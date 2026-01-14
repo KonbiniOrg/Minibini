@@ -65,6 +65,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "docker-compose.yml"
+          target: "."
 
       # 7. ssh to tov
       - name: Deploy with SSH Action
