@@ -28,6 +28,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s # Gives time for initial setup
+# test text to test scp
 #   nginx-proxy:
 #     container_name: nginx-proxy
 #     image: jwilder/nginx-proxy
