@@ -424,7 +424,12 @@ def edit_contact(request, contact_id):
             contact.addr1 = address or ''
             contact.city = city or ''
             contact.postal_code = postal_code or ''
-            contact.business = business
+
+            # Only update business association if a radio button was selected
+            # If no selection mode, preserve existing business association
+            if business_selection_mode:
+                contact.business = business
+
             contact.save()
 
             messages.success(request, f'Contact "{contact}" has been updated successfully.')
