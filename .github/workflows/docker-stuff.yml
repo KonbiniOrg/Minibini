@@ -3,6 +3,7 @@ name: CI/CD – React.js Application with Docker
 on:
   push:
     branches: [feature/*]
+    types: [push]
 
 jobs:
   build-test-push:
