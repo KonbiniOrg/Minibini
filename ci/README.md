@@ -23,11 +23,10 @@ model envisioned in this document runs like this:
 \
 Create a branch from 'main' in feature/[name of feature branch]\
 using something like:\
-\
+
 ```
 git checkout -b feature/my-cool-branch\
 ```
-
 2. Code!\
 Make changes to code in the repo
 3. use docker-compose to bring up a local environment\
@@ -35,3 +34,18 @@ Make changes to code in the repo
 $ docker compose build
 $ docker compose up
 ```
+4. Push\
+\
+git push to a branch within the feature/* space should result\
+in:\
+  1. Unit tests running
+  2. Creation of a container tagged with the branch name
+  3. Deployment of a branch in minibini.me/features/[branch name]
+
+5. Pull request\
+Creating a pull request should result in a board being created
+
+
+
+
+ 
