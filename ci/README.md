@@ -24,14 +24,14 @@ model envisioned in this document runs like this:
 Create a branch from 'main' in feature/[name of feature branch]\
 using something like:\
 \
-```\
+```
 git checkout -b feature/my-cool-branch\
-```\
+```
 
 2. Code!\
 Make changes to code in the repo
 3. use docker-compose to bring up a local environment\
-```\
-$ docker compose build\
-$ docker compose up\
+```
+$ docker compose build
+$ docker compose up
 ```
