@@ -5,11 +5,78 @@
 {% block content %}
 <h2>All Jobs</h2>
 
+<form method="get" action="{% url 'jobs:list' %}" id="filterForm" style="margin-bottom: 20px;">
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+            <strong>Status:</strong>
+            {% for value, label in status_choices %}
+                <label style="display: inline-flex; align-items: center; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; {% if value in current_filters.statuses %}background-color: #007bff; color: white;{% else %}background-color: #f8f9fa;{% endif %}">
+                    <input type="checkbox" name="status" value="{{ value }}"
+                           {% if value in current_filters.statuses %}checked{% endif %}
+                           onchange="document.getElementById('filterForm').submit();"
+                           style="margin-right: 4px;">
+                    {{ label }}
+                </label>
+            {% endfor %}
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <label for="business"><strong>Business:</strong></label>
+            <select name="business" id="business" onchange="document.getElementById('filterForm').submit();">
+                <option value="">All</option>
+                {% for business in businesses %}
+                    <option value="{{ business.business_id }}" {% if current_filters.business == business.business_id|stringformat:"s" %}selected{% endif %}>{{ business.business_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <label for="contact"><strong>Contact:</strong></label>
+            <select name="contact" id="contact" onchange="document.getElementById('filterForm').submit();">
+                <option value="">All</option>
+                {% for contact in contacts %}
+                    <option value="{{ contact.contact_id }}" {% if current_filters.contact == contact.contact_id|stringformat:"s" %}selected{% endif %}>
+                        {{ contact.name }}{% if contact.business %} ({{ contact.business.business_name }}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <label for="date_type"><strong>Date:</strong></label>
+            <select name="date_type" id="date_type" onchange="document.getElementById('filterForm').submit();">
+                <option value="">Any</option>
+                <option value="created" {% if current_filters.date_type == "created" %}selected{% endif %}>Created</option>
+                <option value="due" {% if current_filters.date_type == "due" %}selected{% endif %}>Due</option>
+                <option value="start" {% if current_filters.date_type == "start" %}selected{% endif %}>Start</option>
+                <option value="completed" {% if current_filters.date_type == "completed" %}selected{% endif %}>Completed</option>
+            </select>
+            <input type="date" name="date_from" id="date_from" value="{{ current_filters.date_from }}"
+                   onchange="document.getElementById('filterForm').submit();" title="From date">
+            <span>to</span>
+            <input type="date" name="date_to" id="date_to" value="{{ current_filters.date_to }}"
+                   onchange="document.getElementById('filterForm').submit();" title="To date">
+        </div>
+
+        {% if filters_applied %}
+            <a href="{% url 'jobs:list' %}" style="color: #dc3545;">Clear All</a>
+        {% endif %}
+    </div>
+</form>
+
+{% if filters_applied %}
+    <p style="color: #666; font-size: 0.9em;">
+        <em>Showing {% if current_filters.statuses %}{{ current_filters.statuses|join:", " }}{% else %}all statuses{% endif %}, sorted by {% if current_filters.date_type %}{{ current_filters.date_type }}{% else %}created{% endif %} date.</em>
+    </p>
+{% endif %}
+
 {% if jobs %}
     <table border="1">
         <tr>
             <th>Job Name (#)</th>
             <th>Contact</th>
+            <th>Business</th>
             <th>Status</th>
             <th>Created Date</th>
             <th>Due Date</th>
@@ -26,6 +93,13 @@
                     No contact
                 {% endif %}
             </td>
+            <td>
+                {% if job.contact and job.contact.business %}
+                    {{ job.contact.business.business_name }}
+                {% else %}
+                    —
+                {% endif %}
+            </td>
             <td>{{ job.get_status_display }}</td>
             <td>{{ job.created_date|date:"Y-m-d H:i" }}</td>
             <td>{{ job.due_date|date:"Y-m-d"|default:"—" }}</td>
@@ -35,6 +109,6 @@
         {% endfor %}
     </table>
 {% else %}
-    <p>No jobs found.</p>
+    <p>No jobs found{% if filters_applied %} matching the selected filters{% endif %}.</p>
 {% endif %}
 {% endblock %}
