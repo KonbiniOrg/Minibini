@@ -1,11 +1,9 @@
-name: CI/CD – React.js Application with Docker
+name: CI/CD – Application with Docker
 
 on:
-  push:
-    branches: [docker-stuff]
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [closed]
 
 jobs:
   build-test-push:
