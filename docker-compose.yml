@@ -2,6 +2,11 @@ services:
   minibini:
     container_name: minibini
     image: ashannonlee/minibini
+    environment:
+      - MYSQL_ROOT_PASSWORD=Ru5UPhae
+      - DATABASE_NAME=minibini_db
+      - DATABASE_USER=minidb_user
+      - DATABASE_PASSWORD=Ru5UPhae
     build: .
     #volumes:
     #  - '/home/slee/git/konbini/Minibini:/minibini'

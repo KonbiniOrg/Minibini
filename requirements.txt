@@ -3,6 +3,7 @@ Django==5.2.6
 
 # Database connector for MySQL
 PyMySQL==1.1.2
+mysqlclient==2.2.7
 
 # Django dependencies (automatically installed with Django)
 asgiref==3.9.1
