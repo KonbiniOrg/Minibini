@@ -1,4 +1,4 @@
-name: CI/CD – React.js Application with Docker
+name: CI/CD – Application with Docker
 
 on:
   pull_request:
@@ -55,29 +55,3 @@ jobs:
             ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKERHUB_PROJECT_NAME }}:${{ steps.meta.outputs.SHORT_SHA }}
           cache-from: type=local,src=/tmp/.buildx-cache
-
-
-       # 7. copy docker compose to tov
-       - name: Copy files via SSH
-         uses: appleboy/scp-action@v1
-         with:
-           host: ${{ secrets.DEPLOY_SERVER }}
-           username: ${{ secrets.DEPLOY_USER }}
-           key: ${{ secrets.SSH_PRIVATE_KEY }}
-           source: "docker-compose.yml"
-           target: "."
- 
-       # 8. ssh to tov & docker-compose pull
-       - name: Deploy with SSH Action
-         uses: appleboy/ssh-action@v1.0.0
-         with:
-           host: ${{ secrets.DEPLOY_SERVER }}
-           username: ${{ secrets.DEPLOY_USER }}
-           key: ${{ secrets.SSH_PRIVATE_KEY }}
-           script: |
-             touch i-was-here.txt
-             docker-compose pull
-             # Run other deployment commands
-
-
-
