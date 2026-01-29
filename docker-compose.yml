@@ -33,32 +33,23 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s # Gives time for initial setup
-# test text to test scp
-#   nginx-proxy:
-#     container_name: nginx-proxy
-#     image: jwilder/nginx-proxy
-#     environment:
-#       - ENABLE_IPV6=false
-#     volumes:
-#       - /docker/nginx-config:/etc/nginx/conf.d
-#       - /docker/certs:/etc/nginx/certs
-#       - /docker/nginx-vhost:/etc/nginx/vhost.d
-#       - /docker/nginx-html:/usr/share/nginx/html
-#       - /docker/nginx-dhparam:/etc/nginx/dhparam
-#       - /var/run/docker.sock:/tmp/docker.sock:ro
-#     ports:
-#       - '80:80'
-#       - '443:443'
-#     restart: always
-#     labels:
-#       - com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy=true
-#   letsencrypt-nginx-proxy-companion:
-#     container_name: letsencrypt-nginx-proxy-companion
-#     image: jrcs/letsencrypt-nginx-proxy-companion
-#     volumes:
-#       - '/docker/certs:/etc/nginx/certs:rw'
-#       - '/var/run/docker.sock:/var/run/docker.sock:ro'
-#       - '/docker/nginx-vhost:/etc/nginx/vhost.d'
-#       - '/docker/nginx-html:/usr/share/nginx/html'
-#       - '/docker/nginx-dhparam:/etc/nginx/dhparam'
-#     restart: always
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - certbot
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot

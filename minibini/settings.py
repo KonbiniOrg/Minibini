@@ -34,6 +34,10 @@ ALLOWED_HOSTS = [
     '45.33.56.130'
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://minibini.me'
+]
+
 # Application definition
 
 INSTALLED_APPS = [
