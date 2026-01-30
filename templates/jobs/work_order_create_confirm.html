@@ -14,7 +14,7 @@
     </tr>
     <tr>
         <th>Job</th>
-        <td>{{ estimate.job.job_number }}{% if estimate.job.name %}: {{ estimate.job.name }}{% endif %}</td>
+        <td>{{ estimate.job.job_number }} - {{ estimate.job.description|default:"No description" }}</td>
     </tr>
     <tr>
         <th>Estimate Status</th>
@@ -33,7 +33,7 @@
 <h4>From Worksheet Tasks ({{ worksheet_items|length }})</h4>
 <ul>
     {% for item in worksheet_items %}
-    <li>{{ item.description|default:item.task.name }} - ${{ item.price }} (Qty: {{ item.qty }})</li>
+    <li>{{ item.description|default:item.task.name }} - ${{ item.price_currency }} (Qty: {{ item.qty }})</li>
     {% endfor %}
 </ul>
 <p><em>These will copy existing task details and hierarchy.</em></p>
@@ -43,7 +43,7 @@
 <h4>From Catalog Items ({{ catalog_items|length }})</h4>
 <ul>
     {% for item in catalog_items %}
-    <li>{{ item.price_list_item.code }}: {{ item.description|default:item.price_list_item.description }} - ${{ item.price }} (Qty: {{ item.qty }})</li>
+    <li>{{ item.price_list_item.code }}: {{ item.description|default:item.price_list_item.description }} - ${{ item.price_currency }} (Qty: {{ item.qty }})</li>
     {% endfor %}
 </ul>
 <p><em>These will create new tasks based on catalog item details.</em></p>
@@ -53,7 +53,7 @@
 <h4>Manual Line Items ({{ manual_items|length }})</h4>
 <ul>
     {% for item in manual_items %}
-    <li>{% if item.description %}{{ item.description }}{% else %}Line item #{{ item.line_number|default:item.pk }}{% endif %} - ${{ item.price }} (Qty: {{ item.qty }})</li>
+    <li>{% if item.description %}{{ item.description }}{% else %}Line item #{{ item.line_number|default:item.pk }}{% endif %} - ${{ item.price_currency }} (Qty: {{ item.qty }})</li>
     {% endfor %}
 </ul>
 <p><em>These will create generic tasks that may need manual refinement.</em></p>
@@ -63,7 +63,7 @@
 <p>The new Work Order will be created with:</p>
 <ul>
     <li>Status: Draft</li>
-    <li>Job: {{ estimate.job.job_number }}{% if estimate.job.name %}: {{ estimate.job.name }}{% endif %}</li>
+    <li>Job: {{ estimate.job.job_number }}</li>
     <li>Tasks generated from all line items above</li>
     {% if worksheet %}
     <li>Template: {{ worksheet.template.template_name|default:"No template" }}</li>

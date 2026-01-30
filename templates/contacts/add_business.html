@@ -23,16 +23,12 @@
         <div style="margin-bottom: 15px;">
             <label for="business_name" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Name *</label>
             <input type="text" id="business_name" name="business_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            <small style="display: block; margin-top: 5px; color: #666;">A unique reference code will be automatically generated</small>
         </div>
 
         <div style="margin-bottom: 15px;">
-            <label for="our_reference_code" style="display: block; margin-bottom: 5px; font-weight: bold;">Reference Code</label>
-            <input type="text" id="our_reference_code" name="our_reference_code" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <label for="business_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Number</label>
-            <input type="text" id="business_number" name="business_number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            <label for="business_phone" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Phone</label>
+            <input type="tel" id="business_phone" name="business_phone" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
         </div>
 
         <div style="margin-bottom: 15px;">
@@ -46,8 +42,8 @@
         </div>
 
         <div style="margin-bottom: 15px;">
-            <label for="tax_cloud" style="display: block; margin-bottom: 5px; font-weight: bold;">Tax Cloud</label>
-            <input type="text" id="tax_cloud" name="tax_cloud" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            <label for="website" style="display: block; margin-bottom: 5px; font-weight: bold;">Website</label>
+            <input type="url" id="website" name="website" placeholder="https://example.com" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
         </div>
     </fieldset>
 
@@ -65,8 +61,18 @@
                 <h4 style="margin-top: 0;">Contact 1</h4>
 
                 <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Name *</label>
-                    <input type="text" name="contact_0_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">First Name *</label>
+                    <input type="text" name="contact_0_first_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Middle Initial</label>
+                    <input type="text" name="contact_0_middle_initial" maxlength="10" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Last Name *</label>
+                    <input type="text" name="contact_0_last_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
                 </div>
 
                 <div style="margin-bottom: 15px;">
@@ -133,8 +139,18 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
 
             <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Name</label>
-                <input type="text" name="contact_${contactCount}_name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">First Name</label>
+                <input type="text" name="contact_${contactCount}_first_name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Middle Initial</label>
+                <input type="text" name="contact_${contactCount}_middle_initial" maxlength="10" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Last Name</label>
+                <input type="text" name="contact_${contactCount}_last_name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
             </div>
 
             <div style="margin-bottom: 15px;">

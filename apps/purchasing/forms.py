@@ -1,6 +1,7 @@
 from django import forms
-from .models import PurchaseOrder, PurchaseOrderLineItem, Bill
-from apps.contacts.models import Business, Contact
+from django.core.exceptions import ValidationError
+from .models import PurchaseOrder, Bill
+from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.invoicing.models import PriceListItem
 from apps.core.services import NumberGenerationService
@@ -13,6 +14,13 @@ class PurchaseOrderForm(forms.ModelForm):
         required=True,
         widget=forms.Select(attrs={'class': 'form-control'}),
         empty_label="-- Select Business --"
+    )
+    contact = forms.ModelChoiceField(
+        queryset=Contact.objects.all(),
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-control'}),
+        empty_label="-- Select Contact (optional) --",
+        help_text='If selected, Business will be auto-assigned from Contact'
     )
     job = forms.ModelChoiceField(
         queryset=Job.objects.filter(status='approved'),
@@ -27,29 +35,35 @@ class PurchaseOrderForm(forms.ModelForm):
 
     class Meta:
         model = PurchaseOrder
-        fields = ['business', 'job', 'requested_date']
+        fields = ['business', 'contact', 'job', 'requested_date']
 
     def __init__(self, *args, **kwargs):
         job = kwargs.pop('job', None)
         super().__init__(*args, **kwargs)
 
-        # Only show help text for job field on create (not edit)
-        if self.instance and self.instance.pk:
-            # Editing existing PO - no help text needed
-            self.fields['job'].help_text = ''
-        else:
-            # Creating new PO
-            self.fields['job'].help_text = 'PO number will be assigned automatically on save.'
-
-        # If job provided, pre-select it
+        # Job is optional, but if provided, pre-select it
+        self.fields['job'].required = False
         if job:
             self.fields['job'].initial = job
+
+    def clean(self):
+        """Validate that if contact is provided, it must have a business."""
+        cleaned_data = super().clean()
+        contact = cleaned_data.get('contact')
+
+        if contact and not contact.business:
+            raise forms.ValidationError(
+                f'Contact "{contact}" does not have a Business associated. '
+                'Please assign a Business to this Contact before using it in a Purchase Order.'
+            )
+
+        return cleaned_data
 
     def save(self, commit=True):
         """Override save to generate PO number using NumberGenerationService"""
         instance = super().save(commit=False)
 
-        # Generate the actual PO number only for new POs (increments counter)
+        # Only generate PO number for new instances (not when editing)
         if not instance.pk:
             instance.po_number = NumberGenerationService.generate_next_number('po')
 
@@ -155,8 +169,8 @@ class PurchaseOrderStatusForm(forms.Form):
         # Set valid status choices based on current status
         valid_statuses = self.VALID_TRANSITIONS.get(current_status, [])
         # Convert status codes to display names
-        from .models import PurchaseOrder
-        status_dict = dict(PurchaseOrder.PO_STATUS_CHOICES)
+        from .models import PO_STATUS_CHOICES
+        status_dict = dict(PO_STATUS_CHOICES)
 
         choices = [(current_status, f'{status_dict.get(current_status)} (current)')]
         choices.extend([(s, status_dict.get(s)) for s in valid_statuses])
@@ -174,19 +188,59 @@ class PurchaseOrderStatusForm(forms.Form):
         return self.cleaned_data['status']
 
 
+class BillStatusForm(forms.Form):
+    """Form for changing Bill status"""
+    VALID_TRANSITIONS = {
+        'draft': ['received'],
+        'received': ['partly_paid', 'paid_in_full', 'cancelled'],
+        'partly_paid': ['paid_in_full'],
+        'paid_in_full': ['refunded'],
+        'cancelled': [],  # Terminal state
+        'refunded': [],  # Terminal state
+    }
+
+    status = forms.ChoiceField(choices=[], required=True)
+
+    def __init__(self, *args, **kwargs):
+        current_status = kwargs.pop('current_status', 'draft')
+        super().__init__(*args, **kwargs)
+
+        # Set valid status choices based on current status
+        valid_statuses = self.VALID_TRANSITIONS.get(current_status, [])
+        # Convert status codes to display names
+        from .models import BILL_STATUS_CHOICES
+        status_dict = dict(BILL_STATUS_CHOICES)
+
+        choices = [(current_status, f'{status_dict.get(current_status)} (current)')]
+        choices.extend([(s, status_dict.get(s)) for s in valid_statuses])
+
+        self.fields['status'].choices = choices
+        self.fields['status'].initial = current_status
+
+    @staticmethod
+    def has_valid_transitions(current_status):
+        """Check if the current status has any valid transitions."""
+        return len(BillStatusForm.VALID_TRANSITIONS.get(current_status, [])) > 0
+
+    def clean_status(self):
+        """Validate that the status transition is valid."""
+        return self.cleaned_data['status']
+
+
 class BillForm(forms.ModelForm):
-    """Form for creating/editing Bill"""
-    purchase_order = forms.ModelChoiceField(
-        queryset=PurchaseOrder.objects.all(),
-        required=False,
+    """Form for creating a new Bill with business or contact selection"""
+    business = forms.ModelChoiceField(
+        queryset=Business.objects.all(),
+        required=True,
         widget=forms.Select(attrs={'class': 'form-control'}),
-        empty_label="-- Select Purchase Order (optional) --"
+        empty_label="-- Select Business --"
     )
     contact = forms.ModelChoiceField(
         queryset=Contact.objects.all(),
-        required=True,
+        required=False,
         widget=forms.Select(attrs={'class': 'form-control'}),
-        empty_label="-- Select Vendor Contact --"
+        empty_label="-- Select Contact (optional) --",
+        help_text='If selected, Business will be auto-assigned from Contact'
     )
     vendor_invoice_number = forms.CharField(
         max_length=50,
@@ -196,37 +250,47 @@ class BillForm(forms.ModelForm):
     )
     due_date = forms.DateField(
         required=False,
-        widget=forms.DateInput(attrs={'type': 'date'}),
-        help_text='Optional payment due date'
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+        help_text='Optional due date for payment'
     )
 
     class Meta:
         model = Bill
-        fields = ['purchase_order', 'contact', 'vendor_invoice_number', 'due_date']
+        fields = ['purchase_order', 'business', 'contact', 'vendor_invoice_number', 'due_date']
 
     def __init__(self, *args, **kwargs):
         purchase_order = kwargs.pop('purchase_order', None)
         super().__init__(*args, **kwargs)
 
-        # Only show help text for vendor invoice number on create (not edit)
-        if self.instance and self.instance.pk:
-            # Editing existing Bill - no help text needed
-            self.fields['vendor_invoice_number'].help_text = 'The invoice number from the vendor'
-        else:
-            # Creating new Bill
-            self.fields['vendor_invoice_number'].help_text = 'The invoice number from the vendor. Bill number will be assigned automatically on save.'
+        # Customize contact field display to include business name
+        self.fields['contact'].label_from_instance = lambda obj: f"{obj} ({obj.business.business_name})" if obj.business else str(obj)
 
-        # If purchase_order provided, pre-select it
+        # If purchase_order provided, pre-select it and copy Business/Contact
         if purchase_order:
             self.fields['purchase_order'].initial = purchase_order
+            self.fields['business'].initial = purchase_order.business
+            if purchase_order.contact:
+                self.fields['contact'].initial = purchase_order.contact
+
+    def clean(self):
+        """Validate that if contact is provided, it must have a business."""
+        cleaned_data = super().clean()
+        contact = cleaned_data.get('contact')
+
+        if contact and not contact.business:
+            raise forms.ValidationError(
+                f'Contact "{contact}" does not have a Business associated. '
+                'Please assign a Business to this Contact before using it in a Bill.'
+            )
+
+        return cleaned_data
 
     def save(self, commit=True):
-        """Override save to generate Bill number using NumberGenerationService"""
+        """Override save to set contact from cleaned_data"""
         instance = super().save(commit=False)
 
-        # Generate the actual Bill number only for new Bills (increments counter)
-        if not instance.pk:
-            instance.bill_number = NumberGenerationService.generate_next_number('bill')
+        # Set the contact from cleaned_data (may have been set from business)
+        instance.contact = self.cleaned_data['contact']
 
         if commit:
             instance.save()

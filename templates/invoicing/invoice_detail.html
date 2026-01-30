@@ -29,7 +29,50 @@
 </table>
 
 <h3>Line Items</h3>
-{% include 'includes/_line_items_table.html' with total_label="Total Invoice Amount" %}
+{% if line_items %}
+    <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 10px;">
+        <thead>
+            <tr>
+                <th>Line #</th>
+                <th>Description</th>
+                <th>Task/Price List Item</th>
+                <th>Quantity</th>
+                <th>Unit</th>
+                <th>Price</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in line_items %}
+            <tr>
+                <td>{{ item.line_number|default:item.line_item_id }}</td>
+                <td>{{ item.description|default:"No description" }}</td>
+                <td>
+                    {% if item.task %}
+                        Task: {{ item.task.name }}
+                    {% elif item.price_list_item %}
+                        {{ item.price_list_item.code }} - {{ item.price_list_item.description|truncatewords:5 }}
+                    {% else %}
+                        No source
+                    {% endif %}
+                </td>
+                <td>{{ item.qty }}</td>
+                <td>{{ item.unit_parts_labor|default:"—" }}</td>
+                <td>${{ item.price_currency|floatformat:2 }}</td>
+                <td>${{ item.total_amount|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr style="background-color: #f0f0f0; font-weight: bold;">
+                <td colspan="6">Total Invoice Amount:</td>
+                <td>${{ total_amount|floatformat:2 }}</td>
+            </tr>
+        </tfoot>
+    </table>
+{% else %}
+    <p>No line items found for this invoice.</p>
+{% endif %}
 
 <p>
     <a href="{% url 'jobs:detail' invoice.job.pk %}">View Job Details</a> |

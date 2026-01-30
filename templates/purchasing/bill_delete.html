@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Bill {{ bill.bill_number }} - Minibini{% endblock %}
+
+{% block content %}
+<h2>Delete Bill: {{ bill.bill_number }}</h2>
+
+<p><strong>Please confirm: Are you sure you want to delete this Bill?</strong></p>
+
+<table border="1">
+    <tr>
+        <th>Field</th>
+        <th>Value</th>
+    </tr>
+    <tr>
+        <td>Bill Number</td>
+        <td>{{ bill.bill_number }}</td>
+    </tr>
+    <tr>
+        <td>Status</td>
+        <td>{{ bill.get_status_display }}</td>
+    </tr>
+    <tr>
+        <td>Business</td>
+        <td>
+            {% if bill.business %}
+                {{ bill.business.business_name }}
+            {% else %}
+                No business assigned
+            {% endif %}
+        </td>
+    </tr>
+    <tr>
+        <td>Vendor Invoice Number</td>
+        <td>{{ bill.vendor_invoice_number }}</td>
+    </tr>
+</table>
+
+<p><em>This action cannot be undone.</em></p>
+
+<form method="post">
+    {% csrf_token %}
+    <p>
+        <button type="submit">Yes, Delete Bill</button>
+        <a href="{% url 'purchasing:bill_detail' bill.bill_id %}">Cancel</a>
+    </p>
+</form>
+{% endblock %}

@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
 
-{% block title %}Create Worksheet for {{ job.job_number }}{% if job.name %}: {{ job.name }}{% endif %} - Minibini{% endblock %}
+{% block title %}Create Worksheet for {{ job.job_number }} - Minibini{% endblock %}
 
 {% block content %}
 <h1>Create New Estimate Worksheet</h1>
-<h2>Job: {{ job.job_number }}{% if job.name %}: {{ job.name }}{% endif %}</h2>
+<h2>Job: {{ job.job_number }} - {{ job.description }}</h2>
 
 <form method="post">
     {% csrf_token %}

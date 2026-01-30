@@ -11,7 +11,7 @@ class JobStateTransitionTest(TestCase):
     """Test Job state transitions follow the defined workflow paths."""
 
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
 
     def test_job_starts_in_draft(self):
         """Test that new Jobs start in Draft state."""
@@ -445,7 +445,7 @@ class EstimateStateTransitionTest(TestCase):
     """Test Estimate state transitions and date field handling."""
 
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact

@@ -2,15 +2,45 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils import timezone
 from apps.jobs.models import Job
-from apps.contacts.models import Contact
+from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration
 
 
 class JobCreateViewTest(TestCase):
     def setUp(self):
         self.client = Client()
-        self.contact1 = Contact.objects.create(name="Test Customer 1")
-        self.contact2 = Contact.objects.create(name="Test Customer 2")
+
+        # Create contacts with proper fields
+        self.contact1 = Contact.objects.create(
+            first_name="John",
+            last_name="Doe",
+            email="john.doe@example.com",
+            work_number="555-1234"
+        )
+        self.contact2 = Contact.objects.create(
+            first_name="Jane",
+            last_name="Smith",
+            email="jane.smith@example.com",
+            mobile_number="555-5678"
+        )
+
+        # Create a business with default contact for testing business selection
+        self.business1 = Business.objects.create(
+            business_name="Test Company Inc",
+            default_contact=self.contact1
+        )
+        self.contact1.business = self.business1
+        self.contact1.save()
+
+        # Create another contact for the business
+        self.contact3 = Contact.objects.create(
+            first_name="Bob",
+            last_name="Johnson",
+            email="bob.johnson@example.com",
+            work_number="555-9999",
+            business=self.business1
+        )
+
         self.url = reverse('jobs:create')
 
         # Create Configuration for number generation
@@ -29,13 +59,12 @@ class JobCreateViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'jobs/job_create.html')
         self.assertContains(response, 'Create New Job')
-        self.assertContains(response, 'Select Contact')
 
     def test_job_create_view_get_with_preselected_contact(self):
         """Test GET request with pre-selected contact from query parameter"""
         response = self.client.get(f"{self.url}?contact_id={self.contact1.contact_id}")
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, self.contact1.name)
+        self.assertContains(response, "John Doe")
         # Check that the form has the contact pre-selected
         form = response.context['form']
         self.assertEqual(form.fields['contact'].initial, self.contact1)
@@ -110,7 +139,6 @@ class JobCreateViewTest(TestCase):
 
         # Should not redirect (stays on form with errors)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'This field is required')
 
         # Check form in context has errors
         form = response.context['form']

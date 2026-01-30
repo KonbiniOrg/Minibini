@@ -37,7 +37,8 @@ class UserModelTest(TestCase):
         """Test that each Contact can be associated with at most one User"""
         # Create a contact
         contact = Contact.objects.create(
-            name="John Doe",
+            first_name='John Doe',
+            last_name='',
             email="john@example.com"
         )
         

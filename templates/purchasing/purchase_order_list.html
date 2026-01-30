@@ -5,28 +5,17 @@
 {% block content %}
 <h2>All Purchase Orders</h2>
 
-<p><a href="{% url 'purchasing:purchase_order_create' %}">New Purchase Order</a></p>
-
 {% if purchase_orders %}
     <table border="1">
         <tr>
             <th>PO Number</th>
-            <th>Business</th>
             <th>Job</th>
-            <th>Created Date</th>
-            <th>State</th>
-            <th>Final Date</th>
+            <th>Price List Item</th>
+            <th>Actions</th>
         </tr>
         {% for po in purchase_orders %}
         <tr>
-            <td><a href="{% url 'purchasing:purchase_order_detail' po.po_id %}">{{ po.po_number }}</a></td>
-            <td>
-                {% if po.business %}
-                    {{ po.business.business_name }}
-                {% else %}
-                    No business
-                {% endif %}
-            </td>
+            <td>{{ po.po_number }}</td>
             <td>
                 {% if po.job %}
                     <a href="{% url 'jobs:detail' po.job.pk %}">{{ po.job }}</a>
@@ -34,19 +23,8 @@
                     No job
                 {% endif %}
             </td>
-            <td>{{ po.created_date|date:"Y-m-d H:i" }}</td>
-            <td>{{ po.get_status_display }}</td>
-            <td>
-                {% if po.status == 'cancelled' and po.cancel_date %}
-                    {{ po.cancel_date|date:"Y-m-d H:i" }}
-                {% elif po.status == 'received_in_full' and po.received_date %}
-                    {{ po.received_date|date:"Y-m-d H:i" }}
-                {% elif po.issued_date %}
-                    {{ po.issued_date|date:"Y-m-d H:i" }}
-                {% else %}
-                    -
-                {% endif %}
-            </td>
+            <td>{{ po.price_list_item|default:"No price list item" }}</td>
+            <td><a href="{% url 'purchasing:purchase_order_detail' po.po_id %}">View</a></td>
         </tr>
         {% endfor %}
     </table>

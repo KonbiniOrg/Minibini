@@ -1,21 +1,35 @@
 from django.db import models
-from django.utils import timezone
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from apps.core.models import BaseLineItem
 
 
-class PurchaseOrder(models.Model):
-    PO_STATUS_CHOICES = [
-        ('draft', 'Draft'),
-        ('issued', 'Issued'),
-        ('partly_received', 'Partly Received'),
-        ('received_in_full', 'Received in Full'),
-        ('cancelled', 'Cancelled'),
-    ]
+# Status choices for PurchaseOrder
+PO_STATUS_CHOICES = [
+    ('draft', 'Draft'),
+    ('issued', 'Issued'),
+    ('partly_received', 'Partly Received'),
+    ('received_in_full', 'Received in Full'),
+    ('cancelled', 'Cancelled'),
+]
 
+# Status choices for Bill
+BILL_STATUS_CHOICES = [
+    ('draft', 'Draft'),
+    ('received', 'Received'),
+    ('partly_paid', 'Partly Paid'),
+    ('paid_in_full', 'Paid in Full'),
+    ('cancelled', 'Cancelled'),
+    ('refunded', 'Refunded'),
+]
+
+
+class PurchaseOrder(models.Model):
     po_id = models.AutoField(primary_key=True)
-    business = models.ForeignKey('contacts.Business', on_delete=models.CASCADE, null=True, blank=True)
-    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, null=True, blank=True)
+    # Business is required; Contact is optional but if provided, must have a Business
+    business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
+    contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
+    job = models.ForeignKey('jobs.Job', on_delete=models.SET_NULL, null=True, blank=True)
     po_number = models.CharField(max_length=50, unique=True)
     status = models.CharField(max_length=20, choices=PO_STATUS_CHOICES, default='draft')
 
@@ -29,6 +43,24 @@ class PurchaseOrder(models.Model):
     def clean(self):
         """Validate PurchaseOrder state transitions and protect immutable date fields."""
         super().clean()
+
+        # Validate that if contact is provided, it must have a business
+        if self.contact and not self.contact.business:
+            raise ValidationError(
+                f'Contact "{self.contact}" does not have a Business associated. '
+                'Please assign a Business to this Contact before using it in a Purchase Order.'
+            )
+
+        # Validate that if both contact and business are provided, they must match
+        # Only check on creation (not on updates, since contact's business might change after PO creation)
+        is_new = not self.pk
+        if is_new and self.contact and self.contact.business and self.business_id:
+            if self.business != self.contact.business:
+                raise ValidationError(
+                    f'Contact "{self.contact}" is associated with Business "{self.contact.business.business_name}", '
+                    f'but Purchase Order is set to use Business "{self.business.business_name}". '
+                    'The Business must match the Contact\'s Business.'
+                )
 
         # Define valid transitions for each state
         VALID_TRANSITIONS = {
@@ -74,8 +106,20 @@ class PurchaseOrder(models.Model):
                 pass
 
     def save(self, *args, **kwargs):
-        """Override save to validate state transitions and set dates."""
+        """Override save to validate state transitions, set dates, auto-generate po_number, and auto-associate Business from Contact."""
+        from apps.core.services import NumberGenerationService
+
         old_status = None
+        is_new = not self.pk
+
+        # Auto-generate po_number if not provided
+        if not self.po_number:
+            self.po_number = NumberGenerationService.generate_next_number('po')
+
+        # If contact is provided and has a business, auto-associate the business
+        # Only do this on creation and if business is not already explicitly set
+        if is_new and self.contact and self.contact.business and not self.business_id:
+            self.business = self.contact.business
 
         # Check if this is an update (not a new object)
         if self.pk:
@@ -106,25 +150,27 @@ class PurchaseOrder(models.Model):
         # Call parent save
         super().save(*args, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        """Override delete to enforce that only draft POs can be deleted."""
+        if self.status != 'draft':
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied(
+                f'Cannot delete Purchase Order {self.po_number}. '
+                'Only Purchase Orders in Draft status can be deleted.'
+            )
+        return super().delete(*args, **kwargs)
+
     def __str__(self):
         return f"PO {self.po_number}"
 
 
 class Bill(models.Model):
-    BILL_STATUS_CHOICES = [
-        ('draft', 'Draft'),
-        ('received', 'Received'),
-        ('partly_paid', 'Partly Paid'),
-        ('paid_in_full', 'Paid in Full'),
-        ('cancelled', 'Cancelled'),
-        ('refunded', 'Refunded'),
-    ]
-
     bill_id = models.AutoField(primary_key=True)
     bill_number = models.CharField(max_length=50, unique=True)
-    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.SET_NULL, null=True, blank=True)
-    contact = models.ForeignKey('contacts.Contact', on_delete=models.CASCADE)
-    business = models.ForeignKey('contacts.Business', on_delete=models.SET_NULL, null=True, blank=True)
+    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, null=True, blank=True)
+    # Business is required; Contact is optional but if provided, must have a Business
+    business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
+    contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
     vendor_invoice_number = models.CharField(max_length=50)
     status = models.CharField(max_length=20, choices=BILL_STATUS_CHOICES, default='draft')
 
@@ -138,6 +184,24 @@ class Bill(models.Model):
     def clean(self):
         """Validate Bill state transitions, protect immutable date fields, and enforce line item requirement."""
         super().clean()
+
+        # Validate that if contact is provided, it must have a business
+        if self.contact and not self.contact.business:
+            raise ValidationError(
+                f'Contact "{self.contact}" does not have a Business associated. '
+                'Please assign a Business to this Contact before using it in a Bill.'
+            )
+
+        # Validate that if both contact and business are provided, they must match
+        # Only check on creation (not on updates, since contact's business might change after Bill creation)
+        is_new = not self.pk
+        if is_new and self.contact and self.contact.business and self.business_id:
+            if self.business != self.contact.business:
+                raise ValidationError(
+                    f'Contact "{self.contact}" is associated with Business "{self.contact.business.business_name}", '
+                    f'but Bill is set to use Business "{self.business.business_name}". '
+                    'The Business must match the Contact\'s Business.'
+                )
 
         # Validate that PO is in issued or later status (not draft)
         if self.purchase_order and self.purchase_order.status == 'draft':
@@ -200,12 +264,19 @@ class Bill(models.Model):
                 pass
 
     def save(self, *args, **kwargs):
-        """Override save to validate state transitions, set dates, and auto-associate Business from Contact."""
+        """Override save to validate state transitions, set dates, auto-generate bill_number, and auto-associate Business from Contact."""
+        from apps.core.services import NumberGenerationService
+
         old_status = None
         is_new = not self.pk
 
-        # If this is a new Bill and no business is set, auto-associate from contact's business
-        if is_new and not self.business and self.contact and self.contact.business:
+        # Auto-generate bill_number if not provided
+        if not self.bill_number:
+            self.bill_number = NumberGenerationService.generate_next_number('bill')
+
+        # If contact is provided and has a business, auto-associate the business
+        # Only do this on creation and if business is not already explicitly set
+        if is_new and self.contact and self.contact.business and not self.business_id:
             self.business = self.contact.business
 
         # Check if this is an update (not a new object)
@@ -236,6 +307,16 @@ class Bill(models.Model):
 
         # Call parent save
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Override delete to enforce that only draft Bills can be deleted."""
+        if self.status != 'draft':
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied(
+                f'Cannot delete Bill {self.bill_number}. '
+                'Only Bills in Draft status can be deleted.'
+            )
+        return super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"Bill {self.bill_number}"
@@ -272,4 +353,4 @@ class BillLineItem(BaseLineItem):
         return 'bill'
 
     def __str__(self):
-        return f"Bill Line Item {self.pk} for Bill {self.bill.pk}"
+        return f"Bill Line Item {self.pk} for Bill {self.bill.bill_number}"

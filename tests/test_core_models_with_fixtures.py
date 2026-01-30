@@ -2,13 +2,13 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from apps.core.models import User, Configuration
+from .base import FixtureTestCase
 
 
-class UserModelFixtureTest(TestCase):
+class UserModelFixtureTest(FixtureTestCase):
     """
-    Test User model using fixture data
+    Test User model using fixture data loaded from unit_test_data.json
     """
-    fixtures = ['core_base_data.json', 'contacts_base_data.json']
     
     def test_user_exists_from_fixture(self):
         """Test that users from fixture data exist and have correct properties"""
@@ -75,11 +75,10 @@ class UserModelFixtureTest(TestCase):
         self.assertEqual(new_user.username, "newemployee")
 
 
-class GroupModelFixtureTest(TestCase):
+class GroupModelFixtureTest(FixtureTestCase):
     """
     Test Group model using fixture data
     """
-    fixtures = ['core_base_data.json', 'contacts_base_data.json']
     
     def test_groups_exist_from_fixture(self):
         """Test that all groups from fixture exist"""
@@ -113,11 +112,10 @@ class GroupModelFixtureTest(TestCase):
         self.assertEqual(Group.objects.count(), 4)  # 3 from fixture + 1 new
 
 
-class ConfigurationModelFixtureTest(TestCase):
+class ConfigurationModelFixtureTest(FixtureTestCase):
     """
     Test Configuration model using fixture data
     """
-    fixtures = ['contacts_base_data.json', 'core_base_data.json']
 
     def test_configurations_exist_from_fixture(self):
         """Test that configurations from fixture exist with correct data"""

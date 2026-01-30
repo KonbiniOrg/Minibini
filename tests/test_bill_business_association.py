@@ -10,19 +10,27 @@ class BillBusinessAutoAssociationTest(TestCase):
 
     def setUp(self):
         """Set up test data with businesses and contacts."""
+        # Create default contacts for businesses
+        self.default_contact1 = Contact.objects.create(first_name='Default Contact 1', last_name='', email='default.contact.1@test.com')
+        self.default_contact2 = Contact.objects.create(first_name='Default Contact 2', last_name='', email='default.contact.2@test.com')
+
         # Create businesses
-        self.business1 = Business.objects.create(business_name="Vendor Corp")
-        self.business2 = Business.objects.create(business_name="Alternative Vendor Inc")
+        self.business1 = Business.objects.create(business_name="Vendor Corp", default_contact=self.default_contact1)
+        self.business2 = Business.objects.create(business_name="Alternative Vendor Inc", default_contact=self.default_contact2)
 
         # Create contact with business
         self.contact_with_business = Contact.objects.create(
-            name="John Vendor",
+            first_name='John Vendor',
+            last_name='',
+            email='john.vendor@test.com',
             business=self.business1
         )
 
         # Create contact without business
         self.contact_without_business = Contact.objects.create(
-            name="Jane Independent"
+            first_name='Jane Independent',
+            last_name='',
+            email='jane.independent@test.com',
         )
 
     def test_bill_auto_associates_business_from_contact_on_creation(self):
@@ -40,35 +48,26 @@ class BillBusinessAutoAssociationTest(TestCase):
         self.assertEqual(bill.business, self.business1)
         self.assertEqual(bill.business, self.contact_with_business.business)
 
-    def test_bill_no_business_when_contact_has_no_business(self):
+    def test_bill_explicit_business_must_match_contact_business(self):
         """
-        Test that when creating a Bill with a Contact that has no Business,
-        the Bill's business field remains None.
+        Test that when creating a Bill with both Contact and Business,
+        the Business must match the Contact's Business, otherwise ValidationError is raised.
         """
-        bill = Bill.objects.create(
-            bill_number="BILL-040",
-            contact=self.contact_without_business,
-            vendor_invoice_number="INV002"
-        )
+        from django.core.exceptions import ValidationError
 
-        # Verify no business is associated
-        self.assertIsNone(bill.business)
-
-    def test_bill_explicit_business_not_overridden(self):
-        """
-        Test that when creating a Bill with an explicitly set Business,
-        that Business is used and not overridden by the Contact's business.
-        """
-        bill = Bill.objects.create(
+        # Try to create bill with explicit business that differs from contact's business
+        bill = Bill(
             bill_number="BILL-041",
-            contact=self.contact_with_business,
-            business=self.business2,  # Explicitly set different business
+            contact=self.contact_with_business,  # has business1
+            business=self.business2,  # explicitly set to different business
             vendor_invoice_number="INV003"
         )
 
-        # Verify the explicitly set business is used
-        self.assertEqual(bill.business, self.business2)
-        self.assertNotEqual(bill.business, self.contact_with_business.business)
+        # Should raise ValidationError because business doesn't match contact's business
+        with self.assertRaises(ValidationError) as cm:
+            bill.save()
+
+        self.assertIn('Contact', str(cm.exception))
 
     def test_bill_business_not_changed_on_update(self):
         """
@@ -96,38 +95,13 @@ class BillBusinessAutoAssociationTest(TestCase):
         self.assertEqual(bill.business, self.business1)
         self.assertNotEqual(bill.business, self.contact_with_business.business)
 
-    def test_bill_business_remains_none_on_update_if_initially_none(self):
-        """
-        Test that if a Bill was created without a business (contact had no business),
-        it remains None on updates even if the contact later gets a business.
-        """
-        # Create bill with contact that has no business
-        bill = Bill.objects.create(
-            bill_number="BILL-043",
-            contact=self.contact_without_business,
-            vendor_invoice_number="INV005"
-        )
-
-        # Verify no business initially
-        self.assertIsNone(bill.business)
-
-        # Update the contact to have a business
-        self.contact_without_business.business = self.business1
-        self.contact_without_business.save()
-
-        # Update the bill
-        bill.vendor_invoice_number = "INV005-UPDATED"
-        bill.save()
-
-        # Verify business is still None (not auto-updated)
-        self.assertIsNone(bill.business)
-
     def test_bill_with_purchase_order_auto_associates_business(self):
         """
         Test that Bill auto-associates business even when created with a PurchaseOrder.
         """
         # Create a purchase order in issued status
         po = PurchaseOrder.objects.create(
+            business=self.business1,
             po_number="PO001",
             status='draft'
         )

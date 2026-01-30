@@ -131,7 +131,7 @@ When adding a new configuration setting:
 
 #### BaseLineItem (Abstract)
 - Abstract base class for all line item types
-- Provides shared fields: task, price_list_item, line_number, qty, units, description, price
+- Provides shared fields: task, price_list_item, line_number, qty, units, description, price_currency
 - Validates that items can't have both task AND price_list_item
 - Auto-generates line numbers if not provided
 - Implements total_amount calculation
@@ -674,6 +674,138 @@ Settings stored in `minibini/settings.py`:
 - Implement caching for performance
 - Add database indexes for common queries
 - Create deployment configuration
+
+## Common Coding Pitfalls (Lessons Learned)
+
+This section documents common errors found during code review and how to avoid them.
+
+### 1. Field Names After Migration Renames
+
+**Problem:** After renaming a field in a migration (e.g., `superseded_date` → `closed_date`), code may still reference the old field name. Python silently allows setting arbitrary attributes on model instances, so this doesn't crash immediately but the data is never saved.
+
+**Example of the bug:**
+```python
+# WRONG: superseded_date was renamed to closed_date
+estimate.superseded_date = timezone.now()  # Silently sets instance attribute, NOT saved to DB
+estimate.save()
+```
+
+**Prevention:**
+- After any migration that renames fields, grep the entire codebase for the old field name
+- Write tests that verify the correct field is set
+- Let the model's `save()` method handle date setting for status changes
+
+### 2. Status Value Typos
+
+**Problem:** Using incorrect status values like `'complete'` instead of `'completed'` in QuerySet filters.
+
+**Example of the bug:**
+```python
+# WRONG: Job uses 'completed', not 'complete'
+Job.objects.filter(contact=contact).exclude(status__in=['complete', 'rejected'])
+```
+
+**Prevention:**
+- Define status choices as class constants and use them everywhere:
+  ```python
+  class Job(models.Model):
+      STATUS_COMPLETED = 'completed'
+      JOB_STATUS_CHOICES = [(STATUS_COMPLETED, 'Completed'), ...]
+
+  # Then use:
+  Job.objects.exclude(status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED])
+  ```
+- Write tests that verify status filtering works correctly
+
+### 3. Default Values Not in Choices
+
+**Problem:** Setting a default value that's not in the field's choices list.
+
+**Example of the bug:**
+```python
+# WRONG: 'active' is not in INVOICE_STATUS_CHOICES
+status = models.CharField(choices=INVOICE_STATUS_CHOICES, default='active')
+```
+
+**Prevention:**
+- Always use the first item from your choices list as the default
+- Or better, define the default as a constant: `default=INVOICE_STATUS_CHOICES[0][0]`
+
+### 4. Number Regeneration on Edit
+
+**Problem:** Form `save()` methods that always generate new document numbers, even when editing.
+
+**Example of the bug:**
+```python
+def save(self, commit=True):
+    instance = super().save(commit=False)
+    instance.po_number = generate_next_number('po')  # Wrong for edits!
+    # ...
+```
+
+**Correct pattern:**
+```python
+def save(self, commit=True):
+    instance = super().save(commit=False)
+    if not instance.pk:  # Only generate for NEW instances
+        instance.po_number = generate_next_number('po')
+    # ...
+```
+
+### 5. Type Coercion in ORM Fields
+
+**Problem:** Passing strings to integer fields (e.g., `line_number=str(counter)`). While Django coerces the type, this can cause subtle bugs, especially with sorting.
+
+**Prevention:**
+- Always pass the correct type to model fields
+- Don't wrap numbers in `str()` unless you specifically need a string
+
+### 6. QuerySet.delete() Bypasses Model.delete()
+
+**Problem:** Using `Model.objects.filter(...).delete()` bypasses custom `delete()` methods defined on the model.
+
+**Example of the bug:**
+```python
+# WRONG: Bypasses Contact.delete() method
+Contact.objects.filter(contact_id__in=contact_ids).delete()
+```
+
+**Correct pattern:**
+```python
+# Iterate and call delete() on each instance
+for contact in Contact.objects.filter(contact_id__in=contact_ids):
+    contact.delete()
+```
+
+### 7. Missing Transaction Wrapping
+
+**Problem:** Multi-model operations that should be atomic but aren't wrapped in transactions.
+
+**Example of the bug:**
+```python
+business = Business.objects.create(...)  # Created
+contact = Contact.objects.create(business=business, ...)  # If this fails, orphan business
+```
+
+**Correct pattern:**
+```python
+from django.db import transaction
+
+with transaction.atomic():
+    business = Business.objects.create(...)
+    contact = Contact.objects.create(business=business, ...)
+```
+
+### Code Review Checklist
+
+Before merging code, verify:
+- [ ] Status values match model choice definitions
+- [ ] Default values are in the choices list
+- [ ] Document numbers only generated for new instances
+- [ ] Field names match current model (no old renamed fields)
+- [ ] Integer fields receive integers, not strings
+- [ ] Custom delete() methods are respected (no QuerySet.delete())
+- [ ] Multi-model operations are wrapped in transactions
 
 ## Quick Reference
 

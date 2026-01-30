@@ -1,0 +1,1111 @@
+[
+  {
+    "model": "auth.group",
+    "pk": 1,
+    "fields": {
+      "name": "Administrator",
+      "permissions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        21,
+        22,
+        23,
+        24
+      ]
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 2,
+    "fields": {
+      "name": "Manager",
+      "permissions": [
+        65,
+        66,
+        67,
+        68,
+        73,
+        74,
+        75,
+        76,
+        69,
+        70,
+        71,
+        72,
+        25,
+        26,
+        27,
+        28,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        53,
+        54,
+        55,
+        56,
+        45,
+        46,
+        47,
+        48,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        41,
+        42,
+        43,
+        44,
+        37,
+        38,
+        39,
+        40,
+        93,
+        94,
+        95,
+        96,
+        89,
+        90,
+        91,
+        92
+      ]
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 3,
+    "fields": {
+      "name": "Employee",
+      "permissions": [
+        65,
+        66,
+        67,
+        68,
+        73,
+        74,
+        75,
+        76,
+        69,
+        70,
+        71,
+        72,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        53,
+        54,
+        55,
+        56,
+        45,
+        46,
+        47,
+        48,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        41,
+        42,
+        43,
+        44,
+        37,
+        38,
+        39,
+        40,
+        93,
+        94,
+        95,
+        96,
+        89,
+        90,
+        91,
+        92
+      ]
+    }
+  },
+  {
+    "model": "core.user",
+    "pk": 1,
+    "fields": {
+      "password": "pbkdf2_sha256$600000$fU1Q67TTryqZMFXst0Am34$4nPO2gad6tjKif5Ke3G1PE51yrNfRIg2nd1gTApUuQg=",
+      "last_login": "2025-09-06T17:29:43.009Z",
+      "is_superuser": true,
+      "username": "dev_user",
+      "first_name": "Dev",
+      "last_name": "User",
+      "email": "dev@example.com",
+      "is_staff": true,
+      "is_active": true,
+      "date_joined": "2025-09-01T21:22:06.298Z",
+      "contact": null,
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "core.user",
+    "pk": 2,
+    "fields": {
+      "password": "pbkdf2_sha256$870000$test$hash",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "johnq_public",
+      "first_name": "John Q",
+      "last_name": "Public",
+      "email": "facilities@metrooffice.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2024-01-01T00:00:00Z",
+      "contact": 3,
+      "groups": [
+        3
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 1,
+    "fields": {
+      "email": "jane.doe@abcconstruction.com",
+      "addr1": "123 Main St",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Business District",
+      "postal_code": "12345",
+      "country_code": "US",
+      "mobile_number": "555-0101",
+      "work_number": "",
+      "home_number": "",
+      "business": 2,
+      "first_name": "Jane",
+      "last_name": "Doe"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 2,
+    "fields": {
+      "email": "john.smith@email.com",
+      "addr1": "456 Oak Ave",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Residential Area",
+      "postal_code": "12346",
+      "country_code": "US",
+      "mobile_number": "",
+      "work_number": "",
+      "home_number": "555-0202",
+      "business": null,
+      "first_name": "John",
+      "last_name": "Smith"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 3,
+    "fields": {
+      "email": "facilities@metrooffice.com",
+      "addr1": "789 Corporate Blvd",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Downtown",
+      "postal_code": "12347",
+      "country_code": "US",
+      "mobile_number": "",
+      "work_number": "555-0303",
+      "home_number": "",
+      "business": 3,
+      "first_name": "John",
+      "last_name": "Q Public"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 4,
+    "fields": {
+      "email": "info@greenvalley.com",
+      "addr1": "321 Valley Road",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Suburbs",
+      "postal_code": "12348",
+      "country_code": "US",
+      "mobile_number": "555-0404",
+      "work_number": "",
+      "home_number": "",
+      "business": 5,
+      "first_name": "Laura",
+      "last_name": "Ingalls"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 5,
+    "fields": {
+      "email": "projects@industrialsolutions.com",
+      "addr1": "654 Industrial Pkwy",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Industrial Zone",
+      "postal_code": "12349",
+      "country_code": "US",
+      "mobile_number": "",
+      "work_number": "555-0505",
+      "home_number": "",
+      "business": 4,
+      "first_name": "Frank",
+      "last_name": "Gehry"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 6,
+    "fields": {
+      "email": "orders@housingsupply.com",
+      "addr1": "888 Supply Drive",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Industrial District",
+      "postal_code": "12350",
+      "country_code": "US",
+      "mobile_number": "555-0606",
+      "work_number": "",
+      "home_number": "",
+      "business": 1,
+      "first_name": "Piper",
+      "last_name": "Laurie"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 7,
+    "fields": {
+      "email": "joe@joespizzeria.com",
+      "addr1": "456 Pizza Avenue",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Restaurant District",
+      "postal_code": "12351",
+      "country_code": "US",
+      "mobile_number": "555-0777",
+      "work_number": "",
+      "home_number": "",
+      "business": 6,
+      "first_name": "Joe",
+      "last_name": "Mamma"
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 1,
+    "fields": {
+      "our_reference_code": "HS001",
+      "business_name": "Housing Supply",
+      "business_address": "888 Supply Drive, Industrial District, City, State 12350",
+      "business_phone": "BN-789012",
+      "tax_exemption_number": "TEX-456789",
+      "website": "",
+      "terms": 1,
+      "default_contact": 6
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 2,
+    "fields": {
+      "our_reference_code": "ABC001",
+      "business_name": "ABC Construction Co.",
+      "business_address": "123 Main St, Business District, City, State 12345",
+      "business_phone": "BN-123456",
+      "tax_exemption_number": "TEX-123456",
+      "website": "",
+      "terms": 1,
+      "default_contact": 1
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 3,
+    "fields": {
+      "our_reference_code": "MOC001",
+      "business_name": "Metro Office Complex",
+      "business_address": "789 Corporate Blvd, Downtown, City, State 12347",
+      "business_phone": "BN-345678",
+      "tax_exemption_number": "TEX-345678",
+      "website": "",
+      "terms": 1,
+      "default_contact": 3
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 4,
+    "fields": {
+      "our_reference_code": "ISI001",
+      "business_name": "Industrial Solutions Inc.",
+      "business_address": "654 Industrial Pkwy, Industrial Zone, City, State 12349",
+      "business_phone": "BN-567890",
+      "tax_exemption_number": "TEX-567890",
+      "website": "",
+      "terms": 1,
+      "default_contact": 5
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 5,
+    "fields": {
+      "our_reference_code": "GRV001",
+      "business_name": "Green Valley Homes",
+      "business_address": "321 Valley Road, Suburbs, City, State 12348",
+      "business_phone": "BN-99999",
+      "tax_exemption_number": "TEX-99999",
+      "website": "",
+      "terms": 1,
+      "default_contact": 4
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 6,
+    "fields": {
+      "our_reference_code": "JP001",
+      "business_name": "Joe's Pizzeria",
+      "business_address": "456 Pizza Avenue, Restaurant District, City, State 12351",
+      "business_phone": "BN-777888",
+      "tax_exemption_number": "TEX-777888",
+      "website": "",
+      "terms": 1,
+      "default_contact": 7
+    }
+  },
+  {
+    "model": "contacts.paymentterms",
+    "pk": 1,
+    "fields": {}
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 1,
+    "fields": {
+      "step_type": "labor",
+      "mapping_strategy": "direct",
+      "default_product_type": "",
+      "line_item_name": "Design Consultation",
+      "line_item_description": "Research, planning and consultation services",
+      "task_type_id": "RESEARCH",
+      "breakdown_of_task": "Initial project consultation and planning"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 2,
+    "fields": {
+      "step_type": "labor",
+      "mapping_strategy": "direct",
+      "default_product_type": "",
+      "line_item_name": "Technical Drawings",
+      "line_item_description": "CAD drawings and technical documentation",
+      "task_type_id": "CAD",
+      "breakdown_of_task": "Computer-aided design and technical drawings"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 3,
+    "fields": {
+      "step_type": "component",
+      "mapping_strategy": "bundle_to_product",
+      "default_product_type": "furniture",
+      "line_item_name": "Custom Furniture",
+      "line_item_description": "Bundled into complete furniture product",
+      "task_type_id": "CUT",
+      "breakdown_of_task": "Precision cutting of materials"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 4,
+    "fields": {
+      "step_type": "component",
+      "mapping_strategy": "bundle_to_product",
+      "default_product_type": "furniture",
+      "line_item_name": "Custom Furniture",
+      "line_item_description": "Bundled into complete furniture product",
+      "task_type_id": "ASSEMBLE",
+      "breakdown_of_task": "Assembly and joining of components"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 5,
+    "fields": {
+      "step_type": "component",
+      "mapping_strategy": "bundle_to_product",
+      "default_product_type": "furniture",
+      "line_item_name": "Custom Furniture",
+      "line_item_description": "Bundled into complete furniture product",
+      "task_type_id": "FINISH",
+      "breakdown_of_task": "Surface finishing and coating application"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 6,
+    "fields": {
+      "step_type": "labor",
+      "mapping_strategy": "bundle_to_service",
+      "default_product_type": "delivery",
+      "line_item_name": "Delivery & Installation",
+      "line_item_description": "Complete delivery and installation service",
+      "task_type_id": "DELIVERY",
+      "breakdown_of_task": "Transportation and on-site installation"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 7,
+    "fields": {
+      "step_type": "material",
+      "mapping_strategy": "bundle_to_product",
+      "default_product_type": "furniture",
+      "line_item_name": "Custom Furniture",
+      "line_item_description": "Bundled into complete furniture product",
+      "task_type_id": "MATERIALS",
+      "breakdown_of_task": "Raw materials and supplies"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 8,
+    "fields": {
+      "step_type": "overhead",
+      "mapping_strategy": "exclude",
+      "default_product_type": "",
+      "line_item_name": "",
+      "line_item_description": "",
+      "task_type_id": "QA",
+      "breakdown_of_task": "Quality assurance and inspection"
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 1,
+    "fields": {
+      "template_name": "RESEARCH",
+      "description": "Research that has to happen before the project can be started",
+      "units": "hours",
+      "rate": "100.00",
+      "task_mapping": 1,
+      "created_date": "2025-09-06T17:30:38.271Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 2,
+    "fields": {
+      "template_name": "CAD",
+      "description": "Design, drawing, detailing, modelling",
+      "units": "hours",
+      "rate": "150.00",
+      "task_mapping": 2,
+      "created_date": "2025-09-06T17:31:20.508Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 3,
+    "fields": {
+      "template_name": "CUT",
+      "description": "Cutting parts",
+      "units": "minutes",
+      "rate": "22.00",
+      "task_mapping": 3,
+      "created_date": "2025-09-06T17:31:44.072Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 4,
+    "fields": {
+      "template_name": "ASSEMBLE",
+      "description": "Glue and staple the parts together",
+      "units": "hours",
+      "rate": "100.00",
+      "task_mapping": 4,
+      "created_date": "2025-09-06T17:38:15.359Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 5,
+    "fields": {
+      "template_name": "FINISH",
+      "description": "Sand and fill and apply finish, or veneer, or laminate",
+      "units": "hours",
+      "rate": "100.00",
+      "task_mapping": 5,
+      "created_date": "2025-09-06T17:39:14.272Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 6,
+    "fields": {
+      "template_name": "PALLET",
+      "description": "Palletize piece, build or customize a pallet if needed",
+      "units": "hours",
+      "rate": "100.00",
+      "task_mapping": 6,
+      "created_date": "2025-09-06T17:40:08.033Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.workordertemplate",
+    "pk": 1,
+    "fields": {
+      "template_name": "TEST1",
+      "description": "this is the first work order template to be defined in the test data",
+      "is_active": true,
+      "created_date": "2025-09-06T17:30:00.000Z"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 1,
+    "fields": {
+      "code": "LAB001",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "purchase_price": "25.00",
+      "selling_price": "45.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 2,
+    "fields": {
+      "code": "LAB002",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "purchase_price": "35.00",
+      "selling_price": "65.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 3,
+    "fields": {
+      "code": "MAT001",
+      "units": "sheet",
+      "description": "Plywood - per sheet",
+      "purchase_price": "80.00",
+      "selling_price": "100.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 4,
+    "fields": {
+      "code": "MAT002",
+      "units": "board foot",
+      "description": "White Oak Lumber - per board foot",
+      "purchase_price": "5.50",
+      "selling_price": "7.00",
+      "qty_on_hand": "1000.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 5,
+    "fields": {
+      "code": "MAT003",
+      "units": "piece",
+      "description": "HDU Material - per piece",
+      "purchase_price": "250.00",
+      "selling_price": "300.00",
+      "qty_on_hand": "50.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 1,
+    "fields": {
+      "job_number": "JOB-2025-001",
+      "created_date": "2025-01-15T10:00:00.000Z",
+      "completed_date": null,
+      "status": "approved",
+      "contact": 1,
+      "customer_po_number": "ABC-FORMS-001",
+      "description": "Cut concrete form templates for custom foundation project"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 2,
+    "fields": {
+      "job_number": "JOB-2025-002",
+      "created_date": "2025-02-01T14:30:00.000Z",
+      "completed_date": null,
+      "status": "draft",
+      "contact": 2,
+      "customer_po_number": "DINING-SET-001",
+      "description": "Design and build complete dining room set - table and 6 chairs"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 3,
+    "fields": {
+      "job_number": "JOB-2025-003",
+      "created_date": "2025-02-10T09:15:00.000Z",
+      "completed_date": null,
+      "status": "approved",
+      "contact": 7,
+      "customer_po_number": "PIZZA-SIGN-001",
+      "description": "Construct custom sign for Joe's Pizzeria storefront"
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 1,
+    "fields": {
+      "job": 1,
+      "estimate_number": "EST-2025-001",
+      "version": 1,
+      "status": "accepted",
+      "parent": null,
+      "created_date": "2025-01-15T11:00:00.000Z",
+      "superseded_date": null
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 2,
+    "fields": {
+      "job": 3,
+      "estimate_number": "EST-2025-003",
+      "version": 1,
+      "status": "superseded",
+      "parent": null,
+      "created_date": "2025-02-10T10:00:00.000Z",
+      "superseded_date": "2025-02-12T14:00:00.000Z"
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 3,
+    "fields": {
+      "job": 3,
+      "estimate_number": "EST-2025-003",
+      "version": 2,
+      "status": "superseded",
+      "parent": 2,
+      "created_date": "2025-02-12T14:00:00.000Z",
+      "superseded_date": "2025-02-15T16:30:00.000Z"
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 4,
+    "fields": {
+      "job": 3,
+      "estimate_number": "EST-2025-003",
+      "version": 3,
+      "status": "accepted",
+      "parent": 3,
+      "created_date": "2025-02-15T16:30:00.000Z",
+      "superseded_date": null
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 1,
+    "fields": {
+      "estimate": 1,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 1,
+      "qty": "3.00",
+      "units": "hours",
+      "description": "CAD design and template creation",
+      "price_currency": "3800.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 2,
+    "fields": {
+      "estimate": 1,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 2,
+      "qty": "1.00",
+      "units": "job",
+      "description": "CNC cutting of concrete forms",
+      "price_currency": "3800.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 3,
+    "fields": {
+      "estimate": 1,
+      "task": null,
+      "price_list_item": 3,
+      "line_number": 3,
+      "qty": "20.00",
+      "units": "sheets",
+      "description": "Plywood sheets for form construction",
+      "price_currency": "2000.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 4,
+    "fields": {
+      "estimate": 2,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 4,
+      "qty": "6.00",
+      "units": "hours",
+      "description": "Design drawings",
+      "price_currency": "900.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 5,
+    "fields": {
+      "estimate": 2,
+      "task": null,
+      "price_list_item": 5,
+      "line_number": 5,
+      "qty": "1.00",
+      "units": "piece",
+      "description": "HDU material for sign",
+      "price_currency": "300.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 6,
+    "fields": {
+      "estimate": 2,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 6,
+      "qty": "120.00",
+      "units": "minutes",
+      "description": "CNC cutting of sign",
+      "price_currency": "2640.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 7,
+    "fields": {
+      "estimate": 2,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 7,
+      "qty": "8.00",
+      "units": "hours",
+      "description": "Painting and finishing",
+      "price_currency": "800.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 8,
+    "fields": {
+      "estimate": 2,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 8,
+      "qty": "4.00",
+      "units": "hours",
+      "description": "Assembly and hardware installation",
+      "price_currency": "400.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 9,
+    "fields": {
+      "estimate": 3,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 9,
+      "qty": "8.00",
+      "units": "hours",
+      "description": "Design drawings",
+      "price_currency": "1200.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 10,
+    "fields": {
+      "estimate": 3,
+      "task": null,
+      "price_list_item": 5,
+      "line_number": 10,
+      "qty": "1.00",
+      "units": "piece",
+      "description": "HDU material for sign",
+      "price_currency": "300.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 11,
+    "fields": {
+      "estimate": 3,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 11,
+      "qty": "140.00",
+      "units": "minutes",
+      "description": "CNC cutting of sign",
+      "price_currency": "3080.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 12,
+    "fields": {
+      "estimate": 3,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 12,
+      "qty": "10.00",
+      "units": "hours",
+      "description": "Painting and finishing",
+      "price_currency": "1000.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 13,
+    "fields": {
+      "estimate": 3,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 13,
+      "qty": "5.00",
+      "units": "hours",
+      "description": "Assembly and hardware installation",
+      "price_currency": "500.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 14,
+    "fields": {
+      "estimate": 4,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 14,
+      "qty": "10.00",
+      "units": "hours",
+      "description": "Design drawings with client revisions",
+      "price_currency": "1500.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 15,
+    "fields": {
+      "estimate": 4,
+      "task": null,
+      "price_list_item": 5,
+      "line_number": 15,
+      "qty": "1.00",
+      "units": "piece",
+      "description": "Premium HDU material for sign",
+      "price_currency": "300.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 16,
+    "fields": {
+      "estimate": 4,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 16,
+      "qty": "150.00",
+      "units": "minutes",
+      "description": "Precision CNC cutting with detail work",
+      "price_currency": "3300.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 17,
+    "fields": {
+      "estimate": 4,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 17,
+      "qty": "12.00",
+      "units": "hours",
+      "description": "Multi-layer painting and protective coating",
+      "price_currency": "1200.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 18,
+    "fields": {
+      "estimate": 4,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 18,
+      "qty": "6.00",
+      "units": "hours",
+      "description": "Assembly with LED lighting integration",
+      "price_currency": "600.00"
+    }
+  },
+  {
+    "model": "jobs.estworksheet",
+    "pk": 1,
+    "fields": {
+      "job": 2,
+      "template": null,
+      "estimate": null,
+      "status": "draft",
+      "version": 1,
+      "parent": null,
+      "created_date": "2025-02-01T15:00:00.000Z"
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 1,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "CAD drawing for dining set",
+      "units": "hours",
+      "rate": "100.00",
+      "est_qty": "8.00",
+      "template": 2
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 2,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "White oak lumber purchase",
+      "units": "board feet",
+      "rate": "7.00",
+      "est_qty": "300.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 3,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "Cutting task for dining set",
+      "units": "minutes",
+      "rate": "22.00",
+      "est_qty": "125.00",
+      "template": 3
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 4,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "Gluing task",
+      "units": "hours",
+      "rate": "100.00",
+      "est_qty": "8.00",
+      "template": 4
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 5,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "Finishing task",
+      "units": "hours",
+      "rate": "100.00",
+      "est_qty": "22.00",
+      "template": 5
+    }
+  }
+]

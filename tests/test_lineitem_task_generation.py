@@ -74,7 +74,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         # Verify task properties
         self.assertIn(line_item.price_list_item.code, task.name)
         self.assertEqual(task.units, line_item.units)
-        self.assertEqual(task.rate, line_item.price)
+        self.assertEqual(task.rate, line_item.price_currency)
         self.assertEqual(task.est_qty, line_item.qty)
         self.assertEqual(task.work_order, work_order)
         self.assertIsNone(task.template)
@@ -99,7 +99,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         # Verify task properties
         self.assertEqual(task.name, line_item.description)
         self.assertEqual(task.units, line_item.units)
-        self.assertEqual(task.rate, line_item.price)
+        self.assertEqual(task.rate, line_item.price_currency)
         self.assertEqual(task.est_qty, line_item.qty)
         self.assertEqual(task.work_order, work_order)
         self.assertIsNone(task.template)
@@ -115,7 +115,7 @@ class LineItemTaskGenerationTestCase(TestCase):
             qty=Decimal('1.00'),
             units='each',
             description='',  # Empty description
-            price=Decimal('100.00')
+            price_currency=Decimal('100.00')
         )
 
         work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
@@ -212,12 +212,12 @@ class LineItemTaskGenerationTestCase(TestCase):
         messages = list(response.context['messages'])
         self.assertTrue(any('Work Order' in str(m) and 'created successfully' in str(m) for m in messages))
 
-    def test_price_fallback_handling(self):
+    def test_price_currency_fallback_handling(self):
         """Test that catalog items handle price fallbacks correctly"""
         estimate = Estimate.objects.get(pk=200)
         price_list_item = PriceListItem.objects.get(pk=200)
 
-        # Create line item with no price (should use selling_price)
+        # Create line item with no price_currency (should use selling_price)
         line_item = EstimateLineItem.objects.create(
             estimate=estimate,
             price_list_item=price_list_item,
@@ -225,7 +225,7 @@ class LineItemTaskGenerationTestCase(TestCase):
             qty=Decimal('5.00'),
             units='',  # Empty units (should use price_list_item.units)
             description='Test fallback',
-            price=Decimal('0.00')  # Zero price
+            price_currency=Decimal('0.00')  # Zero price
         )
 
         work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
@@ -245,7 +245,8 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
 
     def setUp(self):
         self.contact = Contact.objects.create(
-            name='Edge Case Contact',
+            first_name='Edge Case Contact',
+            last_name='',
             email='edge@test.com'
         )
 
@@ -270,7 +271,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
             qty=Decimal('0.00'),  # Zero quantity
             units='',  # Empty units
             description='',  # Empty description
-            price=Decimal('0.00')  # Zero price
+            price_currency=Decimal('0.00')  # Zero price
         )
 
         work_order = WorkOrder.objects.create(job=self.job, status='draft')
@@ -301,7 +302,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
             qty=Decimal('1.00'),
             units='each',
             description='',
-            price=Decimal('10.00')
+            price_currency=Decimal('10.00')
         )
 
         work_order = WorkOrder.objects.create(job=self.job, status='draft')

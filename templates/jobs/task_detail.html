@@ -30,9 +30,9 @@
         <td>Associated Job</td>
         <td>
             {% if task.work_order %}
-                <a href="{% url 'jobs:detail' task.work_order.job.pk %}">{{ task.work_order.job.job_number }}{% if task.work_order.job.name %}: {{ task.work_order.job.name }}{% endif %}</a>
+                <a href="{% url 'jobs:detail' task.work_order.job.pk %}">{{ task.work_order.job.job_number }} - {{ task.work_order.job.description|truncatechars:50 }}</a>
             {% elif task.est_worksheet %}
-                <a href="{% url 'jobs:detail' task.est_worksheet.job.pk %}">{{ task.est_worksheet.job.job_number }}{% if task.est_worksheet.job.name %}: {{ task.est_worksheet.job.name }}{% endif %}</a>
+                <a href="{% url 'jobs:detail' task.est_worksheet.job.pk %}">{{ task.est_worksheet.job.job_number }} - {{ task.est_worksheet.job.description|truncatechars:50 }}</a>
             {% else %}
                 No job assigned
             {% endif %}
@@ -42,7 +42,7 @@
         <td>Assignee</td>
         <td>
             {% if task.assignee %}
-                {{ task.assignee.username }} ({{ task.assignee.get_full_name|default:task.assignee.email }})
+                <a href="{% url 'core:user_detail' task.assignee.pk %}">{{ task.assignee.username }}</a> ({{ task.assignee.get_full_name|default:task.assignee.email }})
             {% else %}
                 Unassigned
             {% endif %}
@@ -103,7 +103,13 @@
     {% for subtask in task.subtasks.all %}
     <tr>
         <td>{{ subtask.name }}</td>
-        <td>{{ subtask.assignee.username|default:"Unassigned" }}</td>
+        <td>
+            {% if subtask.assignee %}
+                <a href="{% url 'core:user_detail' subtask.assignee.pk %}">{{ subtask.assignee.username }}</a>
+            {% else %}
+                Unassigned
+            {% endif %}
+        </td>
         <td>{{ subtask.est_qty|default:"-" }}</td>
         <td>{{ subtask.units|default:"-" }}</td>
         <td>

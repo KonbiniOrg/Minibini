@@ -23,29 +23,43 @@
 <form method="post" style="max-width: 400px;">
     {% csrf_token %}
     <div style="margin-bottom: 15px;">
-        <label for="name" style="display: block; margin-bottom: 5px; font-weight: bold;">Name *</label>
-        <input type="text" id="name" name="name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <label for="first_name" style="display: block; margin-bottom: 5px; font-weight: bold;">First Name *</label>
+        <input type="text" id="first_name" name="first_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <div style="margin-bottom: 15px;">
-        <label for="email" style="display: block; margin-bottom: 5px; font-weight: bold;">Email Address</label>
-        <input type="email" id="email" name="email" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <label for="middle_initial" style="display: block; margin-bottom: 5px; font-weight: bold;">Middle Initial</label>
+        <input type="text" id="middle_initial" name="middle_initial" maxlength="10" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <div style="margin-bottom: 15px;">
-        <label for="work_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Work Phone</label>
-        <input type="tel" id="work_number" name="work_number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <label for="last_name" style="display: block; margin-bottom: 5px; font-weight: bold;">Last Name *</label>
+        <input type="text" id="last_name" name="last_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <div style="margin-bottom: 15px;">
-        <label for="mobile_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Mobile Phone</label>
-        <input type="tel" id="mobile_number" name="mobile_number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <label for="email" style="display: block; margin-bottom: 5px; font-weight: bold;">Email Address *</label>
+        <input type="email" id="email" name="email" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
-    <div style="margin-bottom: 15px;">
-        <label for="home_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Home Phone</label>
-        <input type="tel" id="home_number" name="home_number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-    </div>
+    <fieldset style="border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 4px;">
+        <legend style="font-weight: bold; padding: 0 10px;">Phone Numbers * (at least one required)</legend>
+
+        <div style="margin-bottom: 15px;">
+            <label for="work_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Work Phone</label>
+            <input type="tel" id="work_number" name="work_number" class="phone-field" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+
+        <div style="margin-bottom: 15px;">
+            <label for="mobile_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Mobile Phone</label>
+            <input type="tel" id="mobile_number" name="mobile_number" class="phone-field" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+
+        <div style="margin-bottom: 0;">
+            <label for="home_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Home Phone</label>
+            <input type="tel" id="home_number" name="home_number" class="phone-field" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+    </fieldset>
 
     <div style="margin-bottom: 15px;">
         <label for="address" style="display: block; margin-bottom: 5px; font-weight: bold;">Street Address</label>
@@ -62,6 +76,16 @@
         <input type="text" id="postal_code" name="postal_code" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
+    <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+            <input type="checkbox" id="set_as_default" name="set_as_default" value="true" style="width: 18px; height: 18px; margin-right: 10px; cursor: pointer;">
+            <span style="font-weight: bold;">Set as default contact for this business</span>
+        </label>
+        <p style="margin: 8px 0 0 28px; font-size: 0.9em; color: #6c757d;">
+            The default contact will be used as the primary contact for this business.
+        </p>
+    </div>
+
     <button type="submit" style="background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">Add Contact</button>
     <a href="{% url 'contacts:business_detail' business.business_id %}" style="background-color: #6c757d; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Cancel</a>
 </form>
@@ -70,6 +94,8 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Get all form inputs
     const inputs = document.querySelectorAll('input, textarea');
+    const form = document.querySelector('form');
+    const phoneFields = document.querySelectorAll('.phone-field');
 
     // Add event listeners for paste events
     inputs.forEach(function(input) {
@@ -89,6 +115,22 @@ document.addEventListener('DOMContentLoaded', function() {
                 input.checkValidity();
             }
         });
+    });
+
+    // Validate at least one phone number on form submit
+    form.addEventListener('submit', function(e) {
+        let hasPhone = false;
+        phoneFields.forEach(function(field) {
+            if (field.value.trim()) {
+                hasPhone = true;
+            }
+        });
+
+        if (!hasPhone) {
+            e.preventDefault();
+            alert('At least one phone number (work, mobile, or home) is required.');
+            return false;
+        }
     });
 });
 </script>

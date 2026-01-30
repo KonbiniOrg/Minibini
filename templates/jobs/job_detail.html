@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 
-{% block title %}Job {{ job.job_number }}{% if job.name %}: {{ job.name }}{% endif %} - Minibini{% endblock %}
+{% block title %}Job {{ job.job_number }} - Minibini{% endblock %}
 
 {% block content %}
-<h2>Job {{ job.job_number }}{% if job.name %}: {{ job.name }}{% endif %}</h2>
+<h2>Job {{ job.job_number }}</h2>
 
 <p>
     <a href="{% url 'jobs:edit' job.job_id %}">Edit Job</a>
@@ -45,7 +45,7 @@
     <tr>
         <td>Contact</td>
         <td>
-            <a href="{% url 'contacts:contact_detail' job.contact.contact_id %}">{{ job.contact.name }}</a>
+            <a href="{% url 'contacts:contact_detail' job.contact.contact_id %}">{{ job.contact }}</a>
             {% if job.contact.business %}
                 - <a href="{% url 'contacts:business_detail' job.contact.business.business_id %}">{{ job.contact.business.business_name }}</a>
             {% endif %}
@@ -116,7 +116,50 @@
        {{current_estimate.get_status_display }}: {{ current_estimate.closed_date|date:"Y-m-d H:i"|default:"Not closed yet" }}
     </p>
 
-    {% include 'includes/_line_items_table.html' with line_items=current_estimate_line_items total_amount=current_estimate_total total_label="Total Estimate Amount" %}
+    {% if current_estimate_line_items %}
+        <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 10px;">
+            <thead>
+                <tr>
+                    <th>Line #</th>
+                    <th>Description</th>
+                    <th>Task/Price List Item</th>
+                    <th>Quantity</th>
+                    <th>Unit</th>
+                    <th>Price</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in current_estimate_line_items %}
+                <tr>
+                    <td>{{ item.line_number|default:item.line_number }}</td>
+                    <td>{{ item.description|default:"No description" }}</td>
+                    <td>
+                        {% if item.task %}
+                            Task: {{ item.task.name }}
+                        {% elif item.price_list_item %}
+                            {{ item.price_list_item.code }} - {{ item.price_list_item.description|truncatewords:5 }}
+                        {% else %}
+                            No source
+                        {% endif %}
+                    </td>
+                    <td>{{ item.qty }}</td>
+                    <td>{{ item.unit_parts_labor|default:"—" }}</td>
+                    <td>${{ item.price_currency|floatformat:2 }}</td>
+                    <td>${{ item.total_amount|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr style="background-color: #f0f0f0; font-weight: bold;">
+                    <td colspan="6">Total Estimate Amount:</td>
+                    <td>${{ current_estimate_total|floatformat:2 }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    {% else %}
+        <p>No line items found for this estimate.</p>
+    {% endif %}
 
     <p style="margin-top: 10px;">
         {% if current_estimate.status == 'draft' %}
@@ -162,19 +205,7 @@
     <p>No superseded estimates.</p>
 {% endif %}
 
-{% if current_work_order %}
-<h3>Current Work Order <a href="{% url 'jobs:work_order_detail' current_work_order.work_order_id %}">Work Order {{ current_work_order.work_order_id }}</a> -
-    {{ current_work_order.get_status_display }}</h3>
-    <p>Template: {{ current_work_order.template.template_name|default:"—" }}</p>
-
-    <h4>Tasks</h4>
-    {% include 'jobs/_task_list.html' with tasks=current_work_order_tasks %}
-{% else %}
-    <p>No work orders found for this job.</p>
-{% endif %}
-
-<!-- pretty sure there will only ever be one work order per Job but haven't enforced that yet
-<h3>All Work Orders</h3>
+<h3>Associated Work Orders</h3>
 {% if work_orders %}
     <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 10px;">
         <thead>
@@ -186,7 +217,7 @@
         </thead>
         <tbody>
             {% for work_order in work_orders %}
-            <tr{% if work_order == current_work_order %} style="background-color: #f0f0f0; font-weight: bold;"{% endif %}>
+            <tr>
                 <td>{{ work_order.get_status_display }}</td>
                 <td>{{ work_order.template.template_name|default:"—" }}</td>
                 <td>
@@ -196,8 +227,9 @@
             {% endfor %}
         </tbody>
     </table>
+{% else %}
+    <p>No work orders found for this job.</p>
 {% endif %}
--->
 
 <h3>Associated Purchase Orders</h3>
 {% if purchase_orders %}
@@ -205,37 +237,24 @@
         <thead>
             <tr>
                 <th>PO Number</th>
-                <th>Business</th>
-                <th>Status</th>
-                <th>Created Date</th>
-                <th>Requested Date</th>
+                <th>Price List Item</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for purchase_order in purchase_orders %}
             <tr>
-                <td><a href="{% url 'purchasing:purchase_order_detail' purchase_order.po_id %}">{{ purchase_order.po_number }}</a></td>
+                <td>{{ purchase_order.po_number }}</td>
+                <td>{{ purchase_order.price_list_item|default:"—" }}</td>
                 <td>
-                    {% if purchase_order.business %}
-                        {{ purchase_order.business.business_name }}
-                    {% else %}
-                        —
-                    {% endif %}
+                    <a href="{% url 'purchasing:purchase_order_detail' purchase_order.po_id %}">View Details</a>
                 </td>
-                <td>{{ purchase_order.get_status_display }}</td>
-                <td>{{ purchase_order.created_date|date:"Y-m-d H:i" }}</td>
-                <td>{{ purchase_order.requested_date|date:"Y-m-d"|default:"—" }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 {% else %}
     <p>No purchase orders found for this job.</p>
-{% endif %}
-{% if job.status == 'approved' %}
-<p>
-    <a href="{% url 'purchasing:purchase_order_create_for_job' job.job_id %}">Create New Purchase Order</a>
-</p>
 {% endif %}
 
 <h3>Associated Invoices</h3>

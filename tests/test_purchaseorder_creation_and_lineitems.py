@@ -20,16 +20,22 @@ class PurchaseOrderCreationTests(TestCase):
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
         Configuration.objects.create(key='po_counter', value='0')
 
+        # Create default contacts for businesses
+        self.default_contact1 = Contact.objects.create(first_name='Default Contact 1', last_name='', email='default.contact.1@test.com')
+        self.default_contact2 = Contact.objects.create(first_name='Default Contact 2', last_name='', email='default.contact.2@test.com')
+
         # Create a test business
         self.business = Business.objects.create(
             business_name='Test Vendor Co',
-            our_reference_code='VENDOR001'
+            our_reference_code='VENDOR001',
+            default_contact=self.default_contact1
         )
 
         # Create another business for testing
         self.business2 = Business.objects.create(
             business_name='Another Vendor',
-            our_reference_code='VENDOR002'
+            our_reference_code='VENDOR002',
+            default_contact=self.default_contact2
         )
 
     def test_get_purchase_order_create_page(self):
@@ -135,10 +141,14 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
         Configuration.objects.create(key='po_counter', value='0')
 
+        # Create default contact for business
+        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
+
         # Create a test business
         self.business = Business.objects.create(
             business_name='Test Vendor Co',
-            our_reference_code='VENDOR001'
+            our_reference_code='VENDOR001',
+            default_contact=self.default_contact
         )
 
         # Create a purchase order
@@ -199,7 +209,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         # Verify values were copied from price list item
         self.assertEqual(line_item.description, self.price_list_item.description)
         self.assertEqual(line_item.units, self.price_list_item.units)
-        self.assertEqual(line_item.price, self.price_list_item.purchase_price)  # IMPORTANT: Uses purchase_price
+        self.assertEqual(line_item.price_currency, self.price_list_item.purchase_price)  # IMPORTANT: Uses purchase_price
 
         # Verify qty came from form
         self.assertEqual(line_item.qty, Decimal('10.00'))
@@ -223,8 +233,8 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
 
         # Check line item uses purchase_price (25.00), not selling_price (50.00)
         line_item = PurchaseOrderLineItem.objects.filter(purchase_order=self.purchase_order).first()
-        self.assertEqual(line_item.price, Decimal('25.00'))
-        self.assertNotEqual(line_item.price, Decimal('50.00'))
+        self.assertEqual(line_item.price_currency, Decimal('25.00'))
+        self.assertNotEqual(line_item.price_currency, Decimal('50.00'))
 
     def test_add_line_item_missing_qty(self):
         """Test that qty is required when adding a line item."""
@@ -287,12 +297,12 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         # Verify first item
         self.assertEqual(line_items[0].price_list_item, self.price_list_item)
         self.assertEqual(line_items[0].qty, Decimal('10.00'))
-        self.assertEqual(line_items[0].price, Decimal('25.00'))
+        self.assertEqual(line_items[0].price_currency, Decimal('25.00'))
 
         # Verify second item
         self.assertEqual(line_items[1].price_list_item, self.price_list_item2)
         self.assertEqual(line_items[1].qty, Decimal('5.00'))
-        self.assertEqual(line_items[1].price, Decimal('15.50'))
+        self.assertEqual(line_items[1].price_currency, Decimal('15.50'))
 
     def test_line_item_total_amount_calculation(self):
         """Test that line item total amount is calculated correctly."""
@@ -357,7 +367,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
             description='Item 1',
             qty=Decimal('2.00'),
             units='each',
-            price=Decimal('10.00')
+            price_currency=Decimal('10.00')
         )
         PurchaseOrderLineItem.objects.create(
             purchase_order=self.purchase_order,
@@ -365,7 +375,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
             description='Item 2',
             qty=Decimal('3.00'),
             units='each',
-            price=Decimal('15.00')
+            price_currency=Decimal('15.00')
         )
 
         url = reverse('purchasing:purchase_order_detail', args=[self.purchase_order.po_id])
@@ -383,10 +393,14 @@ class PurchaseOrderModelWithBusinessTests(TestCase):
 
     def setUp(self):
         """Set up test data."""
+        # Create default contact for business
+        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
+
         # Create a test business
         self.business = Business.objects.create(
             business_name='Test Vendor',
-            our_reference_code='VENDOR001'
+            our_reference_code='VENDOR001',
+            default_contact=self.default_contact
         )
 
     def test_purchase_order_creation_with_business(self):
@@ -397,13 +411,6 @@ class PurchaseOrderModelWithBusinessTests(TestCase):
         )
         self.assertEqual(po.business, self.business)
         self.assertEqual(po.po_number, 'PO001')
-
-    def test_purchase_order_business_can_be_null(self):
-        """Test that business can be null for backwards compatibility."""
-        po = PurchaseOrder.objects.create(
-            po_number='PO002'
-        )
-        self.assertIsNone(po.business)
 
     def test_purchase_order_str_method(self):
         """Test PO string representation."""

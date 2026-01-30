@@ -3,6 +3,7 @@
     "model": "purchasing.purchaseorder",
     "pk": 1,
     "fields": {
+      "business": 2,
       "job": 1,
       "po_number": "PO-2024-0001",
       "status": "issued"
@@ -12,6 +13,7 @@
     "model": "purchasing.purchaseorder",
     "pk": 2,
     "fields": {
+      "business": 2,
       "job": 2,
       "po_number": "PO-2024-0002",
       "status": "issued"
@@ -22,6 +24,7 @@
     "pk": 1,
     "fields": {
       "purchase_order": 1,
+      "business": 2,
       "contact": 3,
       "vendor_invoice_number": "ACME-INV-001",
       "bill_number": "BILL-FIXTURE-001"
@@ -32,6 +35,7 @@
     "pk": 2,
     "fields": {
       "purchase_order": 2,
+      "business": 2,
       "contact": 3,
       "vendor_invoice_number": "ACME-INV-002",
       "bill_number": "BILL-FIXTURE-002"
@@ -48,7 +52,7 @@
       "qty": "100.00",
       "units": "each",
       "description": "Screws for purchase order",
-      "price": "25.00"
+      "price_currency": "25.00"
     }
   },
   {
@@ -62,7 +66,7 @@
       "qty": "100.00",
       "units": "each",
       "description": "Screws received on bill",
-      "price": "25.00"
+      "price_currency": "25.00"
     }
   }
 ]

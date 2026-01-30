@@ -11,12 +11,14 @@ from apps.core.services import NumberGenerationService
 
 class JobCreateForm(forms.ModelForm):
     """Form for creating a new Job"""
+
     contact = forms.ModelChoiceField(
         queryset=Contact.objects.all().select_related('business'),
         required=True,
         widget=forms.Select(attrs={'class': 'form-control'}),
         empty_label="-- Select Contact --"
     )
+
     due_date = forms.DateField(
         required=False,
         widget=forms.DateInput(attrs={
@@ -27,14 +29,13 @@ class JobCreateForm(forms.ModelForm):
 
     class Meta:
         model = Job
-        fields = ['contact', 'name', 'customer_po_number', 'description', 'due_date']
+        fields = ['customer_po_number', 'description', 'due_date']
         widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Job name'}),
             'customer_po_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Optional'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
         }
         help_texts = {
-            'contact': 'Job number will be assigned automatically on save.',
+            'description': 'Job number will be assigned automatically on save.',
         }
 
     def __init__(self, *args, **kwargs):
@@ -51,12 +52,15 @@ class JobCreateForm(forms.ModelForm):
     def label_from_instance_with_business(self, contact):
         """Custom label for contact dropdown to include business name"""
         if contact.business:
-            return f"{contact.name} ({contact.business.business_name})"
-        return contact.name
+            return f"{contact} ({contact.business.business_name})"
+        return str(contact)
 
     def save(self, commit=True):
         """Override save to generate job number using NumberGenerationService"""
         instance = super().save(commit=False)
+
+        # Set the contact from cleaned_data (may have been set from business)
+        instance.contact = self.cleaned_data['contact']
 
         # Generate the actual job number (increments counter)
         instance.job_number = NumberGenerationService.generate_next_number('job')
@@ -151,8 +155,8 @@ class JobEditForm(forms.ModelForm):
     def label_from_instance_with_business(self, contact):
         """Custom label for contact dropdown to include business name"""
         if contact.business:
-            return f"{contact.name} ({contact.business.business_name})"
-        return contact.name
+            return f"{contact} ({contact.business.business_name})"
+        return str(contact)
 
 
 class WorkOrderTemplateForm(forms.ModelForm):
@@ -223,37 +227,19 @@ class TaskFromTemplateForm(forms.Form):
         widget=forms.NumberInput(attrs={'step': '0.01'})
     )
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Customize the display of task templates to show more information
-        self.fields['template'].label_from_instance = self._template_label
-
-    @staticmethod
-    def _template_label(obj):
-        """Custom label showing template name, rate, and units"""
-        parts = [obj.template_name]
-
-        if obj.rate:
-            parts.append(f"${obj.rate}")
-
-        if obj.units:
-            parts.append(f"{obj.units}")
-
-        return " - ".join(parts)
-
 
 class ManualLineItemForm(forms.ModelForm):
     """Form for creating a manual line item (not linked to a Price List Item)"""
     class Meta:
         model = EstimateLineItem
-        fields = ['description', 'qty', 'units', 'price']
+        fields = ['description', 'qty', 'units', 'price_currency']
         widgets = {
             'qty': forms.NumberInput(attrs={'step': '0.01'}),
-            'price': forms.NumberInput(attrs={'step': '0.01'}),
+            'price_currency': forms.NumberInput(attrs={'step': '0.01'}),
             'description': forms.Textarea(attrs={'rows': 3}),
         }
         labels = {
-            'price': 'Price',
+            'price_currency': 'Price',
         }
 
 

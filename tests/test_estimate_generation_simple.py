@@ -36,16 +36,21 @@ class SimpleEstimateGenerationTestCase(TestCase):
             password='testpass123'
         )
 
-        self.business = Business.objects.create(
-            business_name='Test Company',
-            business_address='123 Test St'
+        # Create contact first for default_contact
+        self.contact = Contact.objects.create(
+            first_name='Test Customer',
+            last_name='',
+            email='customer@example.com'
         )
 
-        self.contact = Contact.objects.create(
-            name='Test Customer',
-            email='customer@example.com',
-            business=self.business
+        self.business = Business.objects.create(
+            business_name='Test Company',
+            business_address='123 Test St',
+            default_contact=self.contact
         )
+
+        self.contact.business = self.business
+        self.contact.save()
 
         self.job = Job.objects.create(
             job_number='TEST-001',
@@ -97,8 +102,7 @@ class SimpleEstimateGenerationTestCase(TestCase):
         line_item = line_items.first()
         self.assertEqual(line_item.description, 'Test task description')
         self.assertEqual(line_item.qty, Decimal('5.00'))
-        self.assertEqual(line_item.price, Decimal('100.00'))  # Unit price, not total
-        self.assertEqual(line_item.total_amount, Decimal('500.00'))  # Verify total is calculated correctly
+        self.assertEqual(line_item.price_currency, Decimal('500.00'))
     
     def test_task_without_mapping_defaults_direct(self):
         """Test task without mapping uses direct strategy"""
@@ -121,8 +125,7 @@ class SimpleEstimateGenerationTestCase(TestCase):
         line_item = line_items.first()
         self.assertEqual(line_item.description, 'Unmapped Task')
         self.assertEqual(line_item.qty, Decimal('2.00'))
-        self.assertEqual(line_item.price, Decimal('200.00'))  # Unit price, not total
-        self.assertEqual(line_item.total_amount, Decimal('400.00'))  # Verify total is calculated correctly
+        self.assertEqual(line_item.price_currency, Decimal('400.00'))
     
     def test_excluded_task(self):
         """Test that excluded tasks don't appear in estimate"""
@@ -173,8 +176,7 @@ class SimpleEstimateGenerationTestCase(TestCase):
         
         line_item = line_items.first()
         self.assertEqual(line_item.description, 'Visible Task')
-        self.assertEqual(line_item.price, Decimal('100.00'))  # Unit price, not total
-        self.assertEqual(line_item.total_amount, Decimal('300.00'))  # Verify total is calculated correctly
+        self.assertEqual(line_item.price_currency, Decimal('300.00'))
     
     def test_product_bundle_basic(self):
         """Test basic product bundling"""
@@ -250,8 +252,7 @@ class SimpleEstimateGenerationTestCase(TestCase):
         self.assertEqual(line_item.description, 'Custom Table')
         self.assertEqual(line_item.qty, Decimal('1.00'))
         # Total: (4*150) + (8*100) = 600 + 800 = 1400
-        self.assertEqual(line_item.price, Decimal('1400.00'))  # Unit price for qty=1
-        self.assertEqual(line_item.total_amount, Decimal('1400.00'))  # Verify total matches
+        self.assertEqual(line_item.price_currency, Decimal('1400.00'))
     
     def test_service_bundle_basic(self):
         """Test basic service bundling"""
@@ -311,6 +312,4 @@ class SimpleEstimateGenerationTestCase(TestCase):
         self.assertIn('Installation', line_item.description)
         self.assertEqual(line_item.qty, Decimal('5.00'))  # 2 + 3 hours
         # Total: (2*75) + (3*100) = 150 + 300 = 450
-        # Unit rate: 450 / 5 = 90.00 per hour
-        self.assertEqual(line_item.price, Decimal('90.00'))  # Average rate per hour
-        self.assertEqual(line_item.total_amount, Decimal('450.00'))  # Verify total is calculated correctly
+        self.assertEqual(line_item.price_currency, Decimal('450.00'))

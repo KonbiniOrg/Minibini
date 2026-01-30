@@ -6,10 +6,11 @@
     "our_reference_code": "VISTA001",
     "business_name": "Vista Manufacturing Co",
     "business_address": "159 Factory Road, Industrial Park, Vista Town 54327",
-    "business_number": "BN-100005",
+    "business_phone": "555-2005",
     "tax_exemption_number": "TEX-100005",
-    "tax_cloud": "",
-    "terms": 2
+    "website": "",
+    "terms": 2,
+    "default_contact": 7
   }
 },
 {
@@ -19,10 +20,11 @@
     "our_reference_code": "COAST001",
     "business_name": "Coastal Designs Ltd",
     "business_address": "753 Ocean Drive, Coastal District, Seaside City 54328",
-    "business_number": "BN-100006",
+    "business_phone": "555-2006",
     "tax_exemption_number": "TEX-100006",
-    "tax_cloud": "",
-    "terms": 1
+    "website": "",
+    "terms": 1,
+    "default_contact": 8
   }
 },
 {
@@ -32,17 +34,20 @@
     "our_reference_code": "NORTH001",
     "business_name": "Northern Supply Chain",
     "business_address": "842 Supply Avenue, Logistics Center, North City 54329",
-    "business_number": "BN-100007",
+    "business_phone": "555-2007",
     "tax_exemption_number": "TEX-100007",
-    "tax_cloud": "",
-    "terms": 1
+    "website": "",
+    "terms": 1,
+    "default_contact": 9
   }
 },
 {
   "model": "contacts.contact",
   "pk": 7,
   "fields": {
-    "name": "Jennifer Martinez",
+    "first_name": "Jennifer",
+    "middle_initial": "",
+    "last_name": "Martinez",
     "email": "jennifer.martinez@vistamanufacturing.com",
     "addr1": "159 Factory Road",
     "addr2": "Building A",
@@ -61,7 +66,9 @@
   "model": "contacts.contact",
   "pk": 8,
   "fields": {
-    "name": "Thomas Anderson",
+    "first_name": "Thomas",
+    "middle_initial": "",
+    "last_name": "Anderson",
     "email": "thomas.anderson@coastaldesigns.com",
     "addr1": "753 Ocean Drive",
     "addr2": "Studio 3",
@@ -80,7 +87,9 @@
   "model": "contacts.contact",
   "pk": 9,
   "fields": {
-    "name": "Karen White",
+    "first_name": "Karen",
+    "middle_initial": "",
+    "last_name": "White",
     "email": "karen.white@northernsupply.com",
     "addr1": "842 Supply Avenue",
     "addr2": "",
@@ -99,7 +108,9 @@
   "model": "contacts.contact",
   "pk": 10,
   "fields": {
-    "name": "Alex Rivera",
+    "first_name": "Alex",
+    "middle_initial": "",
+    "last_name": "Rivera",
     "email": "alex.rivera@freelance.com",
     "addr1": "246 Independent Way",
     "addr2": "",
@@ -118,7 +129,9 @@
   "model": "contacts.contact",
   "pk": 11,
   "fields": {
-    "name": "Maria Garcia",
+    "first_name": "Maria",
+    "middle_initial": "",
+    "last_name": "Garcia",
     "email": "maria.garcia@independent.com",
     "addr1": "135 Solo Street",
     "addr2": "Unit 12",

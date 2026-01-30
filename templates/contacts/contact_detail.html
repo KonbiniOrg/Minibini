@@ -1,10 +1,13 @@
 {% extends 'base.html' %}
 
-{% block title %}Contact {{ contact.name }} - Minibini{% endblock %}
+{% block title %}Contact {{ contact }} - Minibini{% endblock %}
 
 {% block content %}
-<h2>Contact: {{ contact.name }}</h2>
-<a href="{% url 'contacts:edit_contact' contact.contact_id %}" style="display: inline-block; background-color: #ffc107; color: black; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin-bottom: 20px;">Edit Contact</a>
+<h2>Contact: {{ contact }}</h2>
+<div style="margin-bottom: 20px;">
+    <a href="{% url 'contacts:edit_contact' contact.contact_id %}" style="display: inline-block; background-color: #ffc107; color: black; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin-right: 10px;">Edit Contact</a>
+    <button onclick="confirmDelete()" style="background-color: #dc3545; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;">Delete Contact</button>
+</div>
 
 <table border="1">
     <tr>
@@ -13,7 +16,19 @@
     </tr>
     <tr>
         <td>Name</td>
-        <td>{{ contact.name }}</td>
+        <td>{{ contact }}</td>
+    </tr>
+    <tr>
+        <td>First Name</td>
+        <td>{{ contact.first_name }}</td>
+    </tr>
+    <tr>
+        <td>Middle Initial</td>
+        <td>{{ contact.middle_initial|default:"N/A" }}</td>
+    </tr>
+    <tr>
+        <td>Last Name</td>
+        <td>{{ contact.last_name }}</td>
     </tr>
     <tr>
         <td>Email</td>
@@ -40,6 +55,9 @@
         <td>
             {% if contact.business %}
                 <a href="{% url 'contacts:business_detail' contact.business.business_id %}">{{ contact.business.business_name }}</a>
+                {% if contact.business.default_contact and contact.contact_id == contact.business.default_contact.contact_id %}
+                    <span style="color: #1976d2; font-weight: bold; margin-left: 10px;">[DEFAULT CONTACT]</span>
+                {% endif %}
             {% else %}
                 No business associated
             {% endif %}
@@ -47,10 +65,40 @@
     </tr>
 </table>
 
+{% if contact.business %}
+    {% if not contact.business.default_contact or contact.contact_id != contact.business.default_contact.contact_id %}
+<div style="margin: 20px 0; padding: 15px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">
+    <h4 style="margin-top: 0;">Set as Default Contact</h4>
+    <p style="margin-bottom: 15px; color: #6c757d;">
+        Make this contact the default contact for <strong>{{ contact.business.business_name }}</strong>.
+    </p>
+    <form method="post" action="{% url 'contacts:set_default_contact' contact.contact_id %}" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" style="background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;">
+            Set as Default Contact
+        </button>
+    </form>
+</div>
+    {% endif %}
+{% endif %}
+
 <h3>Actions</h3>
 <p>
     <a href="{% url 'jobs:create' %}?contact_id={{ contact.contact_id }}">Add Job for this Contact</a>
 </p>
 
 <p><a href="{% url 'contacts:contact_list' %}">Back to Contacts List</a></p>
+
+<!-- Hidden delete form -->
+<form id="deleteForm" method="post" action="{% url 'contacts:delete_contact' contact.contact_id %}" style="display: none;">
+    {% csrf_token %}
+</form>
+
+<script>
+function confirmDelete() {
+    if (confirm('Are you sure you want to delete "{{ contact }}"? This action cannot be undone.')) {
+        document.getElementById('deleteForm').submit();
+    }
+}
+</script>
 {% endblock %}

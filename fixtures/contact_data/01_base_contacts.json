@@ -80,10 +80,11 @@
     "our_reference_code": "ACME001",
     "business_name": "ACME Construction Corp",
     "business_address": "123 Industrial Blvd, Construction Zone, Business City 54321",
-    "business_number": "BN-100001",
+    "business_phone": "555-2001",
     "tax_exemption_number": "TEX-100001",
-    "tax_cloud": "",
-    "terms": 1
+    "website": "https://www.acmeconstructiontxt.com",
+    "terms": 1,
+    "default_contact": 1
   }
 },
 {
@@ -93,10 +94,11 @@
     "our_reference_code": "METRO001",
     "business_name": "Metro Development LLC",
     "business_address": "456 Corporate Plaza, Downtown District, Metro City 54322",
-    "business_number": "BN-100002",
+    "business_phone": "555-2002",
     "tax_exemption_number": "TEX-100002",
-    "tax_cloud": "",
-    "terms": 1
+    "website": "https://www.metrodevelopmenttxt.com",
+    "terms": 1,
+    "default_contact": 2
   }
 },
 {
@@ -106,10 +108,11 @@
     "our_reference_code": "SUMMIT001",
     "business_name": "Summit Property Group",
     "business_address": "789 Summit Avenue, Uptown Area, Summit City 54323",
-    "business_number": "BN-100003",
+    "business_phone": "555-2003",
     "tax_exemption_number": "TEX-100003",
-    "tax_cloud": "",
-    "terms": 2
+    "website": "",
+    "terms": 2,
+    "default_contact": 3
   }
 },
 {
@@ -119,17 +122,20 @@
     "our_reference_code": "PRIME001",
     "business_name": "Prime Contractors Inc",
     "business_address": "321 Prime Street, Commercial District, Prime City 54324",
-    "business_number": "BN-100004",
+    "business_phone": "555-2004",
     "tax_exemption_number": "TEX-100004",
-    "tax_cloud": "",
-    "terms": 1
+    "website": "",
+    "terms": 1,
+    "default_contact": 4
   }
 },
 {
   "model": "contacts.contact",
   "pk": 1,
   "fields": {
-    "name": "Sarah Johnson",
+    "first_name": "Sarah",
+    "middle_initial": "",
+    "last_name": "Johnson",
     "email": "sarah.johnson@acmeconstruction.com",
     "addr1": "123 Industrial Blvd",
     "addr2": "Suite 100",
@@ -148,7 +154,9 @@
   "model": "contacts.contact",
   "pk": 2,
   "fields": {
-    "name": "Michael Chen",
+    "first_name": "Michael",
+    "middle_initial": "",
+    "last_name": "Chen",
     "email": "m.chen@metrodevelopment.com",
     "addr1": "456 Corporate Plaza",
     "addr2": "Floor 15",
@@ -167,7 +175,9 @@
   "model": "contacts.contact",
   "pk": 3,
   "fields": {
-    "name": "Emily Rodriguez",
+    "first_name": "Emily",
+    "middle_initial": "",
+    "last_name": "Rodriguez",
     "email": "emily.rodriguez@summitproperty.com",
     "addr1": "789 Summit Avenue",
     "addr2": "",
@@ -186,7 +196,9 @@
   "model": "contacts.contact",
   "pk": 4,
   "fields": {
-    "name": "David Thompson",
+    "first_name": "David",
+    "middle_initial": "",
+    "last_name": "Thompson",
     "email": "david.thompson@primecontractors.com",
     "addr1": "321 Prime Street",
     "addr2": "Unit B",
@@ -205,7 +217,9 @@
   "model": "contacts.contact",
   "pk": 5,
   "fields": {
-    "name": "Lisa Park",
+    "first_name": "Lisa",
+    "middle_initial": "",
+    "last_name": "Park",
     "email": "lisa.park@email.com",
     "addr1": "654 Residential Lane",
     "addr2": "",
@@ -224,7 +238,9 @@
   "model": "contacts.contact",
   "pk": 6,
   "fields": {
-    "name": "Robert Wilson",
+    "first_name": "Robert",
+    "middle_initial": "",
+    "last_name": "Wilson",
     "email": "robert.wilson@personal.com",
     "addr1": "987 Oak Street",
     "addr2": "Apt 2B",

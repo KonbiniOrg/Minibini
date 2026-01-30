@@ -1,7 +1,8 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
+from django.views.decorators.http import require_POST
 from .models import PurchaseOrder, Bill, BillLineItem, PurchaseOrderLineItem
-from .forms import PurchaseOrderForm, PurchaseOrderLineItemForm, PurchaseOrderStatusForm, BillForm, BillLineItemForm
+from .forms import PurchaseOrderForm, PurchaseOrderLineItemForm, PurchaseOrderStatusForm, BillForm, BillLineItemForm, BillStatusForm
 
 def purchase_order_list(request):
     purchase_orders = PurchaseOrder.objects.all().order_by('-po_id')
@@ -44,7 +45,10 @@ def purchase_order_detail(request, po_id):
         'bills': bills,
         'line_items': line_items,
         'total_amount': total_amount,
-        'status_form': status_form
+        'status_form': status_form,
+        'show_reorder': purchase_order.status == 'draft',
+        'reorder_url_name': 'purchasing:purchase_order_reorder_line_item',
+        'parent_id': purchase_order.po_id
     })
 
 def purchase_order_create(request):
@@ -93,7 +97,7 @@ def purchase_order_add_line_item(request, po_id):
                 description=price_list_item.description,
                 qty=qty,
                 units=price_list_item.units,
-                price=price_list_item.purchase_price  # Use purchase_price
+                price_currency=price_list_item.purchase_price  # Use purchase_price
             )
 
             messages.success(request, f'Line item "{line_item.description}" added from price list')
@@ -112,13 +116,45 @@ def bill_list(request):
 
 def bill_detail(request, bill_id):
     bill = get_object_or_404(Bill, bill_id=bill_id)
+
+    # Handle status update POST request
+    if request.method == 'POST' and 'update_status' in request.POST:
+        # Check if status transitions are allowed
+        if BillStatusForm.has_valid_transitions(bill.status):
+            form = BillStatusForm(request.POST, current_status=bill.status)
+            if form.is_valid():
+                new_status = form.cleaned_data['status']
+                if new_status != bill.status:
+                    try:
+                        bill.status = new_status
+                        bill.save()
+                        messages.success(request, f'Bill status updated to {bill.get_status_display()}')
+                    except Exception as e:
+                        messages.error(request, f'Error updating status: {str(e)}')
+            else:
+                messages.error(request, 'Error: Invalid status transition.')
+            return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
+        else:
+            messages.error(request, f'Cannot update status from {bill.get_status_display()} (terminal state).')
+            return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
+
     line_items = BillLineItem.objects.filter(bill=bill).order_by('line_number', 'line_item_id')
     # Calculate total amount
     total_amount = sum(item.total_amount for item in line_items)
+
+    # Create status form for display only if there are valid transitions
+    status_form = None
+    if BillStatusForm.has_valid_transitions(bill.status):
+        status_form = BillStatusForm(current_status=bill.status)
+
     return render(request, 'purchasing/bill_detail.html', {
         'bill': bill,
         'line_items': line_items,
-        'total_amount': total_amount
+        'total_amount': total_amount,
+        'status_form': status_form,
+        'show_reorder': bill.status == 'draft',
+        'reorder_url_name': 'purchasing:bill_reorder_line_item',
+        'parent_id': bill.bill_id
     })
 
 def purchase_order_edit(request, po_id):
@@ -191,14 +227,34 @@ def bill_create(request):
     return render(request, 'purchasing/bill_create.html', {'form': form})
 
 def bill_create_for_po(request, po_id):
-    """Create a new Bill for a specific Purchase Order"""
+    """Create a new Bill for a specific Purchase Order and copy its line items"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
 
     if request.method == 'POST':
         form = BillForm(request.POST, purchase_order=purchase_order)
         if form.is_valid():
             bill = form.save()
-            messages.success(request, f'Bill for vendor invoice {bill.vendor_invoice_number} created successfully for PO {purchase_order.po_number}.')
+
+            # Copy line items from PurchaseOrder to Bill
+            po_line_items = PurchaseOrderLineItem.objects.filter(purchase_order=purchase_order).order_by('line_number')
+            for po_line_item in po_line_items:
+                BillLineItem.objects.create(
+                    bill=bill,
+                    price_list_item=po_line_item.price_list_item,
+                    task=po_line_item.task,
+                    description=po_line_item.description,
+                    qty=po_line_item.qty,
+                    units=po_line_item.units,
+                    price_currency=po_line_item.price_currency,
+                    line_number=po_line_item.line_number
+                )
+
+            line_items_copied = po_line_items.count()
+            if line_items_copied > 0:
+                messages.success(request, f'Bill for vendor invoice {bill.vendor_invoice_number} created successfully for PO {purchase_order.po_number} with {line_items_copied} line item(s) copied.')
+            else:
+                messages.success(request, f'Bill for vendor invoice {bill.vendor_invoice_number} created successfully for PO {purchase_order.po_number}.')
+
             return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
     else:
         form = BillForm(purchase_order=purchase_order)
@@ -223,7 +279,7 @@ def bill_add_line_item(request, bill_id):
                     description=price_list_item.description,
                     qty=qty,
                     units=price_list_item.units,
-                    price=price_list_item.purchase_price  # Use purchase_price
+                    price_currency=price_list_item.purchase_price  # Use purchase_price
                 )
                 messages.success(request, f'Line item "{line_item.description}" added from price list')
             else:
@@ -237,7 +293,7 @@ def bill_add_line_item(request, bill_id):
                     description=description,
                     qty=qty,
                     units=units,
-                    price=price
+                    price_currency=price
                 )
                 messages.success(request, f'Line item "{line_item.description}" added manually')
 
@@ -249,3 +305,149 @@ def bill_add_line_item(request, bill_id):
         'form': form,
         'bill': bill
     })
+
+
+@require_POST
+def purchase_order_reorder_line_item(request, po_id, line_item_id, direction):
+    """Reorder line items within a PurchaseOrder by swapping line numbers."""
+    purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
+    line_item = get_object_or_404(PurchaseOrderLineItem, line_item_id=line_item_id, purchase_order=purchase_order)
+
+    # Prevent reordering non-draft purchase orders
+    if purchase_order.status != 'draft':
+        messages.error(request, f'Cannot reorder line items in a {purchase_order.get_status_display().lower()} purchase order.')
+        return redirect('purchasing:purchase_order_detail', po_id=po_id)
+
+    # Get all line items for this purchase order ordered by line_number
+    all_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=purchase_order).order_by('line_number', 'line_item_id'))
+
+    # Find the index of the current line item
+    try:
+        current_index = next(i for i, item in enumerate(all_items) if item.line_item_id == line_item.line_item_id)
+    except StopIteration:
+        messages.error(request, 'Line item not found in purchase order.')
+        return redirect('purchasing:purchase_order_detail', po_id=po_id)
+
+    # Determine the swap target
+    if direction == 'up' and current_index > 0:
+        swap_index = current_index - 1
+    elif direction == 'down' and current_index < len(all_items) - 1:
+        swap_index = current_index + 1
+    else:
+        messages.error(request, 'Cannot move line item in that direction.')
+        return redirect('purchasing:purchase_order_detail', po_id=po_id)
+
+    # Swap line numbers
+    current_item = all_items[current_index]
+    swap_item = all_items[swap_index]
+    current_item.line_number, swap_item.line_number = swap_item.line_number, current_item.line_number
+
+    current_item.save()
+    swap_item.save()
+
+    return redirect('purchasing:purchase_order_detail', po_id=po_id)
+
+
+@require_POST
+def bill_reorder_line_item(request, bill_id, line_item_id, direction):
+    """Reorder line items within a Bill by swapping line numbers."""
+    bill = get_object_or_404(Bill, bill_id=bill_id)
+    line_item = get_object_or_404(BillLineItem, line_item_id=line_item_id, bill=bill)
+
+    # Prevent reordering non-draft bills
+    if bill.status != 'draft':
+        messages.error(request, f'Cannot reorder line items in a {bill.get_status_display().lower()} bill.')
+        return redirect('purchasing:bill_detail', bill_id=bill_id)
+
+    # Get all line items for this bill ordered by line_number
+    all_items = list(BillLineItem.objects.filter(bill=bill).order_by('line_number', 'line_item_id'))
+
+    # Find the index of the current line item
+    try:
+        current_index = next(i for i, item in enumerate(all_items) if item.line_item_id == line_item.line_item_id)
+    except StopIteration:
+        messages.error(request, 'Line item not found in bill.')
+        return redirect('purchasing:bill_detail', bill_id=bill_id)
+
+    # Determine the swap target
+    if direction == 'up' and current_index > 0:
+        swap_index = current_index - 1
+    elif direction == 'down' and current_index < len(all_items) - 1:
+        swap_index = current_index + 1
+    else:
+        messages.error(request, 'Cannot move line item in that direction.')
+        return redirect('purchasing:bill_detail', bill_id=bill_id)
+
+    # Swap line numbers
+    current_item = all_items[current_index]
+    swap_item = all_items[swap_index]
+    current_item.line_number, swap_item.line_number = swap_item.line_number, current_item.line_number
+
+    current_item.save()
+    swap_item.save()
+
+    return redirect('purchasing:bill_detail', bill_id=bill_id)
+
+
+def bill_delete(request, bill_id):
+    """Delete a Bill (only allowed in Draft status)"""
+    bill = get_object_or_404(Bill, bill_id=bill_id)
+
+    # Only allow deletion if Bill is in Draft status
+    if bill.status != 'draft':
+        messages.error(request, f'Cannot delete Bill {bill.bill_number}. Only Draft Bills can be deleted.')
+        return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
+
+    if request.method == 'POST':
+        bill_number = bill.bill_number
+        bill.delete()
+        messages.success(request, f'Bill {bill_number} deleted successfully.')
+        return redirect('purchasing:bill_list')
+
+    return render(request, 'purchasing/bill_delete.html', {
+        'bill': bill
+    })
+
+
+def purchase_order_delete_line_item(request, po_id, line_item_id):
+    """Delete a line item from a purchase order and renumber remaining items"""
+    from apps.core.services import LineItemService
+    from django.core.exceptions import ValidationError
+
+    purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
+    line_item = get_object_or_404(PurchaseOrderLineItem, line_item_id=line_item_id, purchase_order=purchase_order)
+
+    if request.method == 'POST':
+        try:
+            # Use the service to delete and renumber
+            parent_container, deleted_line_number = LineItemService.delete_line_item_with_renumber(line_item)
+            messages.success(request, f'Line item deleted and remaining items renumbered.')
+        except ValidationError as e:
+            messages.error(request, str(e))
+
+        return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
+
+    # GET request - redirect back to detail (no confirmation needed)
+    return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
+
+
+def bill_delete_line_item(request, bill_id, line_item_id):
+    """Delete a line item from a bill and renumber remaining items"""
+    from apps.core.services import LineItemService
+    from django.core.exceptions import ValidationError
+
+    bill = get_object_or_404(Bill, bill_id=bill_id)
+    line_item = get_object_or_404(BillLineItem, line_item_id=line_item_id, bill=bill)
+
+    if request.method == 'POST':
+        try:
+            # Use the service to delete and renumber
+            parent_container, deleted_line_number = LineItemService.delete_line_item_with_renumber(line_item)
+            messages.success(request, f'Line item deleted and remaining items renumbered.')
+        except ValidationError as e:
+            messages.error(request, str(e))
+
+        return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
+
+    # GET request - redirect back to detail (no confirmation needed)
+    return redirect('purchasing:bill_detail', bill_id=bill.bill_id)

@@ -12,12 +12,19 @@
     </tr>
     <tr>
         <td>Associated Job</td>
-        <td><a href="{% url 'jobs:detail' work_order.job.pk %}">{{ work_order.job.job_number }}{% if work_order.job.name %}: {{ work_order.job.name }}{% endif %}</a></td>
+        <td><a href="{% url 'jobs:detail' work_order.job.pk %}">{{ work_order.job.job_number }} - {{ work_order.job.description }}</a></td>
     </tr>
     <tr>
         <td>Status</td>
         <td>
-            {% include 'includes/_inline_status_form.html' with object=work_order %}
+            {{ work_order.get_status_display }}
+            {% if status_form %}
+                <form method="post" style="display: inline; margin-left: 20px;">
+                    {% csrf_token %}
+                    {{ status_form.status }}
+                    <button type="submit" name="update_status">Update Status</button>
+                </form>
+            {% endif %}
         </td>
     </tr>
     <tr>
@@ -27,7 +34,53 @@
 </table>
 
 <h3>Tasks</h3>
-{% include 'jobs/_task_list.html' %}
+{% if tasks %}
+    <table border="1">
+        <tr>
+            <th>Task Name</th>
+            <th>Assignee</th>
+            <th>Estimated Qty</th>
+            <th>Units</th>
+            <th>Rate</th>
+            <th>Total</th>
+            <th>Actions</th>
+        </tr>
+        {% for item in tasks %}
+        <tr>
+            <td>
+                {% if item.level > 0 %}
+                    {% for i in "x"|rjust:item.level %}
+                        &nbsp;&nbsp;&nbsp;&nbsp;
+                    {% endfor %}
+                    └─ {{ item.task.name }}
+                {% else %}
+                    {{ item.task.name }}
+                {% endif %}
+            </td>
+            <td>{{ item.task.assignee.username|default:"Unassigned" }}</td>
+            <td>{{ item.task.est_qty|default:"-" }}</td>
+            <td>{{ item.task.units|default:"-" }}</td>
+            <td>
+                {% if item.task.rate %}
+                    ${{ item.task.rate }}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+            <td>
+                {% if item.task.est_qty and item.task.rate %}
+                    ${% widthratio item.task.est_qty 1 item.task.rate %}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+            <td><a href="{% url 'jobs:task_detail' item.task.pk %}">View</a></td>
+        </tr>
+        {% endfor %}
+    </table>
+{% else %}
+    <p>No tasks found for this work order.</p>
+{% endif %}
 
 <p>
     <a href="{% url 'jobs:work_order_list' %}">Back to Work Orders List</a> |

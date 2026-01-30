@@ -18,7 +18,8 @@ class EstWorksheetCRUDTests(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Contact',
+            first_name='Test Contact',
+            last_name='',
             email='test@example.com'
         )
 
@@ -87,7 +88,8 @@ class TaskCRUDTests(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Contact',
+            first_name='Test Contact',
+            last_name='',
             email='test@example.com'
         )
 
@@ -189,7 +191,8 @@ class EstimateCRUDTests(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Contact',
+            first_name='Test Contact',
+            last_name='',
             email='test@example.com'
         )
 
@@ -222,7 +225,7 @@ class EstimateCRUDTests(TestCase):
         data = {
             'description': 'Test Line Item',
             'qty': 5.0,
-            'price': 100.0,
+            'price_currency': 100.0,
             'units': 'each',
             'manual_submit': 'Add Manual Line Item'
         }
@@ -236,7 +239,7 @@ class EstimateCRUDTests(TestCase):
         self.assertIsNotNone(line_item)
         self.assertEqual(line_item.description, 'Test Line Item')
         self.assertEqual(line_item.qty, 5.0)
-        self.assertEqual(line_item.price, 100.0)
+        self.assertEqual(line_item.price_currency, 100.0)
         self.assertEqual(line_item.units, 'each')
 
     def test_update_status_get(self):
@@ -288,7 +291,8 @@ class NavigationLinksTests(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Contact',
+            first_name='Test Contact',
+            last_name='',
             email='test@example.com'
         )
 
@@ -381,7 +385,8 @@ class SupersededStylingTests(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Contact',
+            first_name='Test Contact',
+            last_name='',
             email='test@example.com'
         )
 

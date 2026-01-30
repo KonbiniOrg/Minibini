@@ -5,196 +5,372 @@
 {% block content %}
 <h2>Search Results</h2>
 
+<style>
+    mark.search-highlight {
+        background-color: #ffeb3b;
+        padding: 0;
+        border-radius: 0;
+        font-weight: 500;
+    }
+</style>
+
 {% if query %}
-    <p><strong>Search query:</strong> "{{ query }}"</p>
-    <p><strong>Total results:</strong> {{ total_count }}</p>
+    <div style="display: flex; gap: 20px;">
+        <!-- Left Sidebar - Filters -->
+        <aside style="width: 250px; flex-shrink: 0;" class="no-highlight">
+            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; border: 1px solid #ddd; position: sticky; top: 20px;">
+                <h3 style="margin-top: 0; font-size: 1.1em;">Refine Results</h3>
+                <form method="get" action="{% url 'search:search' %}">
+                    <input type="hidden" name="q" value="{{ query }}">
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="category" style="display: block; margin-bottom: 5px;"><strong>Category:</strong></label>
+                        <select name="category" id="category" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px;">
+                            <option value="all" {% if not filter_category or filter_category == 'all' %}selected{% endif %}>All Categories</option>
+                            {% for cat_name in available_categories %}
+                            <option value="{{ cat_name }}" {% if filter_category == cat_name %}selected{% endif %}>{{ cat_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="date_from" style="display: block; margin-bottom: 5px;"><strong>Date From:</strong></label>
+                        <input type="date" name="date_from" id="date_from" value="{{ date_from }}" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box;">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="date_to" style="display: block; margin-bottom: 5px;"><strong>Date To:</strong></label>
+                        <input type="date" name="date_to" id="date_to" value="{{ date_to }}" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box;">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="price_min" style="display: block; margin-bottom: 5px;"><strong>Min Price:</strong></label>
+                        <input type="number" name="price_min" id="price_min" value="{{ price_min }}" step="0.01" placeholder="0.00" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box;">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="price_max" style="display: block; margin-bottom: 5px;"><strong>Max Price:</strong></label>
+                        <input type="number" name="price_max" id="price_max" value="{{ price_max }}" step="0.01" placeholder="0.00" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box;">
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <button type="submit" style="width: 100%; padding: 8px 20px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">Apply Filters</button>
+                        <a href="{% url 'search:search' %}?q={{ query }}" style="width: 100%; padding: 8px 20px; background-color: #6c757d; color: white; text-decoration: none; border-radius: 3px; display: block; text-align: center; box-sizing: border-box; font-weight: bold;">Clear Filters</a>
+                    </div>
+                </form>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main style="flex: 1; min-width: 0;">
+            <p class="no-highlight"><strong>Search query:</strong> "{{ query }}"</p>
+            {% if is_within_results and within_query %}
+            <p class="no-highlight"><strong>Searching within results for:</strong> "{{ within_query }}"</p>
+            {% endif %}
+            <p class="no-highlight"><strong>Total results:</strong> {{ total_count }}</p>
+
+            {% if has_stored_results and not is_within_results %}
+            <!-- Search Within Results Box -->
+            <div style="background-color: #e8f4f8; border: 2px solid #17a2b8; border-radius: 5px; padding: 15px; margin: 15px 0;">
+                <h4 style="margin-top: 0; color: #17a2b8;">🔍 Search Within These Results</h4>
+                <p style="margin-bottom: 10px;">Narrow down your search by finding specific items within the current results:</p>
+                <form method="get" action="{% url 'search:search_within' %}" style="display: flex; gap: 10px; align-items: center;">
+                    <input type="text" name="within_q" placeholder="Enter search term (name, date, number, etc.)"
+                           style="flex: 1; padding: 8px 12px; border: 1px solid #17a2b8; border-radius: 3px; font-size: 14px;">
+                    <button type="submit" style="padding: 8px 20px; background-color: #17a2b8; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; white-space: nowrap;">
+                        Search Within
+                    </button>
+                </form>
+                <p style="margin-top: 10px; margin-bottom: 0; font-size: 13px; color: #666;">
+                    <em>Tip: You can search for names, dates, job numbers, or any other details within your current {{ total_count }} results.</em>
+                </p>
+            </div>
+            {% endif %}
+
+            {% if is_within_results %}
+            <!-- Return to Original Results -->
+            <div style="background-color: #fff3cd; border: 2px solid #ffc107; border-radius: 5px; padding: 12px; margin: 15px 0;">
+                <p style="margin: 0;">
+                    <strong>⚠️ Showing filtered results within your original search.</strong>
+                    <a href="{% url 'search:search' %}?q={{ query }}" style="margin-left: 15px; padding: 6px 12px; background-color: #ffc107; color: #000; text-decoration: none; border-radius: 3px; display: inline-block; font-weight: bold;">
+                        Return to All Results
+                    </a>
+                </p>
+            </div>
+            {% endif %}
 
     {% if total_count == 0 %}
-        <p>No results found for "{{ query }}"</p>
+        <p>No results found for "{{ query }}" with the current filters.</p>
     {% else %}
 
-        <!-- Jobs Section -->
-        {% if results.jobs %}
-        <section style="margin: 20px 0;">
-            <h3>Jobs ({{ results.jobs|length }})</h3>
-            <ul>
-                {% for job in results.jobs %}
-                <li>
-                    <a href="{% url 'jobs:detail' job.job_id %}">{{ job.job_number }}{% if job.name %}: {{ job.name }}{% endif %}</a>
-                    - {{ job.status }} - {{ job.contact.name }}
-                    {% if job.description %}<br><em>{{ job.description|truncatewords:20 }}</em>{% endif %}
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
+        {% for category_name, category_data in categories.items %}
+        <section style="margin: 30px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
+            {% if category_data.grouped_items %}
+                <!-- Categories with grouped line items (Invoices, Estimates) -->
+                <h3 style="margin-top: 0;">
+                    {% if category_name == "invoices" %}Invoices
+                    {% elif category_name == "estimates" %}Estimates
+                    {% else %}{{ category_name|title }}
+                    {% endif %}
+                    ({{ category_data.grouped_items|length }})
+                </h3>
 
-        <!-- Estimates Section -->
-        {% if results.estimates %}
-        <section style="margin: 20px 0;">
-            <h3>Estimates ({{ results.estimates|length }})</h3>
-            <ul>
-                {% for estimate in results.estimates %}
-                <li>
-                    <a href="{% url 'jobs:estimate_detail' estimate.estimate_id %}">{{ estimate.estimate_number }}</a>
-                    v{{ estimate.version }} - {{ estimate.status }} - Job: {{ estimate.job.job_number }}{% if estimate.job.name %}: {{ estimate.job.name }}{% endif %}
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
+                {% for item in category_data.grouped_items %}
+                    <div style="margin-bottom: 25px;">
+                        <!-- Parent Item -->
+                        <div style="padding: 10px; background-color: #f0f8ff; border-left: 4px solid #007bff;">
+                            {% if category_name == "invoices" %}
+                                <strong><a href="{% url 'invoicing:invoice_detail' item.invoice_id %}">{{ item.invoice_number }}</a></strong>
+                                - {{ item.status }} - Job: {{ item.job.job_number }}
+                                {% if item.total_amount %} - ${{ item.total_amount }}{% endif %}
 
-        <!-- Tasks Section -->
-        {% if results.tasks %}
-        <section style="margin: 20px 0;">
-            <h3>Tasks ({{ results.tasks|length }})</h3>
-            <ul>
-                {% for task in results.tasks %}
-                <li>
-                    <a href="{% url 'jobs:task_detail' task.task_id %}">{{ task.name }}</a>
-                    {% if task.assignee %} - Assigned to: {{ task.assignee.username }}{% endif %}
-                    {% if task.units %} - {{ task.units }}{% endif %}
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
+                                {% if item.matching_line_items %}
+                                    <div style="margin-top: 10px; margin-left: 20px;">
+                                        <strong>Matching Line Items:</strong>
+                                        <ul style="margin-top: 5px;">
+                                        {% for line_item in item.matching_line_items %}
+                                            <li style="margin-bottom: 5px;">
+                                                {{ line_item.description }} - Qty: {{ line_item.qty }} {{ line_item.units }} @ ${{ line_item.price_currency }} = ${{ line_item.total_amount_calc }}
+                                            </li>
+                                        {% endfor %}
+                                        </ul>
+                                    </div>
+                                {% endif %}
 
-        <!-- Work Orders Section -->
-        {% if results.work_orders %}
-        <section style="margin: 20px 0;">
-            <h3>Work Orders ({{ results.work_orders|length }})</h3>
-            <ul>
-                {% for work_order in results.work_orders %}
-                <li>
-                    <a href="{% url 'jobs:work_order_detail' work_order.work_order_id %}">Work Order {{ work_order.work_order_id }}</a>
-                    - {{ work_order.status }} - Job: {{ work_order.job.job_number }}{% if work_order.job.name %}: {{ work_order.job.name }}{% endif %}
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
+                            {% elif category_name == "estimates" %}
+                                <strong><a href="{% url 'jobs:estimate_detail' item.estimate_id %}">{{ item.estimate_number }}</a></strong>
+                                v{{ item.version }} - {{ item.status }} - Job: {{ item.job.job_number }}
 
-        <!-- EstWorksheets Section -->
-        {% if results.est_worksheets %}
-        <section style="margin: 20px 0;">
-            <h3>Estimation Worksheets ({{ results.est_worksheets|length }})</h3>
-            <ul>
-                {% for worksheet in results.est_worksheets %}
-                <li>
-                    <a href="{% url 'jobs:estworksheet_detail' worksheet.est_worksheet_id %}">Worksheet {{ worksheet.est_worksheet_id }}</a>
-                    v{{ worksheet.version }} - {{ worksheet.status }}
-                    - Job: {{ worksheet.job.job_number }}{% if worksheet.job.name %}: {{ worksheet.job.name }}{% endif %}
-                    {% if worksheet.estimate %} - Estimate: {{ worksheet.estimate.estimate_number }}{% endif %}
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
+                                {% if item.matching_line_items %}
+                                    <div style="margin-top: 10px; margin-left: 20px;">
+                                        <strong>Matching Line Items:</strong>
+                                        <ul style="margin-top: 5px;">
+                                        {% for line_item in item.matching_line_items %}
+                                            <li style="margin-bottom: 5px;">
+                                                {{ line_item.description }} - Qty: {{ line_item.qty }} {{ line_item.units }} @ ${{ line_item.price_currency }} = ${{ line_item.total_amount_calc }}
+                                            </li>
+                                        {% endfor %}
+                                        </ul>
+                                    </div>
+                                {% endif %}
 
-        <!-- Contacts Section -->
-        {% if results.contacts %}
-        <section style="margin: 20px 0;">
-            <h3>Contacts ({{ results.contacts|length }})</h3>
-            <ul>
-                {% for contact in results.contacts %}
-                <li>
-                    <a href="{% url 'contacts:contact_detail' contact.contact_id %}">{{ contact.name }}</a>
-                    {% if contact.email %} - {{ contact.email }}{% endif %}
-                    {% if contact.phone %} - {{ contact.phone }}{% endif %}
-                    {% if contact.business %}<br>Business: {{ contact.business.business_name }}{% endif %}
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
+                            {% elif category_name == "purchase_orders" %}
+                                <strong><a href="{% url 'purchasing:purchase_order_detail' item.po_id %}">{{ item.po_number }}</a></strong>
+                                {% if item.job %} - Job: {{ item.job.job_number }}{% endif %}
 
-        <!-- Businesses Section -->
-        {% if results.businesses %}
-        <section style="margin: 20px 0;">
-            <h3>Businesses ({{ results.businesses|length }})</h3>
-            <ul>
-                {% for business in results.businesses %}
-                <li>
-                    <a href="{% url 'contacts:business_detail' business.business_id %}">{{ business.business_name }}</a>
-                    {% if business.our_reference_code %} - Ref: {{ business.our_reference_code }}{% endif %}
-                    {% if business.business_address %}<br>{{ business.business_address|truncatewords:15 }}{% endif %}
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
+                            {% elif category_name == "bills" %}
+                                <strong><a href="{% url 'purchasing:bill_detail' item.bill_id %}">Bill {{ item.bill_id }}</a></strong>
+                                - Vendor Invoice: {{ item.vendor_invoice_number }}
+                                - Contact: {{ item.contact }}
+                                {% if item.purchase_order %} - PO: {{ item.purchase_order.po_number }}{% endif %}
 
-        <!-- Invoices Section -->
-        {% if results.invoices %}
-        <section style="margin: 20px 0;">
-            <h3>Invoices ({{ results.invoices|length }})</h3>
-            <ul>
-                {% for invoice in results.invoices %}
-                <li>
-                    <a href="{% url 'invoicing:invoice_detail' invoice.invoice_id %}">{{ invoice.invoice_number }}</a>
-                    - {{ invoice.status }} - Job: {{ invoice.job.job_number }}{% if invoice.job.name %}: {{ invoice.job.name }}{% endif %}
-                    {% if invoice.customer_po_number %} - PO: {{ invoice.customer_po_number }}{% endif %}
-                </li>
+                            {% elif category_name == "work_orders" %}
+                                <strong><a href="{% url 'jobs:work_order_detail' item.work_order_id %}">Work Order {{ item.work_order_id }}</a></strong>
+                                - {{ item.status }} - Job: {{ item.job.job_number }}
+                            {% endif %}
+                        </div>
+                    </div>
                 {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
 
-        <!-- Price List Items Section -->
-        {% if results.price_list_items %}
-        <section style="margin: 20px 0;">
-            <h3>Price List Items ({{ results.price_list_items|length }})</h3>
-            <ul>
-                {% for item in results.price_list_items %}
-                <li>
-                    {{ item.code }} - {{ item.description|truncatewords:15 }}
-                    {% if item.units %} ({{ item.units }}){% endif %}
-                    - ${{ item.selling_price }}
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
+            {% elif category_data.items %}
+                <!-- Categories without line items (Jobs, Contacts, etc.) -->
+                <h3 style="margin-top: 0;">
+                    {% if category_name == "jobs" %}Jobs
+                    {% elif category_name == "contacts" %}Contacts
+                    {% elif category_name == "businesses" %}Businesses
+                    {% elif category_name == "price_list_items" %}Price List Items
+                    {% elif category_name == "invoices" %}Invoices
+                    {% elif category_name == "estimates" %}Estimates
+                    {% elif category_name == "purchase_orders" %}Purchase Orders
+                    {% elif category_name == "bills" %}Bills
+                    {% else %}{{ category_name|title }}
+                    {% endif %}
+                    ({{ category_data.items|length }})
+                </h3>
+                <ul style="margin-bottom: 20px;">
+                {% if category_name == "jobs" %}
+                    {% for job in category_data.items %}
+                    <li>
+                        <a href="{% url 'jobs:detail' job.job_id %}">{{ job.job_number }}</a>
+                        - {{ job.status }} - {{ job.contact }}
+                        {% if job.description %}<br><em>{{ job.description|truncatewords:20 }}</em>{% endif %}
+                    </li>
+                    {% endfor %}
 
-        <!-- Purchase Orders Section -->
-        {% if results.purchase_orders %}
-        <section style="margin: 20px 0;">
-            <h3>Purchase Orders ({{ results.purchase_orders|length }})</h3>
-            <ul>
-                {% for po in results.purchase_orders %}
-                <li>
-                    <a href="{% url 'purchasing:purchase_order_detail' po.po_id %}">{{ po.po_number }}</a>
-                    {% if po.job %} - Job: {{ po.job.job_number }}{% if po.job.name %}: {{ po.job.name }}{% endif %}{% endif %}
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
+                {% elif category_name == "estimates" %}
+                    {% for estimate in category_data.items %}
+                    <li>
+                        <a href="{% url 'jobs:estimate_detail' estimate.estimate_id %}">{{ estimate.estimate_number }}</a>
+                        v{{ estimate.version }} - {{ estimate.status }} - Job: {{ estimate.job.job_number }}
+                    </li>
+                    {% endfor %}
 
-        <!-- Bills Section -->
-        {% if results.bills %}
-        <section style="margin: 20px 0;">
-            <h3>Bills ({{ results.bills|length }})</h3>
-            <ul>
-                {% for bill in results.bills %}
-                <li>
-                    <a href="{% url 'purchasing:bill_detail' bill.bill_id %}">Bill {{ bill.bill_id }}</a>
-                    - Vendor Invoice: {{ bill.vendor_invoice_number }}
-                    - Contact: {{ bill.contact.name }}
-                    - PO: {{ bill.purchase_order.po_number }}
-                </li>
-                {% endfor %}
-            </ul>
+                {% elif category_name == "contacts" %}
+                    {% for contact in category_data.items %}
+                    <li>
+                        <a href="{% url 'contacts:contact_detail' contact.contact_id %}">{{ contact }}</a>
+                        {% if contact.email %} - {{ contact.email }}{% endif %}
+                        {% if contact.phone %} - {{ contact.phone }}{% endif %}
+                        {% if contact.business %}<br>Business: {{ contact.business.business_name }}{% endif %}
+                    </li>
+                    {% endfor %}
+
+                {% elif category_name == "businesses" %}
+                    {% for business in category_data.items %}
+                    <li>
+                        <a href="{% url 'contacts:business_detail' business.business_id %}">{{ business.business_name }}</a>
+                        {% if business.our_reference_code %} - Ref: {{ business.our_reference_code }}{% endif %}
+                        {% if business.business_address %}<br>{{ business.business_address|truncatewords:15 }}{% endif %}
+                    </li>
+                    {% endfor %}
+
+                {% elif category_name == "price_list_items" %}
+                    {% for item in category_data.items %}
+                    <li>
+                        <strong>{{ item.code }}</strong> - {{ item.description|truncatewords:15 }}
+                        {% if item.units %} ({{ item.units }}){% endif %}
+                        <br>Purchase: ${{ item.purchase_price }} | Selling: ${{ item.selling_price }}
+                    </li>
+                    {% endfor %}
+
+                {% elif category_name == "invoices" %}
+                    {% for invoice in category_data.items %}
+                    <li>
+                        <a href="{% url 'invoicing:invoice_detail' invoice.invoice_id %}">{{ invoice.invoice_number }}</a>
+                        - {{ invoice.status }} - Job: {{ invoice.job.job_number }}
+                        {% if invoice.total_amount %} - ${{ invoice.total_amount }}{% endif %}
+                    </li>
+                    {% endfor %}
+
+                {% elif category_name == "purchase_orders" %}
+                    {% for po in category_data.items %}
+                    <li>
+                        <a href="{% url 'purchasing:purchase_order_detail' po.po_id %}">{{ po.po_number }}</a>
+                        {% if po.job %} - Job: {{ po.job.job_number }}{% endif %}
+                    </li>
+                    {% endfor %}
+
+                {% elif category_name == "bills" %}
+                    {% for bill in category_data.items %}
+                    <li>
+                        <a href="{% url 'purchasing:bill_detail' bill.bill_id %}">Bill {{ bill.bill_id }}</a>
+                        - Vendor Invoice: {{ bill.vendor_invoice_number }}
+                        - Contact: {{ bill.contact }}
+                        {% if bill.purchase_order %} - PO: {{ bill.purchase_order.po_number }}{% endif %}
+                    </li>
+                    {% endfor %}
+
+                {% endif %}
+                </ul>
+
+            {% else %}
+                <!-- Flat list categories (work_orders, est_worksheets) -->
+                <h3 style="margin-top: 0;">
+                    {% if category_name == "work_orders" %}Work Orders
+                    {% elif category_name == "est_worksheets" %}Worksheets
+                    {% else %}{{ category_name|title }}
+                    {% endif %}
+                    ({{ category_data|length }})
+                </h3>
+                <ul style="margin-bottom: 20px;">
+                {% if category_name == "work_orders" %}
+                    {% for wo in category_data %}
+                    <li>
+                        <a href="{% url 'jobs:work_order_detail' wo.work_order_id %}">Work Order {{ wo.work_order_id }}</a>
+                        - {{ wo.status }} - Job: {{ wo.job.job_number }}
+                    </li>
+                    {% endfor %}
+
+                {% elif category_name == "est_worksheets" %}
+                    {% for worksheet in category_data %}
+                    <li>
+                        <a href="{% url 'jobs:estworksheet_detail' worksheet.est_worksheet_id %}">Worksheet {{ worksheet.est_worksheet_id }}</a>
+                        - Job: {{ worksheet.job.job_number }}
+                        {% if worksheet.estimate %} - Estimate: {{ worksheet.estimate.estimate_number }}{% endif %}
+                    </li>
+                    {% endfor %}
+                {% endif %}
+                </ul>
+            {% endif %}
+
         </section>
-        {% endif %}
+        {% endfor %}
 
     {% endif %}
+
+        </main>
+    </div>
 
 {% else %}
     <p>Please enter a search query.</p>
 {% endif %}
 
 <p><a href="{% url 'home' %}">Back to Home</a></p>
+
+{% if query or within_query %}
+<script>
+(function() {
+    // Get the search query (use within_query if in search-within mode, otherwise use main query)
+    const searchQuery = "{{ within_query|default:query|escapejs }}";
+
+    if (!searchQuery) return;
+
+    // Function to highlight text in a node
+    function highlightText(node) {
+        if (node.nodeType === 3) { // Text node
+            const text = node.nodeValue;
+            const regex = new RegExp(`(${searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+
+            if (regex.test(text)) {
+                // Create a document fragment to hold the new nodes
+                const fragment = document.createDocumentFragment();
+                let lastIndex = 0;
+                let match;
+
+                // Reset regex lastIndex
+                regex.lastIndex = 0;
+
+                while ((match = regex.exec(text)) !== null) {
+                    // Add text before the match
+                    if (match.index > lastIndex) {
+                        fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
+                    }
+
+                    // Add highlighted text
+                    const mark = document.createElement('mark');
+                    mark.className = 'search-highlight';
+                    mark.textContent = match[0];
+                    fragment.appendChild(mark);
+
+                    lastIndex = regex.lastIndex;
+                }
+
+                // Add remaining text after the last match
+                if (lastIndex < text.length) {
+                    fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+                }
+
+                // Replace the original text node with the fragment
+                node.parentNode.replaceChild(fragment, node);
+            }
+        } else if (node.nodeType === 1 && node.nodeName !== 'SCRIPT' && node.nodeName !== 'STYLE' && node.nodeName !== 'MARK') {
+            // Skip elements with no-highlight class
+            if (node.classList && node.classList.contains('no-highlight')) {
+                return;
+            }
+
+            // Element node (but not script, style, or mark tags)
+            Array.from(node.childNodes).forEach(highlightText);
+        }
+    }
+
+    // Get the main content area and highlight
+    const mainContent = document.querySelector('main');
+    if (mainContent) {
+        highlightText(mainContent);
+    }
+})();
+</script>
+{% endif %}
 
 {% endblock %}

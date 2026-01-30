@@ -6,7 +6,7 @@
 <h2{% if worksheet.status == 'superseded' %} class="superseded"{% endif %}>Estimate Worksheet #{{ worksheet.est_worksheet_id }}</h2>
 
 <table border="1"{% if worksheet.status == 'superseded' %} class="superseded"{% endif %}>
-    <tr><th>Job</th><td><a href="{% url 'jobs:detail' worksheet.job.job_id %}">{{ worksheet.job.job_number }}{% if worksheet.job.name %}: {{ worksheet.job.name }}{% endif %}</a></td></tr>
+    <tr><th>Job</th><td><a href="{% url 'jobs:detail' worksheet.job.job_id %}">{{ worksheet.job.job_number }} - {{ worksheet.job.description }}</a></td></tr>
     <tr><th>Status</th><td>{{ worksheet.get_status_display }}</td></tr>
     <tr><th>Version</th><td>{{ worksheet.version }}</td></tr>
     <tr><th>Created</th><td>{{ worksheet.created_date }}</td></tr>
@@ -59,39 +59,10 @@
 </p>
 {% endif %}
 
+{% include 'jobs/_task_list.html' %}
+
 {% if tasks %}
-    <table border="1">
-        <tr>
-            <th>Est. Qty</th>
-            <th>Units</th>
-            <th>Task Name</th>
-            <th>Template</th>
-            <th>Rate</th>
-            <th>Total</th>
-        </tr>
-        {% for task in tasks %}
-        <tr>
-            <td>{{ task.est_qty|floatformat:2 }}</td>
-            <td>{{ task.units }}</td>
-            <td><a href="{% url 'jobs:task_detail' task.task_id %}">{{ task.name }}</a></td>
-            <td>
-                {% if task.template %}
-                    {{ task.template.template_name }}
-                {% else %}
-                    No template
-                {% endif %}
-            </td>
-            <td>${{ task.rate|floatformat:2 }}</td>
-            <td>${{ task.calculated_total|floatformat:2 }}</td>
-        </tr>
-        {% endfor %}
-        <tr>
-            <td colspan="5"><strong>Total:</strong></td>
-            <td><strong>${{ total_cost|floatformat:2 }}</strong></td>
-        </tr>
-    </table>
-{% else %}
-    <p>No tasks found in this worksheet.</p>
+<p><strong>Total Cost: ${{ total_cost|floatformat:2 }}</strong></p>
 {% endif %}
 
 {% endblock %}

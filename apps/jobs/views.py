@@ -4,6 +4,7 @@ from django.urls import reverse
 from django import forms
 from django.utils import timezone
 from django.db import models
+from django.views.decorators.http import require_POST
 from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet, TaskMapping, TaskInstanceMapping
 from .forms import (
     JobCreateForm, JobEditForm, WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
@@ -15,14 +16,17 @@ from apps.invoicing.models import Invoice
 
 
 def _build_task_hierarchy(tasks):
-    """Build a hierarchical task structure with level indicators."""
+    """Build a hierarchical task structure with level indicators, preserving line_number order."""
     task_dict = {task.task_id: task for task in tasks}
     root_tasks = []
 
-    # Find root tasks (no parent)
+    # Find root tasks (no parent) and maintain line_number order
     for task in tasks:
         if not task.parent_task:
             root_tasks.append(task)
+
+    # Sort root tasks by line_number to ensure proper order
+    root_tasks.sort(key=lambda t: t.line_number if t.line_number is not None else float('inf'))
 
     # Recursive function to get task with its children and level
     def get_task_with_children(task, level=0):
@@ -30,8 +34,13 @@ def _build_task_hierarchy(tasks):
         children = []
         for potential_child in tasks:
             if potential_child.parent_task_id == task.task_id:
-                children.append(get_task_with_children(potential_child, level + 1))
-        result['children'] = children
+                children.append(potential_child)
+
+        # Sort children by line_number to ensure proper order
+        children.sort(key=lambda t: t.line_number if t.line_number is not None else float('inf'))
+
+        # Recursively build the tree for each child
+        result['children'] = [get_task_with_children(child, level + 1) for child in children]
         return result
 
     # Build the tree
@@ -68,7 +77,7 @@ def job_detail(request, job_id):
     current_estimate_line_items = []
     current_estimate_total = 0
     if current_estimate:
-        current_estimate_line_items = EstimateLineItem.objects.filter(estimate=current_estimate).order_by('line_number', 'line_item_id')
+        current_estimate_line_items = EstimateLineItem.objects.filter(estimate=current_estimate).order_by('line_item_id')
         current_estimate_total = sum(item.total_amount for item in current_estimate_line_items)
 
     work_orders = WorkOrder.objects.filter(job=job).order_by('-work_order_id')
@@ -80,7 +89,7 @@ def job_detail(request, job_id):
     current_work_order = work_orders.exclude(status='complete').first()
     current_work_order_tasks = []
     if current_work_order:
-        all_tasks = Task.objects.filter(work_order=current_work_order).order_by('task_id')
+        all_tasks = Task.objects.filter(work_order=current_work_order).order_by('line_number', 'task_id')
         current_work_order_tasks = _build_task_hierarchy(all_tasks)
 
     return render(request, 'jobs/job_detail.html', {
@@ -90,8 +99,6 @@ def job_detail(request, job_id):
         'current_estimate_total': current_estimate_total,
         'superseded_estimates': superseded_estimates,
         'work_orders': work_orders,
-        'current_work_order': current_work_order,
-        'current_work_order_tasks': current_work_order_tasks,
         'worksheets': worksheets,
         'purchase_orders': purchase_orders,
         'invoices': invoices
@@ -195,7 +202,7 @@ def estimate_detail(request, estimate_id):
             return redirect('jobs:estimate_detail', estimate_id=estimate.estimate_id)
 
     # Get line items and calculate total
-    line_items = EstimateLineItem.objects.filter(estimate=estimate).order_by('line_number', 'line_item_id')
+    line_items = EstimateLineItem.objects.filter(estimate=estimate).order_by('line_item_id')
     total_amount = sum(item.total_amount for item in line_items)
 
     # Check for associated worksheet
@@ -211,7 +218,10 @@ def estimate_detail(request, estimate_id):
         'line_items': line_items,
         'total_amount': total_amount,
         'worksheet': worksheet,
-        'status_form': status_form
+        'status_form': status_form,
+        'show_reorder': estimate.status == 'draft',
+        'reorder_url_name': 'jobs:estimate_reorder_line_item',
+        'parent_id': estimate.estimate_id
     })
 
 def task_list(request):
@@ -251,7 +261,7 @@ def work_order_detail(request, work_order_id):
             return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
 
     # Get all tasks for this work order
-    all_tasks = Task.objects.filter(work_order=work_order).order_by('task_id')
+    all_tasks = Task.objects.filter(work_order=work_order).order_by('line_number', 'task_id')
     tasks_with_levels = _build_task_hierarchy(all_tasks)
 
     # Create status form for display (unless completed)
@@ -260,7 +270,10 @@ def work_order_detail(request, work_order_id):
     return render(request, 'jobs/work_order_detail.html', {
         'work_order': work_order,
         'tasks': tasks_with_levels,
-        'status_form': status_form
+        'status_form': status_form,
+        'show_reorder': True,
+        'reorder_url_name': 'jobs:task_reorder_work_order',
+        'container_id': work_order.work_order_id
     })
 
 
@@ -351,7 +364,7 @@ def work_order_template_list(request):
 
 def work_order_template_detail(request, template_id):
     template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
-
+    
     # Handle TaskTemplate association
     if request.method == 'POST' and 'associate_task' in request.POST:
         task_template_id = request.POST.get('task_template_id')
@@ -376,7 +389,7 @@ def work_order_template_detail(request, template_id):
             else:
                 messages.warning(request, f'Task Template "{task_template.template_name}" is already associated.')
         return redirect('jobs:work_order_template_detail', template_id=template_id)
-
+    
     # Handle TaskTemplate disassociation
     if request.method == 'POST' and 'remove_task' in request.POST:
         task_template_id = request.POST.get('task_template_id')
@@ -389,18 +402,18 @@ def work_order_template_detail(request, template_id):
             ).delete()
             messages.success(request, f'Task Template "{task_template.template_name}" removed successfully.')
         return redirect('jobs:work_order_template_detail', template_id=template_id)
-
+    
     # Get task template associations
     from .models import TemplateTaskAssociation
     associations = TemplateTaskAssociation.objects.filter(
         work_order_template=template,
         task_template__is_active=True
     ).select_related('task_template').order_by('sort_order', 'task_template__template_name')
-
+    
     # Get available task templates (not yet associated)
     associated_task_ids = associations.values_list('task_template_id', flat=True)
     available_templates = TaskTemplate.objects.filter(is_active=True).exclude(template_id__in=associated_task_ids)
-
+    
     return render(request, 'jobs/work_order_template_detail.html', {
         'template': template,
         'associations': associations,
@@ -417,21 +430,27 @@ def estworksheet_list(request):
 def estworksheet_detail(request, worksheet_id):
     """Show details of a specific EstWorksheet with its tasks"""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-    tasks = Task.objects.filter(est_worksheet=worksheet).select_related(
+    all_tasks = Task.objects.filter(est_worksheet=worksheet).select_related(
         'template', 'template__task_mapping'
-    ).prefetch_related('taskinstancemapping')
+    ).prefetch_related('taskinstancemapping').order_by('line_number', 'task_id')
+
+    # Build task hierarchy
+    tasks_with_levels = _build_task_hierarchy(all_tasks)
 
     # Add calculated total for each task
-    for task in tasks:
+    total_cost = 0
+    for item in tasks_with_levels:
+        task = item['task']
         task.calculated_total = (task.rate * task.est_qty) if task.rate and task.est_qty else 0
-
-    # Calculate worksheet totals
-    total_cost = sum(task.calculated_total for task in tasks)
+        total_cost += task.calculated_total
 
     return render(request, 'jobs/estworksheet_detail.html', {
         'worksheet': worksheet,
-        'tasks': tasks,
-        'total_cost': total_cost
+        'tasks': tasks_with_levels,
+        'total_cost': total_cost,
+        'show_reorder': worksheet.status == 'draft',
+        'reorder_url_name': 'jobs:task_reorder_worksheet',
+        'container_id': worksheet.est_worksheet_id
     })
 
 
@@ -456,17 +475,17 @@ def estworksheet_generate_estimate(request, worksheet_id):
 
             messages.success(request, f'Estimate {estimate.estimate_number} generated successfully!')
             return redirect('jobs:estimate_detail', estimate_id=estimate.estimate_id)
-
+            
         except Exception as e:
             messages.error(request, f'Error generating estimate: {str(e)}')
             return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
-
+    
     # Show confirmation page
     tasks = Task.objects.filter(est_worksheet=worksheet).select_related(
         'template', 'template__task_mapping'
     )
     total_cost = sum(task.rate * task.est_qty for task in tasks if task.rate and task.est_qty)
-
+    
     return render(request, 'jobs/estworksheet_generate_estimate.html', {
         'worksheet': worksheet,
         'tasks': tasks,
@@ -693,6 +712,8 @@ def task_add_manual(request, worksheet_id):
         form = TaskForm(initial={'est_worksheet': worksheet})
         # Hide the worksheet field since it's already set
         form.fields['est_worksheet'].widget = forms.HiddenInput()
+        # Hide the template field since user chose to add manually
+        form.fields['template'].widget = forms.HiddenInput()
 
     return render(request, 'jobs/task_add_manual.html', {
         'form': form,
@@ -702,33 +723,20 @@ def task_add_manual(request, worksheet_id):
 
 def estimate_delete_line_item(request, estimate_id, line_item_id):
     """Delete a line item from an estimate and renumber remaining items"""
+    from apps.core.services import LineItemService
+    from django.core.exceptions import ValidationError
+
     estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
     line_item = get_object_or_404(EstimateLineItem, line_item_id=line_item_id, estimate=estimate)
 
-    # Prevent modifications to superseded estimates
-    if estimate.status == 'superseded':
-        messages.error(request, 'Cannot delete line items from a superseded estimate.')
-        return redirect('jobs:estimate_detail', estimate_id=estimate.estimate_id)
-
     if request.method == 'POST':
-        # Store the line number before deleting
-        deleted_line_number = line_item.line_number
+        try:
+            # Use the service to delete and renumber
+            parent_container, deleted_line_number = LineItemService.delete_line_item_with_renumber(line_item)
+            messages.success(request, f'Line item deleted and remaining items renumbered.')
+        except ValidationError as e:
+            messages.error(request, str(e))
 
-        # Delete the line item
-        line_item.delete()
-
-        # Renumber remaining line items
-        remaining_items = EstimateLineItem.objects.filter(
-            estimate=estimate
-        ).order_by('line_number', 'line_item_id')
-
-        # Reassign line numbers sequentially
-        for index, item in enumerate(remaining_items, start=1):
-            if item.line_number != index:
-                item.line_number = index
-                item.save()
-
-        messages.success(request, f'Line item deleted and remaining items renumbered.')
         return redirect('jobs:estimate_detail', estimate_id=estimate.estimate_id)
 
     # GET request - show confirmation (optional, can skip for simple delete)
@@ -739,9 +747,9 @@ def estimate_add_line_item(request, estimate_id):
     """Add line item to Estimate - either manually or from Price List"""
     estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
 
-    # Prevent modifications to superseded estimates
-    if estimate.status == 'superseded':
-        messages.error(request, 'Cannot add line items to a superseded estimate.')
+    # Prevent modifications to non-draft estimates
+    if estimate.status != 'draft':
+        messages.error(request, f'Cannot add line items to a {estimate.get_status_display().lower()} estimate. Only draft estimates can be modified.')
         return redirect('jobs:estimate_detail', estimate_id=estimate.estimate_id)
 
     if request.method == 'POST':
@@ -774,7 +782,7 @@ def estimate_add_line_item(request, estimate_id):
                     description=price_list_item.description,
                     qty=qty,
                     units=price_list_item.units,
-                    price=price_list_item.selling_price
+                    price_currency=price_list_item.selling_price
                 )
 
                 messages.success(request, f'Line item "{line_item.description}" added from price list')
@@ -880,12 +888,11 @@ def estimate_revise(request, estimate_id):
                     qty=line_item.qty,
                     units=line_item.units,
                     description=line_item.description,
-                    price=line_item.price
+                    price_currency=line_item.price_currency
                 )
 
-            # Mark parent as superseded
+            # Mark parent as superseded (closed_date is set automatically by model.save())
             parent_estimate.status = 'superseded'
-            parent_estimate.superseded_date = timezone.now()
             parent_estimate.save()
 
             messages.success(request, f'Created new revision of estimate {new_estimate.estimate_number} (v{new_estimate.version})')
@@ -897,4 +904,99 @@ def estimate_revise(request, estimate_id):
     return render(request, 'jobs/estimate_revise_confirm.html', {
         'estimate': parent_estimate
     })
+
+
+@require_POST
+def task_reorder_worksheet(request, worksheet_id, task_id, direction):
+    """Reorder tasks within an EstWorksheet by swapping line numbers."""
+    worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
+    task = get_object_or_404(Task, task_id=task_id, est_worksheet=worksheet)
+
+    # Prevent reordering non-draft worksheets
+    if worksheet.status != 'draft':
+        messages.error(request, f'Cannot reorder tasks in a {worksheet.get_status_display().lower()} worksheet.')
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    # Get all tasks for this worksheet ordered by line_number
+    all_tasks = list(Task.objects.filter(est_worksheet=worksheet).order_by('line_number', 'task_id'))
+
+    # Find the index of the current task
+    try:
+        current_index = next(i for i, t in enumerate(all_tasks) if t.task_id == task.task_id)
+    except StopIteration:
+        messages.error(request, 'Task not found in worksheet.')
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    # Determine the swap target
+    if direction == 'up' and current_index > 0:
+        swap_index = current_index - 1
+    elif direction == 'down' and current_index < len(all_tasks) - 1:
+        swap_index = current_index + 1
+    else:
+        messages.error(request, 'Cannot move task in that direction.')
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    # Swap line numbers
+    current_task = all_tasks[current_index]
+    swap_task = all_tasks[swap_index]
+    current_task.line_number, swap_task.line_number = swap_task.line_number, current_task.line_number
+
+    current_task.save()
+    swap_task.save()
+
+    return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+
+@require_POST
+def task_reorder_work_order(request, work_order_id, task_id, direction):
+    """Reorder tasks within a WorkOrder by swapping line numbers."""
+    work_order = get_object_or_404(WorkOrder, work_order_id=work_order_id)
+    task = get_object_or_404(Task, task_id=task_id, work_order=work_order)
+
+    # Get all tasks for this work order ordered by line_number
+    all_tasks = list(Task.objects.filter(work_order=work_order).order_by('line_number', 'task_id'))
+
+    # Find the index of the current task
+    try:
+        current_index = next(i for i, t in enumerate(all_tasks) if t.task_id == task.task_id)
+    except StopIteration:
+        messages.error(request, 'Task not found in work order.')
+        return redirect('jobs:work_order_detail', work_order_id=work_order_id)
+
+    # Determine the swap target
+    if direction == 'up' and current_index > 0:
+        swap_index = current_index - 1
+    elif direction == 'down' and current_index < len(all_tasks) - 1:
+        swap_index = current_index + 1
+    else:
+        messages.error(request, 'Cannot move task in that direction.')
+        return redirect('jobs:work_order_detail', work_order_id=work_order_id)
+
+    # Swap line numbers
+    current_task = all_tasks[current_index]
+    swap_task = all_tasks[swap_index]
+    current_task.line_number, swap_task.line_number = swap_task.line_number, current_task.line_number
+
+    current_task.save()
+    swap_task.save()
+
+    return redirect('jobs:work_order_detail', work_order_id=work_order_id)
+
+
+@require_POST
+def estimate_reorder_line_item(request, estimate_id, line_item_id, direction):
+    """Reorder line items within an Estimate by swapping line numbers."""
+    from apps.core.services import LineItemService
+    from django.core.exceptions import ValidationError
+
+    estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
+    line_item = get_object_or_404(EstimateLineItem, line_item_id=line_item_id, estimate=estimate)
+
+    try:
+        # Use the service to reorder
+        LineItemService.reorder_line_item(line_item, direction)
+    except ValidationError as e:
+        messages.error(request, str(e))
+
+    return redirect('jobs:estimate_detail', estimate_id=estimate_id)
 

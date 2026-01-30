@@ -18,7 +18,7 @@ class EstWorksheetModelTest(TestCase):
     """Test EstWorksheet model creation and basic functionality."""
     
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -90,7 +90,7 @@ class EstWorksheetStatusTransitionTest(TestCase):
     """Test EstWorksheet status transitions based on Estimate status."""
     
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -207,7 +207,7 @@ class EstWorksheetVersioningTest(TestCase):
     """Test EstWorksheet versioning functionality."""
     
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -297,7 +297,7 @@ class TaskWorkContainerTest(TestCase):
     """Test Task model working with both WorkOrder and EstWorksheet."""
     
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,

@@ -21,13 +21,16 @@
     </div>
 
     <div style="margin-bottom: 15px;">
-        <label for="our_reference_code" style="display: block; margin-bottom: 5px; font-weight: bold;">Reference Code</label>
-        <input type="text" id="our_reference_code" name="our_reference_code" value="{{ business.our_reference_code }}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Reference Code</label>
+        <div style="padding: 8px; background-color: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; color: #666;">
+            {{ business.our_reference_code }}
+        </div>
+        <small style="display: block; margin-top: 5px; color: #666;">Reference code is automatically generated and cannot be changed</small>
     </div>
 
     <div style="margin-bottom: 15px;">
-        <label for="business_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Number</label>
-        <input type="text" id="business_number" name="business_number" value="{{ business.business_number }}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <label for="business_phone" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Phone</label>
+        <input type="tel" id="business_phone" name="business_phone" value="{{ business.business_phone }}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <div style="margin-bottom: 15px;">
@@ -41,8 +44,8 @@
     </div>
 
     <div style="margin-bottom: 20px;">
-        <label for="tax_cloud" style="display: block; margin-bottom: 5px; font-weight: bold;">Tax Cloud</label>
-        <input type="text" id="tax_cloud" name="tax_cloud" value="{{ business.tax_cloud }}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <label for="website" style="display: block; margin-bottom: 5px; font-weight: bold;">Website</label>
+        <input type="url" id="website" name="website" value="{{ business.website }}" placeholder="https://example.com" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <button type="submit" style="background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">Update Business</button>

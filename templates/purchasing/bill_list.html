@@ -11,6 +11,7 @@
     <table border="1">
         <tr>
             <th>Purchase Order</th>
+            <th>Business</th>
             <th>Contact</th>
             <th>Vendor Invoice Number</th>
             <th>Status</th>
@@ -19,7 +20,20 @@
         {% for bill in bills %}
         <tr>
             <td>{{ bill.purchase_order|default:"No PO" }}</td>
-            <td>{{ bill.contact }}</td>
+            <td>
+                {% if bill.business %}
+                    {{ bill.business.business_name }}
+                {% else %}
+                    No business
+                {% endif %}
+            </td>
+            <td>
+                {% if bill.contact %}
+                    {{ bill.contact }}
+                {% else %}
+                    Not specified
+                {% endif %}
+            </td>
             <td>{{ bill.vendor_invoice_number }}</td>
             <td>{{ bill.get_status_display }}</td>
             <td><a href="{% url 'purchasing:bill_detail' bill.bill_id %}">View</a></td>

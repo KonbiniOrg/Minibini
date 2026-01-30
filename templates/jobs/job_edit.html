@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 
-{% block title %}Edit Job {{ job.job_number }}{% if job.name %}: {{ job.name }}{% endif %} - Minibini{% endblock %}
+{% block title %}Edit Job {{ job.job_number }} - Minibini{% endblock %}
 
 {% block content %}
-<h2>Edit Job {{ job.job_number }}{% if job.name %}: {{ job.name }}{% endif %}</h2>
+<h2>Edit Job {{ job.job_number }}</h2>
 
 <p><strong>Current Status:</strong> {{ job.get_status_display }}</p>
 

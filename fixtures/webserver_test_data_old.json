@@ -1,0 +1,1935 @@
+[
+  {
+    "model": "auth.group",
+    "pk": 1,
+    "fields": {
+      "name": "Administrator",
+      "permissions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        21,
+        22,
+        23,
+        24
+      ]
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 2,
+    "fields": {
+      "name": "Manager",
+      "permissions": [
+        65,
+        66,
+        67,
+        68,
+        73,
+        74,
+        75,
+        76,
+        69,
+        70,
+        71,
+        72,
+        25,
+        26,
+        27,
+        28,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        53,
+        54,
+        55,
+        56,
+        45,
+        46,
+        47,
+        48,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        41,
+        42,
+        43,
+        44,
+        37,
+        38,
+        39,
+        40,
+        93,
+        94,
+        95,
+        96,
+        89,
+        90,
+        91,
+        92
+      ]
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 3,
+    "fields": {
+      "name": "Employee",
+      "permissions": [
+        65,
+        66,
+        67,
+        68,
+        73,
+        74,
+        75,
+        76,
+        69,
+        70,
+        71,
+        72,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        53,
+        54,
+        55,
+        56,
+        45,
+        46,
+        47,
+        48,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        41,
+        42,
+        43,
+        44,
+        37,
+        38,
+        39,
+        40,
+        93,
+        94,
+        95,
+        96,
+        89,
+        90,
+        91,
+        92
+      ]
+    }
+  },
+  {
+    "model": "core.user",
+    "pk": 1,
+    "fields": {
+      "password": "pbkdf2_sha256$600000$fU1Q67TTryqZMFXst0Am34$4nPO2gad6tjKif5Ke3G1PE51yrNfRIg2nd1gTApUuQg=",
+      "last_login": "2025-09-06T17:29:43.009Z",
+      "is_superuser": true,
+      "username": "dev_user",
+      "first_name": "Dev",
+      "last_name": "User",
+      "email": "dev@example.com",
+      "is_staff": true,
+      "is_active": true,
+      "date_joined": "2025-09-01T21:22:06.298Z",
+      "contact": null,
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "core.user",
+    "pk": 2,
+    "fields": {
+      "password": "pbkdf2_sha256$870000$test$hash",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "johnq_public",
+      "first_name": "John Q",
+      "last_name": "Public",
+      "email": "facilities@metrooffice.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2024-01-01T00:00:00Z",
+      "contact": 3,
+      "groups": [
+        3
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 1,
+    "fields": {
+      "job_number": "JOB-2024-001",
+      "created_date": "2025-07-02T21:45:16.554Z",
+      "completed_date": "2025-08-11T21:45:16.554Z",
+      "status": "completed",
+      "contact": 1,
+      "customer_po_number": "ABC-PO-001",
+      "description": "Office renovation project - replaced flooring, painted walls, updated lighting"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 2,
+    "fields": {
+      "job_number": "JOB-2024-002",
+      "created_date": "2025-07-17T21:45:16.554Z",
+      "completed_date": null,
+      "status": "approved",
+      "contact": 2,
+      "customer_po_number": "",
+      "description": "Kitchen remodel for residential client - new cabinets, countertops, appliances"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 3,
+    "fields": {
+      "job_number": "JOB-2024-003",
+      "created_date": "2025-07-27T21:45:16.554Z",
+      "completed_date": null,
+      "status": "needs_attention",
+      "contact": 3,
+      "customer_po_number": "MOC-2024-HVAC",
+      "description": "HVAC system repair and maintenance for office building"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 4,
+    "fields": {
+      "job_number": "JOB-2024-004",
+      "created_date": "2025-08-01T21:45:16.554Z",
+      "completed_date": null,
+      "status": "draft",
+      "contact": 4,
+      "customer_po_number": "",
+      "description": "Bathroom renovation in master suite - tile work, new fixtures, vanity installation"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 5,
+    "fields": {
+      "job_number": "JOB-2024-005",
+      "created_date": "2025-08-06T21:45:16.554Z",
+      "completed_date": null,
+      "status": "blocked",
+      "contact": 5,
+      "customer_po_number": "ISI-EQ-2024-01",
+      "description": "Industrial equipment installation - waiting for permits and electrical inspection"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 6,
+    "fields": {
+      "job_number": "JOB-2024-006",
+      "created_date": "2025-08-08T21:45:16.554Z",
+      "completed_date": null,
+      "status": "rejected",
+      "contact": 2,
+      "customer_po_number": "",
+      "description": "Deck construction project - client decided to postpone until next year"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 7,
+    "fields": {
+      "job_number": "JOB-2024-007",
+      "created_date": "2025-08-13T21:45:16.554Z",
+      "completed_date": null,
+      "status": "approved",
+      "contact": 1,
+      "customer_po_number": "ABC-EMRG-007",
+      "description": "Emergency roof repair after storm damage"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 8,
+    "fields": {
+      "job_number": "JOB-2024-008",
+      "created_date": "2025-08-15T21:45:16.554Z",
+      "completed_date": null,
+      "status": "draft",
+      "contact": 3,
+      "customer_po_number": "",
+      "description": "Conference room upgrades - new AV equipment, furniture, lighting"
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 1,
+    "fields": {
+      "job": 1,
+      "estimate_number": "EST-2024-001",
+      "version": 1,
+      "status": "superseded",
+      "parent": null,
+      "created_date": "2025-07-02T21:45:16.554Z",
+      "superseded_date": "2025-07-03T10:30:00Z"
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 2,
+    "fields": {
+      "job": 1,
+      "estimate_number": "EST-2024-001",
+      "version": 2,
+      "status": "accepted",
+      "parent": 1,
+      "created_date": "2025-07-03T10:30:00Z",
+      "superseded_date": null
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 3,
+    "fields": {
+      "job": 2,
+      "estimate_number": "EST-2024-002",
+      "version": 1,
+      "status": "open",
+      "parent": null,
+      "created_date": "2025-07-17T21:45:16.554Z",
+      "superseded_date": null
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 4,
+    "fields": {
+      "job": 3,
+      "estimate_number": "EST-2024-003",
+      "version": 1,
+      "status": "open",
+      "parent": null,
+      "created_date": "2025-07-27T21:45:16.554Z",
+      "superseded_date": null
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 5,
+    "fields": {
+      "job": 5,
+      "estimate_number": "EST-2024-004",
+      "version": 1,
+      "status": "open",
+      "parent": null,
+      "created_date": "2025-08-06T21:45:16.554Z",
+      "superseded_date": null
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 6,
+    "fields": {
+      "job": 6,
+      "estimate_number": "EST-2024-005",
+      "version": 1,
+      "status": "rejected",
+      "parent": null,
+      "created_date": "2025-08-08T21:45:16.554Z",
+      "superseded_date": null
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 7,
+    "fields": {
+      "job": 7,
+      "estimate_number": "EST-2024-006",
+      "version": 1,
+      "status": "open",
+      "parent": null,
+      "created_date": "2025-08-13T21:45:16.554Z",
+      "superseded_date": null
+    }
+  },
+  {
+    "model": "jobs.workorder",
+    "pk": 1,
+    "fields": {
+      "job": 1,
+      "status": "complete",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.workorder",
+    "pk": 2,
+    "fields": {
+      "job": 2,
+      "status": "incomplete",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.workorder",
+    "pk": 3,
+    "fields": {
+      "job": 3,
+      "status": "incomplete",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.workorder",
+    "pk": 4,
+    "fields": {
+      "job": 4,
+      "status": "incomplete",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.workorder",
+    "pk": 5,
+    "fields": {
+      "job": 5,
+      "status": "incomplete",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.workorder",
+    "pk": 6,
+    "fields": {
+      "job": 6,
+      "status": "incomplete",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.workorder",
+    "pk": 7,
+    "fields": {
+      "job": 7,
+      "status": "incomplete",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 1,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 1,
+      "name": "Site preparation and setup",
+      "units": "days",
+      "rate": "350.00",
+      "est_qty": "2.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 2,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 1,
+      "name": "Material procurement and delivery",
+      "units": "loads",
+      "rate": "125.00",
+      "est_qty": "3.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 3,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 1,
+      "name": "Installation and construction work",
+      "units": "square_feet",
+      "rate": "25.75",
+      "est_qty": "500.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 4,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 2,
+      "name": "Site preparation and setup",
+      "units": "days",
+      "rate": "350.00",
+      "est_qty": "1.50",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 5,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 2,
+      "name": "Material procurement and delivery",
+      "units": "loads",
+      "rate": "125.00",
+      "est_qty": "2.50",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 6,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 2,
+      "name": "Installation and construction work",
+      "units": "square_feet",
+      "rate": "25.75",
+      "est_qty": "300.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 7,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 3,
+      "name": "Site preparation and setup",
+      "units": "days",
+      "rate": "350.00",
+      "est_qty": "1.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 8,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 3,
+      "name": "Material procurement and delivery",
+      "units": "loads",
+      "rate": "125.00",
+      "est_qty": "1.50",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 9,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 4,
+      "name": "Site preparation and setup",
+      "units": "days",
+      "rate": "350.00",
+      "est_qty": "2.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 10,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 4,
+      "name": "Material procurement and delivery",
+      "units": "loads",
+      "rate": "125.00",
+      "est_qty": "3.50",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 11,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 5,
+      "name": "Site preparation and setup",
+      "units": "days",
+      "rate": "350.00",
+      "est_qty": "1.25",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 12,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 5,
+      "name": "Material procurement and delivery",
+      "units": "loads",
+      "rate": "125.00",
+      "est_qty": "2.75",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 13,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 6,
+      "name": "Site preparation and setup",
+      "units": "days",
+      "rate": "350.00",
+      "est_qty": "1.75",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 14,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 6,
+      "name": "Material procurement and delivery",
+      "units": "loads",
+      "rate": "125.00",
+      "est_qty": "4.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 15,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 7,
+      "name": "Site preparation and setup",
+      "units": "days",
+      "rate": "350.00",
+      "est_qty": "1.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 16,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 7,
+      "name": "Material procurement and delivery",
+      "units": "loads",
+      "rate": "125.00",
+      "est_qty": "1.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 17,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": 7,
+      "name": "Installation and construction work",
+      "units": "square_feet",
+      "rate": "25.75",
+      "est_qty": "400.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.workordertemplate",
+    "pk": 1,
+    "fields": {
+      "template_name": "TEST1",
+      "description": "this is the first work order template to be defined in the test data",
+      "template_type": "product",
+      "product_type": "furniture",
+      "base_price": "2500.00",
+      "is_active": true,
+      "created_date": "2025-09-06T17:29:48.279Z"
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 1,
+    "fields": {
+      "template_name": "RESEARCH",
+      "description": "Research that has to happen before the project can be started",
+      "units": "hours",
+      "rate": "100.00",
+      "task_mapping": 1,
+      "created_date": "2025-09-06T17:30:38.271Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 2,
+    "fields": {
+      "template_name": "CAD",
+      "description": "Design, drawing, detailing, modelling",
+      "units": "hours",
+      "rate": "150.00",
+      "task_mapping": 2,
+      "created_date": "2025-09-06T17:31:20.508Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 3,
+    "fields": {
+      "template_name": "CUT",
+      "description": "Cutting parts",
+      "units": "minutes",
+      "rate": "22.00",
+      "task_mapping": 3,
+      "created_date": "2025-09-06T17:31:44.072Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 4,
+    "fields": {
+      "template_name": "ASSEMBLE",
+      "description": "Glue and staple the parts together",
+      "units": "hours",
+      "rate": "100.00",
+      "task_mapping": 4,
+      "created_date": "2025-09-06T17:38:15.359Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 5,
+    "fields": {
+      "template_name": "FINISH",
+      "description": "Sand and fill and apply finish, or veneer, or laminate",
+      "units": "hours",
+      "rate": "100.00",
+      "task_mapping": 5,
+      "created_date": "2025-09-06T17:39:14.272Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 6,
+    "fields": {
+      "template_name": "PALLET",
+      "description": "Palletize piece, build or customize a pallet if needed",
+      "units": "hours",
+      "rate": "100.00",
+      "task_mapping": 6,
+      "created_date": "2025-09-06T17:40:08.033Z",
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 1,
+    "fields": {
+      "task": null,
+      "price_list_item": 1,
+      "line_number": "LI-EST-001",
+      "qty": "10.00",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "price_currency": "45.00",
+      "estimate": 1
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 2,
+    "fields": {
+      "task": null,
+      "price_list_item": 2,
+      "line_number": "LI-EST-002",
+      "qty": "5.00",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "price_currency": "65.00",
+      "estimate": 1
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 3,
+    "fields": {
+      "task": null,
+      "price_list_item": 3,
+      "line_number": "LI-EST-003",
+      "qty": "5.00",
+      "units": "sheet",
+      "description": "Drywall - per sheet",
+      "price_currency": "18.00",
+      "estimate": 1
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 4,
+    "fields": {
+      "task": null,
+      "price_list_item": 1,
+      "line_number": "LI-EST-004",
+      "qty": "10.00",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "price_currency": "45.00",
+      "estimate": 2
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 5,
+    "fields": {
+      "task": null,
+      "price_list_item": 2,
+      "line_number": "LI-EST-005",
+      "qty": "5.00",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "price_currency": "65.00",
+      "estimate": 2
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 6,
+    "fields": {
+      "task": null,
+      "price_list_item": 3,
+      "line_number": "LI-EST-006",
+      "qty": "5.00",
+      "units": "sheet",
+      "description": "Drywall - per sheet",
+      "price_currency": "18.00",
+      "estimate": 2
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 7,
+    "fields": {
+      "task": null,
+      "price_list_item": 1,
+      "line_number": "LI-EST-007",
+      "qty": "10.00",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "price_currency": "45.00",
+      "estimate": 3
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 8,
+    "fields": {
+      "task": null,
+      "price_list_item": 2,
+      "line_number": "LI-EST-008",
+      "qty": "5.00",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "price_currency": "65.00",
+      "estimate": 3
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 9,
+    "fields": {
+      "task": null,
+      "price_list_item": 1,
+      "line_number": "LI-EST-009",
+      "qty": "10.00",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "price_currency": "45.00",
+      "estimate": 4
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 10,
+    "fields": {
+      "task": null,
+      "price_list_item": 2,
+      "line_number": "LI-EST-010",
+      "qty": "5.00",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "price_currency": "65.00",
+      "estimate": 4
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 11,
+    "fields": {
+      "task": null,
+      "price_list_item": 1,
+      "line_number": "LI-EST-011",
+      "qty": "10.00",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "price_currency": "45.00",
+      "estimate": 5
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 12,
+    "fields": {
+      "task": null,
+      "price_list_item": 2,
+      "line_number": "LI-EST-012",
+      "qty": "5.00",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "price_currency": "65.00",
+      "estimate": 5
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 13,
+    "fields": {
+      "task": null,
+      "price_list_item": 1,
+      "line_number": "LI-EST-013",
+      "qty": "10.00",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "price_currency": "45.00",
+      "estimate": 6
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 14,
+    "fields": {
+      "task": null,
+      "price_list_item": 2,
+      "line_number": "LI-EST-014",
+      "qty": "5.00",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "price_currency": "65.00",
+      "estimate": 6
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 15,
+    "fields": {
+      "task": null,
+      "price_list_item": 1,
+      "line_number": "LI-EST-015",
+      "qty": "10.00",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "price_currency": "45.00",
+      "estimate": 7
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 16,
+    "fields": {
+      "task": null,
+      "price_list_item": 2,
+      "line_number": "LI-EST-016",
+      "qty": "5.00",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "price_currency": "65.00",
+      "estimate": 7
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 17,
+    "fields": {
+      "task": 1,
+      "price_list_item": null,
+      "line_number": "LI-EST-017",
+      "qty": "1.00",
+      "units": "task",
+      "description": "Site preparation and setup",
+      "price_currency": "450.00",
+      "estimate": 2
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 1,
+    "fields": {
+      "email": "jane.doe@abcconstruction.com",
+      "addr1": "123 Main St",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Business District",
+      "postal_code": "12345",
+      "country_code": "US",
+      "mobile_number": "555-0101",
+      "work_number": "",
+      "home_number": "",
+      "business": 2,
+      "first_name": "Jane",
+      "last_name": "Doe"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 2,
+    "fields": {
+      "email": "john.smith@email.com",
+      "addr1": "456 Oak Ave",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Residential Area",
+      "postal_code": "12346",
+      "country_code": "US",
+      "mobile_number": "",
+      "work_number": "",
+      "home_number": "555-0202",
+      "business": null,
+      "first_name": "John",
+      "last_name": "Smith"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 3,
+    "fields": {
+      "email": "facilities@metrooffice.com",
+      "addr1": "789 Corporate Blvd",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Downtown",
+      "postal_code": "12347",
+      "country_code": "US",
+      "mobile_number": "",
+      "work_number": "555-0303",
+      "home_number": "",
+      "business": 3,
+      "first_name": "John",
+      "last_name": "Q Public"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 4,
+    "fields": {
+      "email": "info@greenvalley.com",
+      "addr1": "321 Valley Road",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Suburbs",
+      "postal_code": "12348",
+      "country_code": "US",
+      "mobile_number": "555-0404",
+      "work_number": "",
+      "home_number": "",
+      "business": 5,
+      "first_name": "Laura",
+      "last_name": "Ingalls"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 5,
+    "fields": {
+      "email": "projects@industrialsolutions.com",
+      "addr1": "654 Industrial Pkwy",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Industrial Zone",
+      "postal_code": "12349",
+      "country_code": "US",
+      "mobile_number": "",
+      "work_number": "555-0505",
+      "home_number": "",
+      "business": 4,
+      "first_name": "Frank",
+      "last_name": "Gehry"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 6,
+    "fields": {
+      "email": "orders@housingsupply.com",
+      "addr1": "888 Supply Drive",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "Industrial District",
+      "postal_code": "12350",
+      "country_code": "US",
+      "mobile_number": "555-0606",
+      "work_number": "",
+      "home_number": "",
+      "business": 1,
+      "first_name": "Piper",
+      "last_name": "Laurie"
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 1,
+    "fields": {
+      "our_reference_code": "HS001",
+      "business_name": "Housing Supply",
+      "business_address": "888 Supply Drive, Industrial District, City, State 12350",
+      "business_phone": "BN-789012",
+      "tax_exemption_number": "TEX-456789",
+      "website": "",
+      "terms": 1,
+      "default_contact": 6
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 2,
+    "fields": {
+      "our_reference_code": "ABC001",
+      "business_name": "ABC Construction Co.",
+      "business_address": "123 Main St, Business District, City, State 12345",
+      "business_phone": "BN-123456",
+      "tax_exemption_number": "TEX-123456",
+      "website": "",
+      "terms": 1,
+      "default_contact": 1
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 3,
+    "fields": {
+      "our_reference_code": "MOC001",
+      "business_name": "Metro Office Complex",
+      "business_address": "789 Corporate Blvd, Downtown, City, State 12347",
+      "business_phone": "BN-345678",
+      "tax_exemption_number": "TEX-345678",
+      "website": "",
+      "terms": 1,
+      "default_contact": 3
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 4,
+    "fields": {
+      "our_reference_code": "ISI001",
+      "business_name": "Industrial Solutions Inc.",
+      "business_address": "654 Industrial Pkwy, Industrial Zone, City, State 12349",
+      "business_phone": "BN-567890",
+      "tax_exemption_number": "TEX-567890",
+      "website": "",
+      "terms": 1,
+      "default_contact": 5
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 5,
+    "fields": {
+      "our_reference_code": "GRV001",
+      "business_name": "Green Valley Homes",
+      "business_address": "321 Valley Road, Suburbs, City, State 12348",
+      "business_phone": "BN-99999",
+      "tax_exemption_number": "TEX-99999",
+      "website": "",
+      "terms": 1,
+      "default_contact": 4
+    }
+  },
+  {
+    "model": "contacts.paymentterms",
+    "pk": 1,
+    "fields": {}
+  },
+  {
+    "model": "invoicing.invoice",
+    "pk": 1,
+    "fields": {
+      "job": 1,
+      "invoice_number": "INV-2024-001",
+      "status": "active"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 1,
+    "fields": {
+      "code": "LAB001",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "purchase_price": "25.00",
+      "selling_price": "45.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 2,
+    "fields": {
+      "code": "LAB002",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "purchase_price": "35.00",
+      "selling_price": "65.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 3,
+    "fields": {
+      "code": "MAT001",
+      "units": "sheet",
+      "description": "Drywall - per sheet",
+      "purchase_price": "12.00",
+      "selling_price": "18.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 4,
+    "fields": {
+      "code": "MAT002",
+      "units": "gallon",
+      "description": "Paint - per gallon",
+      "purchase_price": "25.00",
+      "selling_price": "40.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 5,
+    "fields": {
+      "code": "MAT003",
+      "units": "sq ft",
+      "description": "Flooring - per sq ft",
+      "purchase_price": "3.50",
+      "selling_price": "6.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 6,
+    "fields": {
+      "code": "EQP001",
+      "units": "day",
+      "description": "Tool Rental - per day",
+      "purchase_price": "15.00",
+      "selling_price": "25.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 7,
+    "fields": {
+      "code": "SUP001",
+      "units": "box",
+      "description": "Screws and Fasteners",
+      "purchase_price": "8.00",
+      "selling_price": "15.00",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.invoicelineitem",
+    "pk": 17,
+    "fields": {
+      "task": null,
+      "price_list_item": 1,
+      "line_number": "LI-INV-017",
+      "qty": "8.00",
+      "units": "hour",
+      "description": "General Labor - per hour",
+      "price_currency": "45.00",
+      "invoice": 1
+    }
+  },
+  {
+    "model": "invoicing.invoicelineitem",
+    "pk": 18,
+    "fields": {
+      "task": null,
+      "price_list_item": 2,
+      "line_number": "LI-INV-018",
+      "qty": "4.00",
+      "units": "hour",
+      "description": "Skilled Labor - per hour",
+      "price_currency": "65.00",
+      "invoice": 1
+    }
+  },
+  {
+    "model": "invoicing.invoicelineitem",
+    "pk": 19,
+    "fields": {
+      "task": null,
+      "price_list_item": 3,
+      "line_number": "LI-INV-019",
+      "qty": "4.00",
+      "units": "sheet",
+      "description": "Drywall - per sheet",
+      "price_currency": "18.00",
+      "invoice": 1
+    }
+  },
+  {
+    "model": "invoicing.invoicelineitem",
+    "pk": 22,
+    "fields": {
+      "task": 2,
+      "price_list_item": null,
+      "line_number": "LI-INV-022",
+      "qty": "1.00",
+      "units": "task",
+      "description": "Material procurement and delivery",
+      "price_currency": "325.00",
+      "invoice": 1
+    }
+  },
+  {
+    "model": "purchasing.purchaseorder",
+    "pk": 1,
+    "fields": {
+      "job": 1,
+      "po_number": "PO-2024-001"
+    }
+  },
+  {
+    "model": "purchasing.bill",
+    "pk": 1,
+    "fields": {
+      "purchase_order": 1,
+      "contact": 6,
+      "vendor_invoice_number": "HS-INV-001"
+    }
+  },
+  {
+    "model": "purchasing.purchaseorderlineitem",
+    "pk": 21,
+    "fields": {
+      "task": null,
+      "price_list_item": 3,
+      "line_number": "LI-PO-001",
+      "qty": "50.00",
+      "units": "sheet",
+      "description": "Drywall sheets for office renovation",
+      "price_currency": "12.00",
+      "purchase_order": 1
+    }
+  },
+  {
+    "model": "purchasing.billlineitem",
+    "pk": 20,
+    "fields": {
+      "task": null,
+      "price_list_item": 3,
+      "line_number": "LI-BILL-001",
+      "qty": "50.00",
+      "units": "sheet",
+      "description": "Drywall sheets for office renovation",
+      "price_currency": "12.00",
+      "bill": 1
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 1,
+    "fields": {
+      "step_type": "labor",
+      "mapping_strategy": "direct",
+      "default_product_type": "",
+      "line_item_name": "Design Consultation",
+      "line_item_description": "Research, planning and consultation services",
+      "task_type_id": "RESEARCH",
+      "breakdown_of_task": "Maps research tasks directly to consultation line items"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 2,
+    "fields": {
+      "step_type": "labor",
+      "mapping_strategy": "direct",
+      "default_product_type": "",
+      "line_item_name": "Technical Drawings",
+      "line_item_description": "CAD drawings and technical documentation",
+      "task_type_id": "CAD",
+      "breakdown_of_task": "Maps CAD/design tasks directly to technical drawing line items"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 3,
+    "fields": {
+      "step_type": "component",
+      "mapping_strategy": "bundle_to_product",
+      "default_product_type": "furniture",
+      "line_item_name": "Custom Furniture",
+      "line_item_description": "Bundled into complete furniture product",
+      "task_type_id": "CUT",
+      "breakdown_of_task": "Bundles cutting tasks with other manufacturing steps into furniture products"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 4,
+    "fields": {
+      "step_type": "component",
+      "mapping_strategy": "bundle_to_product",
+      "default_product_type": "furniture",
+      "line_item_name": "Custom Furniture",
+      "line_item_description": "Bundled into complete furniture product",
+      "task_type_id": "ASSEMBLE",
+      "breakdown_of_task": "Bundles assembly tasks with other manufacturing steps into furniture products"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 5,
+    "fields": {
+      "step_type": "component",
+      "mapping_strategy": "bundle_to_product",
+      "default_product_type": "furniture",
+      "line_item_name": "Custom Furniture",
+      "line_item_description": "Bundled into complete furniture product",
+      "task_type_id": "FINISH",
+      "breakdown_of_task": "Bundles finishing tasks with other manufacturing steps into furniture products"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 6,
+    "fields": {
+      "step_type": "labor",
+      "mapping_strategy": "bundle_to_service",
+      "default_product_type": "delivery",
+      "line_item_name": "Delivery & Installation",
+      "line_item_description": "Complete delivery and installation service",
+      "task_type_id": "DELIVERY",
+      "breakdown_of_task": "Bundles delivery-related tasks into a single service line item"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 7,
+    "fields": {
+      "step_type": "material",
+      "mapping_strategy": "bundle_to_product",
+      "default_product_type": "furniture",
+      "line_item_name": "Custom Furniture",
+      "line_item_description": "Bundled into complete furniture product",
+      "task_type_id": "MATERIALS",
+      "breakdown_of_task": "Bundles material costs with manufacturing into furniture products"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 8,
+    "fields": {
+      "step_type": "overhead",
+      "mapping_strategy": "exclude",
+      "default_product_type": "",
+      "line_item_name": "",
+      "line_item_description": "",
+      "task_type_id": "QA",
+      "breakdown_of_task": "Internal task - excluded from customer estimates"
+    }
+  },
+  {
+    "model": "jobs.productbundlingrule",
+    "pk": 1,
+    "fields": {
+      "rule_name": "Furniture Bundling Rule",
+      "product_type": "furniture",
+      "line_item_template": "Custom Furniture Item",
+      "pricing_method": "sum_components",
+      "include_materials": true,
+      "include_labor": true,
+      "include_overhead": false
+    }
+  },
+  {
+    "model": "jobs.productbundlingrule",
+    "pk": 2,
+    "fields": {
+      "rule_name": "Delivery Service Bundling",
+      "product_type": "delivery",
+      "line_item_template": "Delivery and Setup Services",
+      "pricing_method": "sum_components",
+      "include_materials": false,
+      "include_labor": true,
+      "include_overhead": false
+    }
+  },
+  {
+    "model": "jobs.productbundlingrule",
+    "pk": 3,
+    "fields": {
+      "rule_name": "Premium Furniture Template Pricing",
+      "product_type": "furniture",
+      "work_order_template": 1,
+      "line_item_template": "Premium Custom Furniture",
+      "combine_instances": true,
+      "pricing_method": "template_base",
+      "include_materials": true,
+      "include_labor": true,
+      "include_overhead": false,
+      "priority": 50,
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.estworksheet",
+    "pk": 1,
+    "fields": {
+      "job": 1,
+      "template": null,
+      "estimate": 2,
+      "status": "final",
+      "version": 1,
+      "parent": null,
+      "created_date": "2025-07-02T21:45:16.554Z"
+    }
+  },
+  {
+    "model": "jobs.estworksheet",
+    "pk": 2,
+    "fields": {
+      "job": 2,
+      "template": null,
+      "estimate": 3,
+      "status": "draft",
+      "version": 1,
+      "parent": null,
+      "created_date": "2025-07-17T21:45:16.554Z"
+    }
+  },
+  {
+    "model": "jobs.estworksheet",
+    "pk": 3,
+    "fields": {
+      "job": 3,
+      "template": null,
+      "estimate": 4,
+      "status": "draft",
+      "version": 1,
+      "parent": null,
+      "created_date": "2025-07-27T21:45:16.554Z"
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 18,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Kitchen Cabinet Design",
+      "units": "hours",
+      "rate": "150.00",
+      "est_qty": "8.00",
+      "template": 2
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 19,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Cabinet Cutting",
+      "units": "hours",
+      "rate": "75.00",
+      "est_qty": "12.00",
+      "template": 3
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 20,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Cabinet Assembly",
+      "units": "hours",
+      "rate": "100.00",
+      "est_qty": "16.00",
+      "template": 4
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 21,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Cabinet Finishing",
+      "units": "hours",
+      "rate": "125.00",
+      "est_qty": "10.00",
+      "template": 5
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 22,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Wood Materials",
+      "units": "board_feet",
+      "rate": "8.50",
+      "est_qty": "200.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 23,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Delivery and Installation",
+      "units": "hours",
+      "rate": "85.00",
+      "est_qty": "4.00",
+      "template": 6
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 24,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Quality Inspection",
+      "units": "hours",
+      "rate": "90.00",
+      "est_qty": "2.00",
+      "template": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 25,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "Site Research and Planning",
+      "units": "hours",
+      "rate": "100.00",
+      "est_qty": "3.00",
+      "template": 1
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 26,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "Technical Drawing",
+      "units": "hours",
+      "rate": "150.00",
+      "est_qty": "4.00",
+      "template": 2
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 27,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "Material Cutting",
+      "units": "minutes",
+      "rate": "22.00",
+      "est_qty": "180.00",
+      "template": 3
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 28,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "Final Assembly",
+      "units": "hours",
+      "rate": "100.00",
+      "est_qty": "4.00",
+      "template": 4
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 29,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 3,
+      "name": "HVAC System Research",
+      "units": "hours",
+      "rate": "100.00",
+      "est_qty": "2.00",
+      "template": 1
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 30,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 3,
+      "name": "HVAC Design and Drawings",
+      "units": "hours",
+      "rate": "150.00",
+      "est_qty": "6.00",
+      "template": 2
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 31,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 3,
+      "name": "Ductwork Cutting",
+      "units": "minutes",
+      "rate": "22.00",
+      "est_qty": "420.00",
+      "template": 3
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 32,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 3,
+      "name": "HVAC Assembly and Installation",
+      "units": "hours",
+      "rate": "100.00",
+      "est_qty": "8.00",
+      "template": 4
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 33,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 3,
+      "name": "System Finishing and Testing",
+      "units": "hours",
+      "rate": "100.00",
+      "est_qty": "3.00",
+      "template": 5
+    }
+  },
+  {
+    "model": "jobs.taskinstancemapping",
+    "pk": 1,
+    "fields": {
+      "task": 19,
+      "product_identifier": "kitchen_cabinet_set_001"
+    }
+  },
+  {
+    "model": "jobs.taskinstancemapping",
+    "pk": 2,
+    "fields": {
+      "task": 20,
+      "product_identifier": "kitchen_cabinet_set_001"
+    }
+  },
+  {
+    "model": "jobs.taskinstancemapping",
+    "pk": 3,
+    "fields": {
+      "task": 21,
+      "product_identifier": "kitchen_cabinet_set_001"
+    }
+  },
+  {
+    "model": "jobs.taskinstancemapping",
+    "pk": 4,
+    "fields": {
+      "task": 22,
+      "product_identifier": "kitchen_cabinet_set_001"
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 1,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 1,
+      "est_qty": "4.00",
+      "sort_order": 1
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 2,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 2,
+      "est_qty": "5.00",
+      "sort_order": 2
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 3,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 3,
+      "est_qty": "300.00",
+      "sort_order": 3
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 4,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 4,
+      "est_qty": "6.00",
+      "sort_order": 4
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 5,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 5,
+      "est_qty": "10.00",
+      "sort_order": 5
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 6,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 6,
+      "est_qty": "2.00",
+      "sort_order": 6
+    }
+  }
+]

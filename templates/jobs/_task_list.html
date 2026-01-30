@@ -2,6 +2,10 @@
     <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 10px;">
         <thead>
             <tr>
+                {% if show_reorder %}
+                <th></th>
+                {% endif %}
+                <th>Line #</th>
                 <th>Task Name</th>
                 <th>Assignee</th>
                 <th>Estimated Qty</th>
@@ -14,6 +18,23 @@
         <tbody>
             {% for item in tasks %}
             <tr>
+                {% if show_reorder %}
+                <td>
+                    {% if not forloop.first %}
+                        <form method="post" action="{% url reorder_url_name container_id item.task.task_id 'up' %}" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" style="background:none;border:none;cursor:pointer;" title="Move up">↑</button>
+                        </form>
+                    {% endif %}
+                    {% if not forloop.last %}
+                        <form method="post" action="{% url reorder_url_name container_id item.task.task_id 'down' %}" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" style="background:none;border:none;cursor:pointer;" title="Move down">↓</button>
+                        </form>
+                    {% endif %}
+                </td>
+                {% endif %}
+                <td>{{ item.task.line_number|default:"-" }}</td>
                 <td>
                     {% if item.level > 0 %}
                         {% for i in "x"|rjust:item.level %}
@@ -24,7 +45,13 @@
                         {{ item.task.name }}
                     {% endif %}
                 </td>
-                <td>{{ item.task.assignee.username|default:"Unassigned" }}</td>
+                <td>
+                    {% if item.task.assignee %}
+                        <a href="{% url 'core:user_detail' item.task.assignee.pk %}">{{ item.task.assignee.username }}</a>
+                    {% else %}
+                        Unassigned
+                    {% endif %}
+                </td>
                 <td>{{ item.task.est_qty|default:"-" }}</td>
                 <td>{{ item.task.units|default:"-" }}</td>
                 <td>

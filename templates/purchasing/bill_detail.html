@@ -12,7 +12,9 @@
     </tr>
     <tr>
         <td>Status</td>
-        <td>{{ bill.get_status_display }}</td>
+        <td>
+            {% include 'includes/_inline_status_form.html' with object=bill %}
+        </td>
     </tr>
     <tr>
         <td>Purchase Order</td>
@@ -35,8 +37,24 @@
         </td>
     </tr>
     <tr>
+        <td>Business</td>
+        <td>
+            {% if bill.business %}
+                {{ bill.business.business_name }}
+            {% else %}
+                No business assigned
+            {% endif %}
+        </td>
+    </tr>
+    <tr>
         <td>Contact</td>
-        <td>{{ bill.contact }}</td>
+        <td>
+            {% if bill.contact %}
+                {{ bill.contact }}
+            {% else %}
+                Not specified
+            {% endif %}
+        </td>
     </tr>
     <tr>
         <td>Vendor Invoice Number</td>
@@ -77,8 +95,15 @@
 </table>
 
 <h3>Line Items</h3>
-<p><a href="{% url 'purchasing:bill_add_line_item' bill.bill_id %}">Add Line Item</a></p>
+{% if bill.status == 'draft' %}
+    <p><a href="{% url 'purchasing:bill_add_line_item' bill.bill_id %}">Add Line Item</a></p>
+{% endif %}
 {% include 'includes/_line_items_table.html' with total_label="Total Bill Amount" %}
 
-<p><a href="{% url 'purchasing:bill_list' %}">Back to Bills List</a></p>
+<p>
+    {% if bill.status == 'draft' %}
+        <a href="{% url 'purchasing:bill_delete' bill.bill_id %}">Delete Bill</a> |
+    {% endif %}
+    <a href="{% url 'purchasing:bill_list' %}">Back to Bills List</a>
+</p>
 {% endblock %}

@@ -23,7 +23,7 @@
         <tr>
             <td>
                 <a href="{% url 'jobs:detail' worksheet.job.job_id %}">
-                    {{ worksheet.job.job_number }}{% if worksheet.job.name %}: {{ worksheet.job.name }}{% endif %}
+                    {{ worksheet.job.job_number }} - {{ worksheet.job.description }}
                 </a>
             </td>
             <td>{{ worksheet.get_status_display }}</td>

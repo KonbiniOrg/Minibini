@@ -1,0 +1,718 @@
+[
+  {
+    "model": "contacts.contact",
+    "pk": 1,
+    "fields": {
+      "email": "john.doe@example.com",
+      "addr1": "123 Main St",
+      "addr2": "",
+      "addr3": "",
+      "city": "Anytown",
+      "municipality": "ST",
+      "postal_code": "12345",
+      "country_code": "US",
+      "mobile_number": "555-123-4567",
+      "work_number": "",
+      "home_number": "",
+      "business": null,
+      "first_name": "John",
+      "last_name": "Doe"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 2,
+    "fields": {
+      "email": "jane.smith@company.com",
+      "addr1": "456 Business Ave",
+      "addr2": "",
+      "addr3": "",
+      "city": "City",
+      "municipality": "",
+      "postal_code": "67890",
+      "country_code": "US",
+      "mobile_number": "555-987-6543",
+      "work_number": "",
+      "home_number": "",
+      "business": 1,
+      "first_name": "Jane",
+      "last_name": "Smith"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 3,
+    "fields": {
+      "email": "vendor@acme.com",
+      "addr1": "789 Industrial Blvd",
+      "addr2": "",
+      "addr3": "",
+      "city": "Factory Town",
+      "municipality": "",
+      "postal_code": "11111",
+      "country_code": "US",
+      "mobile_number": "555-555-5555",
+      "work_number": "",
+      "home_number": "",
+      "business": 2,
+      "first_name": "Acme",
+      "last_name": "Vendor"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 4,
+    "fields": {
+      "email": "john.public@example.com",
+      "addr1": "789 Residential Lane",
+      "addr2": "",
+      "addr3": "",
+      "city": "Hometown",
+      "municipality": "ST",
+      "postal_code": "54321",
+      "country_code": "US",
+      "mobile_number": "555-456-7890",
+      "work_number": "",
+      "home_number": "",
+      "business": null,
+      "first_name": "John",
+      "last_name": "Q Public"
+    }
+  },
+  {
+    "model": "contacts.paymentterms",
+    "pk": 1,
+    "fields": {}
+  },
+  {
+    "model": "contacts.paymentterms",
+    "pk": 2,
+    "fields": {}
+  },
+  {
+    "model": "contacts.business",
+    "pk": 1,
+    "fields": {
+      "our_reference_code": "CUST001",
+      "business_name": "ABC Corporation",
+      "business_address": "100 Corporate Plaza, Suite 200, Business City, ST 22222",
+      "business_phone": "123-456-7890",
+      "tax_exemption_number": "TX123456789",
+      "website": "https://www.abccorp.com",
+      "terms": 1,
+      "default_contact": 2
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 2,
+    "fields": {
+      "our_reference_code": "CUST002",
+      "business_name": "XYZ Industries",
+      "business_address": "200 Manufacturing Way, Industrial Park, ST 33333",
+      "business_phone": "987-654-3210",
+      "tax_exemption_number": "",
+      "website": "",
+      "terms": 2,
+      "default_contact": 3
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 1,
+    "fields": {
+      "name": "Administrator",
+      "permissions": []
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 2,
+    "fields": {
+      "name": "Manager",
+      "permissions": []
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 3,
+    "fields": {
+      "name": "Employee",
+      "permissions": []
+    }
+  },
+  {
+    "model": "core.user",
+    "pk": 1,
+    "fields": {
+      "password": "pbkdf2_sha256$870000$test$hash",
+      "last_login": null,
+      "is_superuser": true,
+      "username": "admin",
+      "first_name": "Admin",
+      "last_name": "User",
+      "email": "admin@minibini.com",
+      "is_staff": true,
+      "is_active": true,
+      "date_joined": "2024-01-01T00:00:00Z",
+      "contact": 1,
+      "groups": [
+        1
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "core.user",
+    "pk": 2,
+    "fields": {
+      "password": "pbkdf2_sha256$870000$test$hash",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "manager1",
+      "first_name": "John",
+      "last_name": "Manager",
+      "email": "manager@minibini.com",
+      "is_staff": true,
+      "is_active": true,
+      "date_joined": "2024-01-01T00:00:00Z",
+      "contact": 2,
+      "groups": [
+        2
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "core.user",
+    "pk": 3,
+    "fields": {
+      "password": "pbkdf2_sha256$870000$test$hash",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "johnq",
+      "first_name": "John Q",
+      "last_name": "Public",
+      "email": "john.public@example.com",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2024-01-01T00:00:00Z",
+      "contact": 4,
+      "groups": [
+        3
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "job_number_sequence",
+    "fields": {
+      "value": "JOB-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "job_counter",
+    "fields": {
+      "value": "0"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "estimate_number_sequence",
+    "fields": {
+      "value": "EST-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "estimate_counter",
+    "fields": {
+      "value": "0"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "invoice_number_sequence",
+    "fields": {
+      "value": "INV-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "invoice_counter",
+    "fields": {
+      "value": "0"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "po_number_sequence",
+    "fields": {
+      "value": "PO-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "po_counter",
+    "fields": {
+      "value": "0"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "bill_number_sequence",
+    "fields": {
+      "value": "BILL-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "bill_counter",
+    "fields": {
+      "value": "0"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 1,
+    "fields": {
+      "job_number": "JOB-2024-0001",
+      "created_date": "2024-01-15T09:00:00Z",
+      "completed_date": null,
+      "status": "draft",
+      "contact": 1,
+      "customer_po_number": "PO-ABC-12345",
+      "description": "Kitchen renovation project for residential client"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 2,
+    "fields": {
+      "job_number": "JOB-2024-0002",
+      "created_date": "2024-01-20T10:30:00Z",
+      "completed_date": "2024-02-15T16:00:00Z",
+      "status": "completed",
+      "contact": 2,
+      "customer_po_number": "",
+      "description": "Office electrical upgrade"
+    }
+  },
+  {
+    "model": "jobs.workorder",
+    "pk": 1,
+    "fields": {
+      "job": 1,
+      "status": "incomplete"
+    }
+  },
+  {
+    "model": "jobs.workorder",
+    "pk": 2,
+    "fields": {
+      "job": 2,
+      "status": "complete"
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 1,
+    "fields": {
+      "assignee": 2,
+      "work_order": 1,
+      "name": "Kitchen demolition",
+      "units": "hours",
+      "rate": "75.00",
+      "est_qty": "8.00"
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 2,
+    "fields": {
+      "assignee": 2,
+      "work_order": 1,
+      "name": "Electrical rough-in",
+      "units": "linear_feet",
+      "rate": "12.50",
+      "est_qty": "150.00"
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 1,
+    "fields": {
+      "job": 1,
+      "estimate_number": "EST-2024-0001",
+      "version": 1,
+      "status": "draft",
+      "parent": null,
+      "created_date": "2024-01-15T09:30:00Z",
+      "closed_date": null
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 2,
+    "fields": {
+      "job": 2,
+      "estimate_number": "EST-2024-0002",
+      "version": 1,
+      "status": "superseded",
+      "parent": null,
+      "created_date": "2024-01-20T10:30:00Z",
+      "closed_date": "2024-01-21T14:00:00Z"
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 3,
+    "fields": {
+      "job": 2,
+      "estimate_number": "EST-2024-0002",
+      "version": 2,
+      "status": "accepted",
+      "parent": 2,
+      "created_date": "2024-01-21T14:00:00Z",
+      "closed_date": null
+    }
+  },
+  {
+    "model": "purchasing.purchaseorder",
+    "pk": 1,
+    "fields": {
+      "business": 2,
+      "job": 1,
+      "po_number": "PO-2024-0001",
+      "status": "issued"
+    }
+  },
+  {
+    "model": "purchasing.purchaseorder",
+    "pk": 2,
+    "fields": {
+      "business": 2,
+      "job": 2,
+      "po_number": "PO-2024-0002",
+      "status": "issued"
+    }
+  },
+  {
+    "model": "purchasing.bill",
+    "pk": 1,
+    "fields": {
+      "bill_number": "BILL-2024-0001",
+      "purchase_order": 1,
+      "business": 2,
+      "contact": 3,
+      "vendor_invoice_number": "ACME-INV-001"
+    }
+  },
+  {
+    "model": "purchasing.bill",
+    "pk": 2,
+    "fields": {
+      "bill_number": "BILL-2024-0002",
+      "purchase_order": 2,
+      "business": 2,
+      "contact": 3,
+      "vendor_invoice_number": "ACME-INV-002"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 1,
+    "fields": {
+      "code": "SCREW001",
+      "units": "each",
+      "description": "Stainless steel screws 2.5 inch",
+      "purchase_price": "0.25",
+      "selling_price": "0.50",
+      "qty_on_hand": "1000.00",
+      "qty_sold": "150.00",
+      "qty_wasted": "5.00"
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 2,
+    "fields": {
+      "code": "LABOR001",
+      "units": "hour",
+      "description": "Skilled labor hourly rate",
+      "purchase_price": "0.00",
+      "selling_price": "75.00",
+      "qty_on_hand": "0.00",
+      "qty_sold": "240.00",
+      "qty_wasted": "0.00"
+    }
+  },
+  {
+    "model": "invoicing.invoice",
+    "pk": 1,
+    "fields": {
+      "job": 1,
+      "invoice_number": "INV-2024-0001",
+      "status": "active"
+    }
+  },
+  {
+    "model": "invoicing.invoice",
+    "pk": 2,
+    "fields": {
+      "job": 2,
+      "invoice_number": "INV-2024-0002",
+      "status": "active"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 1,
+    "fields": {
+      "estimate": 1,
+      "task": null,
+      "price_list_item": 1,
+      "line_number": 1,
+      "qty": "50.00",
+      "units": "each",
+      "description": "Screws for kitchen cabinet installation",
+      "price_currency": "25.00"
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 2,
+    "fields": {
+      "estimate": 1,
+      "task": 2,
+      "price_list_item": null,
+      "line_number": 2,
+      "qty": "8.00",
+      "units": "hour",
+      "description": "Electrical rough-in labor",
+      "price_currency": "600.00"
+    }
+  },
+  {
+    "model": "invoicing.invoicelineitem",
+    "pk": 1,
+    "fields": {
+      "invoice": 1,
+      "task": null,
+      "price_list_item": 1,
+      "line_number": 1,
+      "qty": "50.00",
+      "units": "each",
+      "description": "Screws for kitchen cabinet installation",
+      "price_currency": "25.00"
+    }
+  },
+  {
+    "model": "invoicing.invoicelineitem",
+    "pk": 2,
+    "fields": {
+      "invoice": 1,
+      "task": 2,
+      "price_list_item": null,
+      "line_number": 2,
+      "qty": "8.00",
+      "units": "hour",
+      "description": "Electrical rough-in labor",
+      "price_currency": "600.00"
+    }
+  },
+  {
+    "model": "purchasing.purchaseorderlineitem",
+    "pk": 1,
+    "fields": {
+      "purchase_order": 1,
+      "task": null,
+      "price_list_item": 1,
+      "line_number": 3,
+      "qty": "100.00",
+      "units": "each",
+      "description": "Screws for purchase order",
+      "price_currency": "25.00"
+    }
+  },
+  {
+    "model": "purchasing.billlineitem",
+    "pk": 1,
+    "fields": {
+      "bill": 1,
+      "task": null,
+      "price_list_item": 1,
+      "line_number": 4,
+      "qty": "100.00",
+      "units": "each",
+      "description": "Screws received on bill",
+      "price_currency": "25.00"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 1,
+    "fields": {
+      "step_type": "labor",
+      "mapping_strategy": "direct",
+      "default_product_type": "",
+      "line_item_name": "",
+      "line_item_description": "Site preparation and safety setup",
+      "task_type_id": "PREP001",
+      "breakdown_of_task": "Site preparation and safety setup"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 2,
+    "fields": {
+      "step_type": "material",
+      "mapping_strategy": "direct",
+      "default_product_type": "",
+      "line_item_name": "",
+      "line_item_description": "Material delivery and staging",
+      "task_type_id": "MAT001",
+      "breakdown_of_task": "Material delivery and staging"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 3,
+    "fields": {
+      "step_type": "labor",
+      "mapping_strategy": "direct",
+      "default_product_type": "",
+      "line_item_name": "",
+      "line_item_description": "Installation and construction work",
+      "task_type_id": "INST001",
+      "breakdown_of_task": "Installation and construction work"
+    }
+  },
+  {
+    "model": "jobs.taskmapping",
+    "pk": 4,
+    "fields": {
+      "step_type": "labor",
+      "mapping_strategy": "direct",
+      "default_product_type": "",
+      "line_item_name": "",
+      "line_item_description": "Electrical work and connections",
+      "task_type_id": "ELEC001",
+      "breakdown_of_task": "Electrical work and connections"
+    }
+  },
+  {
+    "model": "jobs.workordertemplate",
+    "pk": 1,
+    "fields": {
+      "template_name": "Standard Kitchen Renovation",
+      "description": "Complete template for kitchen renovation projects",
+      "is_active": true,
+      "created_date": "2023-01-15T10:00:00Z"
+    }
+  },
+  {
+    "model": "jobs.workordertemplate",
+    "pk": 2,
+    "fields": {
+      "template_name": "Basic Maintenance",
+      "description": "Template for routine maintenance work",
+      "is_active": true,
+      "created_date": "2023-02-20T14:30:00Z"
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 1,
+    "fields": {
+      "template_name": "Site Preparation",
+      "description": "Standard site preparation and safety setup",
+      "units": "days",
+      "rate": "350.00",
+      "task_mapping": 1,
+      "is_active": true,
+      "created_date": "2023-01-15T10:30:00Z"
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 2,
+    "fields": {
+      "template_name": "Material Delivery",
+      "description": "Material procurement and delivery setup",
+      "units": "loads",
+      "rate": "125.00",
+      "task_mapping": 2,
+      "is_active": true,
+      "created_date": "2023-01-15T11:00:00Z"
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 3,
+    "fields": {
+      "template_name": "Electrical Installation",
+      "description": "Standard electrical rough-in work",
+      "units": "linear_feet",
+      "rate": "12.50",
+      "task_mapping": 4,
+      "is_active": true,
+      "created_date": "2023-01-15T11:30:00Z"
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 4,
+    "fields": {
+      "template_name": "Construction Work",
+      "description": "General construction and installation",
+      "units": "square_feet",
+      "rate": "25.75",
+      "task_mapping": 3,
+      "is_active": true,
+      "created_date": "2023-01-15T12:00:00Z"
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 1,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 1,
+      "est_qty": "1.00",
+      "sort_order": 1
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 2,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 2,
+      "est_qty": "2.00",
+      "sort_order": 2
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 3,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 3,
+      "est_qty": "150.00",
+      "sort_order": 3
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 4,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 4,
+      "est_qty": "200.00",
+      "sort_order": 4
+    }
+  }
+]

@@ -31,7 +31,8 @@ class EstimateJobStatusSyncTest(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Customer',
+            first_name='Test Customer',
+            last_name='',
             email='customer@example.com'
         )
 

@@ -7,7 +7,7 @@
 
 <h3>Worksheet Details</h3>
 <table border="1">
-    <tr><th>Job</th><td>{{ worksheet.job.job_number }}{% if worksheet.job.name %}: {{ worksheet.job.name }}{% endif %}</td></tr>
+    <tr><th>Job</th><td>{{ worksheet.job.job_number }} - {{ worksheet.job.description }}</td></tr>
     <tr><th>Status</th><td>{{ worksheet.get_status_display }}</td></tr>
     <tr><th>Total Tasks</th><td>{{ tasks.count }}</td></tr>
     <tr><th>Total Cost</th><td>${{ total_cost|floatformat:2 }}</td></tr>

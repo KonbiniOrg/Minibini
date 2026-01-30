@@ -16,21 +16,29 @@ from apps.purchasing.models import PurchaseOrder, Bill
 
 class ComprehensiveModelIntegrationTest(TestCase):
     def setUp(self):
+        # Create Configuration for number generation
+        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
+        Configuration.objects.create(key='bill_counter', value='0')
+
         self.group = Group.objects.create(name="Manager")
         self.user = User.objects.create_user(username="testuser", email="test@example.com")
         self.user.groups.add(self.group)
+        self.payment_terms = PaymentTerms.objects.create()
+        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
+        self.business = Business.objects.create(
+            business_name="Test Business",
+            terms=self.payment_terms,
+            default_contact=self.default_contact
+        )
         self.contact = Contact.objects.create(
-            name="Test Contact",
+            first_name='Test Contact',
+            last_name='',
             email="contact@example.com",
             addr1="123 Main St",
             city="Test City",
             municipality="TS",
-            postal_code="12345"
-        )
-        self.payment_terms = PaymentTerms.objects.create()
-        self.business = Business.objects.create(
-            business_name="Test Business",
-            terms=self.payment_terms
+            postal_code="12345",
+            business=self.business
         )
 
     def test_complete_job_workflow(self):
@@ -100,7 +108,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             price_list_item=price_list_item,
             qty=Decimal('5.00'),
             description="Test estimate line item",
-            price=Decimal('75.00')
+            price_currency=Decimal('75.00')
         )
 
         invoice_line_item = InvoiceLineItem.objects.create(
@@ -108,7 +116,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             price_list_item=price_list_item,
             qty=Decimal('5.00'),
             description="Test invoice line item",
-            price=Decimal('75.00')
+            price_currency=Decimal('75.00')
         )
 
         self.assertEqual(estimate_line_item.estimate, estimate)
@@ -126,6 +134,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
         )
 
         purchase_order = PurchaseOrder.objects.create(
+            business=self.business,
             job=job,
             po_number="PO001",
             status='draft'
@@ -136,6 +145,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
         bill = Bill.objects.create(
             bill_number="BILL-TEST-001",
             purchase_order=purchase_order,
+            business=self.business,
             contact=self.contact,
             vendor_invoice_number="VENDOR001"
         )
@@ -152,7 +162,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             price_list_item=price_item,
             qty=Decimal('2.00'),
             description="Purchase order item",
-            price=Decimal('50.00')
+            price_currency=Decimal('50.00')
         )
 
         bill_line_item = BillLineItem.objects.create(
@@ -160,7 +170,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             price_list_item=price_item,
             qty=Decimal('2.00'),
             description="Bill item",
-            price=Decimal('50.00')
+            price_currency=Decimal('50.00')
         )
 
         self.assertEqual(bill.purchase_order, purchase_order)
@@ -189,12 +199,12 @@ class ComprehensiveModelIntegrationTest(TestCase):
         )
 
         original_estimate.status = 'superseded'
-        original_estimate.superseded_date = timezone.now()
-        original_estimate.save()
+        original_estimate.save()  # closed_date is set automatically by model.save()
 
+        original_estimate.refresh_from_db()
         self.assertEqual(original_estimate.status, 'superseded')
         self.assertEqual(superseding_estimate.parent, original_estimate)
-        self.assertIsNotNone(original_estimate.superseded_date)
+        self.assertIsNotNone(original_estimate.closed_date)
 
     def test_task_workflow(self):
         job = Job.objects.create(
@@ -261,14 +271,11 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         work_order = WorkOrder.objects.create(job=job)
         task = Task.objects.create(work_order=work_order, name="Test Task")
-        blep = Blep.objects.create(task=task, user=self.user)
 
-        initial_blep_count = Blep.objects.count()
         initial_task_count = Task.objects.count()
 
         work_order.delete()
 
-        self.assertEqual(Blep.objects.count(), initial_blep_count - 1)
         self.assertEqual(Task.objects.count(), initial_task_count - 1)
 
     def test_user_group_relationship(self):
@@ -305,11 +312,11 @@ class ComprehensiveModelIntegrationTest(TestCase):
             invoice=invoice,
             price_list_item=price_list_item,
             qty=Decimal('10.00'),
-            price=Decimal('22.50')
+            price_currency=Decimal('22.50')
         )
 
         expected_total = line_item.qty * price_list_item.selling_price
-        self.assertEqual(line_item.price, expected_total)
+        self.assertEqual(line_item.price_currency, expected_total)
 
     def test_unique_constraints(self):
         job = Job.objects.create(job_number="UNIQUE001", contact=self.contact)
@@ -334,7 +341,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
         job = Job.objects.create(job_number="STR_TEST", contact=self.contact)
         estimate = Estimate.objects.create(job=job, estimate_number="EST_STR")
         invoice = Invoice.objects.create(job=job, invoice_number="INV_STR")
-        po = PurchaseOrder.objects.create(po_number="PO_STR")
+        po = PurchaseOrder.objects.create(business=self.business, po_number="PO_STR")
 
         self.assertEqual(str(job), "STR_TEST")
         self.assertEqual(str(estimate), "Estimate EST_STR")
@@ -348,7 +355,9 @@ class LineItemValidationTest(TestCase):
     """Test LineItem validation across all submodel types"""
 
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
+        self.business = Business.objects.create(business_name="Test Business", default_contact=self.default_contact)
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com', business=self.business)
         self.job = Job.objects.create(
             job_number="VALID_JOB001",
             contact=self.contact,
@@ -365,6 +374,7 @@ class LineItemValidationTest(TestCase):
             invoice_number="INV_VALID001"
         )
         self.purchase_order = PurchaseOrder.objects.create(
+            business=self.business,
             job=self.job,
             po_number="PO_VALID001",
             status='draft'
@@ -375,6 +385,7 @@ class LineItemValidationTest(TestCase):
         self.bill = Bill.objects.create(
             bill_number="BILL-TEST-002",
             purchase_order=self.purchase_order,
+            business=self.business,
             contact=self.contact,
             vendor_invoice_number="VIN_VALID001"
         )

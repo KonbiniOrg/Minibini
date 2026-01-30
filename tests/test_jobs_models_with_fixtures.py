@@ -4,13 +4,13 @@ from datetime import timedelta
 from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, TaskMapping, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import User
+from .base import FixtureTestCase
 
 
-class JobModelFixtureTest(TestCase):
+class JobModelFixtureTest(FixtureTestCase):
     """
-    Test Job model using fixture data
+    Test Job model using fixture data loaded from unit_test_data.json
     """
-    fixtures = ['core_base_data.json', 'contacts_base_data.json', 'jobs_basic_data.json']
 
     def test_jobs_exist_from_fixture(self):
         """Test that jobs from fixture data exist and have correct properties"""
@@ -34,7 +34,7 @@ class JobModelFixtureTest(TestCase):
     def test_job_contact_relationships(self):
         """Test that jobs are properly linked to contacts"""
         job1 = Job.objects.get(job_number="JOB-2024-0001")
-        contact1 = Contact.objects.get(name="John Doe")
+        contact1 = Contact.objects.get(first_name="John", last_name="Doe")
         self.assertEqual(job1.contact, contact1)
 
     def test_job_status_progression(self):
@@ -50,7 +50,7 @@ class JobModelFixtureTest(TestCase):
 
     def test_create_new_job_with_existing_contact(self):
         """Test creating a new job with existing contact from fixtures"""
-        contact = Contact.objects.get(name="John Doe")
+        contact = Contact.objects.get(first_name="John", last_name="Doe")
         new_job = Job.objects.create(
             job_number="JOB-2024-0003",
             contact=contact,
@@ -61,11 +61,10 @@ class JobModelFixtureTest(TestCase):
         self.assertEqual(Job.objects.count(), 3)  # 2 from fixture + 1 new
 
 
-class EstimateModelFixtureTest(TestCase):
+class EstimateModelFixtureTest(FixtureTestCase):
     """
     Test Estimate model using fixture data
     """
-    fixtures = ['core_base_data.json', 'contacts_base_data.json', 'jobs_basic_data.json']
 
     def test_estimates_exist_from_fixture(self):
         """Test that estimates from fixture data exist and have correct properties"""
@@ -91,11 +90,10 @@ class EstimateModelFixtureTest(TestCase):
         self.assertEqual(estimate.job, job)
 
 
-class WorkOrderModelFixtureTest(TestCase):
+class WorkOrderModelFixtureTest(FixtureTestCase):
     """
     Test WorkOrder model using fixture data
     """
-    fixtures = ['core_base_data.json', 'contacts_base_data.json', 'jobs_basic_data.json']
 
     def test_work_orders_exist_from_fixture(self):
         """Test that work orders from fixture data exist and have correct properties"""
@@ -119,11 +117,10 @@ class WorkOrderModelFixtureTest(TestCase):
         self.assertEqual(work_order.job, job)
 
 
-class TaskModelFixtureTest(TestCase):
+class TaskModelFixtureTest(FixtureTestCase):
     """
     Test Task model using fixture data
     """
-    fixtures = ['core_base_data.json', 'contacts_base_data.json', 'jobs_basic_data.json']
 
     def test_tasks_exist_from_fixture(self):
         """Test that tasks from fixture data exist and have correct properties"""
@@ -165,11 +162,10 @@ class TaskModelFixtureTest(TestCase):
         self.assertEqual(Task.objects.count(), 3)  # 2 from fixture + 1 new
 
 
-class BlepModelFixtureTest(TestCase):
+class BlepModelFixtureTest(FixtureTestCase):
     """
     Test Blep model using fixture data
     """
-    fixtures = ['core_base_data.json', 'contacts_base_data.json', 'jobs_basic_data.json']
 
     def test_create_blep_for_existing_task(self):
         """Test creating bleps for existing tasks from fixtures"""
@@ -199,11 +195,10 @@ class BlepModelFixtureTest(TestCase):
         self.assertEqual(str(blep), expected_str)
 
 
-class TaskMappingModelFixtureTest(TestCase):
+class TaskMappingModelFixtureTest(FixtureTestCase):
     """
     Test TaskMapping model using fixture data
     """
-    fixtures = ['core_base_data.json', 'contacts_base_data.json', 'jobs_basic_data.json', 'template_system_data.json']
 
     def test_create_task_mapping_for_existing_task(self):
         """Test creating task mapping template that can be used by tasks"""

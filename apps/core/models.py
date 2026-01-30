@@ -33,8 +33,8 @@ class Configuration(models.Model):
         - key="estimate_number_sequence", value="EST-{year}-{counter:04d}"
         - key="estimate_counter", value="0"
     """
-    key = models.CharField(max_length=100, primary_key=True, db_column='config_key')
-    value = models.TextField(blank=True, db_column='config_value')
+    key = models.CharField(max_length=100, primary_key=True)
+    value = models.TextField(blank=True)
 
 #    email_retention_days = models.IntegerField(
 #        default=90,
@@ -153,17 +153,17 @@ class TempEmail(models.Model):
 class BaseLineItem(models.Model):
     """
     Abstract base class for all line item types.
-    Provides shared functionality for EstimateLineItem, InvoiceLineItem,
+    Provides shared functionality for EstimateLineItem, InvoiceLineItem, 
     PurchaseOrderLineItem, and BillLineItem.
     """
     line_item_id = models.AutoField(primary_key=True)
-    task = models.ForeignKey('jobs.Task', on_delete=models.CASCADE, null=True, blank=True)
-    price_list_item = models.ForeignKey('invoicing.PriceListItem', on_delete=models.CASCADE, null=True, blank=True)
+    task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect document integrity
+    price_list_item = models.ForeignKey('invoicing.PriceListItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
     line_number = models.PositiveIntegerField(blank=True, null=True)
     qty = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     units = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    price_currency = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
     class Meta:
         abstract = True
@@ -211,7 +211,7 @@ class BaseLineItem(models.Model):
     @property
     def total_amount(self):
         """Calculate total amount (quantity * price)."""
-        return self.qty * self.price
+        return self.qty * self.price_currency
 
     @property
     def source_name(self):

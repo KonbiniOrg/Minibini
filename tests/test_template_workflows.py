@@ -29,7 +29,7 @@ class WorkOrderCreationWorkflowTest(TestCase):
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
         Configuration.objects.create(key='po_counter', value='0')
 
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -145,7 +145,7 @@ class EstimateCreationWorkflowTest(TestCase):
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
         Configuration.objects.create(key='po_counter', value='0')
 
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -224,7 +224,7 @@ class TaskCreationWorkflowTest(TestCase):
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
         Configuration.objects.create(key='po_counter', value='0')
 
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -366,7 +366,7 @@ class TemplateIntegrationTest(TestCase):
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
         Configuration.objects.create(key='po_counter', value='0')
 
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -457,7 +457,7 @@ class StatusTransitionPreventionTest(TestCase):
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
         Configuration.objects.create(key='po_counter', value='0')
 
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -523,7 +523,7 @@ class TaskMappingTranslationTest(TestCase):
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
         Configuration.objects.create(key='po_counter', value='0')
 
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,

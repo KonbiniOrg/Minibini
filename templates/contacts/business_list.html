@@ -10,14 +10,14 @@
     <table border="1">
         <tr>
             <th>Business Name</th>
-            <th>Business Number</th>
+            <th>Business Phone</th>
             <th>Reference Code</th>
             <th>Actions</th>
         </tr>
         {% for business in businesses %}
         <tr>
             <td>{{ business.business_name }}</td>
-            <td>{{ business.business_number }}</td>
+            <td>{{ business.business_phone }}</td>
             <td>{{ business.our_reference_code }}</td>
             <td><a href="{% url 'contacts:business_detail' business.pk %}">View</a></td>
         </tr>

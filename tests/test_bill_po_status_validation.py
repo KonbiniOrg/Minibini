@@ -10,7 +10,7 @@ Business Rules:
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.purchasing.models import Bill, PurchaseOrder
-from apps.contacts.models import Contact
+from apps.contacts.models import Contact, Business
 
 
 class BillPurchaseOrderStatusValidationTest(TestCase):
@@ -18,9 +18,21 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
 
     def setUp(self):
         """Set up test data."""
-        # Create a test contact
+        # Create a test contact (must be created before business for default_contact)
+        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
+
+        # Create a test business
+        self.business = Business.objects.create(
+            business_name='Test Vendor Business',
+            default_contact=self.default_contact
+        )
+
+        # Create a test contact with business
         self.contact = Contact.objects.create(
-            name='Test Vendor'
+            first_name='Test Vendor',
+            last_name='',
+            email='test.vendor@test.com',
+            business=self.business
         )
 
     def test_bill_creation_without_po_succeeds(self):
@@ -37,11 +49,13 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
     def test_bill_creation_with_draft_po_fails(self):
         """Test that a Bill cannot be created from a draft PO."""
         po = PurchaseOrder.objects.create(
+            business=self.business,
             po_number='PO-TEST-001',
             status='draft'
         )
 
         bill = Bill(
+            bill_number="BILL-DRAFT-TEST",
             purchase_order=po,
             contact=self.contact,
             vendor_invoice_number='INV-001'
@@ -55,6 +69,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
     def test_bill_creation_with_issued_po_succeeds(self):
         """Test that a Bill can be created from an issued PO."""
         po = PurchaseOrder.objects.create(
+            business=self.business,
             po_number='PO-TEST-001',
             status='draft'
         )
@@ -74,6 +89,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
     def test_bill_creation_with_partly_received_po_succeeds(self):
         """Test that a Bill can be created from a partly_received PO."""
         po = PurchaseOrder.objects.create(
+            business=self.business,
             po_number='PO-TEST-001',
             status='draft'
         )
@@ -95,6 +111,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
     def test_bill_creation_with_received_in_full_po_succeeds(self):
         """Test that a Bill can be created from a received_in_full PO."""
         po = PurchaseOrder.objects.create(
+            business=self.business,
             po_number='PO-TEST-001',
             status='draft'
         )
@@ -116,6 +133,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
     def test_bill_creation_with_cancelled_po_succeeds(self):
         """Test that a Bill can be created from a cancelled PO."""
         po = PurchaseOrder.objects.create(
+            business=self.business,
             po_number='PO-TEST-001',
             status='draft'
         )
@@ -146,6 +164,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
 
         # Create a draft PO
         po = PurchaseOrder.objects.create(
+            business=self.business,
             po_number='PO-TEST-001',
             status='draft'
         )
@@ -154,7 +173,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         bill.purchase_order = po
 
         with self.assertRaises(ValidationError) as context:
-            bill.full_clean()
+            bill.save()
 
         self.assertIn('issued or later status', str(context.exception).lower())
 
@@ -162,6 +181,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         """Test that a Bill cannot be updated to reference a draft PO even if it previously had an issued PO."""
         # Create an issued PO
         issued_po = PurchaseOrder.objects.create(
+            business=self.business,
             po_number='PO-ISSUED-001',
             status='draft'
         )
@@ -178,6 +198,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
 
         # Create a draft PO
         draft_po = PurchaseOrder.objects.create(
+            business=self.business,
             po_number='PO-DRAFT-001',
             status='draft'
         )
@@ -186,7 +207,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         bill.purchase_order = draft_po
 
         with self.assertRaises(ValidationError) as context:
-            bill.full_clean()
+            bill.save()
 
         self.assertIn('issued or later status', str(context.exception).lower())
 
@@ -194,6 +215,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         """Test that a Bill can be updated to have no PO."""
         # Create an issued PO
         po = PurchaseOrder.objects.create(
+            business=self.business,
             po_number='PO-TEST-001',
             status='draft'
         )

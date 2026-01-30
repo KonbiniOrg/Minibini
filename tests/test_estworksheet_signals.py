@@ -17,7 +17,7 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
     """Test that the signal system is efficient and only fires when needed."""
 
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -148,7 +148,7 @@ class EstWorksheetSignalIntegrationTest(TestCase):
     """Test the complete signal flow with actual database changes."""
 
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -278,7 +278,7 @@ class EstWorksheetInitialStatusTest(TestCase):
     """Test that EstWorksheet gets correct initial status when created."""
 
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,

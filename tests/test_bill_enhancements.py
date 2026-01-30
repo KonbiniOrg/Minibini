@@ -17,12 +17,17 @@ class BillNumberGenerationTest(TestCase):
         Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
         Configuration.objects.create(key='bill_counter', value='0')
 
-        # Create contact for bills
-        self.contact = Contact.objects.create(name="Test Vendor")
+        # Create default contact for business
+        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
+
+        # Create business and contact for bills
+        self.business = Business.objects.create(business_name="Test Vendor Business", default_contact=self.default_contact)
+        self.contact = Contact.objects.create(first_name='Test Vendor', last_name='', email='test.vendor@test.com', business=self.business)
 
     def test_bill_number_generated_on_form_save(self):
         """Test that bill number is automatically generated when using BillForm."""
         form = BillForm(data={
+            'business': self.business.business_id,
             'contact': self.contact.contact_id,
             'vendor_invoice_number': 'VIN001',
         })
@@ -39,6 +44,7 @@ class BillNumberGenerationTest(TestCase):
         """Test that bill numbers increment sequentially."""
         # Create first bill
         form1 = BillForm(data={
+            'business': self.business.business_id,
             'contact': self.contact.contact_id,
             'vendor_invoice_number': 'VIN001',
         })
@@ -46,6 +52,7 @@ class BillNumberGenerationTest(TestCase):
 
         # Create second bill
         form2 = BillForm(data={
+            'business': self.business.business_id,
             'contact': self.contact.contact_id,
             'vendor_invoice_number': 'VIN002',
         })
@@ -53,6 +60,7 @@ class BillNumberGenerationTest(TestCase):
 
         # Create third bill
         form3 = BillForm(data={
+            'business': self.business.business_id,
             'contact': self.contact.contact_id,
             'vendor_invoice_number': 'VIN003',
         })
@@ -67,6 +75,7 @@ class BillNumberGenerationTest(TestCase):
         """Test that bill numbers are unique."""
         # Create bill
         form = BillForm(data={
+            'business': self.business.business_id,
             'contact': self.contact.contact_id,
             'vendor_invoice_number': 'VIN001',
         })
@@ -76,6 +85,7 @@ class BillNumberGenerationTest(TestCase):
         with self.assertRaises(Exception):
             Bill.objects.create(
                 bill_number=bill1.bill_number,
+                business=self.business,
                 contact=self.contact,
                 vendor_invoice_number='VIN002'
             )
@@ -83,6 +93,7 @@ class BillNumberGenerationTest(TestCase):
     def test_bill_str_method_uses_bill_number(self):
         """Test that Bill's __str__ method uses bill_number."""
         form = BillForm(data={
+            'business': self.business.business_id,
             'contact': self.contact.contact_id,
             'vendor_invoice_number': 'VIN001',
         })
@@ -100,9 +111,14 @@ class BillLineItemManualEntryTest(TestCase):
         Configuration.objects.create(key='bill_number_sequence', value='BILL-{counter:04d}')
         Configuration.objects.create(key='bill_counter', value='0')
 
-        # Create contact and bill
-        self.contact = Contact.objects.create(name="Test Vendor")
+        # Create default contact for business
+        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
+
+        # Create business, contact and bill
+        self.business = Business.objects.create(business_name="Test Vendor Business", default_contact=self.default_contact)
+        self.contact = Contact.objects.create(first_name='Test Vendor', last_name='', email='test.vendor@test.com', business=self.business)
         form = BillForm(data={
+            'business': self.business.business_id,
             'contact': self.contact.contact_id,
             'vendor_invoice_number': 'VIN001',
         })
@@ -115,7 +131,7 @@ class BillLineItemManualEntryTest(TestCase):
             description="Custom service",
             qty=Decimal('5.00'),
             units="hours",
-            price=Decimal('100.00')
+            price_currency=Decimal('100.00')
         )
 
         # Verify line item was created
@@ -123,7 +139,7 @@ class BillLineItemManualEntryTest(TestCase):
         self.assertEqual(line_item.description, "Custom service")
         self.assertEqual(line_item.qty, Decimal('5.00'))
         self.assertEqual(line_item.units, "hours")
-        self.assertEqual(line_item.price, Decimal('100.00'))
+        self.assertEqual(line_item.price_currency, Decimal('100.00'))
         self.assertIsNone(line_item.price_list_item)
         self.assertIsNone(line_item.task)
 
@@ -134,7 +150,7 @@ class BillLineItemManualEntryTest(TestCase):
             description="Custom parts",
             qty=Decimal('10.00'),
             units="ea",
-            price=Decimal('25.50')
+            price_currency=Decimal('25.50')
         )
 
         # Verify total_amount calculation
@@ -169,14 +185,14 @@ class BillLineItemManualEntryTest(TestCase):
             bill=self.bill,
             description="Item 1",
             qty=Decimal('2.00'),
-            price=Decimal('50.00')
+            price_currency=Decimal('50.00')
         )
 
         line_item2 = BillLineItem.objects.create(
             bill=self.bill,
             description="Item 2",
             qty=Decimal('3.00'),
-            price=Decimal('30.00')
+            price_currency=Decimal('30.00')
         )
 
         # Verify both were created
@@ -193,9 +209,14 @@ class BillDraftStateValidationTest(TestCase):
         Configuration.objects.create(key='bill_number_sequence', value='BILL-{counter:04d}')
         Configuration.objects.create(key='bill_counter', value='0')
 
-        # Create contact and bill
-        self.contact = Contact.objects.create(name="Test Vendor")
+        # Create default contact for business
+        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
+
+        # Create business, contact and bill
+        self.business = Business.objects.create(business_name="Test Vendor Business", default_contact=self.default_contact)
+        self.contact = Contact.objects.create(first_name='Test Vendor', last_name='', email='test.vendor@test.com', business=self.business)
         form = BillForm(data={
+            'business': self.business.business_id,
             'contact': self.contact.contact_id,
             'vendor_invoice_number': 'VIN001',
         })
@@ -221,7 +242,7 @@ class BillDraftStateValidationTest(TestCase):
             bill=self.bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price=Decimal('100.00')
+            price_currency=Decimal('100.00')
         )
 
         # Verify line item was added
@@ -256,7 +277,7 @@ class BillDraftStateValidationTest(TestCase):
             bill=self.bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price=Decimal('100.00')
+            price_currency=Decimal('100.00')
         )
 
         # Transition to received

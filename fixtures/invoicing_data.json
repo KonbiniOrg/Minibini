@@ -56,7 +56,7 @@
       "qty": "50.00",
       "units": "each",
       "description": "Screws for kitchen cabinet installation",
-      "price": "25.00"
+      "price_currency":"25.00"
     }
   },
   {
@@ -70,7 +70,7 @@
       "qty": "8.00",
       "units": "hour",
       "description": "Electrical rough-in labor",
-      "price": "600.00"
+      "price_currency":"600.00"
     }
   },
   {
@@ -84,7 +84,7 @@
       "qty": "50.00",
       "units": "each",
       "description": "Screws for kitchen cabinet installation",
-      "price": "25.00"
+      "price_currency":"25.00"
     }
   },
   {
@@ -98,7 +98,7 @@
       "qty": "8.00",
       "units": "hour",
       "description": "Electrical rough-in labor",
-      "price": "600.00"
+      "price_currency":"600.00"
     }
   }
 ]

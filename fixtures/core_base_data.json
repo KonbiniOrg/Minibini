@@ -141,5 +141,19 @@
     "fields": {
       "value": "0"
     }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "bill_number_sequence",
+    "fields": {
+      "value": "BILL-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "bill_counter",
+    "fields": {
+      "value": "0"
+    }
   }
 ]

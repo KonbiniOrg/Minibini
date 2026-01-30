@@ -41,7 +41,8 @@ class WorksheetFinalizationTests(TestCase):
 
         # Create contact
         self.contact = Contact.objects.create(
-            name='Test Contact',
+            first_name='Test Contact',
+            last_name='',
             email='contact@test.com'
         )
 
@@ -273,7 +274,8 @@ class WorksheetEstimateIntegrationTests(TestCase):
 
         # Create contact
         self.contact = Contact.objects.create(
-            name='Test Contact',
+            first_name='Test Contact',
+            last_name='',
             email='contact@test.com'
         )
 

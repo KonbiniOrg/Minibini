@@ -25,7 +25,14 @@
     <tr>
         <td>Status</td>
         <td>
-            {% include 'includes/_inline_status_form.html' with object=estimate %}
+            {{ estimate.get_status_display }}
+            {% if status_form %}
+                <form method="post" style="display: inline; margin-left: 20px;">
+                    {% csrf_token %}
+                    {{ status_form.status }}
+                    <button type="submit" name="update_status">Update Status</button>
+                </form>
+            {% endif %}
         </td>
     </tr>
     <tr>
@@ -81,10 +88,60 @@
 {% endif %}
 
 <h3>Line Items</h3>
-{% if estimate.status == 'draft' %}
-    {% include 'includes/_line_items_table.html' with show_actions=True delete_url_name='jobs:estimate_delete_line_item' parent_id=estimate.estimate_id total_label="Total Estimate Amount" %}
+{% if line_items %}
+    <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 10px;">
+        <thead>
+            <tr>
+                <th>Line #</th>
+                <th>Description</th>
+                <th>Task/Price List Item</th>
+                <th>Quantity</th>
+                <th>Unit</th>
+                <th>Price</th>
+                <th>Total</th>
+                {% if estimate.status == 'draft' %}
+                <th>Actions</th>
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in line_items %}
+            <tr>
+                <td>{{ item.line_number|default:item.line_number }}</td>
+                <td>{{ item.description|default:"No description" }}</td>
+                <td>
+                    {% if item.task %}
+                        Task: {{ item.task.name }}
+                    {% elif item.price_list_item %}
+                        {{ item.price_list_item.code }} - {{ item.price_list_item.description|truncatewords:5 }}
+                    {% else %}
+                        No source
+                    {% endif %}
+                </td>
+                <td>{{ item.qty }}</td>
+                <td>{{ item.unit_parts_labor|default:"—" }}</td>
+                <td>${{ item.price_currency|floatformat:2 }}</td>
+                <td>${{ item.total_amount|floatformat:2 }}</td>
+                {% if estimate.status == 'draft' %}
+                <td>
+                    <form method="post" action="{% url 'jobs:estimate_delete_line_item' estimate.estimate_id item.line_item_id %}" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" onclick="return confirm('Are you sure you want to delete this line item?');">Delete</button>
+                    </form>
+                </td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr style="background-color: #f0f0f0; font-weight: bold;">
+                <td colspan="{% if estimate.status == 'draft' %}7{% else %}6{% endif %}">Total Estimate Amount:</td>
+                <td>${{ total_amount|floatformat:2 }}</td>
+            </tr>
+        </tfoot>
+    </table>
 {% else %}
-    {% include 'includes/_line_items_table.html' with total_label="Total Estimate Amount" %}
+    <p>No line items found for this estimate.</p>
 {% endif %}
 
 <p>

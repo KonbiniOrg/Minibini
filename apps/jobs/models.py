@@ -21,7 +21,7 @@ class Job(models.Model):
     due_date = models.DateTimeField(null=True, blank=True)
     completed_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=JOB_STATUS_CHOICES, default='draft')
-    contact = models.ForeignKey('contacts.Contact', on_delete=models.CASCADE)
+    contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT)
     customer_po_number = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
 
@@ -100,8 +100,6 @@ class Job(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        if self.name:
-            return f"{self.job_number}: {self.name}"
         return f"{self.job_number}"
 
 
@@ -376,6 +374,7 @@ class Task(models.Model):
     work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, null=True, blank=True)
     est_worksheet = models.ForeignKey(EstWorksheet, on_delete=models.CASCADE, null=True, blank=True)
     name = models.CharField(max_length=255)
+    line_number = models.PositiveIntegerField(blank=True, null=True)
     units = models.CharField(max_length=50, blank=True)
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -388,6 +387,30 @@ class Task(models.Model):
             raise ValidationError("Task cannot be attached to both WorkOrder and EstWorksheet")
         if not self.work_order and not self.est_worksheet:
             raise ValidationError("Task must be attached to either WorkOrder or EstWorksheet")
+
+    def save(self, *args, **kwargs):
+        """Override save to auto-generate line numbers."""
+        from django.db import transaction
+
+        if self.line_number is None:
+            with transaction.atomic():
+                container = self.work_order or self.est_worksheet
+                if container:
+                    # Determine the filter based on container type
+                    if self.work_order:
+                        filter_kwargs = {'work_order': container}
+                    else:
+                        filter_kwargs = {'est_worksheet': container}
+
+                    # Get max line number for this container
+                    max_line = Task.objects.filter(**filter_kwargs).aggregate(
+                        models.Max('line_number')
+                    )['line_number__max']
+
+                    self.line_number = (max_line or 0) + 1
+
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def get_container(self):
         """Return the container (WorkOrder or EstWorksheet) this task belongs to."""
@@ -417,8 +440,8 @@ class Task(models.Model):
 
 class Blep(models.Model):
     blep_id = models.AutoField(primary_key=True)
-    user = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
-    task = models.ForeignKey(Task, on_delete=models.CASCADE)
+    user = models.ForeignKey('core.User', on_delete=models.PROTECT, null=True, blank=True)
+    task = models.ForeignKey(Task, on_delete=models.PROTECT)  # Changed from CASCADE - protect audit trail
     start_time = models.DateTimeField(null=True, blank=True)
     end_time = models.DateTimeField(null=True, blank=True)
 
@@ -555,7 +578,7 @@ class TaskTemplate(models.Model):
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     # Relationships
-    task_mapping = models.ForeignKey(TaskMapping, on_delete=models.CASCADE, null=True, blank=True)
+    task_mapping = models.ForeignKey(TaskMapping, on_delete=models.SET_NULL, null=True, blank=True)  # Changed from CASCADE - preserve templates
     work_order_templates = models.ManyToManyField(WorkOrderTemplate, through='TemplateTaskAssociation', related_name='task_templates')
     parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')
 

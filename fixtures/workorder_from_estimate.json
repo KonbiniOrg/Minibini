@@ -3,7 +3,6 @@
     "model": "contacts.contact",
     "pk": 100,
     "fields": {
-      "name": "WorkOrder Test Company",
       "email": "test@workordertest.com",
       "addr1": "100 Test Street",
       "addr2": "",
@@ -15,7 +14,9 @@
       "mobile_number": "555-0100",
       "work_number": "555-0101",
       "home_number": "",
-      "business": null
+      "business": null,
+      "first_name": "WorkOrder",
+      "last_name": "Test Company"
     }
   },
   {
@@ -302,7 +303,7 @@
       "qty": "1.00",
       "units": "each",
       "description": "Test Product Bundle - Complete Assembly",
-      "price": "540.00",
+      "price_currency": "540.00",
       "price_list_item": null,
       "task": 100
     }
@@ -316,7 +317,7 @@
       "qty": "2.00",
       "units": "hours",
       "description": "Material delivery",
-      "price": "80.00",
+      "price_currency": "80.00",
       "price_list_item": null,
       "task": 103
     }
@@ -330,7 +331,7 @@
       "qty": "1.00",
       "units": "hours",
       "description": "Quality check",
-      "price": "60.00",
+      "price_currency": "60.00",
       "price_list_item": null,
       "task": 104
     }

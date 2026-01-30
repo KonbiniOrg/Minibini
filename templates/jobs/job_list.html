@@ -8,7 +8,7 @@
 {% if jobs %}
     <table border="1">
         <tr>
-            <th>Job</th>
+            <th>Job Name (#)</th>
             <th>Contact</th>
             <th>Status</th>
             <th>Created Date</th>
@@ -18,10 +18,10 @@
         </tr>
         {% for job in jobs %}
         <tr>
-            <td><a href="{% url 'jobs:detail' job.pk %}">{{ job.job_number }}{% if job.name %}: {{ job.name }}{% endif %}</a></td>
+            <td><a href="{% url 'jobs:detail' job.pk %}">{{job.name}} ({{ job.job_number }})</a></td>
             <td>
                 {% if job.contact %}
-                    <a href="{% url 'contacts:contact_detail' job.contact.contact_id %}">{{ job.contact.name }}</a>
+                    <a href="{% url 'contacts:contact_detail' job.contact.contact_id %}">{{ job.contact }}</a>
                 {% else %}
                     No contact
                 {% endif %}

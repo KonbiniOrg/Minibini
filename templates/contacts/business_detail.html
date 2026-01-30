@@ -4,7 +4,10 @@
 
 {% block content %}
 <h2>Business: {{ business.business_name }}</h2>
-<a href="{% url 'contacts:edit_business' business.business_id %}" style="display: inline-block; background-color: #ffc107; color: black; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin-bottom: 20px;">Edit Business</a>
+<div style="margin-bottom: 20px;">
+    <a href="{% url 'contacts:edit_business' business.business_id %}" style="display: inline-block; background-color: #ffc107; color: black; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin-right: 10px;">Edit Business</a>
+    <button onclick="confirmDeleteBusiness()" style="background-color: #dc3545; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;">Delete Business</button>
+</div>
 
 <table border="1">
     <tr>
@@ -20,8 +23,8 @@
         <td>{{ business.our_reference_code|default:"No reference code" }}</td>
     </tr>
     <tr>
-        <td>Business Number</td>
-        <td>{{ business.business_number|default:"No business number" }}</td>
+        <td>Business Phone</td>
+        <td>{{ business.business_phone|default:"No phone number" }}</td>
     </tr>
     <tr>
         <td>Address</td>
@@ -32,12 +35,22 @@
         <td>{{ business.tax_exemption_number|default:"No tax exemption number" }}</td>
     </tr>
     <tr>
-        <td>Tax Cloud</td>
-        <td>{{ business.tax_cloud|default:"No tax cloud" }}</td>
+        <td>Website</td>
+        <td>{% if business.website %}<a href="{{ business.website }}" target="_blank">{{ business.website }}</a>{% else %}No website{% endif %}</td>
     </tr>
     <tr>
         <td>Payment Terms</td>
         <td>{{ business.terms|default:"No payment terms" }}</td>
+    </tr>
+    <tr>
+        <td>Default Contact</td>
+        <td>
+            {% if business.default_contact %}
+                <a href="{% url 'contacts:contact_detail' business.default_contact.contact_id %}">{{ business.default_contact }}</a>
+            {% else %}
+                No default contact
+            {% endif %}
+        </td>
     </tr>
 </table>
 
@@ -56,8 +69,13 @@
         </thead>
         <tbody>
             {% for contact in contacts %}
-            <tr>
-                <td>{{ contact.name }}</td>
+            <tr{% if business.default_contact and contact.contact_id == business.default_contact.contact_id %} style="background-color: #e3f2fd;"{% endif %}>
+                <td>
+                    {{ contact }}
+                    {% if business.default_contact and contact.contact_id == business.default_contact.contact_id %}
+                        <span style="color: #1976d2; font-weight: bold; margin-left: 5px;">[DEFAULT]</span>
+                    {% endif %}
+                </td>
                 <td>{{ contact.email|default:"No email" }}</td>
                 <td>{{ contact.mobile_number|default:contact.work_number|default:contact.home_number|default:"No phone" }}</td>
                 <td>{{ contact.address|default:"No address" }}</td>
@@ -73,4 +91,17 @@
 {% endif %}
 
 <p><a href="{% url 'contacts:business_list' %}">Back to Businesses List</a></p>
+
+<!-- Hidden delete form -->
+<form id="deleteBusinessForm" method="post" action="{% url 'contacts:delete_business' business.business_id %}" style="display: none;">
+    {% csrf_token %}
+</form>
+
+<script>
+function confirmDeleteBusiness() {
+    if (confirm('Are you sure you want to delete "{{ business.business_name }}"? You will be able to choose what happens to the associated contacts in the next step.')) {
+        document.getElementById('deleteBusinessForm').submit();
+    }
+}
+</script>
 {% endblock %}

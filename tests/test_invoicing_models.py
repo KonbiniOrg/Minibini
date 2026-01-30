@@ -4,7 +4,8 @@ from decimal import Decimal
 from apps.invoicing.models import Invoice, InvoiceLineItem, PriceListItem
 from apps.jobs.models import Job, Estimate, Task, WorkOrder
 from apps.purchasing.models import PurchaseOrder, Bill
-from apps.contacts.models import Contact
+from apps.contacts.models import Contact, Business
+from apps.core.models import Configuration
 
 
 
@@ -52,7 +53,7 @@ class PriceListItemModelTest(TestCase):
 
 class InvoiceModelTest(TestCase):
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -63,11 +64,11 @@ class InvoiceModelTest(TestCase):
         invoice = Invoice.objects.create(
             job=self.job,
             invoice_number="INV001",
-            status='active'
+            status='open'  # Use valid status from INVOICE_STATUS_CHOICES
         )
         self.assertEqual(invoice.job, self.job)
         self.assertEqual(invoice.invoice_number, "INV001")
-        self.assertEqual(invoice.status, 'active')
+        self.assertEqual(invoice.status, 'open')
         
     def test_invoice_str_method(self):
         invoice = Invoice.objects.create(
@@ -77,11 +78,23 @@ class InvoiceModelTest(TestCase):
         self.assertEqual(str(invoice), "Invoice INV002")
         
     def test_invoice_default_status(self):
+        """Test that Invoice default status is 'draft' (a valid choice)."""
         invoice = Invoice.objects.create(
             job=self.job,
             invoice_number="INV003"
         )
-        self.assertEqual(invoice.status, 'active')
+        # Default status must be 'draft' - a valid choice in INVOICE_STATUS_CHOICES
+        self.assertEqual(invoice.status, 'draft')
+
+    def test_invoice_default_status_is_valid_choice(self):
+        """Test that the default status is in the valid choices list."""
+        invoice = Invoice.objects.create(
+            job=self.job,
+            invoice_number="INV_VALID_DEFAULT"
+        )
+        valid_statuses = [choice[0] for choice in Invoice.INVOICE_STATUS_CHOICES]
+        self.assertIn(invoice.status, valid_statuses,
+            f"Default status '{invoice.status}' is not in valid choices: {valid_statuses}")
         
     def test_invoice_status_choices(self):
         invoice = Invoice.objects.create(
@@ -94,7 +107,18 @@ class InvoiceModelTest(TestCase):
 
 class InvoiceLineItemModelTest(TestCase):
     def setUp(self):
-        self.contact = Contact.objects.create(name="Test Customer")
+        # Create Configuration for number generation
+        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
+        Configuration.objects.create(key='bill_counter', value='0')
+
+        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
+        self.business = Business.objects.create(business_name="Test Business", default_contact=self.default_contact)
+        self.contact = Contact.objects.create(
+            first_name='Test Customer',
+            last_name='',
+            email='test.customer@test.com',
+            business=self.business
+        )
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
@@ -114,15 +138,12 @@ class InvoiceLineItemModelTest(TestCase):
             name="Test Task",
         )
         self.purchase_order = PurchaseOrder.objects.create(
+            business=self.business,
             job=self.job,
             po_number="PO001",
-            status='draft'
+            status='issued'
         )
-        self.purchase_order.status = 'issued'
-        self.purchase_order.save()
-
         self.bill = Bill.objects.create(
-            bill_number="BILL-INV-001",
             purchase_order=self.purchase_order,
             contact=self.contact,
             vendor_invoice_number="VIN001"
@@ -140,7 +161,7 @@ class InvoiceLineItemModelTest(TestCase):
             qty=Decimal('5.00'),
             units="hours",
             description="Test line item",
-            price=Decimal('50.00')
+            price_currency=Decimal('50.00')
         )
         self.assertEqual(line_item.invoice, self.invoice)
         self.assertEqual(line_item.task, self.task)
@@ -149,7 +170,7 @@ class InvoiceLineItemModelTest(TestCase):
         self.assertEqual(line_item.qty, Decimal('5.00'))
         self.assertEqual(line_item.units, "hours")
         self.assertEqual(line_item.description, "Test line item")
-        self.assertEqual(line_item.price, Decimal('50.00'))
+        self.assertEqual(line_item.price_currency, Decimal('50.00'))
         
     def test_invoice_line_item_str_method(self):
         line_item = InvoiceLineItem.objects.create(invoice=self.invoice, task=self.task)
@@ -158,7 +179,7 @@ class InvoiceLineItemModelTest(TestCase):
     def test_invoice_line_item_defaults(self):
         line_item = InvoiceLineItem.objects.create(invoice=self.invoice, task=self.task)
         self.assertEqual(line_item.qty, Decimal('0.00'))
-        self.assertEqual(line_item.price, Decimal('0.00'))
+        self.assertEqual(line_item.price_currency, Decimal('0.00'))
         
     def test_invoice_line_item_optional_relationships(self):
         line_item = InvoiceLineItem.objects.create(

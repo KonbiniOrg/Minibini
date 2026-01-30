@@ -1,130 +1,130 @@
 from django.shortcuts import render
-from django.db.models import Q
-from apps.jobs.models import Job, Estimate, Task, WorkOrder, EstWorksheet
-from apps.contacts.models import Contact, Business
-from apps.invoicing.models import Invoice, PriceListItem
-from apps.purchasing.models import PurchaseOrder, Bill
+from .services import SearchService
 
 
 def search_view(request):
     """
     Search across all models and return categorized results.
     Case-insensitive search across relevant fields.
+    Results are organized into supercategories with subcategories for line items.
     """
+    # Extract request parameters
     query = request.GET.get('q', '').strip()
+    filter_category = request.GET.get('category', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+    price_min = request.GET.get('price_min', '').strip()
+    price_max = request.GET.get('price_max', '').strip()
 
+    # Initialize context
     context = {
         'query': query,
-        'results': {
-            'jobs': [],
-            'estimates': [],
-            'tasks': [],
-            'work_orders': [],
-            'est_worksheets': [],
-            'contacts': [],
-            'businesses': [],
-            'invoices': [],
-            'price_list_items': [],
-            'purchase_orders': [],
-            'bills': [],
-        },
+        'categories': {},
         'total_count': 0,
+        'filter_category': filter_category,
+        'date_from': date_from,
+        'date_to': date_to,
+        'price_min': price_min,
+        'price_max': price_max,
+        'available_categories': SearchService.AVAILABLE_CATEGORIES,
     }
 
     if not query:
         return render(request, 'search/search_results.html', context)
 
-    # Search Jobs
-    jobs = Job.objects.filter(
-        Q(job_number__icontains=query) |
-        Q(customer_po_number__icontains=query) |
-        Q(description__icontains=query) |
-        Q(contact__name__icontains=query)
-    ).select_related('contact')
-    context['results']['jobs'] = jobs
+    # Parse price filters
+    price_min_value, price_max_value = SearchService.parse_price_filters(price_min, price_max)
 
-    # Search Estimates
-    estimates = Estimate.objects.filter(
-        Q(estimate_number__icontains=query) |
-        Q(job__job_number__icontains=query)
-    ).select_related('job')
-    context['results']['estimates'] = estimates
+    # Search all entities
+    categories = SearchService.search_all_entities(query)
 
-    # Search Tasks
-    tasks = Task.objects.filter(
-        Q(name__icontains=query) |
-        Q(units__icontains=query)
-    ).select_related('assignee', 'work_order', 'est_worksheet')
-    context['results']['tasks'] = tasks
+    # Apply category filter
+    categories = SearchService.apply_category_filter(categories, filter_category)
 
-    # Search Work Orders
-    work_orders = WorkOrder.objects.filter(
-        Q(job__job_number__icontains=query) |
-        Q(job__description__icontains=query)
-    ).select_related('job')
-    context['results']['work_orders'] = work_orders
-
-    # Search EstWorksheets
-    est_worksheets = EstWorksheet.objects.filter(
-        Q(job__job_number__icontains=query) |
-        Q(estimate__estimate_number__icontains=query)
-    ).select_related('job', 'estimate')
-    context['results']['est_worksheets'] = est_worksheets
-
-    # Search Contacts
-    contacts = Contact.objects.filter(
-        Q(name__icontains=query) |
-        Q(email__icontains=query) |
-        Q(mobile_number__icontains=query) |
-        Q(work_number__icontains=query) |
-        Q(home_number__icontains=query) |
-        Q(addr1__icontains=query) |
-        Q(city__icontains=query) |
-        Q(postal_code__icontains=query)
-    ).select_related('business')
-    context['results']['contacts'] = contacts
-
-    # Search Businesses
-    businesses = Business.objects.filter(
-        Q(business_name__icontains=query) |
-        Q(our_reference_code__icontains=query) |
-        Q(business_address__icontains=query) |
-        Q(business_number__icontains=query)
+    # Apply date and price filters
+    filtered_categories = SearchService.apply_date_and_price_filters(
+        categories, date_from, date_to, price_min_value, price_max_value
     )
-    context['results']['businesses'] = businesses
-
-    # Search Invoices
-    invoices = Invoice.objects.filter(
-        Q(invoice_number__icontains=query) |
-        Q(job__job_number__icontains=query) |
-        Q(job__customer_po_number__icontains=query)
-    ).select_related('job')
-    context['results']['invoices'] = invoices
-
-    # Search Price List Items
-    price_list_items = PriceListItem.objects.filter(
-        Q(code__icontains=query) |
-        Q(description__icontains=query) |
-        Q(units__icontains=query)
-    )
-    context['results']['price_list_items'] = price_list_items
-
-    # Search Purchase Orders
-    purchase_orders = PurchaseOrder.objects.filter(
-        Q(po_number__icontains=query) |
-        Q(job__job_number__icontains=query)
-    ).select_related('job')
-    context['results']['purchase_orders'] = purchase_orders
-
-    # Search Bills
-    bills = Bill.objects.filter(
-        Q(vendor_invoice_number__icontains=query) |
-        Q(purchase_order__po_number__icontains=query) |
-        Q(contact__name__icontains=query)
-    ).select_related('purchase_order', 'contact')
-    context['results']['bills'] = bills
 
     # Calculate total count
-    context['total_count'] = sum(len(results) for results in context['results'].values())
+    total_count = SearchService.calculate_total_count(filtered_categories)
+
+    # Store result IDs in session for "search within results" functionality
+    if query and total_count > 0:
+        result_ids = SearchService.build_result_ids_for_session(filtered_categories)
+        request.session['search_result_ids'] = result_ids
+        request.session['search_original_query'] = query
+        context['has_stored_results'] = True
+    else:
+        context['has_stored_results'] = False
+
+    # Update context with results
+    context['categories'] = filtered_categories
+    context['total_count'] = total_count
+
+    return render(request, 'search/search_results.html', context)
+
+
+def search_within_results(request):
+    """
+    Search within previously saved search results.
+    Filters the stored result IDs based on a new search query and additional criteria.
+    """
+    # Extract request parameters
+    within_query = request.GET.get('within_q', '').strip()
+    filter_category = request.GET.get('category', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+    price_min = request.GET.get('price_min', '').strip()
+    price_max = request.GET.get('price_max', '').strip()
+
+    # Get stored result IDs from session
+    result_ids = request.session.get('search_result_ids', {})
+    original_query = request.session.get('search_original_query', '')
+
+    # Initialize context
+    context = {
+        'query': original_query,
+        'within_query': within_query,
+        'categories': {},
+        'total_count': 0,
+        'is_within_results': True,
+        'filter_category': filter_category,
+        'date_from': date_from,
+        'date_to': date_to,
+        'price_min': price_min,
+        'price_max': price_max,
+        'available_categories': SearchService.AVAILABLE_CATEGORIES,
+    }
+
+    if not result_ids:
+        context['has_stored_results'] = False
+        return render(request, 'search/search_results.html', context)
+
+    context['has_stored_results'] = True
+
+    if not within_query:
+        return render(request, 'search/search_results.html', context)
+
+    # Parse price filters
+    price_min_value, price_max_value = SearchService.parse_price_filters(price_min, price_max)
+
+    # Search within stored results
+    categories = SearchService.search_within_stored_results(result_ids, within_query)
+
+    # Apply category filter
+    categories = SearchService.apply_category_filter(categories, filter_category)
+
+    # Apply date and price filters
+    filtered_categories = SearchService.apply_date_and_price_filters(
+        categories, date_from, date_to, price_min_value, price_max_value
+    )
+
+    # Calculate total count
+    total_count = SearchService.calculate_total_count(filtered_categories)
+
+    # Update context with results
+    context['categories'] = filtered_categories
+    context['total_count'] = total_count
 
     return render(request, 'search/search_results.html', context)

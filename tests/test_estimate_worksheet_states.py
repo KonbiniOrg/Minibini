@@ -30,7 +30,8 @@ class EstimateStateTests(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Contact',
+            first_name='Test Contact',
+            last_name='',
             email='test@example.com'
         )
 
@@ -132,7 +133,8 @@ class EstWorksheetStateTests(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Contact 2',
+            first_name='Test Contact 2',
+            last_name='',
             email='test2@example.com'
         )
 
@@ -273,7 +275,8 @@ class EstimateGenerationServiceTests(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Contact 3',
+            first_name='Test Contact 3',
+            last_name='',
             email='test3@example.com'
         )
 
@@ -396,7 +399,8 @@ class IntegrationTests(TestCase):
 
         # Create a test contact
         self.contact = Contact.objects.create(
-            name='Test Contact 4',
+            first_name='Test Contact 4',
+            last_name='',
             email='test4@example.com'
         )
 
