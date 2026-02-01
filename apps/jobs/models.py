@@ -479,6 +479,15 @@ class TaskMapping(models.Model):
     line_item_name = models.CharField(max_length=255, blank=True)
     line_item_description = models.TextField(blank=True)
 
+    # LineItemType to assign when tasks with this mapping become line items
+    output_line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text="LineItemType to assign when tasks with this mapping become line items"
+    )
+
     # Keep existing fields
     task_type_id = models.CharField(max_length=50)
     breakdown_of_task = models.TextField(blank=True)

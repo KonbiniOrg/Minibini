@@ -123,6 +123,14 @@ class Business(models.Model):
     terms = models.ForeignKey('PaymentTerms', on_delete=models.SET_NULL, null=True, blank=True)
     default_contact = models.ForeignKey('Contact', on_delete=models.PROTECT, null=False, blank=True, related_name='default_for_business')
 
+    # Tax multiplier: null/1.0 = full rate, 0 = exempt, 0.5 = half rate
+    tax_multiplier = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+
     def __str__(self):
         return self.business_name
 
