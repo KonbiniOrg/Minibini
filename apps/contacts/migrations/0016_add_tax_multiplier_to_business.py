@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('contacts', '0015_add_tax_fields_to_line_items'),
+        ('contacts', '0015_alter_business_phone_max_length'),
     ]
 
     operations = [
