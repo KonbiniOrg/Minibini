@@ -34,6 +34,8 @@
         <thead>
             <tr>
                 <th>Line #</th>
+                <th>Type</th>
+                <th>Taxable</th>
                 <th>Description</th>
                 <th>Task/Price List Item</th>
                 <th>Quantity</th>
@@ -46,6 +48,8 @@
             {% for item in line_items %}
             <tr>
                 <td>{{ item.line_number|default:item.line_item_id }}</td>
+                <td>{{ item.line_item_type.name|default:"—" }}</td>
+                <td>{% if item.line_item_type %}{% if item.line_item_type.taxable %}Yes{% else %}No{% endif %}{% else %}—{% endif %}</td>
                 <td>{{ item.description|default:"No description" }}</td>
                 <td>
                     {% if item.task %}
@@ -65,7 +69,7 @@
         </tbody>
         <tfoot>
             <tr style="background-color: #f0f0f0; font-weight: bold;">
-                <td colspan="6">Total Invoice Amount:</td>
+                <td colspan="8">Total Invoice Amount:</td>
                 <td>${{ total_amount|floatformat:2 }}</td>
             </tr>
         </tfoot>

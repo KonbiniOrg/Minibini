@@ -185,13 +185,14 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         self.assertContains(response, 'Add Line Item to Purchase Order')
         self.assertContains(response, 'PO-TEST-001')
         self.assertContains(response, 'Price List Item')
-        self.assertContains(response, 'Quantity')
+        self.assertContains(response, 'Qty')
 
     def test_add_line_item_from_price_list(self):
         """Test adding a line item from price list."""
         url = reverse('purchasing:purchase_order_add_line_item', args=[self.purchase_order.po_id])
 
         form_data = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '10.00',
         }
@@ -225,6 +226,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         url = reverse('purchasing:purchase_order_add_line_item', args=[self.purchase_order.po_id])
 
         form_data = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '5.00',
         }
@@ -241,6 +243,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         url = reverse('purchasing:purchase_order_add_line_item', args=[self.purchase_order.po_id])
 
         form_data = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '',  # Missing qty
         }
@@ -259,6 +262,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         url = reverse('purchasing:purchase_order_add_line_item', args=[self.purchase_order.po_id])
 
         form_data = {
+            'pricelist_submit': '1',
             'qty': '5.00',
             # Missing price_list_item
         }
@@ -278,6 +282,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
 
         # Add first line item
         form_data_1 = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '10.00',
         }
@@ -285,6 +290,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
 
         # Add second line item
         form_data_2 = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item2.price_list_item_id),
             'qty': '5.00',
         }
@@ -310,6 +316,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
 
         # Add line item with qty and purchase_price
         form_data = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '3.00',  # 3.00 * 25.00 = 75.00
         }
@@ -328,6 +335,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         # Add three line items
         for i in range(3):
             form_data = {
+                'pricelist_submit': '1',
                 'price_list_item': str(self.price_list_item.price_list_item_id),
                 'qty': f'{i+1}.00',
             }

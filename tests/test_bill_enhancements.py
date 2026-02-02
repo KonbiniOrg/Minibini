@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from apps.purchasing.models import Bill, BillLineItem, PurchaseOrder
 from apps.purchasing.forms import BillForm, BillLineItemForm
 from apps.contacts.models import Contact, Business
-from apps.core.models import Configuration
+from apps.core.models import Configuration, LineItemType
 from apps.core.services import NumberGenerationService
 from decimal import Decimal
 
@@ -158,11 +158,17 @@ class BillLineItemManualEntryTest(TestCase):
 
     def test_bill_line_item_form_allows_manual_entry(self):
         """Test that BillLineItemForm accepts manual entry without price_list_item."""
+        # Get or create a line item type for the test
+        service_type, _ = LineItemType.objects.get_or_create(
+            code='SVC',
+            defaults={'name': 'Service', 'taxable': False, 'is_active': True}
+        )
         form = BillLineItemForm(data={
             'description': 'Manual labor',
             'qty': '8.00',
             'units': 'hours',
-            'price': '75.00'
+            'price': '75.00',
+            'line_item_type': service_type.pk
         })
 
         self.assertTrue(form.is_valid())

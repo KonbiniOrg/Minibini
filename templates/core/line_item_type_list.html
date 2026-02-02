@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block title %}Line Item Types - Minibini{% endblock %}
+
+{% block navigation %}
+{% include 'includes/settings_navigation.html' %}
+{% endblock %}
+
+{% block content %}
+<h2>Line Item Types</h2>
+
+<p>
+    <a href="{% url 'core:line_item_type_create' %}" style="background-color: #007bff; color: white; padding: 5px 10px; text-decoration: none;">Add New Type</a>
+    {% if show_all %}
+        | <a href="{% url 'core:line_item_type_list' %}">Hide Inactive</a>
+    {% else %}
+        | <a href="{% url 'core:line_item_type_list' %}?show_all=1">Show All (Including Inactive)</a>
+    {% endif %}
+</p>
+
+{% if line_item_types %}
+<table border="1">
+    <thead>
+        <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Taxable</th>
+            <th>Active</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for type in line_item_types %}
+        <tr{% if not type.is_active %} style="opacity: 0.5;"{% endif %}>
+            <td>{{ type.code }}</td>
+            <td>{{ type.name }}</td>
+            <td>{% if type.taxable %}Yes{% else %}No{% endif %}</td>
+            <td>{% if type.is_active %}Yes{% else %}No{% endif %}</td>
+            <td>
+                <a href="{% url 'core:line_item_type_detail' type.pk %}">View</a> |
+                <a href="{% url 'core:line_item_type_edit' type.pk %}">Edit</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No line item types found.</p>
+{% endif %}
+
+<p><a href="{% url 'settings' %}">Back to Settings</a></p>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - Minibini{% endblock %}
+
+{% block navigation %}
+{% include 'includes/settings_navigation.html' %}
+{% endblock %}
+
+{% block content %}
+<h2>{{ title }}</h2>
+
+<form method="post">
+    {% csrf_token %}
+
+    <p>
+        <label for="id_code"><strong>Code *</strong></label><br>
+        {{ form.code }}
+        {% if form.code.errors %}<br><span style="color: red;">{{ form.code.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        <label for="id_name"><strong>Name *</strong></label><br>
+        {{ form.name }}
+        {% if form.name.errors %}<br><span style="color: red;">{{ form.name.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        <label for="id_taxable"><strong>Taxable by Default</strong></label><br>
+        {{ form.taxable }}
+        {% if form.taxable.errors %}<br><span style="color: red;">{{ form.taxable.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        <label for="id_default_description"><strong>Default Description</strong></label><br>
+        {{ form.default_description }}
+        {% if form.default_description.errors %}<br><span style="color: red;">{{ form.default_description.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        <label for="id_is_active"><strong>Active</strong></label><br>
+        {{ form.is_active }}
+        {% if form.is_active.errors %}<br><span style="color: red;">{{ form.is_active.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        <button type="submit">{{ submit_label }}</button>
+        <a href="{% url 'core:line_item_type_list' %}">Cancel</a>
+    </p>
+</form>
+{% endblock %}

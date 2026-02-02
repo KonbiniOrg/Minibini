@@ -17,7 +17,6 @@ class LineItemTypeModelTest(TestCase):
             code='TST1',  # Use unique code to avoid conflict with migration data
             name='Test Service',
             taxable=False,
-            default_units='hours',
             default_description='Professional service',
             is_active=True
         )
@@ -25,7 +24,6 @@ class LineItemTypeModelTest(TestCase):
         self.assertEqual(line_item_type.code, 'TST1')
         self.assertEqual(line_item_type.name, 'Test Service')
         self.assertFalse(line_item_type.taxable)
-        self.assertEqual(line_item_type.default_units, 'hours')
         self.assertEqual(line_item_type.default_description, 'Professional service')
         self.assertTrue(line_item_type.is_active)
 
@@ -60,15 +58,6 @@ class LineItemTypeModelTest(TestCase):
             name='Active Test'
         )
         self.assertTrue(line_item_type.is_active)
-
-    def test_default_units_can_be_blank(self):
-        """Test that default_units can be blank."""
-        line_item_type = LineItemType.objects.create(
-            code='BLK1',  # Use unique code
-            name='Blank Units Test',
-            default_units=''
-        )
-        self.assertEqual(line_item_type.default_units, '')
 
     def test_default_description_can_be_blank(self):
         """Test that default_description can be blank."""

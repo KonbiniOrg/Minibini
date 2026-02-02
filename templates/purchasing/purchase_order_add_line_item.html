@@ -6,24 +6,76 @@
 <h1>Add Line Item to Purchase Order</h1>
 <h2>PO: {{ purchase_order.po_number }}</h2>
 
+<h3>Manual Entry</h3>
 <form method="post">
     {% csrf_token %}
-    <fieldset>
-        <legend><strong>Select from Price List</strong></legend>
-        <p>
-            <label for="id_price_list_item"><strong>Price List Item *</strong></label><br>
-            {{ form.price_list_item }}
-        </p>
-        <p>
-            <label for="id_qty"><strong>Quantity *</strong></label><br>
-            {{ form.qty }}
-        </p>
-    </fieldset>
     <p>
-        <button type="submit">Add Line Item</button>
-        <a href="{% url 'purchasing:purchase_order_detail' purchase_order.po_id %}">Cancel</a>
+        <label for="id_description"><strong>Description *</strong></label><br>
+        {{ manual_form.description }}
+        {% if manual_form.description.errors %}
+            <br><span style="color: red;">{{ manual_form.description.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_qty"><strong>Qty *</strong></label><br>
+        {{ manual_form.qty }}
+        {% if manual_form.qty.errors %}
+            <br><span style="color: red;">{{ manual_form.qty.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_units"><strong>Units</strong></label><br>
+        {{ manual_form.units }}
+        {% if manual_form.units.errors %}
+            <br><span style="color: red;">{{ manual_form.units.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_price_currency"><strong>Price *</strong></label><br>
+        {{ manual_form.price_currency }}
+        {% if manual_form.price_currency.errors %}
+            <br><span style="color: red;">{{ manual_form.price_currency.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_line_item_type"><strong>Type *</strong></label><br>
+        {{ manual_form.line_item_type }}
+        {% if manual_form.line_item_type.errors %}
+            <br><span style="color: red;">{{ manual_form.line_item_type.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <button type="submit" name="manual_submit">Add Manual Line Item</button>
+    </p>
+</form>
+
+<hr>
+
+<h3>From Price List</h3>
+<form method="post">
+    {% csrf_token %}
+    <p>
+        <label for="id_price_list_item"><strong>Price List Item *</strong></label><br>
+        {{ pricelist_form.price_list_item }}
+        {% if pricelist_form.price_list_item.errors %}
+            <br><span style="color: red;">{{ pricelist_form.price_list_item.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_qty"><strong>Qty *</strong></label><br>
+        {{ pricelist_form.qty }}
+        {% if pricelist_form.qty.errors %}
+            <br><span style="color: red;">{{ pricelist_form.qty.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <button type="submit" name="pricelist_submit">Add from Price List</button>
     </p>
 </form>
 
 <p><em>Note: The purchase price from the Price List Item will be copied to the line item.</em></p>
+
+<p>
+    <a href="{% url 'purchasing:purchase_order_detail' purchase_order.po_id %}">Back to Purchase Order</a>
+</p>
 {% endblock %}

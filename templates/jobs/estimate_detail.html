@@ -93,6 +93,8 @@
         <thead>
             <tr>
                 <th>Line #</th>
+                <th>Type</th>
+                <th>Taxable</th>
                 <th>Description</th>
                 <th>Task/Price List Item</th>
                 <th>Quantity</th>
@@ -108,6 +110,8 @@
             {% for item in line_items %}
             <tr>
                 <td>{{ item.line_number|default:item.line_number }}</td>
+                <td>{{ item.line_item_type.name|default:"—" }}</td>
+                <td>{% if item.line_item_type %}{% if item.line_item_type.taxable %}Yes{% else %}No{% endif %}{% else %}—{% endif %}</td>
                 <td>{{ item.description|default:"No description" }}</td>
                 <td>
                     {% if item.task %}
@@ -134,9 +138,22 @@
             {% endfor %}
         </tbody>
         <tfoot>
-            <tr style="background-color: #f0f0f0; font-weight: bold;">
-                <td colspan="{% if estimate.status == 'draft' %}7{% else %}6{% endif %}">Total Estimate Amount:</td>
-                <td>${{ total_amount|floatformat:2 }}</td>
+            <tr style="background-color: #f5f5f5;">
+                <td colspan="{% if estimate.status == 'draft' %}8{% else %}7{% endif %}" style="text-align: right;"><strong>Subtotal:</strong></td>
+                <td>${{ subtotal|floatformat:2 }}</td>
+                {% if estimate.status == 'draft' %}<td></td>{% endif %}
+            </tr>
+            <tr style="background-color: #f5f5f5;">
+                <td colspan="{% if estimate.status == 'draft' %}8{% else %}7{% endif %}" style="text-align: right;">
+                    <strong>Tax{% if is_tax_exempt %} (Customer exempt){% endif %}:</strong>
+                </td>
+                <td>${{ tax_amount|floatformat:2 }}</td>
+                {% if estimate.status == 'draft' %}<td></td>{% endif %}
+            </tr>
+            <tr style="background-color: #e8e8e8;">
+                <td colspan="{% if estimate.status == 'draft' %}8{% else %}7{% endif %}" style="text-align: right;"><strong>Total:</strong></td>
+                <td><strong>${{ total_with_tax|floatformat:2 }}</strong></td>
+                {% if estimate.status == 'draft' %}<td></td>{% endif %}
             </tr>
         </tfoot>
     </table>

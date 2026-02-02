@@ -36,6 +36,13 @@
         {% endif %}
     </p>
     <p>
+        <label for="id_line_item_type"><strong>Type *</strong></label><br>
+        {{ manual_form.line_item_type }}
+        {% if manual_form.line_item_type.errors %}
+            <br><span style="color: red;">{{ manual_form.line_item_type.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
         <button type="submit" name="manual_submit">Add Manual Line Item</button>
     </p>
 </form>

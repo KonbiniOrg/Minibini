@@ -52,7 +52,6 @@ class LineItemType(models.Model):
     code = models.CharField(max_length=20, unique=True)  # e.g., "SVC", "MAT", "PRD"
     name = models.CharField(max_length=100)  # e.g., "Service", "Material", "Product"
     taxable = models.BooleanField(default=True)  # Default taxability for this type
-    default_units = models.CharField(max_length=50, blank=True)  # e.g., "hours", "each"
     default_description = models.TextField(blank=True)  # Template for descriptions
     is_active = models.BooleanField(default=True)  # Soft delete support
 

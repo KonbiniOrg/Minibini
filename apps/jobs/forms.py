@@ -6,6 +6,7 @@ from .models import (
     EstWorksheet, Task, Estimate, EstimateLineItem, Job
 )
 from apps.contacts.models import Contact
+from apps.core.models import LineItemType
 from apps.core.services import NumberGenerationService
 
 
@@ -232,7 +233,7 @@ class ManualLineItemForm(forms.ModelForm):
     """Form for creating a manual line item (not linked to a Price List Item)"""
     class Meta:
         model = EstimateLineItem
-        fields = ['description', 'qty', 'units', 'price_currency']
+        fields = ['description', 'qty', 'units', 'price_currency', 'line_item_type']
         widgets = {
             'qty': forms.NumberInput(attrs={'step': '0.01'}),
             'price_currency': forms.NumberInput(attrs={'step': '0.01'}),
@@ -240,7 +241,13 @@ class ManualLineItemForm(forms.ModelForm):
         }
         labels = {
             'price_currency': 'Price',
+            'line_item_type': 'Type',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
+        self.fields['line_item_type'].required = True
 
 
 class PriceListLineItemForm(forms.Form):

@@ -117,7 +117,7 @@ class Business(models.Model):
     our_reference_code = models.CharField(max_length=50, blank=True, unique=True)
     business_name = models.CharField(max_length=255)
     business_address = models.TextField(blank=True)
-    business_phone = models.CharField(max_length=20, blank=True)
+    business_phone = models.CharField(max_length=50, blank=True)
     tax_exemption_number = models.CharField(max_length=50, blank=True)
     website = models.URLField(max_length=200, blank=True)
     terms = models.ForeignKey('PaymentTerms', on_delete=models.SET_NULL, null=True, blank=True)

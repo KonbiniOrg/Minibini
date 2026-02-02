@@ -487,7 +487,8 @@ class EstimateGenerationService:
                 # Create separate line items for each instance
                 for instance_data in instances:
                     line_item = self._create_product_line_item(
-                        instance_data['tasks'], rule, estimate, product_type
+                        instance_data['tasks'], rule, estimate, product_type,
+                        instance_data['identifier']
                     )
                     line_items.append(line_item)
         
@@ -503,20 +504,25 @@ class EstimateGenerationService:
             total_hours = Decimal('0.00')
             descriptions = []
             
+            line_item_type = None
             for task in task_list:
                 qty = task.est_qty or Decimal('1.00')
                 rate = task.rate or Decimal('0.00')
                 total_price += qty * rate
                 total_hours += qty
                 descriptions.append(f"- {task.name}")
-            
+                # Get line_item_type from first task with one
+                if not line_item_type and task.template and task.template.task_mapping:
+                    line_item_type = task.template.task_mapping.output_line_item_type
+
             line_item = EstimateLineItem(
                 estimate=estimate,
                 line_number=self.line_number,
                 description=f"{service_type.replace('_', ' ').title()} Services:\n" + "\n".join(descriptions),
                 qty=total_hours,
                 units='hours',
-                price_currency=total_price
+                price_currency=total_price,
+                line_item_type=line_item_type
             )
             
             self.line_number += 1
@@ -540,7 +546,12 @@ class EstimateGenerationService:
             
             qty = task.est_qty or Decimal('1.00')
             rate = task.rate or Decimal('0.00')
-            
+
+            # Get line_item_type from mapping
+            line_item_type = None
+            if mapping and mapping.output_line_item_type:
+                line_item_type = mapping.output_line_item_type
+
             line_item = EstimateLineItem(
                 estimate=estimate,
                 task=task,
@@ -548,7 +559,8 @@ class EstimateGenerationService:
                 description=description,
                 qty=qty,
                 units=task.units or 'each',
-                price_currency=qty * rate
+                price_currency=qty * rate,
+                line_item_type=line_item_type
             )
             
             self.line_number += 1
@@ -556,16 +568,20 @@ class EstimateGenerationService:
         
         return line_items
     
-    def _create_product_line_item(self, tasks: List[Task], rule: Optional[ProductBundlingRule], 
-                                   estimate: Estimate, product_type: str) -> EstimateLineItem:
+    def _create_product_line_item(self, tasks: List[Task], rule: Optional[ProductBundlingRule],
+                                   estimate: Estimate, product_type: str,
+                                   product_identifier: str = '') -> EstimateLineItem:
         """Create a single line item for a product from its component tasks"""
-        
+
         # Default values
         description = f"Custom {product_type.title()}"
         total_price = Decimal('0.00')
-        
+
         if rule:
-            description = rule.line_item_template.format(product_type=product_type.title())
+            description = rule.line_item_template.format(
+                product_type=product_type.title(),
+                product_identifier=product_identifier
+            )
             
             if rule.pricing_method == 'template_base':
                 # Use template base price if available
@@ -594,14 +610,23 @@ class EstimateGenerationService:
                 qty = task.est_qty or Decimal('1.00')
                 rate = task.rate or Decimal('0.00')
                 total_price += qty * rate
-        
+
+        # Get line_item_type from the first task's mapping
+        line_item_type = None
+        for task in tasks:
+            if task.template and task.template.task_mapping:
+                line_item_type = task.template.task_mapping.output_line_item_type
+                if line_item_type:
+                    break
+
         line_item = EstimateLineItem(
             estimate=estimate,
             line_number=self.line_number,
             description=description,
             qty=Decimal('1.00'),
             units='each',
-            price_currency=total_price
+            price_currency=total_price,
+            line_item_type=line_item_type
         )
         
         self.line_number += 1
@@ -643,15 +668,32 @@ class EstimateGenerationService:
             unit_price = total_all_instances / Decimal(str(quantity))
         
         product_type = instances[0]['tasks'][0].get_product_type()
-        description = rule.line_item_template.format(product_type=product_type.title())
-        
+        # For combined instances, use first identifier or a generic label
+        first_identifier = instances[0].get('identifier', '')
+        description = rule.line_item_template.format(
+            product_type=product_type.title(),
+            product_identifier=first_identifier if len(instances) == 1 else f"{quantity}x {product_type}"
+        )
+
+        # Get line_item_type from the first task's mapping
+        line_item_type = None
+        for instance_data in instances:
+            for task in instance_data['tasks']:
+                if task.template and task.template.task_mapping:
+                    line_item_type = task.template.task_mapping.output_line_item_type
+                    if line_item_type:
+                        break
+            if line_item_type:
+                break
+
         line_item = EstimateLineItem(
             estimate=estimate,
             line_number=self.line_number,
             description=description,
             qty=Decimal(str(quantity)),
             units='each',
-            price_currency=unit_price * Decimal(str(quantity))
+            price_currency=unit_price * Decimal(str(quantity)),
+            line_item_type=line_item_type
         )
         
         self.line_number += 1

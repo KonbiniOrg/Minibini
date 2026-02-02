@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.urls import reverse
@@ -6,6 +7,7 @@ from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
 from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet, TaskMapping, TaskInstanceMapping
+from apps.core.services import TaxCalculationService
 from .forms import (
     JobCreateForm, JobEditForm, WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
     TaskForm, TaskFromTemplateForm,
@@ -179,9 +181,21 @@ def estimate_detail(request, estimate_id):
             messages.error(request, f'Cannot update status from {estimate.get_status_display()} (terminal state).')
             return redirect('jobs:estimate_detail', estimate_id=estimate.estimate_id)
 
-    # Get line items and calculate total
+    # Get line items and calculate subtotal
     line_items = EstimateLineItem.objects.filter(estimate=estimate).order_by('line_item_id')
-    total_amount = sum(item.total_amount for item in line_items)
+    subtotal = sum(item.total_amount for item in line_items)
+
+    # Get customer business for tax calculation
+    customer = None
+    if hasattr(estimate.job.contact, 'business') and estimate.job.contact.business:
+        customer = estimate.job.contact.business
+
+    # Calculate tax
+    tax_amount = TaxCalculationService.calculate_document_tax(estimate, customer=customer)
+    total_with_tax = subtotal + tax_amount
+
+    # Check if customer is tax exempt
+    is_tax_exempt = customer and customer.tax_multiplier == Decimal('0.00')
 
     # Check for associated worksheet
     worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
@@ -194,7 +208,10 @@ def estimate_detail(request, estimate_id):
     return render(request, 'jobs/estimate_detail.html', {
         'estimate': estimate,
         'line_items': line_items,
-        'total_amount': total_amount,
+        'subtotal': subtotal,
+        'tax_amount': tax_amount,
+        'total_with_tax': total_with_tax,
+        'is_tax_exempt': is_tax_exempt,
         'worksheet': worksheet,
         'status_form': status_form,
         'show_reorder': estimate.status == 'draft',
@@ -760,7 +777,8 @@ def estimate_add_line_item(request, estimate_id):
                     description=price_list_item.description,
                     qty=qty,
                     units=price_list_item.units,
-                    price_currency=price_list_item.selling_price
+                    price_currency=price_list_item.selling_price,
+                    line_item_type=price_list_item.line_item_type
                 )
 
                 messages.success(request, f'Line item "{line_item.description}" added from price list')

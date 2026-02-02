@@ -6,6 +6,8 @@
                 <th></th>
                 {% endif %}
                 <th>Line #</th>
+                <th>Type</th>
+                <th>Taxable</th>
                 <th>Description</th>
                 <th>Task/Price List Item</th>
                 <th>Quantity</th>
@@ -39,6 +41,8 @@
                 </td>
                 {% endif %}
                 <td>{{ item.line_number|default:item.line_item_id }}</td>
+                <td>{{ item.line_item_type.name|default:"—" }}</td>
+                <td>{% if item.line_item_type %}{% if item.line_item_type.taxable %}Yes{% else %}No{% endif %}{% else %}—{% endif %}</td>
                 <td>{{ item.description|default:"No description" }}</td>
                 <td>
                     {% if item.task %}
@@ -66,7 +70,7 @@
         </tbody>
         <tfoot>
             <tr style="background-color: #f0f0f0; font-weight: bold;">
-                <td colspan="{% if show_actions %}{% if reorder_url_name %}8{% else %}7{% endif %}{% else %}{% if reorder_url_name %}7{% else %}6{% endif %}{% endif %}">{{ total_label|default:"Total Amount" }}:</td>
+                <td colspan="{% if show_actions %}{% if reorder_url_name %}10{% else %}9{% endif %}{% else %}{% if reorder_url_name %}9{% else %}8{% endif %}{% endif %}">{{ total_label|default:"Total Amount" }}:</td>
                 <td>${{ total_amount|floatformat:2 }}</td>
             </tr>
         </tfoot>

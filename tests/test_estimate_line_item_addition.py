@@ -5,7 +5,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import Job, Estimate, EstimateLineItem
 from apps.contacts.models import Contact
-from apps.core.models import Configuration
+from apps.core.models import Configuration, LineItemType
 from apps.invoicing.models import PriceListItem
 
 
@@ -58,6 +58,12 @@ class EstimateLineItemAdditionTests(TestCase):
             qty_on_hand=Decimal('100.00')
         )
 
+        # Create a line item type for manual form tests
+        self.service_type, _ = LineItemType.objects.get_or_create(
+            code='SVC',
+            defaults={'name': 'Service', 'taxable': False}
+        )
+
     def test_get_add_line_item_page(self):
         """Test GET request to add line item page shows both forms."""
         url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
@@ -78,6 +84,7 @@ class EstimateLineItemAdditionTests(TestCase):
             'qty': '5.00',
             'units': 'hours',
             'price_currency': '75.50',
+            'line_item_type': self.service_type.pk,
             'manual_submit': 'Add Manual Line Item'
         }
 
@@ -94,6 +101,7 @@ class EstimateLineItemAdditionTests(TestCase):
         self.assertEqual(line_item.qty, Decimal('5.00'))
         self.assertEqual(line_item.units, 'hours')
         self.assertEqual(line_item.price_currency, Decimal('75.50'))
+        self.assertEqual(line_item.line_item_type, self.service_type)
         self.assertIsNone(line_item.task)
         self.assertIsNone(line_item.price_list_item)
 
@@ -140,6 +148,7 @@ class EstimateLineItemAdditionTests(TestCase):
             'qty': '',  # Missing qty
             'units': 'hours',
             'price_currency': '',  # Missing price
+            'line_item_type': '',  # Missing line item type
             'manual_submit': 'Add Manual Line Item'
         }
 
@@ -192,6 +201,7 @@ class EstimateLineItemAdditionTests(TestCase):
             'qty': '1.00',
             'units': 'each',
             'price_currency': '10.00',
+            'line_item_type': self.service_type.pk,
             'manual_submit': 'Add Manual Line Item'
         }
 
@@ -214,6 +224,7 @@ class EstimateLineItemAdditionTests(TestCase):
             'qty': '1.00',
             'units': 'each',
             'price_currency': '100.00',
+            'line_item_type': self.service_type.pk,
             'manual_submit': 'Add Manual Line Item'
         }
         self.client.post(url, data=form_data_1)
@@ -247,6 +258,7 @@ class EstimateLineItemAdditionTests(TestCase):
             'qty': '3.00',
             'units': 'hours',
             'price_currency': '50.00',
+            'line_item_type': self.service_type.pk,
             'manual_submit': 'Add Manual Line Item'
         }
 

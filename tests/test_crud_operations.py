@@ -7,6 +7,7 @@ from apps.jobs.models import (
     EstimateLineItem, WorkOrderTemplate
 )
 from apps.contacts.models import Contact
+from apps.core.models import LineItemType
 
 
 class EstWorksheetCRUDTests(TestCase):
@@ -221,12 +222,18 @@ class EstimateCRUDTests(TestCase):
 
     def test_add_line_item_post(self):
         """Test POST request to add line item."""
+        # Get or create a line item type for the test
+        service_type, _ = LineItemType.objects.get_or_create(
+            code='SVC',
+            defaults={'name': 'Service', 'taxable': False, 'is_active': True}
+        )
         url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
         data = {
             'description': 'Test Line Item',
             'qty': 5.0,
             'price_currency': 100.0,
             'units': 'each',
+            'line_item_type': service_type.pk,
             'manual_submit': 'Add Manual Line Item'
         }
         response = self.client.post(url, data)
