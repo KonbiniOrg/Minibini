@@ -396,3 +396,93 @@ class SearchViewTests(TestCase):
         response = self.client.get(reverse('search:search'), {'q': 'test'})
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'search/search_results.html')
+
+    def test_category_numeric_mapping_exists(self):
+        """Test that category numeric mappings are properly defined"""
+        from apps.search.services import SearchService
+
+        # Verify all category constants are defined
+        self.assertGreater(SearchService.CATEGORY_BUSINESSES, 0)
+        self.assertGreater(SearchService.CATEGORY_CONTACTS, 0)
+        self.assertGreater(SearchService.CATEGORY_JOBS, 0)
+
+        # Verify bidirectional mappings
+        for cat_id, cat_key in SearchService.CATEGORY_ID_TO_KEY.items():
+            self.assertEqual(SearchService.CATEGORY_KEY_TO_ID[cat_key], cat_id)
+
+    def test_category_id_from_string_case_insensitive(self):
+        """Test that category string lookup is case-insensitive"""
+        from apps.search.services import SearchService
+
+        # Test with different cases
+        jobs_id_lower = SearchService.get_category_id_from_string('jobs')
+        jobs_id_upper = SearchService.get_category_id_from_string('JOBS')
+        jobs_id_mixed = SearchService.get_category_id_from_string('JoBs')
+
+        self.assertIsNotNone(jobs_id_lower)
+        self.assertEqual(jobs_id_lower, jobs_id_upper)
+        self.assertEqual(jobs_id_lower, jobs_id_mixed)
+
+        # Test with whitespace
+        jobs_id_space = SearchService.get_category_id_from_string('  jobs  ')
+        self.assertEqual(jobs_id_lower, jobs_id_space)
+
+    def test_category_id_conversion_methods(self):
+        """Test category ID conversion helper methods"""
+        from apps.search.services import SearchService
+
+        # Test get_category_key_from_id
+        jobs_key = SearchService.get_category_key_from_id(SearchService.CATEGORY_JOBS)
+        self.assertEqual(jobs_key, 'jobs')
+
+        # Test get_category_display_name
+        jobs_display = SearchService.get_category_display_name(SearchService.CATEGORY_JOBS)
+        self.assertEqual(jobs_display, 'Jobs')
+
+        # Test invalid ID
+        invalid_key = SearchService.get_category_key_from_id(99999)
+        self.assertIsNone(invalid_key)
+
+    def test_category_filter_with_different_cases(self):
+        """Test that category filtering works with different string cases"""
+        from apps.search.services import SearchService
+
+        # Create sample categories
+        categories = {
+            'jobs': {'items': [self.job1]},
+            'contacts': {'items': [self.contact1]},
+        }
+
+        # Test with lowercase
+        result_lower = SearchService.apply_category_filter(categories, 'jobs')
+        self.assertIn('jobs', result_lower)
+        self.assertNotIn('contacts', result_lower)
+
+        # Test with uppercase
+        result_upper = SearchService.apply_category_filter(categories, 'JOBS')
+        self.assertIn('jobs', result_upper)
+        self.assertNotIn('contacts', result_upper)
+
+        # Test with mixed case
+        result_mixed = SearchService.apply_category_filter(categories, 'JoBs')
+        self.assertIn('jobs', result_mixed)
+        self.assertNotIn('contacts', result_mixed)
+
+    def test_get_all_category_info(self):
+        """Test that get_all_category_info returns structured data"""
+        from apps.search.services import SearchService
+
+        category_info = SearchService.get_all_category_info()
+
+        # Should return a list of dicts
+        self.assertIsInstance(category_info, list)
+        self.assertGreater(len(category_info), 0)
+
+        # Each item should have id, key, and display_name
+        for item in category_info:
+            self.assertIn('id', item)
+            self.assertIn('key', item)
+            self.assertIn('display_name', item)
+            self.assertIsInstance(item['id'], int)
+            self.assertIsInstance(item['key'], str)
+            self.assertIsInstance(item['display_name'], str)

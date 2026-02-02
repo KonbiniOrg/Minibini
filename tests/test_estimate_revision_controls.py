@@ -51,7 +51,7 @@ class EstimateCreationControlTests(TestCase):
         # Estimate should be created with defaults
         estimate = Estimate.objects.filter(job=self.job).first()
         self.assertIsNotNone(estimate)
-        self.assertEqual(estimate.estimate_number, 'EST-2025-0001')
+        self.assertEqual(estimate.estimate_number, 'EST-2026-0001')
         self.assertEqual(estimate.status, 'draft')
         self.assertEqual(estimate.version, 1)
 
