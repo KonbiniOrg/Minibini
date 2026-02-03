@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration
 from apps.jobs.models import (
-    Job, EstWorksheet, Task, TaskMapping, EstimateLineItem, ProductBundlingRule,
+    Job, EstWorksheet, Task, TaskMapping, EstimateLineItem, BundlingRule,
     TaskTemplate, TaskInstanceMapping
 )
 from apps.jobs.services import EstimateGenerationService
@@ -183,7 +183,7 @@ class SimpleEstimateGenerationTestCase(TestCase):
         # Create design mapping and template
         design_mapping = TaskMapping.objects.create(
             step_type='labor',
-            mapping_strategy='bundle_to_product',
+            mapping_strategy='bundle',
             default_product_type='table',
             task_type_id='design'
         )
@@ -195,7 +195,7 @@ class SimpleEstimateGenerationTestCase(TestCase):
         # Create build mapping and template
         build_mapping = TaskMapping.objects.create(
             step_type='labor',
-            mapping_strategy='bundle_to_product',
+            mapping_strategy='bundle',
             default_product_type='table',
             task_type_id='build'
         )
@@ -226,15 +226,15 @@ class SimpleEstimateGenerationTestCase(TestCase):
         # Create instance mappings with same product identifier
         TaskInstanceMapping.objects.create(
             task=task1,
-            product_identifier='table_001'
+            bundle_identifier='table_001'
         )
         TaskInstanceMapping.objects.create(
             task=task2,
-            product_identifier='table_001'
+            bundle_identifier='table_001'
         )
         
         # Create bundling rule
-        ProductBundlingRule.objects.create(
+        BundlingRule.objects.create(
             rule_name='Table Rule',
             product_type='table',
             line_item_template='Custom Table',
@@ -255,11 +255,11 @@ class SimpleEstimateGenerationTestCase(TestCase):
         self.assertEqual(line_item.price_currency, Decimal('1400.00'))
     
     def test_service_bundle_basic(self):
-        """Test basic service bundling"""
+        """Test basic service bundling with hours-based quantity"""
         # Create setup mapping and template
         setup_mapping = TaskMapping.objects.create(
             step_type='labor',
-            mapping_strategy='bundle_to_service',
+            mapping_strategy='bundle',
             default_product_type='installation_service',
             task_type_id='setup'
         )
@@ -267,11 +267,11 @@ class SimpleEstimateGenerationTestCase(TestCase):
             template_name='Setup Template',
             task_mapping=setup_mapping
         )
-        
+
         # Create installation mapping and template
         install_mapping = TaskMapping.objects.create(
             step_type='labor',
-            mapping_strategy='bundle_to_service',
+            mapping_strategy='bundle',
             default_product_type='installation_service',
             task_type_id='install'
         )
@@ -279,7 +279,17 @@ class SimpleEstimateGenerationTestCase(TestCase):
             template_name='Installation Template',
             task_mapping=install_mapping
         )
-        
+
+        # Create bundling rule with hours-based units and description template
+        BundlingRule.objects.create(
+            rule_name='Installation Service Bundler',
+            product_type='installation_service',
+            line_item_template='Installation Service',
+            description_template='Installation Service Services:\n{tasks_list}',
+            default_units='hours',
+            pricing_method='sum_components'
+        )
+
         # Create service tasks
         task1 = Task.objects.create(
             est_worksheet=self.worksheet,
@@ -289,7 +299,7 @@ class SimpleEstimateGenerationTestCase(TestCase):
             rate=Decimal('75.00'),
             est_qty=Decimal('2.00')
         )
-        
+
         task2 = Task.objects.create(
             est_worksheet=self.worksheet,
             template=install_template,
@@ -298,18 +308,18 @@ class SimpleEstimateGenerationTestCase(TestCase):
             rate=Decimal('100.00'),
             est_qty=Decimal('3.00')
         )
-        
+
         # Generate estimate
         estimate = self.service.generate_estimate_from_worksheet(self.worksheet)
-        
+
         # Verify service bundle line item
         line_items = estimate.estimatelineitem_set.all()
         self.assertEqual(line_items.count(), 1)
-        
+
         line_item = line_items.first()
-        self.assertIn('Installation Service', line_item.description)
         self.assertIn('Setup', line_item.description)
         self.assertIn('Installation', line_item.description)
         self.assertEqual(line_item.qty, Decimal('5.00'))  # 2 + 3 hours
+        self.assertEqual(line_item.units, 'hours')
         # Total: (2*75) + (3*100) = 150 + 300 = 450
         self.assertEqual(line_item.price_currency, Decimal('450.00'))

@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block title %}Bundling Rule: {{ rule.rule_name }} - Minibini{% endblock %}
+
+{% block navigation %}
+{% include 'includes/settings_navigation.html' %}
+{% endblock %}
+
+{% block content %}
+<h2>Bundling Rule: {{ rule.rule_name }}</h2>
+
+<table border="1">
+    <tr><th>Rule Name</th><td>{{ rule.rule_name }}</td></tr>
+    <tr><th>Product Type</th><td>{{ rule.product_type }}</td></tr>
+    <tr><th>Work Order Template</th><td>{% if rule.work_order_template %}{{ rule.work_order_template.template_name }}{% else %}-{% endif %}</td></tr>
+    <tr><th>Line Item Template</th><td><code>{{ rule.line_item_template }}</code></td></tr>
+    <tr><th>Description Template</th><td>{% if rule.description_template %}<code>{{ rule.description_template }}</code>{% else %}-{% endif %}</td></tr>
+    <tr><th>Default Units</th><td>{{ rule.get_default_units_display }}</td></tr>
+    <tr><th>Combine Instances</th><td>{% if rule.combine_instances %}Yes - "4x Chair"{% else %}No - separate lines{% endif %}</td></tr>
+    <tr><th>Pricing Method</th><td>{{ rule.get_pricing_method_display }}</td></tr>
+    <tr><th>Include Materials</th><td>{% if rule.include_materials %}Yes{% else %}No{% endif %}</td></tr>
+    <tr><th>Include Labor</th><td>{% if rule.include_labor %}Yes{% else %}No{% endif %}</td></tr>
+    <tr><th>Include Overhead</th><td>{% if rule.include_overhead %}Yes{% else %}No{% endif %}</td></tr>
+    <tr><th>Priority</th><td>{{ rule.priority }}</td></tr>
+    <tr><th>Active</th><td>{% if rule.is_active %}Yes{% else %}No{% endif %}</td></tr>
+</table>
+
+<p>
+    <a href="{% url 'jobs:bundling_rule_edit' rule.pk %}">Edit</a> |
+    <a href="{% url 'jobs:bundling_rule_delete' rule.pk %}" style="color: #dc3545;">Delete</a> |
+    <a href="{% url 'jobs:bundling_rule_list' %}">Back to List</a>
+</p>
+
+<h3>Matching Task Mappings</h3>
+<p>These Task Mappings use product_type "{{ rule.product_type }}" and will apply this bundling rule:</p>
+{% if matching_mappings %}
+<ul>
+    {% for mapping in matching_mappings %}
+    <li><a href="{% url 'jobs:task_mapping_detail' mapping.pk %}">{{ mapping.task_type_id }}</a> ({{ mapping.get_mapping_strategy_display }})</li>
+    {% endfor %}
+</ul>
+{% else %}
+<p><em>No Task Mappings currently match this product type. Create a Task Mapping with default_product_type="{{ rule.product_type }}" and a bundle mapping strategy.</em></p>
+{% endif %}
+
+{% endblock %}

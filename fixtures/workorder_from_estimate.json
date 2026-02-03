@@ -65,7 +65,7 @@
     "pk": 50,
     "fields": {
       "step_type": "product",
-      "mapping_strategy": "bundle_to_product",
+      "mapping_strategy": "bundle",
       "default_product_type": "test_product",
       "line_item_name": "Test Product Bundle",
       "line_item_description": "Bundled test product",
@@ -272,7 +272,7 @@
     "pk": 100,
     "fields": {
       "task": 100,
-      "product_identifier": "test_product_100_1",
+      "bundle_identifier": "test_product_100_1",
       "product_instance": 1
     }
   },
@@ -281,7 +281,7 @@
     "pk": 101,
     "fields": {
       "task": 101,
-      "product_identifier": "test_product_100_1",
+      "bundle_identifier": "test_product_100_1",
       "product_instance": 1
     }
   },
@@ -290,7 +290,7 @@
     "pk": 102,
     "fields": {
       "task": 102,
-      "product_identifier": "test_product_100_1",
+      "bundle_identifier": "test_product_100_1",
       "product_instance": 1
     }
   },

@@ -1,11 +1,11 @@
 from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import ProductBundlingRule, WorkOrderTemplate
+from apps.jobs.models import BundlingRule, WorkOrderTemplate
 
 
-class ProductBundlingRuleValidationTest(TestCase):
-    """Test validation rules for ProductBundlingRule"""
+class BundlingRuleValidationTest(TestCase):
+    """Test validation rules for BundlingRule"""
     
     def setUp(self):
         """Set up test data"""
@@ -28,9 +28,9 @@ class ProductBundlingRuleValidationTest(TestCase):
         )
     
     def test_template_base_pricing_requires_template(self):
-        """ProductBundlingRule with template_base pricing must have a work_order_template"""
+        """BundlingRule with template_base pricing must have a work_order_template"""
         with self.assertRaises(ValidationError) as context:
-            rule = ProductBundlingRule(
+            rule = BundlingRule(
                 rule_name="Invalid Template Base Rule",
                 product_type="furniture",
                 work_order_template=None,  # Missing template
@@ -42,9 +42,9 @@ class ProductBundlingRuleValidationTest(TestCase):
         self.assertIn("template_base pricing requires", str(context.exception))
     
     def test_template_base_pricing_requires_base_price(self):
-        """ProductBundlingRule with template_base pricing must reference template with base_price"""
+        """BundlingRule with template_base pricing must reference template with base_price"""
         with self.assertRaises(ValidationError) as context:
-            rule = ProductBundlingRule(
+            rule = BundlingRule(
                 rule_name="Invalid Base Price Rule",
                 product_type="furniture", 
                 work_order_template=self.template_without_price,  # Template has no base_price
@@ -56,8 +56,8 @@ class ProductBundlingRuleValidationTest(TestCase):
         self.assertIn("base_price", str(context.exception))
     
     def test_valid_template_base_pricing(self):
-        """ProductBundlingRule with template_base pricing should be valid when properly configured"""
-        rule = ProductBundlingRule(
+        """BundlingRule with template_base pricing should be valid when properly configured"""
+        rule = BundlingRule(
             rule_name="Valid Template Base Rule",
             product_type="furniture",
             work_order_template=self.template_with_price,  # Template has base_price
@@ -74,8 +74,8 @@ class ProductBundlingRuleValidationTest(TestCase):
             self.fail("Valid template_base rule should not raise ValidationError")
     
     def test_sum_components_pricing_without_template(self):
-        """ProductBundlingRule with sum_components pricing should work without template"""
-        rule = ProductBundlingRule(
+        """BundlingRule with sum_components pricing should work without template"""
+        rule = BundlingRule(
             rule_name="Sum Components Rule",
             product_type="furniture",
             work_order_template=None,  # No template needed for sum_components
@@ -92,8 +92,8 @@ class ProductBundlingRuleValidationTest(TestCase):
             self.fail("sum_components rule without template should not raise ValidationError")
     
     def test_sum_components_pricing_with_template(self):
-        """ProductBundlingRule with sum_components pricing should work with template"""
-        rule = ProductBundlingRule(
+        """BundlingRule with sum_components pricing should work with template"""
+        rule = BundlingRule(
             rule_name="Sum Components with Template Rule",
             product_type="furniture",
             work_order_template=self.template_with_price,  # Template allowed but not required
@@ -110,8 +110,8 @@ class ProductBundlingRuleValidationTest(TestCase):
             self.fail("sum_components rule with template should not raise ValidationError")
     
     def test_custom_calculation_pricing(self):
-        """ProductBundlingRule with custom_calculation pricing should work"""
-        rule = ProductBundlingRule(
+        """BundlingRule with custom_calculation pricing should work"""
+        rule = BundlingRule(
             rule_name="Custom Calculation Rule",
             product_type="furniture",
             work_order_template=None,

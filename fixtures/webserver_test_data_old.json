@@ -1445,7 +1445,7 @@
     "pk": 3,
     "fields": {
       "step_type": "component",
-      "mapping_strategy": "bundle_to_product",
+      "mapping_strategy": "bundle",
       "default_product_type": "furniture",
       "line_item_name": "Custom Furniture",
       "line_item_description": "Bundled into complete furniture product",
@@ -1458,7 +1458,7 @@
     "pk": 4,
     "fields": {
       "step_type": "component",
-      "mapping_strategy": "bundle_to_product",
+      "mapping_strategy": "bundle",
       "default_product_type": "furniture",
       "line_item_name": "Custom Furniture",
       "line_item_description": "Bundled into complete furniture product",
@@ -1471,7 +1471,7 @@
     "pk": 5,
     "fields": {
       "step_type": "component",
-      "mapping_strategy": "bundle_to_product",
+      "mapping_strategy": "bundle",
       "default_product_type": "furniture",
       "line_item_name": "Custom Furniture",
       "line_item_description": "Bundled into complete furniture product",
@@ -1484,7 +1484,7 @@
     "pk": 6,
     "fields": {
       "step_type": "labor",
-      "mapping_strategy": "bundle_to_service",
+      "mapping_strategy": "bundle",
       "default_product_type": "delivery",
       "line_item_name": "Delivery & Installation",
       "line_item_description": "Complete delivery and installation service",
@@ -1497,7 +1497,7 @@
     "pk": 7,
     "fields": {
       "step_type": "material",
-      "mapping_strategy": "bundle_to_product",
+      "mapping_strategy": "bundle",
       "default_product_type": "furniture",
       "line_item_name": "Custom Furniture",
       "line_item_description": "Bundled into complete furniture product",
@@ -1519,7 +1519,7 @@
     }
   },
   {
-    "model": "jobs.productbundlingrule",
+    "model": "jobs.bundlingrule",
     "pk": 1,
     "fields": {
       "rule_name": "Furniture Bundling Rule",
@@ -1532,7 +1532,7 @@
     }
   },
   {
-    "model": "jobs.productbundlingrule",
+    "model": "jobs.bundlingrule",
     "pk": 2,
     "fields": {
       "rule_name": "Delivery Service Bundling",
@@ -1545,7 +1545,7 @@
     }
   },
   {
-    "model": "jobs.productbundlingrule",
+    "model": "jobs.bundlingrule",
     "pk": 3,
     "fields": {
       "rule_name": "Premium Furniture Template Pricing",
@@ -1845,7 +1845,7 @@
     "pk": 1,
     "fields": {
       "task": 19,
-      "product_identifier": "kitchen_cabinet_set_001"
+      "bundle_identifier": "kitchen_cabinet_set_001"
     }
   },
   {
@@ -1853,7 +1853,7 @@
     "pk": 2,
     "fields": {
       "task": 20,
-      "product_identifier": "kitchen_cabinet_set_001"
+      "bundle_identifier": "kitchen_cabinet_set_001"
     }
   },
   {
@@ -1861,7 +1861,7 @@
     "pk": 3,
     "fields": {
       "task": 21,
-      "product_identifier": "kitchen_cabinet_set_001"
+      "bundle_identifier": "kitchen_cabinet_set_001"
     }
   },
   {
@@ -1869,7 +1869,7 @@
     "pk": 4,
     "fields": {
       "task": 22,
-      "product_identifier": "kitchen_cabinet_set_001"
+      "bundle_identifier": "kitchen_cabinet_set_001"
     }
   },
   {

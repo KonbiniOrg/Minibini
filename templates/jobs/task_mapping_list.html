@@ -8,7 +8,15 @@
 
 {% block content %}
 <h2>Task Mappings</h2>
-<p>Transformation rules that define how tasks map to estimate line items.</p>
+
+<div style="background-color: #f0f0f0; padding: 10px; margin-bottom: 20px; border-left: 4px solid #007bff;">
+    <strong>About Task Mappings</strong>
+    <p>Task Mappings are reusable configuration templates that define how worksheet tasks transform into estimate line items. Each Task Template links to a Task Mapping.</p>
+</div>
+
+<p>
+    <a href="{% url 'jobs:task_mapping_create' %}" style="background-color: #007bff; color: white; padding: 5px 10px; text-decoration: none;">Add New Mapping</a>
+</p>
 
 {% if mappings %}
     <table border="1">
@@ -17,9 +25,8 @@
             <th>Step Type</th>
             <th>Mapping Strategy</th>
             <th>Default Product Type</th>
-            <th>Line Item Name</th>
-            <th>Line Item Description</th>
-            <th>Breakdown of Task</th>
+            <th>Line Item Type</th>
+            <th>Actions</th>
         </tr>
         {% for mapping in mappings %}
         <tr>
@@ -27,23 +34,25 @@
             <td>{{ mapping.get_step_type_display }}</td>
             <td>{{ mapping.get_mapping_strategy_display }}</td>
             <td>{{ mapping.default_product_type|default:"-" }}</td>
-            <td>{{ mapping.line_item_name|default:"-" }}</td>
-            <td>{{ mapping.line_item_description|truncatewords:15|default:"-" }}</td>
-            <td>{{ mapping.breakdown_of_task|truncatewords:15|default:"-" }}</td>
+            <td>{% if mapping.output_line_item_type %}{{ mapping.output_line_item_type.code }}{% else %}-{% endif %}</td>
+            <td>
+                <a href="{% url 'jobs:task_mapping_detail' mapping.pk %}">View</a> |
+                <a href="{% url 'jobs:task_mapping_edit' mapping.pk %}">Edit</a> |
+                <a href="{% url 'jobs:task_mapping_delete' mapping.pk %}" style="color: #dc3545;">Delete</a>
+            </td>
         </tr>
         {% endfor %}
     </table>
 {% else %}
-    <p>No task mappings found.</p>
+    <p>No task mappings found. <a href="{% url 'jobs:task_mapping_create' %}">Create your first mapping</a>.</p>
 {% endif %}
 
 <h3>Mapping Strategy Reference</h3>
-<p>Available mapping strategies that define how tasks are converted to estimate line items:</p>
 <ul>
-    <li><strong>Direct</strong> - One task to one line item (e.g., consultation becomes "Design Consultation")</li>
-    <li><strong>Bundle into product line item</strong> - Multiple tasks bundled into one product (e.g., cut + assemble + finish → "Custom Table")</li>
-    <li><strong>Bundle into service line item</strong> - Multiple tasks bundled into one service (e.g., delivery tasks → "Delivery & Installation")</li>
-    <li><strong>Internal only - exclude from estimate</strong> - Internal tasks not shown to customer (e.g., quality assurance)</li>
+    <li><strong>Direct</strong> - One task becomes one line item (e.g., consultation becomes "Design Consultation")</li>
+    <li><strong>Bundle</strong> - Multiple tasks bundled into one line item. Tasks are grouped by bundle_identifier. Use BundlingRule.default_units to control qty calculation.</li>
+    <li><strong>Exclude from estimate</strong> - Internal tasks not shown to customer (e.g., shop overhead, quality checks)</li>
 </ul>
 
+<p><a href="{% url 'settings' %}">Back to Settings</a></p>
 {% endblock %}

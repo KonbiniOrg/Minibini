@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .models import (
     WorkOrderTemplate, TaskTemplate, TaskMapping,
-    EstWorksheet, Task, Estimate, EstimateLineItem, Job
+    EstWorksheet, Task, Estimate, EstimateLineItem, Job, BundlingRule
 )
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType
@@ -361,3 +361,108 @@ class WorkOrderStatusForm(forms.Form):
         status = self.cleaned_data['status']
         # Additional validation if needed
         return status
+
+
+class TaskMappingForm(forms.ModelForm):
+    """Form for creating/editing TaskMappings with explanatory help text."""
+
+    class Meta:
+        model = TaskMapping
+        fields = [
+            'task_type_id', 'step_type', 'mapping_strategy',
+            'default_product_type', 'line_item_name', 'line_item_description',
+            'output_line_item_type', 'breakdown_of_task'
+        ]
+        help_texts = {
+            'task_type_id': 'Unique identifier for this mapping (e.g., "CABINET-DOOR", "DELIVERY")',
+            'step_type': 'What type of work this represents in the production process',
+            'mapping_strategy': 'How tasks using this mapping appear on estimates',
+            'default_product_type': 'Product type for bundling (e.g., "cabinet", "table"). Required for bundle strategies.',
+            'line_item_name': 'Name shown on estimate line item when using "direct" mapping',
+            'line_item_description': 'Description for the line item on estimates',
+            'output_line_item_type': 'Determines taxability and categorization of generated line items',
+            'breakdown_of_task': 'Internal notes about what this task involves',
+        }
+        widgets = {
+            'line_item_description': forms.Textarea(attrs={'rows': 3}),
+            'breakdown_of_task': forms.Textarea(attrs={'rows': 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Only show active LineItemTypes
+        self.fields['output_line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
+
+
+class BundlingRuleForm(forms.ModelForm):
+    """Form for creating/editing BundlingRules with explanatory help text."""
+
+    class Meta:
+        model = BundlingRule
+        fields = [
+            'rule_name', 'product_type', 'work_order_template',
+            'line_item_template', 'description_template', 'default_units', 'combine_instances',
+            'pricing_method', 'include_materials', 'include_labor', 'include_overhead',
+            'output_line_item_type', 'priority', 'is_active'
+        ]
+        help_texts = {
+            'rule_name': 'Descriptive name for this rule (e.g., "Cabinet Bundler")',
+            'product_type': 'Must match TaskMapping.default_product_type (e.g., "cabinet", "table")',
+            'work_order_template': 'Optional. Required if pricing_method is "template_base"',
+            'line_item_template': 'Template for line item name. Use {product_type} and {bundle_identifier} placeholders.',
+            'description_template': 'Template for line item description. Use {tasks_list} for bullet list of task names.',
+            'default_units': 'How to calculate quantity: "each" = qty 1, "hours" = sum of task hours',
+            'combine_instances': 'If checked, shows "4x Chair" instead of 4 separate line items',
+            'pricing_method': 'How to calculate the bundled line item price',
+            'include_materials': 'Include material costs in bundle price calculation',
+            'include_labor': 'Include labor costs in bundle price calculation',
+            'include_overhead': 'Include overhead costs in bundle price calculation (usually excluded from customer-facing price)',
+            'output_line_item_type': 'LineItemType for bundled line items. If set, overrides the types from component task mappings.',
+            'priority': 'Lower numbers = higher priority. Used when multiple rules could apply.',
+            'is_active': 'Inactive rules are not applied during estimate generation',
+        }
+        widgets = {
+            'description_template': forms.Textarea(attrs={'rows': 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .models import WorkOrderTemplate
+        self.fields['work_order_template'].queryset = WorkOrderTemplate.objects.filter(is_active=True)
+        self.fields['output_line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
+
+    def clean(self):
+        """
+        Validate that if TaskMappings for the same product_type have different
+        output_line_item_types, an explicit output_line_item_type must be set.
+        """
+        cleaned_data = super().clean()
+        product_type = cleaned_data.get('product_type')
+        output_line_item_type = cleaned_data.get('output_line_item_type')
+
+        if product_type and not output_line_item_type:
+            # Find TaskMappings with this product_type and bundle strategy
+            task_mappings = TaskMapping.objects.filter(
+                default_product_type=product_type,
+                mapping_strategy='bundle'
+            ).exclude(output_line_item_type__isnull=True)
+
+            # Get distinct output_line_item_types
+            distinct_types = set(
+                task_mappings.values_list('output_line_item_type', flat=True)
+            )
+
+            if len(distinct_types) > 1:
+                raise ValidationError({
+                    'output_line_item_type': (
+                        f"TaskMappings for '{product_type}' have conflicting "
+                        "LineItemTypes. You must specify an output_line_item_type "
+                        "to override the conflicting types."
+                    )
+                })
+
+        return cleaned_data
+
+
+# Alias for backwards compatibility
+ProductBundlingRuleForm = BundlingRuleForm

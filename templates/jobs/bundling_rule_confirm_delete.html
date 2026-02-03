@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Bundling Rule - Minibini{% endblock %}
+
+{% block navigation %}
+{% include 'includes/settings_navigation.html' %}
+{% endblock %}
+
+{% block content %}
+<h2>Delete Bundling Rule: {{ rule.rule_name }}</h2>
+
+<div style="background-color: #fff3cd; padding: 10px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+    <strong>Are you sure you want to delete this bundling rule?</strong>
+    <p>This action cannot be undone. The rule "{{ rule.rule_name }}" will be permanently removed.</p>
+    <p><em>Note: This is safe because Bundling Rules are only used during estimate generation and are not stored with line items. Existing estimates will not be affected.</em></p>
+</div>
+
+<table border="1" style="margin-bottom: 20px;">
+    <tr><th>Rule Name</th><td>{{ rule.rule_name }}</td></tr>
+    <tr><th>Product Type</th><td>{{ rule.product_type }}</td></tr>
+    <tr><th>Line Item Template</th><td>{{ rule.line_item_template }}</td></tr>
+</table>
+
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" style="background-color: #dc3545; color: white; padding: 5px 15px;">Delete</button>
+    <a href="{% url 'jobs:bundling_rule_detail' rule.pk %}">Cancel</a>
+</form>
+{% endblock %}

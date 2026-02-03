@@ -518,7 +518,7 @@
         "fields": {
             "task_type_id": "COMPONENT-CABINET",
             "step_type": "component",
-            "mapping_strategy": "bundle_to_product",
+            "mapping_strategy": "bundle",
             "default_product_type": "cabinet",
             "line_item_name": "Custom Cabinet",
             "line_item_description": "Bundled cabinet components",
@@ -714,13 +714,13 @@
         }
     },
     {
-        "model": "jobs.productbundlingrule",
+        "model": "jobs.bundlingrule",
         "pk": 1,
         "fields": {
             "rule_name": "Cabinet Bundler",
             "product_type": "cabinet",
             "work_order_template": 2,
-            "line_item_template": "Custom Cabinet - {product_identifier}",
+            "line_item_template": "Custom Cabinet - {bundle_identifier}",
             "combine_instances": true,
             "pricing_method": "sum_components",
             "include_materials": true,
@@ -983,7 +983,7 @@
         "model": "jobs.taskinstancemapping",
         "pk": 3,
         "fields": {
-            "product_identifier": "cabinet_001",
+            "bundle_identifier": "cabinet_001",
             "product_instance": 1
         },
         "_section": "=== TASK INSTANCE MAPPINGS (3) - group cabinet tasks for bundling ==="
@@ -992,7 +992,7 @@
         "model": "jobs.taskinstancemapping",
         "pk": 4,
         "fields": {
-            "product_identifier": "cabinet_001",
+            "bundle_identifier": "cabinet_001",
             "product_instance": 1
         }
     },
@@ -1000,7 +1000,7 @@
         "model": "jobs.taskinstancemapping",
         "pk": 5,
         "fields": {
-            "product_identifier": "cabinet_001",
+            "bundle_identifier": "cabinet_001",
             "product_instance": 1
         }
     },
@@ -1476,7 +1476,7 @@
         "model": "jobs.taskinstancemapping",
         "pk": 9,
         "fields": {
-            "product_identifier": "cabinet_002",
+            "bundle_identifier": "cabinet_002",
             "product_instance": 1
         }
     },
@@ -1484,7 +1484,7 @@
         "model": "jobs.taskinstancemapping",
         "pk": 10,
         "fields": {
-            "product_identifier": "cabinet_002",
+            "bundle_identifier": "cabinet_002",
             "product_instance": 1
         }
     },
@@ -1492,7 +1492,7 @@
         "model": "jobs.taskinstancemapping",
         "pk": 11,
         "fields": {
-            "product_identifier": "cabinet_002",
+            "bundle_identifier": "cabinet_002",
             "product_instance": 1
         }
     }

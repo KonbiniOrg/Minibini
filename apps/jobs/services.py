@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from .models import (
     Job, WorkOrder, Estimate, Task, WorkOrderTemplate, TaskTemplate,
-    EstWorksheet, EstimateLineItem, TaskMapping, ProductBundlingRule, TaskInstanceMapping
+    EstWorksheet, EstimateLineItem, TaskMapping, BundlingRule, TaskInstanceMapping
 )
 from apps.invoicing.models import PriceListItem
 from apps.core.services import NumberGenerationService
@@ -52,10 +52,10 @@ class LineItemTaskService:
         # Check if this task is part of a bundle
         try:
             instance_mapping = TaskInstanceMapping.objects.get(task=line_item.task)
-            # Find all tasks with the same product_identifier (all tasks that contributed to this line item)
+            # Find all tasks with the same bundle_identifier (all tasks that contributed to this line item)
             source_tasks = Task.objects.filter(
                 est_worksheet=line_item.task.est_worksheet,
-                taskinstancemapping__product_identifier=instance_mapping.product_identifier
+                taskinstancemapping__bundle_identifier=instance_mapping.bundle_identifier
             ).order_by('task_id')
         except TaskInstanceMapping.DoesNotExist:
             # Single task, not part of a bundle
@@ -84,7 +84,7 @@ class LineItemTaskService:
                 old_mapping = TaskInstanceMapping.objects.get(task=source_task)
                 TaskInstanceMapping.objects.create(
                     task=new_task,
-                    product_identifier=old_mapping.product_identifier,
+                    bundle_identifier=old_mapping.bundle_identifier,
                     product_instance=old_mapping.product_instance
                 )
             except TaskInstanceMapping.DoesNotExist:
@@ -301,25 +301,55 @@ class TaskService:
     def create_line_item_from_task(task, estimate):
         """
         Create LineItem from Task.
-        Uses TaskMapping for translation (placeholder for now).
+        Uses TaskMapping for translation.
         """
-        # Placeholder: TaskMapping translation will be implemented later
         from .models import EstimateLineItem
+        from apps.core.models import LineItemType
+
+        # Get line_item_type from task's template mapping if available
+        line_item_type = None
+        if task.template and task.template.task_mapping:
+            line_item_type = task.template.task_mapping.output_line_item_type
+
+        # Fall back to default LineItemType if none specified
+        if line_item_type is None:
+            # Get default LineItemType (Direct/Service)
+            line_item_type = LineItemType.objects.filter(
+                code__in=['SVC', 'DIR']
+            ).first()
+            # If no standard default exists, get any active type
+            if line_item_type is None:
+                line_item_type = LineItemType.objects.filter(is_active=True).first()
+
         line_item = EstimateLineItem.objects.create(
             estimate=estimate,
             description=f"LineItem from {task.name}",
             qty=1,
             units="each",
-            price_currency=0
+            price_currency=0,
+            line_item_type=line_item_type,
         )
         return line_item
 
 
 class EstimateGenerationService:
     """Service for converting EstWorksheets to Estimates using TaskMappings"""
-    
+
     def __init__(self):
         self.line_number = 1
+        self._default_line_item_type = None
+
+    def _get_default_line_item_type(self):
+        """Get a default LineItemType to use when none is specified."""
+        if self._default_line_item_type is None:
+            from apps.core.models import LineItemType
+            # Try to find Service type first, then Direct, then any active type
+            self._default_line_item_type = LineItemType.objects.filter(
+                code__in=['SVC', 'DIR'], is_active=True
+            ).first()
+            if self._default_line_item_type is None:
+                self._default_line_item_type = LineItemType.objects.filter(is_active=True).first()
+        return self._default_line_item_type
     
     @transaction.atomic
     def generate_estimate_from_worksheet(self, worksheet: EstWorksheet) -> Estimate:
@@ -347,21 +377,16 @@ class EstimateGenerationService:
         estimate = self._create_estimate(worksheet)
         
         # Process tasks based on their mappings
-        products, services, direct_items, excluded = self._categorize_tasks(tasks)
-        
+        bundles, direct_items, excluded = self._categorize_tasks(tasks)
+
         # Generate line items
         line_items = []
-        
-        # Process bundled products
-        if products:
-            product_line_items = self._process_product_bundles(products, estimate)
-            line_items.extend(product_line_items)
-        
-        # Process bundled services
-        if services:
-            service_line_items = self._process_service_bundles(services, estimate)
-            line_items.extend(service_line_items)
-        
+
+        # Process bundled tasks
+        if bundles:
+            bundle_line_items = self._process_bundles(bundles, estimate)
+            line_items.extend(bundle_line_items)
+
         # Process direct items
         if direct_items:
             direct_line_items = self._process_direct_items(direct_items, estimate)
@@ -407,129 +432,263 @@ class EstimateGenerationService:
 
         return estimate
     
-    def _categorize_tasks(self, tasks: List[Task]) -> Tuple[Dict, Dict, List[Task], List[Task]]:
+    def _categorize_tasks(self, tasks: List[Task]) -> Tuple[Dict, List[Task], List[Task]]:
         """
         Categorize tasks based on their mapping strategy.
-        
+
         Returns:
-            Tuple of (products_dict, services_dict, direct_list, excluded_list)
+            Tuple of (bundles_dict, direct_list, excluded_list)
+            bundles_dict is keyed by bundle_identifier (or auto-generated key)
         """
-        products = defaultdict(list)  # product_identifier -> [tasks]
-        services = defaultdict(list)  # service bundle key -> [tasks]
+        bundles = defaultdict(list)  # bundle_identifier -> [tasks]
         direct_items = []
         excluded = []
-        
+
         for task in tasks:
             strategy = task.get_mapping_strategy()
-            
+
             if strategy == 'exclude':
                 excluded.append(task)
-            elif strategy == 'bundle_to_product':
-                # Get product identifier from instance mapping or generate one
+            elif strategy == 'bundle':
+                # Get bundle identifier from instance mapping or auto-generate
                 try:
                     instance_mapping = task.taskinstancemapping
-                    product_identifier = instance_mapping.product_identifier
+                    bundle_identifier = instance_mapping.bundle_identifier
                 except TaskInstanceMapping.DoesNotExist:
-                    # Generate product identifier if not set
-                    product_type = task.get_product_type() or 'product'
-                    product_identifier = f"{product_type}_{task.task_id}"
-                
-                products[product_identifier].append(task)
-            elif strategy == 'bundle_to_service':
-                # Use product_type as service bundle key
-                service_key = task.get_product_type() or 'general_service'
-                services[service_key].append(task)
+                    bundle_identifier = None
+
+                # If no explicit bundle_identifier, group by product_type
+                if not bundle_identifier:
+                    product_type = task.get_product_type() or 'general'
+                    bundle_identifier = f"_auto_{product_type}"
+
+                bundles[bundle_identifier].append(task)
             else:  # 'direct' or unrecognized
                 direct_items.append(task)
-        
-        return products, services, direct_items, excluded
+
+        return bundles, direct_items, excluded
     
-    def _process_product_bundles(self, products: Dict[str, List[Task]], estimate: Estimate) -> List[EstimateLineItem]:
-        """Process product bundles into line items"""
+    def _process_bundles(self, bundles: Dict[str, List[Task]], estimate: Estimate) -> List[EstimateLineItem]:
+        """
+        Process bundled tasks into line items using BundlingRule configuration.
+
+        Bundles are grouped by bundle_identifier. The BundlingRule.default_units
+        determines quantity calculation:
+        - 'each': qty=1 per bundle
+        - 'hours': qty=sum of task hours
+        """
         line_items = []
-        
-        # Group by product type for potential combining
-        product_instances = defaultdict(list)
-        
-        for product_id, task_list in products.items():
+
+        # Group bundles by product_type for rule lookup and potential combining
+        bundles_by_type = defaultdict(list)
+
+        for bundle_id, task_list in bundles.items():
             if task_list:
                 first_task = task_list[0]
-                product_type = first_task.get_product_type()
-                if product_type:
-                    # Get instance number if available
-                    try:
-                        instance_mapping = first_task.taskinstancemapping
-                        instance_num = instance_mapping.product_instance
-                    except TaskInstanceMapping.DoesNotExist:
-                        instance_num = None
-                    
-                    product_instances[product_type].append({
-                        'identifier': product_id,
-                        'tasks': task_list,
-                        'instance': instance_num
-                    })
-        
+                product_type = first_task.get_product_type() or 'general'
+
+                # Get instance number if available
+                try:
+                    instance_mapping = first_task.taskinstancemapping
+                    instance_num = instance_mapping.product_instance
+                except TaskInstanceMapping.DoesNotExist:
+                    instance_num = None
+
+                bundles_by_type[product_type].append({
+                    'identifier': bundle_id,
+                    'tasks': task_list,
+                    'instance': instance_num
+                })
+
         # Process each product type
-        for product_type, instances in product_instances.items():
+        for product_type, bundle_instances in bundles_by_type.items():
             # Find applicable bundling rule
-            rule = ProductBundlingRule.objects.filter(
+            rule = BundlingRule.objects.filter(
                 product_type=product_type,
                 is_active=True
             ).order_by('priority').first()
-            
-            if rule and rule.combine_instances and len(instances) > 1:
-                # Create single line item with quantity
-                line_item = self._create_combined_product_line_item(
-                    instances, rule, estimate, quantity=len(instances)
+
+            if rule and rule.combine_instances and len(bundle_instances) > 1:
+                # Create single line item with quantity for combined instances
+                line_item = self._create_combined_bundle_line_item(
+                    bundle_instances, rule, estimate, quantity=len(bundle_instances)
                 )
                 line_items.append(line_item)
             else:
-                # Create separate line items for each instance
-                for instance_data in instances:
-                    line_item = self._create_product_line_item(
-                        instance_data['tasks'], rule, estimate, product_type,
-                        instance_data['identifier']
+                # Create separate line items for each bundle
+                for bundle_data in bundle_instances:
+                    line_item = self._create_bundle_line_item(
+                        bundle_data['tasks'], rule, estimate, product_type,
+                        bundle_data['identifier']
                     )
                     line_items.append(line_item)
-        
+
         return line_items
-    
-    def _process_service_bundles(self, services: Dict[str, List[Task]], estimate: Estimate) -> List[EstimateLineItem]:
-        """Process service bundles into line items"""
-        line_items = []
-        
-        for service_type, task_list in services.items():
-            # Calculate total price for service bundle
-            total_price = Decimal('0.00')
-            total_hours = Decimal('0.00')
-            descriptions = []
-            
-            line_item_type = None
-            for task in task_list:
-                qty = task.est_qty or Decimal('1.00')
-                rate = task.rate or Decimal('0.00')
+
+    def _create_bundle_line_item(self, tasks: List[Task], rule: Optional[BundlingRule],
+                                  estimate: Estimate, product_type: str,
+                                  bundle_identifier: str = '') -> EstimateLineItem:
+        """Create a single line item for a bundle from its component tasks."""
+        # Calculate totals
+        total_price = Decimal('0.00')
+        total_hours = Decimal('0.00')
+        task_names = []
+
+        for task in tasks:
+            qty = task.est_qty or Decimal('1.00')
+            rate = task.rate or Decimal('0.00')
+
+            # Apply inclusion rules if rule exists
+            include = True
+            if rule:
+                step_type = task.get_step_type()
+                if step_type == 'material' and not rule.include_materials:
+                    include = False
+                elif step_type == 'labor' and not rule.include_labor:
+                    include = False
+                elif step_type == 'overhead' and not rule.include_overhead:
+                    include = False
+
+            if include:
                 total_price += qty * rate
                 total_hours += qty
-                descriptions.append(f"- {task.name}")
-                # Get line_item_type from first task with one
-                if not line_item_type and task.template and task.template.task_mapping:
-                    line_item_type = task.template.task_mapping.output_line_item_type
+                task_names.append(task.name)
 
-            line_item = EstimateLineItem(
-                estimate=estimate,
-                line_number=self.line_number,
-                description=f"{service_type.replace('_', ' ').title()} Services:\n" + "\n".join(descriptions),
-                qty=total_hours,
-                units='hours',
-                price_currency=total_price,
-                line_item_type=line_item_type
+        # Determine units and quantity based on rule
+        if rule:
+            default_units = rule.default_units
+            if rule.pricing_method == 'template_base' and rule.work_order_template:
+                total_price = rule.work_order_template.base_price or total_price
+        else:
+            default_units = 'each'
+
+        if default_units == 'hours':
+            qty = total_hours
+            units = 'hours'
+        else:  # 'each'
+            qty = Decimal('1.00')
+            units = 'each'
+
+        # Build description
+        if rule and rule.description_template:
+            tasks_list = '\n'.join(f'- {name}' for name in task_names)
+            description = rule.description_template.format(
+                tasks_list=tasks_list,
+                product_type=product_type.title(),
+                bundle_identifier=bundle_identifier
             )
-            
-            self.line_number += 1
-            line_items.append(line_item)
-        
-        return line_items
-    
+        elif rule and rule.line_item_template:
+            description = rule.line_item_template.format(
+                product_type=product_type.title(),
+                bundle_identifier=bundle_identifier
+            )
+        else:
+            description = f"Custom {product_type.title()}"
+
+        # Get line_item_type: rule overrides task mapping
+        line_item_type = None
+        if rule and rule.output_line_item_type:
+            line_item_type = rule.output_line_item_type
+        else:
+            for task in tasks:
+                if task.template and task.template.task_mapping:
+                    line_item_type = task.template.task_mapping.output_line_item_type
+                    if line_item_type:
+                        break
+
+        if line_item_type is None:
+            line_item_type = self._get_default_line_item_type()
+
+        line_item = EstimateLineItem(
+            estimate=estimate,
+            line_number=self.line_number,
+            description=description,
+            qty=qty,
+            units=units,
+            price_currency=total_price,
+            line_item_type=line_item_type
+        )
+
+        self.line_number += 1
+        return line_item
+
+    def _create_combined_bundle_line_item(self, instances: List[Dict], rule: BundlingRule,
+                                           estimate: Estimate, quantity: int) -> EstimateLineItem:
+        """Create a single line item for multiple instances of the same product type."""
+        # Calculate price per unit
+        unit_price = Decimal('0.00')
+        total_hours = Decimal('0.00')
+
+        if rule.pricing_method == 'template_base' and rule.work_order_template:
+            unit_price = rule.work_order_template.base_price or Decimal('0.00')
+        else:
+            total_all_instances = Decimal('0.00')
+            for instance_data in instances:
+                for task in instance_data['tasks']:
+                    step_type = task.get_step_type()
+                    include = True
+                    if step_type == 'material' and not rule.include_materials:
+                        include = False
+                    elif step_type == 'labor' and not rule.include_labor:
+                        include = False
+                    elif step_type == 'overhead' and not rule.include_overhead:
+                        include = False
+
+                    if include:
+                        task_qty = task.est_qty or Decimal('1.00')
+                        rate = task.rate or Decimal('0.00')
+                        total_all_instances += task_qty * rate
+                        total_hours += task_qty
+
+            unit_price = total_all_instances / Decimal(str(quantity))
+
+        product_type = instances[0]['tasks'][0].get_product_type() or 'product'
+
+        # Determine units and quantity
+        if rule.default_units == 'hours':
+            qty = total_hours
+            units = 'hours'
+        else:
+            qty = Decimal(str(quantity))
+            units = 'each'
+
+        # Build description
+        first_identifier = instances[0].get('identifier', '')
+        description = rule.line_item_template.format(
+            product_type=product_type.title(),
+            bundle_identifier=first_identifier if quantity == 1 else f"{quantity}x {product_type}"
+        )
+
+        # Get line_item_type
+        line_item_type = rule.output_line_item_type
+        if not line_item_type:
+            for instance_data in instances:
+                for task in instance_data['tasks']:
+                    if task.template and task.template.task_mapping:
+                        line_item_type = task.template.task_mapping.output_line_item_type
+                        if line_item_type:
+                            break
+                if line_item_type:
+                    break
+
+        if line_item_type is None:
+            line_item_type = self._get_default_line_item_type()
+
+        total_price = unit_price * qty if rule.default_units == 'each' else unit_price * Decimal(str(quantity))
+
+        line_item = EstimateLineItem(
+            estimate=estimate,
+            line_number=self.line_number,
+            description=description,
+            qty=qty,
+            units=units,
+            price_currency=total_price if rule.default_units == 'each' else unit_price * Decimal(str(quantity)),
+            line_item_type=line_item_type
+        )
+
+        self.line_number += 1
+        return line_item
+
     def _process_direct_items(self, tasks: List[Task], estimate: Estimate) -> List[EstimateLineItem]:
         """Process direct mapping tasks into individual line items"""
         line_items = []
@@ -552,6 +711,10 @@ class EstimateGenerationService:
             if mapping and mapping.output_line_item_type:
                 line_item_type = mapping.output_line_item_type
 
+            # Use default line_item_type if none was found
+            if line_item_type is None:
+                line_item_type = self._get_default_line_item_type()
+
             line_item = EstimateLineItem(
                 estimate=estimate,
                 task=task,
@@ -562,139 +725,8 @@ class EstimateGenerationService:
                 price_currency=qty * rate,
                 line_item_type=line_item_type
             )
-            
+
             self.line_number += 1
             line_items.append(line_item)
-        
+
         return line_items
-    
-    def _create_product_line_item(self, tasks: List[Task], rule: Optional[ProductBundlingRule],
-                                   estimate: Estimate, product_type: str,
-                                   product_identifier: str = '') -> EstimateLineItem:
-        """Create a single line item for a product from its component tasks"""
-
-        # Default values
-        description = f"Custom {product_type.title()}"
-        total_price = Decimal('0.00')
-
-        if rule:
-            description = rule.line_item_template.format(
-                product_type=product_type.title(),
-                product_identifier=product_identifier
-            )
-            
-            if rule.pricing_method == 'template_base':
-                # Use template base price if available
-                template = rule.work_order_template
-                if template and template.base_price:
-                    total_price = template.base_price
-            else:
-                # Sum components based on inclusion rules
-                for task in tasks:
-                    step_type = task.get_step_type()
-                    include = True
-                    if step_type == 'material' and not rule.include_materials:
-                        include = False
-                    elif step_type == 'labor' and not rule.include_labor:
-                        include = False
-                    elif step_type == 'overhead' and not rule.include_overhead:
-                        include = False
-                    
-                    if include:
-                        qty = task.est_qty or Decimal('1.00')
-                        rate = task.rate or Decimal('0.00')
-                        total_price += qty * rate
-        else:
-            # No rule, sum all task prices
-            for task in tasks:
-                qty = task.est_qty or Decimal('1.00')
-                rate = task.rate or Decimal('0.00')
-                total_price += qty * rate
-
-        # Get line_item_type from the first task's mapping
-        line_item_type = None
-        for task in tasks:
-            if task.template and task.template.task_mapping:
-                line_item_type = task.template.task_mapping.output_line_item_type
-                if line_item_type:
-                    break
-
-        line_item = EstimateLineItem(
-            estimate=estimate,
-            line_number=self.line_number,
-            description=description,
-            qty=Decimal('1.00'),
-            units='each',
-            price_currency=total_price,
-            line_item_type=line_item_type
-        )
-        
-        self.line_number += 1
-        return line_item
-    
-    def _create_combined_product_line_item(self, instances: List[Dict], rule: ProductBundlingRule,
-                                            estimate: Estimate, quantity: int) -> EstimateLineItem:
-        """Create a single line item for multiple instances of the same product"""
-        
-        # Calculate price per unit
-        unit_price = Decimal('0.00')
-        
-        if rule.pricing_method == 'template_base':
-            template = rule.work_order_template
-            if template and template.base_price:
-                unit_price = template.base_price
-        else:
-            # Calculate average price per instance
-            total_all_instances = Decimal('0.00')
-            for instance_data in instances:
-                instance_total = Decimal('0.00')
-                for task in instance_data['tasks']:
-                    step_type = task.get_step_type()
-                    include = True
-                    if step_type == 'material' and not rule.include_materials:
-                        include = False
-                    elif step_type == 'labor' and not rule.include_labor:
-                        include = False
-                    elif step_type == 'overhead' and not rule.include_overhead:
-                        include = False
-                    
-                    if include:
-                        qty = task.est_qty or Decimal('1.00')
-                        rate = task.rate or Decimal('0.00')
-                        instance_total += qty * rate
-                
-                total_all_instances += instance_total
-            
-            unit_price = total_all_instances / Decimal(str(quantity))
-        
-        product_type = instances[0]['tasks'][0].get_product_type()
-        # For combined instances, use first identifier or a generic label
-        first_identifier = instances[0].get('identifier', '')
-        description = rule.line_item_template.format(
-            product_type=product_type.title(),
-            product_identifier=first_identifier if len(instances) == 1 else f"{quantity}x {product_type}"
-        )
-
-        # Get line_item_type from the first task's mapping
-        line_item_type = None
-        for instance_data in instances:
-            for task in instance_data['tasks']:
-                if task.template and task.template.task_mapping:
-                    line_item_type = task.template.task_mapping.output_line_item_type
-                    if line_item_type:
-                        break
-            if line_item_type:
-                break
-
-        line_item = EstimateLineItem(
-            estimate=estimate,
-            line_number=self.line_number,
-            description=description,
-            qty=Decimal(str(quantity)),
-            units='each',
-            price_currency=unit_price * Decimal(str(quantity)),
-            line_item_type=line_item_type
-        )
-        
-        self.line_number += 1
-        return line_item

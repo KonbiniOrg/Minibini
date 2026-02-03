@@ -237,12 +237,12 @@ class WorkOrderFromEstimateTestCase(TestCase):
         # Verify mappings exist for the new tasks
         parent_mapping = TaskInstanceMapping.objects.filter(task=new_parent_task).first()
         self.assertIsNotNone(parent_mapping)
-        self.assertEqual(parent_mapping.product_identifier, "test_product_100_1")
+        self.assertEqual(parent_mapping.bundle_identifier, "test_product_100_1")
         self.assertEqual(parent_mapping.product_instance, 1)
 
         child_mapping = TaskInstanceMapping.objects.filter(task=new_child_task).first()
         self.assertIsNotNone(child_mapping)
-        self.assertEqual(child_mapping.product_identifier, "test_product_100_1")
+        self.assertEqual(child_mapping.bundle_identifier, "test_product_100_1")
         self.assertEqual(child_mapping.product_instance, 1)
 
         # Verify tasks without original mapping don't get one

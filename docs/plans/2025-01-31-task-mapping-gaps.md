@@ -25,26 +25,34 @@ TaskMapping defines how tasks translate to line items when generating estimates 
 
 ---
 
-## Gap 1a: Edge Cases for LineItemType in Bundles
+## Gap 1a: Edge Cases for LineItemType in Bundles - FIXED
 
-**Status:** Not yet implemented - notes for future work
+**Status:** ✅ Fixed on 2025-02-02
 
 **Problem:** The current fix takes the first `output_line_item_type` found in bundled tasks. There are edge cases to handle:
 
-### 1. Different types in a bundle
+### 1. Different types in a bundle ✅
 **Scenario:** User tries to create a bundle where tasks have different `output_line_item_type` values (e.g., mixing Service and Material tasks).
 
-**Solution:** When a bundle mapping is being created, if any of the component tasks have different types, stop and ask the user to resolve the conflict.
+**Solution implemented:** `ProductBundlingRuleForm.clean()` validates that if TaskMappings for the same `product_type` have conflicting `output_line_item_type` values, the user must specify an explicit `output_line_item_type` on the bundling rule.
 
-### 2. Tasks without templates or mappings
+**Test:** `tests/test_bundling_rule_views.py::TestBundlingRuleConflictingTypesValidation`
+
+### 2. Tasks without templates or mappings ✅
 **Scenario:** A task has no template or the template has no mapping, resulting in `line_item_type=None`.
 
-**Solution:** The default should be "Direct" (or a configurable default), not None. All line items need a type - without one, we can't determine taxability, and tax authorities will have opinions about that.
+**Solution implemented:** `EstimateGenerationService._get_default_line_item_type()` returns a default LineItemType (SVC, DIR, or first active type). All 4 line item creation methods use this fallback.
 
-### 3. ProductBundlingRule could have its own line_item_type
+**Test:** `tests/test_estimate_generation_line_item_type.py::test_task_without_mapping_gets_default_line_item_type`
+
+### 3. ProductBundlingRule has its own line_item_type ✅
 **Scenario:** Need a way for users to explicitly set the output type for a bundle, overriding the component tasks.
 
-**Solution:** Add `output_line_item_type` field to `ProductBundlingRule`. This could also be the mechanism to implement #1 - when a user is trying to bundle incompatible types, they must explicitly choose the output type on the bundling rule.
+**Solution implemented:** Added `output_line_item_type` field to `ProductBundlingRule`. When set, it overrides the component tasks' types in `_create_product_line_item()` and `_create_combined_product_line_item()`.
+
+**Migration:** `apps/jobs/migrations/0022_add_output_line_item_type_to_bundling_rule.py`
+
+**Test:** `tests/test_estimate_generation_line_item_type.py::test_bundling_rule_output_line_item_type_overrides_task_mapping`
 
 ---
 
@@ -75,6 +83,60 @@ These will need adjustment as the business evolves. Requiring fixture edits and 
 - Edit view
 - Soft delete via `is_active` flag (would need to add this field)
 
+---
+
+## Gap 3: Template Placeholders Create Code/Data Coupling
+
+**Status:** ⚠️ Design issue - needs resolution
+
+**Date identified:** 2025-02-02
+
+**Problem:** `BundlingRule.line_item_template` stores Python format strings like `"Custom {product_type} - {bundle_identifier}"`. The code then does:
+
+```python
+description = rule.line_item_template.format(
+    product_type=product_type.title(),
+    bundle_identifier=bundle_identifier
+)
+```
+
+This creates fragile coupling between database content and code variable names. If a variable is renamed in code, all database records break with a `KeyError`.
+
+**Example of breakage:** When `product_identifier` was renamed to `bundle_identifier`, existing `BundlingRule` records with `{product_identifier}` in their templates caused estimate generation to fail.
+
+**Possible solutions:**
+1. **Eliminate templates entirely** - Use fixed description patterns based on rule configuration
+2. **Validate on save** - Form/model validates that only known placeholders are used
+3. **Abstract placeholder mapping** - Use generic placeholders like `{1}`, `{2}` mapped to values
+4. **Graceful error handling** - Catch KeyError and show meaningful error instead of crashing
+
+**Decision needed:** Whether templates are worth the flexibility vs. the maintenance burden.
+
+---
+
+## Gap 4: TaskInstanceMapping Not Created for Manually-Added Tasks
+
+**Status:** ⚠️ Needs implementation
+
+**Date identified:** 2025-02-02
+
+**Problem:** When tasks are added to a worksheet manually via the UI (using `task_add_from_template` view), no `TaskInstanceMapping` record is created. This causes issues when generating estimates:
+
+1. User adds tasks from TaskTemplates that have `mapping_strategy='bundle'`
+2. Tasks are created but have no `TaskInstanceMapping`
+3. `EstimateGenerationService._categorize_tasks()` auto-generates an identifier: `f"_auto_{product_type}"` (e.g., `_auto_cabinet`)
+4. This ugly internal identifier leaks into customer-facing line item descriptions like "Custom Cabinet - _auto_cabinet"
+
+**Root cause:** `TaskInstanceMapping` records are only created by `WorkOrderTemplate.generate_tasks()`, not by the manual task-add UI flow.
+
+**Fix needed:** When adding a task from a template that has `mapping_strategy='bundle'`, the UI should:
+1. Prompt for or auto-generate a meaningful `bundle_identifier`
+2. Create a `TaskInstanceMapping` record linking the task to that identifier
+
+**Workaround:** Change `BundlingRule.line_item_template` to not include `{bundle_identifier}` (e.g., just `"Custom {product_type}"`), but this loses the ability to distinguish multiple product instances.
+
+---
+
 ## Related Files
 
 - Model: `apps/jobs/models.py` (TaskMapping class, line ~452)
@@ -84,7 +146,9 @@ These will need adjustment as the business evolves. Requiring fixture edits and 
 
 ## Priority
 
-**Updated 2025-02-01:**
+**Updated 2025-02-02:**
 - ✅ Gap 1 (output_line_item_type) - Fixed
-- 📝 Gap 2 (CRUD) - Plan written, ready to implement
-- ⏳ Gap 1a (edge cases) - Future work, lower priority
+- ✅ Gap 1a (edge cases) - Fixed (all 3 items complete)
+- ✅ Gap 2 (CRUD) - Implemented (TaskMapping + BundlingRule CRUD)
+- ⚠️ Gap 3 (template placeholders) - Design issue, needs decision
+- ⚠️ Gap 4 (TaskInstanceMapping for manual tasks) - Needs implementation

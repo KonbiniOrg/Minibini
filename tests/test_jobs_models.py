@@ -380,7 +380,7 @@ class TaskMappingModelTest(TestCase):
     def test_task_mapping_str_method(self):
         mapping = TaskMapping.objects.create(
             step_type="labor",
-            mapping_strategy="bundle_to_product",
+            mapping_strategy="bundle",
             task_type_id="EXEC_001"
         )
         self.assertEqual(str(mapping), "EXEC_001 - ")

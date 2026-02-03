@@ -446,7 +446,7 @@
     "pk": 3,
     "fields": {
       "step_type": "component",
-      "mapping_strategy": "bundle_to_product",
+      "mapping_strategy": "bundle",
       "default_product_type": "furniture",
       "line_item_name": "Custom Furniture",
       "line_item_description": "Bundled into complete furniture product",
@@ -459,7 +459,7 @@
     "pk": 4,
     "fields": {
       "step_type": "component",
-      "mapping_strategy": "bundle_to_product",
+      "mapping_strategy": "bundle",
       "default_product_type": "furniture",
       "line_item_name": "Custom Furniture",
       "line_item_description": "Bundled into complete furniture product",
@@ -472,7 +472,7 @@
     "pk": 5,
     "fields": {
       "step_type": "component",
-      "mapping_strategy": "bundle_to_product",
+      "mapping_strategy": "bundle",
       "default_product_type": "furniture",
       "line_item_name": "Custom Furniture",
       "line_item_description": "Bundled into complete furniture product",
@@ -485,7 +485,7 @@
     "pk": 6,
     "fields": {
       "step_type": "labor",
-      "mapping_strategy": "bundle_to_service",
+      "mapping_strategy": "bundle",
       "default_product_type": "delivery",
       "line_item_name": "Delivery & Installation",
       "line_item_description": "Complete delivery and installation service",
@@ -498,7 +498,7 @@
     "pk": 7,
     "fields": {
       "step_type": "material",
-      "mapping_strategy": "bundle_to_product",
+      "mapping_strategy": "bundle",
       "default_product_type": "furniture",
       "line_item_name": "Custom Furniture",
       "line_item_description": "Bundled into complete furniture product",

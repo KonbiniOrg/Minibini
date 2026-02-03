@@ -466,8 +466,7 @@ class TaskMapping(models.Model):
     # How to map to line items
     MAPPING_STRATEGY_CHOICES = [
         ('direct', 'Direct - One task to one line item'),
-        ('bundle_to_product', 'Bundle into product line item'),
-        ('bundle_to_service', 'Bundle into service line item'),
+        ('bundle', 'Bundle into single line item'),
         ('exclude', 'Internal only - exclude from estimate'),
     ]
     mapping_strategy = models.CharField(max_length=30, choices=MAPPING_STRATEGY_CHOICES, default='direct')
@@ -501,7 +500,7 @@ class TaskInstanceMapping(models.Model):
     task = models.OneToOneField(Task, on_delete=models.CASCADE, primary_key=True)
 
     # Instance-specific identifiers (only for bundled tasks)
-    product_identifier = models.CharField(max_length=100, blank=True)  # e.g., "table_001", "chair_001"
+    bundle_identifier = models.CharField(max_length=100, blank=True)  # e.g., "table_001", "chair_001"
     product_instance = models.IntegerField(null=True, blank=True)  # For multiple items (chair 1, 2, 3, 4)
 
     def __str__(self):
@@ -541,7 +540,7 @@ class WorkOrderTemplate(models.Model):
         generated_tasks = []
 
         for instance in range(1, quantity + 1):
-            product_identifier = f"{self.product_type}_{worksheet.est_worksheet_id}_{instance}"
+            bundle_identifier = f"{self.product_type}_{worksheet.est_worksheet_id}_{instance}"
 
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
@@ -554,7 +553,7 @@ class WorkOrderTemplate(models.Model):
                 task = association.task_template.generate_task(
                     worksheet,
                     est_qty=association.est_qty,
-                    product_identifier=product_identifier,
+                    bundle_identifier=bundle_identifier,
                     product_instance=instance if quantity > 1 else None
                 )
                 generated_tasks.append(task)
@@ -597,7 +596,7 @@ class TaskTemplate(models.Model):
     def __str__(self):
         return self.template_name
 
-    def generate_task(self, container, est_qty, product_identifier=None, product_instance=None, assignee=None):
+    def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None, assignee=None):
         """Generate a Task from this template with specified quantity"""
         task = Task.objects.create(
             work_order=container if isinstance(container, WorkOrder) else None,
@@ -615,7 +614,7 @@ class TaskTemplate(models.Model):
             child_task = child_template.generate_task(
                 container,
                 est_qty=est_qty,  # Pass the same quantity to child tasks
-                product_identifier=product_identifier,
+                bundle_identifier=bundle_identifier,
                 product_instance=product_instance,
                 assignee=assignee
             )
@@ -654,8 +653,8 @@ class EstimateLineItem(BaseLineItem):
         return f"Estimate Line Item {self.pk} for {self.estimate.estimate_number}"
 
 
-class ProductBundlingRule(models.Model):
-    """Rules for how products are bundled into line items"""
+class BundlingRule(models.Model):
+    """Rules for how tasks are bundled into line items"""
 
     rule_id = models.AutoField(primary_key=True)
     rule_name = models.CharField(max_length=255)
@@ -667,6 +666,19 @@ class ProductBundlingRule(models.Model):
     # How to present as line item
     line_item_template = models.CharField(max_length=255)  # e.g., "Custom {product_type}"
     combine_instances = models.BooleanField(default=True)  # True: "4x Chair", False: separate lines
+
+    # Units and quantity strategy
+    DEFAULT_UNITS_CHOICES = [
+        ('each', 'Each (quantity = 1 per bundle)'),
+        ('hours', 'Hours (quantity = sum of task hours)'),
+    ]
+    default_units = models.CharField(max_length=20, choices=DEFAULT_UNITS_CHOICES, default='each')
+
+    # Description template with {tasks_list} support
+    description_template = models.TextField(
+        blank=True,
+        help_text="Template for line item description. Use {tasks_list} for bullet list of task names."
+    )
 
     # Pricing strategy
     PRICING_METHOD_CHOICES = [
@@ -683,11 +695,20 @@ class ProductBundlingRule(models.Model):
     priority = models.IntegerField(default=100)
     is_active = models.BooleanField(default=True)
 
+    # LineItemType to assign to bundled line items (overrides component task mappings)
+    output_line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text="LineItemType to assign to bundled line items. Overrides component task mappings if set."
+    )
+
     class Meta:
         ordering = ['priority', 'rule_name']
 
     def clean(self):
-        """Validate ProductBundlingRule constraints"""
+        """Validate BundlingRule constraints"""
         from django.core.exceptions import ValidationError
 
         if self.pricing_method == 'template_base':
@@ -703,3 +724,7 @@ class ProductBundlingRule(models.Model):
 
     def __str__(self):
         return f"Bundling Rule: {self.rule_name}"
+
+
+# Alias for backwards compatibility during migration
+ProductBundlingRule = BundlingRule

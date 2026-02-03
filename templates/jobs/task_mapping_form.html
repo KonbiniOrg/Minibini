@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - Minibini{% endblock %}
+
+{% block navigation %}
+{% include 'includes/settings_navigation.html' %}
+{% endblock %}
+
+{% block content %}
+<h2>{{ title }}</h2>
+
+<div style="background-color: #f0f0f0; padding: 10px; margin-bottom: 20px; border-left: 4px solid #007bff;">
+    <strong>What is a Task Mapping?</strong>
+    <p>Task Mappings define how worksheet tasks become estimate line items. Each Task Template uses a Task Mapping to determine:</p>
+    <ul>
+        <li><strong>How tasks appear on estimates</strong> - directly as individual items, bundled together, or hidden</li>
+        <li><strong>What type of work it represents</strong> - product, component, labor, material, or overhead</li>
+        <li><strong>Tax treatment</strong> - through the assigned Line Item Type</li>
+    </ul>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    <table>
+        {% for field in form %}
+        <tr>
+            <th><label for="{{ field.id_for_label }}">{{ field.label }}</label></th>
+            <td>
+                {{ field }}
+                {% if field.help_text %}<br><small>{{ field.help_text }}</small>{% endif %}
+                {% if field.errors %}<br><span style="color: red;">{{ field.errors }}</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    <p>
+        <button type="submit">{{ submit_label }}</button>
+        <a href="{% url 'jobs:task_mapping_list' %}">Cancel</a>
+    </p>
+</form>
+{% endblock %}

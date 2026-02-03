@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration
 from apps.jobs.models import (
-    Job, EstWorksheet, Task, TaskMapping, ProductBundlingRule, EstimateLineItem,
+    Job, EstWorksheet, Task, TaskMapping, BundlingRule, EstimateLineItem,
     TaskTemplate, TaskInstanceMapping
 )
 from apps.jobs.services import EstimateGenerationService
@@ -75,7 +75,7 @@ class EstimateGenerationDemoTestCase(TestCase):
             # Create mapping and template for each task type
             mapping = TaskMapping.objects.create(
                 step_type=step_type,
-                mapping_strategy='bundle_to_product',
+                mapping_strategy='bundle',
                 default_product_type='table',
                 task_type_id=name.lower().replace(' ', '_')
             )
@@ -94,10 +94,10 @@ class EstimateGenerationDemoTestCase(TestCase):
             # Create instance mapping to group tasks into same product
             TaskInstanceMapping.objects.create(
                 task=task,
-                product_identifier='table_001'
+                bundle_identifier='table_001'
             )
 
-        # 3. Service bundle tasks
+        # 3. Service bundle tasks (using bundle strategy with default_units='hours')
         service_tasks = [
             ('Delivery Setup', 'delivery', '75.00', '2.00'),
             ('Installation', 'delivery', '100.00', '3.00'),
@@ -107,7 +107,7 @@ class EstimateGenerationDemoTestCase(TestCase):
             # Create mapping and template for each service task
             mapping = TaskMapping.objects.create(
                 step_type='labor',
-                mapping_strategy='bundle_to_service',
+                mapping_strategy='bundle',
                 default_product_type=service_type,
                 task_type_id=name.lower().replace(' ', '_')
             )
@@ -122,6 +122,11 @@ class EstimateGenerationDemoTestCase(TestCase):
                 units='hours',
                 rate=Decimal(rate),
                 est_qty=Decimal(qty)
+            )
+            # Create instance mapping to group service tasks together
+            TaskInstanceMapping.objects.create(
+                task=task,
+                bundle_identifier='delivery_001'
             )
 
         # 4. Excluded task (internal)
@@ -144,12 +149,24 @@ class EstimateGenerationDemoTestCase(TestCase):
         )
 
         # Create bundling rule for table
-        ProductBundlingRule.objects.create(
+        BundlingRule.objects.create(
             rule_name='Table Bundling Rule',
             product_type='table',
             line_item_template='Custom Dining Table',
             pricing_method='sum_components',
+            default_units='each',  # qty=1, units='each'
             include_materials=True,
+            include_labor=True
+        )
+
+        # Create bundling rule for delivery services (with hours-based qty)
+        BundlingRule.objects.create(
+            rule_name='Delivery Bundling Rule',
+            product_type='delivery',
+            line_item_template='Delivery and Installation Services',
+            pricing_method='sum_components',
+            default_units='hours',  # qty=sum of hours, units='hours'
+            include_materials=False,
             include_labor=True
         )
 
@@ -180,7 +197,7 @@ class EstimateGenerationDemoTestCase(TestCase):
         # Verify specific line items exist
         self.assertTrue(any('Initial project consultation' in desc for desc in line_descriptions))
         self.assertTrue(any('Custom Dining Table' in desc for desc in line_descriptions))
-        self.assertTrue(any('Delivery' in desc for desc in line_descriptions))
+        self.assertTrue(any('Delivery' in desc or 'Installation' in desc for desc in line_descriptions))
 
         # Verify excluded task is NOT in estimate
         self.assertFalse(any('Quality Review' in desc for desc in line_descriptions))
@@ -202,8 +219,7 @@ class EstimateGenerationDemoTestCase(TestCase):
 
         # Verify all mapping strategies were used
         self.assertIn('direct', mapping_strategies)
-        self.assertIn('bundle_to_product', mapping_strategies)
-        self.assertIn('bundle_to_service', mapping_strategies)
+        self.assertIn('bundle', mapping_strategies)
         self.assertIn('exclude', mapping_strategies)
 
         # Additional detailed verifications
@@ -215,6 +231,6 @@ class EstimateGenerationDemoTestCase(TestCase):
         self.assertEqual(table_item.qty, Decimal('1.00'))
         self.assertEqual(table_item.price_currency, Decimal('2900.00'))
 
-        service_item = next(item for item in line_items if 'Delivery' in item.description)
+        service_item = next(item for item in line_items if 'Delivery' in item.description or 'Installation' in item.description)
         self.assertEqual(service_item.qty, Decimal('5.00'))  # 2 + 3 hours
         self.assertEqual(service_item.price_currency, Decimal('450.00'))
