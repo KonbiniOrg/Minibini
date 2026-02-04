@@ -237,7 +237,6 @@ class SimpleEstimateGenerationTestCase(TestCase):
         BundlingRule.objects.create(
             rule_name='Table Rule',
             product_type='table',
-            line_item_template='Custom Table',
             pricing_method='sum_components'
         )
         
@@ -249,7 +248,9 @@ class SimpleEstimateGenerationTestCase(TestCase):
         self.assertEqual(line_items.count(), 1)
         
         line_item = line_items.first()
-        self.assertEqual(line_item.description, 'Custom Table')
+        # New hard-coded description format includes identifier and task list
+        self.assertIn('Custom Table', line_item.description)
+        self.assertIn('table_001', line_item.description)
         self.assertEqual(line_item.qty, Decimal('1.00'))
         # Total: (4*150) + (8*100) = 600 + 800 = 1400
         self.assertEqual(line_item.price_currency, Decimal('1400.00'))
@@ -280,12 +281,10 @@ class SimpleEstimateGenerationTestCase(TestCase):
             task_mapping=install_mapping
         )
 
-        # Create bundling rule with hours-based units and description template
+        # Create bundling rule with hours-based units
         BundlingRule.objects.create(
             rule_name='Installation Service Bundler',
             product_type='installation_service',
-            line_item_template='Installation Service',
-            description_template='Installation Service Services:\n{tasks_list}',
             default_units='hours',
             pricing_method='sum_components'
         )

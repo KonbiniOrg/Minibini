@@ -401,16 +401,16 @@ class BundlingRuleForm(forms.ModelForm):
         model = BundlingRule
         fields = [
             'rule_name', 'product_type', 'work_order_template',
-            'line_item_template', 'description_template', 'default_units', 'combine_instances',
+            'default_units', 'combine_instances',
             'pricing_method', 'include_materials', 'include_labor', 'include_overhead',
             'output_line_item_type', 'priority', 'is_active'
         ]
+        # Note: line_item_template and description_template removed from form.
+        # Descriptions are now built using hard-coded patterns in EstimateGenerationService.
         help_texts = {
             'rule_name': 'Descriptive name for this rule (e.g., "Cabinet Bundler")',
             'product_type': 'Must match TaskMapping.default_product_type (e.g., "cabinet", "table")',
             'work_order_template': 'Optional. Required if pricing_method is "template_base"',
-            'line_item_template': 'Template for line item name. Use {product_type} and {bundle_identifier} placeholders.',
-            'description_template': 'Template for line item description. Use {tasks_list} for bullet list of task names.',
             'default_units': 'How to calculate quantity: "each" = qty 1, "hours" = sum of task hours',
             'combine_instances': 'If checked, shows "4x Chair" instead of 4 separate line items',
             'pricing_method': 'How to calculate the bundled line item price',
@@ -420,9 +420,6 @@ class BundlingRuleForm(forms.ModelForm):
             'output_line_item_type': 'LineItemType for bundled line items. If set, overrides the types from component task mappings.',
             'priority': 'Lower numbers = higher priority. Used when multiple rules could apply.',
             'is_active': 'Inactive rules are not applied during estimate generation',
-        }
-        widgets = {
-            'description_template': forms.Textarea(attrs={'rows': 3}),
         }
 
     def __init__(self, *args, **kwargs):

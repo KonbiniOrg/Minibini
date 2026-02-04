@@ -24,7 +24,6 @@ class TestBundlingRuleListView(TestCase):
         rule = BundlingRule.objects.create(
             rule_name='Test Rule',
             product_type='cabinet',
-            line_item_template='Custom {product_type}',
             pricing_method='sum_components'
         )
         response = self.client.get(reverse('jobs:bundling_rule_list'))
@@ -54,7 +53,6 @@ class TestBundlingRuleCreateView(TestCase):
         data = {
             'rule_name': 'New Test Rule',
             'product_type': 'table',
-            'line_item_template': 'Custom {product_type}',
             'combine_instances': True,
             'pricing_method': 'sum_components',
             'default_units': 'each',
@@ -77,7 +75,6 @@ class TestBundlingRuleDetailView(TestCase):
         self.rule = BundlingRule.objects.create(
             rule_name='Detail Test Rule',
             product_type='cabinet',
-            line_item_template='Custom {product_type} - {bundle_identifier}',
             pricing_method='sum_components'
         )
 
@@ -99,7 +96,6 @@ class TestBundlingRuleEditView(TestCase):
         self.rule = BundlingRule.objects.create(
             rule_name='Edit Test Rule',
             product_type='table',
-            line_item_template='Original Template',
             pricing_method='sum_components'
         )
 
@@ -116,7 +112,6 @@ class TestBundlingRuleEditView(TestCase):
         data = {
             'rule_name': 'Updated Rule Name',
             'product_type': 'table',
-            'line_item_template': 'Updated Template',
             'combine_instances': False,
             'pricing_method': 'sum_components',
             'default_units': 'each',
@@ -145,7 +140,6 @@ class TestBundlingRuleDeleteView(TestCase):
         self.rule = BundlingRule.objects.create(
             rule_name='Delete Test Rule',
             product_type='chair',
-            line_item_template='Custom {product_type}',
             pricing_method='sum_components'
         )
 
@@ -205,7 +199,6 @@ class TestBundlingRuleConflictingTypesValidation(TestCase):
         form = BundlingRuleForm(data={
             'rule_name': 'Cabinet Bundler',
             'product_type': 'cabinet',
-            'line_item_template': 'Custom {product_type}',
             'combine_instances': True,
             'pricing_method': 'sum_components',
             'include_materials': True,
@@ -246,7 +239,6 @@ class TestBundlingRuleConflictingTypesValidation(TestCase):
         form = BundlingRuleForm(data={
             'rule_name': 'Table Bundler',
             'product_type': 'table',
-            'line_item_template': 'Custom {product_type}',
             'combine_instances': True,
             'pricing_method': 'sum_components',
             'default_units': 'each',
@@ -286,7 +278,6 @@ class TestBundlingRuleConflictingTypesValidation(TestCase):
         form = BundlingRuleForm(data={
             'rule_name': 'Chair Bundler',
             'product_type': 'chair',
-            'line_item_template': 'Custom {product_type}',
             'combine_instances': True,
             'pricing_method': 'sum_components',
             'default_units': 'each',

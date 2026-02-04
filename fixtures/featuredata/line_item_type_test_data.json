@@ -720,7 +720,6 @@
             "rule_name": "Cabinet Bundler",
             "product_type": "cabinet",
             "work_order_template": 2,
-            "line_item_template": "Custom Cabinet - {bundle_identifier}",
             "combine_instances": true,
             "pricing_method": "sum_components",
             "include_materials": true,

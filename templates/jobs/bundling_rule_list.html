@@ -30,7 +30,6 @@
         <tr>
             <th>Rule Name</th>
             <th>Product Type</th>
-            <th>Line Item Template</th>
             <th>Pricing Method</th>
             <th>Combine?</th>
             <th>Active</th>
@@ -42,7 +41,6 @@
         <tr{% if not rule.is_active %} style="opacity: 0.5;"{% endif %}>
             <td>{{ rule.rule_name }}</td>
             <td>{{ rule.product_type }}</td>
-            <td>{{ rule.line_item_template }}</td>
             <td>{{ rule.get_pricing_method_display }}</td>
             <td>{% if rule.combine_instances %}Yes{% else %}No{% endif %}</td>
             <td>{% if rule.is_active %}Yes{% else %}No{% endif %}</td>
@@ -65,7 +63,7 @@
     <li>The bundling rule matching the product_type is applied</li>
     <li>Component prices are combined based on the pricing method</li>
     <li>Quantity is determined by default_units: "each" = qty 1, "hours" = sum of task hours</li>
-    <li>One line item is created with the template name (e.g., "Custom Cabinet - cabinet_001")</li>
+    <li>One line item is created with a description like "Custom Cabinet - kitchen_island"</li>
 </ol>
 
 <p><a href="{% url 'settings' %}">Back to Settings</a></p>

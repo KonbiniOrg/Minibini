@@ -203,7 +203,6 @@ class TestEstimateGenerationLineItemType(TestCase):
             rule_name="Cabinet Bundler",
             product_type="cabinet",
             work_order_template=worksheet_template,
-            line_item_template="Custom Cabinet - {bundle_identifier}",
             pricing_method="sum_components"
         )
 
@@ -366,7 +365,6 @@ class TestEstimateGenerationLineItemType(TestCase):
             rule_name="Chair Bundler",
             product_type="chair",
             work_order_template=worksheet_template,
-            line_item_template="Custom Chair - {bundle_identifier}",
             pricing_method="sum_components",
             output_line_item_type=furniture_type  # Rule specifies FRN
         )

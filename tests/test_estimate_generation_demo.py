@@ -152,7 +152,6 @@ class EstimateGenerationDemoTestCase(TestCase):
         BundlingRule.objects.create(
             rule_name='Table Bundling Rule',
             product_type='table',
-            line_item_template='Custom Dining Table',
             pricing_method='sum_components',
             default_units='each',  # qty=1, units='each'
             include_materials=True,
@@ -163,7 +162,6 @@ class EstimateGenerationDemoTestCase(TestCase):
         BundlingRule.objects.create(
             rule_name='Delivery Bundling Rule',
             product_type='delivery',
-            line_item_template='Delivery and Installation Services',
             pricing_method='sum_components',
             default_units='hours',  # qty=sum of hours, units='hours'
             include_materials=False,
@@ -195,9 +193,10 @@ class EstimateGenerationDemoTestCase(TestCase):
             total += item.price_currency
 
         # Verify specific line items exist
+        # Note: descriptions are built using hard-coded patterns based on product_type
         self.assertTrue(any('Initial project consultation' in desc for desc in line_descriptions))
-        self.assertTrue(any('Custom Dining Table' in desc for desc in line_descriptions))
-        self.assertTrue(any('Delivery' in desc or 'Installation' in desc for desc in line_descriptions))
+        self.assertTrue(any('Custom Table' in desc for desc in line_descriptions))  # Hard-coded from product_type
+        self.assertTrue(any('Custom Delivery' in desc for desc in line_descriptions))  # Hard-coded from product_type
 
         # Verify excluded task is NOT in estimate
         self.assertFalse(any('Quality Review' in desc for desc in line_descriptions))

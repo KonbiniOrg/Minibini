@@ -70,8 +70,7 @@ class TestConsolidatedBundlingStrategy(TestCase):
         rule = BundlingRule.objects.create(
             rule_name='Cabinet Bundler',
             product_type='cabinet',
-            line_item_template='Custom Cabinet',
-            default_units='each',  # NEW FIELD
+            default_units='each',
             pricing_method='sum_components'
         )
 
@@ -139,8 +138,7 @@ class TestConsolidatedBundlingStrategy(TestCase):
         rule = BundlingRule.objects.create(
             rule_name='Installation Service Bundler',
             product_type='installation',
-            line_item_template='Installation Services',
-            default_units='hours',  # NEW FIELD - sum hours
+            default_units='hours',  # sum hours
             pricing_method='sum_components'
         )
 
@@ -175,10 +173,10 @@ class TestConsolidatedBundlingStrategy(TestCase):
         # Total: (2 * 75) + (3 * 75) = 375
         self.assertEqual(line_item.price_currency, Decimal('375.00'))
 
-    def test_description_template_with_tasks_list(self):
+    def test_description_includes_tasks_list(self):
         """
-        BundlingRule.description_template should support {tasks_list} placeholder
-        that renders a bullet list of task names.
+        Bundled line items with multiple tasks should include a task list.
+        Descriptions are built using hard-coded patterns.
         """
         mapping = TaskMapping.objects.create(
             task_type_id='SERVICE-ITEM',
@@ -193,12 +191,10 @@ class TestConsolidatedBundlingStrategy(TestCase):
             task_mapping=mapping
         )
 
-        # Create bundling rule with description_template containing {tasks_list}
+        # Create bundling rule
         rule = BundlingRule.objects.create(
             rule_name='Maintenance Bundler',
             product_type='maintenance',
-            line_item_template='Maintenance Services',
-            description_template='Maintenance work included:\n{tasks_list}',  # NEW FIELD
             default_units='hours',
             pricing_method='sum_components'
         )
@@ -224,27 +220,25 @@ class TestConsolidatedBundlingStrategy(TestCase):
         # Generate estimate
         estimate = self.service.generate_estimate_from_worksheet(self.worksheet)
 
-        # Verify description contains task list
+        # Verify description uses hard-coded pattern with task list
         line_items = list(estimate.estimatelineitem_set.all())
         self.assertEqual(len(line_items), 1)
 
         description = line_items[0].description
-        self.assertIn('Maintenance work included:', description)
+        # Hard-coded format: "Custom Maintenance\n- Oil Change\n- Filter Replacement"
+        self.assertIn('Custom Maintenance', description)
         self.assertIn('- Oil Change', description)
         self.assertIn('- Filter Replacement', description)
 
-    def test_bundling_rule_model_has_new_fields(self):
-        """BundlingRule should have default_units and description_template fields."""
+    def test_bundling_rule_model_has_default_units_field(self):
+        """BundlingRule should have default_units field."""
         rule = BundlingRule.objects.create(
             rule_name='Test Rule',
             product_type='test',
-            line_item_template='Test',
-            default_units='each',
-            description_template='Test template with {tasks_list}'
+            default_units='each'
         )
         rule.refresh_from_db()
         self.assertEqual(rule.default_units, 'each')
-        self.assertEqual(rule.description_template, 'Test template with {tasks_list}')
 
     def test_bundle_identifier_field_renamed(self):
         """TaskInstanceMapping should use bundle_identifier, not product_identifier."""
@@ -287,8 +281,7 @@ class TestBundlingRuleDefaultUnitsChoices(TestCase):
         from apps.jobs.models import BundlingRule
         rule = BundlingRule.objects.create(
             rule_name='Default Test',
-            product_type='test',
-            line_item_template='Test'
+            product_type='test'
         )
         self.assertEqual(rule.default_units, 'each')
 
@@ -327,7 +320,6 @@ class TestBundleIdentifierGrouping(TestCase):
         BundlingRule.objects.create(
             rule_name='Widget Bundler',
             product_type='widget',
-            line_item_template='Custom Widget - {bundle_identifier}',
             default_units='each',
             combine_instances=False  # Don't combine into qty > 1
         )
@@ -378,7 +370,6 @@ class TestBundleIdentifierGrouping(TestCase):
         BundlingRule.objects.create(
             rule_name='Consulting Bundler',
             product_type='consulting',
-            line_item_template='Consulting Services',
             default_units='hours'
         )
 

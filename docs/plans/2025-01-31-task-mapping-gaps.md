@@ -87,9 +87,10 @@ These will need adjustment as the business evolves. Requiring fixture edits and 
 
 ## Gap 3: Template Placeholders Create Code/Data Coupling
 
-**Status:** ⚠️ Design issue - needs resolution
+**Status:** ✅ Simplified - placeholder interpolation removed
 
 **Date identified:** 2025-02-02
+**Date resolved:** 2025-02-03
 
 **Problem:** `BundlingRule.line_item_template` stores Python format strings like `"Custom {product_type} - {bundle_identifier}"`. The code then does:
 
@@ -104,13 +105,44 @@ This creates fragile coupling between database content and code variable names. 
 
 **Example of breakage:** When `product_identifier` was renamed to `bundle_identifier`, existing `BundlingRule` records with `{product_identifier}` in their templates caused estimate generation to fail.
 
-**Possible solutions:**
-1. **Eliminate templates entirely** - Use fixed description patterns based on rule configuration
-2. **Validate on save** - Form/model validates that only known placeholders are used
-3. **Abstract placeholder mapping** - Use generic placeholders like `{1}`, `{2}` mapped to values
-4. **Graceful error handling** - Catch KeyError and show meaningful error instead of crashing
+### Discussion (2025-02-03)
 
-**Decision needed:** Whether templates are worth the flexibility vs. the maintenance burden.
+Explored several approaches:
+
+1. **Stable context dictionary** - Define a fixed set of placeholder names (`{product}`, `{identifier}`) as the "template API", decoupled from internal variable names. Code maps internal variables to stable names.
+
+2. **Positional placeholders** - Use `{0}`, `{1}`, `{2}` with documented order. Less readable but completely decoupled.
+
+3. **Structured fields** - Instead of free-form templates, store discrete choices: `name_prefix`, `include_product_type`, `include_identifier`. Code assembles the name from these fields.
+
+4. **Predefined patterns** - Dropdown of fixed patterns like "Custom {product}", "Custom {product} - {identifier}".
+
+**Key insight:** From a UX perspective, non-technical users won't understand template/placeholder concepts. A future "Template Creation Wizard" would walk users through the process, so users wouldn't write `{placeholders}` directly. This means free-form templates may be over-engineered.
+
+**Decision:** Defer the template flexibility question. For now, eliminate placeholders entirely and use hard-coded line item descriptions. The generated line items are editable anyway, so users can adjust as needed. Revisit when we better understand how templates will actually be used.
+
+### Resolution (2025-02-03)
+
+**Phase 1:** Removed placeholder interpolation from `EstimateGenerationService`. Descriptions are now built using hard-coded patterns:
+
+- Single bundle: `"Custom {ProductType}"` or `"Custom {ProductType} - {identifier}"` if identifier exists
+- Multiple instances: `"{N}x {ProductType}"`
+- Multiple tasks in bundle: appends task list (`\n- Task A\n- Task B`)
+- `_auto_` prefixed identifiers are hidden from descriptions
+
+**Phase 2:** Removed `line_item_template` and `description_template` fields from `BundlingRule` model entirely.
+
+**Files changed:**
+- `apps/jobs/models.py` - Removed `line_item_template` and `description_template` fields
+- `apps/jobs/services.py` - `_create_bundle_line_item()` and `_create_combined_bundle_line_item()` now use hard-coded patterns
+- `apps/jobs/forms.py` - Removed fields from `BundlingRuleForm`
+- Templates updated to remove field references
+
+**Migration:** `apps/jobs/migrations/0024_remove_template_fields_from_bundling_rule.py`
+
+**Tests:**
+- `tests/test_hardcoded_descriptions.py` - Tests for hard-coded behavior
+- Updated all existing tests to remove field references
 
 ---
 
@@ -133,7 +165,7 @@ This creates fragile coupling between database content and code variable names. 
 1. Prompt for or auto-generate a meaningful `bundle_identifier`
 2. Create a `TaskInstanceMapping` record linking the task to that identifier
 
-**Workaround:** Change `BundlingRule.line_item_template` to not include `{bundle_identifier}` (e.g., just `"Custom {product_type}"`), but this loses the ability to distinguish multiple product instances.
+**Current behavior (after Gap 3 fix):** `_auto_` prefixed identifiers are now hidden from descriptions, so the ugly internal identifiers no longer leak to customers. However, this means manually-added bundled tasks won't have distinguishing identifiers in their descriptions until this gap is properly addressed.
 
 ---
 
@@ -146,9 +178,9 @@ This creates fragile coupling between database content and code variable names. 
 
 ## Priority
 
-**Updated 2025-02-02:**
+**Updated 2025-02-03:**
 - ✅ Gap 1 (output_line_item_type) - Fixed
 - ✅ Gap 1a (edge cases) - Fixed (all 3 items complete)
 - ✅ Gap 2 (CRUD) - Implemented (TaskMapping + BundlingRule CRUD)
-- ⚠️ Gap 3 (template placeholders) - Design issue, needs decision
+- ✅ Gap 3 (template placeholders) - Simplified; placeholder interpolation removed, using hard-coded patterns
 - ⚠️ Gap 4 (TaskInstanceMapping for manual tasks) - Needs implementation

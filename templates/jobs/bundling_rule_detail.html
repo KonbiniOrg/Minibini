@@ -13,8 +13,6 @@
     <tr><th>Rule Name</th><td>{{ rule.rule_name }}</td></tr>
     <tr><th>Product Type</th><td>{{ rule.product_type }}</td></tr>
     <tr><th>Work Order Template</th><td>{% if rule.work_order_template %}{{ rule.work_order_template.template_name }}{% else %}-{% endif %}</td></tr>
-    <tr><th>Line Item Template</th><td><code>{{ rule.line_item_template }}</code></td></tr>
-    <tr><th>Description Template</th><td>{% if rule.description_template %}<code>{{ rule.description_template }}</code>{% else %}-{% endif %}</td></tr>
     <tr><th>Default Units</th><td>{{ rule.get_default_units_display }}</td></tr>
     <tr><th>Combine Instances</th><td>{% if rule.combine_instances %}Yes - "4x Chair"{% else %}No - separate lines{% endif %}</td></tr>
     <tr><th>Pricing Method</th><td>{{ rule.get_pricing_method_display }}</td></tr>

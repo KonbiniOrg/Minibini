@@ -664,7 +664,8 @@ class BundlingRule(models.Model):
     work_order_template = models.ForeignKey(WorkOrderTemplate, on_delete=models.CASCADE, null=True, blank=True)
 
     # How to present as line item
-    line_item_template = models.CharField(max_length=255)  # e.g., "Custom {product_type}"
+    # Note: line_item_template and description_template were removed in Gap 3 resolution.
+    # Descriptions are now built using hard-coded patterns in EstimateGenerationService.
     combine_instances = models.BooleanField(default=True)  # True: "4x Chair", False: separate lines
 
     # Units and quantity strategy
@@ -673,12 +674,6 @@ class BundlingRule(models.Model):
         ('hours', 'Hours (quantity = sum of task hours)'),
     ]
     default_units = models.CharField(max_length=20, choices=DEFAULT_UNITS_CHOICES, default='each')
-
-    # Description template with {tasks_list} support
-    description_template = models.TextField(
-        blank=True,
-        help_text="Template for line item description. Use {tasks_list} for bullet list of task names."
-    )
 
     # Pricing strategy
     PRICING_METHOD_CHOICES = [

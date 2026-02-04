@@ -34,7 +34,6 @@ class BundlingRuleValidationTest(TestCase):
                 rule_name="Invalid Template Base Rule",
                 product_type="furniture",
                 work_order_template=None,  # Missing template
-                line_item_template="Custom Furniture",
                 pricing_method="template_base"
             )
             rule.full_clean()
@@ -48,7 +47,6 @@ class BundlingRuleValidationTest(TestCase):
                 rule_name="Invalid Base Price Rule",
                 product_type="furniture", 
                 work_order_template=self.template_without_price,  # Template has no base_price
-                line_item_template="Custom Furniture",
                 pricing_method="template_base"
             )
             rule.full_clean()
@@ -61,7 +59,6 @@ class BundlingRuleValidationTest(TestCase):
             rule_name="Valid Template Base Rule",
             product_type="furniture",
             work_order_template=self.template_with_price,  # Template has base_price
-            line_item_template="Premium Custom Furniture", 
             pricing_method="template_base"
         )
         
@@ -79,7 +76,6 @@ class BundlingRuleValidationTest(TestCase):
             rule_name="Sum Components Rule",
             product_type="furniture",
             work_order_template=None,  # No template needed for sum_components
-            line_item_template="Custom Furniture",
             pricing_method="sum_components"
         )
         
@@ -97,7 +93,6 @@ class BundlingRuleValidationTest(TestCase):
             rule_name="Sum Components with Template Rule",
             product_type="furniture",
             work_order_template=self.template_with_price,  # Template allowed but not required
-            line_item_template="Custom Furniture",
             pricing_method="sum_components"
         )
         
@@ -115,7 +110,6 @@ class BundlingRuleValidationTest(TestCase):
             rule_name="Custom Calculation Rule",
             product_type="furniture",
             work_order_template=None,
-            line_item_template="Custom Furniture",
             pricing_method="custom_calculation"
         )
         

@@ -18,7 +18,7 @@
 <table border="1" style="margin-bottom: 20px;">
     <tr><th>Rule Name</th><td>{{ rule.rule_name }}</td></tr>
     <tr><th>Product Type</th><td>{{ rule.product_type }}</td></tr>
-    <tr><th>Line Item Template</th><td>{{ rule.line_item_template }}</td></tr>
+    <tr><th>Pricing Method</th><td>{{ rule.get_pricing_method_display }}</td></tr>
 </table>
 
 <form method="post">

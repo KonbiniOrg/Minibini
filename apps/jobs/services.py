@@ -569,21 +569,17 @@ class EstimateGenerationService:
             qty = Decimal('1.00')
             units = 'each'
 
-        # Build description
-        if rule and rule.description_template:
+        # Build description using hard-coded pattern (ignoring line_item_template/description_template)
+        # Format: "Custom {ProductType}" or "Custom {ProductType} - {identifier}"
+        # If tasks exist, append task list
+        description = f"Custom {product_type.title()}"
+        if bundle_identifier and not bundle_identifier.startswith('_auto_'):
+            description = f"{description} - {bundle_identifier}"
+
+        # Append task list if there are multiple tasks
+        if len(task_names) > 1:
             tasks_list = '\n'.join(f'- {name}' for name in task_names)
-            description = rule.description_template.format(
-                tasks_list=tasks_list,
-                product_type=product_type.title(),
-                bundle_identifier=bundle_identifier
-            )
-        elif rule and rule.line_item_template:
-            description = rule.line_item_template.format(
-                product_type=product_type.title(),
-                bundle_identifier=bundle_identifier
-            )
-        else:
-            description = f"Custom {product_type.title()}"
+            description = f"{description}\n{tasks_list}"
 
         # Get line_item_type: rule overrides task mapping
         line_item_type = None
@@ -652,12 +648,16 @@ class EstimateGenerationService:
             qty = Decimal(str(quantity))
             units = 'each'
 
-        # Build description
+        # Build description using hard-coded pattern (ignoring line_item_template)
+        # Single instance: "Custom {ProductType} - {identifier}"
+        # Multiple instances: "{N}x {ProductType}"
         first_identifier = instances[0].get('identifier', '')
-        description = rule.line_item_template.format(
-            product_type=product_type.title(),
-            bundle_identifier=first_identifier if quantity == 1 else f"{quantity}x {product_type}"
-        )
+        if quantity == 1:
+            description = f"Custom {product_type.title()}"
+            if first_identifier and not first_identifier.startswith('_auto_'):
+                description = f"{description} - {first_identifier}"
+        else:
+            description = f"{quantity}x {product_type.title()}"
 
         # Get line_item_type
         line_item_type = rule.output_line_item_type

@@ -1,8 +1,11 @@
 """
 Test for estimate generation with bundled tasks.
 
-This test verifies that the BundlingRule.line_item_template
-can use {bundle_identifier} placeholder (not just {product_type}).
+This test verifies that bundled line item descriptions include the bundle_identifier
+when one is set (e.g., "Custom Cabinet - cabinet_001").
+
+Note: As of Gap 3 resolution, the line_item_template and description_template
+fields were removed. Descriptions are built using hard-coded patterns in code.
 """
 from decimal import Decimal
 from django.test import TestCase
@@ -16,7 +19,7 @@ from apps.core.models import Configuration
 
 
 class TestEstimateGenerationWithProductIdentifier(TestCase):
-    """Test that bundling works with {bundle_identifier} in line_item_template."""
+    """Test that bundled line items include bundle_identifier in description."""
 
     def setUp(self):
         """Set up configuration for number generation."""
@@ -25,11 +28,10 @@ class TestEstimateGenerationWithProductIdentifier(TestCase):
 
     def test_bundling_with_bundle_identifier_template(self):
         """
-        BundlingRule.line_item_template should support {bundle_identifier}
-        placeholder, not just {product_type}.
+        Bundled line items should include bundle_identifier in description.
 
-        This allows line items like "Custom Cabinet - cabinet_001" instead of
-        just "Custom Cabinet".
+        The description is built using a hard-coded pattern:
+        "Custom Cabinet - cabinet_001".
         """
         # Create a contact for the job
         contact = Contact.objects.create(
@@ -70,12 +72,11 @@ class TestEstimateGenerationWithProductIdentifier(TestCase):
             base_price=Decimal("450.00")
         )
 
-        # Create bundling rule WITH {bundle_identifier} in template
+        # Create bundling rule
         bundling_rule = BundlingRule.objects.create(
             rule_name="Cabinet Bundler",
             product_type="cabinet",
             work_order_template=worksheet_template,
-            line_item_template="Custom Cabinet - {bundle_identifier}",  # Uses bundle_identifier!
             combine_instances=True,
             pricing_method="sum_components",
             include_materials=True,
