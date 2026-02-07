@@ -99,7 +99,7 @@
 
 <script>
 function confirmDeleteBusiness() {
-    if (confirm('Are you sure you want to delete "{{ business.business_name }}"? You will be able to choose what happens to the associated contacts in the next step.')) {
+    if (confirm('Are you sure you want to delete "{{ business.business_name }}"? You will be able to choose what happens to all associated objects in the next step.')) {
         document.getElementById('deleteBusinessForm').submit();
     }
 }

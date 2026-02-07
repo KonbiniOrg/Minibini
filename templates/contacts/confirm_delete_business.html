@@ -12,110 +12,270 @@
 
 {% if messages %}
     {% for message in messages %}
-        <div style="padding: 10px; margin-bottom: 10px; background-color: {% if message.tags == 'error' %}#ffebee; color: #c62828;{% else %}#e8f5e8; color: #2e7d32;{% endif %}">
+        <div style="padding: 10px; margin-bottom: 10px; background-color: {% if message.tags == 'error' %}#ffebee; color: #c62828;{% else %}#e8f5e8; color: #2e7d32;{% endif %}; border-radius: 4px;">
             {{ message }}
         </div>
     {% endfor %}
 {% endif %}
 
-<div style="margin-bottom: 20px;">
-    <p>This business has <strong>{{ contact_count }}</strong> associated contact(s).</p>
+<p>The following objects are associated with this business. Choose what to do with each before proceeding.</p>
 
-    {% if contact_count > 0 %}
-    <p>What would you like to do with these contacts?</p>
-    {% endif %}
-</div>
-
-<form method="post" action="{% url 'contacts:delete_business' business.business_id %}" style="max-width: 600px;">
+<form method="post" action="{% url 'contacts:delete_business' business.business_id %}" style="max-width: 800px;">
     {% csrf_token %}
+    <input type="hidden" name="confirm_actions" value="true">
 
-    {% if contact_count > 0 %}
-    <div style="margin-bottom: 20px;">
-        <label style="display: block; margin-bottom: 10px; font-weight: bold; font-size: 1.1em;">
-            Contact Action *
-        </label>
-
-        <div style="border: 2px solid #dee2e6; border-radius: 4px; padding: 15px; margin-bottom: 15px;">
-            <label style="display: flex; align-items: start; cursor: pointer; padding: 10px; border-radius: 4px; transition: background-color 0.2s;">
-                <input
-                    type="radio"
-                    name="contact_action"
-                    value="unlink"
-                    required
-                    style="margin-top: 3px; margin-right: 10px; width: 18px; height: 18px; cursor: pointer;"
-                >
+    {% if direct_pos %}
+    <div style="margin-bottom: 30px;">
+        <h3 style="border-bottom: 2px solid #007bff; padding-bottom: 8px;">Purchase Orders ({{ direct_pos|length }})</h3>
+        {% for po in direct_pos %}
+        <div style="border: 1px solid #dee2e6; border-radius: 4px; padding: 15px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
                 <div>
-                    <strong style="display: block; margin-bottom: 5px;">Unlink Contacts</strong>
-                    <span style="color: #6c757d; font-size: 0.9em;">
-                        Keep the contacts but remove their association with this business.
-                        Contacts will become independent (no business assigned).
-                    </span>
+                    <strong>{{ po.po_number }}</strong> &mdash; Status: {{ po.get_status_display }}
+                    {% if po.contact %}<br><span style="color: #6c757d; font-size: 0.9em;">Contact: {{ po.contact }}</span>{% endif %}
                 </div>
-            </label>
-        </div>
-
-        <div style="border: 2px solid #dc3545; border-radius: 4px; padding: 15px;">
-            <label style="display: flex; align-items: start; cursor: pointer; padding: 10px; border-radius: 4px; transition: background-color 0.2s;">
-                <input
-                    type="radio"
-                    name="contact_action"
-                    value="delete"
-                    required
-                    style="margin-top: 3px; margin-right: 10px; width: 18px; height: 18px; cursor: pointer;"
-                >
-                <div>
-                    <strong style="display: block; margin-bottom: 5px; color: #dc3545;">Delete All Contacts</strong>
-                    <span style="color: #6c757d; font-size: 0.9em;">
-                        Permanently delete all contacts associated with this business.
-                        This action cannot be undone.
-                    </span>
+                <div style="margin-top: 8px;">
+                    {% if po.status == 'draft' %}
+                    <label style="margin-right: 15px; cursor: pointer;">
+                        <input type="radio" name="action_po_{{ po.po_id }}" value="delete" required
+                               onchange="toggleReassign('reassign_po_{{ po.po_id }}', false)">
+                        Delete
+                    </label>
+                    {% endif %}
+                    {% if other_businesses %}
+                    <label style="cursor: pointer;">
+                        <input type="radio" name="action_po_{{ po.po_id }}" value="reassign"
+                               {% if po.status != 'draft' %}checked required{% else %}required{% endif %}
+                               onchange="toggleReassign('reassign_po_{{ po.po_id }}', true)">
+                        Reassign
+                    </label>
+                    {% endif %}
                 </div>
-            </label>
+            </div>
+            {% if po.status != 'draft' %}
+            <div style="color: #856404; font-size: 0.85em; margin-top: 5px; background-color: #fff3cd; padding: 5px 8px; border-radius: 3px;">
+                This PO is not in Draft status and cannot be deleted.
+            </div>
+            {% endif %}
+            <div id="reassign_po_{{ po.po_id }}" style="{% if po.status == 'draft' %}display: none;{% endif %} margin-top: 10px;">
+                <label style="font-size: 0.9em;">Reassign to:
+                    <select name="reassign_po_{{ po.po_id }}_business" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="">-- Select business --</option>
+                        {% for b in other_businesses %}
+                        <option value="{{ b.business_id }}">{{ b.business_name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
         </div>
+        {% endfor %}
     </div>
+    {% endif %}
 
-    <div style="margin-bottom: 20px; padding: 15px; background-color: #e3f2fd; border-radius: 4px;">
-        <h4 style="margin-top: 0; color: #1976d2;">Associated Contacts:</h4>
-        <ul style="margin: 0; padding-left: 20px;">
-            {% for contact in contacts %}
-                <li>{{ contact }} - {{ contact.email }}</li>
-            {% endfor %}
-        </ul>
+    {% if direct_bills %}
+    <div style="margin-bottom: 30px;">
+        <h3 style="border-bottom: 2px solid #007bff; padding-bottom: 8px;">Bills ({{ direct_bills|length }})</h3>
+        {% for bill in direct_bills %}
+        <div style="border: 1px solid #dee2e6; border-radius: 4px; padding: 15px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                <div>
+                    <strong>{{ bill.bill_number }}</strong> &mdash; Status: {{ bill.get_status_display }}
+                    {% if bill.contact %}<br><span style="color: #6c757d; font-size: 0.9em;">Contact: {{ bill.contact }}</span>{% endif %}
+                </div>
+                <div style="margin-top: 8px;">
+                    {% if bill.status == 'draft' %}
+                    <label style="margin-right: 15px; cursor: pointer;">
+                        <input type="radio" name="action_bill_{{ bill.bill_id }}" value="delete" required
+                               onchange="toggleReassign('reassign_bill_{{ bill.bill_id }}', false)">
+                        Delete
+                    </label>
+                    {% endif %}
+                    {% if other_businesses %}
+                    <label style="cursor: pointer;">
+                        <input type="radio" name="action_bill_{{ bill.bill_id }}" value="reassign"
+                               {% if bill.status != 'draft' %}checked required{% else %}required{% endif %}
+                               onchange="toggleReassign('reassign_bill_{{ bill.bill_id }}', true)">
+                        Reassign
+                    </label>
+                    {% endif %}
+                </div>
+            </div>
+            {% if bill.status != 'draft' %}
+            <div style="color: #856404; font-size: 0.85em; margin-top: 5px; background-color: #fff3cd; padding: 5px 8px; border-radius: 3px;">
+                This bill is not in Draft status and cannot be deleted.
+            </div>
+            {% endif %}
+            <div id="reassign_bill_{{ bill.bill_id }}" style="{% if bill.status == 'draft' %}display: none;{% endif %} margin-top: 10px;">
+                <label style="font-size: 0.9em;">Reassign to:
+                    <select name="reassign_bill_{{ bill.bill_id }}_business" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="">-- Select business --</option>
+                        {% for b in other_businesses %}
+                        <option value="{{ b.business_id }}">{{ b.business_name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if contact_data %}
+    <div style="margin-bottom: 30px;">
+        <h3 style="border-bottom: 2px solid #007bff; padding-bottom: 8px;">Contacts ({{ contact_data|length }})</h3>
+        {% for item in contact_data %}
+        <div style="border: 1px solid #dee2e6; border-radius: 4px; padding: 15px; margin-bottom: 15px;">
+            <div style="margin-bottom: 8px;">
+                <strong>{{ item.contact.name }}</strong> &mdash; {{ item.contact.email }}
+                {% if item.contact.contact_id == business.default_contact.contact_id %}
+                    <span style="color: #1976d2; font-weight: bold; margin-left: 5px;">[DEFAULT]</span>
+                {% endif %}
+                {% if item.jobs %}
+                    <span style="color: #856404; font-size: 0.85em; margin-left: 8px;">({{ item.jobs|length }} job{{ item.jobs|length|pluralize }})</span>
+                {% endif %}
+            </div>
+
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px;">
+                <label style="cursor: pointer;">
+                    <input type="radio" name="action_contact_{{ item.contact.contact_id }}" value="unlink" required
+                           onchange="handleContactAction({{ item.contact.contact_id }}, 'unlink')">
+                    Unlink
+                </label>
+                <label style="cursor: pointer;">
+                    <input type="radio" name="action_contact_{{ item.contact.contact_id }}" value="delete"
+                           onchange="handleContactAction({{ item.contact.contact_id }}, 'delete')">
+                    Delete
+                </label>
+                {% if other_businesses %}
+                <label style="cursor: pointer;">
+                    <input type="radio" name="action_contact_{{ item.contact.contact_id }}" value="reassign"
+                           onchange="handleContactAction({{ item.contact.contact_id }}, 'reassign')">
+                    Reassign
+                </label>
+                {% endif %}
+            </div>
+
+            <div id="reassign_contact_{{ item.contact.contact_id }}" style="display: none; margin-top: 10px;">
+                <label style="font-size: 0.9em;">Reassign to:
+                    <select name="reassign_contact_{{ item.contact.contact_id }}_business" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="">-- Select business --</option>
+                        {% for b in other_businesses %}
+                        <option value="{{ b.business_id }}">{{ b.business_name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+
+            {% if item.jobs %}
+            <div id="jobs_for_contact_{{ item.contact.contact_id }}"
+                 style="display: none; margin-top: 15px; margin-left: 20px; border-left: 3px solid #dc3545; padding-left: 15px;">
+                <h4 style="margin-top: 0; color: #dc3545; font-size: 1em;">
+                    Jobs linked to this contact ({{ item.jobs|length }})
+                </h4>
+                <p style="font-size: 0.85em; color: #6c757d; margin-top: 0;">
+                    These jobs reference this contact and must be handled before the contact can be deleted.
+                </p>
+                {% for job in item.jobs %}
+                <div style="padding: 10px; margin-bottom: 8px; background: #fff8f8; border-radius: 4px; border: 1px solid #f5c6cb;">
+                    <strong>{{ job.job_number }}</strong>{% if job.name %} &mdash; {{ job.name }}{% endif %}
+                    <span style="color: #6c757d; font-size: 0.85em;">({{ job.get_status_display }})</span>
+                    <div style="margin-top: 8px; display: flex; gap: 15px; flex-wrap: wrap;">
+                        <label style="cursor: pointer;">
+                            <input type="radio" name="action_job_{{ job.job_id }}" value="delete"
+                                   onchange="toggleReassign('reassign_job_{{ job.job_id }}', false)">
+                            Delete
+                        </label>
+                        <label style="cursor: pointer;">
+                            <input type="radio" name="action_job_{{ job.job_id }}" value="reassign"
+                                   onchange="toggleReassign('reassign_job_{{ job.job_id }}', true)">
+                            Reassign to another contact
+                        </label>
+                    </div>
+                    <div id="reassign_job_{{ job.job_id }}" style="display: none; margin-top: 8px;">
+                        <label style="font-size: 0.9em;">Reassign to:
+                            <select name="reassign_job_{{ job.job_id }}_contact" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px;">
+                                <option value="">-- Select contact --</option>
+                                {% for sc in sibling_contacts %}
+                                    {% if sc.contact_id != item.contact.contact_id %}
+                                    <option value="{{ sc.contact_id }}">{{ sc.name }} ({{ sc.email }}) [This business]</option>
+                                    {% endif %}
+                                {% endfor %}
+                                {% for c in external_contacts %}
+                                <option value="{{ c.contact_id }}">{{ c.name }} ({{ c.email }})</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if not other_businesses %}
+    <div style="padding: 10px; margin-bottom: 15px; background-color: #fff3cd; color: #856404; border-radius: 4px;">
+        <strong>Note:</strong> No other businesses exist in the system. Reassignment options are not available.
     </div>
     {% endif %}
 
     <div style="margin-top: 30px; padding: 15px; background-color: #ffebee; border-radius: 4px; border-left: 4px solid #dc3545;">
-        <strong style="color: #c62828;">⚠ Warning:</strong> Deleting this business cannot be undone.
+        <strong style="color: #c62828;">Warning:</strong> Deleting this business cannot be undone. All deletions are permanent.
     </div>
 
-    <div style="margin-top: 30px;">
-        <button
-            type="submit"
-            style="background-color: #dc3545; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; margin-right: 10px;"
-        >
-            Delete Business
+    <div style="margin-top: 20px;">
+        <button type="submit"
+                style="background-color: #dc3545; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; margin-right: 10px;">
+            Confirm and Delete Business
         </button>
-        <a
-            href="{% url 'contacts:business_detail' business.business_id %}"
-            style="background-color: #6c757d; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;"
-        >
+        <a href="{% url 'contacts:business_detail' business.business_id %}"
+           style="background-color: #6c757d; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
             Cancel
         </a>
     </div>
 </form>
 
 <script>
-// Highlight selected radio option
-document.querySelectorAll('input[name="contact_action"]').forEach(function(radio) {
-    radio.addEventListener('change', function() {
-        document.querySelectorAll('input[name="contact_action"]').forEach(function(r) {
-            r.parentElement.style.backgroundColor = '';
+function toggleReassign(targetId, show) {
+    var el = document.getElementById(targetId);
+    if (el) {
+        el.style.display = show ? 'block' : 'none';
+    }
+}
+
+function handleContactAction(contactId, action) {
+    // Toggle reassign dropdown
+    var reassignDiv = document.getElementById('reassign_contact_' + contactId);
+    if (reassignDiv) {
+        reassignDiv.style.display = (action === 'reassign') ? 'block' : 'none';
+    }
+
+    // Toggle jobs sub-section
+    var jobsDiv = document.getElementById('jobs_for_contact_' + contactId);
+    if (jobsDiv) {
+        jobsDiv.style.display = (action === 'delete') ? 'block' : 'none';
+
+        // Set/unset required on job radios based on visibility
+        var jobRadios = jobsDiv.querySelectorAll('input[type="radio"]');
+        jobRadios.forEach(function(r) {
+            if (action === 'delete') {
+                r.required = true;
+            } else {
+                r.checked = false;
+                r.required = false;
+            }
         });
-        if (this.checked) {
-            this.parentElement.style.backgroundColor = '#f8f9fa';
+
+        // Hide all job reassign dropdowns when hiding jobs section
+        if (action !== 'delete') {
+            jobsDiv.querySelectorAll('[id^="reassign_job_"]').forEach(function(d) {
+                d.style.display = 'none';
+            });
         }
-    });
-});
+    }
+}
 </script>
 
 {% endblock %}
