@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -25,8 +26,17 @@ SECRET_KEY = 'django-insecure-change-this-in-production'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['testserver', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = [
+    'testserver', 
+    'localhost', 
+    '127.0.0.1', 
+    'minibini.me',
+    '45.33.56.130'
+]
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://minibini.me'
+]
 
 # Application definition
 
@@ -85,10 +95,10 @@ DATABASES = {
 #        'ENGINE': 'django.db.backends.sqlite3',
 #        'NAME': BASE_DIR / 'db.sqlite3',
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'minibini_db',
-        'USER': 'minibini_user',
-        'PASSWORD': 'dev_password',
-        'HOST': 'localhost',
+        'NAME': os.getenv("DATABASE_NAME", "minibini_db"),
+        'USER': os.getenv("DATABASE_USER", "minibini_user"),
+        'PASSWORD': os.getenv("DATABASE_PASSWORD", "dev_password"),
+        'HOST': os.getenv("DATABASE_HOST", "localhost"),
         'PORT': '3306',
     }
 }

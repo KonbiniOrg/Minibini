@@ -1,0 +1,55 @@
+services:
+  minibini:
+    container_name: minibini
+    image: ashannonlee/minibini
+    environment:
+      - MYSQL_ROOT_PASSWORD=Ru5UPhae
+      - DATABASE_NAME=minibini_db
+      - DATABASE_USER=minidb_user
+      - DATABASE_PASSWORD=Ru5UPhae
+    build: .
+    #volumes:
+    #  - '/home/slee/git/konbini/Minibini:/minibini'
+    ports:
+      - '8000:8000'
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+        restart: true
+  mysql:
+    container_name: mysql
+    image: mariadb:latest
+    environment:
+      - MYSQL_ROOT_PASSWORD=Ru5UPhae
+      - MARIADB_DATABASE=minibini_db
+      - MARIADB_USER=minidb_user
+      - MARIADB_PASSWORD=Ru5UPhae
+    ports:
+      - '3306:3306'
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--su-mysql", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s # Gives time for initial setup
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - certbot
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
