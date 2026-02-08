@@ -416,24 +416,6 @@ class Task(models.Model):
         """Return the container (WorkOrder or EstWorksheet) this task belongs to."""
         return self.work_order or self.est_worksheet
 
-    def get_mapping_strategy(self):
-        """Get the mapping strategy from template or default to direct"""
-        if self.template and self.template.task_mapping:
-            return self.template.task_mapping.mapping_strategy
-        return 'direct'
-
-    def get_step_type(self):
-        """Get the step type from template or default to labor"""
-        if self.template and self.template.task_mapping:
-            return self.template.task_mapping.step_type
-        return 'labor'
-
-    def get_product_type(self):
-        """Get the product type from template"""
-        if self.template and self.template.task_mapping:
-            return self.template.task_mapping.default_product_type
-        return ''
-
     def __str__(self):
         return self.name
 
@@ -449,64 +431,6 @@ class Blep(models.Model):
         return f"Blep {self.pk} for Task {self.task.pk}"
 
 
-class TaskMapping(models.Model):
-    """Reusable mapping template that defines how tasks map to line items"""
-    task_mapping_id = models.AutoField(primary_key=True)
-
-    # What this task represents
-    STEP_TYPE_CHOICES = [
-        ('product', 'Complete Product'),
-        ('component', 'Product Component'),
-        ('labor', 'Labor/Service'),
-        ('material', 'Material/Supply'),
-        ('overhead', 'Overhead/Internal'),
-    ]
-    step_type = models.CharField(max_length=100, choices=STEP_TYPE_CHOICES)
-
-    # How to map to line items
-    MAPPING_STRATEGY_CHOICES = [
-        ('direct', 'Direct - One task to one line item'),
-        ('bundle', 'Bundle into single line item'),
-        ('exclude', 'Internal only - exclude from estimate'),
-    ]
-    mapping_strategy = models.CharField(max_length=30, choices=MAPPING_STRATEGY_CHOICES, default='direct')
-
-    # Template-level configuration
-    default_product_type = models.CharField(max_length=50, blank=True)  # e.g., "table", "chair"
-
-    # Line item generation
-    line_item_name = models.CharField(max_length=255, blank=True)
-    line_item_description = models.TextField(blank=True)
-
-    # LineItemType to assign when tasks with this mapping become line items
-    output_line_item_type = models.ForeignKey(
-        'core.LineItemType',
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        help_text="LineItemType to assign when tasks with this mapping become line items"
-    )
-
-    # Keep existing fields
-    task_type_id = models.CharField(max_length=50)
-    breakdown_of_task = models.TextField(blank=True)
-
-    def __str__(self):
-        return f"{self.task_type_id} - {self.breakdown_of_task}"
-
-
-class TaskInstanceMapping(models.Model):
-    """Instance-specific mapping data for individual tasks"""
-    task = models.OneToOneField(Task, on_delete=models.CASCADE, primary_key=True)
-
-    # Instance-specific identifiers (only for bundled tasks)
-    bundle_identifier = models.CharField(max_length=100, blank=True)  # e.g., "table_001", "chair_001"
-    product_instance = models.IntegerField(null=True, blank=True)  # For multiple items (chair 1, 2, 3, 4)
-
-    def __str__(self):
-        return f"Instance mapping for {self.task.name}"
-
-
 from apps.core.models import BaseLineItem
 
 
@@ -516,15 +440,6 @@ class WorkOrderTemplate(models.Model):
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-
-    # Product definition
-    TEMPLATE_TYPE_CHOICES = [
-        ('product', 'Complete Product Template'),
-        ('service', 'Service Template'),
-        ('process', 'Process/Workflow Template'),
-    ]
-    template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPE_CHOICES, default='product')
-    product_type = models.CharField(max_length=50, blank=True)  # e.g., "table", "chair"
 
     # Pricing
     base_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -540,7 +455,7 @@ class WorkOrderTemplate(models.Model):
         generated_tasks = []
 
         for instance in range(1, quantity + 1):
-            bundle_identifier = f"{self.product_type}_{worksheet.est_worksheet_id}_{instance}"
+            bundle_identifier = f"{self.template_name}_{worksheet.est_worksheet_id}_{instance}"
 
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
@@ -586,7 +501,6 @@ class TaskTemplate(models.Model):
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     # Relationships
-    task_mapping = models.ForeignKey(TaskMapping, on_delete=models.SET_NULL, null=True, blank=True)  # Changed from CASCADE - preserve templates
     work_order_templates = models.ManyToManyField(WorkOrderTemplate, through='TemplateTaskAssociation', related_name='task_templates')
     parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')
 
@@ -623,18 +537,6 @@ class TaskTemplate(models.Model):
 
         return task
 
-    def get_mapping_strategy(self):
-        """Get the mapping strategy for this template"""
-        return self.task_mapping.mapping_strategy if self.task_mapping else 'direct'
-
-    def get_step_type(self):
-        """Get the step type for this template"""
-        return self.task_mapping.step_type if self.task_mapping else 'labor'
-
-    def get_product_type(self):
-        """Get the default product type for this template"""
-        return self.task_mapping.default_product_type if self.task_mapping else ''
-
 
 class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
@@ -651,75 +553,3 @@ class EstimateLineItem(BaseLineItem):
 
     def __str__(self):
         return f"Estimate Line Item {self.pk} for {self.estimate.estimate_number}"
-
-
-class BundlingRule(models.Model):
-    """Rules for how tasks are bundled into line items"""
-
-    rule_id = models.AutoField(primary_key=True)
-    rule_name = models.CharField(max_length=255)
-
-    # What to bundle
-    product_type = models.CharField(max_length=50)  # Match against TaskMapping.default_product_type
-    work_order_template = models.ForeignKey(WorkOrderTemplate, on_delete=models.CASCADE, null=True, blank=True)
-
-    # How to present as line item
-    # Note: line_item_template and description_template were removed in Gap 3 resolution.
-    # Descriptions are now built using hard-coded patterns in EstimateGenerationService.
-    combine_instances = models.BooleanField(default=True)  # True: "4x Chair", False: separate lines
-
-    # Units and quantity strategy
-    DEFAULT_UNITS_CHOICES = [
-        ('each', 'Each (quantity = 1 per bundle)'),
-        ('hours', 'Hours (quantity = sum of task hours)'),
-    ]
-    default_units = models.CharField(max_length=20, choices=DEFAULT_UNITS_CHOICES, default='each')
-
-    # Pricing strategy
-    PRICING_METHOD_CHOICES = [
-        ('sum_components', 'Sum all component task prices'),
-        ('template_base', 'Use WorkOrderTemplate base price'),
-        ('custom_calculation', 'Custom calculation'),
-    ]
-    pricing_method = models.CharField(max_length=20, choices=PRICING_METHOD_CHOICES, default='sum_components')
-
-    include_materials = models.BooleanField(default=True)
-    include_labor = models.BooleanField(default=True)
-    include_overhead = models.BooleanField(default=False)
-
-    priority = models.IntegerField(default=100)
-    is_active = models.BooleanField(default=True)
-
-    # LineItemType to assign to bundled line items (overrides component task mappings)
-    output_line_item_type = models.ForeignKey(
-        'core.LineItemType',
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        help_text="LineItemType to assign to bundled line items. Overrides component task mappings if set."
-    )
-
-    class Meta:
-        ordering = ['priority', 'rule_name']
-
-    def clean(self):
-        """Validate BundlingRule constraints"""
-        from django.core.exceptions import ValidationError
-
-        if self.pricing_method == 'template_base':
-            if not self.work_order_template:
-                raise ValidationError({
-                    'work_order_template': 'template_base pricing requires a WorkOrderTemplate to be specified.'
-                })
-
-            if not self.work_order_template.base_price:
-                raise ValidationError({
-                    'work_order_template': f'The selected WorkOrderTemplate "{self.work_order_template.template_name}" must have a base_price set to use template_base pricing.'
-                })
-
-    def __str__(self):
-        return f"Bundling Rule: {self.rule_name}"
-
-
-# Alias for backwards compatibility during migration
-ProductBundlingRule = BundlingRule

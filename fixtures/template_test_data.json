@@ -5,8 +5,6 @@
         "fields": {
             "template_name": "Standard Installation",
             "description": "Complete installation workflow with all standard tasks",
-            "template_type": "product",
-            "product_type": "installation",
             "base_price": "1500.00",
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
@@ -18,40 +16,8 @@
         "fields": {
             "template_name": "Maintenance Service",
             "description": "Regular maintenance service package",
-            "template_type": "service",
-            "product_type": "maintenance",
             "base_price": "750.00",
             "is_active": true,
-            "created_date": "2024-01-01T10:00:00Z"
-        }
-    },
-    {
-        "model": "jobs.taskmapping",
-        "pk": 1,
-        "fields": {
-            "task_type_id": "ELEC001",
-            "task_type_name": "Electrical",
-            "cost_code": "100-200",
-            "created_date": "2024-01-01T10:00:00Z"
-        }
-    },
-    {
-        "model": "jobs.taskmapping",
-        "pk": 2,
-        "fields": {
-            "task_type_id": "PLUMB001",
-            "task_type_name": "Plumbing",
-            "cost_code": "200-300",
-            "created_date": "2024-01-01T10:00:00Z"
-        }
-    },
-    {
-        "model": "jobs.taskmapping",
-        "pk": 3,
-        "fields": {
-            "task_type_id": "CARP001",
-            "task_type_name": "Carpentry",
-            "cost_code": "300-400",
             "created_date": "2024-01-01T10:00:00Z"
         }
     },
@@ -63,7 +29,6 @@
             "description": "Install standard electrical outlets",
             "units": "outlets",
             "rate": "45.00",
-            "task_mapping": 1,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -76,7 +41,6 @@
             "description": "Run electrical wiring through walls",
             "units": "linear feet",
             "rate": "12.50",
-            "task_mapping": 1,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -89,7 +53,6 @@
             "description": "Install bathroom and kitchen fixtures",
             "units": "fixtures",
             "rate": "85.00",
-            "task_mapping": 2,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -102,7 +65,6 @@
             "description": "Install water supply lines",
             "units": "linear feet",
             "rate": "18.75",
-            "task_mapping": 2,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -115,7 +77,6 @@
             "description": "Frame interior walls",
             "units": "square feet",
             "rate": "25.00",
-            "task_mapping": 3,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -128,7 +89,6 @@
             "description": "Install and finish drywall",
             "units": "square feet",
             "rate": "15.50",
-            "task_mapping": 3,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }

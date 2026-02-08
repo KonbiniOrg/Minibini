@@ -1,229 +1,213 @@
 [
-  {
-    "model": "contacts.contact",
-    "pk": 200,
-    "fields": {
-      "email": "mixed@test.com",
-      "addr1": "200 Mixed Street",
-      "addr2": "",
-      "addr3": "",
-      "city": "Test City",
-      "municipality": "TS",
-      "postal_code": "20001",
-      "country_code": "USA",
-      "mobile_number": "555-0200",
-      "work_number": "555-0201",
-      "home_number": "",
-      "business": null,
-      "first_name": "Mixed",
-      "last_name": "LineItems Test Company"
+    {
+        "model": "contacts.contact",
+        "pk": 200,
+        "fields": {
+            "email": "mixed@test.com",
+            "addr1": "200 Mixed Street",
+            "addr2": "",
+            "addr3": "",
+            "city": "Test City",
+            "municipality": "TS",
+            "postal_code": "20001",
+            "country_code": "USA",
+            "mobile_number": "555-0200",
+            "work_number": "555-0201",
+            "home_number": "",
+            "business": null,
+            "first_name": "Mixed",
+            "last_name": "LineItems Test Company"
+        }
+    },
+    {
+        "model": "jobs.job",
+        "pk": 100,
+        "fields": {
+            "job_number": "JOB-2024-0100",
+            "created_date": "2024-01-10T10:00:00Z",
+            "due_date": "2024-02-10T10:00:00Z",
+            "completed_date": null,
+            "status": "approved",
+            "contact": 200,
+            "customer_po_number": "no PO",
+            "description": "Test job for empty estimate"
+        }
+    },
+    {
+        "model": "jobs.job",
+        "pk": 200,
+        "fields": {
+            "job_number": "JOB-2024-0200",
+            "created_date": "2024-01-10T10:00:00Z",
+            "due_date": "2024-02-10T10:00:00Z",
+            "completed_date": null,
+            "status": "approved",
+            "contact": 200,
+            "customer_po_number": "PO-MIXED-200",
+            "description": "Test job for mixed LineItem types"
+        }
+    },
+    {
+        "model": "invoicing.pricelistitem",
+        "pk": 200,
+        "fields": {
+            "code": "WOOD001",
+            "units": "board_feet",
+            "description": "Premium oak lumber for furniture",
+            "purchase_price": "4.50",
+            "selling_price": "8.00",
+            "qty_on_hand": "500.00",
+            "qty_sold": "120.00",
+            "qty_wasted": "5.00"
+        }
+    },
+    {
+        "model": "invoicing.pricelistitem",
+        "pk": 201,
+        "fields": {
+            "code": "FINISH001",
+            "units": "quart",
+            "description": "Water-based polyurethane finish",
+            "purchase_price": "15.00",
+            "selling_price": "25.00",
+            "qty_on_hand": "50.00",
+            "qty_sold": "30.00",
+            "qty_wasted": "2.00"
+        }
+    },
+    {
+        "model": "jobs.workordertemplate",
+        "pk": 200,
+        "fields": {
+            "template_name": "Mixed Test Template",
+            "description": "Template for testing mixed scenarios",
+            "base_price": "500.00",
+            "is_active": true,
+            "created_date": "2024-01-10T09:00:00Z"
+        }
+    },
+    {
+        "model": "jobs.tasktemplate",
+        "pk": 200,
+        "fields": {
+            "template_name": "Mixed Assembly Task",
+            "description": "Assembly task for mixed testing",
+            "parent_template": null,
+            "units": "hours",
+            "rate": "40.00",
+            "is_active": true,
+            "created_date": "2024-01-10T09:00:00Z"
+        }
+    },
+    {
+        "model": "jobs.estworksheet",
+        "pk": 200,
+        "fields": {
+            "job": 200,
+            "template": 200,
+            "estimate": 200,
+            "status": "final",
+            "version": 1,
+            "parent": null,
+            "created_date": "2024-01-10T10:30:00Z"
+        }
+    },
+    {
+        "model": "jobs.estimate",
+        "pk": 200,
+        "fields": {
+            "job": 200,
+            "estimate_number": "EST-MIXED-200",
+            "version": 1,
+            "status": "accepted",
+            "parent": null,
+            "created_date": "2024-01-10T11:00:00Z",
+            "closed_date": null
+        }
+    },
+    {
+        "model": "jobs.task",
+        "pk": 200,
+        "fields": {
+            "parent_task": null,
+            "assignee": null,
+            "work_order": null,
+            "est_worksheet": 200,
+            "name": "Mixed Assembly Task",
+            "units": "hours",
+            "rate": "40.00",
+            "est_qty": "3.00",
+            "template": 200
+        }
+    },
+    {
+        "model": "jobs.estimatelineitem",
+        "pk": 200,
+        "fields": {
+            "estimate": 200,
+            "task": 200,
+            "price_list_item": null,
+            "line_number": 1,
+            "qty": "3.00",
+            "units": "hours",
+            "description": "Assembly work from worksheet",
+            "price_currency": "120.00"
+        }
+    },
+    {
+        "model": "jobs.estimatelineitem",
+        "pk": 201,
+        "fields": {
+            "estimate": 200,
+            "task": null,
+            "price_list_item": 200,
+            "line_number": 2,
+            "qty": "25.00",
+            "units": "board_feet",
+            "description": "Premium oak lumber",
+            "price_currency": "200.00"
+        }
+    },
+    {
+        "model": "jobs.estimatelineitem",
+        "pk": 202,
+        "fields": {
+            "estimate": 200,
+            "task": null,
+            "price_list_item": 201,
+            "line_number": 3,
+            "qty": "2.00",
+            "units": "quart",
+            "description": "Polyurethane finish",
+            "price_currency": "50.00"
+        }
+    },
+    {
+        "model": "jobs.estimatelineitem",
+        "pk": 203,
+        "fields": {
+            "estimate": 200,
+            "task": null,
+            "price_list_item": null,
+            "line_number": 4,
+            "qty": "1.00",
+            "units": "each",
+            "description": "Custom hardware installation",
+            "price_currency": "75.00"
+        }
+    },
+    {
+        "model": "jobs.estimatelineitem",
+        "pk": 204,
+        "fields": {
+            "estimate": 200,
+            "task": null,
+            "price_list_item": null,
+            "line_number": 5,
+            "qty": "1.00",
+            "units": "each",
+            "description": "Delivery and setup",
+            "price_currency": "50.00"
+        }
     }
-  },
-  {
-    "model": "jobs.job",
-    "pk": 100,
-    "fields": {
-      "job_number": "JOB-2024-0100",
-      "created_date": "2024-01-10T10:00:00Z",
-      "due_date": "2024-02-10T10:00:00Z",
-      "completed_date": null,
-      "status": "approved",
-      "contact": 200,
-      "customer_po_number": "no PO",
-      "description": "Test job for empty estimate"
-    }
-  },
-  {
-    "model": "jobs.job",
-    "pk": 200,
-    "fields": {
-      "job_number": "JOB-2024-0200",
-      "created_date": "2024-01-10T10:00:00Z",
-      "due_date": "2024-02-10T10:00:00Z",
-      "completed_date": null,
-      "status": "approved",
-      "contact": 200,
-      "customer_po_number": "PO-MIXED-200",
-      "description": "Test job for mixed LineItem types"
-    }
-  },
-  {
-    "model": "invoicing.pricelistitem",
-    "pk": 200,
-    "fields": {
-      "code": "WOOD001",
-      "units": "board_feet",
-      "description": "Premium oak lumber for furniture",
-      "purchase_price": "4.50",
-      "selling_price": "8.00",
-      "qty_on_hand": "500.00",
-      "qty_sold": "120.00",
-      "qty_wasted": "5.00"
-    }
-  },
-  {
-    "model": "invoicing.pricelistitem",
-    "pk": 201,
-    "fields": {
-      "code": "FINISH001",
-      "units": "quart",
-      "description": "Water-based polyurethane finish",
-      "purchase_price": "15.00",
-      "selling_price": "25.00",
-      "qty_on_hand": "50.00",
-      "qty_sold": "30.00",
-      "qty_wasted": "2.00"
-    }
-  },
-  {
-    "model": "jobs.workordertemplate",
-    "pk": 200,
-    "fields": {
-      "template_name": "Mixed Test Template",
-      "description": "Template for testing mixed scenarios",
-      "template_type": "product",
-      "product_type": "mixed_product",
-      "base_price": "500.00",
-      "is_active": true,
-      "created_date": "2024-01-10T09:00:00Z"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 200,
-    "fields": {
-      "step_type": "product",
-      "mapping_strategy": "direct",
-      "default_product_type": "mixed_product",
-      "line_item_name": "Mixed Product Task",
-      "line_item_description": "Direct mapped mixed product task",
-      "task_type_id": "MIXED_PRODUCT",
-      "breakdown_of_task": "Mixed product task mapping"
-    }
-  },
-  {
-    "model": "jobs.tasktemplate",
-    "pk": 200,
-    "fields": {
-      "template_name": "Mixed Assembly Task",
-      "description": "Assembly task for mixed testing",
-      "parent_template": null,
-      "units": "hours",
-      "rate": "40.00",
-      "task_mapping": 200,
-      "is_active": true,
-      "created_date": "2024-01-10T09:00:00Z"
-    }
-  },
-  {
-    "model": "jobs.estworksheet",
-    "pk": 200,
-    "fields": {
-      "job": 200,
-      "template": 200,
-      "estimate": 200,
-      "status": "final",
-      "version": 1,
-      "parent": null,
-      "created_date": "2024-01-10T10:30:00Z"
-    }
-  },
-  {
-    "model": "jobs.estimate",
-    "pk": 200,
-    "fields": {
-      "job": 200,
-      "estimate_number": "EST-MIXED-200",
-      "version": 1,
-      "status": "accepted",
-      "parent": null,
-      "created_date": "2024-01-10T11:00:00Z",
-      "closed_date": null
-    }
-  },
-  {
-    "model": "jobs.task",
-    "pk": 200,
-    "fields": {
-      "parent_task": null,
-      "assignee": null,
-      "work_order": null,
-      "est_worksheet": 200,
-      "name": "Mixed Assembly Task",
-      "units": "hours",
-      "rate": "40.00",
-      "est_qty": "3.00",
-      "template": 200
-    }
-  },
-  {
-    "model": "jobs.estimatelineitem",
-    "pk": 200,
-    "fields": {
-      "estimate": 200,
-      "task": 200,
-      "price_list_item": null,
-      "line_number": 1,
-      "qty": "3.00",
-      "units": "hours",
-      "description": "Assembly work from worksheet",
-      "price_currency": "120.00"
-    }
-  },
-  {
-    "model": "jobs.estimatelineitem",
-    "pk": 201,
-    "fields": {
-      "estimate": 200,
-      "task": null,
-      "price_list_item": 200,
-      "line_number": 2,
-      "qty": "25.00",
-      "units": "board_feet",
-      "description": "Premium oak lumber",
-      "price_currency": "200.00"
-    }
-  },
-  {
-    "model": "jobs.estimatelineitem",
-    "pk": 202,
-    "fields": {
-      "estimate": 200,
-      "task": null,
-      "price_list_item": 201,
-      "line_number": 3,
-      "qty": "2.00",
-      "units": "quart",
-      "description": "Polyurethane finish",
-      "price_currency": "50.00"
-    }
-  },
-  {
-    "model": "jobs.estimatelineitem",
-    "pk": 203,
-    "fields": {
-      "estimate": 200,
-      "task": null,
-      "price_list_item": null,
-      "line_number": 4,
-      "qty": "1.00",
-      "units": "each",
-      "description": "Custom hardware installation",
-      "price_currency": "75.00"
-    }
-  },
-  {
-    "model": "jobs.estimatelineitem",
-    "pk": 204,
-    "fields": {
-      "estimate": 200,
-      "task": null,
-      "price_list_item": null,
-      "line_number": 5,
-      "qty": "1.00",
-      "units": "each",
-      "description": "Delivery and setup",
-      "price_currency": "50.00"
-    }
-  }
 ]

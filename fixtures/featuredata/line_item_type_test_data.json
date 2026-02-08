@@ -484,63 +484,6 @@
         }
     },
     {
-        "model": "jobs.taskmapping",
-        "pk": 1,
-        "fields": {
-            "task_type_id": "LABOR-DIRECT",
-            "step_type": "labor",
-            "mapping_strategy": "direct",
-            "default_product_type": "",
-            "line_item_name": "",
-            "line_item_description": "",
-            "output_line_item_type": 1,
-            "breakdown_of_task": "Direct labor tasks map 1:1 to Service line items"
-        },
-        "_section": "=== TASK MAPPINGS (4) - define how tasks become line items ==="
-    },
-    {
-        "model": "jobs.taskmapping",
-        "pk": 2,
-        "fields": {
-            "task_type_id": "MATERIAL-DIRECT",
-            "step_type": "material",
-            "mapping_strategy": "direct",
-            "default_product_type": "",
-            "line_item_name": "",
-            "line_item_description": "",
-            "output_line_item_type": 2,
-            "breakdown_of_task": "Direct material tasks map 1:1 to Material line items"
-        }
-    },
-    {
-        "model": "jobs.taskmapping",
-        "pk": 3,
-        "fields": {
-            "task_type_id": "COMPONENT-CABINET",
-            "step_type": "component",
-            "mapping_strategy": "bundle",
-            "default_product_type": "cabinet",
-            "line_item_name": "Custom Cabinet",
-            "line_item_description": "Bundled cabinet components",
-            "output_line_item_type": 4,
-            "breakdown_of_task": "Cabinet component tasks bundle into a single Product line item"
-        }
-    },
-    {
-        "model": "jobs.taskmapping",
-        "pk": 4,
-        "fields": {
-            "task_type_id": "OVERHEAD-INTERNAL",
-            "step_type": "overhead",
-            "mapping_strategy": "exclude",
-            "default_product_type": "",
-            "line_item_name": "",
-            "line_item_description": "",
-            "output_line_item_type": 6,
-            "breakdown_of_task": "Internal overhead tasks are excluded from customer-facing estimates"
-        }
-    },
-    {
         "model": "jobs.tasktemplate",
         "pk": 1,
         "fields": {
@@ -548,7 +491,6 @@
             "description": "Standard hourly labor for direct service tasks",
             "units": "hours",
             "rate": "75.00",
-            "task_mapping": 1,
             "parent_template": null,
             "is_active": true,
             "created_date": "2025-01-01T00:00:00Z"
@@ -563,7 +505,6 @@
             "description": "Material procurement and handling",
             "units": "each",
             "rate": "25.00",
-            "task_mapping": 2,
             "parent_template": null,
             "is_active": true,
             "created_date": "2025-01-01T00:00:00Z"
@@ -577,7 +518,6 @@
             "description": "Build cabinet frame/carcass - bundles into product",
             "units": "each",
             "rate": "200.00",
-            "task_mapping": 3,
             "parent_template": null,
             "is_active": true,
             "created_date": "2025-01-01T00:00:00Z"
@@ -591,7 +531,6 @@
             "description": "Fabricate and install cabinet doors - bundles into product",
             "units": "each",
             "rate": "150.00",
-            "task_mapping": 3,
             "parent_template": null,
             "is_active": true,
             "created_date": "2025-01-01T00:00:00Z"
@@ -605,7 +544,6 @@
             "description": "Sand and apply finish to cabinet - bundles into product",
             "units": "each",
             "rate": "100.00",
-            "task_mapping": 3,
             "parent_template": null,
             "is_active": true,
             "created_date": "2025-01-01T00:00:00Z"
@@ -619,7 +557,6 @@
             "description": "Internal shop overhead allocation - excluded from estimates",
             "units": "hours",
             "rate": "50.00",
-            "task_mapping": 4,
             "parent_template": null,
             "is_active": true,
             "created_date": "2025-01-01T00:00:00Z"
@@ -631,8 +568,6 @@
         "fields": {
             "template_name": "Simple Service",
             "description": "Basic service job with direct labor and materials",
-            "template_type": "service",
-            "product_type": "",
             "base_price": null,
             "is_active": true,
             "created_date": "2025-01-01T00:00:00Z"
@@ -645,8 +580,6 @@
         "fields": {
             "template_name": "Cabinet Build",
             "description": "Full cabinet build with bundled components - for testing bundling",
-            "template_type": "product",
-            "product_type": "cabinet",
             "base_price": "450.00",
             "is_active": true,
             "created_date": "2025-01-01T00:00:00Z"
@@ -712,21 +645,6 @@
             "est_qty": "2.00",
             "sort_order": 4
         }
-    },
-    {
-        "model": "jobs.bundlingrule",
-        "pk": 1,
-        "fields": {
-            "rule_name": "Cabinet Bundler",
-            "product_type": "cabinet",
-            "work_order_template": 2,
-            "combine_instances": true,
-            "pricing_method": "sum_components",
-            "include_materials": true,
-            "include_labor": true,
-            "include_overhead": false
-        },
-        "_section": "=== PRODUCT BUNDLING RULE (1) - for cabinet bundling test ==="
     },
     {
         "model": "jobs.job",
@@ -976,31 +894,6 @@
             "rate": "85.00",
             "est_qty": "1.00",
             "template": null
-        }
-    },
-    {
-        "model": "jobs.taskinstancemapping",
-        "pk": 3,
-        "fields": {
-            "bundle_identifier": "cabinet_001",
-            "product_instance": 1
-        },
-        "_section": "=== TASK INSTANCE MAPPINGS (3) - group cabinet tasks for bundling ==="
-    },
-    {
-        "model": "jobs.taskinstancemapping",
-        "pk": 4,
-        "fields": {
-            "bundle_identifier": "cabinet_001",
-            "product_instance": 1
-        }
-    },
-    {
-        "model": "jobs.taskinstancemapping",
-        "pk": 5,
-        "fields": {
-            "bundle_identifier": "cabinet_001",
-            "product_instance": 1
         }
     },
     {
@@ -1469,30 +1362,6 @@
             "rate": "50.00",
             "est_qty": "2.00",
             "template": 6
-        }
-    },
-    {
-        "model": "jobs.taskinstancemapping",
-        "pk": 9,
-        "fields": {
-            "bundle_identifier": "cabinet_002",
-            "product_instance": 1
-        }
-    },
-    {
-        "model": "jobs.taskinstancemapping",
-        "pk": 10,
-        "fields": {
-            "bundle_identifier": "cabinet_002",
-            "product_instance": 1
-        }
-    },
-    {
-        "model": "jobs.taskinstancemapping",
-        "pk": 11,
-        "fields": {
-            "bundle_identifier": "cabinet_002",
-            "product_instance": 1
         }
     }
 ]
