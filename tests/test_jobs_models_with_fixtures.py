@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.utils import timezone
 from datetime import timedelta
-from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, TaskMapping, TaskTemplate
+from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import User
 from .base import FixtureTestCase
@@ -193,45 +193,3 @@ class BlepModelFixtureTest(FixtureTestCase):
         blep = Blep.objects.create(task=task)
         expected_str = f"Blep {blep.pk} for Task {task.pk}"
         self.assertEqual(str(blep), expected_str)
-
-
-class TaskMappingModelFixtureTest(FixtureTestCase):
-    """
-    Test TaskMapping model using fixture data
-    """
-
-    def test_create_task_mapping_for_existing_task(self):
-        """Test creating task mapping template that can be used by tasks"""
-        task = Task.objects.get(name="Kitchen demolition")
-
-        mapping = TaskMapping.objects.create(
-            step_type="labor",
-            mapping_strategy="direct",
-            task_type_id="DEMO_PREP_001",
-            breakdown_of_task="Remove cabinet doors and drawers, disconnect utilities"
-        )
-
-        template = TaskTemplate.objects.create(
-            template_name="Demolition Task Template",
-            task_mapping=mapping
-        )
-
-        # Update task to use template
-        task.template = template
-        task.save()
-
-        self.assertEqual(task.template.task_mapping, mapping)
-        self.assertEqual(mapping.step_type, "labor")
-        self.assertEqual(mapping.task_type_id, "DEMO_PREP_001")
-        self.assertEqual(mapping.breakdown_of_task, "Remove cabinet doors and drawers, disconnect utilities")
-
-    def test_task_mapping_str_method_with_fixture_task(self):
-        """Test task mapping string representation with fixture task data"""
-        task = Task.objects.get(name="Kitchen demolition")
-        mapping = TaskMapping.objects.create(
-            step_type="labor",
-            mapping_strategy="direct",
-            task_type_id="DEMO_EXEC_001"
-        )
-        expected_str = "DEMO_EXEC_001 - "
-        self.assertEqual(str(mapping), expected_str)

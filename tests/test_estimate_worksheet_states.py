@@ -4,7 +4,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth.models import User
 from apps.jobs.models import (
-    Job, Estimate, EstWorksheet, Task, TaskTemplate, TaskMapping
+    Job, Estimate, EstWorksheet, Task, TaskTemplate
 )
 from apps.jobs.services import EstimateGenerationService
 from apps.contacts.models import Contact
@@ -288,16 +288,9 @@ class EstimateGenerationServiceTests(TestCase):
         )
 
         # Create task mapping for testing
-        self.task_mapping = TaskMapping.objects.create(
-            mapping_strategy='direct',
-            task_type_id='TEST_TYPE',
-            breakdown_of_task='Test task mapping'
-        )
-
         # Create task template
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
-            task_mapping=self.task_mapping,
             rate=100.0,
             units='hours'
         )
@@ -412,16 +405,9 @@ class IntegrationTests(TestCase):
         )
 
         # Create task mapping
-        self.task_mapping = TaskMapping.objects.create(
-            mapping_strategy='direct',
-            task_type_id='INTEGRATION_TEST',
-            breakdown_of_task='Integration test task'
-        )
-
         # Create task template
         self.task_template = TaskTemplate.objects.create(
             template_name='Integration Template',
-            task_mapping=self.task_mapping,
             rate=100.0,
             units='hours'
         )

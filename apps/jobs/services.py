@@ -307,10 +307,7 @@ class TaskService:
 
 
 class EstimateGenerationService:
-    """Service for converting EstWorksheets to Estimates.
-
-    TODO: Reimplement using TemplateBundle system.
-    """
+    """Service for converting EstWorksheets to Estimates using TemplateBundle system."""
 
     def __init__(self):
         self.line_number = 1
@@ -330,8 +327,164 @@ class EstimateGenerationService:
     @transaction.atomic
     def generate_estimate_from_worksheet(self, worksheet) -> 'Estimate':
         """
-        Convert EstWorksheet to Estimate.
+        Convert EstWorksheet to Estimate using TemplateBundle system.
 
-        TODO: Reimplement with TemplateBundle system.
+        Tasks are processed based on their template's association mapping_strategy:
+        - 'direct': Task becomes its own line item
+        - 'bundle': Tasks in same bundle are combined into one line item
+        - 'exclude': Task is not included on estimate
         """
-        raise NotImplementedError("EstimateGenerationService needs reimplementation with TemplateBundle system")
+        from .models import TemplateTaskAssociation, TemplateBundle
+
+        tasks = worksheet.task_set.select_related('template').all()
+
+        if not tasks:
+            raise ValueError(f"EstWorksheet {worksheet.pk} has no tasks to convert")
+
+        # Create the estimate
+        estimate = self._create_estimate(worksheet)
+
+        # Categorize tasks by their mapping strategy
+        direct_tasks = []
+        bundles = defaultdict(list)  # bundle_id -> [tasks]
+        excluded_tasks = []
+
+        for task in tasks:
+            strategy = self._get_mapping_strategy(task, worksheet)
+            bundle = self._get_bundle(task, worksheet)
+
+            if strategy == 'exclude':
+                excluded_tasks.append(task)
+            elif strategy == 'bundle' and bundle:
+                bundles[bundle.pk].append((task, bundle))
+            else:
+                # Default to direct for tasks without template or association
+                direct_tasks.append(task)
+
+        # Generate line items
+        line_items = []
+
+        # Process bundled tasks first
+        for bundle_pk, task_bundle_pairs in bundles.items():
+            bundle = task_bundle_pairs[0][1]  # Get the bundle from first pair
+            bundle_tasks = [pair[0] for pair in task_bundle_pairs]
+            line_item = self._create_bundle_line_item(bundle_tasks, bundle, estimate)
+            line_items.append(line_item)
+
+        # Process direct tasks
+        for task in direct_tasks:
+            line_item = self._create_direct_line_item(task, estimate)
+            line_items.append(line_item)
+
+        # Bulk create all line items
+        if line_items:
+            EstimateLineItem.objects.bulk_create(line_items)
+
+        # Link worksheet to estimate
+        worksheet.estimate = estimate
+        worksheet.save()
+
+        return estimate
+
+    def _get_mapping_strategy(self, task, worksheet):
+        """Get the mapping strategy for a task from its template association."""
+        if not task.template:
+            return 'direct'
+
+        from .models import TemplateTaskAssociation
+        # Find the association through worksheet's work order template if available
+        # For now, find any association for this template
+        assoc = TemplateTaskAssociation.objects.filter(
+            task_template=task.template
+        ).first()
+
+        if assoc:
+            return assoc.mapping_strategy
+        return 'direct'
+
+    def _get_bundle(self, task, worksheet):
+        """Get the bundle for a task from its template association."""
+        if not task.template:
+            return None
+
+        from .models import TemplateTaskAssociation
+        assoc = TemplateTaskAssociation.objects.filter(
+            task_template=task.template
+        ).select_related('bundle').first()
+
+        if assoc:
+            return assoc.bundle
+        return None
+
+    def _create_estimate(self, worksheet) -> 'Estimate':
+        """Create a new estimate for the worksheet's job."""
+        version = 1
+        parent_estimate = None
+
+        if worksheet.parent and worksheet.parent.estimate:
+            parent_estimate = worksheet.parent.estimate
+            estimate_number = parent_estimate.estimate_number
+            version = parent_estimate.version + 1
+            parent_estimate.status = 'superseded'
+            parent_estimate.save()
+        else:
+            estimate_number = NumberGenerationService.generate_next_number('estimate')
+
+        estimate = Estimate.objects.create(
+            job=worksheet.job,
+            estimate_number=estimate_number,
+            version=version,
+            parent=parent_estimate,
+            status='draft'
+        )
+
+        return estimate
+
+    def _create_direct_line_item(self, task, estimate) -> 'EstimateLineItem':
+        """Create a line item for a direct-mapped task."""
+        qty = task.est_qty or Decimal('1.00')
+        rate = task.rate or Decimal('0.00')
+
+        # Get line_item_type from task template
+        line_item_type = None
+        if task.template and task.template.line_item_type:
+            line_item_type = task.template.line_item_type
+
+        if line_item_type is None:
+            line_item_type = self._get_default_line_item_type()
+
+        line_item = EstimateLineItem(
+            estimate=estimate,
+            task=task,
+            line_number=self.line_number,
+            description=task.name,
+            qty=qty,
+            units=task.units or 'each',
+            price_currency=qty * rate,
+            line_item_type=line_item_type
+        )
+
+        self.line_number += 1
+        return line_item
+
+    def _create_bundle_line_item(self, tasks, bundle, estimate) -> 'EstimateLineItem':
+        """Create a single line item for bundled tasks."""
+        total_price = Decimal('0.00')
+
+        for task in tasks:
+            qty = task.est_qty or Decimal('1.00')
+            rate = task.rate or Decimal('0.00')
+            total_price += qty * rate
+
+        line_item = EstimateLineItem(
+            estimate=estimate,
+            line_number=self.line_number,
+            description=bundle.name,
+            qty=Decimal('1.00'),
+            units='each',
+            price_currency=total_price,
+            line_item_type=bundle.line_item_type
+        )
+
+        self.line_number += 1
+        return line_item

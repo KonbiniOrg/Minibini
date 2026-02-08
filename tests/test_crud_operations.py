@@ -3,7 +3,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import (
-    Job, Estimate, EstWorksheet, Task, TaskTemplate, TaskMapping,
+    Job, Estimate, EstWorksheet, Task, TaskTemplate,
     EstimateLineItem, WorkOrderTemplate
 )
 from apps.contacts.models import Contact
@@ -32,15 +32,8 @@ class EstWorksheetCRUDTests(TestCase):
         )
 
         # Create task mapping and template for testing
-        self.task_mapping = TaskMapping.objects.create(
-            mapping_strategy='direct',
-            task_type_id='TEST_TYPE',
-            breakdown_of_task='Test task mapping'
-        )
-
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
-            task_mapping=self.task_mapping,
             rate=100.0,
             units='hours'
         )
@@ -109,15 +102,8 @@ class TaskCRUDTests(TestCase):
         )
 
         # Create task mapping and template
-        self.task_mapping = TaskMapping.objects.create(
-            mapping_strategy='direct',
-            task_type_id='TEST_TYPE',
-            breakdown_of_task='Test task mapping'
-        )
-
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
-            task_mapping=self.task_mapping,
             rate=100.0,
             units='hours'
         )

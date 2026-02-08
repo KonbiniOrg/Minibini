@@ -19,7 +19,6 @@
             <th>Description</th>
             <th>Units</th>
             <th>Rate</th>
-            <th>Task Mapping</th>
             <th>Used in WorkOrder Templates</th>
             <th>Active</th>
             <th>Created</th>
@@ -30,7 +29,6 @@
             <td>{{ template.description|truncatewords:10|default:"-" }}</td>
             <td>{{ template.units|default:"-" }}</td>
             <td>${{ template.rate|default:"0.00" }}</td>
-            <td>{{ template.task_mapping|default:"-" }}</td>
             <td>
                 {% if template.work_order_templates.all %}
                     {% for wot in template.work_order_templates.all %}

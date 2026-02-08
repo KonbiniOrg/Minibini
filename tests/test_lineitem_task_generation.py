@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from apps.jobs.models import (
     Job, Estimate, EstimateLineItem, WorkOrder, Task,
-    EstWorksheet, TaskInstanceMapping, WorkOrderTemplate, TaskTemplate
+    EstWorksheet, WorkOrderTemplate, TaskTemplate
 )
 from apps.jobs.services import LineItemTaskService
 from apps.contacts.models import Contact

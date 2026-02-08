@@ -45,7 +45,6 @@
         <th>Units</th>
         <th>Rate</th>
         <th>Est. Quantity</th>
-        <th>Task Mapping</th>
         <th>Active</th>
         <th>Action</th>
     </tr>
@@ -56,7 +55,6 @@
         <td>{{ association.task_template.units|default:"-" }}</td>
         <td>${{ association.task_template.rate|default:"0.00" }}</td>
         <td>{{ association.est_qty }}</td>
-        <td>{{ association.task_template.task_mapping|default:"-" }}</td>
         <td>{{ association.task_template.is_active|yesno:"Yes,No" }}</td>
         <td>
             <form method="post" style="display: inline;">
@@ -68,7 +66,7 @@
     </tr>
     {% empty %}
     <tr>
-        <td colspan="8">No task templates found for this work order template.</td>
+        <td colspan="7">No task templates found for this work order template.</td>
     </tr>
     {% endfor %}
 </table>

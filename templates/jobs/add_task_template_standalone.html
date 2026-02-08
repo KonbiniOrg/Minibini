@@ -44,15 +44,7 @@
             <div>{{ form.rate.errors }}</div>
         {% endif %}
     </div>
-    
-    <div>
-        <label for="{{ form.task_mapping.id_for_label }}">Task Mapping:</label>
-        {{ form.task_mapping }}
-        {% if form.task_mapping.errors %}
-            <div>{{ form.task_mapping.errors }}</div>
-        {% endif %}
-    </div>
-    
+
     <div>
         <label for="{{ form.is_active.id_for_label }}">Active:</label>
         {{ form.is_active }}

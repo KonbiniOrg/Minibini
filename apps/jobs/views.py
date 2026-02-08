@@ -426,8 +426,8 @@ def estworksheet_detail(request, worksheet_id):
     """Show details of a specific EstWorksheet with its tasks"""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
     all_tasks = Task.objects.filter(est_worksheet=worksheet).select_related(
-        'template', 'template__task_mapping'
-    ).prefetch_related('taskinstancemapping').order_by('line_number', 'task_id')
+        'template'
+    ).order_by('line_number', 'task_id')
 
     # Build task hierarchy
     tasks_with_levels = _build_task_hierarchy(all_tasks)
@@ -477,7 +477,7 @@ def estworksheet_generate_estimate(request, worksheet_id):
     
     # Show confirmation page
     tasks = Task.objects.filter(est_worksheet=worksheet).select_related(
-        'template', 'template__task_mapping'
+        'template'
     )
     total_cost = sum(task.rate * task.est_qty for task in tasks if task.rate and task.est_qty)
     
@@ -551,7 +551,7 @@ def estworksheet_revise(request, worksheet_id):
 
 def task_template_list(request):
     """List all TaskTemplates with all fields"""
-    templates = TaskTemplate.objects.filter(is_active=True).select_related('task_mapping').prefetch_related('work_order_templates').order_by('template_name')
+    templates = TaskTemplate.objects.filter(is_active=True).prefetch_related('work_order_templates').order_by('template_name')
     return render(request, 'jobs/task_template_list.html', {'templates': templates})
 
 
