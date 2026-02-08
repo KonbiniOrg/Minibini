@@ -397,22 +397,99 @@ def work_order_template_detail(request, template_id):
             ).delete()
             messages.success(request, f'Task Template "{task_template.template_name}" removed successfully.')
         return redirect('jobs:work_order_template_detail', template_id=template_id)
-    
-    # Get task template associations
-    from .models import TemplateTaskAssociation
+
+    # Handle bundle creation
+    if request.method == 'POST' and 'bundle_tasks' in request.POST:
+        from .models import TemplateTaskAssociation, TemplateBundle
+        from apps.core.models import LineItemType
+
+        # Get selected association IDs
+        selected_ids = request.POST.getlist('selected_tasks')
+        bundle_name = request.POST.get('bundle_name', '').strip()
+        bundle_description = request.POST.get('bundle_description', '').strip()
+        line_item_type_id = request.POST.get('line_item_type')
+
+        if len(selected_ids) < 2:
+            messages.error(request, 'Please select at least 2 tasks to bundle.')
+        elif not bundle_name:
+            messages.error(request, 'Bundle name is required.')
+        elif not line_item_type_id:
+            messages.error(request, 'Line item type is required.')
+        else:
+            line_item_type = get_object_or_404(LineItemType, pk=line_item_type_id)
+
+            # Get next sort order for bundles
+            max_sort = TemplateBundle.objects.filter(
+                work_order_template=template
+            ).aggregate(models.Max('sort_order'))['sort_order__max']
+            next_sort = (max_sort or 0) + 1
+
+            # Create the bundle
+            bundle = TemplateBundle.objects.create(
+                work_order_template=template,
+                name=bundle_name,
+                description=bundle_description,
+                line_item_type=line_item_type,
+                sort_order=next_sort
+            )
+
+            # Update selected associations
+            updated = TemplateTaskAssociation.objects.filter(
+                pk__in=selected_ids,
+                work_order_template=template
+            ).update(mapping_strategy='bundle', bundle=bundle)
+
+            messages.success(request, f'Bundle "{bundle_name}" created with {updated} tasks.')
+
+        return redirect('jobs:work_order_template_detail', template_id=template_id)
+
+    # Get task template associations with bundle info
+    from .models import TemplateTaskAssociation, TemplateBundle
+    from apps.core.models import LineItemType
+
     associations = TemplateTaskAssociation.objects.filter(
         work_order_template=template,
         task_template__is_active=True
-    ).select_related('task_template').order_by('sort_order', 'task_template__template_name')
-    
+    ).select_related('task_template', 'bundle').order_by('sort_order', 'task_template__template_name')
+
+    # Group associations: bundled first (grouped by bundle), then direct, then excluded
+    bundled = []
+    direct = []
+    excluded = []
+
+    for assoc in associations:
+        if assoc.mapping_strategy == 'bundle' and assoc.bundle:
+            bundled.append(assoc)
+        elif assoc.mapping_strategy == 'exclude':
+            excluded.append(assoc)
+        else:
+            direct.append(assoc)
+
+    # Group bundled associations by their bundle
+    from itertools import groupby
+    bundled_sorted = sorted(bundled, key=lambda a: (a.bundle.sort_order, a.bundle.name))
+    bundled_groups = []
+    for bundle, group in groupby(bundled_sorted, key=lambda a: a.bundle):
+        bundled_groups.append({
+            'bundle': bundle,
+            'associations': list(group)
+        })
+
     # Get available task templates (not yet associated)
     associated_task_ids = associations.values_list('task_template_id', flat=True)
     available_templates = TaskTemplate.objects.filter(is_active=True).exclude(template_id__in=associated_task_ids)
-    
+
+    # Get line item types for bundle form
+    line_item_types = LineItemType.objects.all().order_by('name')
+
     return render(request, 'jobs/work_order_template_detail.html', {
         'template': template,
-        'associations': associations,
-        'available_templates': available_templates
+        'bundled_groups': bundled_groups,
+        'direct_associations': direct,
+        'excluded_associations': excluded,
+        'associations': associations,  # Keep for backward compat
+        'available_templates': available_templates,
+        'line_item_types': line_item_types,
     })
 
 

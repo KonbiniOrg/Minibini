@@ -7,69 +7,169 @@
 {% endblock %}
 
 {% block content %}
+<style>
+    .bundle-group {
+        background-color: #f0f7ff;
+        border-left: 4px solid #4a90d9;
+        margin: 10px 0;
+        padding: 5px 0;
+    }
+    .bundle-header {
+        padding: 5px 10px;
+        font-weight: bold;
+        color: #2c5282;
+    }
+    .bundle-group table {
+        margin: 0;
+        background: transparent;
+    }
+    .excluded-task {
+        opacity: 0.5;
+        font-style: italic;
+    }
+</style>
+
 <h2>Work Order Template: {{ template.template_name }}</h2>
 
 <table border="1">
-    <tr>
-        <th>Field</th>
-        <th>Value</th>
-    </tr>
-    <tr>
-        <td>Template ID</td>
-        <td>{{ template.template_id }}</td>
-    </tr>
-    <tr>
-        <td>Template Name</td>
-        <td>{{ template.template_name }}</td>
-    </tr>
-    <tr>
-        <td>Description</td>
-        <td>{{ template.description|default:"-" }}</td>
-    </tr>
-    <tr>
-        <td>Active</td>
-        <td>{{ template.is_active|yesno:"Yes,No" }}</td>
-    </tr>
-    <tr>
-        <td>Created Date</td>
-        <td>{{ template.created_date }}</td>
-    </tr>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Template ID</td><td>{{ template.template_id }}</td></tr>
+    <tr><td>Template Name</td><td>{{ template.template_name }}</td></tr>
+    <tr><td>Description</td><td>{{ template.description|default:"-" }}</td></tr>
+    <tr><td>Active</td><td>{{ template.is_active|yesno:"Yes,No" }}</td></tr>
+    <tr><td>Created Date</td><td>{{ template.created_date }}</td></tr>
 </table>
 
 <h3>Task Templates</h3>
 
-<table border="1">
-    <tr>
-        <th>Task Name</th>
-        <th>Description</th>
-        <th>Units</th>
-        <th>Rate</th>
-        <th>Est. Quantity</th>
-        <th>Active</th>
-        <th>Action</th>
-    </tr>
-    {% for association in associations %}
-    <tr>
-        <td>{{ association.task_template.template_name }}</td>
-        <td>{{ association.task_template.description|truncatewords:10|default:"-" }}</td>
-        <td>{{ association.task_template.units|default:"-" }}</td>
-        <td>${{ association.task_template.rate|default:"0.00" }}</td>
-        <td>{{ association.est_qty }}</td>
-        <td>{{ association.task_template.is_active|yesno:"Yes,No" }}</td>
-        <td>
-            <form method="post" style="display: inline;">
-                {% csrf_token %}
-                <input type="hidden" name="task_template_id" value="{{ association.task_template.template_id }}">
-                <button type="submit" name="remove_task" onclick="return confirm('Remove this task template from this work order?')">Remove</button>
-            </form>
-        </td>
-    </tr>
-    {% empty %}
-    <tr>
-        <td colspan="7">No task templates found for this work order template.</td>
-    </tr>
+<form method="post" id="task-form">
+    {% csrf_token %}
+
+    {% if bundled_groups %}
+    {% for group in bundled_groups %}
+    <div class="bundle-group">
+        <div class="bundle-header">
+            Bundle: "{{ group.bundle.name }}" ({{ group.bundle.line_item_type.name }})
+        </div>
+        <table border="1">
+            <tr>
+                <th style="width: 30px;"></th>
+                <th>Task Name</th>
+                <th>Description</th>
+                <th>Units</th>
+                <th>Rate</th>
+                <th>Est. Qty</th>
+                <th>Action</th>
+            </tr>
+            {% for association in group.associations %}
+            <tr>
+                <td><input type="checkbox" name="selected_tasks" value="{{ association.pk }}"></td>
+                <td>{{ association.task_template.template_name }}</td>
+                <td>{{ association.task_template.description|truncatewords:10|default:"-" }}</td>
+                <td>{{ association.task_template.units|default:"-" }}</td>
+                <td>${{ association.task_template.rate|default:"0.00" }}</td>
+                <td>{{ association.est_qty }}</td>
+                <td>
+                    <button type="submit" name="remove_task" value="{{ association.task_template.template_id }}"
+                            onclick="return confirm('Remove this task template?')">Remove</button>
+                    <input type="hidden" name="task_template_id" value="{{ association.task_template.template_id }}">
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
     {% endfor %}
-</table>
+    {% endif %}
+
+    {% if direct_associations %}
+    <table border="1">
+        <tr>
+            <th style="width: 30px;"></th>
+            <th>Task Name</th>
+            <th>Description</th>
+            <th>Units</th>
+            <th>Rate</th>
+            <th>Est. Qty</th>
+            <th>Mapping</th>
+            <th>Action</th>
+        </tr>
+        {% for association in direct_associations %}
+        <tr>
+            <td><input type="checkbox" name="selected_tasks" value="{{ association.pk }}"></td>
+            <td>{{ association.task_template.template_name }}</td>
+            <td>{{ association.task_template.description|truncatewords:10|default:"-" }}</td>
+            <td>{{ association.task_template.units|default:"-" }}</td>
+            <td>${{ association.task_template.rate|default:"0.00" }}</td>
+            <td>{{ association.est_qty }}</td>
+            <td>Direct</td>
+            <td>
+                <button type="submit" name="remove_task" value="{{ association.task_template.template_id }}"
+                        onclick="return confirm('Remove this task template?')">Remove</button>
+                <input type="hidden" name="task_template_id" value="{{ association.task_template.template_id }}">
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if excluded_associations %}
+    <h4>Excluded (Internal Only)</h4>
+    <table border="1">
+        <tr>
+            <th style="width: 30px;"></th>
+            <th>Task Name</th>
+            <th>Description</th>
+            <th>Units</th>
+            <th>Rate</th>
+            <th>Est. Qty</th>
+            <th>Action</th>
+        </tr>
+        {% for association in excluded_associations %}
+        <tr class="excluded-task">
+            <td><input type="checkbox" name="selected_tasks" value="{{ association.pk }}"></td>
+            <td>{{ association.task_template.template_name }}</td>
+            <td>{{ association.task_template.description|truncatewords:10|default:"-" }}</td>
+            <td>{{ association.task_template.units|default:"-" }}</td>
+            <td>${{ association.task_template.rate|default:"0.00" }}</td>
+            <td>{{ association.est_qty }}</td>
+            <td>
+                <button type="submit" name="remove_task" value="{{ association.task_template.template_id }}"
+                        onclick="return confirm('Remove this task template?')">Remove</button>
+                <input type="hidden" name="task_template_id" value="{{ association.task_template.template_id }}">
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if not bundled_groups and not direct_associations and not excluded_associations %}
+    <p>No task templates found for this work order template.</p>
+    {% endif %}
+
+    <h4>Create Bundle from Selected Tasks</h4>
+    <div style="border: 1px solid #ccc; padding: 10px; margin: 10px 0;">
+        <div>
+            <label for="bundle_name">Bundle Name:</label>
+            <input type="text" name="bundle_name" id="bundle_name" style="width: 200px;">
+        </div>
+        <div>
+            <label for="bundle_description">Description (optional):</label>
+            <input type="text" name="bundle_description" id="bundle_description" style="width: 300px;">
+        </div>
+        <div>
+            <label for="line_item_type">Line Item Type:</label>
+            <select name="line_item_type" id="line_item_type">
+                <option value="">-- Select Type --</option>
+                {% for lit in line_item_types %}
+                <option value="{{ lit.pk }}">{{ lit.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="margin-top: 10px;">
+            <button type="submit" name="bundle_tasks">Bundle Selected Tasks</button>
+        </div>
+    </div>
+</form>
 
 {% if available_templates %}
 <h4>Associate Existing Task Template</h4>
@@ -80,7 +180,7 @@
         <select name="task_template_id" required>
             <option value="">-- Select Task Template --</option>
             {% for task in available_templates %}
-                <option value="{{ task.template_id }}">{{ task.template_name }} ({{ task.units|default:"no units" }}, ${{ task.rate|default:"0.00" }})</option>
+            <option value="{{ task.template_id }}">{{ task.template_name }} ({{ task.units|default:"no units" }}, ${{ task.rate|default:"0.00" }})</option>
             {% endfor %}
         </select>
     </div>

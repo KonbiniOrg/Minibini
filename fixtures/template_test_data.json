@@ -1,5 +1,21 @@
 [
     {
+        "model": "core.lineitemtype",
+        "pk": 100,
+        "fields": {
+            "name": "Electrical Work",
+            "code": "ELEC"
+        }
+    },
+    {
+        "model": "core.lineitemtype",
+        "pk": 101,
+        "fields": {
+            "name": "Plumbing Work",
+            "code": "PLMB"
+        }
+    },
+    {
         "model": "jobs.workordertemplate",
         "pk": 1,
         "fields": {
@@ -94,13 +110,37 @@
         }
     },
     {
+        "model": "jobs.templatebundle",
+        "pk": 1,
+        "fields": {
+            "work_order_template": 1,
+            "name": "Complete Electrical",
+            "description": "All electrical installation tasks bundled together",
+            "line_item_type": 100,
+            "sort_order": 1
+        }
+    },
+    {
+        "model": "jobs.templatebundle",
+        "pk": 2,
+        "fields": {
+            "work_order_template": 1,
+            "name": "Complete Plumbing",
+            "description": "All plumbing installation tasks bundled together",
+            "line_item_type": 101,
+            "sort_order": 2
+        }
+    },
+    {
         "model": "jobs.templatetaskassociation",
         "pk": 1,
         "fields": {
             "work_order_template": 1,
             "task_template": 1,
             "est_qty": "10.00",
-            "sort_order": 1
+            "sort_order": 1,
+            "mapping_strategy": "bundle",
+            "bundle": 1
         }
     },
     {
@@ -110,7 +150,9 @@
             "work_order_template": 1,
             "task_template": 2,
             "est_qty": "150.00",
-            "sort_order": 2
+            "sort_order": 2,
+            "mapping_strategy": "bundle",
+            "bundle": 1
         }
     },
     {
@@ -120,7 +162,9 @@
             "work_order_template": 1,
             "task_template": 3,
             "est_qty": "5.00",
-            "sort_order": 3
+            "sort_order": 3,
+            "mapping_strategy": "bundle",
+            "bundle": 2
         }
     },
     {
@@ -130,7 +174,9 @@
             "work_order_template": 1,
             "task_template": 4,
             "est_qty": "200.00",
-            "sort_order": 4
+            "sort_order": 4,
+            "mapping_strategy": "bundle",
+            "bundle": 2
         }
     },
     {
@@ -140,7 +186,9 @@
             "work_order_template": 1,
             "task_template": 5,
             "est_qty": "400.00",
-            "sort_order": 5
+            "sort_order": 5,
+            "mapping_strategy": "direct",
+            "bundle": null
         }
     },
     {
@@ -150,7 +198,9 @@
             "work_order_template": 1,
             "task_template": 6,
             "est_qty": "400.00",
-            "sort_order": 6
+            "sort_order": 6,
+            "mapping_strategy": "direct",
+            "bundle": null
         }
     },
     {
@@ -160,7 +210,9 @@
             "work_order_template": 2,
             "task_template": 1,
             "est_qty": "2.00",
-            "sort_order": 1
+            "sort_order": 1,
+            "mapping_strategy": "direct",
+            "bundle": null
         }
     },
     {
@@ -170,7 +222,9 @@
             "work_order_template": 2,
             "task_template": 3,
             "est_qty": "1.00",
-            "sort_order": 2
+            "sort_order": 2,
+            "mapping_strategy": "direct",
+            "bundle": null
         }
     }
 ]
