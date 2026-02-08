@@ -528,7 +528,7 @@ def estworksheet_revise(request, worksheet_id):
             # Copy tasks from parent to new worksheet
             parent_tasks = Task.objects.filter(est_worksheet=parent_worksheet)
             for task in parent_tasks:
-                new_task = Task.objects.create(
+                Task.objects.create(
                     name=task.name,
                     template=task.template,
                     est_worksheet=new_worksheet,
@@ -536,17 +536,6 @@ def estworksheet_revise(request, worksheet_id):
                     units=task.units,
                     rate=task.rate
                 )
-
-                # Copy instance mapping if exists
-                try:
-                    instance_mapping = TaskInstanceMapping.objects.get(task=task)
-                    TaskInstanceMapping.objects.create(
-                        task=new_task,
-                        bundle_identifier=instance_mapping.bundle_identifier,
-                        product_instance=instance_mapping.product_instance
-                    )
-                except TaskInstanceMapping.DoesNotExist:
-                    pass
 
             # Mark parent as superseded and increment version
             parent_worksheet.status = 'superseded'

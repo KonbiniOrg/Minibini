@@ -141,7 +141,7 @@ class WorkOrderService:
             status='incomplete'
         )
         
-        # Convert LineItems to Tasks via TaskMapping (placeholder for now)
+        # Convert LineItems to Tasks
         for line_item in estimate.estimatelineitem_set.all():
             TaskService.create_from_line_item(line_item, work_order)
             
@@ -209,7 +209,7 @@ class EstimateService:
             status='draft'
         )
 
-        # Convert Tasks to LineItems via TaskMapping (placeholder for now)
+        # Convert Tasks to LineItems
         from .models import EstimateLineItem
         for task in work_order.task_set.all():
             TaskService.create_line_item_from_task(task, estimate)
@@ -240,9 +240,7 @@ class TaskService:
     def create_from_line_item(line_item, work_order):
         """
         Create Task from LineItem.
-        Uses TaskMapping for translation (placeholder for now).
         """
-        # Placeholder: TaskMapping translation will be implemented later
         task = Task.objects.create(
             work_order=work_order,
             name=f"Task from {line_item.description or 'LineItem'}",
@@ -253,7 +251,6 @@ class TaskService:
     def create_from_template(template, work_order, assignee=None):
         """
         Create Task from TaskTemplate.
-        Direct creation - no TaskMapping involved.
         """
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")

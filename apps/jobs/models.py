@@ -500,6 +500,15 @@ class TaskTemplate(models.Model):
     units = models.CharField(max_length=50, blank=True)
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
+    # LineItemType determines what type of line item this task produces when mapped directly
+    line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT,
+        null=True,  # Temporarily nullable for migration
+        blank=True,
+        help_text="Type of line item this task produces when mapped directly"
+    )
+
     # Relationships
     work_order_templates = models.ManyToManyField(WorkOrderTemplate, through='TemplateTaskAssociation', related_name='task_templates')
     parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')

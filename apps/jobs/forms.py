@@ -170,16 +170,9 @@ class WorkOrderTemplateForm(forms.ModelForm):
 
 
 class TaskTemplateForm(forms.ModelForm):
-    task_mapping = forms.ModelChoiceField(
-        queryset=TaskMapping.objects.all(),
-        required=False,
-        widget=forms.Select(attrs={'class': 'form-control'}),
-        empty_label="-- Select Task Mapping (Optional) --"
-    )
-
     class Meta:
         model = TaskTemplate
-        fields = ['template_name', 'description', 'units', 'rate', 'task_mapping', 'is_active']
+        fields = ['template_name', 'description', 'units', 'rate', 'is_active']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
             'units': forms.TextInput(attrs={'placeholder': 'e.g., hours, pieces'}),
