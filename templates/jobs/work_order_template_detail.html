@@ -8,24 +8,26 @@
 
 {% block content %}
 <style>
-    .bundle-group {
+    .bundle-group-row {
+        background-color: #e8f0fe;
+    }
+    .bundle-task-row {
         background-color: #f0f7ff;
-        border-left: 4px solid #4a90d9;
-        margin: 10px 0;
-        padding: 5px 0;
     }
     .bundle-header {
-        padding: 5px 10px;
         font-weight: bold;
         color: #2c5282;
-    }
-    .bundle-group table {
-        margin: 0;
-        background: transparent;
     }
     .excluded-task {
         opacity: 0.5;
         font-style: italic;
+    }
+    .reorder-btn {
+        padding: 2px 6px;
+        font-size: 12px;
+        cursor: pointer;
+        border: 1px solid #ccc;
+        background: #fff;
     }
 </style>
 
@@ -42,111 +44,107 @@
 
 <h3>Task Templates</h3>
 
-<form method="post" id="task-form">
-    {% csrf_token %}
+{% if container_items %}
+<table border="1">
+    <tr>
+        <th style="width: 30px;"></th>
+        <th>Task Name</th>
+        <th>Description</th>
+        <th>Units</th>
+        <th>Rate</th>
+        <th>Est. Qty</th>
+        <th>Mapping</th>
+        <th>Order</th>
+        <th>Action</th>
+    </tr>
 
-    {% if bundled_groups %}
-    {% for group in bundled_groups %}
-    <div class="bundle-group">
-        <div class="bundle-header">
-            Bundle: "{{ group.bundle.name }}" ({{ group.bundle.line_item_type.name }})
-        </div>
-        <table border="1">
-            <tr>
-                <th style="width: 30px;"></th>
-                <th>Task Name</th>
-                <th>Description</th>
-                <th>Units</th>
-                <th>Rate</th>
-                <th>Est. Qty</th>
-                <th>Action</th>
-            </tr>
-            {% for association in group.associations %}
-            <tr>
-                <td><input type="checkbox" name="selected_tasks" value="{{ association.pk }}"></td>
-                <td>{{ association.task_template.template_name }}</td>
-                <td>{{ association.task_template.description|truncatewords:10|default:"-" }}</td>
-                <td>{{ association.task_template.units|default:"-" }}</td>
-                <td>${{ association.task_template.rate|default:"0.00" }}</td>
-                <td>{{ association.est_qty }}</td>
-                <td>
+    {% for item_type, item_data, sort_order in container_items %}
+        {% if item_type == 'bundle' %}
+        <tr class="bundle-group-row">
+            <td></td>
+            <td class="bundle-header" colspan="5">
+                Bundle: "{{ item_data.bundle.name }}" ({{ item_data.bundle.line_item_type.name }})
+            </td>
+            <td></td>
+            <td>
+                <form method="post" action="{% url 'jobs:template_reorder_item' template.template_id 'bundle' item_data.bundle.pk 'up' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9650;</button>
+                </form>
+                <form method="post" action="{% url 'jobs:template_reorder_item' template.template_id 'bundle' item_data.bundle.pk 'down' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9660;</button>
+                </form>
+            </td>
+            <td></td>
+        </tr>
+        {% for association in item_data.associations %}
+        <tr class="bundle-task-row">
+            <td>
+                <form method="post" id="select-form" style="display:inline">
+                    <input type="checkbox" name="selected_tasks" value="{{ association.pk }}" form="bundle-form">
+                </form>
+            </td>
+            <td style="padding-left: 20px;">{{ association.task_template.template_name }}</td>
+            <td>{{ association.task_template.description|truncatewords:10|default:"-" }}</td>
+            <td>{{ association.task_template.units|default:"-" }}</td>
+            <td>${{ association.task_template.rate|default:"0.00" }}</td>
+            <td>{{ association.est_qty }}</td>
+            <td>{{ item_data.bundle.name }}</td>
+            <td>
+                <form method="post" action="{% url 'jobs:template_reorder_in_bundle' template.template_id association.pk 'up' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9650;</button>
+                </form>
+                <form method="post" action="{% url 'jobs:template_reorder_in_bundle' template.template_id association.pk 'down' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9660;</button>
+                </form>
+            </td>
+            <td>
+                <form method="post" style="display:inline">
+                    {% csrf_token %}
                     <button type="submit" name="remove_task" value="{{ association.task_template.template_id }}"
-                            onclick="return confirm('Remove this task template?')">Remove</button>
-                    <input type="hidden" name="task_template_id" value="{{ association.task_template.template_id }}">
-                </td>
-            </tr>
-            {% endfor %}
-        </table>
-    </div>
+                             class="reorder-btn">Unbundle</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+
+        {% else %}
+        {# item_type == 'task' - unbundled association #}
+        <tr{% if item_data.mapping_strategy == 'exclude' %} class="excluded-task"{% endif %}>
+            <td>
+                <input type="checkbox" name="selected_tasks" value="{{ item_data.pk }}" form="bundle-form">
+            </td>
+            <td>{{ item_data.task_template.template_name }}</td>
+            <td>{{ item_data.task_template.description|truncatewords:10|default:"-" }}</td>
+            <td>{{ item_data.task_template.units|default:"-" }}</td>
+            <td>${{ item_data.task_template.rate|default:"0.00" }}</td>
+            <td>{{ item_data.est_qty }}</td>
+            <td>{% if item_data.mapping_strategy == 'exclude' %}Exclude (internal){% else %}Direct{% endif %}</td>
+            <td>
+                <form method="post" action="{% url 'jobs:template_reorder_item' template.template_id 'task' item_data.pk 'up' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9650;</button>
+                </form>
+                <form method="post" action="{% url 'jobs:template_reorder_item' template.template_id 'task' item_data.pk 'down' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9660;</button>
+                </form>
+            </td>
+            <td>
+                <form method="post" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit" name="remove_task" value="{{ item_data.task_template.template_id }}"
+                             class="reorder-btn">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endif %}
     {% endfor %}
-    {% endif %}
+</table>
+{% else %}
+<p>No task templates found for this work order template.</p>
+{% endif %}
 
-    {% if direct_associations %}
-    <table border="1">
-        <tr>
-            <th style="width: 30px;"></th>
-            <th>Task Name</th>
-            <th>Description</th>
-            <th>Units</th>
-            <th>Rate</th>
-            <th>Est. Qty</th>
-            <th>Mapping</th>
-            <th>Action</th>
-        </tr>
-        {% for association in direct_associations %}
-        <tr>
-            <td><input type="checkbox" name="selected_tasks" value="{{ association.pk }}"></td>
-            <td>{{ association.task_template.template_name }}</td>
-            <td>{{ association.task_template.description|truncatewords:10|default:"-" }}</td>
-            <td>{{ association.task_template.units|default:"-" }}</td>
-            <td>${{ association.task_template.rate|default:"0.00" }}</td>
-            <td>{{ association.est_qty }}</td>
-            <td>Direct</td>
-            <td>
-                <button type="submit" name="remove_task" value="{{ association.task_template.template_id }}"
-                        onclick="return confirm('Remove this task template?')">Remove</button>
-                <input type="hidden" name="task_template_id" value="{{ association.task_template.template_id }}">
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-    {% endif %}
-
-    {% if excluded_associations %}
-    <h4>Excluded (Internal Only)</h4>
-    <table border="1">
-        <tr>
-            <th style="width: 30px;"></th>
-            <th>Task Name</th>
-            <th>Description</th>
-            <th>Units</th>
-            <th>Rate</th>
-            <th>Est. Qty</th>
-            <th>Action</th>
-        </tr>
-        {% for association in excluded_associations %}
-        <tr class="excluded-task">
-            <td><input type="checkbox" name="selected_tasks" value="{{ association.pk }}"></td>
-            <td>{{ association.task_template.template_name }}</td>
-            <td>{{ association.task_template.description|truncatewords:10|default:"-" }}</td>
-            <td>{{ association.task_template.units|default:"-" }}</td>
-            <td>${{ association.task_template.rate|default:"0.00" }}</td>
-            <td>{{ association.est_qty }}</td>
-            <td>
-                <button type="submit" name="remove_task" value="{{ association.task_template.template_id }}"
-                        onclick="return confirm('Remove this task template?')">Remove</button>
-                <input type="hidden" name="task_template_id" value="{{ association.task_template.template_id }}">
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-    {% endif %}
-
-    {% if not bundled_groups and not direct_associations and not excluded_associations %}
-    <p>No task templates found for this work order template.</p>
-    {% endif %}
-
-    <h4>Create Bundle from Selected Tasks</h4>
+<h4>Create Bundle from Selected Tasks</h4>
+<form method="post" id="bundle-form">
+    {% csrf_token %}
     <div style="border: 1px solid #ccc; padding: 10px; margin: 10px 0;">
         <div>
             <label for="bundle_name">Bundle Name:</label>

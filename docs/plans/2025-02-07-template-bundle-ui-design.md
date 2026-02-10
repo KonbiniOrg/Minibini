@@ -105,12 +105,20 @@ No model changes required.
    - Update TemplateTaskAssociation records with mapping_strategy and bundle references
    - Include at least one example of bundled tasks
 
+**Implemented (2025-02-09):**
+
+- Unbundling tasks (Remove button on bundled tasks unbundles; click again to remove from template)
+- Adding more tasks to existing bundle (use same bundle name)
+- Bundles auto-dissolve when reduced to 1 or 0 tasks
+- Interleaved ordering with up/down arrows (container-level and within-bundle)
+
+**Known UX issue:**
+
+- Combining tasks from an existing bundle with non-bundled tasks has minor confusing UI behaviors. Needs a closer look later.
+
 **Deferred:**
 
-- Unbundling tasks (removing from a bundle)
-- Adding more tasks to an existing bundle
 - Changing mapping strategy after initial assignment
-- Deleting a bundle
 - EstWorksheet bundling (needs separate model and UI design)
 - Setting "Exclude" mapping strategy via UI
 

@@ -37,4 +37,6 @@ urlpatterns = [
     path('worksheets/<int:worksheet_id>/task/<int:task_id>/reorder/<str:direction>/', views.task_reorder_worksheet, name='task_reorder_worksheet'),
     path('workorders/<int:work_order_id>/task/<int:task_id>/reorder/<str:direction>/', views.task_reorder_work_order, name='task_reorder_work_order'),
     path('<int:job_id>/create-estimate/', views.estimate_create_for_job, name='estimate_create_for_job'),
+    path('templates/<int:template_id>/reorder/<str:item_type>/<int:item_id>/<str:direction>/', views.template_reorder_item, name='template_reorder_item'),
+    path('templates/<int:template_id>/reorder-in-bundle/<int:association_id>/<str:direction>/', views.template_reorder_in_bundle, name='template_reorder_in_bundle'),
 ]

@@ -357,6 +357,18 @@ def work_order_template_list(request):
     return render(request, 'jobs/work_order_template_list.html', {'templates': templates})
 
 
+def _next_container_sort_order(template):
+    """Get the next sort_order in the shared container-level space (bundles + unbundled associations)."""
+    from .models import TemplateTaskAssociation, TemplateBundle
+    max_assoc = TemplateTaskAssociation.objects.filter(
+        work_order_template=template, bundle__isnull=True
+    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
+    max_bundle = TemplateBundle.objects.filter(
+        work_order_template=template
+    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
+    return max(max_assoc, max_bundle) + 1
+
+
 def work_order_template_detail(request, template_id):
     template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
     
@@ -368,11 +380,7 @@ def work_order_template_detail(request, template_id):
             from .models import TemplateTaskAssociation
             task_template = get_object_or_404(TaskTemplate, template_id=task_template_id)
 
-            # Get the next sort_order value
-            max_sort_order = TemplateTaskAssociation.objects.filter(
-                work_order_template=template
-            ).aggregate(models.Max('sort_order'))['sort_order__max']
-            next_sort_order = (max_sort_order or 0) + 1
+            next_sort_order = _next_container_sort_order(template)
 
             association, created = TemplateTaskAssociation.objects.get_or_create(
                 work_order_template=template,
@@ -385,17 +393,42 @@ def work_order_template_detail(request, template_id):
                 messages.warning(request, f'Task Template "{task_template.template_name}" is already associated.')
         return redirect('jobs:work_order_template_detail', template_id=template_id)
     
-    # Handle TaskTemplate disassociation
+    # Handle TaskTemplate removal (unbundle if bundled, delete if unbundled)
     if request.method == 'POST' and 'remove_task' in request.POST:
-        task_template_id = request.POST.get('task_template_id')
+        task_template_id = request.POST.get('remove_task')
         if task_template_id:
             from .models import TemplateTaskAssociation
             task_template = get_object_or_404(TaskTemplate, template_id=task_template_id)
-            TemplateTaskAssociation.objects.filter(
+            assoc = TemplateTaskAssociation.objects.filter(
                 work_order_template=template,
                 task_template=task_template
-            ).delete()
-            messages.success(request, f'Task Template "{task_template.template_name}" removed successfully.')
+            ).first()
+            if assoc and assoc.mapping_strategy == 'bundle' and assoc.bundle:
+                # Unbundle: place just after the bundle in container-level ordering
+                bundle = assoc.bundle
+                assoc.mapping_strategy = 'direct'
+                assoc.bundle = None
+                assoc.sort_order = bundle.sort_order + 1
+                assoc.save()
+                # Clean up: dissolve bundle if 0 or 1 tasks remain
+                remaining = TemplateTaskAssociation.objects.filter(bundle=bundle)
+                if remaining.count() == 0:
+                    bundle.delete()
+                    messages.success(request, f'"{task_template.template_name}" unbundled. Bundle "{bundle.name}" removed (empty).')
+                elif remaining.count() == 1:
+                    # Auto-unbundle the last task
+                    last_assoc = remaining.first()
+                    last_assoc.mapping_strategy = 'direct'
+                    last_assoc.sort_order = bundle.sort_order
+                    last_assoc.bundle = None
+                    last_assoc.save()
+                    bundle.delete()
+                    messages.success(request, f'"{task_template.template_name}" unbundled. Bundle "{bundle.name}" dissolved (only 1 task remained).')
+                else:
+                    messages.success(request, f'"{task_template.template_name}" removed from bundle "{bundle.name}".')
+            elif assoc:
+                assoc.delete()
+                messages.success(request, f'Task Template "{task_template.template_name}" removed.')
         return redirect('jobs:work_order_template_detail', template_id=template_id)
 
     # Handle bundle creation
@@ -418,28 +451,54 @@ def work_order_template_detail(request, template_id):
         else:
             line_item_type = get_object_or_404(LineItemType, pk=line_item_type_id)
 
-            # Get next sort order for bundles
-            max_sort = TemplateBundle.objects.filter(
-                work_order_template=template
-            ).aggregate(models.Max('sort_order'))['sort_order__max']
-            next_sort = (max_sort or 0) + 1
-
-            # Create the bundle
-            bundle = TemplateBundle.objects.create(
+            # Use existing bundle if name matches, otherwise create new
+            bundle, created = TemplateBundle.objects.get_or_create(
                 work_order_template=template,
                 name=bundle_name,
-                description=bundle_description,
-                line_item_type=line_item_type,
-                sort_order=next_sort
+                defaults={
+                    'description': bundle_description,
+                    'line_item_type': line_item_type,
+                    'sort_order': _next_container_sort_order(template),
+                }
             )
 
-            # Update selected associations
-            updated = TemplateTaskAssociation.objects.filter(
+            # Update selected associations and assign sequential within-bundle sort_order
+            selected_assocs = TemplateTaskAssociation.objects.filter(
                 pk__in=selected_ids,
                 work_order_template=template
-            ).update(mapping_strategy='bundle', bundle=bundle)
+            ).order_by('sort_order', 'pk')
 
-            messages.success(request, f'Bundle "{bundle_name}" created with {updated} tasks.')
+            # Find the current max sort_order within the bundle (for adding to existing)
+            existing_max = TemplateTaskAssociation.objects.filter(
+                bundle=bundle
+            ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
+
+            for i, assoc in enumerate(selected_assocs, start=existing_max + 1):
+                assoc.mapping_strategy = 'bundle'
+                assoc.bundle = bundle
+                assoc.sort_order = i
+                assoc.save()
+
+            updated = selected_assocs.count()
+
+            # Check if any other bundles were reduced to 1 or 0 tasks
+            for other_bundle in TemplateBundle.objects.filter(work_order_template=template).exclude(pk=bundle.pk):
+                remaining = TemplateTaskAssociation.objects.filter(bundle=other_bundle)
+                if remaining.count() == 0:
+                    other_bundle.delete()
+                elif remaining.count() == 1:
+                    # Auto-unbundle the last task
+                    last_assoc = remaining.first()
+                    last_assoc.mapping_strategy = 'direct'
+                    last_assoc.sort_order = other_bundle.sort_order
+                    last_assoc.bundle = None
+                    last_assoc.save()
+                    other_bundle.delete()
+
+            if created:
+                messages.success(request, f'Bundle "{bundle_name}" created with {updated} tasks.')
+            else:
+                messages.success(request, f'{updated} tasks added to existing bundle "{bundle_name}".')
 
         return redirect('jobs:work_order_template_detail', template_id=template_id)
 
@@ -452,28 +511,36 @@ def work_order_template_detail(request, template_id):
         task_template__is_active=True
     ).select_related('task_template', 'bundle').order_by('sort_order', 'task_template__template_name')
 
-    # Group associations: bundled first (grouped by bundle), then direct, then excluded
-    bundled = []
-    direct = []
-    excluded = []
+    # Build interleaved container-level list of bundles and unbundled associations.
+    # Bundles and unbundled associations share the same sort_order space.
+    # Bundled associations have their own sort_order within the bundle.
+    from itertools import groupby
+
+    bundles_by_id = {}  # bundle.pk -> {'bundle': bundle, 'associations': [...]}
+    unbundled = []  # associations not in a bundle (direct or exclude)
 
     for assoc in associations:
         if assoc.mapping_strategy == 'bundle' and assoc.bundle:
-            bundled.append(assoc)
-        elif assoc.mapping_strategy == 'exclude':
-            excluded.append(assoc)
+            if assoc.bundle.pk not in bundles_by_id:
+                bundles_by_id[assoc.bundle.pk] = {
+                    'bundle': assoc.bundle,
+                    'associations': [],
+                }
+            bundles_by_id[assoc.bundle.pk]['associations'].append(assoc)
         else:
-            direct.append(assoc)
+            unbundled.append(assoc)
 
-    # Group bundled associations by their bundle
-    from itertools import groupby
-    bundled_sorted = sorted(bundled, key=lambda a: (a.bundle.sort_order, a.bundle.name))
-    bundled_groups = []
-    for bundle, group in groupby(bundled_sorted, key=lambda a: a.bundle):
-        bundled_groups.append({
-            'bundle': bundle,
-            'associations': list(group)
-        })
+    # Sort associations within each bundle by sort_order
+    for bundle_data in bundles_by_id.values():
+        bundle_data['associations'].sort(key=lambda a: a.sort_order)
+
+    # Build interleaved list: each item is either ('bundle', bundle_data) or ('task', assoc)
+    container_items = []
+    for assoc in unbundled:
+        container_items.append(('task', assoc, assoc.sort_order))
+    for bundle_data in bundles_by_id.values():
+        container_items.append(('bundle', bundle_data, bundle_data['bundle'].sort_order))
+    container_items.sort(key=lambda x: x[2])
 
     # Get available task templates (not yet associated)
     associated_task_ids = associations.values_list('task_template_id', flat=True)
@@ -484,10 +551,7 @@ def work_order_template_detail(request, template_id):
 
     return render(request, 'jobs/work_order_template_detail.html', {
         'template': template,
-        'bundled_groups': bundled_groups,
-        'direct_associations': direct,
-        'excluded_associations': excluded,
-        'associations': associations,  # Keep for backward compat
+        'container_items': container_items,
         'available_templates': available_templates,
         'line_item_types': line_item_types,
     })
@@ -1056,4 +1120,114 @@ def estimate_reorder_line_item(request, estimate_id, line_item_id, direction):
         messages.error(request, str(e))
 
     return redirect('jobs:estimate_detail', estimate_id=estimate_id)
+
+
+@require_POST
+def template_reorder_item(request, template_id, item_type, item_id, direction):
+    """Reorder items at the container level within a WorkOrderTemplate.
+
+    Bundles and unbundled associations share the same sort_order space.
+    item_type is 'bundle' or 'task' (for unbundled TemplateTaskAssociation).
+    """
+    from .models import TemplateTaskAssociation, TemplateBundle
+
+    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+
+    # Build the container-level list: unbundled associations + bundles
+    associations = TemplateTaskAssociation.objects.filter(
+        work_order_template=template,
+    ).select_related('bundle')
+
+    container_items = []  # (sort_order, item_type, object)
+    seen_bundles = set()
+
+    for assoc in associations:
+        if assoc.mapping_strategy == 'bundle' and assoc.bundle:
+            if assoc.bundle.pk not in seen_bundles:
+                seen_bundles.add(assoc.bundle.pk)
+                container_items.append((assoc.bundle.sort_order, 'bundle', assoc.bundle))
+        else:
+            container_items.append((assoc.sort_order, 'task', assoc))
+
+    container_items.sort(key=lambda x: x[0])
+
+    # Find the item being moved
+    current_index = None
+    for i, (_, itype, obj) in enumerate(container_items):
+        if itype == item_type:
+            if item_type == 'bundle' and obj.pk == item_id:
+                current_index = i
+                break
+            elif item_type == 'task' and obj.pk == item_id:
+                current_index = i
+                break
+
+    if current_index is None:
+        messages.error(request, 'Item not found.')
+        return redirect('jobs:work_order_template_detail', template_id=template_id)
+
+    # Determine swap target
+    if direction == 'up' and current_index > 0:
+        swap_index = current_index - 1
+    elif direction == 'down' and current_index < len(container_items) - 1:
+        swap_index = current_index + 1
+    else:
+        return redirect('jobs:work_order_template_detail', template_id=template_id)
+
+    # Swap sort_order values
+    _, _, current_obj = container_items[current_index]
+    _, _, swap_obj = container_items[swap_index]
+
+    current_obj.sort_order, swap_obj.sort_order = swap_obj.sort_order, current_obj.sort_order
+    current_obj.save()
+    swap_obj.save()
+
+    return redirect('jobs:work_order_template_detail', template_id=template_id)
+
+
+@require_POST
+def template_reorder_in_bundle(request, template_id, association_id, direction):
+    """Reorder a task within its bundle."""
+    from .models import TemplateTaskAssociation
+
+    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+    assoc = get_object_or_404(
+        TemplateTaskAssociation,
+        pk=association_id,
+        work_order_template=template,
+        mapping_strategy='bundle',
+        bundle__isnull=False
+    )
+
+    # Get all associations in this bundle, ordered by sort_order
+    bundle_assocs = list(
+        TemplateTaskAssociation.objects.filter(
+            bundle=assoc.bundle
+        ).order_by('sort_order', 'pk')
+    )
+
+    current_index = None
+    for i, a in enumerate(bundle_assocs):
+        if a.pk == assoc.pk:
+            current_index = i
+            break
+
+    if current_index is None:
+        return redirect('jobs:work_order_template_detail', template_id=template_id)
+
+    if direction == 'up' and current_index > 0:
+        swap_index = current_index - 1
+    elif direction == 'down' and current_index < len(bundle_assocs) - 1:
+        swap_index = current_index + 1
+    else:
+        return redirect('jobs:work_order_template_detail', template_id=template_id)
+
+    # Swap sort_order values
+    current = bundle_assocs[current_index]
+    swap = bundle_assocs[swap_index]
+    current.sort_order, swap.sort_order = swap.sort_order, current.sort_order
+    current.save()
+    swap.save()
+
+    return redirect('jobs:work_order_template_detail', template_id=template_id)
 
