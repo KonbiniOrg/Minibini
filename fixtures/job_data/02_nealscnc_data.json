@@ -11875,11 +11875,11 @@
       "work_order": 88,
       "est_worksheet": null,
       "name": "1. cut ash to size H/W",
-      "line_number": 1,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -11891,11 +11891,11 @@
       "work_order": 88,
       "est_worksheet": null,
       "name": "2. draw notches for CNC cutting",
-      "line_number": 2,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -11907,11 +11907,11 @@
       "work_order": 88,
       "est_worksheet": null,
       "name": "3. cut ash to lengths (post CNC) and cut side groove",
-      "line_number": 3,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -11923,11 +11923,11 @@
       "work_order": 88,
       "est_worksheet": null,
       "name": "4. assemble frames",
-      "line_number": 4,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 4
     }
   },
   {
@@ -11939,11 +11939,11 @@
       "work_order": 88,
       "est_worksheet": null,
       "name": "5. stain frames",
-      "line_number": 5,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 5
     }
   },
   {
@@ -11955,11 +11955,11 @@
       "work_order": 87,
       "est_worksheet": null,
       "name": "4'x8' x 1/4\" sheet(s) of clear acrylic **price as of 05/20/24*",
-      "line_number": 1,
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -11971,11 +11971,11 @@
       "work_order": 87,
       "est_worksheet": null,
       "name": "4'x8' x 3/4\" sheet(s) of Baltic Birch plywood  *price as of 5/20/24*",
-      "line_number": 2,
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -11987,11 +11987,11 @@
       "work_order": 87,
       "est_worksheet": null,
       "name": "CAD drawing",
-      "line_number": 3,
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12003,11 +12003,11 @@
       "work_order": 74,
       "est_worksheet": null,
       "name": "Alter Oculus headset to sit on the wearer's forehead",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12019,11 +12019,11 @@
       "work_order": 33,
       "est_worksheet": null,
       "name": "Apply laminate to acrylic sheets",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12035,11 +12035,11 @@
       "work_order": 33,
       "est_worksheet": null,
       "name": "Cut \"SYNOPSYS\" logo at 10.125\" high from aluminum-laminated 1/2\" thick acrylic",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12051,11 +12051,11 @@
       "work_order": 33,
       "est_worksheet": null,
       "name": "Cut \"SYNOPSYS\" logo at 13.5\" high from aluminum-laminated 1/2\" thick acrylic",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12067,11 +12067,11 @@
       "work_order": 33,
       "est_worksheet": null,
       "name": "Cut \"SYNOPSYS\" logo at 3.3263\" high from aluminum-laminated 1/4\" thick acrylic",
-      "line_number": 4,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 4
     }
   },
   {
@@ -12083,11 +12083,11 @@
       "work_order": 33,
       "est_worksheet": null,
       "name": "Cut (1) Sintra template for each of the logo sizes\n(includes Sintra from stock)",
-      "line_number": 5,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 5
     }
   },
   {
@@ -12099,11 +12099,11 @@
       "work_order": 33,
       "est_worksheet": null,
       "name": "Materials needed:\n(4) 4'x8' x 1/2\" acrylic\n(1) 4'x8' x 1/4\" acrylic\n(5) 4'X8' aluminum laminate",
-      "line_number": 6,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 6
     }
   },
   {
@@ -12115,11 +12115,11 @@
       "work_order": 33,
       "est_worksheet": null,
       "name": "Setup, editing, and coding",
-      "line_number": 7,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 7
     }
   },
   {
@@ -12131,11 +12131,11 @@
       "work_order": 82,
       "est_worksheet": null,
       "name": "Assemble and paint panel structure (either size)",
-      "line_number": 1,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12147,11 +12147,11 @@
       "work_order": 82,
       "est_worksheet": null,
       "name": "CAD drawing and detailed design work",
-      "line_number": 2,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12163,11 +12163,11 @@
       "work_order": 82,
       "est_worksheet": null,
       "name": "Insert LED strips & battery, attach panel fronts, and attach to leg structures",
-      "line_number": 3,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12179,11 +12179,11 @@
       "work_order": 35,
       "est_worksheet": null,
       "name": "Band Sintra shelves, 1 long side",
-      "line_number": 1,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12195,11 +12195,11 @@
       "work_order": 35,
       "est_worksheet": null,
       "name": "Construct \"gutter\"",
-      "line_number": 2,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12211,11 +12211,11 @@
       "work_order": 35,
       "est_worksheet": null,
       "name": "Onsite Consultation",
-      "line_number": 3,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12227,11 +12227,11 @@
       "work_order": 44,
       "est_worksheet": null,
       "name": "Below items are optional if you choose to have us source and construct the rough blank.  Above cut charge is the same whether you or we provide the material.",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12243,11 +12243,11 @@
       "work_order": 44,
       "est_worksheet": null,
       "name": "'Board feet of hardwood at cost plus ten percent sourcing fee\n-= PRICE ESTIMATED =-\nactual cost will depend on species and availability",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12259,11 +12259,11 @@
       "work_order": 44,
       "est_worksheet": null,
       "name": "Cut one logo and tagline \"khp Capital Partners\" from 1\" thick hardwood, reversed, with keyhole slots in all pieces",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12275,11 +12275,11 @@
       "work_order": 44,
       "est_worksheet": null,
       "name": "Delivery within Hayward/Union City/Fremont/Newark/Castro Valley/San Leandro/Oakland/Alameda/Berkeley",
-      "line_number": 4,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 4
     }
   },
   {
@@ -12291,11 +12291,11 @@
       "work_order": 44,
       "est_worksheet": null,
       "name": "Draw keyhole location template on paper with large \"khp\" block for placement",
-      "line_number": 5,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 5
     }
   },
   {
@@ -12307,11 +12307,11 @@
       "work_order": 44,
       "est_worksheet": null,
       "name": "Setup, editing, and coding",
-      "line_number": 6,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 6
     }
   },
   {
@@ -12323,11 +12323,11 @@
       "work_order": 44,
       "est_worksheet": null,
       "name": "Straighten and join hardwood planks into blank for cutting",
-      "line_number": 7,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 7
     }
   },
   {
@@ -12339,11 +12339,11 @@
       "work_order": 65,
       "est_worksheet": null,
       "name": "Break up pieces to fit on plywood sheets; add dogleg joins",
-      "line_number": 1,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12355,11 +12355,11 @@
       "work_order": 68,
       "est_worksheet": null,
       "name": "CAD drawing bench",
-      "line_number": 1,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12371,11 +12371,11 @@
       "work_order": 68,
       "est_worksheet": null,
       "name": "CAD drawing for pipe and clamp assemblies",
-      "line_number": 2,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12387,11 +12387,11 @@
       "work_order": 61,
       "est_worksheet": null,
       "name": "CAD work on first drawing set",
-      "line_number": 1,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12403,11 +12403,11 @@
       "work_order": 53,
       "est_worksheet": null,
       "name": "Calculate wood dimensions to buy",
-      "line_number": 1,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12419,11 +12419,11 @@
       "work_order": 59,
       "est_worksheet": null,
       "name": "CNC cutting of wall parts",
-      "line_number": 1,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12435,11 +12435,11 @@
       "work_order": 59,
       "est_worksheet": null,
       "name": "Setup, editing, coding and CAD Drawing",
-      "line_number": 2,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12451,11 +12451,11 @@
       "work_order": 59,
       "est_worksheet": null,
       "name": "Shop rate for 2 people to construct and test fit beer wall",
-      "line_number": 3,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12467,11 +12467,11 @@
       "work_order": 3,
       "est_worksheet": null,
       "name": "code for cutting (kill the current coding)",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12483,11 +12483,11 @@
       "work_order": 3,
       "est_worksheet": null,
       "name": "cut 3 more sheets of the ribs",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12499,11 +12499,11 @@
       "work_order": 3,
       "est_worksheet": null,
       "name": "cut all sheets",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12515,11 +12515,11 @@
       "work_order": 3,
       "est_worksheet": null,
       "name": "edit drawing to make the minor changes he requested",
-      "line_number": 4,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 4
     }
   },
   {
@@ -12531,11 +12531,11 @@
       "work_order": 3,
       "est_worksheet": null,
       "name": "receive material",
-      "line_number": 5,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 5
     }
   },
   {
@@ -12547,11 +12547,11 @@
       "work_order": 3,
       "est_worksheet": null,
       "name": "recut the desk edges from birch",
-      "line_number": 6,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 6
     }
   },
   {
@@ -12563,11 +12563,11 @@
       "work_order": 80,
       "est_worksheet": null,
       "name": "Complete unfinished finger",
-      "line_number": 1,
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12579,11 +12579,11 @@
       "work_order": 80,
       "est_worksheet": null,
       "name": "Document finger construction process",
-      "line_number": 2,
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12595,11 +12595,11 @@
       "work_order": 80,
       "est_worksheet": null,
       "name": "Fully construct five fingers from cut-out pieces",
-      "line_number": 3,
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12611,11 +12611,11 @@
       "work_order": 46,
       "est_worksheet": null,
       "name": "Cut (7) console desktop parts, (2) having back side hogout features, from 1/2\" wood or composite material TBD",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12627,11 +12627,11 @@
       "work_order": 46,
       "est_worksheet": null,
       "name": "Materials:\n(2) 4'x8' x 1/2\" sheets of plywood, melamine, or other composite\n(2) 4'x8' sheets of laminate (optional)",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12643,11 +12643,11 @@
       "work_order": 46,
       "est_worksheet": null,
       "name": "Setup, editing, and coding",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12659,11 +12659,11 @@
       "work_order": 7,
       "est_worksheet": null,
       "name": "Cut 1/8\" deep square holes and 1/4\" round full-depth holes in 1/4\" thick laminated MDF panels. Also cut panels to precise size.",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12675,11 +12675,11 @@
       "work_order": 7,
       "est_worksheet": null,
       "name": "re-quote based on new drawings",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12691,11 +12691,11 @@
       "work_order": 7,
       "est_worksheet": null,
       "name": "Setup, editing, and coding",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12707,11 +12707,11 @@
       "work_order": 4,
       "est_worksheet": null,
       "name": "cut 6 sheets",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12723,11 +12723,11 @@
       "work_order": 8,
       "est_worksheet": null,
       "name": "Cut 8 shaped pieces 41 3/16\u201d  x 37 9/16\u201d with 2\u201d hole from 3/4\" melamine",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12739,11 +12739,11 @@
       "work_order": 8,
       "est_worksheet": null,
       "name": "Setup, editing, and coding",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12755,11 +12755,11 @@
       "work_order": 6,
       "est_worksheet": null,
       "name": "Cut a sheet of 3/4\" ply with 2 countertop pieces, one solid, one edge only",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12771,11 +12771,11 @@
       "work_order": 6,
       "est_worksheet": null,
       "name": "Cut a sheet of 3/4\" ply with 5 shelf pieces",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12787,11 +12787,11 @@
       "work_order": 6,
       "est_worksheet": null,
       "name": "Setup, editing, and coding - rotate shelves",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12803,11 +12803,11 @@
       "work_order": 36,
       "est_worksheet": null,
       "name": "Cut all parts for ROx_Drain:\n(1) A-109180-00\n(1) A-109181-00\n(2) A-109182-00\n(4) A-109183-00\n(4) A-109184-00\n(8) A-109185-00\n(2) A-109186-00\n(1) A-109187-00\n(1) A-109188-00",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12819,11 +12819,11 @@
       "work_order": 36,
       "est_worksheet": null,
       "name": "Material sourcing fee",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12835,11 +12835,11 @@
       "work_order": 36,
       "est_worksheet": null,
       "name": "Material:\n4'x8' sheets of pressure treated plywood from Home Depot\n(5) sheets per drain set",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12851,11 +12851,11 @@
       "work_order": 36,
       "est_worksheet": null,
       "name": "Setup, editing, and coding",
-      "line_number": 4,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 4
     }
   },
   {
@@ -12867,11 +12867,11 @@
       "work_order": 58,
       "est_worksheet": null,
       "name": "Cut floor parts from coated plywood",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12883,11 +12883,11 @@
       "work_order": 58,
       "est_worksheet": null,
       "name": "door panel sets",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -12899,11 +12899,11 @@
       "work_order": 58,
       "est_worksheet": null,
       "name": "DRG assemblies (all parts, 100, 200, & 300 series)",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -12915,11 +12915,11 @@
       "work_order": 58,
       "est_worksheet": null,
       "name": "DRG300 series only",
-      "line_number": 4,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 4
     }
   },
   {
@@ -12931,11 +12931,11 @@
       "work_order": 58,
       "est_worksheet": null,
       "name": "ISL assemblies, all part numbers",
-      "line_number": 5,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 5
     }
   },
   {
@@ -12947,11 +12947,11 @@
       "work_order": 58,
       "est_worksheet": null,
       "name": "PSG assemblies, all part numbers",
-      "line_number": 6,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 6
     }
   },
   {
@@ -12963,11 +12963,11 @@
       "work_order": 58,
       "est_worksheet": null,
       "name": "UBB assemblies, all part numbers including doors",
-      "line_number": 7,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 7
     }
   },
   {
@@ -12979,11 +12979,11 @@
       "work_order": 5,
       "est_worksheet": null,
       "name": "Cut pucks with beveled edges and 3 milled holes each, from 3/4\" cast acrylic, identical to those from job #02910a",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -12995,11 +12995,11 @@
       "work_order": 5,
       "est_worksheet": null,
       "name": "Materials: partial sheet of 3/4\" clear acrylic, drop from previous job.",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -13011,11 +13011,11 @@
       "work_order": 5,
       "est_worksheet": null,
       "name": "Setup, editing, and coding",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -13027,11 +13027,11 @@
       "work_order": 9,
       "est_worksheet": null,
       "name": "Cut various shapes for Bar Counter from 2 sheets of 3/4\" ply",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13043,11 +13043,11 @@
       "work_order": 9,
       "est_worksheet": null,
       "name": "Setup, editing, and coding",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -13059,11 +13059,11 @@
       "work_order": 77,
       "est_worksheet": null,
       "name": "Cut, construct, and finish one stage using reclaimed wood. Dimensions a quarter circle with radius 9'6\", and 10\" tall.  Constructed in two pieces attached with Norse fasteners.\nWood planks covering radius edge to be bent not faceted.",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13075,11 +13075,11 @@
       "work_order": 77,
       "est_worksheet": null,
       "name": "Delivery and installation to Scotts Valley, CA",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -13091,11 +13091,11 @@
       "work_order": 77,
       "est_worksheet": null,
       "name": "Materials:\n(1) sheets 4'x10' x 3/4\" shop plywood\n(2) sheets 4'x8' x 3/4\" shop plywood\n(7) Norse fasteners\napproximately 100 board feet of reclaimed lumber, 3/4\" thick",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -13107,11 +13107,11 @@
       "work_order": 63,
       "est_worksheet": null,
       "name": "draw 20x20 section",
-      "line_number": 1,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13123,11 +13123,11 @@
       "work_order": 63,
       "est_worksheet": null,
       "name": "Draw 40x40 section",
-      "line_number": 2,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -13139,11 +13139,11 @@
       "work_order": 43,
       "est_worksheet": null,
       "name": "Laminate in two colors and cut logo and letters in two sizes \"cpacket networks\" from 1/2\" HDU foam",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13155,11 +13155,11 @@
       "work_order": 43,
       "est_worksheet": null,
       "name": "Materials:\n(1) sheet of 4'x8' x 1/2\" HDU foam\n(1) sheet of 4'x8' laminate in black\n(1) sheet of 4'x8' laminate in blue (actually only about a quarter sheet is needed)\n\nWe will match paint color and provide paint",
-      "line_number": 2,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -13171,11 +13171,11 @@
       "work_order": 43,
       "est_worksheet": null,
       "name": "Prime and paint sides of all above letters, including matching paint color to laminate",
-      "line_number": 3,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -13187,11 +13187,11 @@
       "work_order": 43,
       "est_worksheet": null,
       "name": "Setup, editing, and coding",
-      "line_number": 4,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 4
     }
   },
   {
@@ -13203,11 +13203,11 @@
       "work_order": 72,
       "est_worksheet": null,
       "name": "Layout",
-      "line_number": 1,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13219,11 +13219,11 @@
       "work_order": 73,
       "est_worksheet": null,
       "name": "Measure sample panels and update drawings accordingly",
-      "line_number": 1,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13235,11 +13235,11 @@
       "work_order": 73,
       "est_worksheet": null,
       "name": "metatron drawing",
-      "line_number": 2,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -13251,11 +13251,11 @@
       "work_order": 73,
       "est_worksheet": null,
       "name": "Update drawings according to new DXF's received",
-      "line_number": 3,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -13267,11 +13267,11 @@
       "work_order": 84,
       "est_worksheet": null,
       "name": "Model the frame",
-      "line_number": 1,
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13283,11 +13283,11 @@
       "work_order": 57,
       "est_worksheet": null,
       "name": "Sew 84 total covers (maybe including the 3?)",
-      "line_number": 1,
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13299,11 +13299,11 @@
       "work_order": 57,
       "est_worksheet": null,
       "name": "Sew one prototype cover",
-      "line_number": 2,
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -13315,11 +13315,11 @@
       "work_order": 57,
       "est_worksheet": null,
       "name": "Sew three test covers",
-      "line_number": 3,
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -13331,11 +13331,11 @@
       "work_order": 60,
       "est_worksheet": null,
       "name": "Sew first prototype & provide feedback",
-      "line_number": 1,
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13347,11 +13347,11 @@
       "work_order": 60,
       "est_worksheet": null,
       "name": "Sew second prototype and provide feedback",
-      "line_number": 2,
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 2
     }
   },
   {
@@ -13363,11 +13363,11 @@
       "work_order": 60,
       "est_worksheet": null,
       "name": "Sew third prototype and document construction process",
-      "line_number": 3,
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 3
     }
   },
   {
@@ -13379,11 +13379,11 @@
       "work_order": 45,
       "est_worksheet": null,
       "name": "tree shapes, estimated as similar to Steve Wiersema's at 1200",
-      "line_number": 1,
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {
@@ -13395,11 +13395,11 @@
       "work_order": 56,
       "est_worksheet": null,
       "name": "Update master drawings with revisions",
-      "line_number": 1,
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null
+      "template": null,
+      "sort_order": 1
     }
   },
   {

@@ -348,8 +348,22 @@ class EstWorksheet(AbstractWorkContainer):
             estimate=None  # New version starts without an estimate
         )
 
+        # Copy TaskBundles, mapping old bundle PKs to new ones
+        bundle_mapping = {}
+        for bundle in self.bundles.all():
+            new_bundle = TaskBundle.objects.create(
+                est_worksheet=new_worksheet,
+                name=bundle.name,
+                description=bundle.description,
+                line_item_type=bundle.line_item_type,
+                sort_order=bundle.sort_order,
+                source_template_bundle=bundle.source_template_bundle,
+            )
+            bundle_mapping[bundle.pk] = new_bundle
+
         # Copy all tasks to the new worksheet
         for task in self.task_set.all():
+            new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
             Task.objects.create(
                 parent_task=task.parent_task,
                 assignee=task.assignee,
@@ -358,7 +372,9 @@ class EstWorksheet(AbstractWorkContainer):
                 units=task.units,
                 rate=task.rate,
                 est_qty=task.est_qty,
-                template=task.template
+                template=task.template,
+                mapping_strategy=task.mapping_strategy,
+                bundle=new_bundle,
             )
 
         return new_worksheet
@@ -381,12 +397,17 @@ class Task(models.Model):
     template = models.ForeignKey('TaskTemplate', on_delete=models.SET_NULL, null=True, blank=True)
 
     def clean(self):
-        """Ensure task is attached to either WorkOrder or EstWorksheet, but not both."""
         from django.core.exceptions import ValidationError
+        # Must belong to exactly one container
         if self.work_order and self.est_worksheet:
             raise ValidationError("Task cannot be attached to both WorkOrder and EstWorksheet")
         if not self.work_order and not self.est_worksheet:
             raise ValidationError("Task must be attached to either WorkOrder or EstWorksheet")
+        # Bundle consistency
+        if self.mapping_strategy == 'bundle' and not self.bundle:
+            raise ValidationError("Bundled tasks must have a bundle assigned")
+        if self.bundle and self.mapping_strategy != 'bundle':
+            raise ValidationError("Tasks with a bundle must use 'bundle' mapping strategy")
 
     def save(self, *args, **kwargs):
         """Override save to auto-generate sort order."""
@@ -416,8 +437,71 @@ class Task(models.Model):
         """Return the container (WorkOrder or EstWorksheet) this task belongs to."""
         return self.work_order or self.est_worksheet
 
+    # Mapping config for estimate generation
+    MAPPING_CHOICES = [
+        ('direct', 'Direct'),
+        ('bundle', 'Bundle'),
+        ('exclude', 'Exclude'),
+    ]
+    mapping_strategy = models.CharField(max_length=20, choices=MAPPING_CHOICES, default='direct')
+    bundle = models.ForeignKey(
+        'TaskBundle',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tasks'
+    )
+
     def __str__(self):
         return self.name
+
+
+class TaskBundle(models.Model):
+    """
+    Instance-level grouping of Tasks within a worksheet or work order.
+
+    Parallel to TemplateBundle, but lives on the instance container.
+    Tasks with mapping_strategy='bundle' point to a TaskBundle, and
+    the bundle becomes a single line item on the estimate.
+    """
+    # Dual FK pattern (same as Task)
+    est_worksheet = models.ForeignKey(
+        EstWorksheet, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='bundles'
+    )
+    work_order = models.ForeignKey(
+        WorkOrder, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='bundles'
+    )
+
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT
+    )
+    sort_order = models.IntegerField(default=0)
+
+    # Traceability
+    source_template_bundle = models.ForeignKey(
+        'TemplateBundle', on_delete=models.SET_NULL,
+        null=True, blank=True
+    )
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+
+    def get_container(self):
+        return self.est_worksheet or self.work_order
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if bool(self.est_worksheet) == bool(self.work_order):
+            raise ValidationError("TaskBundle must belong to exactly one container")
+
+    def __str__(self):
+        container = self.get_container()
+        return f"{container} - {self.name}"
 
 
 class Blep(models.Model):
@@ -451,25 +535,45 @@ class WorkOrderTemplate(models.Model):
         return self.template_name
 
     def generate_tasks_for_worksheet(self, worksheet, quantity=1):
-        """Generate all tasks for a worksheet, with proper product grouping"""
+        """Generate all tasks for a worksheet, with proper product grouping and bundling."""
         generated_tasks = []
 
         for instance in range(1, quantity + 1):
             bundle_identifier = f"{self.template_name}_{worksheet.est_worksheet_id}_{instance}"
+
+            # Create TaskBundles from TemplateBundles
+            template_to_instance_bundle = {}
+            for template_bundle in self.bundles.all():
+                task_bundle = TaskBundle.objects.create(
+                    est_worksheet=worksheet,
+                    name=template_bundle.name,
+                    description=template_bundle.description,
+                    line_item_type=template_bundle.line_item_type,
+                    sort_order=template_bundle.sort_order,
+                    source_template_bundle=template_bundle,
+                )
+                template_to_instance_bundle[template_bundle.pk] = task_bundle
 
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
                 work_order_template=self,
                 task_template__parent_template__isnull=True,  # Root-level templates only
                 task_template__is_active=True
-            ).order_by('sort_order', 'task_template__template_name')
+            ).select_related('bundle').order_by('sort_order', 'task_template__template_name')
 
             for association in associations:
+                # Resolve instance-level bundle for this association
+                instance_bundle = None
+                if association.bundle_id:
+                    instance_bundle = template_to_instance_bundle.get(association.bundle_id)
+
                 task = association.task_template.generate_task(
                     worksheet,
                     est_qty=association.est_qty,
                     bundle_identifier=bundle_identifier,
-                    product_instance=instance if quantity > 1 else None
+                    product_instance=instance if quantity > 1 else None,
+                    mapping_strategy=association.mapping_strategy,
+                    bundle=instance_bundle,
                 )
                 generated_tasks.append(task)
 
@@ -569,8 +673,9 @@ class TaskTemplate(models.Model):
     def __str__(self):
         return self.template_name
 
-    def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None, assignee=None):
-        """Generate a Task from this template with specified quantity"""
+    def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
+                       assignee=None, mapping_strategy='direct', bundle=None):
+        """Generate a Task from this template with specified quantity and mapping config."""
         task = Task.objects.create(
             work_order=container if isinstance(container, WorkOrder) else None,
             est_worksheet=container if isinstance(container, EstWorksheet) else None,
@@ -579,7 +684,9 @@ class TaskTemplate(models.Model):
             rate=self.rate,
             est_qty=est_qty,
             template=self,
-            assignee=assignee
+            assignee=assignee,
+            mapping_strategy=mapping_strategy,
+            bundle=bundle,
         )
 
         # Generate child tasks if this template has children

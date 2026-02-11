@@ -307,7 +307,7 @@ class TaskService:
 
 
 class EstimateGenerationService:
-    """Service for converting EstWorksheets to Estimates using TemplateBundle system."""
+    """Service for converting EstWorksheets to Estimates using instance-level bundling."""
 
     def __init__(self):
         self.line_number = 1
@@ -327,16 +327,14 @@ class EstimateGenerationService:
     @transaction.atomic
     def generate_estimate_from_worksheet(self, worksheet) -> 'Estimate':
         """
-        Convert EstWorksheet to Estimate using TemplateBundle system.
+        Convert EstWorksheet to Estimate using instance-level mapping config.
 
-        Tasks are processed based on their template's association mapping_strategy:
+        Tasks are processed based on their own mapping_strategy field:
         - 'direct': Task becomes its own line item
-        - 'bundle': Tasks in same bundle are combined into one line item
+        - 'bundle': Tasks in same TaskBundle are combined into one line item
         - 'exclude': Task is not included on estimate
         """
-        from .models import TemplateTaskAssociation, TemplateBundle
-
-        tasks = worksheet.task_set.select_related('template').all()
+        tasks = worksheet.task_set.select_related('template', 'bundle').all()
 
         if not tasks:
             raise ValueError(f"EstWorksheet {worksheet.pk} has no tasks to convert")
@@ -344,31 +342,25 @@ class EstimateGenerationService:
         # Create the estimate
         estimate = self._create_estimate(worksheet)
 
-        # Categorize tasks by their mapping strategy
+        # Categorize tasks by their instance-level mapping strategy
         direct_tasks = []
         bundles = defaultdict(list)  # bundle_id -> [tasks]
-        excluded_tasks = []
 
         for task in tasks:
-            strategy = self._get_mapping_strategy(task, worksheet)
-            bundle = self._get_bundle(task, worksheet)
-
-            if strategy == 'exclude':
-                excluded_tasks.append(task)
-            elif strategy == 'bundle' and bundle:
-                bundles[bundle.pk].append((task, bundle))
+            if task.mapping_strategy == 'exclude':
+                continue
+            elif task.mapping_strategy == 'bundle' and task.bundle:
+                bundles[task.bundle_id].append(task)
             else:
-                # Default to direct for tasks without template or association
                 direct_tasks.append(task)
 
         # Generate line items
         line_items = []
 
-        # Process bundled tasks first
-        for bundle_pk, task_bundle_pairs in bundles.items():
-            bundle = task_bundle_pairs[0][1]  # Get the bundle from first pair
-            bundle_tasks = [pair[0] for pair in task_bundle_pairs]
-            line_item = self._create_bundle_line_item(bundle_tasks, bundle, estimate)
+        # Process bundled tasks
+        for bundle_id, bundle_tasks in bundles.items():
+            task_bundle = bundle_tasks[0].bundle
+            line_item = self._create_bundle_line_item(bundle_tasks, task_bundle, estimate)
             line_items.append(line_item)
 
         # Process direct tasks
@@ -385,36 +377,6 @@ class EstimateGenerationService:
         worksheet.save()
 
         return estimate
-
-    def _get_mapping_strategy(self, task, worksheet):
-        """Get the mapping strategy for a task from its template association."""
-        if not task.template:
-            return 'direct'
-
-        from .models import TemplateTaskAssociation
-        # Find the association through worksheet's work order template if available
-        # For now, find any association for this template
-        assoc = TemplateTaskAssociation.objects.filter(
-            task_template=task.template
-        ).first()
-
-        if assoc:
-            return assoc.mapping_strategy
-        return 'direct'
-
-    def _get_bundle(self, task, worksheet):
-        """Get the bundle for a task from its template association."""
-        if not task.template:
-            return None
-
-        from .models import TemplateTaskAssociation
-        assoc = TemplateTaskAssociation.objects.filter(
-            task_template=task.template
-        ).select_related('bundle').first()
-
-        if assoc:
-            return assoc.bundle
-        return None
 
     def _create_estimate(self, worksheet) -> 'Estimate':
         """Create a new estimate for the worksheet's job."""

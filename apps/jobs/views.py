@@ -357,6 +357,50 @@ def work_order_template_list(request):
     return render(request, 'jobs/work_order_template_list.html', {'templates': templates})
 
 
+def _build_container_items_from_associations(associations):
+    """Normalize TemplateTaskAssociations into the shared container_items format."""
+    bundles_by_id = {}
+    unbundled = []
+
+    for assoc in associations:
+        item = {
+            'id': assoc.pk,
+            'name': assoc.task_template.template_name,
+            'description': assoc.task_template.description,
+            'units': assoc.task_template.units,
+            'rate': assoc.task_template.rate,
+            'est_qty': assoc.est_qty,
+            'mapping_strategy': assoc.mapping_strategy,
+            'remove_id': assoc.task_template.template_id,
+        }
+        if assoc.mapping_strategy == 'bundle' and assoc.bundle:
+            bid = assoc.bundle.pk
+            if bid not in bundles_by_id:
+                bundles_by_id[bid] = {
+                    'id': bid,
+                    'name': assoc.bundle.name,
+                    'line_item_type_name': assoc.bundle.line_item_type.name,
+                    'sort_order': assoc.bundle.sort_order,
+                    'items': [],
+                }
+            bundles_by_id[bid]['items'].append(item)
+        else:
+            unbundled.append((assoc.sort_order, item))
+
+    # Sort within each bundle
+    for bundle_data in bundles_by_id.values():
+        bundle_data['items'].sort(key=lambda i: i['id'])
+
+    # Build interleaved list
+    container_items = []
+    for sort_order, item in unbundled:
+        container_items.append(('task', item, sort_order))
+    for bundle_data in bundles_by_id.values():
+        container_items.append(('bundle', bundle_data, bundle_data['sort_order']))
+    container_items.sort(key=lambda x: x[2])
+    return container_items
+
+
 def _next_container_sort_order(template):
     """Get the next sort_order in the shared container-level space (bundles + unbundled associations)."""
     from .models import TemplateTaskAssociation, TemplateBundle
@@ -511,36 +555,8 @@ def work_order_template_detail(request, template_id):
         task_template__is_active=True
     ).select_related('task_template', 'bundle').order_by('sort_order', 'task_template__template_name')
 
-    # Build interleaved container-level list of bundles and unbundled associations.
-    # Bundles and unbundled associations share the same sort_order space.
-    # Bundled associations have their own sort_order within the bundle.
-    from itertools import groupby
-
-    bundles_by_id = {}  # bundle.pk -> {'bundle': bundle, 'associations': [...]}
-    unbundled = []  # associations not in a bundle (direct or exclude)
-
-    for assoc in associations:
-        if assoc.mapping_strategy == 'bundle' and assoc.bundle:
-            if assoc.bundle.pk not in bundles_by_id:
-                bundles_by_id[assoc.bundle.pk] = {
-                    'bundle': assoc.bundle,
-                    'associations': [],
-                }
-            bundles_by_id[assoc.bundle.pk]['associations'].append(assoc)
-        else:
-            unbundled.append(assoc)
-
-    # Sort associations within each bundle by sort_order
-    for bundle_data in bundles_by_id.values():
-        bundle_data['associations'].sort(key=lambda a: a.sort_order)
-
-    # Build interleaved list: each item is either ('bundle', bundle_data) or ('task', assoc)
-    container_items = []
-    for assoc in unbundled:
-        container_items.append(('task', assoc, assoc.sort_order))
-    for bundle_data in bundles_by_id.values():
-        container_items.append(('bundle', bundle_data, bundle_data['bundle'].sort_order))
-    container_items.sort(key=lambda x: x[2])
+    # Build normalized container_items for shared _bundle_table.html partial
+    container_items = _build_container_items_from_associations(associations)
 
     # Get available task templates (not yet associated)
     associated_task_ids = associations.values_list('task_template_id', flat=True)
@@ -554,6 +570,10 @@ def work_order_template_detail(request, template_id):
         'container_items': container_items,
         'available_templates': available_templates,
         'line_item_types': line_item_types,
+        'can_edit': True,
+        'reorder_container_url': 'jobs:template_reorder_item',
+        'reorder_in_bundle_url': 'jobs:template_reorder_in_bundle',
+        'container_id': template.template_id,
     })
 
 
@@ -563,30 +583,180 @@ def estworksheet_list(request):
     return render(request, 'jobs/estworksheet_list.html', {'worksheets': worksheets})
 
 
+def _build_container_items_from_tasks(worksheet):
+    """Normalize worksheet Tasks/TaskBundles into the shared container_items format."""
+    tasks = Task.objects.filter(
+        est_worksheet=worksheet
+    ).select_related('template', 'bundle').order_by('sort_order', 'task_id')
+
+    bundles_by_id = {}
+    unbundled = []
+
+    for task in tasks:
+        item = {
+            'id': task.task_id,
+            'name': task.name,
+            'description': task.template.description if task.template else '',
+            'units': task.units,
+            'rate': task.rate,
+            'est_qty': task.est_qty,
+            'mapping_strategy': task.mapping_strategy,
+            'remove_id': task.task_id,
+        }
+        if task.mapping_strategy == 'bundle' and task.bundle:
+            bid = task.bundle_id
+            if bid not in bundles_by_id:
+                bundles_by_id[bid] = {
+                    'id': bid,
+                    'name': task.bundle.name,
+                    'line_item_type_name': task.bundle.line_item_type.name,
+                    'sort_order': task.bundle.sort_order,
+                    'items': [],
+                }
+            bundles_by_id[bid]['items'].append(item)
+        else:
+            unbundled.append((task.sort_order or 0, item))
+
+    for bundle_data in bundles_by_id.values():
+        bundle_data['items'].sort(key=lambda i: i['id'])
+
+    container_items = []
+    for sort_order, item in unbundled:
+        container_items.append(('task', item, sort_order))
+    for bundle_data in bundles_by_id.values():
+        container_items.append(('bundle', bundle_data, bundle_data['sort_order']))
+    container_items.sort(key=lambda x: x[2])
+    return container_items
+
+
+def _next_worksheet_sort_order(worksheet):
+    """Get the next sort_order in the shared container-level space for a worksheet."""
+    from .models import TaskBundle
+    max_task = Task.objects.filter(
+        est_worksheet=worksheet, bundle__isnull=True
+    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
+    max_bundle = TaskBundle.objects.filter(
+        est_worksheet=worksheet
+    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
+    return max(max_task, max_bundle) + 1
+
+
 def estworksheet_detail(request, worksheet_id):
-    """Show details of a specific EstWorksheet with its tasks"""
+    """Show details of a specific EstWorksheet with its tasks and bundle editing."""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-    all_tasks = Task.objects.filter(est_worksheet=worksheet).select_related(
-        'template'
-    ).order_by('sort_order', 'task_id')
+    can_edit = worksheet.status == 'draft'
 
-    # Build task hierarchy
-    tasks_with_levels = _build_task_hierarchy(all_tasks)
+    # Handle bundle creation
+    if request.method == 'POST' and 'bundle_tasks' in request.POST and can_edit:
+        from .models import TaskBundle
+        from apps.core.models import LineItemType
 
-    # Add calculated total for each task
-    total_cost = 0
-    for item in tasks_with_levels:
-        task = item['task']
-        task.calculated_total = (task.rate * task.est_qty) if task.rate and task.est_qty else 0
-        total_cost += task.calculated_total
+        selected_ids = request.POST.getlist('selected_tasks')
+        bundle_name = request.POST.get('bundle_name', '').strip()
+        bundle_description = request.POST.get('bundle_description', '').strip()
+        line_item_type_id = request.POST.get('line_item_type')
+
+        if len(selected_ids) < 2:
+            messages.error(request, 'Please select at least 2 tasks to bundle.')
+        elif not bundle_name:
+            messages.error(request, 'Bundle name is required.')
+        elif not line_item_type_id:
+            messages.error(request, 'Line item type is required.')
+        else:
+            line_item_type = get_object_or_404(LineItemType, pk=line_item_type_id)
+
+            bundle, created = TaskBundle.objects.get_or_create(
+                est_worksheet=worksheet,
+                name=bundle_name,
+                defaults={
+                    'description': bundle_description,
+                    'line_item_type': line_item_type,
+                    'sort_order': _next_worksheet_sort_order(worksheet),
+                }
+            )
+
+            selected_tasks = Task.objects.filter(
+                task_id__in=selected_ids, est_worksheet=worksheet
+            ).order_by('sort_order', 'task_id')
+
+            for task in selected_tasks:
+                task.mapping_strategy = 'bundle'
+                task.bundle = bundle
+                task.save()
+
+            # Auto-dissolve other bundles reduced to 0 or 1 tasks
+            for other_bundle in TaskBundle.objects.filter(est_worksheet=worksheet).exclude(pk=bundle.pk):
+                remaining = Task.objects.filter(bundle=other_bundle)
+                if remaining.count() == 0:
+                    other_bundle.delete()
+                elif remaining.count() == 1:
+                    last_task = remaining.first()
+                    last_task.mapping_strategy = 'direct'
+                    last_task.sort_order = other_bundle.sort_order
+                    last_task.bundle = None
+                    last_task.save()
+                    other_bundle.delete()
+
+            if created:
+                messages.success(request, f'Bundle "{bundle_name}" created with {selected_tasks.count()} tasks.')
+            else:
+                messages.success(request, f'{selected_tasks.count()} tasks added to existing bundle "{bundle_name}".')
+
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    # Handle unbundle / remove
+    if request.method == 'POST' and 'remove_task' in request.POST and can_edit:
+        from .models import TaskBundle
+        task_id = request.POST.get('remove_task')
+        task = get_object_or_404(Task, task_id=task_id, est_worksheet=worksheet)
+
+        if task.mapping_strategy == 'bundle' and task.bundle:
+            bundle = task.bundle
+            task.mapping_strategy = 'direct'
+            task.bundle = None
+            task.sort_order = bundle.sort_order + 1
+            task.save()
+
+            remaining = Task.objects.filter(bundle=bundle)
+            if remaining.count() == 0:
+                bundle.delete()
+                messages.success(request, f'"{task.name}" unbundled. Bundle "{bundle.name}" removed (empty).')
+            elif remaining.count() == 1:
+                last_task = remaining.first()
+                last_task.mapping_strategy = 'direct'
+                last_task.sort_order = bundle.sort_order
+                last_task.bundle = None
+                last_task.save()
+                bundle.delete()
+                messages.success(request, f'"{task.name}" unbundled. Bundle "{bundle.name}" dissolved (only 1 task remained).')
+            else:
+                messages.success(request, f'"{task.name}" removed from bundle "{bundle.name}".')
+        else:
+            messages.info(request, f'Task "{task.name}" is not bundled.')
+
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    # Build context
+    from apps.core.models import LineItemType
+
+    container_items = _build_container_items_from_tasks(worksheet)
+    line_item_types = LineItemType.objects.all().order_by('name')
+
+    # Calculate total cost from all tasks
+    all_tasks = Task.objects.filter(est_worksheet=worksheet)
+    total_cost = sum(
+        (t.rate * t.est_qty) for t in all_tasks if t.rate and t.est_qty
+    )
 
     return render(request, 'jobs/estworksheet_detail.html', {
         'worksheet': worksheet,
-        'tasks': tasks_with_levels,
+        'container_items': container_items,
+        'line_item_types': line_item_types,
         'total_cost': total_cost,
-        'show_reorder': worksheet.status == 'draft',
-        'reorder_url_name': 'jobs:task_reorder_worksheet',
-        'container_id': worksheet.est_worksheet_id
+        'can_edit': can_edit,
+        'reorder_container_url': 'jobs:worksheet_reorder_item',
+        'reorder_in_bundle_url': 'jobs:worksheet_reorder_in_bundle',
+        'container_id': worksheet.est_worksheet_id,
     })
 
 
@@ -735,26 +905,10 @@ def estworksheet_create_for_job(request, job_id):
             worksheet.job = job  # Ensure job is set
             worksheet.save()
 
-            # If a template was selected, create tasks from it
+            # If a template was selected, generate tasks (and bundles) from it
             template = form.cleaned_data.get('template')
             if template:
-                # Create tasks from template's task templates
-                from .models import TemplateTaskAssociation
-                associations = TemplateTaskAssociation.objects.filter(
-                    work_order_template=template,
-                    task_template__is_active=True
-                ).select_related('task_template').order_by('sort_order', 'task_template__template_name')
-
-                for association in associations:
-                    Task.objects.create(
-                        name=association.task_template.template_name,
-                        template=association.task_template,
-                        est_worksheet=worksheet,
-                        est_qty=association.est_qty,  # Use the association's quantity
-                        units=association.task_template.units,
-                        rate=association.task_template.rate
-                    )
-
+                template.generate_tasks_for_worksheet(worksheet)
                 messages.success(request, f'Worksheet created from template "{template.template_name}" for Job {job.job_number}')
             else:
                 messages.success(request, f'Worksheet created successfully for Job {job.job_number}')
@@ -1230,4 +1384,106 @@ def template_reorder_in_bundle(request, template_id, association_id, direction):
     swap.save()
 
     return redirect('jobs:work_order_template_detail', template_id=template_id)
+
+
+@require_POST
+def worksheet_reorder_item(request, worksheet_id, item_type, item_id, direction):
+    """Reorder items at the container level within a worksheet.
+
+    Bundles and unbundled tasks share the same sort_order space.
+    item_type is 'bundle' or 'task'.
+    """
+    from .models import TaskBundle
+
+    worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
+
+    if worksheet.status != 'draft':
+        messages.error(request, f'Cannot reorder in a {worksheet.get_status_display().lower()} worksheet.')
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    # Build container-level list: unbundled tasks + bundles
+    tasks = Task.objects.filter(est_worksheet=worksheet).select_related('bundle')
+
+    container_items = []  # (sort_order, item_type, object)
+    seen_bundles = set()
+
+    for task in tasks:
+        if task.mapping_strategy == 'bundle' and task.bundle:
+            if task.bundle_id not in seen_bundles:
+                seen_bundles.add(task.bundle_id)
+                container_items.append((task.bundle.sort_order, 'bundle', task.bundle))
+        else:
+            container_items.append((task.sort_order or 0, 'task', task))
+
+    container_items.sort(key=lambda x: x[0])
+
+    # Find the item being moved
+    current_index = None
+    for i, (_, itype, obj) in enumerate(container_items):
+        if itype == item_type and obj.pk == item_id:
+            current_index = i
+            break
+
+    if current_index is None:
+        messages.error(request, 'Item not found.')
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    if direction == 'up' and current_index > 0:
+        swap_index = current_index - 1
+    elif direction == 'down' and current_index < len(container_items) - 1:
+        swap_index = current_index + 1
+    else:
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    _, _, current_obj = container_items[current_index]
+    _, _, swap_obj = container_items[swap_index]
+
+    current_obj.sort_order, swap_obj.sort_order = swap_obj.sort_order, current_obj.sort_order
+    current_obj.save()
+    swap_obj.save()
+
+    return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+
+@require_POST
+def worksheet_reorder_in_bundle(request, worksheet_id, task_id, direction):
+    """Reorder a task within its bundle on a worksheet."""
+    worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
+
+    if worksheet.status != 'draft':
+        messages.error(request, f'Cannot reorder in a {worksheet.get_status_display().lower()} worksheet.')
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    task = get_object_or_404(
+        Task, task_id=task_id, est_worksheet=worksheet,
+        mapping_strategy='bundle', bundle__isnull=False
+    )
+
+    bundle_tasks = list(
+        Task.objects.filter(bundle=task.bundle).order_by('sort_order', 'task_id')
+    )
+
+    current_index = None
+    for i, t in enumerate(bundle_tasks):
+        if t.task_id == task.task_id:
+            current_index = i
+            break
+
+    if current_index is None:
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    if direction == 'up' and current_index > 0:
+        swap_index = current_index - 1
+    elif direction == 'down' and current_index < len(bundle_tasks) - 1:
+        swap_index = current_index + 1
+    else:
+        return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+    current = bundle_tasks[current_index]
+    swap = bundle_tasks[swap_index]
+    current.sort_order, swap.sort_order = swap.sort_order, current.sort_order
+    current.save()
+    swap.save()
+
+    return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
 

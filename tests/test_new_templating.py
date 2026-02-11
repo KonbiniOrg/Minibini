@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 
 from apps.jobs.models import (
     TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle,
-    Job, EstWorksheet, Task, Estimate, EstimateLineItem
+    TaskBundle, Job, EstWorksheet, Task, Estimate, EstimateLineItem
 )
 from apps.jobs.services import EstimateGenerationService
 from apps.core.models import LineItemType
@@ -221,8 +221,18 @@ class TestEstimateGeneration(TestCase):
         )
 
         worksheet = EstWorksheet.objects.create(job=self.job)
-        Task.objects.create(est_worksheet=worksheet, name="Sand", rate=50, est_qty=1, template=tt1)
-        Task.objects.create(est_worksheet=worksheet, name="Clean", rate=25, est_qty=1, template=tt2)
+        task_bundle = TaskBundle.objects.create(
+            est_worksheet=worksheet, name="Prep Work",
+            line_item_type=self.lit_labor, source_template_bundle=bundle
+        )
+        Task.objects.create(
+            est_worksheet=worksheet, name="Sand", rate=50, est_qty=1,
+            template=tt1, mapping_strategy='bundle', bundle=task_bundle
+        )
+        Task.objects.create(
+            est_worksheet=worksheet, name="Clean", rate=25, est_qty=1,
+            template=tt2, mapping_strategy='bundle', bundle=task_bundle
+        )
 
         service = EstimateGenerationService()
         estimate = service.generate_estimate_from_worksheet(worksheet)
@@ -248,8 +258,14 @@ class TestEstimateGeneration(TestCase):
         )
 
         worksheet = EstWorksheet.objects.create(job=self.job)
-        Task.objects.create(est_worksheet=worksheet, name="Sand", rate=50, est_qty=1, template=tt1)
-        Task.objects.create(est_worksheet=worksheet, name="Internal Check", rate=0, est_qty=1, template=tt2)
+        Task.objects.create(
+            est_worksheet=worksheet, name="Sand", rate=50, est_qty=1,
+            template=tt1, mapping_strategy='direct'
+        )
+        Task.objects.create(
+            est_worksheet=worksheet, name="Internal Check", rate=0, est_qty=1,
+            template=tt2, mapping_strategy='exclude'
+        )
 
         service = EstimateGenerationService()
         estimate = service.generate_estimate_from_worksheet(worksheet)
