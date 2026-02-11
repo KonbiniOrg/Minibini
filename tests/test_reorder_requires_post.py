@@ -122,12 +122,12 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
         self.task1 = Task.objects.create(
             est_worksheet=self.worksheet,
             name='Task 1',
-            line_number=1
+            sort_order=1
         )
         self.task2 = Task.objects.create(
             est_worksheet=self.worksheet,
             name='Task 2',
-            line_number=2
+            sort_order=2
         )
 
     def test_get_returns_405(self):
@@ -153,8 +153,8 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
         # Verify reordering occurred
         self.task1.refresh_from_db()
         self.task2.refresh_from_db()
-        self.assertEqual(self.task1.line_number, 2)
-        self.assertEqual(self.task2.line_number, 1)
+        self.assertEqual(self.task1.sort_order, 2)
+        self.assertEqual(self.task2.sort_order, 1)
 
 
 class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
@@ -181,12 +181,12 @@ class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
         self.task1 = Task.objects.create(
             work_order=self.work_order,
             name='Task 1',
-            line_number=1
+            sort_order=1
         )
         self.task2 = Task.objects.create(
             work_order=self.work_order,
             name='Task 2',
-            line_number=2
+            sort_order=2
         )
 
     def test_get_returns_405(self):
@@ -212,8 +212,8 @@ class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
         # Verify reordering occurred
         self.task1.refresh_from_db()
         self.task2.refresh_from_db()
-        self.assertEqual(self.task1.line_number, 2)
-        self.assertEqual(self.task2.line_number, 1)
+        self.assertEqual(self.task1.sort_order, 2)
+        self.assertEqual(self.task2.sort_order, 1)
 
 
 class InvoiceReorderLineItemTest(ReorderRequiresPostTestBase):

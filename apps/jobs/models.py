@@ -374,7 +374,7 @@ class Task(models.Model):
     work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, null=True, blank=True)
     est_worksheet = models.ForeignKey(EstWorksheet, on_delete=models.CASCADE, null=True, blank=True)
     name = models.CharField(max_length=255)
-    line_number = models.PositiveIntegerField(blank=True, null=True)
+    sort_order = models.PositiveIntegerField(blank=True, null=True)
     units = models.CharField(max_length=50, blank=True)
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -389,10 +389,10 @@ class Task(models.Model):
             raise ValidationError("Task must be attached to either WorkOrder or EstWorksheet")
 
     def save(self, *args, **kwargs):
-        """Override save to auto-generate line numbers."""
+        """Override save to auto-generate sort order."""
         from django.db import transaction
 
-        if self.line_number is None:
+        if self.sort_order is None:
             with transaction.atomic():
                 container = self.work_order or self.est_worksheet
                 if container:
@@ -402,12 +402,12 @@ class Task(models.Model):
                     else:
                         filter_kwargs = {'est_worksheet': container}
 
-                    # Get max line number for this container
-                    max_line = Task.objects.filter(**filter_kwargs).aggregate(
-                        models.Max('line_number')
-                    )['line_number__max']
+                    # Get max sort_order for this container
+                    max_order = Task.objects.filter(**filter_kwargs).aggregate(
+                        models.Max('sort_order')
+                    )['sort_order__max']
 
-                    self.line_number = (max_line or 0) + 1
+                    self.sort_order = (max_order or 0) + 1
 
         self.full_clean()
         super().save(*args, **kwargs)

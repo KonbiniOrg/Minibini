@@ -18,17 +18,17 @@ from apps.invoicing.models import Invoice
 
 
 def _build_task_hierarchy(tasks):
-    """Build a hierarchical task structure with level indicators, preserving line_number order."""
+    """Build a hierarchical task structure with level indicators, preserving sort_order."""
     task_dict = {task.task_id: task for task in tasks}
     root_tasks = []
 
-    # Find root tasks (no parent) and maintain line_number order
+    # Find root tasks (no parent) and maintain sort_order
     for task in tasks:
         if not task.parent_task:
             root_tasks.append(task)
 
-    # Sort root tasks by line_number to ensure proper order
-    root_tasks.sort(key=lambda t: t.line_number if t.line_number is not None else float('inf'))
+    # Sort root tasks by sort_order to ensure proper order
+    root_tasks.sort(key=lambda t: t.sort_order if t.sort_order is not None else float('inf'))
 
     # Recursive function to get task with its children and level
     def get_task_with_children(task, level=0):
@@ -38,8 +38,8 @@ def _build_task_hierarchy(tasks):
             if potential_child.parent_task_id == task.task_id:
                 children.append(potential_child)
 
-        # Sort children by line_number to ensure proper order
-        children.sort(key=lambda t: t.line_number if t.line_number is not None else float('inf'))
+        # Sort children by sort_order to ensure proper order
+        children.sort(key=lambda t: t.sort_order if t.sort_order is not None else float('inf'))
 
         # Recursively build the tree for each child
         result['children'] = [get_task_with_children(child, level + 1) for child in children]
@@ -91,7 +91,7 @@ def job_detail(request, job_id):
     current_work_order = work_orders.exclude(status='complete').first()
     current_work_order_tasks = []
     if current_work_order:
-        all_tasks = Task.objects.filter(work_order=current_work_order).order_by('line_number', 'task_id')
+        all_tasks = Task.objects.filter(work_order=current_work_order).order_by('sort_order', 'task_id')
         current_work_order_tasks = _build_task_hierarchy(all_tasks)
 
     return render(request, 'jobs/job_detail.html', {
@@ -256,7 +256,7 @@ def work_order_detail(request, work_order_id):
             return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
 
     # Get all tasks for this work order
-    all_tasks = Task.objects.filter(work_order=work_order).order_by('line_number', 'task_id')
+    all_tasks = Task.objects.filter(work_order=work_order).order_by('sort_order', 'task_id')
     tasks_with_levels = _build_task_hierarchy(all_tasks)
 
     # Create status form for display (unless completed)
@@ -568,7 +568,7 @@ def estworksheet_detail(request, worksheet_id):
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
     all_tasks = Task.objects.filter(est_worksheet=worksheet).select_related(
         'template'
-    ).order_by('line_number', 'task_id')
+    ).order_by('sort_order', 'task_id')
 
     # Build task hierarchy
     tasks_with_levels = _build_task_hierarchy(all_tasks)
@@ -1038,8 +1038,8 @@ def task_reorder_worksheet(request, worksheet_id, task_id, direction):
         messages.error(request, f'Cannot reorder tasks in a {worksheet.get_status_display().lower()} worksheet.')
         return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
 
-    # Get all tasks for this worksheet ordered by line_number
-    all_tasks = list(Task.objects.filter(est_worksheet=worksheet).order_by('line_number', 'task_id'))
+    # Get all tasks for this worksheet ordered by sort_order
+    all_tasks = list(Task.objects.filter(est_worksheet=worksheet).order_by('sort_order', 'task_id'))
 
     # Find the index of the current task
     try:
@@ -1057,10 +1057,10 @@ def task_reorder_worksheet(request, worksheet_id, task_id, direction):
         messages.error(request, 'Cannot move task in that direction.')
         return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
 
-    # Swap line numbers
+    # Swap sort_order
     current_task = all_tasks[current_index]
     swap_task = all_tasks[swap_index]
-    current_task.line_number, swap_task.line_number = swap_task.line_number, current_task.line_number
+    current_task.sort_order, swap_task.sort_order = swap_task.sort_order, current_task.sort_order
 
     current_task.save()
     swap_task.save()
@@ -1074,8 +1074,8 @@ def task_reorder_work_order(request, work_order_id, task_id, direction):
     work_order = get_object_or_404(WorkOrder, work_order_id=work_order_id)
     task = get_object_or_404(Task, task_id=task_id, work_order=work_order)
 
-    # Get all tasks for this work order ordered by line_number
-    all_tasks = list(Task.objects.filter(work_order=work_order).order_by('line_number', 'task_id'))
+    # Get all tasks for this work order ordered by sort_order
+    all_tasks = list(Task.objects.filter(work_order=work_order).order_by('sort_order', 'task_id'))
 
     # Find the index of the current task
     try:
@@ -1093,10 +1093,10 @@ def task_reorder_work_order(request, work_order_id, task_id, direction):
         messages.error(request, 'Cannot move task in that direction.')
         return redirect('jobs:work_order_detail', work_order_id=work_order_id)
 
-    # Swap line numbers
+    # Swap sort_order
     current_task = all_tasks[current_index]
     swap_task = all_tasks[swap_index]
-    current_task.line_number, swap_task.line_number = swap_task.line_number, current_task.line_number
+    current_task.sort_order, swap_task.sort_order = swap_task.sort_order, current_task.sort_order
 
     current_task.save()
     swap_task.save()

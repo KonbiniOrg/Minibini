@@ -201,8 +201,24 @@ This already exists partially. The TaskBundle dual-FK pattern mirrors how Task a
 
 1. **line_number vs sort_order for instances**: Templates use `sort_order` (internal). Instances currently use `line_number` (user-visible, auto-generated). Do we add a separate `sort_order` to Task for container-level ordering, or repurpose `line_number`?
 
+--
+The term "line number" makes the most sense for line items, less so for Tasks. If it's not difficult to use sort_order for Tasks, that seems better, but if line_number is the property of a base object let's just note that and come back later.  My current thinking is that Tasks and TaskTemplates get sort orders and Line Item Types get line numbers, but I'm open to changing my mind.
+--
+
 2. **WorkOrder bundling UI**: WorkOrders are created from estimates. The bundling info would need to carry through: Template → Worksheet → Estimate → WorkOrder. Or should WorkOrder bundling be independent?
+
+--
+I anticipate WorkOrders to be generated directly from Worksheets where a Worksheet exists, in which case bundling would be copied and be editable in the WorkOrder independently.  For Jobs without Worksheets, a WorkOrder can be started from an Estimate, but will often need considerable editing by a user.  Bundling will need to be available there - I expect Invoices to be generated from WorkOrders as Estimates are generated from Worksheets.  (But not yet.)
+--
 
 3. **Estimate revision**: When a worksheet is revised (new version), the bundling config should copy over with the tasks. The existing `create_new_version()` method copies tasks but would need to also copy TaskBundles.
 
+--
+Yes.
+--
+
 4. **Bundle editing UI for worksheets**: Similar to template detail page, but on the worksheet detail page. Checkboxes, bundle creation form, unbundle/remove buttons, reorder arrows. Can likely reuse patterns from the template UI.
+
+--
+Yes let's reuse that code as much as possible.
+--
