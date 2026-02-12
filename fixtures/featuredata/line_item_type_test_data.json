@@ -1026,7 +1026,7 @@
       "qty": "2.00",
       "units": "hour",
       "description": "Consultation Hour - Professional consulting services",
-      "price_currency": "95.00",
+      "price": "95.00",
       "line_item_type": 1,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1044,7 +1044,7 @@
       "qty": "5.00",
       "units": "each",
       "description": "Extra Materials - Material via task (direct mapping)",
-      "price_currency": "25.00",
+      "price": "25.00",
       "line_item_type": 2,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1061,7 +1061,7 @@
       "qty": "1.00",
       "units": "each",
       "description": "Standard Shipping - Flat rate shipping charge",
-      "price_currency": "45.00",
+      "price": "45.00",
       "line_item_type": 5,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1078,7 +1078,7 @@
       "qty": "4.00",
       "units": "hours",
       "description": "Consultation - Service from direct labor task",
-      "price_currency": "75.00",
+      "price": "75.00",
       "line_item_type": 1,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1095,7 +1095,7 @@
       "qty": "10.00",
       "units": "each",
       "description": "Lumber 2x4x8 - Material, forced taxable override",
-      "price_currency": "12.50",
+      "price": "12.50",
       "line_item_type": 2,
       "taxable_override": true,
       "tax_rate_override": null
@@ -1112,7 +1112,7 @@
       "qty": "1.00",
       "units": "each",
       "description": "Permit Fee - Overhead non-taxable",
-      "price_currency": "150.00",
+      "price": "150.00",
       "line_item_type": 6,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1129,7 +1129,7 @@
       "qty": "1.00",
       "units": "each",
       "description": "Custom Cabinet - cabinet_001 (BUNDLED from component tasks)",
-      "price_currency": "600.00",
+      "price": "600.00",
       "line_item_type": 4,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1179,7 +1179,7 @@
       "qty": "20.00",
       "units": "each",
       "description": "Lumber 2x4x8 - Material purchase for Job 4",
-      "price_currency": "6.50",
+      "price": "6.50",
       "line_item_type": 2,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1197,7 +1197,7 @@
       "qty": "1.00",
       "units": "each",
       "description": "Standard Shipping - Freight on PO",
-      "price_currency": "25.00",
+      "price": "25.00",
       "line_item_type": 5,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1214,7 +1214,7 @@
       "qty": "5.00",
       "units": "kit",
       "description": "Hardware Kit - Standalone material order",
-      "price_currency": "15.00",
+      "price": "15.00",
       "line_item_type": 2,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1266,7 +1266,7 @@
       "qty": "20.00",
       "units": "each",
       "description": "Lumber 2x4x8 - Received materials from PO",
-      "price_currency": "6.50",
+      "price": "6.50",
       "line_item_type": 2,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1284,7 +1284,7 @@
       "qty": "3.00",
       "units": "kit",
       "description": "Hardware Kit - Direct material bill",
-      "price_currency": "15.00",
+      "price": "15.00",
       "line_item_type": 2,
       "taxable_override": null,
       "tax_rate_override": null
@@ -1301,7 +1301,7 @@
       "qty": "1.00",
       "units": "each",
       "description": "Permit Fee - Overhead charge on bill",
-      "price_currency": "100.00",
+      "price": "100.00",
       "line_item_type": 6,
       "taxable_override": null,
       "tax_rate_override": null

@@ -51,7 +51,7 @@ class POLineItemTypeManualFormTest(TestCase):
                 'description': 'Test Service',
                 'qty': '2.00',
                 'units': 'hours',
-                'price_currency': '50.00',
+                'price': '50.00',
                 'line_item_type': self.service_type.pk,
             }
         )
@@ -68,7 +68,7 @@ class POLineItemTypeManualFormTest(TestCase):
                 'description': 'Test Service',
                 'qty': '2.00',
                 'units': 'hours',
-                'price_currency': '50.00',
+                'price': '50.00',
                 # No line_item_type
             }
         )

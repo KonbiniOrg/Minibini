@@ -1,258 +1,261 @@
 [
-{
-  "model": "core.configuration",
-  "pk": "job_number_sequence",
-  "fields": {
-    "value": "JOB-{year}-{counter:04d}"
+  {
+    "model": "core.configuration",
+    "pk": "job_number_sequence",
+    "fields": {
+      "value": "JOB-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "job_counter",
+    "fields": {
+      "value": "0"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "estimate_number_sequence",
+    "fields": {
+      "value": "EST-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "estimate_counter",
+    "fields": {
+      "value": "0"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "invoice_number_sequence",
+    "fields": {
+      "value": "INV-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "invoice_counter",
+    "fields": {
+      "value": "0"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "po_number_sequence",
+    "fields": {
+      "value": "PO-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "po_counter",
+    "fields": {
+      "value": "0"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "est_expire_days",
+    "fields": {
+      "value": "30"
+    }
+  },
+  {
+    "model": "contacts.paymentterms",
+    "pk": 1,
+    "fields": {}
+  },
+  {
+    "model": "contacts.paymentterms",
+    "pk": 2,
+    "fields": {}
+  },
+  {
+    "model": "contacts.business",
+    "pk": 1,
+    "fields": {
+      "our_reference_code": "ACME001",
+      "business_name": "ACME Construction Corp",
+      "business_address": "123 Industrial Blvd, Construction Zone, Business City 54321",
+      "business_phone": "555-2001",
+      "tax_exemption_number": "TEX-100001",
+      "website": "https://www.acmeconstructiontxt.com",
+      "terms": 1,
+      "default_contact": 1,
+      "tax_multiplier": null
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 2,
+    "fields": {
+      "our_reference_code": "METRO001",
+      "business_name": "Metro Development LLC",
+      "business_address": "456 Corporate Plaza, Downtown District, Metro City 54322",
+      "business_phone": "555-2002",
+      "tax_exemption_number": "TEX-100002",
+      "website": "https://www.metrodevelopmenttxt.com",
+      "terms": 1,
+      "default_contact": 2,
+      "tax_multiplier": null
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 3,
+    "fields": {
+      "our_reference_code": "SUMMIT001",
+      "business_name": "Summit Property Group",
+      "business_address": "789 Summit Avenue, Uptown Area, Summit City 54323",
+      "business_phone": "555-2003",
+      "tax_exemption_number": "TEX-100003",
+      "website": "",
+      "terms": 2,
+      "default_contact": 3,
+      "tax_multiplier": null
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 4,
+    "fields": {
+      "our_reference_code": "PRIME001",
+      "business_name": "Prime Contractors Inc",
+      "business_address": "321 Prime Street, Commercial District, Prime City 54324",
+      "business_phone": "555-2004",
+      "tax_exemption_number": "TEX-100004",
+      "website": "",
+      "terms": 1,
+      "default_contact": 4,
+      "tax_multiplier": null
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 1,
+    "fields": {
+      "first_name": "Sarah",
+      "middle_initial": "",
+      "last_name": "Johnson",
+      "email": "sarah.johnson@acmeconstruction.com",
+      "addr1": "123 Industrial Blvd",
+      "addr2": "Suite 100",
+      "addr3": "",
+      "city": "Business City",
+      "municipality": "Construction Zone",
+      "postal_code": "54321",
+      "country_code": "US",
+      "mobile_number": "555-0101",
+      "work_number": "555-0111",
+      "home_number": "",
+      "business": 1
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 2,
+    "fields": {
+      "first_name": "Michael",
+      "middle_initial": "",
+      "last_name": "Chen",
+      "email": "m.chen@metrodevelopment.com",
+      "addr1": "456 Corporate Plaza",
+      "addr2": "Floor 15",
+      "addr3": "",
+      "city": "Metro City",
+      "municipality": "Downtown District",
+      "postal_code": "54322",
+      "country_code": "US",
+      "mobile_number": "555-0202",
+      "work_number": "555-0212",
+      "home_number": "",
+      "business": 2
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 3,
+    "fields": {
+      "first_name": "Emily",
+      "middle_initial": "",
+      "last_name": "Rodriguez",
+      "email": "emily.rodriguez@summitproperty.com",
+      "addr1": "789 Summit Avenue",
+      "addr2": "",
+      "addr3": "",
+      "city": "Summit City",
+      "municipality": "Uptown Area",
+      "postal_code": "54323",
+      "country_code": "US",
+      "mobile_number": "555-0303",
+      "work_number": "555-0313",
+      "home_number": "",
+      "business": 3
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 4,
+    "fields": {
+      "first_name": "David",
+      "middle_initial": "",
+      "last_name": "Thompson",
+      "email": "david.thompson@primecontractors.com",
+      "addr1": "321 Prime Street",
+      "addr2": "Unit B",
+      "addr3": "",
+      "city": "Prime City",
+      "municipality": "Commercial District",
+      "postal_code": "54324",
+      "country_code": "US",
+      "mobile_number": "555-0404",
+      "work_number": "555-0414",
+      "home_number": "",
+      "business": 4
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 5,
+    "fields": {
+      "first_name": "Lisa",
+      "middle_initial": "",
+      "last_name": "Park",
+      "email": "lisa.park@email.com",
+      "addr1": "654 Residential Lane",
+      "addr2": "",
+      "addr3": "",
+      "city": "Hometown",
+      "municipality": "Residential Area",
+      "postal_code": "54325",
+      "country_code": "US",
+      "mobile_number": "555-0505",
+      "work_number": "",
+      "home_number": "555-0515",
+      "business": null
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 6,
+    "fields": {
+      "first_name": "Robert",
+      "middle_initial": "",
+      "last_name": "Wilson",
+      "email": "robert.wilson@personal.com",
+      "addr1": "987 Oak Street",
+      "addr2": "Apt 2B",
+      "addr3": "",
+      "city": "Oak Grove",
+      "municipality": "Suburbs",
+      "postal_code": "54326",
+      "country_code": "US",
+      "mobile_number": "",
+      "work_number": "",
+      "home_number": "555-0606",
+      "business": null
+    }
   }
-},
-{
-  "model": "core.configuration",
-  "pk": "job_counter",
-  "fields": {
-    "value": "0"
-  }
-},
-{
-  "model": "core.configuration",
-  "pk": "estimate_number_sequence",
-  "fields": {
-    "value": "EST-{year}-{counter:04d}"
-  }
-},
-{
-  "model": "core.configuration",
-  "pk": "estimate_counter",
-  "fields": {
-    "value": "0"
-  }
-},
-{
-  "model": "core.configuration",
-  "pk": "invoice_number_sequence",
-  "fields": {
-    "value": "INV-{year}-{counter:04d}"
-  }
-},
-{
-  "model": "core.configuration",
-  "pk": "invoice_counter",
-  "fields": {
-    "value": "0"
-  }
-},
-{
-  "model": "core.configuration",
-  "pk": "po_number_sequence",
-  "fields": {
-    "value": "PO-{year}-{counter:04d}"
-  }
-},
-{
-  "model": "core.configuration",
-  "pk": "po_counter",
-  "fields": {
-    "value": "0"
-  }
-},
-{
-  "model": "core.configuration",
-  "pk": "est_expire_days",
-  "fields": {
-    "value": "30"
-  }
-},
-{
-
-  "model": "contacts.paymentterms",
-  "pk": 1,
-  "fields": {}
-},
-{
-  "model": "contacts.paymentterms",
-  "pk": 2,
-  "fields": {}
-},
-{
-  "model": "contacts.business",
-  "pk": 1,
-  "fields": {
-    "our_reference_code": "ACME001",
-    "business_name": "ACME Construction Corp",
-    "business_address": "123 Industrial Blvd, Construction Zone, Business City 54321",
-    "business_phone": "555-2001",
-    "tax_exemption_number": "TEX-100001",
-    "website": "https://www.acmeconstructiontxt.com",
-    "terms": 1,
-    "default_contact": 1
-  }
-},
-{
-  "model": "contacts.business",
-  "pk": 2,
-  "fields": {
-    "our_reference_code": "METRO001",
-    "business_name": "Metro Development LLC",
-    "business_address": "456 Corporate Plaza, Downtown District, Metro City 54322",
-    "business_phone": "555-2002",
-    "tax_exemption_number": "TEX-100002",
-    "website": "https://www.metrodevelopmenttxt.com",
-    "terms": 1,
-    "default_contact": 2
-  }
-},
-{
-  "model": "contacts.business",
-  "pk": 3,
-  "fields": {
-    "our_reference_code": "SUMMIT001",
-    "business_name": "Summit Property Group",
-    "business_address": "789 Summit Avenue, Uptown Area, Summit City 54323",
-    "business_phone": "555-2003",
-    "tax_exemption_number": "TEX-100003",
-    "website": "",
-    "terms": 2,
-    "default_contact": 3
-  }
-},
-{
-  "model": "contacts.business",
-  "pk": 4,
-  "fields": {
-    "our_reference_code": "PRIME001",
-    "business_name": "Prime Contractors Inc",
-    "business_address": "321 Prime Street, Commercial District, Prime City 54324",
-    "business_phone": "555-2004",
-    "tax_exemption_number": "TEX-100004",
-    "website": "",
-    "terms": 1,
-    "default_contact": 4
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 1,
-  "fields": {
-    "first_name": "Sarah",
-    "middle_initial": "",
-    "last_name": "Johnson",
-    "email": "sarah.johnson@acmeconstruction.com",
-    "addr1": "123 Industrial Blvd",
-    "addr2": "Suite 100",
-    "addr3": "",
-    "city": "Business City",
-    "municipality": "Construction Zone",
-    "postal_code": "54321",
-    "country_code": "US",
-    "mobile_number": "555-0101",
-    "work_number": "555-0111",
-    "home_number": "",
-    "business": 1
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 2,
-  "fields": {
-    "first_name": "Michael",
-    "middle_initial": "",
-    "last_name": "Chen",
-    "email": "m.chen@metrodevelopment.com",
-    "addr1": "456 Corporate Plaza",
-    "addr2": "Floor 15",
-    "addr3": "",
-    "city": "Metro City",
-    "municipality": "Downtown District",
-    "postal_code": "54322",
-    "country_code": "US",
-    "mobile_number": "555-0202",
-    "work_number": "555-0212",
-    "home_number": "",
-    "business": 2
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 3,
-  "fields": {
-    "first_name": "Emily",
-    "middle_initial": "",
-    "last_name": "Rodriguez",
-    "email": "emily.rodriguez@summitproperty.com",
-    "addr1": "789 Summit Avenue",
-    "addr2": "",
-    "addr3": "",
-    "city": "Summit City",
-    "municipality": "Uptown Area",
-    "postal_code": "54323",
-    "country_code": "US",
-    "mobile_number": "555-0303",
-    "work_number": "555-0313",
-    "home_number": "",
-    "business": 3
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 4,
-  "fields": {
-    "first_name": "David",
-    "middle_initial": "",
-    "last_name": "Thompson",
-    "email": "david.thompson@primecontractors.com",
-    "addr1": "321 Prime Street",
-    "addr2": "Unit B",
-    "addr3": "",
-    "city": "Prime City",
-    "municipality": "Commercial District",
-    "postal_code": "54324",
-    "country_code": "US",
-    "mobile_number": "555-0404",
-    "work_number": "555-0414",
-    "home_number": "",
-    "business": 4
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 5,
-  "fields": {
-    "first_name": "Lisa",
-    "middle_initial": "",
-    "last_name": "Park",
-    "email": "lisa.park@email.com",
-    "addr1": "654 Residential Lane",
-    "addr2": "",
-    "addr3": "",
-    "city": "Hometown",
-    "municipality": "Residential Area",
-    "postal_code": "54325",
-    "country_code": "US",
-    "mobile_number": "555-0505",
-    "work_number": "",
-    "home_number": "555-0515",
-    "business": null
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 6,
-  "fields": {
-    "first_name": "Robert",
-    "middle_initial": "",
-    "last_name": "Wilson",
-    "email": "robert.wilson@personal.com",
-    "addr1": "987 Oak Street",
-    "addr2": "Apt 2B",
-    "addr3": "",
-    "city": "Oak Grove",
-    "municipality": "Suburbs",
-    "postal_code": "54326",
-    "country_code": "US",
-    "mobile_number": "",
-    "work_number": "",
-    "home_number": "555-0606",
-    "business": null
-  }
-}
 ]

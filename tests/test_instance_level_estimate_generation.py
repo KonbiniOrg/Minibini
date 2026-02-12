@@ -50,7 +50,10 @@ class InstanceLevelEstimateGenerationTest(TestCase):
         self.assertEqual(estimate.estimatelineitem_set.count(), 1)
         li = estimate.estimatelineitem_set.first()
         self.assertEqual(li.description, "Custom Task")
-        self.assertEqual(li.price_currency, Decimal('200.00'))
+        # price is the unit price, total_amount = qty * price
+        self.assertEqual(li.price, Decimal('100.00'))
+        self.assertEqual(li.qty, Decimal('2.00'))
+        self.assertEqual(li.total_amount, Decimal('200.00'))
 
     def test_excluded_task_without_template(self):
         """A manually created task with mapping_strategy='exclude' does not become a line item."""
@@ -97,7 +100,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
         li = estimate.estimatelineitem_set.first()
         self.assertEqual(li.description, "Prep Work")
         self.assertEqual(li.line_item_type, self.lit_labor)
-        self.assertEqual(li.price_currency, Decimal('75.00'))
+        self.assertEqual(li.price, Decimal('75.00'))
 
     def test_mixed_strategies_without_template(self):
         """Mixed direct, bundled, excluded - all from instance-level config, no templates."""

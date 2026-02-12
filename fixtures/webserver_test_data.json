@@ -669,7 +669,7 @@
             "qty": "3.00",
             "units": "hours",
             "description": "CAD design and template creation",
-            "price_currency": "3800.00"
+            "price": "3800.00"
         }
     },
     {
@@ -683,7 +683,7 @@
             "qty": "1.00",
             "units": "job",
             "description": "CNC cutting of concrete forms",
-            "price_currency": "3800.00"
+            "price": "3800.00"
         }
     },
     {
@@ -697,7 +697,7 @@
             "qty": "20.00",
             "units": "sheets",
             "description": "Plywood sheets for form construction",
-            "price_currency": "2000.00"
+            "price": "2000.00"
         }
     },
     {
@@ -711,7 +711,7 @@
             "qty": "6.00",
             "units": "hours",
             "description": "Design drawings",
-            "price_currency": "900.00"
+            "price": "900.00"
         }
     },
     {
@@ -725,7 +725,7 @@
             "qty": "1.00",
             "units": "piece",
             "description": "HDU material for sign",
-            "price_currency": "300.00"
+            "price": "300.00"
         }
     },
     {
@@ -739,7 +739,7 @@
             "qty": "120.00",
             "units": "minutes",
             "description": "CNC cutting of sign",
-            "price_currency": "2640.00"
+            "price": "2640.00"
         }
     },
     {
@@ -753,7 +753,7 @@
             "qty": "8.00",
             "units": "hours",
             "description": "Painting and finishing",
-            "price_currency": "800.00"
+            "price": "800.00"
         }
     },
     {
@@ -767,7 +767,7 @@
             "qty": "4.00",
             "units": "hours",
             "description": "Assembly and hardware installation",
-            "price_currency": "400.00"
+            "price": "400.00"
         }
     },
     {
@@ -781,7 +781,7 @@
             "qty": "8.00",
             "units": "hours",
             "description": "Design drawings",
-            "price_currency": "1200.00"
+            "price": "1200.00"
         }
     },
     {
@@ -795,7 +795,7 @@
             "qty": "1.00",
             "units": "piece",
             "description": "HDU material for sign",
-            "price_currency": "300.00"
+            "price": "300.00"
         }
     },
     {
@@ -809,7 +809,7 @@
             "qty": "140.00",
             "units": "minutes",
             "description": "CNC cutting of sign",
-            "price_currency": "3080.00"
+            "price": "3080.00"
         }
     },
     {
@@ -823,7 +823,7 @@
             "qty": "10.00",
             "units": "hours",
             "description": "Painting and finishing",
-            "price_currency": "1000.00"
+            "price": "1000.00"
         }
     },
     {
@@ -837,7 +837,7 @@
             "qty": "5.00",
             "units": "hours",
             "description": "Assembly and hardware installation",
-            "price_currency": "500.00"
+            "price": "500.00"
         }
     },
     {
@@ -851,7 +851,7 @@
             "qty": "10.00",
             "units": "hours",
             "description": "Design drawings with client revisions",
-            "price_currency": "1500.00"
+            "price": "1500.00"
         }
     },
     {
@@ -865,7 +865,7 @@
             "qty": "1.00",
             "units": "piece",
             "description": "Premium HDU material for sign",
-            "price_currency": "300.00"
+            "price": "300.00"
         }
     },
     {
@@ -879,7 +879,7 @@
             "qty": "150.00",
             "units": "minutes",
             "description": "Precision CNC cutting with detail work",
-            "price_currency": "3300.00"
+            "price": "3300.00"
         }
     },
     {
@@ -893,7 +893,7 @@
             "qty": "12.00",
             "units": "hours",
             "description": "Multi-layer painting and protective coating",
-            "price_currency": "1200.00"
+            "price": "1200.00"
         }
     },
     {
@@ -907,7 +907,7 @@
             "qty": "6.00",
             "units": "hours",
             "description": "Assembly with LED lighting integration",
-            "price_currency": "600.00"
+            "price": "600.00"
         }
     },
     {

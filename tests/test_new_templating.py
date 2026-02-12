@@ -242,7 +242,7 @@ class TestEstimateGeneration(TestCase):
         line_item = estimate.estimatelineitem_set.first()
         self.assertEqual(line_item.description, "Prep Work")
         self.assertEqual(line_item.line_item_type, self.lit_labor)
-        self.assertEqual(line_item.price_currency, Decimal('75'))  # 50 + 25
+        self.assertEqual(line_item.price, Decimal('75'))  # 50 + 25
 
     def test_excluded_tasks_not_on_estimate(self):
         """Tasks with exclude mapping don't appear on estimate"""

@@ -57,7 +57,7 @@ class BillDetailViewTest(TestCase):
             bill=self.bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
 
     def test_bill_detail_view_displays_status_form_for_non_terminal_status(self):

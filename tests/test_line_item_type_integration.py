@@ -116,7 +116,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'description': 'Consulting',
                 'qty': '5.00',
                 'units': 'hours',
-                'price_currency': '100.00',
+                'price': '100.00',
                 'line_item_type': service_type.pk,
             }
         )
@@ -169,7 +169,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'description': 'Metal Sheet',
                 'qty': '1.00',
                 'units': 'each',
-                'price_currency': '200.00',
+                'price': '200.00',
                 'line_item_type': material_type.pk,
             }
         )
@@ -303,7 +303,7 @@ class LineItemTypeIntegrationTest(TestCase):
         line_item = EstimateLineItem.objects.get(estimate=estimate)
         self.assertEqual(line_item.line_item_type, material_type)
         self.assertEqual(line_item.description, 'Widget')
-        self.assertEqual(line_item.price_currency, Decimal('10.00'))
+        self.assertEqual(line_item.price, Decimal('10.00'))
         self.assertEqual(line_item.total_amount, Decimal('50.00'))
 
     def test_mixed_taxable_and_nontaxable_items(self):
@@ -346,7 +346,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'description': 'Physical Product',
                 'qty': '2.00',
                 'units': 'each',
-                'price_currency': '100.00',
+                'price': '100.00',
                 'line_item_type': product_type.pk,
             }
         )
@@ -359,7 +359,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'description': 'Installation Service',
                 'qty': '1.00',
                 'units': 'hours',
-                'price_currency': '50.00',
+                'price': '50.00',
                 'line_item_type': service_type.pk,
             }
         )
@@ -419,7 +419,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'description': 'Parts',
                 'qty': '1.00',
                 'units': 'each',
-                'price_currency': '100.00',
+                'price': '100.00',
                 'line_item_type': material_type.pk,
             }
         )
@@ -573,7 +573,7 @@ class TaxCalculationIntegrationTest(TestCase):
                 'description': 'Test Item',
                 'qty': '1.00',
                 'units': 'each',
-                'price_currency': '100.00',
+                'price': '100.00',
                 'line_item_type': taxable_type.pk,
             }
         )
@@ -617,7 +617,7 @@ class TaxCalculationIntegrationTest(TestCase):
                 'description': 'Labor Service',
                 'qty': '10.00',
                 'units': 'hours',
-                'price_currency': '75.00',
+                'price': '75.00',
                 'line_item_type': nontaxable_type.pk,
             }
         )

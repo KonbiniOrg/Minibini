@@ -775,7 +775,7 @@
             "qty": "10.00",
             "units": "hour",
             "description": "General Labor - per hour",
-            "price_currency": "45.00",
+            "price": "45.00",
             "estimate": 1
         }
     },
@@ -789,7 +789,7 @@
             "qty": "5.00",
             "units": "hour",
             "description": "Skilled Labor - per hour",
-            "price_currency": "65.00",
+            "price": "65.00",
             "estimate": 1
         }
     },
@@ -803,7 +803,7 @@
             "qty": "5.00",
             "units": "sheet",
             "description": "Drywall - per sheet",
-            "price_currency": "18.00",
+            "price": "18.00",
             "estimate": 1
         }
     },
@@ -817,7 +817,7 @@
             "qty": "10.00",
             "units": "hour",
             "description": "General Labor - per hour",
-            "price_currency": "45.00",
+            "price": "45.00",
             "estimate": 2
         }
     },
@@ -831,7 +831,7 @@
             "qty": "5.00",
             "units": "hour",
             "description": "Skilled Labor - per hour",
-            "price_currency": "65.00",
+            "price": "65.00",
             "estimate": 2
         }
     },
@@ -845,7 +845,7 @@
             "qty": "5.00",
             "units": "sheet",
             "description": "Drywall - per sheet",
-            "price_currency": "18.00",
+            "price": "18.00",
             "estimate": 2
         }
     },
@@ -859,7 +859,7 @@
             "qty": "10.00",
             "units": "hour",
             "description": "General Labor - per hour",
-            "price_currency": "45.00",
+            "price": "45.00",
             "estimate": 3
         }
     },
@@ -873,7 +873,7 @@
             "qty": "5.00",
             "units": "hour",
             "description": "Skilled Labor - per hour",
-            "price_currency": "65.00",
+            "price": "65.00",
             "estimate": 3
         }
     },
@@ -887,7 +887,7 @@
             "qty": "10.00",
             "units": "hour",
             "description": "General Labor - per hour",
-            "price_currency": "45.00",
+            "price": "45.00",
             "estimate": 4
         }
     },
@@ -901,7 +901,7 @@
             "qty": "5.00",
             "units": "hour",
             "description": "Skilled Labor - per hour",
-            "price_currency": "65.00",
+            "price": "65.00",
             "estimate": 4
         }
     },
@@ -915,7 +915,7 @@
             "qty": "10.00",
             "units": "hour",
             "description": "General Labor - per hour",
-            "price_currency": "45.00",
+            "price": "45.00",
             "estimate": 5
         }
     },
@@ -929,7 +929,7 @@
             "qty": "5.00",
             "units": "hour",
             "description": "Skilled Labor - per hour",
-            "price_currency": "65.00",
+            "price": "65.00",
             "estimate": 5
         }
     },
@@ -943,7 +943,7 @@
             "qty": "10.00",
             "units": "hour",
             "description": "General Labor - per hour",
-            "price_currency": "45.00",
+            "price": "45.00",
             "estimate": 6
         }
     },
@@ -957,7 +957,7 @@
             "qty": "5.00",
             "units": "hour",
             "description": "Skilled Labor - per hour",
-            "price_currency": "65.00",
+            "price": "65.00",
             "estimate": 6
         }
     },
@@ -971,7 +971,7 @@
             "qty": "10.00",
             "units": "hour",
             "description": "General Labor - per hour",
-            "price_currency": "45.00",
+            "price": "45.00",
             "estimate": 7
         }
     },
@@ -985,7 +985,7 @@
             "qty": "5.00",
             "units": "hour",
             "description": "Skilled Labor - per hour",
-            "price_currency": "65.00",
+            "price": "65.00",
             "estimate": 7
         }
     },
@@ -999,7 +999,7 @@
             "qty": "1.00",
             "units": "task",
             "description": "Site preparation and setup",
-            "price_currency": "450.00",
+            "price": "450.00",
             "estimate": 2
         }
     },
@@ -1315,7 +1315,7 @@
             "qty": "8.00",
             "units": "hour",
             "description": "General Labor - per hour",
-            "price_currency": "45.00",
+            "price": "45.00",
             "invoice": 1
         }
     },
@@ -1329,7 +1329,7 @@
             "qty": "4.00",
             "units": "hour",
             "description": "Skilled Labor - per hour",
-            "price_currency": "65.00",
+            "price": "65.00",
             "invoice": 1
         }
     },
@@ -1343,7 +1343,7 @@
             "qty": "4.00",
             "units": "sheet",
             "description": "Drywall - per sheet",
-            "price_currency": "18.00",
+            "price": "18.00",
             "invoice": 1
         }
     },
@@ -1357,7 +1357,7 @@
             "qty": "1.00",
             "units": "task",
             "description": "Material procurement and delivery",
-            "price_currency": "325.00",
+            "price": "325.00",
             "invoice": 1
         }
     },
@@ -1388,7 +1388,7 @@
             "qty": "50.00",
             "units": "sheet",
             "description": "Drywall sheets for office renovation",
-            "price_currency": "12.00",
+            "price": "12.00",
             "purchase_order": 1
         }
     },
@@ -1402,7 +1402,7 @@
             "qty": "50.00",
             "units": "sheet",
             "description": "Drywall sheets for office renovation",
-            "price_currency": "12.00",
+            "price": "12.00",
             "bill": 1
         }
     },

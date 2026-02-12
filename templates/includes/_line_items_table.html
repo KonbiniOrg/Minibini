@@ -55,7 +55,7 @@
                 </td>
                 <td>{{ item.qty }}</td>
                 <td>{{ item.units|default:"—" }}</td>
-                <td>${{ item.price_currency|floatformat:2 }}</td>
+                <td>${{ item.price|floatformat:2 }}</td>
                 <td>${{ item.total_amount|floatformat:2 }}</td>
                 {% if show_actions %}
                 <td>

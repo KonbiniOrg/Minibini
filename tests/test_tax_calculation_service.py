@@ -47,7 +47,7 @@ class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             taxable_override=None  # Use type default
         )
 
@@ -60,7 +60,7 @@ class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.nontaxable_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             taxable_override=None
         )
 
@@ -73,7 +73,7 @@ class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.nontaxable_type,  # Type is non-taxable
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             taxable_override=True  # Override to taxable
         )
 
@@ -86,7 +86,7 @@ class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,  # Type is taxable
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             taxable_override=False  # Override to non-taxable
         )
 
@@ -129,7 +129,7 @@ class TaxCalculationServiceEffectiveTaxRateTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.line_item_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             tax_rate_override=None
         )
 
@@ -144,7 +144,7 @@ class TaxCalculationServiceEffectiveTaxRateTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.line_item_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             tax_rate_override=Decimal('0.05')  # 5% special rate
         )
 
@@ -157,7 +157,7 @@ class TaxCalculationServiceEffectiveTaxRateTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.line_item_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             tax_rate_override=None
         )
 
@@ -203,7 +203,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('2.00'),
-            price_currency=Decimal('50.00'),  # total = 100.00
+            price=Decimal('50.00'),  # total = 100.00
             taxable_override=None
         )
 
@@ -217,7 +217,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.nontaxable_type,
             qty=Decimal('2.00'),
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
             taxable_override=None
         )
 
@@ -236,7 +236,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('2.00'),
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
             taxable_override=None
         )
 
@@ -255,7 +255,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('2.00'),
-            price_currency=Decimal('50.00'),  # total = 100.00
+            price=Decimal('50.00'),  # total = 100.00
             taxable_override=None
         )
 
@@ -275,7 +275,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('2.00'),
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
             taxable_override=None
         )
 
@@ -290,7 +290,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('2.00'),
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
             taxable_override=None
         )
 
@@ -310,7 +310,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('33.33'),  # 8.25% of 33.33 = 2.749725
+            price=Decimal('33.33'),  # 8.25% of 33.33 = 2.749725
             taxable_override=None
         )
 
@@ -357,19 +357,19 @@ class TaxCalculationServiceDocumentTaxTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),  # 10% = $10
+            price=Decimal('100.00'),  # 10% = $10
         )
         EstimateLineItem.objects.create(
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('2.00'),
-            price_currency=Decimal('25.00'),  # total 50, 10% = $5
+            price=Decimal('25.00'),  # total 50, 10% = $5
         )
         EstimateLineItem.objects.create(
             estimate=self.estimate,
             line_item_type=self.nontaxable_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('200.00'),  # Non-taxable = $0
+            price=Decimal('200.00'),  # Non-taxable = $0
         )
 
         result = TaxCalculationService.calculate_document_tax(self.estimate)
@@ -397,13 +397,13 @@ class TaxCalculationServiceDocumentTaxTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
         )
         EstimateLineItem.objects.create(
             estimate=self.estimate,
             line_item_type=self.taxable_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
         )
 
         result = TaxCalculationService.calculate_document_tax(self.estimate, customer=exempt_business)

@@ -1080,7 +1080,7 @@ def estimate_add_line_item(request, estimate_id):
                     description=price_list_item.description,
                     qty=qty,
                     units=price_list_item.units,
-                    price_currency=price_list_item.selling_price,
+                    price=price_list_item.selling_price,
                     line_item_type=price_list_item.line_item_type
                 )
 
@@ -1187,7 +1187,7 @@ def estimate_revise(request, estimate_id):
                     qty=line_item.qty,
                     units=line_item.units,
                     description=line_item.description,
-                    price_currency=line_item.price_currency,
+                    price=line_item.price,
                     line_item_type=line_item.line_item_type,
                 )
 

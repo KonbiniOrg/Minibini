@@ -51,7 +51,7 @@ class EstimateTaxDisplayTest(TestCase):
             line_item_type=self.taxable_type,
             description='Test Item',
             qty=Decimal('2.00'),
-            price_currency=Decimal('50.00')
+            price=Decimal('50.00')
         )
         response = self.client.get(
             reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
@@ -66,7 +66,7 @@ class EstimateTaxDisplayTest(TestCase):
             line_item_type=self.taxable_type,
             description='Taxable Item',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
         response = self.client.get(
             reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
@@ -81,7 +81,7 @@ class EstimateTaxDisplayTest(TestCase):
             line_item_type=self.taxable_type,
             description='Taxable Item',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
         response = self.client.get(
             reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
@@ -96,7 +96,7 @@ class EstimateTaxDisplayTest(TestCase):
             line_item_type=self.nontaxable_type,  # Non-taxable
             description='Service Item',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
         response = self.client.get(
             reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
@@ -111,7 +111,7 @@ class EstimateTaxDisplayTest(TestCase):
             line_item_type=self.taxable_type,
             description='Material Item',
             qty=Decimal('1.00'),
-            price_currency=Decimal('50.00')
+            price=Decimal('50.00')
         )
         response = self.client.get(
             reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
@@ -165,7 +165,7 @@ class EstimateCustomerExemptionTest(TestCase):
             line_item_type=self.taxable_type,
             description='Taxable Item',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
 
         response = self.client.get(

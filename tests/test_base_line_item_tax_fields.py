@@ -53,7 +53,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             description='Test item without type'
         )
         self.assertIsNone(line_item.line_item_type)
@@ -64,7 +64,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.service_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             description='Service item'
         )
 
@@ -77,7 +77,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.material_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
             description='Material item'
         )
 
@@ -89,7 +89,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.service_type,  # Service is taxable=False by default
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             description='Taxable service',
             taxable_override=True  # Override to taxable
         )
@@ -102,7 +102,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.material_type,  # Material is taxable=True by default
             qty=Decimal('1.00'),
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
             description='Non-taxable material',
             taxable_override=False  # Override to non-taxable
         )
@@ -115,7 +115,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.material_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
             description='Material item'
         )
 
@@ -127,7 +127,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.material_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             description='Special tax rate item',
             tax_rate_override=Decimal('0.0500')  # 5% special rate
         )
@@ -140,7 +140,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.material_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             description='Precise tax rate item',
             tax_rate_override=Decimal('0.0825')  # 8.25%
         )
@@ -162,7 +162,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
             estimate=self.estimate,
             line_item_type=test_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             description='Protected item'
         )
 
@@ -176,14 +176,14 @@ class BaseLineItemTaxFieldsTest(TestCase):
             estimate=self.estimate,
             line_item_type=self.service_type,
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             description='Service 1'
         )
         line_item2 = EstimateLineItem.objects.create(
             estimate=self.estimate,
             line_item_type=self.service_type,
             qty=Decimal('2.00'),
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
             description='Service 2'
         )
 

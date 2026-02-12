@@ -217,7 +217,7 @@ class EstimateCRUDTests(TestCase):
         data = {
             'description': 'Test Line Item',
             'qty': 5.0,
-            'price_currency': 100.0,
+            'price': 100.0,
             'units': 'each',
             'line_item_type': service_type.pk,
             'manual_submit': 'Add Manual Line Item'
@@ -232,7 +232,7 @@ class EstimateCRUDTests(TestCase):
         self.assertIsNotNone(line_item)
         self.assertEqual(line_item.description, 'Test Line Item')
         self.assertEqual(line_item.qty, 5.0)
-        self.assertEqual(line_item.price_currency, 100.0)
+        self.assertEqual(line_item.price, 100.0)
         self.assertEqual(line_item.units, 'each')
 
     def test_update_status_get(self):

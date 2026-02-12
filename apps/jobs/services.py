@@ -89,7 +89,7 @@ class LineItemTaskService:
             work_order=work_order,
             name=task_name,
             units=line_item.units or line_item.price_list_item.units,
-            rate=line_item.price_currency or line_item.price_list_item.selling_price,
+            rate=line_item.price or line_item.price_list_item.selling_price,
             est_qty=line_item.qty,
             assignee=None,
             template=None,
@@ -111,7 +111,7 @@ class LineItemTaskService:
             work_order=work_order,
             name=task_name,
             units=line_item.units,
-            rate=line_item.price_currency,
+            rate=line_item.price,
             est_qty=line_item.qty,
             assignee=None,
             template=None,
@@ -300,7 +300,7 @@ class TaskService:
             description=f"LineItem from {task.name}",
             qty=1,
             units="each",
-            price_currency=0,
+            price=0,
             line_item_type=line_item_type,
         )
         return line_item
@@ -422,7 +422,7 @@ class EstimateGenerationService:
             description=task.name,
             qty=qty,
             units=task.units or 'each',
-            price_currency=qty * rate,
+            price=rate,
             line_item_type=line_item_type
         )
 
@@ -444,7 +444,7 @@ class EstimateGenerationService:
             description=bundle.name,
             qty=Decimal('1.00'),
             units='each',
-            price_currency=total_price,
+            price=total_price,
             line_item_type=bundle.line_item_type
         )
 

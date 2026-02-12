@@ -232,7 +232,7 @@ class BillFromPurchaseOrderTest(TestCase):
             description="Test Item 1",
             qty=5,
             units="ea",
-            price_currency=10.00,
+            price=10.00,
             line_number=1
         )
         PurchaseOrderLineItem.objects.create(
@@ -241,7 +241,7 @@ class BillFromPurchaseOrderTest(TestCase):
             description="Test Item 2",
             qty=3,
             units="kg",
-            price_currency=20.00,
+            price=20.00,
             line_number=2
         )
 
@@ -295,7 +295,7 @@ class BillFromPurchaseOrderTest(TestCase):
                 description=po_line_item.description,
                 qty=po_line_item.qty,
                 units=po_line_item.units,
-                price_currency=po_line_item.price_currency,
+                price=po_line_item.price,
                 line_number=po_line_item.line_number
             )
 
@@ -306,12 +306,12 @@ class BillFromPurchaseOrderTest(TestCase):
         # Verify first line item
         self.assertEqual(bill_line_items[0].description, "Test Item 1")
         self.assertEqual(bill_line_items[0].qty, 5)
-        self.assertEqual(bill_line_items[0].price_currency, 10.00)
+        self.assertEqual(bill_line_items[0].price, 10.00)
 
         # Verify second line item
         self.assertEqual(bill_line_items[1].description, "Test Item 2")
         self.assertEqual(bill_line_items[1].qty, 3)
-        self.assertEqual(bill_line_items[1].price_currency, 20.00)
+        self.assertEqual(bill_line_items[1].price, 20.00)
 
     def test_bill_line_items_can_be_modified_after_creation(self):
         """Bill line items can be modified after creation from PO"""
@@ -332,7 +332,7 @@ class BillFromPurchaseOrderTest(TestCase):
                 description=po_line_item.description,
                 qty=po_line_item.qty,
                 units=po_line_item.units,
-                price_currency=po_line_item.price_currency,
+                price=po_line_item.price,
                 line_number=po_line_item.line_number
             )
 
@@ -351,7 +351,7 @@ class BillFromPurchaseOrderTest(TestCase):
             description="New Item",
             qty=1,
             units="ea",
-            price_currency=5.00,
+            price=5.00,
             line_number=3
         )
 

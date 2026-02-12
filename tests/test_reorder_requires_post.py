@@ -64,14 +64,14 @@ class EstimateReorderLineItemTest(ReorderRequiresPostTestBase):
             estimate=self.estimate,
             description='Line Item 1',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             units='hours'
         )
         self.line_item2 = EstimateLineItem.objects.create(
             estimate=self.estimate,
             description='Line Item 2',
             qty=Decimal('2.00'),
-            price_currency=Decimal('200.00'),
+            price=Decimal('200.00'),
             units='hours'
         )
 
@@ -231,14 +231,14 @@ class InvoiceReorderLineItemTest(ReorderRequiresPostTestBase):
             invoice=self.invoice,
             description='Line Item 1',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             units='hours'
         )
         self.line_item2 = InvoiceLineItem.objects.create(
             invoice=self.invoice,
             description='Line Item 2',
             qty=Decimal('2.00'),
-            price_currency=Decimal('200.00'),
+            price=Decimal('200.00'),
             units='hours'
         )
 
@@ -284,14 +284,14 @@ class PurchaseOrderReorderLineItemTest(ReorderRequiresPostTestBase):
             purchase_order=self.po,
             description='Line Item 1',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             units='hours'
         )
         self.line_item2 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po,
             description='Line Item 2',
             qty=Decimal('2.00'),
-            price_currency=Decimal('200.00'),
+            price=Decimal('200.00'),
             units='hours'
         )
 
@@ -338,14 +338,14 @@ class BillReorderLineItemTest(ReorderRequiresPostTestBase):
             bill=self.bill,
             description='Line Item 1',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             units='hours'
         )
         self.line_item2 = BillLineItem.objects.create(
             bill=self.bill,
             description='Line Item 2',
             qty=Decimal('2.00'),
-            price_currency=Decimal('200.00'),
+            price=Decimal('200.00'),
             units='hours'
         )
 

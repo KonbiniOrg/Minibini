@@ -168,7 +168,7 @@ class BillCreateFromPOLineItemTypeTest(TestCase):
             description='Test Product',
             qty=Decimal('2.00'),
             units='ea',
-            price_currency=Decimal('50.00'),
+            price=Decimal('50.00'),
             line_item_type=cls.product_type
         )
         # Issue the PO so we can create a bill from it

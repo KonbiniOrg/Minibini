@@ -98,10 +98,10 @@ class SearchService:
         ).select_related('job').prefetch_related('invoicelineitem_set')
 
         invoice_line_items = InvoiceLineItem.objects.annotate(
-            price_text=Cast('price_currency', CharField()),
+            price_text=Cast('price', CharField()),
             qty_text=Cast('qty', CharField()),
-            total_amount_calc=F('qty') * F('price_currency'),
-            total_amount_text=Cast(F('qty') * F('price_currency'), CharField())
+            total_amount_calc=F('qty') * F('price'),
+            total_amount_text=Cast(F('qty') * F('price'), CharField())
         ).filter(
             Q(description__icontains=query) |
             Q(invoice__invoice_number__icontains=query) |
@@ -139,10 +139,10 @@ class SearchService:
         ).select_related('job').prefetch_related('estimatelineitem_set')
 
         estimate_line_items = EstimateLineItem.objects.annotate(
-            price_text=Cast('price_currency', CharField()),
+            price_text=Cast('price', CharField()),
             qty_text=Cast('qty', CharField()),
-            total_amount_calc=F('qty') * F('price_currency'),
-            total_amount_text=Cast(F('qty') * F('price_currency'), CharField())
+            total_amount_calc=F('qty') * F('price'),
+            total_amount_text=Cast(F('qty') * F('price'), CharField())
         ).filter(
             Q(description__icontains=query) |
             Q(estimate__estimate_number__icontains=query) |
@@ -220,10 +220,10 @@ class SearchService:
         ).select_related('purchase_order', 'contact').prefetch_related('billlineitem_set')
 
         bill_line_items = BillLineItem.objects.annotate(
-            price_text=Cast('price_currency', CharField()),
+            price_text=Cast('price', CharField()),
             qty_text=Cast('qty', CharField()),
-            total_amount_calc=F('qty') * F('price_currency'),
-            total_amount_text=Cast(F('qty') * F('price_currency'), CharField())
+            total_amount_calc=F('qty') * F('price'),
+            total_amount_text=Cast(F('qty') * F('price'), CharField())
         ).filter(
             Q(description__icontains=query) |
             Q(bill__vendor_invoice_number__icontains=query) |
@@ -261,10 +261,10 @@ class SearchService:
         ).select_related('job').prefetch_related('purchaseorderlineitem_set')
 
         po_line_items = PurchaseOrderLineItem.objects.annotate(
-            price_text=Cast('price_currency', CharField()),
+            price_text=Cast('price', CharField()),
             qty_text=Cast('qty', CharField()),
-            total_amount_calc=F('qty') * F('price_currency'),
-            total_amount_text=Cast(F('qty') * F('price_currency'), CharField())
+            total_amount_calc=F('qty') * F('price'),
+            total_amount_text=Cast(F('qty') * F('price'), CharField())
         ).filter(
             Q(description__icontains=query) |
             Q(purchase_order__po_number__icontains=query) |
