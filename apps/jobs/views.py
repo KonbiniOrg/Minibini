@@ -905,20 +905,6 @@ def add_task_template_standalone(request):
     return render(request, 'jobs/add_task_template_standalone.html', {'form': form})
 
 
-def estworksheet_create(request):
-    """Create a new EstWorksheet manually"""
-    if request.method == 'POST':
-        form = EstWorksheetForm(request.POST)
-        if form.is_valid():
-            worksheet = form.save()
-            messages.success(request, f'Worksheet created successfully')
-            return redirect('jobs:estworksheet_detail', worksheet_id=worksheet.est_worksheet_id)
-    else:
-        form = EstWorksheetForm()
-
-    return render(request, 'jobs/estworksheet_create.html', {'form': form})
-
-
 def estworksheet_create_for_job(request, job_id):
     """Create a new EstWorksheet for a specific Job, optionally from a template"""
     job = get_object_or_404(Job, job_id=job_id)

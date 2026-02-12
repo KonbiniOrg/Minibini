@@ -44,33 +44,7 @@ class EstWorksheetCRUDTests(TestCase):
             description='Test template for work orders'
         )
 
-    def test_create_estworksheet_get(self):
-        """Test GET request to create EstWorksheet form."""
-        url = reverse('jobs:estworksheet_create')
-        response = self.client.get(url)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Create New EstWorksheet')
-
-    def test_create_estworksheet_post(self):
-        """Test POST request to create new EstWorksheet."""
-        url = reverse('jobs:estworksheet_create')
-        data = {
-            'job': self.job.job_id,
-            'status': 'draft'
-        }
-        response = self.client.post(url, data)
-
-        # Check redirect after successful creation
-        self.assertEqual(response.status_code, 302)
-
-        # Check worksheet was created
-        worksheet = EstWorksheet.objects.filter(job=self.job).first()
-        self.assertIsNotNone(worksheet)
-        self.assertEqual(worksheet.status, 'draft')
-        self.assertEqual(worksheet.version, 1)
-
-    # Removed tests for estworksheet_create_from_template - functionality merged into estworksheet_create_for_job
+    # Removed standalone estworksheet_create tests - view removed, worksheets are now only created from the Job page
 
 
 class TaskCRUDTests(TestCase):

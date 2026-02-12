@@ -30,7 +30,6 @@ urlpatterns = [
     path('estimates/<int:estimate_id>/reorder-line-item/<int:line_item_id>/<str:direction>/', views.estimate_reorder_line_item, name='estimate_reorder_line_item'),
     path('estimates/<int:estimate_id>/revise/', views.estimate_revise, name='estimate_revise'),
     path('estimates/<int:estimate_id>/create-work-order/', views.work_order_create_from_estimate, name='work_order_create_from_estimate'),
-    path('worksheets/create/', views.estworksheet_create, name='estworksheet_create'),
     path('<int:job_id>/create-worksheet/', views.estworksheet_create_for_job, name='estworksheet_create_for_job'),
     path('worksheets/<int:worksheet_id>/add-task-from-template/', views.task_add_from_template, name='task_add_from_template'),
     path('worksheets/<int:worksheet_id>/add-task-manual/', views.task_add_manual, name='task_add_manual'),
