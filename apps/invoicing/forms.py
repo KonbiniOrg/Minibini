@@ -16,7 +16,8 @@ class PriceListItemForm(forms.ModelForm):
             'selling_price',
             'qty_on_hand',
             'qty_sold',
-            'qty_wasted'
+            'qty_wasted',
+            'is_inventoried',
         ]
 
     def clean_code(self):

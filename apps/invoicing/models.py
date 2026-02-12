@@ -56,6 +56,7 @@ class PriceListItem(models.Model):
     qty_on_hand = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     qty_sold = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     qty_wasted = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    is_inventoried = models.BooleanField(default=False)  # True for physical/orderable items, False for services
     is_active = models.BooleanField(default=True)  # For soft-delete - use instead of hard deletion
 
     def __str__(self):
