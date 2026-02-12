@@ -76,4 +76,4 @@ jobs:
           script: |
             touch i-was-here.txt
             docker-compose pull
-            docker-compose restart minibini
+            docker compose up -d --pull always  minibini
