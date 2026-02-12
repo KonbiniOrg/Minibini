@@ -372,6 +372,7 @@ def _build_container_items_from_associations(associations):
             'est_qty': assoc.est_qty,
             'mapping_strategy': assoc.mapping_strategy,
             'remove_id': assoc.task_template.template_id,
+            'sort_order': assoc.sort_order,
         }
         if assoc.mapping_strategy == 'bundle' and assoc.bundle:
             bid = assoc.bundle.pk
@@ -389,7 +390,7 @@ def _build_container_items_from_associations(associations):
 
     # Sort within each bundle
     for bundle_data in bundles_by_id.values():
-        bundle_data['items'].sort(key=lambda i: i['id'])
+        bundle_data['items'].sort(key=lambda i: i['sort_order'])
 
     # Build interleaved list
     container_items = []
@@ -441,7 +442,7 @@ def work_order_template_detail(request, template_id):
     if request.method == 'POST' and 'remove_task' in request.POST:
         task_template_id = request.POST.get('remove_task')
         if task_template_id:
-            from .models import TemplateTaskAssociation
+            from .models import TemplateTaskAssociation, TemplateBundle
             task_template = get_object_or_404(TaskTemplate, template_id=task_template_id)
             assoc = TemplateTaskAssociation.objects.filter(
                 work_order_template=template,
@@ -450,9 +451,20 @@ def work_order_template_detail(request, template_id):
             if assoc and assoc.mapping_strategy == 'bundle' and assoc.bundle:
                 # Unbundle: place just after the bundle in container-level ordering
                 bundle = assoc.bundle
+                insert_point = bundle.sort_order + 1
+
+                # Bump container-level items at >= insert_point to make room
+                TemplateTaskAssociation.objects.filter(
+                    work_order_template=template, bundle__isnull=True,
+                    sort_order__gte=insert_point
+                ).update(sort_order=models.F('sort_order') + 1)
+                TemplateBundle.objects.filter(
+                    work_order_template=template, sort_order__gte=insert_point
+                ).update(sort_order=models.F('sort_order') + 1)
+
                 assoc.mapping_strategy = 'direct'
                 assoc.bundle = None
-                assoc.sort_order = bundle.sort_order + 1
+                assoc.sort_order = insert_point
                 assoc.save()
                 # Clean up: dissolve bundle if 0 or 1 tasks remain
                 remaining = TemplateTaskAssociation.objects.filter(bundle=bundle)
@@ -602,6 +614,7 @@ def _build_container_items_from_tasks(worksheet):
             'est_qty': task.est_qty,
             'mapping_strategy': task.mapping_strategy,
             'remove_id': task.task_id,
+            'sort_order': task.sort_order or 0,
         }
         if task.mapping_strategy == 'bundle' and task.bundle:
             bid = task.bundle_id
@@ -618,7 +631,7 @@ def _build_container_items_from_tasks(worksheet):
             unbundled.append((task.sort_order or 0, item))
 
     for bundle_data in bundles_by_id.values():
-        bundle_data['items'].sort(key=lambda i: i['id'])
+        bundle_data['items'].sort(key=lambda i: i['sort_order'])
 
     container_items = []
     for sort_order, item in unbundled:
@@ -679,9 +692,10 @@ def estworksheet_detail(request, worksheet_id):
                 task_id__in=selected_ids, est_worksheet=worksheet
             ).order_by('sort_order', 'task_id')
 
-            for task in selected_tasks:
+            for i, task in enumerate(selected_tasks, start=1):
                 task.mapping_strategy = 'bundle'
                 task.bundle = bundle
+                task.sort_order = i  # Within-bundle position
                 task.save()
 
             # Auto-dissolve other bundles reduced to 0 or 1 tasks
@@ -712,9 +726,20 @@ def estworksheet_detail(request, worksheet_id):
 
         if task.mapping_strategy == 'bundle' and task.bundle:
             bundle = task.bundle
+            insert_point = bundle.sort_order + 1
+
+            # Bump container-level items at >= insert_point to make room
+            Task.objects.filter(
+                est_worksheet=worksheet, bundle__isnull=True,
+                sort_order__gte=insert_point
+            ).update(sort_order=models.F('sort_order') + 1)
+            TaskBundle.objects.filter(
+                est_worksheet=worksheet, sort_order__gte=insert_point
+            ).update(sort_order=models.F('sort_order') + 1)
+
             task.mapping_strategy = 'direct'
             task.bundle = None
-            task.sort_order = bundle.sort_order + 1
+            task.sort_order = insert_point
             task.save()
 
             remaining = Task.objects.filter(bundle=bundle)

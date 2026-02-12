@@ -493,7 +493,8 @@
       "rate": "75.00",
       "parent_template": null,
       "is_active": true,
-      "created_date": "2025-01-01T00:00:00Z"
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 1
     },
     "_section": "=== TASK TEMPLATES (6) ==="
   },
@@ -507,7 +508,8 @@
       "rate": "25.00",
       "parent_template": null,
       "is_active": true,
-      "created_date": "2025-01-01T00:00:00Z"
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 2
     }
   },
   {
@@ -520,7 +522,8 @@
       "rate": "200.00",
       "parent_template": null,
       "is_active": true,
-      "created_date": "2025-01-01T00:00:00Z"
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 3
     }
   },
   {
@@ -533,7 +536,8 @@
       "rate": "150.00",
       "parent_template": null,
       "is_active": true,
-      "created_date": "2025-01-01T00:00:00Z"
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 3
     }
   },
   {
@@ -546,7 +550,8 @@
       "rate": "100.00",
       "parent_template": null,
       "is_active": true,
-      "created_date": "2025-01-01T00:00:00Z"
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 3
     }
   },
   {
@@ -559,7 +564,8 @@
       "rate": "50.00",
       "parent_template": null,
       "is_active": true,
-      "created_date": "2025-01-01T00:00:00Z"
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 6
     }
   },
   {
@@ -586,13 +592,27 @@
     }
   },
   {
+    "model": "jobs.templatebundle",
+    "pk": 1,
+    "fields": {
+      "work_order_template": 2,
+      "name": "Cabinet",
+      "description": "Combined cabinet components become one product line item",
+      "line_item_type": 4,
+      "sort_order": 1
+    },
+    "_section": "=== TEMPLATE BUNDLES (1) ==="
+  },
+  {
     "model": "jobs.templatetaskassociation",
     "pk": 1,
     "fields": {
       "work_order_template": 1,
       "task_template": 1,
       "est_qty": "4.00",
-      "sort_order": 1
+      "sort_order": 1,
+      "mapping_strategy": "direct",
+      "bundle": null
     },
     "_section": "=== TEMPLATE TASK ASSOCIATIONS (6) ==="
   },
@@ -603,7 +623,9 @@
       "work_order_template": 1,
       "task_template": 2,
       "est_qty": "2.00",
-      "sort_order": 2
+      "sort_order": 2,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -613,7 +635,9 @@
       "work_order_template": 2,
       "task_template": 3,
       "est_qty": "1.00",
-      "sort_order": 1
+      "sort_order": 1,
+      "mapping_strategy": "bundle",
+      "bundle": 1
     }
   },
   {
@@ -623,7 +647,9 @@
       "work_order_template": 2,
       "task_template": 4,
       "est_qty": "2.00",
-      "sort_order": 2
+      "sort_order": 2,
+      "mapping_strategy": "bundle",
+      "bundle": 1
     }
   },
   {
@@ -633,7 +659,9 @@
       "work_order_template": 2,
       "task_template": 5,
       "est_qty": "1.00",
-      "sort_order": 3
+      "sort_order": 3,
+      "mapping_strategy": "bundle",
+      "bundle": 1
     }
   },
   {
@@ -643,7 +671,9 @@
       "work_order_template": 2,
       "task_template": 6,
       "est_qty": "2.00",
-      "sort_order": 4
+      "sort_order": 4,
+      "mapping_strategy": "exclude",
+      "bundle": null
     }
   },
   {
@@ -768,6 +798,33 @@
     }
   },
   {
+    "model": "jobs.taskbundle",
+    "pk": 1,
+    "fields": {
+      "est_worksheet": 2,
+      "work_order": null,
+      "name": "Cabinet",
+      "description": "Combined cabinet components become one product line item",
+      "line_item_type": 4,
+      "sort_order": 1,
+      "source_template_bundle": 1
+    },
+    "_section": "=== TASK BUNDLES (2) ==="
+  },
+  {
+    "model": "jobs.taskbundle",
+    "pk": 2,
+    "fields": {
+      "est_worksheet": 4,
+      "work_order": null,
+      "name": "Cabinet",
+      "description": "Combined cabinet components become one product line item",
+      "line_item_type": 4,
+      "sort_order": 1,
+      "source_template_bundle": 1
+    }
+  },
+  {
     "model": "jobs.task",
     "pk": 1,
     "fields": {
@@ -780,7 +837,9 @@
       "rate": "75.00",
       "est_qty": "4.00",
       "template": 1,
-      "sort_order": 1
+      "sort_order": 1,
+      "mapping_strategy": "direct",
+      "bundle": null
     },
     "_section": "=== TASKS (8) - across worksheets ==="
   },
@@ -797,7 +856,9 @@
       "rate": "25.00",
       "est_qty": "2.00",
       "template": 2,
-      "sort_order": 2
+      "sort_order": 2,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -813,7 +874,9 @@
       "rate": "200.00",
       "est_qty": "1.00",
       "template": 3,
-      "sort_order": 1
+      "sort_order": 1,
+      "mapping_strategy": "bundle",
+      "bundle": 1
     }
   },
   {
@@ -829,7 +892,9 @@
       "rate": "150.00",
       "est_qty": "2.00",
       "template": 4,
-      "sort_order": 2
+      "sort_order": 2,
+      "mapping_strategy": "bundle",
+      "bundle": 1
     }
   },
   {
@@ -845,7 +910,9 @@
       "rate": "100.00",
       "est_qty": "1.00",
       "template": 5,
-      "sort_order": 3
+      "sort_order": 3,
+      "mapping_strategy": "bundle",
+      "bundle": 1
     }
   },
   {
@@ -861,7 +928,9 @@
       "rate": "50.00",
       "est_qty": "2.00",
       "template": 6,
-      "sort_order": 4
+      "sort_order": 4,
+      "mapping_strategy": "exclude",
+      "bundle": null
     }
   },
   {
@@ -877,7 +946,9 @@
       "rate": "25.00",
       "est_qty": "5.00",
       "template": 2,
-      "sort_order": 1
+      "sort_order": 1,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -893,7 +964,9 @@
       "rate": "85.00",
       "est_qty": "1.00",
       "template": null,
-      "sort_order": 2
+      "sort_order": 2,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -1313,7 +1386,9 @@
       "rate": "200.00",
       "est_qty": "1.00",
       "template": 3,
-      "sort_order": 1
+      "sort_order": 1,
+      "mapping_strategy": "bundle",
+      "bundle": 2
     }
   },
   {
@@ -1329,7 +1404,9 @@
       "rate": "150.00",
       "est_qty": "2.00",
       "template": 4,
-      "sort_order": 2
+      "sort_order": 2,
+      "mapping_strategy": "bundle",
+      "bundle": 2
     }
   },
   {
@@ -1345,7 +1422,9 @@
       "rate": "100.00",
       "est_qty": "1.00",
       "template": 5,
-      "sort_order": 3
+      "sort_order": 3,
+      "mapping_strategy": "bundle",
+      "bundle": 2
     }
   },
   {
@@ -1361,7 +1440,9 @@
       "rate": "50.00",
       "est_qty": "2.00",
       "template": 6,
-      "sort_order": 4
+      "sort_order": 4,
+      "mapping_strategy": "exclude",
+      "bundle": null
     }
   }
 ]

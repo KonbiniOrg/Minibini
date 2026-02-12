@@ -410,23 +410,47 @@ class Task(models.Model):
             raise ValidationError("Tasks with a bundle must use 'bundle' mapping strategy")
 
     def save(self, *args, **kwargs):
-        """Override save to auto-generate sort order."""
+        """Override save to auto-generate sort order.
+
+        sort_order means different things depending on context:
+        - Unbundled tasks: position at the container level (alongside bundles)
+        - Bundled tasks: position within the bundle
+        """
         from django.db import transaction
 
         if self.sort_order is None:
             with transaction.atomic():
                 container = self.work_order or self.est_worksheet
                 if container:
-                    # Determine the filter based on container type
-                    if self.work_order:
-                        filter_kwargs = {'work_order': container}
+                    if self.bundle:
+                        # Within-bundle: max among tasks in the same bundle
+                        max_order = Task.objects.filter(
+                            bundle=self.bundle
+                        ).aggregate(
+                            models.Max('sort_order')
+                        )['sort_order__max']
                     else:
-                        filter_kwargs = {'est_worksheet': container}
+                        # Container-level: max among unbundled tasks AND TaskBundles
+                        if self.work_order:
+                            container_kwargs = {'work_order': container}
+                            bundle_kwargs = {'work_order': container}
+                        else:
+                            container_kwargs = {'est_worksheet': container}
+                            bundle_kwargs = {'est_worksheet': container}
 
-                    # Get max sort_order for this container
-                    max_order = Task.objects.filter(**filter_kwargs).aggregate(
-                        models.Max('sort_order')
-                    )['sort_order__max']
+                        max_task = Task.objects.filter(
+                            bundle__isnull=True, **container_kwargs
+                        ).aggregate(
+                            models.Max('sort_order')
+                        )['sort_order__max'] or 0
+
+                        max_bundle = TaskBundle.objects.filter(
+                            **bundle_kwargs
+                        ).aggregate(
+                            models.Max('sort_order')
+                        )['sort_order__max'] or 0
+
+                        max_order = max(max_task, max_bundle)
 
                     self.sort_order = (max_order or 0) + 1
 
@@ -574,6 +598,7 @@ class WorkOrderTemplate(models.Model):
                     product_instance=instance if quantity > 1 else None,
                     mapping_strategy=association.mapping_strategy,
                     bundle=instance_bundle,
+                    sort_order=association.sort_order,
                 )
                 generated_tasks.append(task)
 
@@ -674,7 +699,7 @@ class TaskTemplate(models.Model):
         return self.template_name
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
-                       assignee=None, mapping_strategy='direct', bundle=None):
+                       assignee=None, mapping_strategy='direct', bundle=None, sort_order=None):
         """Generate a Task from this template with specified quantity and mapping config."""
         task = Task.objects.create(
             work_order=container if isinstance(container, WorkOrder) else None,
@@ -687,6 +712,7 @@ class TaskTemplate(models.Model):
             assignee=assignee,
             mapping_strategy=mapping_strategy,
             bundle=bundle,
+            sort_order=sort_order,
         )
 
         # Generate child tasks if this template has children
