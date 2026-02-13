@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Tax Settings - Minibini{% endblock %}
+
+{% block navigation %}
+{% include 'includes/settings_navigation.html' %}
+{% endblock %}
+
+{% block content %}
+<h2>Edit Tax Settings</h2>
+
+<form method="post">
+    {% csrf_token %}
+
+    <p>
+        <label for="id_default_tax_rate"><strong>Default Tax Rate</strong></label><br>
+        {{ form.default_tax_rate }}
+        <br><small>{{ form.default_tax_rate.help_text }}</small>
+        {% if form.default_tax_rate.errors %}<br><span style="color: red;">{{ form.default_tax_rate.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        <label for="id_org_tax_multiplier"><strong>Organization Tax Multiplier</strong></label><br>
+        {{ form.org_tax_multiplier }}
+        <br><small>{{ form.org_tax_multiplier.help_text }}</small>
+        {% if form.org_tax_multiplier.errors %}<br><span style="color: red;">{{ form.org_tax_multiplier.errors }}</span>{% endif %}
+    </p>
+
+    <p>
+        <button type="submit">Save Changes</button>
+        <a href="{% url 'settings' %}">Cancel</a>
+    </p>
+</form>
+{% endblock %}

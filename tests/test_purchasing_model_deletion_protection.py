@@ -188,7 +188,7 @@ class BillModelDeletionTest(TestCase):
             bill=bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
         bill.status = 'received'
         bill.save()
@@ -217,7 +217,7 @@ class BillModelDeletionTest(TestCase):
             bill=bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
         bill.status = 'received'
         bill.save()
@@ -248,7 +248,7 @@ class BillModelDeletionTest(TestCase):
             bill=bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
         bill.status = 'received'
         bill.save()
@@ -279,7 +279,7 @@ class BillModelDeletionTest(TestCase):
             bill=bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
         bill.status = 'received'
         bill.save()
@@ -310,7 +310,7 @@ class BillModelDeletionTest(TestCase):
             bill=bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
         bill.status = 'received'
         bill.save()

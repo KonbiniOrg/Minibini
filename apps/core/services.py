@@ -3,6 +3,7 @@ Service classes for core application functionality.
 """
 
 from datetime import datetime
+from decimal import Decimal
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from .models import Configuration
@@ -401,3 +402,114 @@ class LineItemService:
             Decimal: Total amount
         """
         return sum(item.total_amount for item in line_items)
+
+
+class TaxCalculationService:
+    """
+    Calculates tax for line items and documents.
+
+    Supports:
+    - LineItemType default taxability
+    - Line item taxable_override
+    - Line item tax_rate_override
+    - Customer tax multiplier (for sales exemptions)
+    - Organization tax multiplier (for purchase exemptions)
+    """
+
+    @staticmethod
+    def get_effective_taxability(line_item):
+        """
+        Determine if a line item is taxable.
+
+        Uses taxable_override if set, otherwise falls back to
+        the line_item_type's default taxability.
+
+        Args:
+            line_item: A BaseLineItem subclass instance
+
+        Returns:
+            bool: True if the line item is taxable
+        """
+        if line_item.taxable_override is not None:
+            return line_item.taxable_override
+        if line_item.line_item_type:
+            return line_item.line_item_type.taxable
+        return False  # Default to non-taxable if no type
+
+    @staticmethod
+    def get_effective_tax_rate(line_item):
+        """
+        Get the tax rate for a line item.
+
+        Uses tax_rate_override if set, otherwise falls back to
+        the app's default_tax_rate configuration.
+
+        Args:
+            line_item: A BaseLineItem subclass instance
+
+        Returns:
+            Decimal: The tax rate (e.g., 0.08 for 8%)
+        """
+        if line_item.tax_rate_override is not None:
+            return line_item.tax_rate_override
+
+        try:
+            config = Configuration.objects.get(key='default_tax_rate')
+            return Decimal(config.value)
+        except Configuration.DoesNotExist:
+            return Decimal('0')
+
+    @staticmethod
+    def calculate_line_item_tax(line_item, customer=None):
+        """
+        Calculate tax amount for a single line item.
+
+        Args:
+            line_item: The line item to calculate tax for
+            customer: Business object (for customer multiplier) or None for purchases
+
+        Returns:
+            Decimal: Tax amount rounded to 2 decimal places
+        """
+        # Non-taxable items have zero tax
+        if not TaxCalculationService.get_effective_taxability(line_item):
+            return Decimal('0')
+
+        rate = TaxCalculationService.get_effective_tax_rate(line_item)
+
+        # Apply customer/org multiplier
+        if customer is not None and customer.tax_multiplier is not None:
+            rate = rate * customer.tax_multiplier
+        elif customer is None:
+            # Purchasing - use org multiplier
+            try:
+                org_config = Configuration.objects.get(key='org_tax_multiplier')
+                org_multiplier = Decimal(org_config.value)
+                rate = rate * org_multiplier
+            except Configuration.DoesNotExist:
+                pass  # No org multiplier = full rate
+
+        return (line_item.total_amount * rate).quantize(Decimal('0.01'))
+
+    @staticmethod
+    def calculate_document_tax(document, customer=None):
+        """
+        Calculate total tax for an estimate, invoice, PO, or bill.
+
+        Args:
+            document: The document (Estimate, Invoice, PurchaseOrder, Bill)
+            customer: Business object (for customer multiplier) or None for purchases
+
+        Returns:
+            Decimal: Total tax amount
+        """
+        total_tax = Decimal('0')
+
+        # Get line items using the document's relationship
+        # Documents have different related names, but we can get them generically
+        line_items = document.estimatelineitem_set.all() if hasattr(document, 'estimatelineitem_set') else []
+
+        for line_item in line_items:
+            total_tax += TaxCalculationService.calculate_line_item_tax(line_item, customer)
+
+        return total_tax

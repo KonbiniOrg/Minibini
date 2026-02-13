@@ -163,7 +163,7 @@ class BillDeletionTest(TestCase):
             bill=self.received_bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
         self.received_bill.status = 'received'
         self.received_bill.save()
@@ -247,21 +247,21 @@ class PurchaseOrderLineItemDeletionTest(TestCase):
             purchase_order=self.draft_po,
             description="Item 1",
             qty=Decimal('1.00'),
-            price_currency=Decimal('10.00'),
+            price=Decimal('10.00'),
             line_number=1
         )
         self.line_item_2 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.draft_po,
             description="Item 2",
             qty=Decimal('2.00'),
-            price_currency=Decimal('20.00'),
+            price=Decimal('20.00'),
             line_number=2
         )
         self.line_item_3 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.draft_po,
             description="Item 3",
             qty=Decimal('3.00'),
-            price_currency=Decimal('30.00'),
+            price=Decimal('30.00'),
             line_number=3
         )
 
@@ -270,7 +270,7 @@ class PurchaseOrderLineItemDeletionTest(TestCase):
             purchase_order=self.issued_po,
             description="Issued item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             line_number=1
         )
 
@@ -367,21 +367,21 @@ class BillLineItemDeletionTest(TestCase):
             bill=self.draft_bill,
             description="Item 1",
             qty=Decimal('1.00'),
-            price_currency=Decimal('10.00'),
+            price=Decimal('10.00'),
             line_number=1
         )
         self.line_item_2 = BillLineItem.objects.create(
             bill=self.draft_bill,
             description="Item 2",
             qty=Decimal('2.00'),
-            price_currency=Decimal('20.00'),
+            price=Decimal('20.00'),
             line_number=2
         )
         self.line_item_3 = BillLineItem.objects.create(
             bill=self.draft_bill,
             description="Item 3",
             qty=Decimal('3.00'),
-            price_currency=Decimal('30.00'),
+            price=Decimal('30.00'),
             line_number=3
         )
 
@@ -390,7 +390,7 @@ class BillLineItemDeletionTest(TestCase):
             bill=self.received_bill,
             description="Received item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             line_number=1
         )
         self.received_bill.status = 'received'

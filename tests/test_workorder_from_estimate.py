@@ -2,8 +2,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from apps.jobs.models import (
-    Job, Estimate, WorkOrder, Task, EstWorksheet,
-    TaskInstanceMapping, WorkOrderTemplate, TaskTemplate
+    Job, Estimate, WorkOrder, Task, EstWorksheet, WorkOrderTemplate, TaskTemplate
 )
 from apps.contacts.models import Contact
 
@@ -57,9 +56,9 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.assertEqual(work_order.job_id, estimate.job_id)
         self.assertEqual(work_order.template_id, worksheet.template_id)
 
-        # Verify tasks were copied
+        # Verify tasks were created from line items (3 line items = 3 tasks)
         wo_tasks = Task.objects.filter(work_order=work_order).order_by('task_id')
-        self.assertEqual(wo_tasks.count(), 5)
+        self.assertEqual(wo_tasks.count(), 3)
 
         # Check success message
         messages = list(response.context['messages'])
@@ -131,15 +130,13 @@ class WorkOrderFromEstimateTestCase(TestCase):
                 work_orders = WorkOrder.objects.filter(job=estimate.job)
                 self.assertEqual(work_orders.count(), 0)
 
-    def test_task_hierarchy_preserved_in_workorder(self):
-        """Test that task parent-child relationships are properly maintained in the new WorkOrder"""
+    def test_tasks_created_from_line_items(self):
+        """Test that tasks are created from estimate line items (not worksheet tasks directly)"""
         estimate = Estimate.objects.get(pk=100)
-        worksheet = EstWorksheet.objects.get(pk=100)
 
-        # Get original tasks
-        original_parent = Task.objects.get(pk=100)
-        original_children = Task.objects.filter(parent_task=original_parent).order_by('task_id')
-        self.assertEqual(original_children.count(), 2)
+        # Verify we have 3 line items in the estimate
+        line_items = estimate.estimatelineitem_set.all()
+        self.assertEqual(line_items.count(), 3)
 
         # Create WorkOrder
         url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
@@ -148,34 +145,14 @@ class WorkOrderFromEstimateTestCase(TestCase):
         # Get the created WorkOrder
         work_order = WorkOrder.objects.filter(job=estimate.job).first()
 
-        # Find the new parent task (by name matching)
-        new_parent = Task.objects.get(
-            work_order=work_order,
-            name=original_parent.name
-        )
+        # Verify 3 tasks created (one per line item)
+        wo_tasks = Task.objects.filter(work_order=work_order)
+        self.assertEqual(wo_tasks.count(), 3)
 
-        # Verify it has no parent in EstWorksheet context
-        self.assertIsNone(new_parent.parent_task)
-
-        # Find new children
-        new_children = Task.objects.filter(
-            work_order=work_order,
-            parent_task=new_parent
-        ).order_by('name')
-
-        # Should have same number of children
-        self.assertEqual(new_children.count(), 2)
-
-        # Verify children properties match
-        for original_child in original_children:
-            new_child = Task.objects.get(
-                work_order=work_order,
-                name=original_child.name
-            )
-            self.assertEqual(new_child.parent_task_id, new_parent.task_id)
-            self.assertEqual(new_child.units, original_child.units)
-            self.assertEqual(new_child.rate, original_child.rate)
-            self.assertEqual(new_child.est_qty, original_child.est_qty)
+        # Verify task names match line items
+        task_names = set(wo_tasks.values_list('name', flat=True))
+        expected_names = {'Parent Task - Assembly', 'Standalone Task - Material Delivery', 'Standalone Task - Quality Check'}
+        self.assertEqual(task_names, expected_names)
 
     def test_task_template_references_preserved(self):
         """Test that TaskTemplate references are preserved for future Invoice generation"""
@@ -187,71 +164,21 @@ class WorkOrderFromEstimateTestCase(TestCase):
 
         work_order = WorkOrder.objects.filter(job=estimate.job).first()
 
-        # Check tasks with templates
+        # Check task with template (Parent Task - Assembly has template_id=50)
         parent_task = Task.objects.get(
             work_order=work_order,
             name="Parent Task - Assembly"
         )
-        child_task = Task.objects.get(
-            work_order=work_order,
-            name="Child Task - Component A"
-        )
 
-        # Verify template references preserved
+        # Verify template reference preserved
         self.assertEqual(parent_task.template_id, 50)
-        self.assertEqual(child_task.template_id, 51)
 
-        # Verify task without template
+        # Verify tasks without templates (standalone tasks have no template in fixture)
         task_no_template = Task.objects.get(
             work_order=work_order,
-            name="Child Task - Component B"
+            name="Standalone Task - Material Delivery"
         )
         self.assertIsNone(task_no_template.template)
-
-    def test_task_instance_mapping_copied(self):
-        """Test that TaskInstanceMapping is properly copied to maintain bundling strategy"""
-        estimate = Estimate.objects.get(pk=100)
-
-        # Verify original mappings exist
-        original_mappings = TaskInstanceMapping.objects.filter(
-            task__est_worksheet_id=100
-        )
-        self.assertEqual(original_mappings.count(), 3)
-
-        # Create WorkOrder
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
-        response = self.client.post(url)
-
-        work_order = WorkOrder.objects.filter(job=estimate.job).first()
-
-        # Check new mappings were created
-        new_parent_task = Task.objects.get(
-            work_order=work_order,
-            name="Parent Task - Assembly"
-        )
-        new_child_task = Task.objects.get(
-            work_order=work_order,
-            name="Child Task - Component A"
-        )
-
-        # Verify mappings exist for the new tasks
-        parent_mapping = TaskInstanceMapping.objects.filter(task=new_parent_task).first()
-        self.assertIsNotNone(parent_mapping)
-        self.assertEqual(parent_mapping.product_identifier, "test_product_100_1")
-        self.assertEqual(parent_mapping.product_instance, 1)
-
-        child_mapping = TaskInstanceMapping.objects.filter(task=new_child_task).first()
-        self.assertIsNotNone(child_mapping)
-        self.assertEqual(child_mapping.product_identifier, "test_product_100_1")
-        self.assertEqual(child_mapping.product_instance, 1)
-
-        # Verify tasks without original mapping don't get one
-        task_no_mapping = Task.objects.get(
-            work_order=work_order,
-            name="Standalone Task - Quality Check"
-        )
-        no_mapping = TaskInstanceMapping.objects.filter(task=task_no_mapping).exists()
-        self.assertFalse(no_mapping)
 
     def test_confirmation_page_displays_correct_info(self):
         """Test that the confirmation page shows correct information before creating WorkOrder"""
@@ -353,7 +280,7 @@ class WorkOrderFromEstimateIntegrationTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f'Work Order {work_order.work_order_id}')
         self.assertContains(response, 'Parent Task - Assembly')
-        self.assertContains(response, 'Child Task - Component A')
+        self.assertContains(response, 'Standalone Task - Material Delivery')
 
     def test_multiple_workorders_from_same_job(self):
         """Test that multiple WorkOrders can be created for the same job from different estimates"""

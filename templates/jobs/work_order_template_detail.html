@@ -10,68 +10,17 @@
 <h2>Work Order Template: {{ template.template_name }}</h2>
 
 <table border="1">
-    <tr>
-        <th>Field</th>
-        <th>Value</th>
-    </tr>
-    <tr>
-        <td>Template ID</td>
-        <td>{{ template.template_id }}</td>
-    </tr>
-    <tr>
-        <td>Template Name</td>
-        <td>{{ template.template_name }}</td>
-    </tr>
-    <tr>
-        <td>Description</td>
-        <td>{{ template.description|default:"-" }}</td>
-    </tr>
-    <tr>
-        <td>Active</td>
-        <td>{{ template.is_active|yesno:"Yes,No" }}</td>
-    </tr>
-    <tr>
-        <td>Created Date</td>
-        <td>{{ template.created_date }}</td>
-    </tr>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Template ID</td><td>{{ template.template_id }}</td></tr>
+    <tr><td>Template Name</td><td>{{ template.template_name }}</td></tr>
+    <tr><td>Description</td><td>{{ template.description|default:"-" }}</td></tr>
+    <tr><td>Active</td><td>{{ template.is_active|yesno:"Yes,No" }}</td></tr>
+    <tr><td>Created Date</td><td>{{ template.created_date }}</td></tr>
 </table>
 
 <h3>Task Templates</h3>
 
-<table border="1">
-    <tr>
-        <th>Task Name</th>
-        <th>Description</th>
-        <th>Units</th>
-        <th>Rate</th>
-        <th>Est. Quantity</th>
-        <th>Task Mapping</th>
-        <th>Active</th>
-        <th>Action</th>
-    </tr>
-    {% for association in associations %}
-    <tr>
-        <td>{{ association.task_template.template_name }}</td>
-        <td>{{ association.task_template.description|truncatewords:10|default:"-" }}</td>
-        <td>{{ association.task_template.units|default:"-" }}</td>
-        <td>${{ association.task_template.rate|default:"0.00" }}</td>
-        <td>{{ association.est_qty }}</td>
-        <td>{{ association.task_template.task_mapping|default:"-" }}</td>
-        <td>{{ association.task_template.is_active|yesno:"Yes,No" }}</td>
-        <td>
-            <form method="post" style="display: inline;">
-                {% csrf_token %}
-                <input type="hidden" name="task_template_id" value="{{ association.task_template.template_id }}">
-                <button type="submit" name="remove_task" onclick="return confirm('Remove this task template from this work order?')">Remove</button>
-            </form>
-        </td>
-    </tr>
-    {% empty %}
-    <tr>
-        <td colspan="8">No task templates found for this work order template.</td>
-    </tr>
-    {% endfor %}
-</table>
+{% include 'includes/_bundle_table.html' %}
 
 {% if available_templates %}
 <h4>Associate Existing Task Template</h4>
@@ -82,7 +31,7 @@
         <select name="task_template_id" required>
             <option value="">-- Select Task Template --</option>
             {% for task in available_templates %}
-                <option value="{{ task.template_id }}">{{ task.template_name }} ({{ task.units|default:"no units" }}, ${{ task.rate|default:"0.00" }})</option>
+            <option value="{{ task.template_id }}">{{ task.template_name }} ({{ task.units|default:"no units" }}, ${{ task.rate|default:"0.00" }})</option>
             {% endfor %}
         </select>
     </div>

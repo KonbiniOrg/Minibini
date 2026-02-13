@@ -383,7 +383,8 @@
       "tax_exemption_number": "TEX-456789",
       "website": "",
       "terms": 1,
-      "default_contact": 6
+      "default_contact": 6,
+      "tax_multiplier": null
     }
   },
   {
@@ -397,7 +398,8 @@
       "tax_exemption_number": "TEX-123456",
       "website": "",
       "terms": 1,
-      "default_contact": 1
+      "default_contact": 1,
+      "tax_multiplier": null
     }
   },
   {
@@ -411,7 +413,8 @@
       "tax_exemption_number": "TEX-345678",
       "website": "",
       "terms": 1,
-      "default_contact": 3
+      "default_contact": 3,
+      "tax_multiplier": null
     }
   },
   {
@@ -425,7 +428,8 @@
       "tax_exemption_number": "TEX-567890",
       "website": "",
       "terms": 1,
-      "default_contact": 5
+      "default_contact": 5,
+      "tax_multiplier": null
     }
   },
   {
@@ -439,7 +443,8 @@
       "tax_exemption_number": "TEX-99999",
       "website": "",
       "terms": 1,
-      "default_contact": 4
+      "default_contact": 4,
+      "tax_multiplier": null
     }
   },
   {
@@ -453,7 +458,8 @@
       "tax_exemption_number": "TEX-777888",
       "website": "",
       "terms": 1,
-      "default_contact": 7
+      "default_contact": 7,
+      "tax_multiplier": null
     }
   },
   {
@@ -467,7 +473,8 @@
       "tax_exemption_number": "",
       "website": "",
       "terms": null,
-      "default_contact": 8
+      "default_contact": 8,
+      "tax_multiplier": null
     }
   },
   {
@@ -481,117 +488,14 @@
       "tax_exemption_number": "",
       "website": "",
       "terms": null,
-      "default_contact": 11
+      "default_contact": 11,
+      "tax_multiplier": null
     }
   },
   {
     "model": "contacts.paymentterms",
     "pk": 1,
     "fields": {}
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 1,
-    "fields": {
-      "step_type": "labor",
-      "mapping_strategy": "direct",
-      "default_product_type": "",
-      "line_item_name": "Design Consultation",
-      "line_item_description": "Research, planning and consultation services",
-      "task_type_id": "RESEARCH",
-      "breakdown_of_task": "Initial project consultation and planning"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 2,
-    "fields": {
-      "step_type": "labor",
-      "mapping_strategy": "direct",
-      "default_product_type": "",
-      "line_item_name": "Technical Drawings",
-      "line_item_description": "CAD drawings and technical documentation",
-      "task_type_id": "CAD",
-      "breakdown_of_task": "Computer-aided design and technical drawings"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 3,
-    "fields": {
-      "step_type": "component",
-      "mapping_strategy": "bundle_to_product",
-      "default_product_type": "furniture",
-      "line_item_name": "Custom Furniture",
-      "line_item_description": "Bundled into complete furniture product",
-      "task_type_id": "CUT",
-      "breakdown_of_task": "Precision cutting of materials"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 4,
-    "fields": {
-      "step_type": "component",
-      "mapping_strategy": "bundle_to_product",
-      "default_product_type": "furniture",
-      "line_item_name": "Custom Furniture",
-      "line_item_description": "Bundled into complete furniture product",
-      "task_type_id": "ASSEMBLE",
-      "breakdown_of_task": "Assembly and joining of components"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 5,
-    "fields": {
-      "step_type": "component",
-      "mapping_strategy": "bundle_to_product",
-      "default_product_type": "furniture",
-      "line_item_name": "Custom Furniture",
-      "line_item_description": "Bundled into complete furniture product",
-      "task_type_id": "FINISH",
-      "breakdown_of_task": "Surface finishing and coating application"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 6,
-    "fields": {
-      "step_type": "labor",
-      "mapping_strategy": "bundle_to_service",
-      "default_product_type": "delivery",
-      "line_item_name": "Delivery & Installation",
-      "line_item_description": "Complete delivery and installation service",
-      "task_type_id": "DELIVERY",
-      "breakdown_of_task": "Transportation and on-site installation"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 7,
-    "fields": {
-      "step_type": "material",
-      "mapping_strategy": "bundle_to_product",
-      "default_product_type": "furniture",
-      "line_item_name": "Custom Furniture",
-      "line_item_description": "Bundled into complete furniture product",
-      "task_type_id": "MATERIALS",
-      "breakdown_of_task": "Raw materials and supplies"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 8,
-    "fields": {
-      "step_type": "overhead",
-      "mapping_strategy": "exclude",
-      "default_product_type": "",
-      "line_item_name": "",
-      "line_item_description": "",
-      "task_type_id": "QA",
-      "breakdown_of_task": "Quality assurance and inspection"
-    }
   },
   {
     "model": "jobs.tasktemplate",
@@ -601,10 +505,10 @@
       "description": "Research that has to happen before the project can be started",
       "units": "hours",
       "rate": "100.00",
-      "task_mapping": 1,
       "parent_template": null,
       "created_date": "2025-09-06T17:30:38.271Z",
-      "is_active": true
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -615,10 +519,10 @@
       "description": "Design, drawing, detailing, modelling",
       "units": "hours",
       "rate": "150.00",
-      "task_mapping": 2,
       "parent_template": null,
       "created_date": "2025-09-06T17:31:20.508Z",
-      "is_active": true
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -629,10 +533,10 @@
       "description": "Cutting parts",
       "units": "minutes",
       "rate": "22.00",
-      "task_mapping": 3,
       "parent_template": null,
       "created_date": "2025-09-06T17:31:44.072Z",
-      "is_active": true
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -643,10 +547,10 @@
       "description": "Glue and staple the parts together",
       "units": "hours",
       "rate": "100.00",
-      "task_mapping": 4,
       "parent_template": null,
       "created_date": "2025-09-06T17:38:15.359Z",
-      "is_active": true
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -657,10 +561,10 @@
       "description": "Sand and fill and apply finish, or veneer, or laminate",
       "units": "hours",
       "rate": "100.00",
-      "task_mapping": 5,
       "parent_template": null,
       "created_date": "2025-09-06T17:39:14.272Z",
-      "is_active": true
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -671,10 +575,10 @@
       "description": "Palletize piece, build or customize a pallet if needed",
       "units": "hours",
       "rate": "100.00",
-      "task_mapping": 6,
       "parent_template": null,
       "created_date": "2025-09-06T17:40:08.033Z",
-      "is_active": true
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -685,10 +589,10 @@
       "description": "Go to customer's location to evaluate and measure",
       "units": "hours",
       "rate": "200.00",
-      "task_mapping": 1,
       "parent_template": null,
       "created_date": "2025-09-24T05:31:52.957Z",
-      "is_active": true
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -699,10 +603,10 @@
       "description": "Design and build jig(s) for assembly.  ADD JIG MATERIAL SEPARATELY",
       "units": "hours",
       "rate": "150.00",
-      "task_mapping": 2,
       "parent_template": null,
       "created_date": "2025-09-24T05:38:38.849Z",
-      "is_active": true
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -713,10 +617,10 @@
       "description": "Deliver in our truck, or arrange for delivery through an external service",
       "units": "-",
       "rate": "150.00",
-      "task_mapping": 6,
       "parent_template": null,
       "created_date": "2025-10-17T15:17:50.313Z",
-      "is_active": true
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -725,8 +629,6 @@
     "fields": {
       "template_name": "Table",
       "description": "A template for building a custom table",
-      "template_type": "product",
-      "product_type": "",
       "base_price": null,
       "is_active": true,
       "created_date": "2025-09-24T05:14:54.761Z"
@@ -738,8 +640,6 @@
     "fields": {
       "template_name": "SIGN",
       "description": "Template for a custom sign, installed",
-      "template_type": "product",
-      "product_type": "",
       "base_price": null,
       "is_active": true,
       "created_date": "2025-09-24T05:21:26.097Z"
@@ -752,7 +652,9 @@
       "work_order_template": 4,
       "task_template": 7,
       "est_qty": "1.00",
-      "sort_order": 1
+      "sort_order": 1,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -762,7 +664,9 @@
       "work_order_template": 4,
       "task_template": 2,
       "est_qty": "3.00",
-      "sort_order": 2
+      "sort_order": 2,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -772,7 +676,9 @@
       "work_order_template": 4,
       "task_template": 3,
       "est_qty": "85.00",
-      "sort_order": 3
+      "sort_order": 3,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -782,7 +688,9 @@
       "work_order_template": 4,
       "task_template": 5,
       "est_qty": "5.00",
-      "sort_order": 4
+      "sort_order": 4,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -792,7 +700,9 @@
       "work_order_template": 3,
       "task_template": 2,
       "est_qty": "10.00",
-      "sort_order": 1
+      "sort_order": 1,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -802,7 +712,9 @@
       "work_order_template": 3,
       "task_template": 3,
       "est_qty": "125.00",
-      "sort_order": 2
+      "sort_order": 2,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -812,7 +724,9 @@
       "work_order_template": 3,
       "task_template": 4,
       "est_qty": "3.00",
-      "sort_order": 3
+      "sort_order": 3,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -822,7 +736,9 @@
       "work_order_template": 3,
       "task_template": 5,
       "est_qty": "12.00",
-      "sort_order": 4
+      "sort_order": 4,
+      "mapping_strategy": "direct",
+      "bundle": null
     }
   },
   {
@@ -836,7 +752,9 @@
       "selling_price": "45.00",
       "qty_on_hand": "100.00",
       "qty_sold": "0.00",
-      "qty_wasted": "0.00"
+      "qty_wasted": "0.00",
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -850,7 +768,9 @@
       "selling_price": "65.00",
       "qty_on_hand": "100.00",
       "qty_sold": "0.00",
-      "qty_wasted": "0.00"
+      "qty_wasted": "0.00",
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -864,7 +784,9 @@
       "selling_price": "100.00",
       "qty_on_hand": "100.00",
       "qty_sold": "0.00",
-      "qty_wasted": "0.00"
+      "qty_wasted": "0.00",
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -878,7 +800,9 @@
       "selling_price": "7.00",
       "qty_on_hand": "1000.00",
       "qty_sold": "0.00",
-      "qty_wasted": "0.00"
+      "qty_wasted": "0.00",
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -892,7 +816,9 @@
       "selling_price": "300.00",
       "qty_on_hand": "50.00",
       "qty_sold": "0.00",
-      "qty_wasted": "0.00"
+      "qty_wasted": "0.00",
+      "is_active": true,
+      "line_item_type": null
     }
   },
   {
@@ -906,7 +832,9 @@
       "selling_price": "0.00",
       "qty_on_hand": "0.00",
       "qty_sold": "0.00",
-      "qty_wasted": "0.00"
+      "qty_wasted": "0.00",
+      "is_active": true,
+      "line_item_type": null
     }
   }
 ]

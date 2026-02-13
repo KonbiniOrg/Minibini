@@ -34,7 +34,7 @@
                     {% endif %}
                 </td>
                 {% endif %}
-                <td>{{ item.task.line_number|default:"-" }}</td>
+                <td>{{ item.task.sort_order|default:"-" }}</td>
                 <td>
                     {% if item.level > 0 %}
                         {% for i in "x"|rjust:item.level %}

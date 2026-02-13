@@ -2,10 +2,11 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .models import (
-    WorkOrderTemplate, TaskTemplate, TaskMapping,
+    WorkOrderTemplate, TaskTemplate,
     EstWorksheet, Task, Estimate, EstimateLineItem, Job
 )
 from apps.contacts.models import Contact
+from apps.core.models import LineItemType
 from apps.core.services import NumberGenerationService
 
 
@@ -169,16 +170,9 @@ class WorkOrderTemplateForm(forms.ModelForm):
 
 
 class TaskTemplateForm(forms.ModelForm):
-    task_mapping = forms.ModelChoiceField(
-        queryset=TaskMapping.objects.all(),
-        required=False,
-        widget=forms.Select(attrs={'class': 'form-control'}),
-        empty_label="-- Select Task Mapping (Optional) --"
-    )
-
     class Meta:
         model = TaskTemplate
-        fields = ['template_name', 'description', 'units', 'rate', 'task_mapping', 'is_active']
+        fields = ['template_name', 'description', 'units', 'rate', 'is_active']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
             'units': forms.TextInput(attrs={'placeholder': 'e.g., hours, pieces'}),
@@ -232,15 +226,21 @@ class ManualLineItemForm(forms.ModelForm):
     """Form for creating a manual line item (not linked to a Price List Item)"""
     class Meta:
         model = EstimateLineItem
-        fields = ['description', 'qty', 'units', 'price_currency']
+        fields = ['description', 'qty', 'units', 'price', 'line_item_type']
         widgets = {
             'qty': forms.NumberInput(attrs={'step': '0.01'}),
-            'price_currency': forms.NumberInput(attrs={'step': '0.01'}),
+            'price': forms.NumberInput(attrs={'step': '0.01'}),
             'description': forms.Textarea(attrs={'rows': 3}),
         }
         labels = {
-            'price_currency': 'Price',
+            'price': 'Price',
+            'line_item_type': 'Type',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
+        self.fields['line_item_type'].required = True
 
 
 class PriceListLineItemForm(forms.Form):

@@ -1,149 +1,152 @@
 [
-{
-  "model": "contacts.business",
-  "pk": 5,
-  "fields": {
-    "our_reference_code": "VISTA001",
-    "business_name": "Vista Manufacturing Co",
-    "business_address": "159 Factory Road, Industrial Park, Vista Town 54327",
-    "business_phone": "555-2005",
-    "tax_exemption_number": "TEX-100005",
-    "website": "",
-    "terms": 2,
-    "default_contact": 7
+  {
+    "model": "contacts.business",
+    "pk": 5,
+    "fields": {
+      "our_reference_code": "VISTA001",
+      "business_name": "Vista Manufacturing Co",
+      "business_address": "159 Factory Road, Industrial Park, Vista Town 54327",
+      "business_phone": "555-2005",
+      "tax_exemption_number": "TEX-100005",
+      "website": "",
+      "terms": 2,
+      "default_contact": 7,
+      "tax_multiplier": null
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 6,
+    "fields": {
+      "our_reference_code": "COAST001",
+      "business_name": "Coastal Designs Ltd",
+      "business_address": "753 Ocean Drive, Coastal District, Seaside City 54328",
+      "business_phone": "555-2006",
+      "tax_exemption_number": "TEX-100006",
+      "website": "",
+      "terms": 1,
+      "default_contact": 8,
+      "tax_multiplier": null
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 7,
+    "fields": {
+      "our_reference_code": "NORTH001",
+      "business_name": "Northern Supply Chain",
+      "business_address": "842 Supply Avenue, Logistics Center, North City 54329",
+      "business_phone": "555-2007",
+      "tax_exemption_number": "TEX-100007",
+      "website": "",
+      "terms": 1,
+      "default_contact": 9,
+      "tax_multiplier": null
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 7,
+    "fields": {
+      "first_name": "Jennifer",
+      "middle_initial": "",
+      "last_name": "Martinez",
+      "email": "jennifer.martinez@vistamanufacturing.com",
+      "addr1": "159 Factory Road",
+      "addr2": "Building A",
+      "addr3": "",
+      "city": "Vista Town",
+      "municipality": "Industrial Park",
+      "postal_code": "54327",
+      "country_code": "US",
+      "mobile_number": "555-0707",
+      "work_number": "555-0717",
+      "home_number": "",
+      "business": 5
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 8,
+    "fields": {
+      "first_name": "Thomas",
+      "middle_initial": "",
+      "last_name": "Anderson",
+      "email": "thomas.anderson@coastaldesigns.com",
+      "addr1": "753 Ocean Drive",
+      "addr2": "Studio 3",
+      "addr3": "",
+      "city": "Seaside City",
+      "municipality": "Coastal District",
+      "postal_code": "54328",
+      "country_code": "US",
+      "mobile_number": "555-0808",
+      "work_number": "555-0818",
+      "home_number": "",
+      "business": 6
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 9,
+    "fields": {
+      "first_name": "Karen",
+      "middle_initial": "",
+      "last_name": "White",
+      "email": "karen.white@northernsupply.com",
+      "addr1": "842 Supply Avenue",
+      "addr2": "",
+      "addr3": "",
+      "city": "North City",
+      "municipality": "Logistics Center",
+      "postal_code": "54329",
+      "country_code": "US",
+      "mobile_number": "555-0909",
+      "work_number": "555-0919",
+      "home_number": "",
+      "business": 7
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 10,
+    "fields": {
+      "first_name": "Alex",
+      "middle_initial": "",
+      "last_name": "Rivera",
+      "email": "alex.rivera@freelance.com",
+      "addr1": "246 Independent Way",
+      "addr2": "",
+      "addr3": "",
+      "city": "Freelance City",
+      "municipality": "Creative District",
+      "postal_code": "54330",
+      "country_code": "US",
+      "mobile_number": "555-1010",
+      "work_number": "",
+      "home_number": "",
+      "business": null
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 11,
+    "fields": {
+      "first_name": "Maria",
+      "middle_initial": "",
+      "last_name": "Garcia",
+      "email": "maria.garcia@independent.com",
+      "addr1": "135 Solo Street",
+      "addr2": "Unit 12",
+      "addr3": "",
+      "city": "Independent Town",
+      "municipality": "Entrepreneur Zone",
+      "postal_code": "54331",
+      "country_code": "US",
+      "mobile_number": "555-1111",
+      "work_number": "",
+      "home_number": "555-1121",
+      "business": null
+    }
   }
-},
-{
-  "model": "contacts.business",
-  "pk": 6,
-  "fields": {
-    "our_reference_code": "COAST001",
-    "business_name": "Coastal Designs Ltd",
-    "business_address": "753 Ocean Drive, Coastal District, Seaside City 54328",
-    "business_phone": "555-2006",
-    "tax_exemption_number": "TEX-100006",
-    "website": "",
-    "terms": 1,
-    "default_contact": 8
-  }
-},
-{
-  "model": "contacts.business",
-  "pk": 7,
-  "fields": {
-    "our_reference_code": "NORTH001",
-    "business_name": "Northern Supply Chain",
-    "business_address": "842 Supply Avenue, Logistics Center, North City 54329",
-    "business_phone": "555-2007",
-    "tax_exemption_number": "TEX-100007",
-    "website": "",
-    "terms": 1,
-    "default_contact": 9
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 7,
-  "fields": {
-    "first_name": "Jennifer",
-    "middle_initial": "",
-    "last_name": "Martinez",
-    "email": "jennifer.martinez@vistamanufacturing.com",
-    "addr1": "159 Factory Road",
-    "addr2": "Building A",
-    "addr3": "",
-    "city": "Vista Town",
-    "municipality": "Industrial Park",
-    "postal_code": "54327",
-    "country_code": "US",
-    "mobile_number": "555-0707",
-    "work_number": "555-0717",
-    "home_number": "",
-    "business": 5
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 8,
-  "fields": {
-    "first_name": "Thomas",
-    "middle_initial": "",
-    "last_name": "Anderson",
-    "email": "thomas.anderson@coastaldesigns.com",
-    "addr1": "753 Ocean Drive",
-    "addr2": "Studio 3",
-    "addr3": "",
-    "city": "Seaside City",
-    "municipality": "Coastal District",
-    "postal_code": "54328",
-    "country_code": "US",
-    "mobile_number": "555-0808",
-    "work_number": "555-0818",
-    "home_number": "",
-    "business": 6
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 9,
-  "fields": {
-    "first_name": "Karen",
-    "middle_initial": "",
-    "last_name": "White",
-    "email": "karen.white@northernsupply.com",
-    "addr1": "842 Supply Avenue",
-    "addr2": "",
-    "addr3": "",
-    "city": "North City",
-    "municipality": "Logistics Center",
-    "postal_code": "54329",
-    "country_code": "US",
-    "mobile_number": "555-0909",
-    "work_number": "555-0919",
-    "home_number": "",
-    "business": 7
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 10,
-  "fields": {
-    "first_name": "Alex",
-    "middle_initial": "",
-    "last_name": "Rivera",
-    "email": "alex.rivera@freelance.com",
-    "addr1": "246 Independent Way",
-    "addr2": "",
-    "addr3": "",
-    "city": "Freelance City",
-    "municipality": "Creative District",
-    "postal_code": "54330",
-    "country_code": "US",
-    "mobile_number": "555-1010",
-    "work_number": "",
-    "home_number": "",
-    "business": null
-  }
-},
-{
-  "model": "contacts.contact",
-  "pk": 11,
-  "fields": {
-    "first_name": "Maria",
-    "middle_initial": "",
-    "last_name": "Garcia",
-    "email": "maria.garcia@independent.com",
-    "addr1": "135 Solo Street",
-    "addr2": "Unit 12",
-    "addr3": "",
-    "city": "Independent Town",
-    "municipality": "Entrepreneur Zone",
-    "postal_code": "54331",
-    "country_code": "US",
-    "mobile_number": "555-1111",
-    "work_number": "",
-    "home_number": "555-1121",
-    "business": null
-  }
-}
 ]

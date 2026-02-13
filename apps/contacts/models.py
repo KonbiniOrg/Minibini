@@ -117,11 +117,19 @@ class Business(models.Model):
     our_reference_code = models.CharField(max_length=50, blank=True, unique=True)
     business_name = models.CharField(max_length=255)
     business_address = models.TextField(blank=True)
-    business_phone = models.CharField(max_length=20, blank=True)
+    business_phone = models.CharField(max_length=50, blank=True)
     tax_exemption_number = models.CharField(max_length=50, blank=True)
     website = models.URLField(max_length=200, blank=True)
     terms = models.ForeignKey('PaymentTerms', on_delete=models.SET_NULL, null=True, blank=True)
     default_contact = models.ForeignKey('Contact', on_delete=models.PROTECT, null=False, blank=True, related_name='default_for_business')
+
+    # Tax multiplier: null/1.0 = full rate, 0 = exempt, 0.5 = half rate
+    tax_multiplier = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
 
     def __str__(self):
         return self.business_name

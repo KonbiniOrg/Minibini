@@ -80,7 +80,7 @@ class SupersededEstimateRestrictionTests(TestCase):
             'qty': '5',
             'units': 'each',
             'description': 'Test line item',
-            'price_currency': '20.00'
+            'price': '20.00'
         })
 
         # Should redirect to estimate detail
@@ -248,7 +248,7 @@ class SupersededEstimateModelTests(TestCase):
             qty=Decimal('10'),
             units='each',
             description='Test item',
-            price_currency=Decimal('25.00')
+            price=Decimal('25.00')
         )
 
         # Mark estimate as superseded

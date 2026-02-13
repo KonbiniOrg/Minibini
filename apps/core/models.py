@@ -44,10 +44,28 @@ class Configuration(models.Model):
         verbose_name_plural = "Configurations"
 
 
+class LineItemType(models.Model):
+    """
+    Defines categories of line items with default taxability.
+    Examples: Service, Material, Product, Freight, Overhead
+    """
+    code = models.CharField(max_length=20, unique=True)  # e.g., "SVC", "MAT", "PRD"
+    name = models.CharField(max_length=100)  # e.g., "Service", "Material", "Product"
+    taxable = models.BooleanField(default=True)  # Default taxability for this type
+    default_description = models.TextField(blank=True)  # Template for descriptions
+    is_active = models.BooleanField(default=True)  # Soft delete support
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class BaseLineItem(models.Model):
     """
     Abstract base class for all line item types.
-    Provides shared functionality for EstimateLineItem, InvoiceLineItem, 
+    Provides shared functionality for EstimateLineItem, InvoiceLineItem,
     PurchaseOrderLineItem, and BillLineItem.
     """
     line_item_id = models.AutoField(primary_key=True)
@@ -57,7 +75,23 @@ class BaseLineItem(models.Model):
     qty = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     units = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
-    price_currency = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    # Tax-related fields
+    line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT,
+        related_name='%(class)s_items',
+        null=True,  # Nullable initially for migration; will be made required after data migration
+        blank=True
+    )
+    taxable_override = models.BooleanField(null=True, blank=True)  # null = use type default
+    tax_rate_override = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,  # Supports rates like 0.0825 (8.25%)
+        null=True,
+        blank=True
+    )  # null = use app default
 
     class Meta:
         abstract = True
@@ -67,7 +101,7 @@ class BaseLineItem(models.Model):
         super().clean()
         has_task = self.task is not None
         has_price_item = self.price_list_item is not None
-        
+
         if has_task and has_price_item:
             raise ValidationError("LineItem cannot have both task and price_list_item")
 
@@ -105,7 +139,7 @@ class BaseLineItem(models.Model):
     @property
     def total_amount(self):
         """Calculate total amount (quantity * price)."""
-        return self.qty * self.price_currency
+        return self.qty * self.price
 
     @property
     def source_name(self):

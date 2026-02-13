@@ -5,7 +5,7 @@ Test that tasks cannot be added to non-draft worksheets.
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, EstWorksheet, Task, TaskTemplate, TaskMapping
+from apps.jobs.models import Job, EstWorksheet, Task, TaskTemplate
 from apps.contacts.models import Contact
 from decimal import Decimal
 
@@ -42,19 +42,9 @@ class WorksheetTaskRestrictionTests(TestCase):
         )
 
         # Create task mapping for test
-        self.task_mapping = TaskMapping.objects.create(
-            step_type='labor',
-            mapping_strategy='direct',
-            task_type_id='TEST',
-            breakdown_of_task='Test task',
-            line_item_name='Test Labor',
-            line_item_description='Test labor description'
-        )
-
         # Create task template
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
-            task_mapping=self.task_mapping,
             units='hours',
             rate=Decimal('50.00')
         )
@@ -339,19 +329,9 @@ class WorksheetTaskWorkflowTests(TestCase):
         )
 
         # Create task mapping
-        self.task_mapping = TaskMapping.objects.create(
-            step_type='labor',
-            mapping_strategy='direct',
-            task_type_id='TEST',
-            breakdown_of_task='Test task',
-            line_item_name='Test Labor',
-            line_item_description='Test labor description'
-        )
-
         # Create task template
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
-            task_mapping=self.task_mapping,
             units='hours',
             rate=Decimal('50.00')
         )

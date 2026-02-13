@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ line_item_type.name }} - Line Item Type - Minibini{% endblock %}
+
+{% block navigation %}
+{% include 'includes/settings_navigation.html' %}
+{% endblock %}
+
+{% block content %}
+<h2>Line Item Type: {{ line_item_type.name }}</h2>
+
+<table border="1">
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Code</td><td>{{ line_item_type.code }}</td></tr>
+    <tr><td>Name</td><td>{{ line_item_type.name }}</td></tr>
+    <tr><td>Taxable by Default</td><td>{% if line_item_type.taxable %}Yes{% else %}No{% endif %}</td></tr>
+    <tr><td>Default Description</td><td>{{ line_item_type.default_description|default:"—" }}</td></tr>
+    <tr><td>Active</td><td>{% if line_item_type.is_active %}Yes{% else %}No{% endif %}</td></tr>
+</table>
+
+<p>
+    <a href="{% url 'core:line_item_type_edit' line_item_type.pk %}">Edit</a> |
+    <a href="{% url 'core:line_item_type_list' %}">Back to List</a>
+</p>
+{% endblock %}
