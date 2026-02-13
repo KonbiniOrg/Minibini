@@ -63,8 +63,95 @@ def _build_task_hierarchy(tasks):
 
 
 def job_list(request):
-    jobs = Job.objects.all().order_by('-created_date')
-    return render(request, 'jobs/job_list.html', {'jobs': jobs})
+    from apps.contacts.models import Contact, Business
+    from django.db.models import Case, When, Value, IntegerField
+    from django.db.models.functions import Coalesce
+
+    jobs = Job.objects.select_related('contact', 'contact__business').all()
+
+    # Get filter parameters
+    status_filters = request.GET.getlist('status')  # Multiple statuses allowed
+    date_filter = request.GET.get('date_type', '')
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    contact_filter = request.GET.get('contact', '')
+    business_filter = request.GET.get('business', '')
+
+    # Default to Draft and Approved if no status filters and no query string
+    # (allows explicitly clearing all statuses via empty submission)
+    using_default_statuses = False
+    if not status_filters and not request.GET:
+        status_filters = ['draft', 'approved']
+        using_default_statuses = True
+
+    # Track if any filters are applied (beyond defaults)
+    filters_applied = any([date_from, date_to, contact_filter, business_filter]) or (status_filters and not using_default_statuses)
+
+    # Apply status filter (multiple statuses with OR logic)
+    if status_filters:
+        jobs = jobs.filter(status__in=status_filters)
+
+    # Apply date filter
+    if date_filter and (date_from or date_to):
+        date_field_map = {
+            'created': 'created_date',
+            'due': 'due_date',
+            'completed': 'completed_date',
+            'start': 'start_date',
+        }
+        date_field = date_field_map.get(date_filter, 'created_date')
+
+        if date_from:
+            jobs = jobs.filter(**{f'{date_field}__gte': date_from})
+        if date_to:
+            jobs = jobs.filter(**{f'{date_field}__lte': date_to})
+
+    # Apply contact filter
+    if contact_filter:
+        jobs = jobs.filter(contact_id=contact_filter)
+
+    # Apply business filter
+    if business_filter:
+        jobs = jobs.filter(contact__business_id=business_filter)
+
+    # Custom status ordering: Draft (0) → Approved (1) → Completed (2) → Rejected (3) → Cancelled (4)
+    status_order = Case(
+        When(status='draft', then=Value(0)),
+        When(status='approved', then=Value(1)),
+        When(status='submitted', then=Value(2)),
+        When(status='completed', then=Value(3)),
+        When(status='rejected', then=Value(4)),
+        When(status='cancelled', then=Value(5)),
+        default=Value(6),
+        output_field=IntegerField(),
+    )
+
+    # Sort by status order, then by start_date (falling back to created_date if no start_date)
+    jobs = jobs.annotate(
+        status_order=status_order,
+        sort_date=Coalesce('start_date', 'created_date')
+    ).order_by('status_order', '-sort_date')
+
+    # Get all contacts and businesses for filter dropdowns
+    contacts = Contact.objects.select_related('business').order_by('first_name', 'last_name')
+    businesses = Business.objects.order_by('business_name')
+
+    context = {
+        'jobs': jobs,
+        'contacts': contacts,
+        'businesses': businesses,
+        'status_choices': Job.JOB_STATUS_CHOICES,
+        'current_filters': {
+            'statuses': status_filters,  # List of selected statuses
+            'date_type': date_filter,
+            'date_from': date_from,
+            'date_to': date_to,
+            'contact': contact_filter,
+            'business': business_filter,
+        },
+        'filters_applied': filters_applied,
+    }
+    return render(request, 'jobs/job_list.html', context)
 
 def job_detail(request, job_id):
     job = get_object_or_404(Job, job_id=job_id)
