@@ -20,8 +20,8 @@
             <th>Units</th>
             <th>Rate</th>
             <th>Used in WorkOrder Templates</th>
-            <th>Active</th>
             <th>Created</th>
+            <th>Actions</th>
         </tr>
         {% for template in templates %}
         <tr>
@@ -38,8 +38,10 @@
                     <em>Not used</em>
                 {% endif %}
             </td>
-            <td>{% if template.is_active %}Yes{% else %}No{% endif %}</td>
             <td>{{ template.created_date|date:"M j, Y" }}</td>
+            <td>
+                <a href="{% url 'jobs:task_template_edit' template.template_id %}">Edit</a>
+            </td>
         </tr>
         {% endfor %}
     </table>

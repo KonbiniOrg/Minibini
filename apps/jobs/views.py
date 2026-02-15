@@ -6,7 +6,7 @@ from django import forms
 from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
-from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet
+from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet, TemplateTaskAssociation
 from apps.core.services import TaxCalculationService
 from .forms import (
     JobCreateForm, JobEditForm, WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
@@ -1000,7 +1000,7 @@ def estworksheet_revise(request, worksheet_id):
 
 def task_template_list(request):
     """List all TaskTemplates with all fields"""
-    templates = TaskTemplate.objects.filter(is_active=True).prefetch_related('work_order_templates').order_by('template_name')
+    templates = TaskTemplate.objects.all().prefetch_related('work_order_templates').order_by('template_name')
     return render(request, 'jobs/task_template_list.html', {'templates': templates})
 
 
@@ -1016,6 +1016,48 @@ def add_task_template_standalone(request):
         form = TaskTemplateForm()
 
     return render(request, 'jobs/add_task_template_standalone.html', {'form': form})
+
+
+def task_template_edit(request, template_id):
+    """Edit an existing TaskTemplate."""
+    template = get_object_or_404(TaskTemplate, template_id=template_id)
+
+    if request.method == 'POST':
+        form = TaskTemplateForm(request.POST, instance=template)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Task Template "{template.template_name}" updated successfully.')
+            return redirect('jobs:task_template_list')
+    else:
+        form = TaskTemplateForm(instance=template)
+
+    # Get WorkOrderTemplates using this TaskTemplate
+    work_order_templates = WorkOrderTemplate.objects.filter(
+        templatetaskassociation__task_template=template
+    ).distinct()
+
+    return render(request, 'jobs/task_template_edit.html', {
+        'form': form,
+        'template': template,
+        'work_order_templates': work_order_templates,
+        'can_delete': not work_order_templates.exists()
+    })
+
+
+@require_POST
+def task_template_delete(request, template_id):
+    """Delete a TaskTemplate."""
+    template = get_object_or_404(TaskTemplate, template_id=template_id)
+
+    # Check if template is used in any WorkOrderTemplate
+    if TemplateTaskAssociation.objects.filter(task_template=template).exists():
+        messages.error(request, f'Task Template "{template.template_name}" cannot be deleted because it is used in one or more Work Order Templates.')
+        return redirect('jobs:task_template_edit', template_id=template_id)
+
+    template_name = template.template_name
+    template.delete()
+    messages.success(request, f'Task Template "{template_name}" deleted successfully.')
+    return redirect('jobs:task_template_list')
 
 
 def estworksheet_create_for_job(request, job_id):

@@ -694,6 +694,7 @@ class TaskTemplate(models.Model):
     parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')
 
     created_date = models.DateTimeField(auto_now_add=True)
+    # is_active no longer used but kept in case we change our minds later and to avoid a migration
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
