@@ -438,9 +438,35 @@ def add_work_order_template(request):
     return render(request, 'jobs/add_work_order_template.html', {'form': form})
 
 
+def work_order_template_edit(request, template_id):
+    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+
+    if request.method == 'POST':
+        form = WorkOrderTemplateForm(request.POST, instance=template)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Work Order Template "{template.template_name}" updated successfully.')
+            return redirect('jobs:work_order_template_detail', template_id=template.template_id)
+    else:
+        form = WorkOrderTemplateForm(instance=template)
+
+    return render(request, 'jobs/work_order_template_edit.html', {
+        'form': form,
+        'template': template
+    })
+
+
+@require_POST
+def work_order_template_delete(request, template_id):
+    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+    template_name = template.template_name
+    template.delete()
+    messages.success(request, f'Work Order Template "{template_name}" deleted successfully.')
+    return redirect('jobs:work_order_template_list')
+
 
 def work_order_template_list(request):
-    templates = WorkOrderTemplate.objects.filter(is_active=True).order_by('-created_date')
+    templates = WorkOrderTemplate.objects.all().order_by('-created_date')
     return render(request, 'jobs/work_order_template_list.html', {'templates': templates})
 
 

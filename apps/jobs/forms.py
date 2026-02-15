@@ -163,7 +163,7 @@ class JobEditForm(forms.ModelForm):
 class WorkOrderTemplateForm(forms.ModelForm):
     class Meta:
         model = WorkOrderTemplate
-        fields = ['template_name', 'description', 'is_active']
+        fields = ['template_name', 'description']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 4}),
         }
