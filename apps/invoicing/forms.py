@@ -19,12 +19,19 @@ class PriceListItemForm(forms.ModelForm):
             'qty_sold',
             'qty_wasted',
             'line_item_type',
+            'is_active',
         ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Only show active LineItemTypes in the dropdown
         self.fields['line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
+        # Only show is_active field when editing existing items (not on create)
+        if self.instance.pk:
+            self.fields['is_active'].label = "Active (uncheck to archive)"
+        else:
+            # For new items, remove the is_active field - they're always active by default
+            del self.fields['is_active']
 
     def clean_code(self):
         """Ensure code is unique when creating a new item or updating."""

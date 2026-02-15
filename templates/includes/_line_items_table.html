@@ -48,7 +48,7 @@
                     {% if item.task %}
                         Task: {{ item.task.name }}
                     {% elif item.price_list_item %}
-                        {{ item.price_list_item.code }} - {{ item.price_list_item.description|truncatewords:5 }}
+                        {{ item.price_list_item.code }} - {{ item.price_list_item.description|truncatewords:5 }}{% if not item.price_list_item.is_active %} <strong>(Archived)</strong>{% endif %}
                     {% else %}
                         No source
                     {% endif %}

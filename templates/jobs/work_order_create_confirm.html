@@ -43,7 +43,7 @@
 <h4>From Catalog Items ({{ catalog_items|length }})</h4>
 <ul>
     {% for item in catalog_items %}
-    <li>{{ item.price_list_item.code }}: {{ item.description|default:item.price_list_item.description }} - ${{ item.price }} (Qty: {{ item.qty }})</li>
+    <li>{{ item.price_list_item.code }}{% if not item.price_list_item.is_active %} <strong>(Archived)</strong>{% endif %}: {{ item.description|default:item.price_list_item.description }} - ${{ item.price }} (Qty: {{ item.qty }})</li>
     {% endfor %}
 </ul>
 <p><em>These will create new tasks based on catalog item details.</em></p>

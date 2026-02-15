@@ -260,6 +260,11 @@ class PriceListLineItemForm(forms.Form):
         label="Qty"
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.invoicing.models import PriceListItem
+        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
+
 
 class EstimateForm(forms.ModelForm):
     """Form for creating/editing Estimate"""
