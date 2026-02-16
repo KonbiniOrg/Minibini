@@ -12,6 +12,7 @@ urlpatterns = [
     path('estimates/<int:estimate_id>/', views.estimate_detail, name='estimate_detail'),
     path('tasks/', views.task_list, name='task_list'),
     path('tasks/<int:task_id>/', views.task_detail, name='task_detail'),
+    path('tasks/<int:task_id>/edit/', views.task_edit, name='task_edit'),
     path('workorders/', views.work_order_list, name='work_order_list'),
     path('workorders/<int:work_order_id>/', views.work_order_detail, name='work_order_detail'),
     path('templates/', views.work_order_template_list, name='work_order_template_list'),

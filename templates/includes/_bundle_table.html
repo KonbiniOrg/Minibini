@@ -77,7 +77,7 @@ Expected context:
                 <input type="checkbox" name="selected_tasks" value="{{ bi.id }}" form="bundle-form">
             </td>
             {% endif %}
-            <td style="padding-left: 20px;">{{ bi.name }}</td>
+            <td style="padding-left: 20px;">{% if bi.detail_url %}<a href="{{ bi.detail_url }}">{{ bi.name }}</a>{% else %}{{ bi.name }}{% endif %}</td>
             <td>{{ bi.description|truncatewords:10|default:"-" }}</td>
             <td>{{ bi.units|default:"-" }}</td>
             <td>${{ bi.rate|default:"0.00" }}</td>
@@ -111,7 +111,7 @@ Expected context:
                 <input type="checkbox" name="selected_tasks" value="{{ item_data.id }}" form="bundle-form">
             </td>
             {% endif %}
-            <td>{{ item_data.name }}</td>
+            <td>{% if item_data.detail_url %}<a href="{{ item_data.detail_url }}">{{ item_data.name }}</a>{% else %}{{ item_data.name }}{% endif %}</td>
             <td>{{ item_data.description|truncatewords:10|default:"-" }}</td>
             <td>{{ item_data.units|default:"-" }}</td>
             <td>${{ item_data.rate|default:"0.00" }}</td>

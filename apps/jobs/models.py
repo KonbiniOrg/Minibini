@@ -390,6 +390,7 @@ class Task(models.Model):
     work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, null=True, blank=True)
     est_worksheet = models.ForeignKey(EstWorksheet, on_delete=models.CASCADE, null=True, blank=True)
     name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
     sort_order = models.PositiveIntegerField(blank=True, null=True)
     units = models.CharField(max_length=50, blank=True)
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -707,6 +708,7 @@ class TaskTemplate(models.Model):
             work_order=container if isinstance(container, WorkOrder) else None,
             est_worksheet=container if isinstance(container, EstWorksheet) else None,
             name=self.template_name,
+            description=self.description,
             units=self.units,
             rate=self.rate,
             est_qty=est_qty,

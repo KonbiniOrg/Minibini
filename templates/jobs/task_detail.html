@@ -15,6 +15,10 @@
         <td>{{ task.name }}</td>
     </tr>
     <tr>
+        <td>Description</td>
+        <td>{{ task.description|default:"-" }}</td>
+    </tr>
+    <tr>
         <td>Container</td>
         <td>
             {% if task.work_order %}
@@ -132,5 +136,16 @@
 </table>
 {% endif %}
 
-<p><a href="{% url 'jobs:task_list' %}">Back to Tasks List</a></p>
+<p>
+    {% if task.est_worksheet and task.est_worksheet.status == 'draft' %}
+        <a href="{% url 'jobs:task_edit' task.task_id %}">Edit</a> |
+    {% endif %}
+    {% if task.est_worksheet %}
+        <a href="{% url 'jobs:estworksheet_detail' task.est_worksheet.pk %}">Back to Worksheet</a>
+    {% elif task.work_order %}
+        <a href="{% url 'jobs:work_order_detail' task.work_order.pk %}">Back to Work Order</a>
+    {% else %}
+        <a href="{% url 'jobs:task_list' %}">Back to Tasks List</a>
+    {% endif %}
+</p>
 {% endblock %}

@@ -10,7 +10,7 @@ from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderT
 from apps.core.services import TaxCalculationService
 from .forms import (
     JobCreateForm, JobEditForm, WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
-    TaskForm, TaskFromTemplateForm,
+    TaskEditForm, TaskFromTemplateForm,
     ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm, EstimateForm, WorkOrderStatusForm
 )
 from apps.purchasing.models import PurchaseOrder
@@ -319,6 +319,32 @@ def task_list(request):
 def task_detail(request, task_id):
     task = get_object_or_404(Task, task_id=task_id)
     return render(request, 'jobs/task_detail.html', {'task': task})
+
+
+def task_edit(request, task_id):
+    """Edit a task's details. Only allowed for tasks on draft worksheets."""
+    task = get_object_or_404(Task, task_id=task_id)
+
+    # Check if editing is allowed
+    container = task.get_container()
+    if hasattr(container, 'status') and container.status != 'draft':
+        messages.error(request, f'Cannot edit tasks on a {container.get_status_display().lower()} worksheet.')
+        return redirect('jobs:task_detail', task_id=task_id)
+
+    if request.method == 'POST':
+        form = TaskEditForm(request.POST, instance=task)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Task "{task.name}" updated.')
+            return redirect('jobs:task_detail', task_id=task_id)
+    else:
+        form = TaskEditForm(instance=task)
+
+    return render(request, 'jobs/task_edit.html', {
+        'form': form,
+        'task': task,
+    })
+
 
 def work_order_list(request):
     work_orders = WorkOrder.objects.all().order_by('-work_order_id')
@@ -721,13 +747,14 @@ def _build_container_items_from_tasks(worksheet):
         item = {
             'id': task.task_id,
             'name': task.name,
-            'description': task.template.description if task.template else '',
+            'description': task.description,
             'units': task.units,
             'rate': task.rate,
             'est_qty': task.est_qty,
             'mapping_strategy': task.mapping_strategy,
             'remove_id': task.task_id,
             'sort_order': task.sort_order or 0,
+            'detail_url': reverse('jobs:task_detail', args=[task.task_id]),
         }
         if task.mapping_strategy == 'bundle' and task.bundle:
             bid = task.bundle_id
@@ -1111,6 +1138,7 @@ def task_add_from_template(request, worksheet_id):
 
             task = Task.objects.create(
                 name=template.template_name,
+                description=template.description,
                 template=template,
                 est_worksheet=worksheet,
                 est_qty=est_qty,
@@ -1139,20 +1167,15 @@ def task_add_manual(request, worksheet_id):
         return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':
-        form = TaskForm(request.POST)
+        task_instance = Task(est_worksheet=worksheet)
+        form = TaskEditForm(request.POST, instance=task_instance)
         if form.is_valid():
-            task = form.save(commit=False)
-            task.est_worksheet = worksheet
-            task.save()
+            form.save()
 
-            messages.success(request, f'Task "{task.name}" added manually')
+            messages.success(request, f'Task "{task_instance.name}" added manually')
             return redirect('jobs:estworksheet_detail', worksheet_id=worksheet.est_worksheet_id)
     else:
-        form = TaskForm(initial={'est_worksheet': worksheet})
-        # Hide the worksheet field since it's already set
-        form.fields['est_worksheet'].widget = forms.HiddenInput()
-        # Hide the template field since user chose to add manually
-        form.fields['template'].widget = forms.HiddenInput()
+        form = TaskEditForm()
 
     return render(request, 'jobs/task_add_manual.html', {
         'form': form,

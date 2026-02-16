@@ -196,11 +196,11 @@ class EstWorksheetForm(forms.ModelForm):
         self.fields['template'].empty_label = "-- No Template (Manual) --"
 
 
-class TaskForm(forms.ModelForm):
-    """Form for creating/editing Task"""
+class TaskEditForm(forms.ModelForm):
+    """Form for editing an existing Task's details."""
     class Meta:
         model = Task
-        fields = ['name', 'template', 'est_worksheet', 'est_qty', 'units', 'rate']
+        fields = ['name', 'description', 'units', 'rate', 'est_qty']
         widgets = {
             'est_qty': forms.NumberInput(attrs={'step': '0.01'}),
             'rate': forms.NumberInput(attrs={'step': '0.01'}),
