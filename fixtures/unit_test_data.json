@@ -325,7 +325,12 @@
             "name": "Kitchen demolition",
             "units": "hours",
             "rate": "75.00",
-            "est_qty": "8.00"
+            "est_qty": "8.00",
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
         }
     },
     {
@@ -337,7 +342,12 @@
             "name": "Electrical rough-in",
             "units": "linear_feet",
             "rate": "12.50",
-            "est_qty": "150.00"
+            "est_qty": "150.00",
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
         }
     },
     {

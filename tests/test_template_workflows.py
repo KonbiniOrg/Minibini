@@ -237,8 +237,7 @@ class TaskCreationWorkflowTest(TestCase):
         self.assertEqual(task.work_order, self.work_order)
         self.assertEqual(task.name, "Test Task")
         self.assertEqual(task.assignee, self.user)
-        self.assertIsNone(task.template)
-    
+
     def test_task_from_active_template(self):
         """Test Task creation from active TaskTemplate."""
         template = TaskTemplate.objects.create(
@@ -249,7 +248,6 @@ class TaskCreationWorkflowTest(TestCase):
         task = TaskService.create_from_template(template, self.work_order, self.user)
         
         self.assertEqual(task.work_order, self.work_order)
-        self.assertEqual(task.template, template)
         self.assertEqual(task.name, template.template_name)
         self.assertEqual(task.assignee, self.user)
     
@@ -386,10 +384,9 @@ class TemplateIntegrationTest(TestCase):
         self.assertIn("Preparation Task", task_names)
         self.assertIn("Execution Task", task_names)
         
-        # Verify task templates are linked
+        # Verify task names match template names
         for task in tasks:
-            self.assertIsNotNone(task.template)
-            self.assertIn(task.template, [task_template1, task_template2])
+            self.assertIn(task.name, [task_template1.template_name, task_template2.template_name])
 
 
 class StatusTransitionPreventionTest(TestCase):

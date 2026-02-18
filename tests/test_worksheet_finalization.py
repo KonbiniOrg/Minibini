@@ -69,13 +69,17 @@ class WorksheetFinalizationTests(TestCase):
         )
 
         # Add a task to the worksheet
+        from apps.core.models import LineItemType
+        self.line_item_type, _ = LineItemType.objects.get_or_create(
+            code='LBR', defaults={'name': 'Labor'}
+        )
         self.task = Task.objects.create(
             est_worksheet=self.worksheet,
-            template=self.task_template,
             name='Test Task',
             units='hours',
             rate=Decimal('50.00'),
-            est_qty=Decimal('2.0')
+            est_qty=Decimal('2.0'),
+            line_item_type=self.line_item_type,
         )
 
     def test_worksheet_marked_final_after_generating_estimate(self):
@@ -284,6 +288,11 @@ class WorksheetEstimateIntegrationTests(TestCase):
             rate=Decimal('50.00')
         )
 
+        from apps.core.models import LineItemType
+        self.line_item_type, _ = LineItemType.objects.get_or_create(
+            code='LBR', defaults={'name': 'Labor'}
+        )
+
         self.service = EstimateGenerationService()
 
     def test_worksheet_workflow_from_draft_to_final(self):
@@ -298,11 +307,11 @@ class WorksheetEstimateIntegrationTests(TestCase):
         # Add task
         Task.objects.create(
             est_worksheet=worksheet,
-            template=self.task_template,
             name='Test Task',
             units='hours',
             rate=Decimal('50.00'),
-            est_qty=Decimal('2.0')
+            est_qty=Decimal('2.0'),
+            line_item_type=self.line_item_type,
         )
 
         # Verify worksheet is draft
@@ -346,11 +355,11 @@ class WorksheetEstimateIntegrationTests(TestCase):
         # Add task to v2
         Task.objects.create(
             est_worksheet=worksheet_v2,
-            template=self.task_template,
             name='Test Task v2',
             units='hours',
             rate=Decimal('60.00'),
-            est_qty=Decimal('3.0')
+            est_qty=Decimal('3.0'),
+            line_item_type=self.line_item_type,
         )
 
         # Generate estimate from v2

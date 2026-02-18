@@ -174,7 +174,11 @@
             "units": "hours",
             "rate": "50.00",
             "est_qty": "4.00",
-            "template": 50
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
         }
     },
     {
@@ -189,7 +193,11 @@
             "units": "hours",
             "rate": "45.00",
             "est_qty": "2.00",
-            "template": 51
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
         }
     },
     {
@@ -204,7 +212,11 @@
             "units": "pieces",
             "rate": "25.00",
             "est_qty": "10.00",
-            "template": null
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
         }
     },
     {
@@ -219,7 +231,11 @@
             "units": "hours",
             "rate": "40.00",
             "est_qty": "2.00",
-            "template": null
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
         }
     },
     {
@@ -234,7 +250,11 @@
             "units": "hours",
             "rate": "60.00",
             "est_qty": "1.00",
-            "template": null
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
         }
     },
     {

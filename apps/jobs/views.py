@@ -738,7 +738,7 @@ def _build_container_items_from_tasks(worksheet):
     """Normalize worksheet Tasks/TaskBundles into the shared container_items format."""
     tasks = Task.objects.filter(
         est_worksheet=worksheet
-    ).select_related('template', 'bundle').order_by('sort_order', 'task_id')
+    ).select_related('bundle').order_by('sort_order', 'task_id')
 
     bundles_by_id = {}
     unbundled = []
@@ -935,6 +935,29 @@ def estworksheet_generate_estimate(request, worksheet_id):
         return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':
+        # Save any line_item_type assignments from the form
+        from apps.core.models import LineItemType
+        for key, value in request.POST.items():
+            if key.startswith('task_line_item_type_') and value:
+                task_pk = key.replace('task_line_item_type_', '')
+                try:
+                    task = Task.objects.get(pk=task_pk, est_worksheet=worksheet)
+                    task.line_item_type = LineItemType.objects.get(pk=value)
+                    task.save()
+                except (Task.DoesNotExist, LineItemType.DoesNotExist):
+                    pass
+
+        # Check if any direct tasks still lack line_item_type
+        untyped_direct = Task.objects.filter(
+            est_worksheet=worksheet,
+            mapping_strategy='direct',
+            line_item_type__isnull=True,
+            bundle__isnull=True,
+        )
+        if untyped_direct.exists():
+            messages.error(request, 'All direct tasks must have a line item type before generating an estimate.')
+            return redirect('jobs:estworksheet_generate_estimate', worksheet_id=worksheet_id)
+
         try:
             from .services import EstimateGenerationService
             service = EstimateGenerationService()
@@ -946,21 +969,31 @@ def estworksheet_generate_estimate(request, worksheet_id):
 
             messages.success(request, f'Estimate {estimate.estimate_number} generated successfully!')
             return redirect('jobs:estimate_detail', estimate_id=estimate.estimate_id)
-            
+
         except Exception as e:
             messages.error(request, f'Error generating estimate: {str(e)}')
             return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
-    
+
     # Show confirmation page
-    tasks = Task.objects.filter(est_worksheet=worksheet).select_related(
-        'template'
-    )
+    tasks = Task.objects.filter(est_worksheet=worksheet)
     total_cost = sum(task.rate * task.est_qty for task in tasks if task.rate and task.est_qty)
-    
+
+    # Find direct tasks missing line_item_type
+    from apps.core.models import LineItemType
+    untyped_tasks = list(Task.objects.filter(
+        est_worksheet=worksheet,
+        mapping_strategy='direct',
+        line_item_type__isnull=True,
+        bundle__isnull=True,
+    ))
+    line_item_types = LineItemType.objects.filter(is_active=True)
+
     return render(request, 'jobs/estworksheet_generate_estimate.html', {
         'worksheet': worksheet,
         'tasks': tasks,
-        'total_cost': total_cost
+        'total_cost': total_cost,
+        'untyped_tasks': untyped_tasks,
+        'line_item_types': line_item_types,
     })
 
 
@@ -1006,7 +1039,7 @@ def estworksheet_revise(request, worksheet_id):
             for task in parent_tasks:
                 Task.objects.create(
                     name=task.name,
-                    template=task.template,
+                    line_item_type=task.line_item_type,
                     est_worksheet=new_worksheet,
                     est_qty=task.est_qty,
                     units=task.units,
@@ -1139,7 +1172,7 @@ def task_add_from_template(request, worksheet_id):
             task = Task.objects.create(
                 name=template.template_name,
                 description=template.description,
-                template=template,
+                line_item_type=template.line_item_type,
                 est_worksheet=worksheet,
                 est_qty=est_qty,
                 units=template.units,

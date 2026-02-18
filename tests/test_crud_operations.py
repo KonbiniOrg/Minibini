@@ -105,7 +105,6 @@ class TaskCRUDTests(TestCase):
         # Check task was created
         task = Task.objects.filter(est_worksheet=self.worksheet).first()
         self.assertIsNotNone(task)
-        self.assertEqual(task.template, self.task_template)
         self.assertEqual(task.est_qty, 5.0)
         self.assertEqual(task.rate, self.task_template.rate)
         self.assertEqual(task.units, self.task_template.units)
@@ -140,7 +139,6 @@ class TaskCRUDTests(TestCase):
         self.assertEqual(task.est_qty, 10.0)
         self.assertEqual(task.rate, 75.0)
         self.assertEqual(task.units, 'hours')
-        self.assertIsNone(task.template)
 
 
 class EstimateCRUDTests(TestCase):

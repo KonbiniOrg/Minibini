@@ -172,7 +172,7 @@ class WorkOrderTemplateForm(forms.ModelForm):
 class TaskTemplateForm(forms.ModelForm):
     class Meta:
         model = TaskTemplate
-        fields = ['template_name', 'description', 'units', 'rate']
+        fields = ['template_name', 'description', 'units', 'rate', 'line_item_type']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
             'units': forms.TextInput(attrs={'placeholder': 'e.g., hours, pieces'}),
@@ -200,7 +200,7 @@ class TaskEditForm(forms.ModelForm):
     """Form for editing an existing Task's details."""
     class Meta:
         model = Task
-        fields = ['name', 'description', 'units', 'rate', 'est_qty']
+        fields = ['name', 'description', 'units', 'rate', 'est_qty', 'line_item_type']
         widgets = {
             'est_qty': forms.NumberInput(attrs={'step': '0.01'}),
             'rate': forms.NumberInput(attrs={'step': '0.01'}),

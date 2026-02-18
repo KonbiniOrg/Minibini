@@ -71,6 +71,10 @@
         <td>{{ task.units|default:"-" }}</td>
     </tr>
     <tr>
+        <td>Line Item Type</td>
+        <td>{{ task.line_item_type|default:"-" }}</td>
+    </tr>
+    <tr>
         <td>Rate</td>
         <td>
             {% if task.rate %}

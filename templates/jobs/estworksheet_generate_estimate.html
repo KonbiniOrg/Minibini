@@ -18,6 +18,7 @@
     <tr>
         <th>Task Name</th>
         <th>Cost</th>
+        <th>Line Item Type</th>
         <th>Will be included?</th>
     </tr>
     {% for task in tasks %}
@@ -31,7 +32,16 @@
             {% endif %}
         </td>
         <td>
-            {% if task.get_mapping_strategy == 'exclude' %}
+            {% if task.line_item_type %}
+                {{ task.line_item_type }}
+            {% elif task.mapping_strategy == 'bundle' %}
+                (via bundle)
+            {% else %}
+                -
+            {% endif %}
+        </td>
+        <td>
+            {% if task.mapping_strategy == 'exclude' %}
                 No (internal task)
             {% else %}
                 Yes
@@ -41,13 +51,43 @@
     {% endfor %}
 </table>
 
+{% if untyped_tasks %}
+<h3>Assign Line Item Types</h3>
+<p>These tasks need a line item type before generating:</p>
+<form method="post">
+    {% csrf_token %}
+    <table border="1">
+        <tr>
+            <th>Task</th>
+            <th>Line Item Type</th>
+        </tr>
+        {% for task in untyped_tasks %}
+        <tr>
+            <td>{{ task.name }}</td>
+            <td>
+                <select name="task_line_item_type_{{ task.pk }}" required>
+                    <option value="">-- Select --</option>
+                    {% for lit in line_item_types %}
+                    <option value="{{ lit.pk }}">{{ lit.name }}</option>
+                    {% endfor %}
+                </select>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    <p>
+        <button type="submit">Assign Types &amp; Generate Estimate</button>
+        <a href="{% url 'jobs:estworksheet_detail' worksheet.est_worksheet_id %}">Cancel</a>
+    </p>
+</form>
+{% else %}
 <h3>Generate Estimate</h3>
 <p>Click the button below to generate a new estimate from this worksheet.</p>
-
 <form method="post">
     {% csrf_token %}
     <button type="submit">Generate Estimate Now</button>
     <a href="{% url 'jobs:estworksheet_detail' worksheet.est_worksheet_id %}">Cancel</a>
 </form>
+{% endif %}
 
 {% endblock %}
