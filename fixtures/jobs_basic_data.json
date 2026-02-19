@@ -1,107 +1,117 @@
 [
-  {
-    "model": "jobs.job",
-    "pk": 1,
-    "fields": {
-      "job_number": "JOB-2024-0001",
-      "created_date": "2024-01-15T09:00:00Z",
-      "completed_date": null,
-      "status": "draft",
-      "contact": 1,
-      "customer_po_number": "PO-ABC-12345",
-      "description": "Kitchen renovation project for residential client"
+    {
+        "model": "jobs.job",
+        "pk": 1,
+        "fields": {
+            "job_number": "JOB-2024-0001",
+            "created_date": "2024-01-15T09:00:00Z",
+            "completed_date": null,
+            "status": "draft",
+            "contact": 1,
+            "customer_po_number": "PO-ABC-12345",
+            "description": "Kitchen renovation project for residential client"
+        }
+    },
+    {
+        "model": "jobs.job",
+        "pk": 2,
+        "fields": {
+            "job_number": "JOB-2024-0002",
+            "created_date": "2024-01-20T10:30:00Z",
+            "completed_date": "2024-02-15T16:00:00Z",
+            "status": "completed",
+            "contact": 2,
+            "customer_po_number": "",
+            "description": "Office electrical upgrade"
+        }
+    },
+    {
+        "model": "jobs.workorder",
+        "pk": 1,
+        "fields": {
+            "job": 1,
+            "status": "incomplete"
+        }
+    },
+    {
+        "model": "jobs.workorder",
+        "pk": 2,
+        "fields": {
+            "job": 2,
+            "status": "complete"
+        }
+    },
+    {
+        "model": "jobs.task",
+        "pk": 1,
+        "fields": {
+            "assignee": 2,
+            "work_order": 1,
+            "name": "Kitchen demolition",
+            "units": "hours",
+            "rate": "75.00",
+            "est_qty": "8.00",
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
+        }
+    },
+    {
+        "model": "jobs.task",
+        "pk": 2,
+        "fields": {
+            "assignee": 2,
+            "work_order": 1,
+            "name": "Electrical rough-in",
+            "units": "linear_feet",
+            "rate": "12.50",
+            "est_qty": "150.00",
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
+        }
+    },
+    {
+        "model": "jobs.estimate",
+        "pk": 1,
+        "fields": {
+            "job": 1,
+            "estimate_number": "EST-2024-0001",
+            "version": 1,
+            "status": "draft",
+            "parent": null,
+            "created_date": "2024-01-15T09:30:00Z",
+            "closed_date": null
+        }
+    },
+    {
+        "model": "jobs.estimate",
+        "pk": 2,
+        "fields": {
+            "job": 2,
+            "estimate_number": "EST-2024-0002",
+            "version": 1,
+            "status": "superseded",
+            "parent": null,
+            "created_date": "2024-01-20T10:30:00Z",
+            "closed_date": "2024-01-21T14:00:00Z"
+        }
+    },
+    {
+        "model": "jobs.estimate",
+        "pk": 3,
+        "fields": {
+            "job": 2,
+            "estimate_number": "EST-2024-0002",
+            "version": 2,
+            "status": "accepted",
+            "parent": 2,
+            "created_date": "2024-01-21T14:00:00Z",
+            "closed_date": null
+        }
     }
-  },
-  {
-    "model": "jobs.job",
-    "pk": 2,
-    "fields": {
-      "job_number": "JOB-2024-0002",
-      "created_date": "2024-01-20T10:30:00Z",
-      "completed_date": "2024-02-15T16:00:00Z",
-      "status": "completed",
-      "contact": 2,
-      "customer_po_number": "",
-      "description": "Office electrical upgrade"
-    }
-  },
-  {
-    "model": "jobs.workorder",
-    "pk": 1,
-    "fields": {
-      "job": 1,
-      "status": "incomplete"
-    }
-  },
-  {
-    "model": "jobs.workorder",
-    "pk": 2,
-    "fields": {
-      "job": 2,
-      "status": "complete"
-    }
-  },
-  {
-    "model": "jobs.task",
-    "pk": 1,
-    "fields": {
-      "assignee": 2,
-      "work_order": 1,
-      "name": "Kitchen demolition",
-      "units": "hours",
-      "rate": "75.00",
-      "est_qty": "8.00"
-    }
-  },
-  {
-    "model": "jobs.task",
-    "pk": 2,
-    "fields": {
-      "assignee": 2,
-      "work_order": 1,
-      "name": "Electrical rough-in",
-      "units": "linear_feet",
-      "rate": "12.50",
-      "est_qty": "150.00"
-    }
-  },
-  {
-    "model": "jobs.estimate",
-    "pk": 1,
-    "fields": {
-      "job": 1,
-      "estimate_number": "EST-2024-0001",
-      "version": 1,
-      "status": "draft",
-      "parent": null,
-      "created_date": "2024-01-15T09:30:00Z",
-      "closed_date": null
-    }
-  },
-  {
-    "model": "jobs.estimate",
-    "pk": 2,
-    "fields": {
-      "job": 2,
-      "estimate_number": "EST-2024-0002",
-      "version": 1,
-      "status": "superseded",
-      "parent": null,
-      "created_date": "2024-01-20T10:30:00Z",
-      "closed_date": "2024-01-21T14:00:00Z"
-    }
-  },
-  {
-    "model": "jobs.estimate",
-    "pk": 3,
-    "fields": {
-      "job": 2,
-      "estimate_number": "EST-2024-0002",
-      "version": 2,
-      "status": "accepted",
-      "parent": 2,
-      "created_date": "2024-01-21T14:00:00Z",
-      "closed_date": null
-    }
-  }
 ]

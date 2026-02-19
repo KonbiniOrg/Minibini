@@ -163,7 +163,7 @@ class JobEditForm(forms.ModelForm):
 class WorkOrderTemplateForm(forms.ModelForm):
     class Meta:
         model = WorkOrderTemplate
-        fields = ['template_name', 'description', 'is_active']
+        fields = ['template_name', 'description']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 4}),
         }
@@ -172,7 +172,7 @@ class WorkOrderTemplateForm(forms.ModelForm):
 class TaskTemplateForm(forms.ModelForm):
     class Meta:
         model = TaskTemplate
-        fields = ['template_name', 'description', 'units', 'rate', 'is_active']
+        fields = ['template_name', 'description', 'units', 'rate', 'line_item_type']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
             'units': forms.TextInput(attrs={'placeholder': 'e.g., hours, pieces'}),
@@ -196,11 +196,11 @@ class EstWorksheetForm(forms.ModelForm):
         self.fields['template'].empty_label = "-- No Template (Manual) --"
 
 
-class TaskForm(forms.ModelForm):
-    """Form for creating/editing Task"""
+class TaskEditForm(forms.ModelForm):
+    """Form for editing an existing Task's details."""
     class Meta:
         model = Task
-        fields = ['name', 'template', 'est_worksheet', 'est_qty', 'units', 'rate']
+        fields = ['name', 'description', 'units', 'rate', 'est_qty', 'line_item_type']
         widgets = {
             'est_qty': forms.NumberInput(attrs={'step': '0.01'}),
             'rate': forms.NumberInput(attrs={'step': '0.01'}),
@@ -259,6 +259,11 @@ class PriceListLineItemForm(forms.Form):
         widget=forms.NumberInput(attrs={'step': '0.01'}),
         label="Qty"
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.invoicing.models import PriceListItem
+        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
 
 class EstimateForm(forms.ModelForm):

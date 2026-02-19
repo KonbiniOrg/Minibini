@@ -137,7 +137,11 @@
             "units": "hours",
             "rate": "40.00",
             "est_qty": "3.00",
-            "template": 200
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
         }
     },
     {

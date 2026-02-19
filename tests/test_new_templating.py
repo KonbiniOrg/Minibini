@@ -189,8 +189,8 @@ class TestEstimateGeneration(TestCase):
 
         # Create worksheet and tasks
         worksheet = EstWorksheet.objects.create(job=self.job)
-        Task.objects.create(est_worksheet=worksheet, name="Sand", rate=50, est_qty=2, template=tt1)
-        Task.objects.create(est_worksheet=worksheet, name="Stain", rate=75, est_qty=1, template=tt2)
+        Task.objects.create(est_worksheet=worksheet, name="Sand", rate=50, est_qty=2, line_item_type=self.lit_labor)
+        Task.objects.create(est_worksheet=worksheet, name="Stain", rate=75, est_qty=1, line_item_type=self.lit_labor)
 
         # Generate estimate
         service = EstimateGenerationService()
@@ -227,11 +227,11 @@ class TestEstimateGeneration(TestCase):
         )
         Task.objects.create(
             est_worksheet=worksheet, name="Sand", rate=50, est_qty=1,
-            template=tt1, mapping_strategy='bundle', bundle=task_bundle
+            line_item_type=self.lit_labor, mapping_strategy='bundle', bundle=task_bundle
         )
         Task.objects.create(
             est_worksheet=worksheet, name="Clean", rate=25, est_qty=1,
-            template=tt2, mapping_strategy='bundle', bundle=task_bundle
+            line_item_type=self.lit_labor, mapping_strategy='bundle', bundle=task_bundle
         )
 
         service = EstimateGenerationService()
@@ -260,11 +260,11 @@ class TestEstimateGeneration(TestCase):
         worksheet = EstWorksheet.objects.create(job=self.job)
         Task.objects.create(
             est_worksheet=worksheet, name="Sand", rate=50, est_qty=1,
-            template=tt1, mapping_strategy='direct'
+            line_item_type=self.lit_labor, mapping_strategy='direct'
         )
         Task.objects.create(
             est_worksheet=worksheet, name="Internal Check", rate=0, est_qty=1,
-            template=tt2, mapping_strategy='exclude'
+            line_item_type=self.lit_labor, mapping_strategy='exclude'
         )
 
         service = EstimateGenerationService()

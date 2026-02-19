@@ -19,7 +19,7 @@ python manage.py makemigrations         # Create migrations (OK to run)
 python manage.py loaddata unit_test_data.json  # Load test fixtures
 
 # Testing
-python manage.py test                   # Run all tests (993 tests)
+python manage.py test                   # Run all tests
 python manage.py test tests.test_foo    # Run specific test module
 
 # Docker
@@ -83,6 +83,12 @@ with transaction.atomic():
 ```
 
 ## Testing
+
+**Use Test-Driven Development (TDD) for all code work:**
+1. Write failing tests first
+2. Verify tests fail for the expected reason
+3. Write minimal code to make tests pass
+4. Refactor while keeping tests green
 
 - Tests in `/tests/` directory using Django TestCase
 - Fixtures in `/fixtures/` (JSON format)

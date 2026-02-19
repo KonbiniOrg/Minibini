@@ -62,7 +62,7 @@ class LineItemTaskService:
                 rate=source_task.rate,
                 est_qty=source_task.est_qty,
                 assignee=source_task.assignee,
-                template=source_task.template,
+                line_item_type=source_task.line_item_type,
                 parent_task=None  # Set in second pass
             )
             task_id_mapping[source_task.task_id] = new_task
@@ -92,7 +92,6 @@ class LineItemTaskService:
             rate=line_item.price or line_item.price_list_item.selling_price,
             est_qty=line_item.qty,
             assignee=None,
-            template=None,
             parent_task=None
         )
         return [task]
@@ -114,7 +113,6 @@ class LineItemTaskService:
             rate=line_item.price,
             est_qty=line_item.qty,
             assignee=None,
-            template=None,
             parent_task=None
         )
         return [task]
@@ -257,7 +255,7 @@ class TaskService:
             
         task = Task.objects.create(
             work_order=work_order,
-            template=template,
+            line_item_type=template.line_item_type,
             name=template.template_name,
             assignee=assignee
         )
@@ -280,10 +278,8 @@ class TaskService:
         from .models import EstimateLineItem
         from apps.core.models import LineItemType
 
-        # Get line_item_type from task's template if available
-        line_item_type = None
-        if task.template and hasattr(task.template, 'line_item_type'):
-            line_item_type = task.template.line_item_type
+        # Get line_item_type from task directly
+        line_item_type = task.line_item_type
 
         # Fall back to default LineItemType if none specified
         if line_item_type is None:
@@ -334,7 +330,7 @@ class EstimateGenerationService:
         - 'bundle': Tasks in same TaskBundle are combined into one line item
         - 'exclude': Task is not included on estimate
         """
-        tasks = worksheet.task_set.select_related('template', 'bundle').all()
+        tasks = worksheet.task_set.select_related('bundle').all()
 
         if not tasks:
             raise ValueError(f"EstWorksheet {worksheet.pk} has no tasks to convert")
@@ -407,10 +403,8 @@ class EstimateGenerationService:
         qty = task.est_qty or Decimal('1.00')
         rate = task.rate or Decimal('0.00')
 
-        # Get line_item_type from task template
-        line_item_type = None
-        if task.template and task.template.line_item_type:
-            line_item_type = task.template.line_item_type
+        # Get line_item_type from task directly
+        line_item_type = task.line_item_type
 
         if line_item_type is None:
             line_item_type = self._get_default_line_item_type()

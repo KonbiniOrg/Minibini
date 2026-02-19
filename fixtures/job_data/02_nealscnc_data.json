@@ -12416,10 +12416,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12434,10 +12435,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12452,10 +12454,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12470,10 +12473,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 4,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12488,10 +12492,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 5,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12506,10 +12511,11 @@
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 5
     }
   },
   {
@@ -12524,10 +12530,11 @@
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 5
     }
   },
   {
@@ -12542,10 +12549,11 @@
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12560,10 +12568,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12578,10 +12587,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12596,10 +12606,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12614,10 +12625,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12632,10 +12644,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 4,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12650,10 +12663,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 5,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12668,10 +12682,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 6,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 5
     }
   },
   {
@@ -12686,10 +12701,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 7,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -12704,10 +12720,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12722,10 +12739,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12740,10 +12758,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12758,10 +12777,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12776,10 +12796,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12794,10 +12815,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12812,10 +12834,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12830,10 +12853,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 5
     }
   },
   {
@@ -12848,10 +12872,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12866,10 +12891,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 4,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12884,10 +12910,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 5,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12902,10 +12929,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 6,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -12920,10 +12948,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 7,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -12938,10 +12967,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12956,10 +12986,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12974,10 +13005,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -12992,10 +13024,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13010,10 +13043,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13028,10 +13062,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13046,10 +13081,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -13064,10 +13100,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13082,10 +13119,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13100,10 +13138,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13118,10 +13157,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13136,10 +13176,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 4,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13154,10 +13195,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 5,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13172,10 +13214,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 6,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13190,10 +13233,11 @@
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13208,10 +13252,11 @@
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13226,10 +13271,11 @@
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13244,10 +13290,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13262,10 +13309,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 5
     }
   },
   {
@@ -13280,10 +13328,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -13298,10 +13347,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13316,10 +13366,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13334,10 +13385,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -13352,10 +13404,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13366,14 +13419,15 @@
       "assignee": null,
       "work_order": 8,
       "est_worksheet": null,
-      "name": "Cut 8 shaped pieces 41 3/16\u201d  x 37 9/16\u201d with 2\u201d hole from 3/4\" melamine",
+      "name": "Cut 8 shaped pieces 41 3/16”  x 37 9/16” with 2” hole from 3/4\" melamine",
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13388,10 +13442,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -13406,10 +13461,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13424,10 +13480,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13442,10 +13499,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -13460,10 +13518,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13478,10 +13537,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13496,10 +13556,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 5
     }
   },
   {
@@ -13514,10 +13575,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 4,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -13532,10 +13594,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13550,10 +13613,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13568,10 +13632,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13586,10 +13651,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 4,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13604,10 +13670,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 5,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13622,10 +13689,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 6,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13640,10 +13708,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 7,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13658,10 +13727,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13676,10 +13746,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 5
     }
   },
   {
@@ -13694,10 +13765,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -13712,10 +13784,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13730,10 +13803,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -13748,10 +13822,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13766,10 +13841,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13784,10 +13860,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 5
     }
   },
   {
@@ -13802,10 +13879,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13820,10 +13898,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13838,10 +13917,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 4
     }
   },
   {
@@ -13856,10 +13936,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13874,10 +13955,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13892,10 +13974,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 4,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": 1
     }
   },
   {
@@ -13910,10 +13993,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13928,10 +14012,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13946,10 +14031,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13964,10 +14050,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -13982,10 +14069,11 @@
       "units": "hours",
       "rate": "60.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -14000,10 +14088,11 @@
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -14018,10 +14107,11 @@
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -14036,10 +14126,11 @@
       "units": "hours",
       "rate": "100.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -14054,10 +14145,11 @@
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -14072,10 +14164,11 @@
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 2,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -14090,10 +14183,11 @@
       "units": "hours",
       "rate": "120.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 3,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -14108,10 +14202,11 @@
       "units": "hours",
       "rate": "0.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -14126,10 +14221,11 @@
       "units": "hours",
       "rate": "75.0",
       "est_qty": "0",
-      "template": null,
       "sort_order": 1,
       "mapping_strategy": "direct",
-      "bundle": null
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
     }
   },
   {
@@ -14601,7 +14697,7 @@
       "line_number": 1,
       "qty": "1.0",
       "units": "",
-      "description": "Cut 8 shaped pieces 41 3/16\u201d  x 37 9/16\u201d with 2\u201d hole from 3/4\" melamine",
+      "description": "Cut 8 shaped pieces 41 3/16”  x 37 9/16” with 2” hole from 3/4\" melamine",
       "price": "76.0",
       "line_item_type": null,
       "taxable_override": null,
@@ -23207,7 +23303,7 @@
       "line_number": 2,
       "qty": "7.0",
       "units": "",
-      "description": "Cut door approximately 76\" x 36\" with drill holes, internal cutouts, 30\u00b0 chamfer, and pocket, plus cap switch with roundover on one side, from 1/2\" plyboo; install (41) 8-32 push in threaded inserts and (16) 6/32 twist-in threaded inserts; apply The Good Stuff finish",
+      "description": "Cut door approximately 76\" x 36\" with drill holes, internal cutouts, 30° chamfer, and pocket, plus cap switch with roundover on one side, from 1/2\" plyboo; install (41) 8-32 push in threaded inserts and (16) 6/32 twist-in threaded inserts; apply The Good Stuff finish",
       "price": "440.0",
       "line_item_type": null,
       "taxable_override": null,
@@ -25547,7 +25643,7 @@
       "line_number": 1,
       "qty": "1.0",
       "units": "",
-      "description": "Cut (1) 2\u2019 square sample panel with perforations from 3/16\u201d aluminum with 1/4 inch bit\n\n",
+      "description": "Cut (1) 2’ square sample panel with perforations from 3/16” aluminum with 1/4 inch bit\n\n",
       "price": "500.0",
       "line_item_type": null,
       "taxable_override": null,
@@ -27554,7 +27650,7 @@
       "line_number": 2,
       "qty": "1.0",
       "units": "",
-      "description": "Cut Sintra logo to read \"SanDisk\u00ae InfiniFlash\" as per Czarnowski art-work",
+      "description": "Cut Sintra logo to read \"SanDisk® InfiniFlash\" as per Czarnowski art-work",
       "price": "192.8",
       "line_item_type": null,
       "taxable_override": null,
@@ -28056,7 +28152,7 @@
       "line_number": 2,
       "qty": "1.0",
       "units": "",
-      "description": "Cut Sintra logo to read \"SanDisk\u00ae InfiniFlash\" as per Czarnowski art-work",
+      "description": "Cut Sintra logo to read \"SanDisk® InfiniFlash\" as per Czarnowski art-work",
       "price": "192.8",
       "line_item_type": null,
       "taxable_override": null,
@@ -37873,7 +37969,7 @@
       "line_number": 2,
       "qty": "7.0",
       "units": "",
-      "description": "Cut door approximately 76\" x 36\" with drill holes, internal cutouts, 30\u00b0 chamfer, and pocket, plus cap switch with roundover on one side, from 1/2\" plyboo ",
+      "description": "Cut door approximately 76\" x 36\" with drill holes, internal cutouts, 30° chamfer, and pocket, plus cap switch with roundover on one side, from 1/2\" plyboo ",
       "price": "283.67",
       "line_item_type": null,
       "taxable_override": null,

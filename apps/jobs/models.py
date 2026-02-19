@@ -372,7 +372,7 @@ class EstWorksheet(AbstractWorkContainer):
                 units=task.units,
                 rate=task.rate,
                 est_qty=task.est_qty,
-                template=task.template,
+                line_item_type=task.line_item_type,
                 mapping_strategy=task.mapping_strategy,
                 bundle=new_bundle,
             )
@@ -390,11 +390,18 @@ class Task(models.Model):
     work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, null=True, blank=True)
     est_worksheet = models.ForeignKey(EstWorksheet, on_delete=models.CASCADE, null=True, blank=True)
     name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
     sort_order = models.PositiveIntegerField(blank=True, null=True)
     units = models.CharField(max_length=50, blank=True)
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    template = models.ForeignKey('TaskTemplate', on_delete=models.SET_NULL, null=True, blank=True)
+    line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text="Type of line item this task produces when mapped directly"
+    )
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -552,6 +559,7 @@ class WorkOrderTemplate(models.Model):
     # Pricing
     base_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
+    # is_active no longer used but kept in case we change our minds later and to avoid a migration
     is_active = models.BooleanField(default=True)
     created_date = models.DateTimeField(auto_now_add=True)
 
@@ -693,6 +701,7 @@ class TaskTemplate(models.Model):
     parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')
 
     created_date = models.DateTimeField(auto_now_add=True)
+    # is_active no longer used but kept in case we change our minds later and to avoid a migration
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
@@ -705,10 +714,11 @@ class TaskTemplate(models.Model):
             work_order=container if isinstance(container, WorkOrder) else None,
             est_worksheet=container if isinstance(container, EstWorksheet) else None,
             name=self.template_name,
+            description=self.description,
             units=self.units,
             rate=self.rate,
             est_qty=est_qty,
-            template=self,
+            line_item_type=self.line_item_type,
             assignee=assignee,
             mapping_strategy=mapping_strategy,
             bundle=bundle,

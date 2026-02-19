@@ -109,6 +109,10 @@ class POPriceListLineItemForm(forms.Form):
         label="Quantity"
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
+
 
 class PurchaseOrderLineItemForm(forms.Form):
     """Form for creating a PO line item from a Price List Item (deprecated, use POPriceListLineItemForm)"""
@@ -124,6 +128,10 @@ class PurchaseOrderLineItemForm(forms.Form):
         widget=forms.NumberInput(attrs={'step': '0.01'}),
         label="Quantity"
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
 
 class BillLineItemForm(forms.Form):
@@ -172,6 +180,10 @@ class BillLineItemForm(forms.Form):
         label="Type",
         help_text="Required if not using price list item"
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
     def clean(self):
         """Validate that either price_list_item is selected OR manual fields are filled"""

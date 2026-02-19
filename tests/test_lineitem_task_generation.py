@@ -51,7 +51,6 @@ class LineItemTaskGenerationTestCase(TestCase):
         self.assertEqual(task.units, original_task.units)
         self.assertEqual(task.rate, original_task.rate)
         self.assertEqual(task.est_qty, original_task.est_qty)
-        self.assertEqual(task.template, original_task.template)
         self.assertEqual(task.work_order, work_order)
 
     def test_catalog_item_task_generation(self):
@@ -77,7 +76,6 @@ class LineItemTaskGenerationTestCase(TestCase):
         self.assertEqual(task.rate, line_item.price)
         self.assertEqual(task.est_qty, line_item.qty)
         self.assertEqual(task.work_order, work_order)
-        self.assertIsNone(task.template)
 
     def test_manual_item_task_generation(self):
         """Test that manual LineItems create generic tasks"""
@@ -102,7 +100,6 @@ class LineItemTaskGenerationTestCase(TestCase):
         self.assertEqual(task.rate, line_item.price)
         self.assertEqual(task.est_qty, line_item.qty)
         self.assertEqual(task.work_order, work_order)
-        self.assertIsNone(task.template)
 
     def test_manual_item_without_description(self):
         """Test manual item task generation when no description provided"""
@@ -145,22 +142,15 @@ class LineItemTaskGenerationTestCase(TestCase):
         # Verify task sources
         tasks = Task.objects.filter(work_order=work_order).order_by('task_id')
 
-        # First task should be from worksheet (has template)
-        self.assertIsNotNone(tasks[0].template)
+        # First task should be from worksheet
         self.assertEqual(tasks[0].name, "Mixed Assembly Task")
 
-        # Second and third tasks should be from catalog (no template, specific naming)
-        self.assertIsNone(tasks[1].template)
+        # Second and third tasks should be from catalog (specific naming)
         self.assertIn("WOOD001", tasks[1].name)
-
-        self.assertIsNone(tasks[2].template)
         self.assertIn("FINISH001", tasks[2].name)
 
-        # Fourth and fifth tasks should be manual (no template, use description)
-        self.assertIsNone(tasks[3].template)
+        # Fourth and fifth tasks should be manual (use description)
         self.assertEqual(tasks[3].name, "Custom hardware installation")
-
-        self.assertIsNone(tasks[4].template)
         self.assertEqual(tasks[4].name, "Delivery and setup")
 
     def test_confirmation_page_shows_mixed_items(self):

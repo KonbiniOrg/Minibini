@@ -163,7 +163,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
         Task.objects.create(
             est_worksheet=worksheet, name="Sand",
             rate=Decimal('50'), est_qty=Decimal('1'),
-            template=tt,
+            line_item_type=self.lit_labor,
             mapping_strategy='exclude'
         )
 

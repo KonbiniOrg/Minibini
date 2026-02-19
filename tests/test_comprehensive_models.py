@@ -222,12 +222,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             template_name="Planning Task Template"
         )
 
-        # Update task to use template
-        task.template = task_template
-        task.save()
-
         self.assertEqual(task.work_order, work_order)
-        self.assertEqual(task.template, task_template)
 
     def test_configuration_number_sequences(self):
         # Create configuration entries for number sequences

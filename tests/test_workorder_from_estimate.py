@@ -170,15 +170,12 @@ class WorkOrderFromEstimateTestCase(TestCase):
             name="Parent Task - Assembly"
         )
 
-        # Verify template reference preserved
-        self.assertEqual(parent_task.template_id, 50)
-
-        # Verify tasks without templates (standalone tasks have no template in fixture)
+        # Verify standalone task exists
         task_no_template = Task.objects.get(
             work_order=work_order,
             name="Standalone Task - Material Delivery"
         )
-        self.assertIsNone(task_no_template.template)
+        self.assertIsNotNone(task_no_template)
 
     def test_confirmation_page_displays_correct_info(self):
         """Test that the confirmation page shows correct information before creating WorkOrder"""

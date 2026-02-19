@@ -1,5 +1,60 @@
 [
   {
+    "model": "core.lineitemtype",
+    "pk": 1,
+    "fields": {
+      "code": "SVC",
+      "name": "Service",
+      "taxable": false,
+      "default_description": "Professional services and labor",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 2,
+    "fields": {
+      "code": "PRD",
+      "name": "Product",
+      "taxable": true,
+      "default_description": "Finished goods and products",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 3,
+    "fields": {
+      "code": "DLV",
+      "name": "Delivery",
+      "taxable": false,
+      "default_description": "Delivery and logistics services",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 4,
+    "fields": {
+      "code": "MFR",
+      "name": "Manufacturing",
+      "taxable": true,
+      "default_description": "cut, build, or assemble part of a product that will get further processing by the customer",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 5,
+    "fields": {
+      "code": "MTL",
+      "name": "Material",
+      "taxable": true,
+      "default_description": "Raw material sold to customer",
+      "is_active": true
+    }
+  },
+  {
     "model": "core.user",
     "pk": 1,
     "fields": {
@@ -508,7 +563,7 @@
       "parent_template": null,
       "created_date": "2025-09-06T17:30:38.271Z",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 1
     }
   },
   {
@@ -522,7 +577,7 @@
       "parent_template": null,
       "created_date": "2025-09-06T17:31:20.508Z",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 1
     }
   },
   {
@@ -536,7 +591,7 @@
       "parent_template": null,
       "created_date": "2025-09-06T17:31:44.072Z",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 4
     }
   },
   {
@@ -550,7 +605,7 @@
       "parent_template": null,
       "created_date": "2025-09-06T17:38:15.359Z",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 4
     }
   },
   {
@@ -564,7 +619,7 @@
       "parent_template": null,
       "created_date": "2025-09-06T17:39:14.272Z",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 4
     }
   },
   {
@@ -578,7 +633,7 @@
       "parent_template": null,
       "created_date": "2025-09-06T17:40:08.033Z",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 1
     }
   },
   {
@@ -592,7 +647,7 @@
       "parent_template": null,
       "created_date": "2025-09-24T05:31:52.957Z",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 1
     }
   },
   {
@@ -606,7 +661,7 @@
       "parent_template": null,
       "created_date": "2025-09-24T05:38:38.849Z",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 4
     }
   },
   {
@@ -620,7 +675,7 @@
       "parent_template": null,
       "created_date": "2025-10-17T15:17:50.313Z",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 3
     }
   },
   {

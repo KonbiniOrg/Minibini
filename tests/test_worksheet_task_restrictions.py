@@ -89,7 +89,6 @@ class WorksheetTaskRestrictionTests(TestCase):
         self.assertEqual(tasks.count(), 1)
 
         task = tasks.first()
-        self.assertEqual(task.template, self.task_template)
         self.assertEqual(task.est_qty, Decimal('2.0'))
 
     def test_cannot_add_task_from_template_to_final_worksheet(self):

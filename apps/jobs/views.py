@@ -6,11 +6,11 @@ from django import forms
 from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
-from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet
+from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet, TemplateTaskAssociation
 from apps.core.services import TaxCalculationService
 from .forms import (
     JobCreateForm, JobEditForm, WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
-    TaskForm, TaskFromTemplateForm,
+    TaskEditForm, TaskFromTemplateForm,
     ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm, EstimateForm, WorkOrderStatusForm
 )
 from apps.purchasing.models import PurchaseOrder
@@ -320,6 +320,32 @@ def task_detail(request, task_id):
     task = get_object_or_404(Task, task_id=task_id)
     return render(request, 'jobs/task_detail.html', {'task': task})
 
+
+def task_edit(request, task_id):
+    """Edit a task's details. Only allowed for tasks on draft worksheets."""
+    task = get_object_or_404(Task, task_id=task_id)
+
+    # Check if editing is allowed
+    container = task.get_container()
+    if hasattr(container, 'status') and container.status != 'draft':
+        messages.error(request, f'Cannot edit tasks on a {container.get_status_display().lower()} worksheet.')
+        return redirect('jobs:task_detail', task_id=task_id)
+
+    if request.method == 'POST':
+        form = TaskEditForm(request.POST, instance=task)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Task "{task.name}" updated.')
+            return redirect('jobs:task_detail', task_id=task_id)
+    else:
+        form = TaskEditForm(instance=task)
+
+    return render(request, 'jobs/task_edit.html', {
+        'form': form,
+        'task': task,
+    })
+
+
 def work_order_list(request):
     work_orders = WorkOrder.objects.all().order_by('-work_order_id')
     return render(request, 'jobs/work_order_list.html', {'work_orders': work_orders})
@@ -438,9 +464,35 @@ def add_work_order_template(request):
     return render(request, 'jobs/add_work_order_template.html', {'form': form})
 
 
+def work_order_template_edit(request, template_id):
+    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+
+    if request.method == 'POST':
+        form = WorkOrderTemplateForm(request.POST, instance=template)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Work Order Template "{template.template_name}" updated successfully.')
+            return redirect('jobs:work_order_template_detail', template_id=template.template_id)
+    else:
+        form = WorkOrderTemplateForm(instance=template)
+
+    return render(request, 'jobs/work_order_template_edit.html', {
+        'form': form,
+        'template': template
+    })
+
+
+@require_POST
+def work_order_template_delete(request, template_id):
+    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+    template_name = template.template_name
+    template.delete()
+    messages.success(request, f'Work Order Template "{template_name}" deleted successfully.')
+    return redirect('jobs:work_order_template_list')
+
 
 def work_order_template_list(request):
-    templates = WorkOrderTemplate.objects.filter(is_active=True).order_by('-created_date')
+    templates = WorkOrderTemplate.objects.all().order_by('-created_date')
     return render(request, 'jobs/work_order_template_list.html', {'templates': templates})
 
 
@@ -686,7 +738,7 @@ def _build_container_items_from_tasks(worksheet):
     """Normalize worksheet Tasks/TaskBundles into the shared container_items format."""
     tasks = Task.objects.filter(
         est_worksheet=worksheet
-    ).select_related('template', 'bundle').order_by('sort_order', 'task_id')
+    ).select_related('bundle').order_by('sort_order', 'task_id')
 
     bundles_by_id = {}
     unbundled = []
@@ -695,13 +747,14 @@ def _build_container_items_from_tasks(worksheet):
         item = {
             'id': task.task_id,
             'name': task.name,
-            'description': task.template.description if task.template else '',
+            'description': task.description,
             'units': task.units,
             'rate': task.rate,
             'est_qty': task.est_qty,
             'mapping_strategy': task.mapping_strategy,
             'remove_id': task.task_id,
             'sort_order': task.sort_order or 0,
+            'detail_url': reverse('jobs:task_detail', args=[task.task_id]),
         }
         if task.mapping_strategy == 'bundle' and task.bundle:
             bid = task.bundle_id
@@ -882,6 +935,29 @@ def estworksheet_generate_estimate(request, worksheet_id):
         return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':
+        # Save any line_item_type assignments from the form
+        from apps.core.models import LineItemType
+        for key, value in request.POST.items():
+            if key.startswith('task_line_item_type_') and value:
+                task_pk = key.replace('task_line_item_type_', '')
+                try:
+                    task = Task.objects.get(pk=task_pk, est_worksheet=worksheet)
+                    task.line_item_type = LineItemType.objects.get(pk=value)
+                    task.save()
+                except (Task.DoesNotExist, LineItemType.DoesNotExist):
+                    pass
+
+        # Check if any direct tasks still lack line_item_type
+        untyped_direct = Task.objects.filter(
+            est_worksheet=worksheet,
+            mapping_strategy='direct',
+            line_item_type__isnull=True,
+            bundle__isnull=True,
+        )
+        if untyped_direct.exists():
+            messages.error(request, 'All direct tasks must have a line item type before generating an estimate.')
+            return redirect('jobs:estworksheet_generate_estimate', worksheet_id=worksheet_id)
+
         try:
             from .services import EstimateGenerationService
             service = EstimateGenerationService()
@@ -893,21 +969,31 @@ def estworksheet_generate_estimate(request, worksheet_id):
 
             messages.success(request, f'Estimate {estimate.estimate_number} generated successfully!')
             return redirect('jobs:estimate_detail', estimate_id=estimate.estimate_id)
-            
+
         except Exception as e:
             messages.error(request, f'Error generating estimate: {str(e)}')
             return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
-    
+
     # Show confirmation page
-    tasks = Task.objects.filter(est_worksheet=worksheet).select_related(
-        'template'
-    )
+    tasks = Task.objects.filter(est_worksheet=worksheet)
     total_cost = sum(task.rate * task.est_qty for task in tasks if task.rate and task.est_qty)
-    
+
+    # Find direct tasks missing line_item_type
+    from apps.core.models import LineItemType
+    untyped_tasks = list(Task.objects.filter(
+        est_worksheet=worksheet,
+        mapping_strategy='direct',
+        line_item_type__isnull=True,
+        bundle__isnull=True,
+    ))
+    line_item_types = LineItemType.objects.filter(is_active=True)
+
     return render(request, 'jobs/estworksheet_generate_estimate.html', {
         'worksheet': worksheet,
         'tasks': tasks,
-        'total_cost': total_cost
+        'total_cost': total_cost,
+        'untyped_tasks': untyped_tasks,
+        'line_item_types': line_item_types,
     })
 
 
@@ -953,7 +1039,7 @@ def estworksheet_revise(request, worksheet_id):
             for task in parent_tasks:
                 Task.objects.create(
                     name=task.name,
-                    template=task.template,
+                    line_item_type=task.line_item_type,
                     est_worksheet=new_worksheet,
                     est_qty=task.est_qty,
                     units=task.units,
@@ -974,7 +1060,7 @@ def estworksheet_revise(request, worksheet_id):
 
 def task_template_list(request):
     """List all TaskTemplates with all fields"""
-    templates = TaskTemplate.objects.filter(is_active=True).prefetch_related('work_order_templates').order_by('template_name')
+    templates = TaskTemplate.objects.all().prefetch_related('work_order_templates').order_by('template_name')
     return render(request, 'jobs/task_template_list.html', {'templates': templates})
 
 
@@ -990,6 +1076,48 @@ def add_task_template_standalone(request):
         form = TaskTemplateForm()
 
     return render(request, 'jobs/add_task_template_standalone.html', {'form': form})
+
+
+def task_template_edit(request, template_id):
+    """Edit an existing TaskTemplate."""
+    template = get_object_or_404(TaskTemplate, template_id=template_id)
+
+    if request.method == 'POST':
+        form = TaskTemplateForm(request.POST, instance=template)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Task Template "{template.template_name}" updated successfully.')
+            return redirect('jobs:task_template_list')
+    else:
+        form = TaskTemplateForm(instance=template)
+
+    # Get WorkOrderTemplates using this TaskTemplate
+    work_order_templates = WorkOrderTemplate.objects.filter(
+        templatetaskassociation__task_template=template
+    ).distinct()
+
+    return render(request, 'jobs/task_template_edit.html', {
+        'form': form,
+        'template': template,
+        'work_order_templates': work_order_templates,
+        'can_delete': not work_order_templates.exists()
+    })
+
+
+@require_POST
+def task_template_delete(request, template_id):
+    """Delete a TaskTemplate."""
+    template = get_object_or_404(TaskTemplate, template_id=template_id)
+
+    # Check if template is used in any WorkOrderTemplate
+    if TemplateTaskAssociation.objects.filter(task_template=template).exists():
+        messages.error(request, f'Task Template "{template.template_name}" cannot be deleted because it is used in one or more Work Order Templates.')
+        return redirect('jobs:task_template_edit', template_id=template_id)
+
+    template_name = template.template_name
+    template.delete()
+    messages.success(request, f'Task Template "{template_name}" deleted successfully.')
+    return redirect('jobs:task_template_list')
 
 
 def estworksheet_create_for_job(request, job_id):
@@ -1043,7 +1171,8 @@ def task_add_from_template(request, worksheet_id):
 
             task = Task.objects.create(
                 name=template.template_name,
-                template=template,
+                description=template.description,
+                line_item_type=template.line_item_type,
                 est_worksheet=worksheet,
                 est_qty=est_qty,
                 units=template.units,
@@ -1071,20 +1200,15 @@ def task_add_manual(request, worksheet_id):
         return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':
-        form = TaskForm(request.POST)
+        task_instance = Task(est_worksheet=worksheet)
+        form = TaskEditForm(request.POST, instance=task_instance)
         if form.is_valid():
-            task = form.save(commit=False)
-            task.est_worksheet = worksheet
-            task.save()
+            form.save()
 
-            messages.success(request, f'Task "{task.name}" added manually')
+            messages.success(request, f'Task "{task_instance.name}" added manually')
             return redirect('jobs:estworksheet_detail', worksheet_id=worksheet.est_worksheet_id)
     else:
-        form = TaskForm(initial={'est_worksheet': worksheet})
-        # Hide the worksheet field since it's already set
-        form.fields['est_worksheet'].widget = forms.HiddenInput()
-        # Hide the template field since user chose to add manually
-        form.fields['template'].widget = forms.HiddenInput()
+        form = TaskEditForm()
 
     return render(request, 'jobs/task_add_manual.html', {
         'form': form,

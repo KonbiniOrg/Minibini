@@ -9,6 +9,14 @@
 {% block content %}
 <h2>Price List Items</h2>
 
+<p>
+    {% if show_archived %}
+    <a href="{% url 'invoicing:price_list_item_list' %}">Hide Archived</a>
+    {% else %}
+    <a href="{% url 'invoicing:price_list_item_list' %}?show_archived=1">Show Archived</a>
+    {% endif %}
+</p>
+
 <div>
     <table border="1">
         <tr>
@@ -18,6 +26,7 @@
             <th>Units</th>
             <th>Purchase Price</th>
             <th>Selling Price</th>
+            <th>Status</th>
             <th>Actions</th>
         </tr>
         {% for item in items %}
@@ -28,13 +37,14 @@
             <td>{{ item.units|default:"-" }}</td>
             <td>${{ item.purchase_price|floatformat:2 }}</td>
             <td>${{ item.selling_price|floatformat:2 }}</td>
+            <td>{% if not item.is_active %}<strong>Archived</strong>{% else %}Active{% endif %}</td>
             <td>
                 <a href="{% url 'invoicing:price_list_item_edit' item.price_list_item_id %}">Edit</a>
             </td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="7">No price list items found.</td>
+            <td colspan="8">No price list items found.</td>
         </tr>
         {% endfor %}
     </table>
