@@ -9,7 +9,7 @@ from decimal import Decimal
 from apps.contacts.models import Contact
 from apps.jobs.models import (
     Job, WorkOrder, Estimate, Task, EstWorksheet, 
-    WorkOrderTemplate, TaskTemplate, TaskMapping
+    WorkOrderTemplate, TaskTemplate
 )
 from apps.core.models import User
 

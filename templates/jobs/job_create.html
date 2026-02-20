@@ -20,6 +20,14 @@
         {% endif %}
     </div>
 
+    <p>
+        <label for="{{ form.name.id_for_label }}"><strong>Job Name</strong></label><br>
+        {{ form.name }}
+        {% if form.name.errors %}
+            <div class="error">{{ form.name.errors }}</div>
+        {% endif %}
+    </p>
+
     <div class="form-group">
         <label for="{{ form.customer_po_number.id_for_label }}">{{ form.customer_po_number.label }}</label>
         {{ form.customer_po_number }}

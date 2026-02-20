@@ -49,25 +49,6 @@ def add_contact(request):
         # Business selection from dropdown
         business_id = request.POST.get('business_id')
 
-        # TODO: the below is both parts of a merge conflict from old email stuff and much more recent biz bugfixes.
-        # committing this way bc I don't have the energy to sort it now but I want to get this branch sort of up to date
-        # it will NOT work
-        if first_name:
-            business = None
-
-            # Get selected business from dropdown (if not "NONE")
-            if business_id and business_id != 'NONE':
-                try:
-                    business = Business.objects.get(business_id=int(business_id))
-                except (Business.DoesNotExist, ValueError):
-                    pass
-        # Business fields
-        business_name = request.POST.get('business_name')
-        business_phone = request.POST.get('business_phone')
-        business_address = request.POST.get('business_address')
-        tax_exemption_number = request.POST.get('tax_exemption_number')
-        website = request.POST.get('website')
-
         if first_name and last_name:
             # Validate email is provided
             if not email or not email.strip():
@@ -79,8 +60,15 @@ def add_contact(request):
                 messages.error(request, 'At least one phone number (work, mobile, or home) is required.')
                 return render(request, 'contacts/add_contact.html')
 
+            business = None
+            # Get selected business from dropdown (if not "NONE")
+            if business_id and business_id != 'NONE':
+                try:
+                    business = Business.objects.get(business_id=int(business_id))
+                except (Business.DoesNotExist, ValueError):
+                    pass
+
             with transaction.atomic():
-                # Create contact first (without business association)
                 contact = Contact.objects.create(
                     first_name=first_name,
                     middle_initial=middle_initial or '',
@@ -92,23 +80,8 @@ def add_contact(request):
                     addr1=address or '',
                     city=city or '',
                     postal_code=postal_code or '',
-                    business=None
+                    business=business
                 )
-
-                business = None
-                # Create business only if business name is provided and not just whitespace
-                if business_name and business_name.strip():
-                    business = Business.objects.create(
-                        business_name=business_name.strip(),
-                        business_phone=business_phone.strip() if business_phone else '',
-                        business_address=business_address.strip() if business_address else '',
-                        tax_exemption_number=tax_exemption_number.strip() if tax_exemption_number else '',
-                        website=website.strip() if website else '',
-                        default_contact=contact
-                    )
-                    # Associate contact with business
-                    contact.business = business
-                    contact.save()
 
             success_msg = f'Contact "{contact}" has been added successfully.'
             if business:
@@ -138,8 +111,17 @@ def add_contact(request):
         else:
             messages.error(request, 'First name and last name are required.')
 
+    # Split initial_name into first/last for the form
+    initial_first_name = ''
+    initial_last_name = ''
+    if initial_name:
+        parts = initial_name.split(' ', 1)
+        initial_first_name = parts[0]
+        initial_last_name = parts[1] if len(parts) > 1 else ''
+
     return render(request, 'contacts/add_contact.html', {
-        'initial_name': initial_name,
+        'initial_first_name': initial_first_name,
+        'initial_last_name': initial_last_name,
         'initial_email': initial_email,
         'initial_business_name': initial_business_name,
         'suggested_business_id': suggested_business_id,
@@ -171,10 +153,10 @@ def confirm_create_business(request):
         create_business = request.POST.get('create_business')
 
         if create_business == 'yes':
-            # Create the business
+            # Create the business with this contact as the default
             business = Business.objects.create(
                 business_name=initial_business_name.strip(),
-                # Other fields can be left blank for now
+                default_contact=contact,
             )
 
             # Associate contact with the new business
@@ -536,7 +518,12 @@ def edit_contact(request, contact_id):
             contact.addr1 = address or ''
             contact.city = city or ''
             contact.postal_code = postal_code or ''
-            contact.business = business
+
+            # Only update business association if a radio button was selected
+            # If no selection mode, preserve existing business association
+            if business_selection_mode:
+                contact.business = business
+
             contact.save()
 
             messages.success(request, f'Contact "{contact}" has been updated successfully.')
@@ -694,132 +681,277 @@ def delete_contact(request, contact_id):
     return redirect('contacts:contact_detail', contact_id=contact.contact_id)
 
 def delete_business(request, business_id):
-    """Delete a business if none of its contacts are associated with non-business objects"""
+    """Delete a business, letting the user decide what to do with each associated object."""
     business = get_object_or_404(Business, business_id=business_id)
 
-    if request.method == 'POST':
-        # Get all contacts for this business
-        contacts = business.contacts.all()
+    if request.method != 'POST':
+        return redirect('contacts:business_detail', business_id=business_id)
 
-        # Check if any contacts have associations with Jobs or Bills
-        # Use bulk queries to avoid N+1 problem
-        from apps.jobs.models import Job
-        from apps.purchasing.models import Bill
-        from collections import defaultdict
+    # Phase 2: Process confirmed actions
+    if request.POST.get('confirm_actions') == 'true':
+        return _process_business_deletion(request, business)
 
-        contact_ids = list(contacts.values_list('contact_id', flat=True))
+    # Phase 1: Gather associated objects and show management page
+    return _show_deletion_management_page(request, business)
 
-        # Single query to get all jobs for all contacts
-        jobs_by_contact = defaultdict(list)
-        for item in Job.objects.filter(contact_id__in=contact_ids).values('contact_id', 'job_number'):
-            jobs_by_contact[item['contact_id']].append(item['job_number'])
 
-        # Single query to get all bills for all contacts
-        bills_by_contact = defaultdict(list)
-        for item in Bill.objects.filter(contact_id__in=contact_ids).values('contact_id', 'bill_id'):
-            bills_by_contact[item['contact_id']].append(str(item['bill_id']))
+def _show_deletion_management_page(request, business):
+    """Gather all objects associated with a business and render the management page."""
+    from apps.jobs.models import Job
+    from apps.purchasing.models import PurchaseOrder, Bill
+    from collections import defaultdict
 
-        # Build associated contacts list using the pre-fetched data
-        associated_contacts = []
-        for contact in contacts:
-            jobs = jobs_by_contact.get(contact.contact_id, [])
-            bills = bills_by_contact.get(contact.contact_id, [])
+    contacts = list(business.contacts.all().order_by('last_name', 'first_name'))
+    contact_ids = [c.contact_id for c in contacts]
 
-            if jobs or bills:
-                associations = []
-                if jobs:
-                    associations.append(f"Jobs: {', '.join(jobs)}")
-                if bills:
-                    associations.append(f"Bills: {', '.join(bills)}")
+    # Direct POs and Bills (FK to Business with PROTECT)
+    direct_pos = list(PurchaseOrder.objects.filter(business=business))
+    direct_bills = list(Bill.objects.filter(business=business))
 
-                associated_contacts.append({
-                    'name': contact,
-                    'associations': '; '.join(associations)
-                })
+    # Jobs grouped by contact
+    jobs_by_contact = defaultdict(list)
+    for job in Job.objects.filter(contact_id__in=contact_ids).order_by('job_number'):
+        jobs_by_contact[job.contact_id].append(job)
 
-        # If any contacts have associations, prevent deletion
-        if associated_contacts:
-            error_details = []
-            for item in associated_contacts:
-                error_details.append(f"{item['name']} ({item['associations']})")
+    # Build contact data for template
+    contact_data = []
+    for contact in contacts:
+        contact_data.append({
+            'contact': contact,
+            'jobs': jobs_by_contact.get(contact.contact_id, []),
+        })
 
-            messages.error(
-                request,
-                f'Cannot delete business "{business.business_name}" because the following contacts have associations: '
-                f'{"; ".join(error_details)}. Please remove these associations before deleting the business.'
-            )
-            return redirect('contacts:business_detail', business_id=business.business_id)
+    has_associations = bool(contacts or direct_pos or direct_bills)
 
-        # Get user's choice for contact action
-        contact_action = request.POST.get('contact_action')
-
-        # If there are contacts and no action specified, show confirmation form
-        if contacts.exists() and not contact_action:
-            return render(request, 'contacts/confirm_delete_business.html', {
-                'business': business,
-                'contacts': contacts,
-                'contact_count': contacts.count()
-            })
-
-        # Validate contact action if contacts exist
-        if contacts.exists() and contact_action not in ['unlink', 'delete']:
-            messages.error(request, 'Please select what to do with the associated contacts.')
-            return render(request, 'contacts/confirm_delete_business.html', {
-                'business': business,
-                'contacts': contacts,
-                'contact_count': contacts.count()
-            })
-
-        # Perform deletion based on user's choice
+    # If nothing is associated, delete directly
+    if not has_associations:
         business_name = business.business_name
-        contact_count = contacts.count()
-
-        if contact_action == 'unlink':
-            # Unlink contacts from business individually to trigger model validation
-            for contact in contacts:
-                contact.business = None
-                contact.save()
-            business.delete()
-            messages.success(
-                request,
-                f'Business "{business_name}" has been deleted. {contact_count} contact(s) have been unlinked and are now independent.'
-            )
-        elif contact_action == 'delete':
-            # Delete all contacts along with business
-            contact_names = [str(c) for c in contacts[:5]]  # Get first 5 names
-            contact_ids = list(contacts.values_list('contact_id', flat=True))
-
-            # Must delete business first to avoid PROTECT constraint on default_contact
-            business.delete()
-
-            # Delete contacts individually to trigger model validation logic
-            # (contacts are now orphaned since business was deleted first)
-            for contact_id in contact_ids:
-                try:
-                    contact = Contact.objects.get(contact_id=contact_id)
-                    contact.delete()
-                except Contact.DoesNotExist:
-                    pass
-
-            if contact_count <= 5:
-                messages.success(
-                    request,
-                    f'Business "{business_name}" and {contact_count} contact(s) have been deleted: {", ".join(contact_names)}.'
-                )
-            else:
-                messages.success(
-                    request,
-                    f'Business "{business_name}" and all {contact_count} associated contacts have been deleted.'
-                )
-        else:
-            # No contacts, just delete business
-            business.delete()
-            messages.success(request, f'Business "{business_name}" has been deleted successfully.')
-
+        business.delete()
+        messages.success(request, f'Business "{business_name}" has been deleted successfully.')
         return redirect('contacts:business_list')
 
-    # If not POST, redirect back
-    return redirect('contacts:business_detail', business_id=business_id)
+    # Other businesses for reassignment dropdowns
+    other_businesses = Business.objects.exclude(
+        business_id=business.business_id
+    ).order_by('business_name')
+
+    # All contacts for job reassignment dropdown (excluding this business's contacts)
+    external_contacts = Contact.objects.exclude(
+        business=business
+    ).order_by('last_name', 'first_name')
+
+    return render(request, 'contacts/confirm_delete_business.html', {
+        'business': business,
+        'contact_data': contact_data,
+        'direct_pos': direct_pos,
+        'direct_bills': direct_bills,
+        'other_businesses': other_businesses,
+        'external_contacts': external_contacts,
+        'sibling_contacts': contacts,
+    })
+
+
+def _process_business_deletion(request, business):
+    """Validate and execute per-object actions, then delete the business."""
+    from django.db import transaction
+    from apps.jobs.models import Job
+    from apps.purchasing.models import PurchaseOrder, Bill
+    from collections import defaultdict
+
+    errors = []
+
+    # Re-fetch all associated objects
+    contacts = list(business.contacts.all())
+    contact_ids = [c.contact_id for c in contacts]
+    direct_pos = list(PurchaseOrder.objects.filter(business=business))
+    direct_bills = list(Bill.objects.filter(business=business))
+
+    jobs_by_contact = defaultdict(list)
+    for job in Job.objects.filter(contact_id__in=contact_ids).order_by('job_number'):
+        jobs_by_contact[job.contact_id].append(job)
+
+    # ---- VALIDATION ----
+
+    # Validate PO actions
+    po_actions = {}
+    for po in direct_pos:
+        action = request.POST.get(f'action_po_{po.po_id}')
+        if action not in ('delete', 'reassign'):
+            errors.append(f'Please select an action for PO {po.po_number}.')
+            continue
+        if action == 'delete' and po.status != 'draft':
+            errors.append(
+                f'Cannot delete PO {po.po_number} (status: {po.get_status_display()}). '
+                'Only draft POs can be deleted.'
+            )
+            continue
+        if action == 'reassign':
+            target_id = request.POST.get(f'reassign_po_{po.po_id}_business')
+            if not target_id:
+                errors.append(f'Please select a target business for PO {po.po_number}.')
+                continue
+            try:
+                target_biz = Business.objects.get(business_id=target_id)
+            except Business.DoesNotExist:
+                errors.append(f'Invalid target business for PO {po.po_number}.')
+                continue
+            po_actions[po.po_id] = ('reassign', target_biz)
+        else:
+            po_actions[po.po_id] = ('delete', None)
+
+    # Validate Bill actions
+    bill_actions = {}
+    for bill in direct_bills:
+        action = request.POST.get(f'action_bill_{bill.bill_id}')
+        if action not in ('delete', 'reassign'):
+            errors.append(f'Please select an action for Bill {bill.bill_number}.')
+            continue
+        if action == 'delete' and bill.status != 'draft':
+            errors.append(
+                f'Cannot delete Bill {bill.bill_number} (status: {bill.get_status_display()}). '
+                'Only draft bills can be deleted.'
+            )
+            continue
+        if action == 'reassign':
+            target_id = request.POST.get(f'reassign_bill_{bill.bill_id}_business')
+            if not target_id:
+                errors.append(f'Please select a target business for Bill {bill.bill_number}.')
+                continue
+            try:
+                target_biz = Business.objects.get(business_id=target_id)
+            except Business.DoesNotExist:
+                errors.append(f'Invalid target business for Bill {bill.bill_number}.')
+                continue
+            bill_actions[bill.bill_id] = ('reassign', target_biz)
+        else:
+            bill_actions[bill.bill_id] = ('delete', None)
+
+    # Validate Contact actions
+    contact_actions = {}
+    contacts_being_deleted = set()
+    for contact in contacts:
+        action = request.POST.get(f'action_contact_{contact.contact_id}')
+        if action not in ('unlink', 'delete', 'reassign'):
+            errors.append(f'Please select an action for contact {contact.name}.')
+            continue
+        if action == 'reassign':
+            target_id = request.POST.get(f'reassign_contact_{contact.contact_id}_business')
+            if not target_id:
+                errors.append(f'Please select a target business for contact {contact.name}.')
+                continue
+            try:
+                target_biz = Business.objects.get(business_id=target_id)
+            except Business.DoesNotExist:
+                errors.append(f'Invalid target business for contact {contact.name}.')
+                continue
+            contact_actions[contact.contact_id] = ('reassign', target_biz)
+        elif action == 'delete':
+            contacts_being_deleted.add(contact.contact_id)
+            contact_actions[contact.contact_id] = ('delete', None)
+        else:
+            contact_actions[contact.contact_id] = ('unlink', None)
+
+    # Validate Job actions (only for contacts being deleted)
+    job_actions = {}
+    for contact_id in contacts_being_deleted:
+        for job in jobs_by_contact.get(contact_id, []):
+            action = request.POST.get(f'action_job_{job.job_id}')
+            if action not in ('delete', 'reassign'):
+                errors.append(f'Please select an action for job {job.job_number}.')
+                continue
+            if action == 'reassign':
+                target_id = request.POST.get(f'reassign_job_{job.job_id}_contact')
+                if not target_id:
+                    errors.append(f'Please select a target contact for job {job.job_number}.')
+                    continue
+                try:
+                    target_contact_id = int(target_id)
+                except (ValueError, TypeError):
+                    errors.append(f'Invalid target contact for job {job.job_number}.')
+                    continue
+                if target_contact_id in contacts_being_deleted:
+                    errors.append(
+                        f'Cannot reassign job {job.job_number} to a contact that is also being deleted.'
+                    )
+                    continue
+                if not Contact.objects.filter(contact_id=target_contact_id).exists():
+                    errors.append(f'Invalid target contact for job {job.job_number}.')
+                    continue
+                job_actions[job.job_id] = ('reassign', target_contact_id)
+            else:
+                job_actions[job.job_id] = ('delete', None)
+
+    # If validation errors, re-render with errors
+    if errors:
+        for error in errors:
+            messages.error(request, error)
+        return _show_deletion_management_page(request, business)
+
+    # ---- EXECUTION (atomic) ----
+    business_name = business.business_name
+    try:
+        with transaction.atomic():
+            # Step 1: Process POs
+            for po in direct_pos:
+                action, target = po_actions[po.po_id]
+                if action == 'delete':
+                    po.delete()
+                else:
+                    # Use QuerySet.update() to bypass PO.save() full_clean()
+                    PurchaseOrder.objects.filter(pk=po.po_id).update(
+                        business=target, contact=None
+                    )
+
+            # Step 2: Process Bills
+            for bill in direct_bills:
+                action, target = bill_actions[bill.bill_id]
+                if action == 'delete':
+                    bill.delete()
+                else:
+                    Bill.objects.filter(pk=bill.bill_id).update(
+                        business=target, contact=None
+                    )
+
+            # Step 3: Process Jobs (for contacts being deleted)
+            for job_id, (action, target) in job_actions.items():
+                if action == 'delete':
+                    Job.objects.get(pk=job_id).delete()
+                else:
+                    Job.objects.filter(pk=job_id).update(contact_id=target)
+
+            # Step 4: Clear contact references on POs/Bills from OTHER businesses
+            # that reference contacts being deleted
+            if contacts_being_deleted:
+                PurchaseOrder.objects.filter(
+                    contact_id__in=contacts_being_deleted
+                ).update(contact=None)
+                Bill.objects.filter(
+                    contact_id__in=contacts_being_deleted
+                ).update(contact=None)
+
+            # Step 5: Unlink and reassign contacts
+            for contact in contacts:
+                cid = contact.contact_id
+                action, target = contact_actions[cid]
+                if action == 'unlink':
+                    Contact.objects.filter(pk=cid).update(business=None)
+                elif action == 'reassign':
+                    Contact.objects.filter(pk=cid).update(business=target)
+
+            # Step 6: Delete the business
+            business.delete()
+
+            # Step 7: Delete contacts marked for deletion
+            # Use QuerySet.delete() to bypass Contact.delete() custom logic
+            if contacts_being_deleted:
+                Contact.objects.filter(contact_id__in=contacts_being_deleted).delete()
+
+        messages.success(request, f'Business "{business_name}" has been deleted successfully.')
+        return redirect('contacts:business_list')
+
+    except Exception as e:
+        messages.error(request, f'An error occurred while deleting the business: {str(e)}')
+        return redirect('contacts:business_detail', business_id=business.business_id)
 
 def edit_business(request, business_id):
     business = get_object_or_404(Business, business_id=business_id)

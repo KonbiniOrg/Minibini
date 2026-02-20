@@ -52,7 +52,7 @@
       "qty": "100.00",
       "units": "each",
       "description": "Screws for purchase order",
-      "price_currency": "25.00"
+      "price": "25.00"
     }
   },
   {
@@ -66,7 +66,7 @@
       "qty": "100.00",
       "units": "each",
       "description": "Screws received on bill",
-      "price_currency": "25.00"
+      "price": "25.00"
     }
   }
 ]

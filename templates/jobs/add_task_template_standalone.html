@@ -44,15 +44,15 @@
             <div>{{ form.rate.errors }}</div>
         {% endif %}
     </div>
-    
+
     <div>
-        <label for="{{ form.task_mapping.id_for_label }}">Task Mapping:</label>
-        {{ form.task_mapping }}
-        {% if form.task_mapping.errors %}
-            <div>{{ form.task_mapping.errors }}</div>
+        <label for="{{ form.line_item_type.id_for_label }}">Line Item Type:</label>
+        {{ form.line_item_type }}
+        {% if form.line_item_type.errors %}
+            <div>{{ form.line_item_type.errors }}</div>
         {% endif %}
     </div>
-    
+
     <div>
         <label for="{{ form.is_active.id_for_label }}">Active:</label>
         {{ form.is_active }}

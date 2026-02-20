@@ -9,7 +9,7 @@
     {% csrf_token %}
     <div style="margin-bottom: 15px;">
         <label for="first_name" style="display: block; margin-bottom: 5px; font-weight: bold;">First Name *</label>
-        <input type="text" id="first_name" name="first_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <input type="text" id="first_name" name="first_name" value="{{ initial_first_name }}" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <div style="margin-bottom: 15px;">
@@ -19,12 +19,12 @@
 
     <div style="margin-bottom: 15px;">
         <label for="last_name" style="display: block; margin-bottom: 5px; font-weight: bold;">Last Name *</label>
-        <input type="text" id="last_name" name="last_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <input type="text" id="last_name" name="last_name" value="{{ initial_last_name }}" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <div style="margin-bottom: 15px;">
         <label for="email" style="display: block; margin-bottom: 5px; font-weight: bold;">Email Address *</label>
-        <input type="email" id="email" name="email" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <input type="email" id="email" name="email" value="{{ initial_email }}" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <fieldset style="border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 4px;">
@@ -64,7 +64,6 @@
     <fieldset>
         <legend><strong>Business Association (Optional)</strong></legend>
 
-<<<<<<< HEAD
         {% if initial_business_name %}
         <p><em>Company detected from email: "{{ initial_business_name }}"</em></p>
         {% endif %}
@@ -85,33 +84,6 @@
             <br><small>No matching business found. Select an existing business or choose "-- None --" to create a new one.</small>
             {% endif %}
         </p>
-=======
-        <div style="margin-bottom: 15px;">
-            <label for="business_name" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Name</label>
-            <input type="text" id="business_name" name="business_name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-            <small style="display: block; margin-top: 5px; color: #666;">A unique reference code will be automatically generated</small>
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <label for="business_phone" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Phone</label>
-            <input type="tel" id="business_phone" name="business_phone" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <label for="business_address" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Address</label>
-            <textarea id="business_address" name="business_address" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; min-height: 80px;"></textarea>
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <label for="tax_exemption_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Tax Exemption Number</label>
-            <input type="text" id="tax_exemption_number" name="tax_exemption_number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <label for="website" style="display: block; margin-bottom: 5px; font-weight: bold;">Website</label>
-            <input type="url" id="website" name="website" placeholder="https://example.com" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-        </div>
->>>>>>> main
     </fieldset>
 
     <p>

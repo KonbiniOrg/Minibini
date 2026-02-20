@@ -376,8 +376,9 @@ class AddContactFromEmailWorkflowTest(TestCase):
 
         response = self.client.get(self.url)
 
-        # Check form is pre-filled
-        self.assertContains(response, 'value="New Person"')
+        # Check form is pre-filled (name split into first/last)
+        self.assertContains(response, 'value="New"')
+        self.assertContains(response, 'value="Person"')
         self.assertContains(response, 'value="new@example.com"')
 
     def test_add_contact_with_suggested_business(self):
@@ -419,9 +420,11 @@ class AddContactFromEmailWorkflowTest(TestCase):
         session.save()
 
         post_data = {
-            'name': 'Bob Smith',
+            'first_name': 'Bob',
+            'last_name': 'Smith',
             'email': 'bob@newcustomer.com',
-            'business_id': '1',  # Acme Corporation
+            'work_number': '555-0001',
+            'business_id': '1',  # Acme Corp
         }
 
         response = self.client.post(self.url, data=post_data)
@@ -446,8 +449,10 @@ class AddContactFromEmailWorkflowTest(TestCase):
         session.save()
 
         post_data = {
-            'name': 'Dave Solo',
+            'first_name': 'Dave',
+            'last_name': 'Solo',
             'email': 'dave@solo.com',
+            'work_number': '555-0002',
             'business_id': 'NONE',
         }
 
@@ -472,8 +477,10 @@ class AddContactFromEmailWorkflowTest(TestCase):
         session.save()
 
         post_data = {
-            'name': 'Carol Williams',
+            'first_name': 'Carol',
+            'last_name': 'Williams',
             'email': 'carol@techstart.com',
+            'work_number': '555-0003',
             'business_id': 'NONE',
         }
 
@@ -515,7 +522,8 @@ class ConfirmCreateBusinessFromEmailTest(TestCase):
         """Test viewing the confirmation page"""
         # Create a contact first
         contact = Contact.objects.create(
-            name='Test Person',
+            first_name='Test',
+            last_name='Person',
             email='test@newco.com'
         )
 
@@ -537,7 +545,8 @@ class ConfirmCreateBusinessFromEmailTest(TestCase):
     def test_confirm_create_business_post_yes(self):
         """Test choosing YES to create business"""
         contact = Contact.objects.create(
-            name='Test Person',
+            first_name='Test',
+            last_name='Person',
             email='test@newco.com'
         )
 
@@ -574,7 +583,8 @@ class ConfirmCreateBusinessFromEmailTest(TestCase):
     def test_confirm_create_business_post_no(self):
         """Test choosing NO to skip business creation"""
         contact = Contact.objects.create(
-            name='Test Person',
+            first_name='Test',
+            last_name='Person',
             email='test@newco.com'
         )
 

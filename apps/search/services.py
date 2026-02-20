@@ -11,10 +11,109 @@ from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, B
 class SearchService:
     """Service class to handle search business logic"""
 
+    # Category numeric identifiers
+    CATEGORY_BUSINESSES = 1
+    CATEGORY_PRICE_LIST_ITEMS = 2
+    CATEGORY_CONTACTS = 3
+    CATEGORY_INVOICES = 4
+    CATEGORY_JOBS = 5
+    CATEGORY_ESTIMATES = 6
+    CATEGORY_WORK_ORDERS = 7
+    CATEGORY_EST_WORKSHEETS = 8
+    CATEGORY_BILLS = 9
+    CATEGORY_PURCHASE_ORDERS = 10
+
+    # Mapping from category ID to internal key name
+    CATEGORY_ID_TO_KEY = {
+        CATEGORY_BUSINESSES: 'businesses',
+        CATEGORY_PRICE_LIST_ITEMS: 'price_list_items',
+        CATEGORY_CONTACTS: 'contacts',
+        CATEGORY_INVOICES: 'invoices',
+        CATEGORY_JOBS: 'jobs',
+        CATEGORY_ESTIMATES: 'estimates',
+        CATEGORY_WORK_ORDERS: 'work_orders',
+        CATEGORY_EST_WORKSHEETS: 'est_worksheets',
+        CATEGORY_BILLS: 'bills',
+        CATEGORY_PURCHASE_ORDERS: 'purchase_orders',
+    }
+
+    # Mapping from internal key name to category ID
+    CATEGORY_KEY_TO_ID = {v: k for k, v in CATEGORY_ID_TO_KEY.items()}
+
+    # Mapping from category ID to display name
+    CATEGORY_ID_TO_DISPLAY = {
+        CATEGORY_BUSINESSES: 'Businesses',
+        CATEGORY_PRICE_LIST_ITEMS: 'Price List Items',
+        CATEGORY_CONTACTS: 'Contacts',
+        CATEGORY_INVOICES: 'Invoices',
+        CATEGORY_JOBS: 'Jobs',
+        CATEGORY_ESTIMATES: 'Estimates',
+        CATEGORY_WORK_ORDERS: 'Work Orders',
+        CATEGORY_EST_WORKSHEETS: 'Est Worksheets',
+        CATEGORY_BILLS: 'Bills',
+        CATEGORY_PURCHASE_ORDERS: 'Purchase Orders',
+    }
+
+    # Legacy support: List of category keys (for backward compatibility)
     AVAILABLE_CATEGORIES = [
         'businesses', 'price_list_items', 'contacts', 'invoices', 'jobs',
         'estimates', 'work_orders', 'est_worksheets', 'bills', 'purchase_orders'
     ]
+
+    @classmethod
+    def get_category_id_from_string(cls, category_str):
+        """
+        Convert a category string to its numeric ID.
+        Case-insensitive lookup.
+        Returns None if not found.
+        """
+        if not category_str:
+            return None
+
+        # Normalize to lowercase for case-insensitive comparison
+        normalized = category_str.lower().strip()
+
+        # Try exact match first
+        if normalized in cls.CATEGORY_KEY_TO_ID:
+            return cls.CATEGORY_KEY_TO_ID[normalized]
+
+        # Try matching against all keys case-insensitively
+        for key, category_id in cls.CATEGORY_KEY_TO_ID.items():
+            if key.lower() == normalized:
+                return category_id
+
+        return None
+
+    @classmethod
+    def get_category_key_from_id(cls, category_id):
+        """
+        Convert a category ID to its internal key name.
+        Returns None if not found.
+        """
+        return cls.CATEGORY_ID_TO_KEY.get(category_id)
+
+    @classmethod
+    def get_category_display_name(cls, category_id):
+        """
+        Get the display name for a category ID.
+        Returns None if not found.
+        """
+        return cls.CATEGORY_ID_TO_DISPLAY.get(category_id)
+
+    @classmethod
+    def get_all_category_info(cls):
+        """
+        Get information about all categories.
+        Returns a list of dicts with id, key, and display_name.
+        """
+        return [
+            {
+                'id': category_id,
+                'key': cls.get_category_key_from_id(category_id),
+                'display_name': cls.get_category_display_name(category_id)
+            }
+            for category_id in sorted(cls.CATEGORY_ID_TO_KEY.keys())
+        ]
 
     @staticmethod
     def parse_price_filters(price_min_str, price_max_str):
@@ -98,10 +197,10 @@ class SearchService:
         ).select_related('job').prefetch_related('invoicelineitem_set')
 
         invoice_line_items = InvoiceLineItem.objects.annotate(
-            price_text=Cast('price_currency', CharField()),
+            price_text=Cast('price', CharField()),
             qty_text=Cast('qty', CharField()),
-            total_amount_calc=F('qty') * F('price_currency'),
-            total_amount_text=Cast(F('qty') * F('price_currency'), CharField())
+            total_amount_calc=F('qty') * F('price'),
+            total_amount_text=Cast(F('qty') * F('price'), CharField())
         ).filter(
             Q(description__icontains=query) |
             Q(invoice__invoice_number__icontains=query) |
@@ -139,10 +238,10 @@ class SearchService:
         ).select_related('job').prefetch_related('estimatelineitem_set')
 
         estimate_line_items = EstimateLineItem.objects.annotate(
-            price_text=Cast('price_currency', CharField()),
+            price_text=Cast('price', CharField()),
             qty_text=Cast('qty', CharField()),
-            total_amount_calc=F('qty') * F('price_currency'),
-            total_amount_text=Cast(F('qty') * F('price_currency'), CharField())
+            total_amount_calc=F('qty') * F('price'),
+            total_amount_text=Cast(F('qty') * F('price'), CharField())
         ).filter(
             Q(description__icontains=query) |
             Q(estimate__estimate_number__icontains=query) |
@@ -220,10 +319,10 @@ class SearchService:
         ).select_related('purchase_order', 'contact').prefetch_related('billlineitem_set')
 
         bill_line_items = BillLineItem.objects.annotate(
-            price_text=Cast('price_currency', CharField()),
+            price_text=Cast('price', CharField()),
             qty_text=Cast('qty', CharField()),
-            total_amount_calc=F('qty') * F('price_currency'),
-            total_amount_text=Cast(F('qty') * F('price_currency'), CharField())
+            total_amount_calc=F('qty') * F('price'),
+            total_amount_text=Cast(F('qty') * F('price'), CharField())
         ).filter(
             Q(description__icontains=query) |
             Q(bill__vendor_invoice_number__icontains=query) |
@@ -261,10 +360,10 @@ class SearchService:
         ).select_related('job').prefetch_related('purchaseorderlineitem_set')
 
         po_line_items = PurchaseOrderLineItem.objects.annotate(
-            price_text=Cast('price_currency', CharField()),
+            price_text=Cast('price', CharField()),
             qty_text=Cast('qty', CharField()),
-            total_amount_calc=F('qty') * F('price_currency'),
-            total_amount_text=Cast(F('qty') * F('price_currency'), CharField())
+            total_amount_calc=F('qty') * F('price'),
+            total_amount_text=Cast(F('qty') * F('price'), CharField())
         ).filter(
             Q(description__icontains=query) |
             Q(purchase_order__po_number__icontains=query) |
@@ -395,17 +494,35 @@ class SearchService:
 
         return categories
 
-    @staticmethod
-    def apply_category_filter(categories, filter_category):
-        """Apply category filter to results"""
-        if filter_category and filter_category != 'all':
-            # Normalize to lowercase to match category keys
-            normalized_category = filter_category.lower()
-            if normalized_category in categories:
-                return {normalized_category: categories[normalized_category]}
-            else:
-                return {}
-        return categories
+    @classmethod
+    def apply_category_filter(cls, categories, filter_category):
+        """
+        Apply category filter to results.
+        Accepts either a category ID (int), category key (str), or 'all'.
+        Uses numeric mapping to avoid case sensitivity issues.
+        """
+        if not filter_category or filter_category == 'all':
+            return categories
+
+        # Convert filter to category ID if it's a string
+        category_id = None
+        if isinstance(filter_category, int):
+            category_id = filter_category
+        elif isinstance(filter_category, str):
+            category_id = cls.get_category_id_from_string(filter_category)
+
+        # If we couldn't resolve to a valid category ID, return empty
+        if category_id is None:
+            return {}
+
+        # Get the category key for this ID
+        category_key = cls.get_category_key_from_id(category_id)
+
+        # Return only the matching category if it exists in results
+        if category_key and category_key in categories:
+            return {category_key: categories[category_key]}
+
+        return {}
 
     @staticmethod
     def apply_date_filter(item_date, date_from_str, date_to_str):
@@ -509,50 +626,56 @@ class SearchService:
                             total += len(subcategory_items)
         return total
 
-    @staticmethod
-    def build_result_ids_for_session(categories):
-        """Build a dictionary of result IDs for session storage"""
+    @classmethod
+    def build_result_ids_for_session(cls, categories):
+        """
+        Build a dictionary of result IDs for session storage.
+        Uses numeric category mapping to avoid case sensitivity issues.
+        """
         result_ids = {}
 
+        # Mapping from category key to model name
+        CATEGORY_KEY_TO_MODEL = {
+            'jobs': 'Job',
+            'contacts': 'Contact',
+            'businesses': 'Business',
+            'price_list_items': 'PriceListItem',
+            'invoices': 'Invoice',
+            'estimates': 'Estimate',
+            'bills': 'Bill',
+            'purchase_orders': 'PurchaseOrder',
+            'work_orders': 'WorkOrder',
+            'est_worksheets': 'EstWorksheet',
+        }
+
         for category_name, category_data in categories.items():
+            # Normalize category name using the numeric mapping system
+            category_id = cls.get_category_id_from_string(category_name)
+            if category_id is None:
+                continue
+
+            category_key = cls.get_category_key_from_id(category_id)
+            model_name = CATEGORY_KEY_TO_MODEL.get(category_key)
+
+            if not model_name:
+                continue
+
+            items_list = None
+
             # Handle dict with 'items' or 'grouped_items'
             if isinstance(category_data, dict):
-                model_name = None
-                items_list = None
-
-                # Determine model name
-                if category_name == 'jobs':
-                    model_name = 'Job'
-                elif category_name == 'contacts':
-                    model_name = 'Contact'
-                elif category_name == 'businesses':
-                    model_name = 'Business'
-                elif category_name == 'price_list_items':
-                    model_name = 'PriceListItem'
-                elif category_name == 'invoices':
-                    model_name = 'Invoice'
-                elif category_name == 'estimates':
-                    model_name = 'Estimate'
-                elif category_name == 'bills':
-                    model_name = 'Bill'
-                elif category_name == 'purchase_orders':
-                    model_name = 'PurchaseOrder'
-
                 # Get items from either 'grouped_items' or 'items'
                 if 'grouped_items' in category_data:
                     items_list = category_data['grouped_items']
                 elif 'items' in category_data:
                     items_list = category_data['items']
 
-                if model_name and items_list:
-                    result_ids[model_name] = [item.pk for item in items_list]
-
             # Handle flat lists (work_orders, est_worksheets)
             elif isinstance(category_data, list):
-                if category_name == 'work_orders':
-                    result_ids['WorkOrder'] = [item.pk for item in category_data]
-                elif category_name == 'est_worksheets':
-                    result_ids['EstWorksheet'] = [item.pk for item in category_data]
+                items_list = category_data
+
+            if items_list:
+                result_ids[model_name] = [item.pk for item in items_list]
 
         return result_ids
 

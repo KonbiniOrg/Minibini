@@ -95,10 +95,10 @@ DATABASES = {
 #        'ENGINE': 'django.db.backends.sqlite3',
 #        'NAME': BASE_DIR / 'db.sqlite3',
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv("DATABASE_NAME"),
-        'USER': os.getenv("DATABASE_USER"),
-        'PASSWORD': os.getenv("DATABASE_PASSWORD"),
-        'HOST': 'mysql',
+        'NAME': os.getenv("DATABASE_NAME", "minibini_db"),
+        'USER': os.getenv("DATABASE_USER", "minibini_user"),
+        'PASSWORD': os.getenv("DATABASE_PASSWORD", "dev_password"),
+        'HOST': os.getenv("DATABASE_HOST", "localhost"),
         'PORT': '3306',
     }
 }

@@ -14,16 +14,29 @@
 <ul>
     <li><a href="{% url 'jobs:work_order_template_list' %}">WorkOrder Templates</a></li>
     <li><a href="{% url 'jobs:task_template_list' %}">Task Templates</a></li>
-    <li><a href="{% url 'jobs:task_mapping_list' %}">Task Mappings</a></li>
 </ul>
 
 <h3>Inventory & Pricing</h3>
 <ul>
     <li><a href="{% url 'invoicing:price_list_item_list' %}">Price List Items</a></li>
+    <li><a href="{% url 'core:line_item_type_list' %}">Line Item Types</a></li>
 </ul>
 
 <h3>User Management</h3>
 <ul>
     <li><a href="{% url 'core:user_list' %}">View All Users</a></li>
 </ul>
+
+<h3>Tax Settings</h3>
+<table>
+    <tr>
+        <td><strong>default_tax_rate</strong></td>
+        <td>{% if default_tax_rate %}{{ default_tax_rate.value }}{% else %}Not set{% endif %}</td>
+    </tr>
+    <tr>
+        <td><strong>org_tax_multiplier</strong></td>
+        <td>{% if org_tax_multiplier %}{{ org_tax_multiplier.value }}{% else %}Not set{% endif %}</td>
+    </tr>
+</table>
+<p><a href="{% url 'tax_config_edit' %}">Edit Tax Settings</a></p>
 {% endblock %}

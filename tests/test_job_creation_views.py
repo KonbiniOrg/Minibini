@@ -210,6 +210,27 @@ class JobCreateViewTest(TestCase):
         expected_url = reverse('jobs:detail', args=[job.job_id])
         self.assertRedirects(response, expected_url)
 
+    def test_job_create_with_name(self):
+        """Test that the name field is included in the form and saved to the Job"""
+        post_data = {
+            'contact': self.contact1.contact_id,
+            'name': 'Kitchen Remodel',
+            'description': 'Full kitchen renovation',
+        }
+
+        response = self.client.post(self.url, data=post_data)
+        self.assertEqual(response.status_code, 302)
+
+        job = Job.objects.filter(description='Full kitchen renovation').first()
+        self.assertIsNotNone(job)
+        self.assertEqual(job.name, 'Kitchen Remodel')
+
+    def test_job_create_name_field_in_form(self):
+        """Test that the name field appears in the creation form"""
+        response = self.client.get(self.url)
+        form = response.context['form']
+        self.assertIn('name', form.fields)
+
     def test_job_always_starts_in_draft_status(self):
         """Test that all new jobs start in draft status regardless of input"""
         # Even if someone tries to set a different status, it should be draft

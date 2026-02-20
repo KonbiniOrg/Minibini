@@ -14,12 +14,17 @@ class EmailRecordModelTest(TestCase):
 
     def setUp(self):
         """Create test data."""
-        self.business = Business.objects.create(business_name="Test Business")
         self.contact = Contact.objects.create(
-            name="Test Contact",
+            first_name="Test",
+            last_name="Contact",
             email="contact@example.com",
-            business=self.business
         )
+        self.business = Business.objects.create(
+            business_name="Test Business",
+            default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
         self.job = Job.objects.create(
             job_number="JOB-001",
             contact=self.contact,
@@ -297,12 +302,17 @@ class EmailServiceTest(TestCase):
 
     def setUp(self):
         """Create test data."""
-        self.business = Business.objects.create(business_name="Test Business")
         self.contact = Contact.objects.create(
-            name="Test Contact",
+            first_name="Test",
+            last_name="Contact",
             email="contact@example.com",
-            business=self.business
         )
+        self.business = Business.objects.create(
+            business_name="Test Business",
+            default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
         self.job = Job.objects.create(
             job_number="JOB-001",
             contact=self.contact,

@@ -348,8 +348,22 @@ class EstWorksheet(AbstractWorkContainer):
             estimate=None  # New version starts without an estimate
         )
 
+        # Copy TaskBundles, mapping old bundle PKs to new ones
+        bundle_mapping = {}
+        for bundle in self.bundles.all():
+            new_bundle = TaskBundle.objects.create(
+                est_worksheet=new_worksheet,
+                name=bundle.name,
+                description=bundle.description,
+                line_item_type=bundle.line_item_type,
+                sort_order=bundle.sort_order,
+                source_template_bundle=bundle.source_template_bundle,
+            )
+            bundle_mapping[bundle.pk] = new_bundle
+
         # Copy all tasks to the new worksheet
         for task in self.task_set.all():
+            new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
             Task.objects.create(
                 parent_task=task.parent_task,
                 assignee=task.assignee,
@@ -358,7 +372,9 @@ class EstWorksheet(AbstractWorkContainer):
                 units=task.units,
                 rate=task.rate,
                 est_qty=task.est_qty,
-                template=task.template
+                line_item_type=task.line_item_type,
+                mapping_strategy=task.mapping_strategy,
+                bundle=new_bundle,
             )
 
         return new_worksheet
@@ -374,40 +390,76 @@ class Task(models.Model):
     work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, null=True, blank=True)
     est_worksheet = models.ForeignKey(EstWorksheet, on_delete=models.CASCADE, null=True, blank=True)
     name = models.CharField(max_length=255)
-    line_number = models.PositiveIntegerField(blank=True, null=True)
+    description = models.TextField(blank=True, default='')
+    sort_order = models.PositiveIntegerField(blank=True, null=True)
     units = models.CharField(max_length=50, blank=True)
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    template = models.ForeignKey('TaskTemplate', on_delete=models.SET_NULL, null=True, blank=True)
+    line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text="Type of line item this task produces when mapped directly"
+    )
 
     def clean(self):
-        """Ensure task is attached to either WorkOrder or EstWorksheet, but not both."""
         from django.core.exceptions import ValidationError
+        # Must belong to exactly one container
         if self.work_order and self.est_worksheet:
             raise ValidationError("Task cannot be attached to both WorkOrder and EstWorksheet")
         if not self.work_order and not self.est_worksheet:
             raise ValidationError("Task must be attached to either WorkOrder or EstWorksheet")
+        # Bundle consistency
+        if self.mapping_strategy == 'bundle' and not self.bundle:
+            raise ValidationError("Bundled tasks must have a bundle assigned")
+        if self.bundle and self.mapping_strategy != 'bundle':
+            raise ValidationError("Tasks with a bundle must use 'bundle' mapping strategy")
 
     def save(self, *args, **kwargs):
-        """Override save to auto-generate line numbers."""
+        """Override save to auto-generate sort order.
+
+        sort_order means different things depending on context:
+        - Unbundled tasks: position at the container level (alongside bundles)
+        - Bundled tasks: position within the bundle
+        """
         from django.db import transaction
 
-        if self.line_number is None:
+        if self.sort_order is None:
             with transaction.atomic():
                 container = self.work_order or self.est_worksheet
                 if container:
-                    # Determine the filter based on container type
-                    if self.work_order:
-                        filter_kwargs = {'work_order': container}
+                    if self.bundle:
+                        # Within-bundle: max among tasks in the same bundle
+                        max_order = Task.objects.filter(
+                            bundle=self.bundle
+                        ).aggregate(
+                            models.Max('sort_order')
+                        )['sort_order__max']
                     else:
-                        filter_kwargs = {'est_worksheet': container}
+                        # Container-level: max among unbundled tasks AND TaskBundles
+                        if self.work_order:
+                            container_kwargs = {'work_order': container}
+                            bundle_kwargs = {'work_order': container}
+                        else:
+                            container_kwargs = {'est_worksheet': container}
+                            bundle_kwargs = {'est_worksheet': container}
 
-                    # Get max line number for this container
-                    max_line = Task.objects.filter(**filter_kwargs).aggregate(
-                        models.Max('line_number')
-                    )['line_number__max']
+                        max_task = Task.objects.filter(
+                            bundle__isnull=True, **container_kwargs
+                        ).aggregate(
+                            models.Max('sort_order')
+                        )['sort_order__max'] or 0
 
-                    self.line_number = (max_line or 0) + 1
+                        max_bundle = TaskBundle.objects.filter(
+                            **bundle_kwargs
+                        ).aggregate(
+                            models.Max('sort_order')
+                        )['sort_order__max'] or 0
+
+                        max_order = max(max_task, max_bundle)
+
+                    self.sort_order = (max_order or 0) + 1
 
         self.full_clean()
         super().save(*args, **kwargs)
@@ -416,26 +468,71 @@ class Task(models.Model):
         """Return the container (WorkOrder or EstWorksheet) this task belongs to."""
         return self.work_order or self.est_worksheet
 
-    def get_mapping_strategy(self):
-        """Get the mapping strategy from template or default to direct"""
-        if self.template and self.template.task_mapping:
-            return self.template.task_mapping.mapping_strategy
-        return 'direct'
-
-    def get_step_type(self):
-        """Get the step type from template or default to labor"""
-        if self.template and self.template.task_mapping:
-            return self.template.task_mapping.step_type
-        return 'labor'
-
-    def get_product_type(self):
-        """Get the product type from template"""
-        if self.template and self.template.task_mapping:
-            return self.template.task_mapping.default_product_type
-        return ''
+    # Mapping config for estimate generation
+    MAPPING_CHOICES = [
+        ('direct', 'Direct'),
+        ('bundle', 'Bundle'),
+        ('exclude', 'Exclude'),
+    ]
+    mapping_strategy = models.CharField(max_length=20, choices=MAPPING_CHOICES, default='direct')
+    bundle = models.ForeignKey(
+        'TaskBundle',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tasks'
+    )
 
     def __str__(self):
         return self.name
+
+
+class TaskBundle(models.Model):
+    """
+    Instance-level grouping of Tasks within a worksheet or work order.
+
+    Parallel to TemplateBundle, but lives on the instance container.
+    Tasks with mapping_strategy='bundle' point to a TaskBundle, and
+    the bundle becomes a single line item on the estimate.
+    """
+    # Dual FK pattern (same as Task)
+    est_worksheet = models.ForeignKey(
+        EstWorksheet, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='bundles'
+    )
+    work_order = models.ForeignKey(
+        WorkOrder, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='bundles'
+    )
+
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT
+    )
+    sort_order = models.IntegerField(default=0)
+
+    # Traceability
+    source_template_bundle = models.ForeignKey(
+        'TemplateBundle', on_delete=models.SET_NULL,
+        null=True, blank=True
+    )
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+
+    def get_container(self):
+        return self.est_worksheet or self.work_order
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if bool(self.est_worksheet) == bool(self.work_order):
+            raise ValidationError("TaskBundle must belong to exactly one container")
+
+    def __str__(self):
+        container = self.get_container()
+        return f"{container} - {self.name}"
 
 
 class Blep(models.Model):
@@ -449,56 +546,6 @@ class Blep(models.Model):
         return f"Blep {self.pk} for Task {self.task.pk}"
 
 
-class TaskMapping(models.Model):
-    """Reusable mapping template that defines how tasks map to line items"""
-    task_mapping_id = models.AutoField(primary_key=True)
-
-    # What this task represents
-    STEP_TYPE_CHOICES = [
-        ('product', 'Complete Product'),
-        ('component', 'Product Component'),
-        ('labor', 'Labor/Service'),
-        ('material', 'Material/Supply'),
-        ('overhead', 'Overhead/Internal'),
-    ]
-    step_type = models.CharField(max_length=100, choices=STEP_TYPE_CHOICES)
-
-    # How to map to line items
-    MAPPING_STRATEGY_CHOICES = [
-        ('direct', 'Direct - One task to one line item'),
-        ('bundle_to_product', 'Bundle into product line item'),
-        ('bundle_to_service', 'Bundle into service line item'),
-        ('exclude', 'Internal only - exclude from estimate'),
-    ]
-    mapping_strategy = models.CharField(max_length=30, choices=MAPPING_STRATEGY_CHOICES, default='direct')
-
-    # Template-level configuration
-    default_product_type = models.CharField(max_length=50, blank=True)  # e.g., "table", "chair"
-
-    # Line item generation
-    line_item_name = models.CharField(max_length=255, blank=True)
-    line_item_description = models.TextField(blank=True)
-
-    # Keep existing fields
-    task_type_id = models.CharField(max_length=50)
-    breakdown_of_task = models.TextField(blank=True)
-
-    def __str__(self):
-        return f"{self.task_type_id} - {self.breakdown_of_task}"
-
-
-class TaskInstanceMapping(models.Model):
-    """Instance-specific mapping data for individual tasks"""
-    task = models.OneToOneField(Task, on_delete=models.CASCADE, primary_key=True)
-
-    # Instance-specific identifiers (only for bundled tasks)
-    product_identifier = models.CharField(max_length=100, blank=True)  # e.g., "table_001", "chair_001"
-    product_instance = models.IntegerField(null=True, blank=True)  # For multiple items (chair 1, 2, 3, 4)
-
-    def __str__(self):
-        return f"Instance mapping for {self.task.name}"
-
-
 from apps.core.models import BaseLineItem
 
 
@@ -509,18 +556,10 @@ class WorkOrderTemplate(models.Model):
     template_name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
 
-    # Product definition
-    TEMPLATE_TYPE_CHOICES = [
-        ('product', 'Complete Product Template'),
-        ('service', 'Service Template'),
-        ('process', 'Process/Workflow Template'),
-    ]
-    template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPE_CHOICES, default='product')
-    product_type = models.CharField(max_length=50, blank=True)  # e.g., "table", "chair"
-
     # Pricing
     base_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
+    # is_active no longer used but kept in case we change our minds later and to avoid a migration
     is_active = models.BooleanField(default=True)
     created_date = models.DateTimeField(auto_now_add=True)
 
@@ -528,44 +567,115 @@ class WorkOrderTemplate(models.Model):
         return self.template_name
 
     def generate_tasks_for_worksheet(self, worksheet, quantity=1):
-        """Generate all tasks for a worksheet, with proper product grouping"""
+        """Generate all tasks for a worksheet, with proper product grouping and bundling."""
         generated_tasks = []
 
         for instance in range(1, quantity + 1):
-            product_identifier = f"{self.product_type}_{worksheet.est_worksheet_id}_{instance}"
+            bundle_identifier = f"{self.template_name}_{worksheet.est_worksheet_id}_{instance}"
+
+            # Create TaskBundles from TemplateBundles
+            template_to_instance_bundle = {}
+            for template_bundle in self.bundles.all():
+                task_bundle = TaskBundle.objects.create(
+                    est_worksheet=worksheet,
+                    name=template_bundle.name,
+                    description=template_bundle.description,
+                    line_item_type=template_bundle.line_item_type,
+                    sort_order=template_bundle.sort_order,
+                    source_template_bundle=template_bundle,
+                )
+                template_to_instance_bundle[template_bundle.pk] = task_bundle
 
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
                 work_order_template=self,
                 task_template__parent_template__isnull=True,  # Root-level templates only
                 task_template__is_active=True
-            ).order_by('sort_order', 'task_template__template_name')
+            ).select_related('bundle').order_by('sort_order', 'task_template__template_name')
 
             for association in associations:
+                # Resolve instance-level bundle for this association
+                instance_bundle = None
+                if association.bundle_id:
+                    instance_bundle = template_to_instance_bundle.get(association.bundle_id)
+
                 task = association.task_template.generate_task(
                     worksheet,
                     est_qty=association.est_qty,
-                    product_identifier=product_identifier,
-                    product_instance=instance if quantity > 1 else None
+                    bundle_identifier=bundle_identifier,
+                    product_instance=instance if quantity > 1 else None,
+                    mapping_strategy=association.mapping_strategy,
+                    bundle=instance_bundle,
+                    sort_order=association.sort_order,
                 )
                 generated_tasks.append(task)
 
         return generated_tasks
 
 
-class TemplateTaskAssociation(models.Model):
-    """Association between WorkOrderTemplate and TaskTemplate with customizable quantities"""
-    work_order_template = models.ForeignKey(WorkOrderTemplate, on_delete=models.CASCADE)
-    task_template = models.ForeignKey('TaskTemplate', on_delete=models.CASCADE)
-    est_qty = models.DecimalField(max_digits=10, decimal_places=2)
+class TemplateBundle(models.Model):
+    """
+    A named grouping within a WorkOrderTemplate that becomes one line item.
+
+    TemplateTaskAssociations point to a bundle to indicate they should be
+    combined into a single line item on the estimate.
+    """
+    work_order_template = models.ForeignKey(
+        WorkOrderTemplate,
+        on_delete=models.CASCADE,
+        related_name='bundles'
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT
+    )
     sort_order = models.IntegerField(default=0)
 
     class Meta:
-        unique_together = ['work_order_template', 'task_template']
-        ordering = ['sort_order', 'task_template__template_name']
+        unique_together = ['work_order_template', 'name']
+        ordering = ['sort_order', 'name']
 
     def __str__(self):
-        return f"{self.work_order_template.template_name} -> {self.task_template.template_name} ({self.est_qty})"
+        return f"{self.work_order_template.template_name} - {self.name}"
+
+
+class TemplateTaskAssociation(models.Model):
+    """Association between WorkOrderTemplate and TaskTemplate with mapping configuration."""
+    work_order_template = models.ForeignKey(WorkOrderTemplate, on_delete=models.CASCADE)
+    task_template = models.ForeignKey('TaskTemplate', on_delete=models.CASCADE)
+
+    # Quantity and ordering
+    est_qty = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    sort_order = models.IntegerField(default=0)
+
+    # Mapping configuration
+    MAPPING_CHOICES = [
+        ('direct', 'Direct - becomes its own line item'),
+        ('bundle', 'Bundle - part of a bundled line item'),
+        ('exclude', 'Exclude - internal only, not on estimate'),
+    ]
+    mapping_strategy = models.CharField(max_length=20, choices=MAPPING_CHOICES, default='direct')
+    bundle = models.ForeignKey(
+        TemplateBundle,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='associations'
+    )
+
+    class Meta:
+        unique_together = ['work_order_template', 'task_template']
+        ordering = ['sort_order']
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.bundle and self.bundle.work_order_template != self.work_order_template:
+            raise ValidationError("Bundle must belong to the same WorkOrderTemplate")
+
+    def __str__(self):
+        return f"{self.work_order_template.template_name} -> {self.task_template.template_name}"
 
 
 class TaskTemplate(models.Model):
@@ -577,28 +687,42 @@ class TaskTemplate(models.Model):
     units = models.CharField(max_length=50, blank=True)
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
+    # LineItemType determines what type of line item this task produces when mapped directly
+    line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT,
+        null=True,  # Temporarily nullable for migration
+        blank=True,
+        help_text="Type of line item this task produces when mapped directly"
+    )
+
     # Relationships
-    task_mapping = models.ForeignKey(TaskMapping, on_delete=models.SET_NULL, null=True, blank=True)  # Changed from CASCADE - preserve templates
     work_order_templates = models.ManyToManyField(WorkOrderTemplate, through='TemplateTaskAssociation', related_name='task_templates')
     parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')
 
     created_date = models.DateTimeField(auto_now_add=True)
+    # is_active no longer used but kept in case we change our minds later and to avoid a migration
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.template_name
 
-    def generate_task(self, container, est_qty, product_identifier=None, product_instance=None, assignee=None):
-        """Generate a Task from this template with specified quantity"""
+    def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
+                       assignee=None, mapping_strategy='direct', bundle=None, sort_order=None):
+        """Generate a Task from this template with specified quantity and mapping config."""
         task = Task.objects.create(
             work_order=container if isinstance(container, WorkOrder) else None,
             est_worksheet=container if isinstance(container, EstWorksheet) else None,
             name=self.template_name,
+            description=self.description,
             units=self.units,
             rate=self.rate,
             est_qty=est_qty,
-            template=self,
-            assignee=assignee
+            line_item_type=self.line_item_type,
+            assignee=assignee,
+            mapping_strategy=mapping_strategy,
+            bundle=bundle,
+            sort_order=sort_order,
         )
 
         # Generate child tasks if this template has children
@@ -606,7 +730,7 @@ class TaskTemplate(models.Model):
             child_task = child_template.generate_task(
                 container,
                 est_qty=est_qty,  # Pass the same quantity to child tasks
-                product_identifier=product_identifier,
+                bundle_identifier=bundle_identifier,
                 product_instance=product_instance,
                 assignee=assignee
             )
@@ -614,18 +738,6 @@ class TaskTemplate(models.Model):
             child_task.save()
 
         return task
-
-    def get_mapping_strategy(self):
-        """Get the mapping strategy for this template"""
-        return self.task_mapping.mapping_strategy if self.task_mapping else 'direct'
-
-    def get_step_type(self):
-        """Get the step type for this template"""
-        return self.task_mapping.step_type if self.task_mapping else 'labor'
-
-    def get_product_type(self):
-        """Get the default product type for this template"""
-        return self.task_mapping.default_product_type if self.task_mapping else ''
 
 
 class EstimateLineItem(BaseLineItem):
@@ -643,54 +755,3 @@ class EstimateLineItem(BaseLineItem):
 
     def __str__(self):
         return f"Estimate Line Item {self.pk} for {self.estimate.estimate_number}"
-
-
-class ProductBundlingRule(models.Model):
-    """Rules for how products are bundled into line items"""
-
-    rule_id = models.AutoField(primary_key=True)
-    rule_name = models.CharField(max_length=255)
-
-    # What to bundle
-    product_type = models.CharField(max_length=50)  # Match against TaskMapping.default_product_type
-    work_order_template = models.ForeignKey(WorkOrderTemplate, on_delete=models.CASCADE, null=True, blank=True)
-
-    # How to present as line item
-    line_item_template = models.CharField(max_length=255)  # e.g., "Custom {product_type}"
-    combine_instances = models.BooleanField(default=True)  # True: "4x Chair", False: separate lines
-
-    # Pricing strategy
-    PRICING_METHOD_CHOICES = [
-        ('sum_components', 'Sum all component task prices'),
-        ('template_base', 'Use WorkOrderTemplate base price'),
-        ('custom_calculation', 'Custom calculation'),
-    ]
-    pricing_method = models.CharField(max_length=20, choices=PRICING_METHOD_CHOICES, default='sum_components')
-
-    include_materials = models.BooleanField(default=True)
-    include_labor = models.BooleanField(default=True)
-    include_overhead = models.BooleanField(default=False)
-
-    priority = models.IntegerField(default=100)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        ordering = ['priority', 'rule_name']
-
-    def clean(self):
-        """Validate ProductBundlingRule constraints"""
-        from django.core.exceptions import ValidationError
-
-        if self.pricing_method == 'template_base':
-            if not self.work_order_template:
-                raise ValidationError({
-                    'work_order_template': 'template_base pricing requires a WorkOrderTemplate to be specified.'
-                })
-
-            if not self.work_order_template.base_price:
-                raise ValidationError({
-                    'work_order_template': f'The selected WorkOrderTemplate "{self.work_order_template.template_name}" must have a base_price set to use template_base pricing.'
-                })
-
-    def __str__(self):
-        return f"Bundling Rule: {self.rule_name}"

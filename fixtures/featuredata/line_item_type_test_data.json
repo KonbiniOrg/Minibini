@@ -1,0 +1,1471 @@
+[
+  {
+    "model": "core.lineitemtype",
+    "pk": 1,
+    "fields": {
+      "code": "SVC",
+      "name": "Service",
+      "taxable": false,
+      "default_description": "Professional services and labor",
+      "is_active": true
+    },
+    "_section": "=== LINE ITEM TYPES (6) - Categories for line items with default taxability ==="
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 2,
+    "fields": {
+      "code": "MAT",
+      "name": "Material",
+      "taxable": true,
+      "default_description": "Raw materials and supplies",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 3,
+    "fields": {
+      "code": "MFR",
+      "name": "Manufacturing",
+      "taxable": true,
+      "default_description": "Manufacturing processes for physical products",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 4,
+    "fields": {
+      "code": "PRD",
+      "name": "Product",
+      "taxable": true,
+      "default_description": "Finished goods and products",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 5,
+    "fields": {
+      "code": "FRT",
+      "name": "Freight",
+      "taxable": false,
+      "default_description": "Shipping and delivery charges",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 6,
+    "fields": {
+      "code": "OVH",
+      "name": "Overhead",
+      "taxable": false,
+      "default_description": "Administrative fees and permits",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.lineitemtype",
+    "pk": 7,
+    "fields": {
+      "code": "DLV",
+      "name": "Delivery",
+      "taxable": false,
+      "default_description": "Delivery and logistics services",
+      "is_active": true
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "job_number_sequence",
+    "fields": {
+      "value": "JOB-{year}-{counter:04d}"
+    },
+    "_section": "=== CONFIGURATION - Number sequences and settings ==="
+  },
+  {
+    "model": "core.configuration",
+    "pk": "job_counter",
+    "fields": {
+      "value": "100"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "estimate_number_sequence",
+    "fields": {
+      "value": "EST-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "estimate_counter",
+    "fields": {
+      "value": "100"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "invoice_number_sequence",
+    "fields": {
+      "value": "INV-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "invoice_counter",
+    "fields": {
+      "value": "100"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "po_number_sequence",
+    "fields": {
+      "value": "PO-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "po_counter",
+    "fields": {
+      "value": "100"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "bill_number_sequence",
+    "fields": {
+      "value": "BILL-{year}-{counter:04d}"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "bill_counter",
+    "fields": {
+      "value": "100"
+    }
+  },
+  {
+    "model": "core.configuration",
+    "pk": "default_tax_rate",
+    "fields": {
+      "value": "0.08"
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 1,
+    "fields": {
+      "name": "Administrator",
+      "permissions": []
+    },
+    "_section": "=== AUTH GROUPS (3) ==="
+  },
+  {
+    "model": "auth.group",
+    "pk": 2,
+    "fields": {
+      "name": "Manager",
+      "permissions": []
+    }
+  },
+  {
+    "model": "auth.group",
+    "pk": 3,
+    "fields": {
+      "name": "Employee",
+      "permissions": []
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 1,
+    "fields": {
+      "our_reference_code": "ACME-001",
+      "business_name": "Acme Supplies Inc",
+      "business_address": "100 Industrial Way, Supplier City, ST 11111",
+      "business_phone": "555-100-1000",
+      "tax_exemption_number": "",
+      "website": "https://acmesupplies.example.com",
+      "terms": null,
+      "default_contact": 4,
+      "tax_multiplier": null
+    },
+    "_section": "=== BUSINESSES (2) ==="
+  },
+  {
+    "model": "contacts.business",
+    "pk": 2,
+    "fields": {
+      "our_reference_code": "WIDGET-001",
+      "business_name": "Widget Corp",
+      "business_address": "200 Customer Plaza, Client Town, ST 22222",
+      "business_phone": "555-200-2000",
+      "tax_exemption_number": "TX-EXEMPT-12345",
+      "website": "https://widgetcorp.example.com",
+      "terms": null,
+      "default_contact": 2,
+      "tax_multiplier": "0.00"
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 1,
+    "fields": {
+      "first_name": "Single",
+      "middle_initial": "",
+      "last_name": "Individual",
+      "email": "single.individual@example.com",
+      "addr1": "123 Solo Street",
+      "addr2": "",
+      "addr3": "",
+      "city": "Hometown",
+      "municipality": "ST",
+      "postal_code": "12345",
+      "country_code": "US",
+      "mobile_number": "555-001-0001",
+      "work_number": "",
+      "home_number": "",
+      "business": null
+    },
+    "_section": "=== CONTACTS (5) ==="
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 2,
+    "fields": {
+      "first_name": "Manager",
+      "middle_initial": "",
+      "last_name": "Person",
+      "email": "manager.person@widgetcorp.example.com",
+      "addr1": "200 Customer Plaza",
+      "addr2": "Suite 100",
+      "addr3": "",
+      "city": "Client Town",
+      "municipality": "ST",
+      "postal_code": "22222",
+      "country_code": "US",
+      "mobile_number": "555-002-0002",
+      "work_number": "555-200-2001",
+      "home_number": "",
+      "business": 2
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 3,
+    "fields": {
+      "first_name": "Alice",
+      "middle_initial": "",
+      "last_name": "Widget",
+      "email": "alice.widget@widgetcorp.example.com",
+      "addr1": "200 Customer Plaza",
+      "addr2": "Suite 200",
+      "addr3": "",
+      "city": "Client Town",
+      "municipality": "ST",
+      "postal_code": "22222",
+      "country_code": "US",
+      "mobile_number": "555-003-0003",
+      "work_number": "555-200-2002",
+      "home_number": "",
+      "business": 2
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 4,
+    "fields": {
+      "first_name": "Bob",
+      "middle_initial": "",
+      "last_name": "Acme",
+      "email": "bob.acme@acmesupplies.example.com",
+      "addr1": "100 Industrial Way",
+      "addr2": "",
+      "addr3": "",
+      "city": "Supplier City",
+      "municipality": "ST",
+      "postal_code": "11111",
+      "country_code": "US",
+      "mobile_number": "555-004-0004",
+      "work_number": "555-100-1001",
+      "home_number": "",
+      "business": 1
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 5,
+    "fields": {
+      "first_name": "Solo",
+      "middle_initial": "",
+      "last_name": "Customer",
+      "email": "solo.customer@example.com",
+      "addr1": "456 Independent Ave",
+      "addr2": "",
+      "addr3": "",
+      "city": "Freetown",
+      "municipality": "ST",
+      "postal_code": "33333",
+      "country_code": "US",
+      "mobile_number": "555-005-0005",
+      "work_number": "",
+      "home_number": "",
+      "business": null
+    }
+  },
+  {
+    "model": "core.user",
+    "pk": 1,
+    "fields": {
+      "password": "pbkdf2_sha256$870000$test$hash",
+      "last_login": null,
+      "is_superuser": true,
+      "username": "testadmin",
+      "first_name": "Test",
+      "last_name": "Admin",
+      "email": "testadmin@minibini.local",
+      "is_staff": true,
+      "is_active": true,
+      "date_joined": "2025-01-01T00:00:00Z",
+      "contact": 1,
+      "groups": [
+        1
+      ],
+      "user_permissions": []
+    },
+    "_section": "=== USERS (3) ==="
+  },
+  {
+    "model": "core.user",
+    "pk": 2,
+    "fields": {
+      "password": "pbkdf2_sha256$870000$test$hash",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "testmgr",
+      "first_name": "Test",
+      "last_name": "Manager",
+      "email": "testmgr@minibini.local",
+      "is_staff": true,
+      "is_active": true,
+      "date_joined": "2025-01-01T00:00:00Z",
+      "contact": 2,
+      "groups": [
+        2
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "core.user",
+    "pk": 3,
+    "fields": {
+      "password": "pbkdf2_sha256$870000$test$hash",
+      "last_login": null,
+      "is_superuser": false,
+      "username": "testuser",
+      "first_name": "Test",
+      "last_name": "Employee",
+      "email": "testuser@minibini.local",
+      "is_staff": false,
+      "is_active": true,
+      "date_joined": "2025-01-01T00:00:00Z",
+      "contact": 5,
+      "groups": [
+        3
+      ],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 1,
+    "fields": {
+      "code": "PLI-SVC-01",
+      "units": "hour",
+      "description": "Consultation Hour - Professional consulting services",
+      "purchase_price": "0.00",
+      "selling_price": "95.00",
+      "qty_on_hand": "0.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00",
+      "line_item_type": 1,
+      "is_active": true
+    },
+    "_section": "=== PRICE LIST ITEMS (7) - one per LineItemType + extra ==="
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 2,
+    "fields": {
+      "code": "PLI-MAT-01",
+      "units": "each",
+      "description": "Lumber 2x4x8 - Standard dimensional lumber",
+      "purchase_price": "6.50",
+      "selling_price": "12.50",
+      "qty_on_hand": "100.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00",
+      "line_item_type": 2,
+      "is_active": true
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 3,
+    "fields": {
+      "code": "PLI-MFR-01",
+      "units": "hour",
+      "description": "CNC Machining Hour - Computer-controlled manufacturing",
+      "purchase_price": "50.00",
+      "selling_price": "125.00",
+      "qty_on_hand": "0.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00",
+      "line_item_type": 3,
+      "is_active": true
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 4,
+    "fields": {
+      "code": "PLI-PRD-01",
+      "units": "each",
+      "description": "Custom Cabinet - Finished custom cabinetry",
+      "purchase_price": "350.00",
+      "selling_price": "850.00",
+      "qty_on_hand": "5.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00",
+      "line_item_type": 4,
+      "is_active": true
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 5,
+    "fields": {
+      "code": "PLI-FRT-01",
+      "units": "each",
+      "description": "Standard Shipping - Flat rate shipping charge",
+      "purchase_price": "25.00",
+      "selling_price": "45.00",
+      "qty_on_hand": "0.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00",
+      "line_item_type": 5,
+      "is_active": true
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 6,
+    "fields": {
+      "code": "PLI-OVH-01",
+      "units": "each",
+      "description": "Permit Fee - Standard permit and administrative fees",
+      "purchase_price": "100.00",
+      "selling_price": "150.00",
+      "qty_on_hand": "0.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00",
+      "line_item_type": 6,
+      "is_active": true
+    }
+  },
+  {
+    "model": "invoicing.pricelistitem",
+    "pk": 7,
+    "fields": {
+      "code": "PLI-MAT-02",
+      "units": "kit",
+      "description": "Hardware Kit - Assorted screws, bolts, and fasteners",
+      "purchase_price": "15.00",
+      "selling_price": "35.00",
+      "qty_on_hand": "50.00",
+      "qty_sold": "0.00",
+      "qty_wasted": "0.00",
+      "line_item_type": 2,
+      "is_active": true
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 1,
+    "fields": {
+      "template_name": "Basic Labor",
+      "description": "Standard hourly labor for direct service tasks",
+      "units": "hours",
+      "rate": "75.00",
+      "parent_template": null,
+      "is_active": true,
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 1
+    },
+    "_section": "=== TASK TEMPLATES (6) ==="
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 2,
+    "fields": {
+      "template_name": "Material Handling",
+      "description": "Material procurement and handling",
+      "units": "each",
+      "rate": "25.00",
+      "parent_template": null,
+      "is_active": true,
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 2
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 3,
+    "fields": {
+      "template_name": "Cabinet Frame",
+      "description": "Build cabinet frame/carcass - bundles into product",
+      "units": "each",
+      "rate": "200.00",
+      "parent_template": null,
+      "is_active": true,
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 3
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 4,
+    "fields": {
+      "template_name": "Cabinet Doors",
+      "description": "Fabricate and install cabinet doors - bundles into product",
+      "units": "each",
+      "rate": "150.00",
+      "parent_template": null,
+      "is_active": true,
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 3
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 5,
+    "fields": {
+      "template_name": "Cabinet Finish",
+      "description": "Sand and apply finish to cabinet - bundles into product",
+      "units": "each",
+      "rate": "100.00",
+      "parent_template": null,
+      "is_active": true,
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 3
+    }
+  },
+  {
+    "model": "jobs.tasktemplate",
+    "pk": 6,
+    "fields": {
+      "template_name": "Shop Overhead",
+      "description": "Internal shop overhead allocation - excluded from estimates",
+      "units": "hours",
+      "rate": "50.00",
+      "parent_template": null,
+      "is_active": true,
+      "created_date": "2025-01-01T00:00:00Z",
+      "line_item_type": 6
+    }
+  },
+  {
+    "model": "jobs.workordertemplate",
+    "pk": 1,
+    "fields": {
+      "template_name": "Simple Service",
+      "description": "Basic service job with direct labor and materials",
+      "base_price": null,
+      "is_active": true,
+      "created_date": "2025-01-01T00:00:00Z"
+    },
+    "_section": "=== WORK ORDER TEMPLATES (2) ==="
+  },
+  {
+    "model": "jobs.workordertemplate",
+    "pk": 2,
+    "fields": {
+      "template_name": "Cabinet Build",
+      "description": "Full cabinet build with bundled components - for testing bundling",
+      "base_price": "450.00",
+      "is_active": true,
+      "created_date": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "jobs.templatebundle",
+    "pk": 1,
+    "fields": {
+      "work_order_template": 2,
+      "name": "Cabinet",
+      "description": "Combined cabinet components become one product line item",
+      "line_item_type": 4,
+      "sort_order": 1
+    },
+    "_section": "=== TEMPLATE BUNDLES (1) ==="
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 1,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 1,
+      "est_qty": "4.00",
+      "sort_order": 1,
+      "mapping_strategy": "direct",
+      "bundle": null
+    },
+    "_section": "=== TEMPLATE TASK ASSOCIATIONS (6) ==="
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 2,
+    "fields": {
+      "work_order_template": 1,
+      "task_template": 2,
+      "est_qty": "2.00",
+      "sort_order": 2,
+      "mapping_strategy": "direct",
+      "bundle": null
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 3,
+    "fields": {
+      "work_order_template": 2,
+      "task_template": 3,
+      "est_qty": "1.00",
+      "sort_order": 1,
+      "mapping_strategy": "bundle",
+      "bundle": 1
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 4,
+    "fields": {
+      "work_order_template": 2,
+      "task_template": 4,
+      "est_qty": "2.00",
+      "sort_order": 2,
+      "mapping_strategy": "bundle",
+      "bundle": 1
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 5,
+    "fields": {
+      "work_order_template": 2,
+      "task_template": 5,
+      "est_qty": "1.00",
+      "sort_order": 3,
+      "mapping_strategy": "bundle",
+      "bundle": 1
+    }
+  },
+  {
+    "model": "jobs.templatetaskassociation",
+    "pk": 6,
+    "fields": {
+      "work_order_template": 2,
+      "task_template": 6,
+      "est_qty": "2.00",
+      "sort_order": 4,
+      "mapping_strategy": "exclude",
+      "bundle": null
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 1,
+    "fields": {
+      "job_number": "JOB-TEST-0001",
+      "name": "Empty Job",
+      "created_date": "2025-01-15T10:00:00Z",
+      "start_date": null,
+      "due_date": null,
+      "completed_date": null,
+      "status": "draft",
+      "contact": 1,
+      "customer_po_number": "",
+      "description": "Job 1: Empty job with no worksheets or estimates"
+    },
+    "_section": "=== JOBS (5) - all in draft state ==="
+  },
+  {
+    "model": "jobs.job",
+    "pk": 2,
+    "fields": {
+      "job_number": "JOB-TEST-0002",
+      "name": "Worksheet Only",
+      "created_date": "2025-01-15T10:00:00Z",
+      "start_date": null,
+      "due_date": null,
+      "completed_date": null,
+      "status": "draft",
+      "contact": 2,
+      "customer_po_number": "",
+      "description": "Job 2: Has worksheet (WS 1) with direct tasks, no estimate yet"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 3,
+    "fields": {
+      "job_number": "JOB-TEST-0003",
+      "name": "Empty Estimate",
+      "created_date": "2025-01-15T10:00:00Z",
+      "start_date": null,
+      "due_date": null,
+      "completed_date": null,
+      "status": "draft",
+      "contact": 3,
+      "customer_po_number": "",
+      "description": "Job 3: Has empty draft estimate (Est 1)"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 4,
+    "fields": {
+      "job_number": "JOB-TEST-0004",
+      "name": "Direct Line Items",
+      "created_date": "2025-01-15T10:00:00Z",
+      "start_date": null,
+      "due_date": null,
+      "completed_date": null,
+      "status": "draft",
+      "contact": 5,
+      "customer_po_number": "CUST-PO-4567",
+      "description": "Job 4: Has worksheet (WS 3) and estimate (Est 2) with direct line items"
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 5,
+    "fields": {
+      "job_number": "JOB-TEST-0005",
+      "name": "Bundling Test Job",
+      "created_date": "2025-01-15T10:00:00Z",
+      "start_date": null,
+      "due_date": null,
+      "completed_date": null,
+      "status": "draft",
+      "contact": 2,
+      "customer_po_number": "WIDGET-PO-001",
+      "description": "Job 5: BUNDLING TEST - Has Cabinet Build worksheet (WS 2) and estimate (Est 3) with bundled line items"
+    }
+  },
+  {
+    "model": "jobs.estworksheet",
+    "pk": 1,
+    "fields": {
+      "job": 2,
+      "template": 1,
+      "estimate": null,
+      "status": "draft",
+      "version": 1,
+      "parent": null,
+      "created_date": "2025-01-15T10:00:00Z"
+    },
+    "_section": "=== EST WORKSHEETS (3) ==="
+  },
+  {
+    "model": "jobs.estworksheet",
+    "pk": 2,
+    "fields": {
+      "job": 5,
+      "template": 2,
+      "estimate": 3,
+      "status": "final",
+      "version": 1,
+      "parent": null,
+      "created_date": "2025-01-15T10:00:00Z"
+    }
+  },
+  {
+    "model": "jobs.estworksheet",
+    "pk": 3,
+    "fields": {
+      "job": 4,
+      "template": null,
+      "estimate": 2,
+      "status": "final",
+      "version": 1,
+      "parent": null,
+      "created_date": "2025-01-15T10:00:00Z"
+    }
+  },
+  {
+    "model": "jobs.taskbundle",
+    "pk": 1,
+    "fields": {
+      "est_worksheet": 2,
+      "work_order": null,
+      "name": "Cabinet",
+      "description": "Combined cabinet components become one product line item",
+      "line_item_type": 4,
+      "sort_order": 1,
+      "source_template_bundle": 1
+    },
+    "_section": "=== TASK BUNDLES (2) ==="
+  },
+  {
+    "model": "jobs.taskbundle",
+    "pk": 2,
+    "fields": {
+      "est_worksheet": 4,
+      "work_order": null,
+      "name": "Cabinet",
+      "description": "Combined cabinet components become one product line item",
+      "line_item_type": 4,
+      "sort_order": 1,
+      "source_template_bundle": 1
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 1,
+    "fields": {
+      "parent_task": null,
+      "assignee": 2,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "Consultation",
+      "units": "hours",
+      "rate": "75.00",
+      "est_qty": "4.00",
+      "sort_order": 1,
+      "mapping_strategy": "direct",
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
+    },
+    "_section": "=== TASKS (8) - across worksheets ==="
+  },
+  {
+    "model": "jobs.task",
+    "pk": 2,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 1,
+      "name": "Material Setup",
+      "units": "each",
+      "rate": "25.00",
+      "est_qty": "2.00",
+      "sort_order": 2,
+      "mapping_strategy": "direct",
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 3,
+    "fields": {
+      "parent_task": null,
+      "assignee": 2,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Cabinet Frame",
+      "units": "each",
+      "rate": "200.00",
+      "est_qty": "1.00",
+      "sort_order": 1,
+      "mapping_strategy": "bundle",
+      "bundle": 1,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 4,
+    "fields": {
+      "parent_task": null,
+      "assignee": 2,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Cabinet Doors",
+      "units": "each",
+      "rate": "150.00",
+      "est_qty": "2.00",
+      "sort_order": 2,
+      "mapping_strategy": "bundle",
+      "bundle": 1,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 5,
+    "fields": {
+      "parent_task": null,
+      "assignee": 2,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Cabinet Finish",
+      "units": "each",
+      "rate": "100.00",
+      "est_qty": "1.00",
+      "sort_order": 3,
+      "mapping_strategy": "bundle",
+      "bundle": 1,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 6,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 2,
+      "name": "Shop Overhead",
+      "units": "hours",
+      "rate": "50.00",
+      "est_qty": "2.00",
+      "sort_order": 4,
+      "mapping_strategy": "exclude",
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 7,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 3,
+      "name": "Extra Materials",
+      "units": "each",
+      "rate": "25.00",
+      "est_qty": "5.00",
+      "sort_order": 1,
+      "mapping_strategy": "direct",
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 8,
+    "fields": {
+      "parent_task": null,
+      "assignee": 3,
+      "work_order": null,
+      "est_worksheet": 3,
+      "name": "Custom Work",
+      "units": "hours",
+      "rate": "85.00",
+      "est_qty": "1.00",
+      "sort_order": 2,
+      "mapping_strategy": "direct",
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 1,
+    "fields": {
+      "job": 3,
+      "estimate_number": "EST-TEST-0001",
+      "version": 1,
+      "status": "draft",
+      "parent": null,
+      "created_date": "2025-01-15T10:00:00Z",
+      "sent_date": null,
+      "closed_date": null,
+      "expiration_date": null
+    },
+    "_section": "=== ESTIMATES (3) ==="
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 2,
+    "fields": {
+      "job": 4,
+      "estimate_number": "EST-TEST-0002",
+      "version": 1,
+      "status": "draft",
+      "parent": null,
+      "created_date": "2025-01-15T10:00:00Z",
+      "sent_date": null,
+      "closed_date": null,
+      "expiration_date": null
+    }
+  },
+  {
+    "model": "jobs.estimate",
+    "pk": 3,
+    "fields": {
+      "job": 5,
+      "estimate_number": "EST-TEST-0003",
+      "version": 1,
+      "status": "draft",
+      "parent": null,
+      "created_date": "2025-01-15T10:00:00Z",
+      "sent_date": null,
+      "closed_date": null,
+      "expiration_date": null
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 1,
+    "fields": {
+      "estimate": 2,
+      "task": null,
+      "price_list_item": 1,
+      "line_number": 1,
+      "qty": "2.00",
+      "units": "hour",
+      "description": "Consultation Hour - Professional consulting services",
+      "price": "95.00",
+      "line_item_type": 1,
+      "taxable_override": null,
+      "tax_rate_override": null
+    },
+    "_section": "=== ESTIMATE LINE ITEMS (7) ==="
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 2,
+    "fields": {
+      "estimate": 2,
+      "task": 7,
+      "price_list_item": null,
+      "line_number": 2,
+      "qty": "5.00",
+      "units": "each",
+      "description": "Extra Materials - Material via task (direct mapping)",
+      "price": "25.00",
+      "line_item_type": 2,
+      "taxable_override": null,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 3,
+    "fields": {
+      "estimate": 2,
+      "task": null,
+      "price_list_item": 5,
+      "line_number": 3,
+      "qty": "1.00",
+      "units": "each",
+      "description": "Standard Shipping - Flat rate shipping charge",
+      "price": "45.00",
+      "line_item_type": 5,
+      "taxable_override": null,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 4,
+    "fields": {
+      "estimate": 3,
+      "task": 1,
+      "price_list_item": null,
+      "line_number": 1,
+      "qty": "4.00",
+      "units": "hours",
+      "description": "Consultation - Service from direct labor task",
+      "price": "75.00",
+      "line_item_type": 1,
+      "taxable_override": null,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 5,
+    "fields": {
+      "estimate": 3,
+      "task": null,
+      "price_list_item": 2,
+      "line_number": 2,
+      "qty": "10.00",
+      "units": "each",
+      "description": "Lumber 2x4x8 - Material, forced taxable override",
+      "price": "12.50",
+      "line_item_type": 2,
+      "taxable_override": true,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 6,
+    "fields": {
+      "estimate": 3,
+      "task": null,
+      "price_list_item": 6,
+      "line_number": 3,
+      "qty": "1.00",
+      "units": "each",
+      "description": "Permit Fee - Overhead non-taxable",
+      "price": "150.00",
+      "line_item_type": 6,
+      "taxable_override": null,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "jobs.estimatelineitem",
+    "pk": 7,
+    "fields": {
+      "estimate": 3,
+      "task": null,
+      "price_list_item": null,
+      "line_number": 4,
+      "qty": "1.00",
+      "units": "each",
+      "description": "Custom Cabinet - cabinet_001 (BUNDLED from component tasks)",
+      "price": "600.00",
+      "line_item_type": 4,
+      "taxable_override": null,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "purchasing.purchaseorder",
+    "pk": 1,
+    "fields": {
+      "business": 1,
+      "contact": 4,
+      "job": 4,
+      "po_number": "PO-TEST-0001",
+      "status": "draft",
+      "created_date": "2025-01-16T10:00:00Z",
+      "requested_date": null,
+      "issued_date": null,
+      "received_date": null,
+      "cancel_date": null
+    },
+    "_section": "=== PURCHASE ORDERS (2) ==="
+  },
+  {
+    "model": "purchasing.purchaseorder",
+    "pk": 2,
+    "fields": {
+      "business": 1,
+      "contact": 4,
+      "job": null,
+      "po_number": "PO-TEST-0002",
+      "status": "draft",
+      "created_date": "2025-01-16T10:00:00Z",
+      "requested_date": null,
+      "issued_date": null,
+      "received_date": null,
+      "cancel_date": null
+    }
+  },
+  {
+    "model": "purchasing.purchaseorderlineitem",
+    "pk": 1,
+    "fields": {
+      "purchase_order": 1,
+      "task": null,
+      "price_list_item": 2,
+      "line_number": 1,
+      "qty": "20.00",
+      "units": "each",
+      "description": "Lumber 2x4x8 - Material purchase for Job 4",
+      "price": "6.50",
+      "line_item_type": 2,
+      "taxable_override": null,
+      "tax_rate_override": null
+    },
+    "_section": "=== PURCHASE ORDER LINE ITEMS (3) ==="
+  },
+  {
+    "model": "purchasing.purchaseorderlineitem",
+    "pk": 2,
+    "fields": {
+      "purchase_order": 1,
+      "task": null,
+      "price_list_item": 5,
+      "line_number": 2,
+      "qty": "1.00",
+      "units": "each",
+      "description": "Standard Shipping - Freight on PO",
+      "price": "25.00",
+      "line_item_type": 5,
+      "taxable_override": null,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "purchasing.purchaseorderlineitem",
+    "pk": 3,
+    "fields": {
+      "purchase_order": 2,
+      "task": null,
+      "price_list_item": 7,
+      "line_number": 1,
+      "qty": "5.00",
+      "units": "kit",
+      "description": "Hardware Kit - Standalone material order",
+      "price": "15.00",
+      "line_item_type": 2,
+      "taxable_override": null,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "purchasing.bill",
+    "pk": 1,
+    "fields": {
+      "bill_number": "BILL-TEST-0001",
+      "purchase_order": 1,
+      "business": 1,
+      "contact": 4,
+      "vendor_invoice_number": "ACME-INV-2025-001",
+      "status": "draft",
+      "created_date": "2025-01-17T10:00:00Z",
+      "due_date": "2025-02-17T10:00:00Z",
+      "received_date": null,
+      "paid_date": null,
+      "cancelled_date": null
+    },
+    "_section": "=== BILLS (2) ==="
+  },
+  {
+    "model": "purchasing.bill",
+    "pk": 2,
+    "fields": {
+      "bill_number": "BILL-TEST-0002",
+      "purchase_order": null,
+      "business": 1,
+      "contact": 4,
+      "vendor_invoice_number": "ACME-INV-2025-002",
+      "status": "draft",
+      "created_date": "2025-01-17T10:00:00Z",
+      "due_date": "2025-02-17T10:00:00Z",
+      "received_date": null,
+      "paid_date": null,
+      "cancelled_date": null
+    }
+  },
+  {
+    "model": "purchasing.billlineitem",
+    "pk": 1,
+    "fields": {
+      "bill": 1,
+      "task": null,
+      "price_list_item": 2,
+      "line_number": 1,
+      "qty": "20.00",
+      "units": "each",
+      "description": "Lumber 2x4x8 - Received materials from PO",
+      "price": "6.50",
+      "line_item_type": 2,
+      "taxable_override": null,
+      "tax_rate_override": null
+    },
+    "_section": "=== BILL LINE ITEMS (3) ==="
+  },
+  {
+    "model": "purchasing.billlineitem",
+    "pk": 2,
+    "fields": {
+      "bill": 2,
+      "task": null,
+      "price_list_item": 7,
+      "line_number": 1,
+      "qty": "3.00",
+      "units": "kit",
+      "description": "Hardware Kit - Direct material bill",
+      "price": "15.00",
+      "line_item_type": 2,
+      "taxable_override": null,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "purchasing.billlineitem",
+    "pk": 3,
+    "fields": {
+      "bill": 2,
+      "task": null,
+      "price_list_item": 6,
+      "line_number": 2,
+      "qty": "1.00",
+      "units": "each",
+      "description": "Permit Fee - Overhead charge on bill",
+      "price": "100.00",
+      "line_item_type": 6,
+      "taxable_override": null,
+      "tax_rate_override": null
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 3,
+    "fields": {
+      "our_reference_code": "OAKDALE-001",
+      "business_name": "Oakdale Renovations",
+      "business_address": "300 Oak Street, Renovation City, ST 44444",
+      "business_phone": "555-300-3000",
+      "tax_exemption_number": "",
+      "website": "https://oakdalerenovations.example.com",
+      "terms": null,
+      "default_contact": 6,
+      "tax_multiplier": null
+    },
+    "_section": "=== NEW: Business + Contact + Job with bundled worksheet (no estimate) ==="
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 6,
+    "fields": {
+      "first_name": "Oscar",
+      "middle_initial": "",
+      "last_name": "Oakdale",
+      "email": "oscar@oakdalerenovations.example.com",
+      "addr1": "300 Oak Street",
+      "addr2": "",
+      "addr3": "",
+      "city": "Renovation City",
+      "municipality": "ST",
+      "postal_code": "44444",
+      "country_code": "US",
+      "mobile_number": "555-006-0006",
+      "work_number": "555-300-3001",
+      "home_number": "",
+      "business": 3
+    }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 6,
+    "fields": {
+      "job_number": "JOB-TEST-0006",
+      "name": "Bundling Test - Worksheet Only",
+      "created_date": "2025-01-20T10:00:00Z",
+      "start_date": null,
+      "due_date": null,
+      "completed_date": null,
+      "status": "draft",
+      "contact": 6,
+      "customer_po_number": "OAKDALE-PO-001",
+      "description": "Job 6: BUNDLING TEST - Has Cabinet Build worksheet (WS 4) with bundled tasks, NO ESTIMATE YET. Use this to test creating estimate from bundled worksheet."
+    }
+  },
+  {
+    "model": "jobs.estworksheet",
+    "pk": 4,
+    "fields": {
+      "job": 6,
+      "template": 2,
+      "estimate": null,
+      "status": "draft",
+      "version": 1,
+      "parent": null,
+      "created_date": "2025-01-20T10:00:00Z"
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 9,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 4,
+      "name": "Cabinet Frame",
+      "units": "each",
+      "rate": "200.00",
+      "est_qty": "1.00",
+      "sort_order": 1,
+      "mapping_strategy": "bundle",
+      "bundle": 2,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 10,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 4,
+      "name": "Cabinet Doors",
+      "units": "each",
+      "rate": "150.00",
+      "est_qty": "2.00",
+      "sort_order": 2,
+      "mapping_strategy": "bundle",
+      "bundle": 2,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 11,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 4,
+      "name": "Cabinet Finish",
+      "units": "each",
+      "rate": "100.00",
+      "est_qty": "1.00",
+      "sort_order": 3,
+      "mapping_strategy": "bundle",
+      "bundle": 2,
+      "description": "",
+      "line_item_type": null
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 12,
+    "fields": {
+      "parent_task": null,
+      "assignee": null,
+      "work_order": null,
+      "est_worksheet": 4,
+      "name": "Shop Overhead",
+      "units": "hours",
+      "rate": "50.00",
+      "est_qty": "2.00",
+      "sort_order": 4,
+      "mapping_strategy": "exclude",
+      "bundle": null,
+      "description": "",
+      "line_item_type": null
+    }
+  }
+]

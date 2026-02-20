@@ -4,7 +4,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils import timezone
 from apps.jobs.models import Job, Estimate, EstimateLineItem
-from apps.core.models import Configuration
+from apps.core.models import Configuration, LineItemType
 from apps.contacts.models import Contact
 from apps.invoicing.models import PriceListItem
 
@@ -51,7 +51,8 @@ class EstimateCreationControlTests(TestCase):
         # Estimate should be created with defaults
         estimate = Estimate.objects.filter(job=self.job).first()
         self.assertIsNotNone(estimate)
-        self.assertEqual(estimate.estimate_number, 'EST-2025-0001')
+        current_year = timezone.now().year
+        self.assertEqual(estimate.estimate_number, f'EST-{current_year}-0001')
         self.assertEqual(estimate.status, 'draft')
         self.assertEqual(estimate.version, 1)
 
@@ -194,7 +195,7 @@ class EstimateRevisionTests(TestCase):
             qty=5.0,
             units='hour',
             description='Line Item 1',
-            price_currency=100.00
+            price=100.00
         )
 
         self.line_item2 = EstimateLineItem.objects.create(
@@ -203,7 +204,7 @@ class EstimateRevisionTests(TestCase):
             qty=10.0,
             units='each',
             description='Line Item 2',
-            price_currency=50.00
+            price=50.00
         )
 
     def test_revise_confirmation_page(self):
@@ -289,14 +290,45 @@ class EstimateRevisionTests(TestCase):
         self.assertEqual(new_li1.qty, 5.0)
         self.assertEqual(new_li1.units, 'hour')
         self.assertEqual(new_li1.description, 'Line Item 1')
-        self.assertEqual(new_li1.price_currency, 100.00)
+        self.assertEqual(new_li1.price, 100.00)
 
         new_li2 = new_line_items.filter(line_number=2).first()
         self.assertIsNotNone(new_li2)
         self.assertEqual(new_li2.qty, 10.0)
         self.assertEqual(new_li2.units, 'each')
         self.assertEqual(new_li2.description, 'Line Item 2')
-        self.assertEqual(new_li2.price_currency, 50.00)
+        self.assertEqual(new_li2.price, 50.00)
+
+    def test_line_item_type_copied_during_revision(self):
+        """Test that line_item_type is copied when revising an estimate."""
+        # Get or create a line item type
+        service_type, _ = LineItemType.objects.get_or_create(
+            code='SVC',
+            defaults={'name': 'Service', 'taxable': False}
+        )
+
+        # Update line_item1 to have a line_item_type
+        self.line_item1.line_item_type = service_type
+        self.line_item1.save()
+
+        # Revise the estimate
+        url = reverse('jobs:estimate_revise', args=[self.estimate.estimate_id])
+        response = self.client.post(url)
+
+        # Get new estimate
+        new_estimate = Estimate.objects.filter(
+            job=self.job,
+            parent=self.estimate
+        ).first()
+
+        # Check that line_item_type was copied
+        new_li1 = EstimateLineItem.objects.filter(
+            estimate=new_estimate,
+            description='Line Item 1'
+        ).first()
+
+        self.assertIsNotNone(new_li1)
+        self.assertEqual(new_li1.line_item_type, service_type)
 
     def test_revise_button_shows_for_non_draft(self):
         """Test that revise button shows for non-draft estimates."""

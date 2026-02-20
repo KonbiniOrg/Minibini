@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0003_alter_configuration_key_alter_configuration_value'),
+        ('core', '0005_remove_lineitemtype_default_units'),
         ('jobs', '0015_job_start_date'),
     ]
 

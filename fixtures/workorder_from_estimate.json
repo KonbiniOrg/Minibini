@@ -1,339 +1,302 @@
 [
-  {
-    "model": "contacts.contact",
-    "pk": 100,
-    "fields": {
-      "email": "test@workordertest.com",
-      "addr1": "100 Test Street",
-      "addr2": "",
-      "addr3": "",
-      "city": "Test City",
-      "municipality": "TS",
-      "postal_code": "10001",
-      "country_code": "USA",
-      "mobile_number": "555-0100",
-      "work_number": "555-0101",
-      "home_number": "",
-      "business": null,
-      "first_name": "WorkOrder",
-      "last_name": "Test Company"
+    {
+        "model": "contacts.contact",
+        "pk": 100,
+        "fields": {
+            "email": "test@workordertest.com",
+            "addr1": "100 Test Street",
+            "addr2": "",
+            "addr3": "",
+            "city": "Test City",
+            "municipality": "TS",
+            "postal_code": "10001",
+            "country_code": "USA",
+            "mobile_number": "555-0100",
+            "work_number": "555-0101",
+            "home_number": "",
+            "business": null,
+            "first_name": "WorkOrder",
+            "last_name": "Test Company"
+        }
+    },
+    {
+        "model": "jobs.job",
+        "pk": 100,
+        "fields": {
+            "job_number": "JOB-2024-0100",
+            "created_date": "2024-01-01T10:00:00Z",
+            "due_date": "2024-02-01T10:00:00Z",
+            "completed_date": null,
+            "status": "approved",
+            "contact": 100,
+            "customer_po_number": "PO-TEST-100",
+            "description": "Test job for WorkOrder creation from Estimate"
+        }
+    },
+    {
+        "model": "jobs.job",
+        "pk": 101,
+        "fields": {
+            "job_number": "JOB-2024-0101",
+            "created_date": "2024-01-02T10:00:00Z",
+            "due_date": "2024-02-02T10:00:00Z",
+            "completed_date": null,
+            "status": "draft",
+            "contact": 100,
+            "customer_po_number": "PO-TEST-101",
+            "description": "Test job with draft estimate"
+        }
+    },
+    {
+        "model": "jobs.workordertemplate",
+        "pk": 50,
+        "fields": {
+            "template_name": "Test Product Template",
+            "description": "Template for testing WorkOrder creation",
+            "base_price": "1000.00",
+            "is_active": true,
+            "created_date": "2024-01-01T09:00:00Z"
+        }
+    },
+    {
+        "model": "jobs.tasktemplate",
+        "pk": 50,
+        "fields": {
+            "template_name": "Parent Task Template",
+            "description": "Parent task for hierarchy testing",
+            "parent_template": null,
+            "units": "hours",
+            "rate": "50.00",
+            "is_active": true,
+            "created_date": "2024-01-01T09:00:00Z"
+        }
+    },
+    {
+        "model": "jobs.tasktemplate",
+        "pk": 51,
+        "fields": {
+            "template_name": "Child Task Template",
+            "description": "Child task for hierarchy testing",
+            "parent_template": 50,
+            "units": "hours",
+            "rate": "45.00",
+            "is_active": true,
+            "created_date": "2024-01-01T09:00:00Z"
+        }
+    },
+    {
+        "model": "jobs.estworksheet",
+        "pk": 100,
+        "fields": {
+            "job": 100,
+            "template": 50,
+            "estimate": 100,
+            "status": "final",
+            "version": 1,
+            "parent": null,
+            "created_date": "2024-01-05T10:00:00Z"
+        }
+    },
+    {
+        "model": "jobs.estworksheet",
+        "pk": 101,
+        "fields": {
+            "job": 101,
+            "template": null,
+            "estimate": null,
+            "status": "draft",
+            "version": 1,
+            "parent": null,
+            "created_date": "2024-01-06T10:00:00Z"
+        }
+    },
+    {
+        "model": "jobs.estimate",
+        "pk": 100,
+        "fields": {
+            "job": 100,
+            "estimate_number": "EST-JOB-2024-0100",
+            "version": 1,
+            "status": "accepted",
+            "parent": null,
+            "created_date": "2024-01-05T11:00:00Z",
+            "closed_date": null
+        }
+    },
+    {
+        "model": "jobs.estimate",
+        "pk": 101,
+        "fields": {
+            "job": 100,
+            "estimate_number": "EST-JOB-2024-0100",
+            "version": 2,
+            "status": "open",
+            "parent": 100,
+            "created_date": "2024-01-10T11:00:00Z",
+            "closed_date": null
+        }
+    },
+    {
+        "model": "jobs.estimate",
+        "pk": 102,
+        "fields": {
+            "job": 101,
+            "estimate_number": "EST-JOB-2024-0101",
+            "version": 1,
+            "status": "draft",
+            "parent": null,
+            "created_date": "2024-01-06T11:00:00Z",
+            "closed_date": null
+        }
+    },
+    {
+        "model": "jobs.estimate",
+        "pk": 103,
+        "fields": {
+            "job": 100,
+            "estimate_number": "EST-JOB-2024-0100-NO-WS",
+            "version": 1,
+            "status": "accepted",
+            "parent": null,
+            "created_date": "2024-01-07T11:00:00Z",
+            "closed_date": null
+        }
+    },
+    {
+        "model": "jobs.task",
+        "pk": 100,
+        "fields": {
+            "parent_task": null,
+            "assignee": null,
+            "work_order": null,
+            "est_worksheet": 100,
+            "name": "Parent Task - Assembly",
+            "units": "hours",
+            "rate": "50.00",
+            "est_qty": "4.00",
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
+        }
+    },
+    {
+        "model": "jobs.task",
+        "pk": 101,
+        "fields": {
+            "parent_task": 100,
+            "assignee": null,
+            "work_order": null,
+            "est_worksheet": 100,
+            "name": "Child Task - Component A",
+            "units": "hours",
+            "rate": "45.00",
+            "est_qty": "2.00",
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
+        }
+    },
+    {
+        "model": "jobs.task",
+        "pk": 102,
+        "fields": {
+            "parent_task": 100,
+            "assignee": null,
+            "work_order": null,
+            "est_worksheet": 100,
+            "name": "Child Task - Component B",
+            "units": "pieces",
+            "rate": "25.00",
+            "est_qty": "10.00",
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
+        }
+    },
+    {
+        "model": "jobs.task",
+        "pk": 103,
+        "fields": {
+            "parent_task": null,
+            "assignee": null,
+            "work_order": null,
+            "est_worksheet": 100,
+            "name": "Standalone Task - Material Delivery",
+            "units": "hours",
+            "rate": "40.00",
+            "est_qty": "2.00",
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
+        }
+    },
+    {
+        "model": "jobs.task",
+        "pk": 104,
+        "fields": {
+            "parent_task": null,
+            "assignee": null,
+            "work_order": null,
+            "est_worksheet": 100,
+            "name": "Standalone Task - Quality Check",
+            "units": "hours",
+            "rate": "60.00",
+            "est_qty": "1.00",
+            "description": "",
+            "sort_order": null,
+            "mapping_strategy": "direct",
+            "bundle": null,
+            "line_item_type": null
+        }
+    },
+    {
+        "model": "jobs.estimatelineitem",
+        "pk": 100,
+        "fields": {
+            "estimate": 100,
+            "line_number": 1,
+            "qty": "1.00",
+            "units": "each",
+            "description": "Test Product Bundle - Complete Assembly",
+            "price": "540.00",
+            "price_list_item": null,
+            "task": 100
+        }
+    },
+    {
+        "model": "jobs.estimatelineitem",
+        "pk": 103,
+        "fields": {
+            "estimate": 100,
+            "line_number": 2,
+            "qty": "2.00",
+            "units": "hours",
+            "description": "Material delivery",
+            "price": "80.00",
+            "price_list_item": null,
+            "task": 103
+        }
+    },
+    {
+        "model": "jobs.estimatelineitem",
+        "pk": 104,
+        "fields": {
+            "estimate": 100,
+            "line_number": 3,
+            "qty": "1.00",
+            "units": "hours",
+            "description": "Quality check",
+            "price": "60.00",
+            "price_list_item": null,
+            "task": 104
+        }
     }
-  },
-  {
-    "model": "jobs.job",
-    "pk": 100,
-    "fields": {
-      "job_number": "JOB-2024-0100",
-      "created_date": "2024-01-01T10:00:00Z",
-      "due_date": "2024-02-01T10:00:00Z",
-      "completed_date": null,
-      "status": "approved",
-      "contact": 100,
-      "customer_po_number": "PO-TEST-100",
-      "description": "Test job for WorkOrder creation from Estimate"
-    }
-  },
-  {
-    "model": "jobs.job",
-    "pk": 101,
-    "fields": {
-      "job_number": "JOB-2024-0101",
-      "created_date": "2024-01-02T10:00:00Z",
-      "due_date": "2024-02-02T10:00:00Z",
-      "completed_date": null,
-      "status": "draft",
-      "contact": 100,
-      "customer_po_number": "PO-TEST-101",
-      "description": "Test job with draft estimate"
-    }
-  },
-  {
-    "model": "jobs.workordertemplate",
-    "pk": 50,
-    "fields": {
-      "template_name": "Test Product Template",
-      "description": "Template for testing WorkOrder creation",
-      "template_type": "product",
-      "product_type": "test_product",
-      "base_price": "1000.00",
-      "is_active": true,
-      "created_date": "2024-01-01T09:00:00Z"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 50,
-    "fields": {
-      "step_type": "product",
-      "mapping_strategy": "bundle_to_product",
-      "default_product_type": "test_product",
-      "line_item_name": "Test Product Bundle",
-      "line_item_description": "Bundled test product",
-      "task_type_id": "TEST_PRODUCT",
-      "breakdown_of_task": "Test product task mapping"
-    }
-  },
-  {
-    "model": "jobs.taskmapping",
-    "pk": 51,
-    "fields": {
-      "step_type": "labor",
-      "mapping_strategy": "direct",
-      "default_product_type": "",
-      "line_item_name": "Labor Task",
-      "line_item_description": "Direct labor mapping",
-      "task_type_id": "TEST_LABOR",
-      "breakdown_of_task": "Test labor task mapping"
-    }
-  },
-  {
-    "model": "jobs.tasktemplate",
-    "pk": 50,
-    "fields": {
-      "template_name": "Parent Task Template",
-      "description": "Parent task for hierarchy testing",
-      "parent_template": null,
-      "units": "hours",
-      "rate": "50.00",
-      "task_mapping": 50,
-      "is_active": true,
-      "created_date": "2024-01-01T09:00:00Z"
-    }
-  },
-  {
-    "model": "jobs.tasktemplate",
-    "pk": 51,
-    "fields": {
-      "template_name": "Child Task Template",
-      "description": "Child task for hierarchy testing",
-      "parent_template": 50,
-      "units": "hours",
-      "rate": "45.00",
-      "task_mapping": 51,
-      "is_active": true,
-      "created_date": "2024-01-01T09:00:00Z"
-    }
-  },
-  {
-    "model": "jobs.estworksheet",
-    "pk": 100,
-    "fields": {
-      "job": 100,
-      "template": 50,
-      "estimate": 100,
-      "status": "final",
-      "version": 1,
-      "parent": null,
-      "created_date": "2024-01-05T10:00:00Z"
-    }
-  },
-  {
-    "model": "jobs.estworksheet",
-    "pk": 101,
-    "fields": {
-      "job": 101,
-      "template": null,
-      "estimate": null,
-      "status": "draft",
-      "version": 1,
-      "parent": null,
-      "created_date": "2024-01-06T10:00:00Z"
-    }
-  },
-  {
-    "model": "jobs.estimate",
-    "pk": 100,
-    "fields": {
-      "job": 100,
-      "estimate_number": "EST-JOB-2024-0100",
-      "version": 1,
-      "status": "accepted",
-      "parent": null,
-      "created_date": "2024-01-05T11:00:00Z",
-      "closed_date": null
-    }
-  },
-  {
-    "model": "jobs.estimate",
-    "pk": 101,
-    "fields": {
-      "job": 100,
-      "estimate_number": "EST-JOB-2024-0100",
-      "version": 2,
-      "status": "open",
-      "parent": 100,
-      "created_date": "2024-01-10T11:00:00Z",
-      "closed_date": null
-    }
-  },
-  {
-    "model": "jobs.estimate",
-    "pk": 102,
-    "fields": {
-      "job": 101,
-      "estimate_number": "EST-JOB-2024-0101",
-      "version": 1,
-      "status": "draft",
-      "parent": null,
-      "created_date": "2024-01-06T11:00:00Z",
-      "closed_date": null
-    }
-  },
-  {
-    "model": "jobs.estimate",
-    "pk": 103,
-    "fields": {
-      "job": 100,
-      "estimate_number": "EST-JOB-2024-0100-NO-WS",
-      "version": 1,
-      "status": "accepted",
-      "parent": null,
-      "created_date": "2024-01-07T11:00:00Z",
-      "closed_date": null
-    }
-  },
-  {
-    "model": "jobs.task",
-    "pk": 100,
-    "fields": {
-      "parent_task": null,
-      "assignee": null,
-      "work_order": null,
-      "est_worksheet": 100,
-      "name": "Parent Task - Assembly",
-      "units": "hours",
-      "rate": "50.00",
-      "est_qty": "4.00",
-      "template": 50
-    }
-  },
-  {
-    "model": "jobs.task",
-    "pk": 101,
-    "fields": {
-      "parent_task": 100,
-      "assignee": null,
-      "work_order": null,
-      "est_worksheet": 100,
-      "name": "Child Task - Component A",
-      "units": "hours",
-      "rate": "45.00",
-      "est_qty": "2.00",
-      "template": 51
-    }
-  },
-  {
-    "model": "jobs.task",
-    "pk": 102,
-    "fields": {
-      "parent_task": 100,
-      "assignee": null,
-      "work_order": null,
-      "est_worksheet": 100,
-      "name": "Child Task - Component B",
-      "units": "pieces",
-      "rate": "25.00",
-      "est_qty": "10.00",
-      "template": null
-    }
-  },
-  {
-    "model": "jobs.task",
-    "pk": 103,
-    "fields": {
-      "parent_task": null,
-      "assignee": null,
-      "work_order": null,
-      "est_worksheet": 100,
-      "name": "Standalone Task - Material Delivery",
-      "units": "hours",
-      "rate": "40.00",
-      "est_qty": "2.00",
-      "template": null
-    }
-  },
-  {
-    "model": "jobs.task",
-    "pk": 104,
-    "fields": {
-      "parent_task": null,
-      "assignee": null,
-      "work_order": null,
-      "est_worksheet": 100,
-      "name": "Standalone Task - Quality Check",
-      "units": "hours",
-      "rate": "60.00",
-      "est_qty": "1.00",
-      "template": null
-    }
-  },
-  {
-    "model": "jobs.taskinstancemapping",
-    "pk": 100,
-    "fields": {
-      "task": 100,
-      "product_identifier": "test_product_100_1",
-      "product_instance": 1
-    }
-  },
-  {
-    "model": "jobs.taskinstancemapping",
-    "pk": 101,
-    "fields": {
-      "task": 101,
-      "product_identifier": "test_product_100_1",
-      "product_instance": 1
-    }
-  },
-  {
-    "model": "jobs.taskinstancemapping",
-    "pk": 102,
-    "fields": {
-      "task": 102,
-      "product_identifier": "test_product_100_1",
-      "product_instance": 1
-    }
-  },
-  {
-    "model": "jobs.estimatelineitem",
-    "pk": 100,
-    "fields": {
-      "estimate": 100,
-      "line_number": 1,
-      "qty": "1.00",
-      "units": "each",
-      "description": "Test Product Bundle - Complete Assembly",
-      "price_currency": "540.00",
-      "price_list_item": null,
-      "task": 100
-    }
-  },
-  {
-    "model": "jobs.estimatelineitem",
-    "pk": 103,
-    "fields": {
-      "estimate": 100,
-      "line_number": 2,
-      "qty": "2.00",
-      "units": "hours",
-      "description": "Material delivery",
-      "price_currency": "80.00",
-      "price_list_item": null,
-      "task": 103
-    }
-  },
-  {
-    "model": "jobs.estimatelineitem",
-    "pk": 104,
-    "fields": {
-      "estimate": 100,
-      "line_number": 3,
-      "qty": "1.00",
-      "units": "hours",
-      "description": "Quality check",
-      "price_currency": "60.00",
-      "price_list_item": null,
-      "task": 104
-    }
-  }
 ]

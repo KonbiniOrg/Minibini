@@ -58,6 +58,15 @@ class PriceListItem(models.Model):
     qty_wasted = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     is_active = models.BooleanField(default=True)  # For soft-delete - use instead of hard deletion
 
+    # LineItemType for categorization and taxability
+    line_item_type = models.ForeignKey(
+        'core.LineItemType',
+        on_delete=models.PROTECT,
+        related_name='price_list_items',
+        null=True,  # Nullable initially for migration; will be made required after data migration
+        blank=True
+    )
+
     def __str__(self):
         return f"{self.code} - {self.description[:50]}"
 

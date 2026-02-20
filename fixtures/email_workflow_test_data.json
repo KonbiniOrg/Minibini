@@ -1,27 +1,34 @@
 [
   {
+    "model": "contacts.contact",
+    "pk": 1,
+    "fields": {
+      "first_name": "Alice",
+      "last_name": "Johnson",
+      "email": "alice@acme.com",
+      "addr1": "123 Main St",
+      "addr2": "",
+      "addr3": "",
+      "city": "Anytown",
+      "municipality": "ST",
+      "postal_code": "12345",
+      "country_code": "US",
+      "mobile_number": "555-111-1111",
+      "work_number": "",
+      "home_number": "",
+      "business": null
+    }
+  },
+  {
     "model": "contacts.business",
     "pk": 1,
     "fields": {
       "business_name": "Acme Corp",
       "our_reference_code": "ACME001",
       "business_address": "100 Acme Way, Business City, ST 12345",
-      "business_number": "555-100-1000",
+      "business_phone": "555-100-1000",
       "tax_exemption_number": "",
-      "tax_cloud": "",
-      "terms": null
-    }
-  },
-  {
-    "model": "contacts.business",
-    "pk": 2,
-    "fields": {
-      "business_name": "TechStart Inc",
-      "our_reference_code": "TECH001",
-      "business_address": "200 Innovation Drive, Tech City, ST 67890",
-      "business_number": "555-200-2000",
-      "tax_exemption_number": "",
-      "tax_cloud": "",
+      "default_contact": 1,
       "terms": null
     }
   },
@@ -29,7 +36,8 @@
     "model": "contacts.contact",
     "pk": 1,
     "fields": {
-      "name": "Alice Johnson",
+      "first_name": "Alice",
+      "last_name": "Johnson",
       "email": "alice@acme.com",
       "addr1": "123 Main St",
       "addr2": "",
@@ -42,6 +50,59 @@
       "work_number": "",
       "home_number": "",
       "business": 1
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 2,
+    "fields": {
+      "first_name": "TechStart",
+      "last_name": "Contact",
+      "email": "info@techstart.com",
+      "addr1": "",
+      "addr2": "",
+      "addr3": "",
+      "city": "",
+      "municipality": "",
+      "postal_code": "",
+      "country_code": "",
+      "mobile_number": "",
+      "work_number": "",
+      "home_number": "",
+      "business": null
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 2,
+    "fields": {
+      "business_name": "TechStart Inc",
+      "our_reference_code": "TECH001",
+      "business_address": "200 Innovation Drive, Tech City, ST 67890",
+      "business_phone": "555-200-2000",
+      "tax_exemption_number": "",
+      "default_contact": 2,
+      "terms": null
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 2,
+    "fields": {
+      "first_name": "TechStart",
+      "last_name": "Contact",
+      "email": "info@techstart.com",
+      "addr1": "",
+      "addr2": "",
+      "addr3": "",
+      "city": "",
+      "municipality": "",
+      "postal_code": "",
+      "country_code": "",
+      "mobile_number": "",
+      "work_number": "",
+      "home_number": "",
+      "business": 2
     }
   },
   {

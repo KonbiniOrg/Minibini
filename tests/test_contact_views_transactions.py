@@ -22,31 +22,35 @@ class AddContactViewTransactionTest(TestCase):
         )
         self.client.login(username='testuser', password='testpass')
 
-    def test_add_contact_with_business_creates_both(self):
-        """Adding a contact with business info should create both atomically."""
+    def test_add_contact_with_existing_business(self):
+        """Adding a contact with existing business selected should associate them."""
+        # Create a contact and business first
+        default_contact = Contact.objects.create(
+            first_name='Default', last_name='Contact',
+            email='default@test.com', work_number='555-0000'
+        )
+        business = Business.objects.create(
+            business_name='Test Company',
+            business_phone='555-5678',
+            default_contact=default_contact
+        )
+        default_contact.business = business
+        default_contact.save()
+
         response = self.client.post(reverse('contacts:add_contact'), {
             'first_name': 'John',
             'last_name': 'Doe',
             'email': 'john@test.com',
             'work_number': '555-1234',
-            'business_name': 'Test Company',
-            'business_phone': '555-5678',
+            'business_id': str(business.business_id),
         })
 
         # Should redirect on success
         self.assertEqual(response.status_code, 302)
 
-        # Both should be created
-        self.assertEqual(Contact.objects.count(), 1)
-        self.assertEqual(Business.objects.count(), 1)
-
         # Contact should be associated with business
-        contact = Contact.objects.first()
-        business = Business.objects.first()
+        contact = Contact.objects.get(email='john@test.com')
         self.assertEqual(contact.business, business)
-
-        # Business should have contact as default
-        self.assertEqual(business.default_contact, contact)
 
     def test_add_contact_without_business(self):
         """Adding a contact without business info should only create contact."""

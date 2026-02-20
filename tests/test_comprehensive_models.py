@@ -7,7 +7,7 @@ from decimal import Decimal
 from datetime import timedelta
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.core.models import User, Configuration
-from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, TaskMapping, TaskTemplate
+from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, TaskTemplate
 from apps.invoicing.models import Invoice, InvoiceLineItem, PriceListItem
 from apps.jobs.models import EstimateLineItem
 from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
@@ -108,7 +108,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             price_list_item=price_list_item,
             qty=Decimal('5.00'),
             description="Test estimate line item",
-            price_currency=Decimal('75.00')
+            price=Decimal('75.00')
         )
 
         invoice_line_item = InvoiceLineItem.objects.create(
@@ -116,7 +116,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             price_list_item=price_list_item,
             qty=Decimal('5.00'),
             description="Test invoice line item",
-            price_currency=Decimal('75.00')
+            price=Decimal('75.00')
         )
 
         self.assertEqual(estimate_line_item.estimate, estimate)
@@ -162,7 +162,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             price_list_item=price_item,
             qty=Decimal('2.00'),
             description="Purchase order item",
-            price_currency=Decimal('50.00')
+            price=Decimal('50.00')
         )
 
         bill_line_item = BillLineItem.objects.create(
@@ -170,7 +170,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             price_list_item=price_item,
             qty=Decimal('2.00'),
             description="Bill item",
-            price_currency=Decimal('50.00')
+            price=Decimal('50.00')
         )
 
         self.assertEqual(bill.purchase_order, purchase_order)
@@ -218,25 +218,11 @@ class ComprehensiveModelIntegrationTest(TestCase):
             work_order=work_order,
             name="Planning Task",
         )
-
-        task_mapping = TaskMapping.objects.create(
-            step_type="labor",
-            mapping_strategy="direct",
-            task_type_id="PLAN001",
-            breakdown_of_task="Break down the planning requirements"
-        )
-
         task_template = TaskTemplate.objects.create(
-            template_name="Planning Task Template",
-            task_mapping=task_mapping
+            template_name="Planning Task Template"
         )
-
-        # Update task to use template
-        task.template = task_template
-        task.save()
 
         self.assertEqual(task.work_order, work_order)
-        self.assertEqual(task.template.task_mapping, task_mapping)
 
     def test_configuration_number_sequences(self):
         # Create configuration entries for number sequences
@@ -312,11 +298,11 @@ class ComprehensiveModelIntegrationTest(TestCase):
             invoice=invoice,
             price_list_item=price_list_item,
             qty=Decimal('10.00'),
-            price_currency=Decimal('22.50')
+            price=Decimal('22.50')
         )
 
         expected_total = line_item.qty * price_list_item.selling_price
-        self.assertEqual(line_item.price_currency, expected_total)
+        self.assertEqual(line_item.price, expected_total)
 
     def test_unique_constraints(self):
         job = Job.objects.create(job_number="UNIQUE001", contact=self.contact)

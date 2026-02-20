@@ -166,12 +166,12 @@ class EstWorksheetCreateFromJobTest(TestCase):
         self.assertEqual(tasks.count(), 2)
 
         # Check task details
-        task1 = tasks.get(template=task_template1)
+        task1 = tasks.get(name=task_template1.template_name)
         self.assertEqual(task1.name, "Test Task 1")
         self.assertEqual(task1.est_qty, 2.0)
         self.assertEqual(task1.rate, 50.00)
 
-        task2 = tasks.get(template=task_template2)
+        task2 = tasks.get(name=task_template2.template_name)
         self.assertEqual(task2.name, "Test Task 2")
         self.assertEqual(task2.est_qty, 5.0)
         self.assertEqual(task2.rate, 25.00)
