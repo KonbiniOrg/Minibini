@@ -5,6 +5,8 @@
 {% block content %}
 <h2>Inventory</h2>
 
+<p><a href="{% url 'inventory:inventory_item_add' %}">+ Add Inventory Item</a></p>
+
 <div>
     <table border="1">
         <tr>
@@ -16,6 +18,7 @@
             <th>Qty Wasted</th>
             <th>Purchase Price</th>
             <th>Selling Price</th>
+            <th></th>
         </tr>
         {% for item in items %}
         <tr>
@@ -27,10 +30,11 @@
             <td>{{ item.qty_wasted|floatformat:2 }}</td>
             <td>${{ item.purchase_price|floatformat:2 }}</td>
             <td>${{ item.selling_price|floatformat:2 }}</td>
+            <td><a href="{% url 'inventory:inventory_item_edit' item.inventory_item_id %}">Edit</a></td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="8">No inventory items found.</td>
+            <td colspan="9">No inventory items found.</td>
         </tr>
         {% endfor %}
     </table>
