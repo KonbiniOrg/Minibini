@@ -3,7 +3,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import timedelta
 from decimal import Decimal
-from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, TaskMapping, WorkOrderTemplate, TaskTemplate
+from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, WorkOrderTemplate, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import User
 
@@ -352,65 +352,6 @@ class BlepModelTest(TestCase):
         blep = Blep.objects.create(task=self.task)
         self.assertEqual(str(blep), f"Blep {blep.pk} for Task {self.task.pk}")
 
-class TaskMappingModelTest(TestCase):
-    def setUp(self):
-        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
-        self.job = Job.objects.create(
-            job_number="JOB001",
-            contact=self.contact
-        )
-        self.work_order = WorkOrder.objects.create(job=self.job)
-        self.task = Task.objects.create(
-            work_order=self.work_order,
-            name="Test Task",
-        )
-
-    def test_task_mapping_creation(self):
-        mapping = TaskMapping.objects.create(
-            step_type="labor",
-            mapping_strategy="direct",
-            task_type_id="PREP_001",
-            breakdown_of_task="Detailed breakdown of preparation steps"
-        )
-        self.assertEqual(mapping.step_type, "labor")
-        self.assertEqual(mapping.mapping_strategy, "direct")
-        self.assertEqual(mapping.task_type_id, "PREP_001")
-        self.assertEqual(mapping.breakdown_of_task, "Detailed breakdown of preparation steps")
-
-    def test_task_mapping_str_method(self):
-        mapping = TaskMapping.objects.create(
-            step_type="labor",
-            mapping_strategy="bundle_to_product",
-            task_type_id="EXEC_001"
-        )
-        self.assertEqual(str(mapping), "EXEC_001 - ")
-
-    def test_task_mapping_optional_breakdown(self):
-        mapping = TaskMapping.objects.create(
-            step_type="material",
-            mapping_strategy="direct",
-            task_type_id="COMP_001"
-        )
-        self.assertEqual(mapping.breakdown_of_task, "")
-
-    def test_task_mapping_template_relationship(self):
-        """Test TaskMapping used as template via TaskTemplate."""
-        mapping = TaskMapping.objects.create(
-            step_type="labor",
-            mapping_strategy="direct",
-            task_type_id="GEN_001",
-            breakdown_of_task="General task mapping template"
-        )
-
-        template = TaskTemplate.objects.create(
-            template_name="General Task Template",
-            task_mapping=mapping
-        )
-
-        self.assertEqual(template.task_mapping, mapping)
-        self.assertEqual(mapping.step_type, "labor")
-
-
 class WorkOrderTemplateModelTest(TestCase):
     def test_work_order_template_creation(self):
         template = WorkOrderTemplate.objects.create(
@@ -456,11 +397,6 @@ class TaskTemplateModelTest(TestCase):
             work_order=self.work_order,
             name="Test Task",
         )
-        self.task_mapping = TaskMapping.objects.create(
-            step_type="labor",
-            mapping_strategy="direct",
-            task_type_id="TEST001"
-        )
         self.work_order_template = WorkOrderTemplate.objects.create(
             template_name="Test WO Template"
         )
@@ -471,7 +407,6 @@ class TaskTemplateModelTest(TestCase):
             description="Standard electrical installation task",
             units="outlets",
             rate=Decimal('45.00'),
-            task_mapping=self.task_mapping,
             is_active=True
         )
 
@@ -487,7 +422,6 @@ class TaskTemplateModelTest(TestCase):
         self.assertEqual(template.description, "Standard electrical installation task")
         self.assertEqual(template.units, "outlets")
         self.assertEqual(template.rate, Decimal('45.00'))
-        self.assertEqual(template.task_mapping, self.task_mapping)
         self.assertIn(self.work_order_template, template.work_order_templates.all())
         self.assertEqual(association.est_qty, Decimal('12.00'))
         self.assertTrue(template.is_active)
@@ -495,15 +429,13 @@ class TaskTemplateModelTest(TestCase):
 
     def test_task_template_str_method(self):
         template = TaskTemplate.objects.create(
-            template_name="Plumbing Setup",
-            task_mapping=self.task_mapping
+            template_name="Plumbing Setup"
         )
         self.assertEqual(str(template), "Plumbing Setup")
 
     def test_task_template_defaults(self):
         template = TaskTemplate.objects.create(
-            template_name="Default Template",
-            task_mapping=self.task_mapping
+            template_name="Default Template"
         )
         self.assertTrue(template.is_active)
         self.assertEqual(template.description, "")
@@ -511,24 +443,10 @@ class TaskTemplateModelTest(TestCase):
         self.assertIsNone(template.rate)
         self.assertEqual(template.work_order_templates.count(), 0)
 
-    def test_task_template_without_task_mapping(self):
-        """Test TaskTemplate can be created without TaskMapping."""
-        template = TaskTemplate.objects.create(
-            template_name="Template Without Mapping",
-            description="Template without task mapping",
-            units="hours",
-            rate=Decimal('50.00')
-        )
-        self.assertIsNone(template.task_mapping)
-        self.assertEqual(template.template_name, "Template Without Mapping")
-        self.assertEqual(template.units, "hours")
-        self.assertEqual(template.rate, Decimal('50.00'))
-
     def test_task_template_new_fields_optional(self):
         """Test that new pricing fields are optional."""
         template = TaskTemplate.objects.create(
-            template_name="Simple Template",
-            task_mapping=self.task_mapping
+            template_name="Simple Template"
         )
         self.assertEqual(template.units, "")
         self.assertIsNone(template.rate)
@@ -537,7 +455,6 @@ class TaskTemplateModelTest(TestCase):
         """Test using TaskTemplate fields with association quantities for cost calculations."""
         template = TaskTemplate.objects.create(
             template_name="Material Template",
-            task_mapping=self.task_mapping,
             units="square_feet",
             rate=Decimal('15.25')
         )
@@ -556,11 +473,9 @@ class TaskTemplateModelTest(TestCase):
     def test_task_template_without_work_order_template(self):
         """Test TaskTemplate can exist without WorkOrderTemplate."""
         template = TaskTemplate.objects.create(
-            template_name="Standalone Template",
-            task_mapping=self.task_mapping
+            template_name="Standalone Template"
         )
         self.assertEqual(template.work_order_templates.count(), 0)
-        self.assertEqual(template.task_mapping, self.task_mapping)
 
     def test_template_task_association_sort_order(self):
         """Test that TaskTemplates added to WorkOrderTemplate maintain sort order."""
@@ -568,16 +483,13 @@ class TaskTemplateModelTest(TestCase):
 
         # Create multiple task templates
         task_template1 = TaskTemplate.objects.create(
-            template_name="First Task",
-            task_mapping=self.task_mapping
+            template_name="First Task"
         )
         task_template2 = TaskTemplate.objects.create(
-            template_name="Second Task",
-            task_mapping=self.task_mapping
+            template_name="Second Task"
         )
         task_template3 = TaskTemplate.objects.create(
-            template_name="Third Task",
-            task_mapping=self.task_mapping
+            template_name="Third Task"
         )
 
         # Add them to the work order template with specific sort orders
@@ -624,8 +536,7 @@ class TaskTemplateModelTest(TestCase):
         task_templates = []
         for i in range(5):
             template = TaskTemplate.objects.create(
-                template_name=f"Task {i+1}",
-                task_mapping=self.task_mapping
+                template_name=f"Task {i+1}"
             )
             task_templates.append(template)
 

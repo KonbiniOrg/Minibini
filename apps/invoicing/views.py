@@ -24,10 +24,17 @@ def invoice_detail(request, invoice_id):
 
 
 def price_list_item_list(request):
-    """Display all price list items."""
-    items = PriceListItem.objects.all().order_by('code')
+    """Display price list items, filtered by active status."""
+    show_archived = request.GET.get('show_archived') == '1'
+
+    if show_archived:
+        items = PriceListItem.objects.all().order_by('code')
+    else:
+        items = PriceListItem.objects.filter(is_active=True).order_by('code')
+
     return render(request, 'invoicing/price_list_item_list.html', {
-        'items': items
+        'items': items,
+        'show_archived': show_archived
     })
 
 

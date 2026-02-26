@@ -53,15 +53,15 @@
     <a href="{% url 'jobs:task_add_from_template' worksheet.est_worksheet_id %}">Add Task from Template</a> |
     <a href="{% url 'jobs:task_add_manual' worksheet.est_worksheet_id %}">Add Task Manually</a>
 </p>
-{% else %}
-<p style="color: #666; font-style: italic;">
-    Tasks cannot be added to a {{ worksheet.get_status_display|lower }} worksheet.
-</p>
+{% elif worksheet.status == 'final' %}
+<p>Tasks cannot be added to a final worksheet.</p>
+{% elif worksheet.status == 'superseded' %}
+<p>Tasks cannot be added to a superseded worksheet.</p>
 {% endif %}
 
-{% include 'jobs/_task_list.html' %}
+{% include 'includes/_bundle_table.html' %}
 
-{% if tasks %}
+{% if container_items %}
 <p><strong>Total Cost: ${{ total_cost|floatformat:2 }}</strong></p>
 {% endif %}
 

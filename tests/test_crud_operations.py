@@ -3,10 +3,11 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import (
-    Job, Estimate, EstWorksheet, Task, TaskTemplate, TaskMapping,
+    Job, Estimate, EstWorksheet, Task, TaskTemplate,
     EstimateLineItem, WorkOrderTemplate
 )
 from apps.contacts.models import Contact
+from apps.core.models import LineItemType
 
 
 class EstWorksheetCRUDTests(TestCase):
@@ -31,15 +32,8 @@ class EstWorksheetCRUDTests(TestCase):
         )
 
         # Create task mapping and template for testing
-        self.task_mapping = TaskMapping.objects.create(
-            mapping_strategy='direct',
-            task_type_id='TEST_TYPE',
-            breakdown_of_task='Test task mapping'
-        )
-
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
-            task_mapping=self.task_mapping,
             rate=100.0,
             units='hours'
         )
@@ -50,33 +44,7 @@ class EstWorksheetCRUDTests(TestCase):
             description='Test template for work orders'
         )
 
-    def test_create_estworksheet_get(self):
-        """Test GET request to create EstWorksheet form."""
-        url = reverse('jobs:estworksheet_create')
-        response = self.client.get(url)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Create New EstWorksheet')
-
-    def test_create_estworksheet_post(self):
-        """Test POST request to create new EstWorksheet."""
-        url = reverse('jobs:estworksheet_create')
-        data = {
-            'job': self.job.job_id,
-            'status': 'draft'
-        }
-        response = self.client.post(url, data)
-
-        # Check redirect after successful creation
-        self.assertEqual(response.status_code, 302)
-
-        # Check worksheet was created
-        worksheet = EstWorksheet.objects.filter(job=self.job).first()
-        self.assertIsNotNone(worksheet)
-        self.assertEqual(worksheet.status, 'draft')
-        self.assertEqual(worksheet.version, 1)
-
-    # Removed tests for estworksheet_create_from_template - functionality merged into estworksheet_create_for_job
+    # Removed standalone estworksheet_create tests - view removed, worksheets are now only created from the Job page
 
 
 class TaskCRUDTests(TestCase):
@@ -108,15 +76,8 @@ class TaskCRUDTests(TestCase):
         )
 
         # Create task mapping and template
-        self.task_mapping = TaskMapping.objects.create(
-            mapping_strategy='direct',
-            task_type_id='TEST_TYPE',
-            breakdown_of_task='Test task mapping'
-        )
-
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
-            task_mapping=self.task_mapping,
             rate=100.0,
             units='hours'
         )
@@ -144,7 +105,6 @@ class TaskCRUDTests(TestCase):
         # Check task was created
         task = Task.objects.filter(est_worksheet=self.worksheet).first()
         self.assertIsNotNone(task)
-        self.assertEqual(task.template, self.task_template)
         self.assertEqual(task.est_qty, 5.0)
         self.assertEqual(task.rate, self.task_template.rate)
         self.assertEqual(task.units, self.task_template.units)
@@ -179,7 +139,6 @@ class TaskCRUDTests(TestCase):
         self.assertEqual(task.est_qty, 10.0)
         self.assertEqual(task.rate, 75.0)
         self.assertEqual(task.units, 'hours')
-        self.assertIsNone(task.template)
 
 
 class EstimateCRUDTests(TestCase):
@@ -221,12 +180,18 @@ class EstimateCRUDTests(TestCase):
 
     def test_add_line_item_post(self):
         """Test POST request to add line item."""
+        # Get or create a line item type for the test
+        service_type, _ = LineItemType.objects.get_or_create(
+            code='SVC',
+            defaults={'name': 'Service', 'taxable': False, 'is_active': True}
+        )
         url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
         data = {
             'description': 'Test Line Item',
             'qty': 5.0,
-            'price_currency': 100.0,
+            'price': 100.0,
             'units': 'each',
+            'line_item_type': service_type.pk,
             'manual_submit': 'Add Manual Line Item'
         }
         response = self.client.post(url, data)
@@ -239,7 +204,7 @@ class EstimateCRUDTests(TestCase):
         self.assertIsNotNone(line_item)
         self.assertEqual(line_item.description, 'Test Line Item')
         self.assertEqual(line_item.qty, 5.0)
-        self.assertEqual(line_item.price_currency, 100.0)
+        self.assertEqual(line_item.price, 100.0)
         self.assertEqual(line_item.units, 'each')
 
     def test_update_status_get(self):

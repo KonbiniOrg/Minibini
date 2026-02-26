@@ -61,7 +61,7 @@ class BillStatusTransitionTest(TestCase):
             bill=bill,
             description="Test item",
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00')
+            price=Decimal('100.00')
         )
 
     def test_bill_default_status_is_draft(self):

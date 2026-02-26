@@ -185,13 +185,14 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         self.assertContains(response, 'Add Line Item to Purchase Order')
         self.assertContains(response, 'PO-TEST-001')
         self.assertContains(response, 'Price List Item')
-        self.assertContains(response, 'Quantity')
+        self.assertContains(response, 'Qty')
 
     def test_add_line_item_from_price_list(self):
         """Test adding a line item from price list."""
         url = reverse('purchasing:purchase_order_add_line_item', args=[self.purchase_order.po_id])
 
         form_data = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '10.00',
         }
@@ -209,7 +210,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         # Verify values were copied from price list item
         self.assertEqual(line_item.description, self.price_list_item.description)
         self.assertEqual(line_item.units, self.price_list_item.units)
-        self.assertEqual(line_item.price_currency, self.price_list_item.purchase_price)  # IMPORTANT: Uses purchase_price
+        self.assertEqual(line_item.price, self.price_list_item.purchase_price)  # IMPORTANT: Uses purchase_price
 
         # Verify qty came from form
         self.assertEqual(line_item.qty, Decimal('10.00'))
@@ -225,6 +226,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         url = reverse('purchasing:purchase_order_add_line_item', args=[self.purchase_order.po_id])
 
         form_data = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '5.00',
         }
@@ -233,14 +235,15 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
 
         # Check line item uses purchase_price (25.00), not selling_price (50.00)
         line_item = PurchaseOrderLineItem.objects.filter(purchase_order=self.purchase_order).first()
-        self.assertEqual(line_item.price_currency, Decimal('25.00'))
-        self.assertNotEqual(line_item.price_currency, Decimal('50.00'))
+        self.assertEqual(line_item.price, Decimal('25.00'))
+        self.assertNotEqual(line_item.price, Decimal('50.00'))
 
     def test_add_line_item_missing_qty(self):
         """Test that qty is required when adding a line item."""
         url = reverse('purchasing:purchase_order_add_line_item', args=[self.purchase_order.po_id])
 
         form_data = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '',  # Missing qty
         }
@@ -259,6 +262,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         url = reverse('purchasing:purchase_order_add_line_item', args=[self.purchase_order.po_id])
 
         form_data = {
+            'pricelist_submit': '1',
             'qty': '5.00',
             # Missing price_list_item
         }
@@ -278,6 +282,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
 
         # Add first line item
         form_data_1 = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '10.00',
         }
@@ -285,6 +290,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
 
         # Add second line item
         form_data_2 = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item2.price_list_item_id),
             'qty': '5.00',
         }
@@ -297,12 +303,12 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         # Verify first item
         self.assertEqual(line_items[0].price_list_item, self.price_list_item)
         self.assertEqual(line_items[0].qty, Decimal('10.00'))
-        self.assertEqual(line_items[0].price_currency, Decimal('25.00'))
+        self.assertEqual(line_items[0].price, Decimal('25.00'))
 
         # Verify second item
         self.assertEqual(line_items[1].price_list_item, self.price_list_item2)
         self.assertEqual(line_items[1].qty, Decimal('5.00'))
-        self.assertEqual(line_items[1].price_currency, Decimal('15.50'))
+        self.assertEqual(line_items[1].price, Decimal('15.50'))
 
     def test_line_item_total_amount_calculation(self):
         """Test that line item total amount is calculated correctly."""
@@ -310,6 +316,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
 
         # Add line item with qty and purchase_price
         form_data = {
+            'pricelist_submit': '1',
             'price_list_item': str(self.price_list_item.price_list_item_id),
             'qty': '3.00',  # 3.00 * 25.00 = 75.00
         }
@@ -328,6 +335,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         # Add three line items
         for i in range(3):
             form_data = {
+                'pricelist_submit': '1',
                 'price_list_item': str(self.price_list_item.price_list_item_id),
                 'qty': f'{i+1}.00',
             }
@@ -367,7 +375,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
             description='Item 1',
             qty=Decimal('2.00'),
             units='each',
-            price_currency=Decimal('10.00')
+            price=Decimal('10.00')
         )
         PurchaseOrderLineItem.objects.create(
             purchase_order=self.purchase_order,
@@ -375,7 +383,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
             description='Item 2',
             qty=Decimal('3.00'),
             units='each',
-            price_currency=Decimal('15.00')
+            price=Decimal('15.00')
         )
 
         url = reverse('purchasing:purchase_order_detail', args=[self.purchase_order.po_id])

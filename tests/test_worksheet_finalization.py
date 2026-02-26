@@ -5,7 +5,7 @@ Test that worksheets are properly finalized after generating estimates.
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, Estimate, EstWorksheet, Task, TaskTemplate, TaskMapping
+from apps.jobs.models import Job, Estimate, EstWorksheet, Task, TaskTemplate
 from apps.core.models import Configuration
 from apps.contacts.models import Contact
 from apps.jobs.services import EstimateGenerationService
@@ -54,19 +54,9 @@ class WorksheetFinalizationTests(TestCase):
         )
 
         # Create task mapping for test
-        self.task_mapping = TaskMapping.objects.create(
-            step_type='labor',
-            mapping_strategy='direct',
-            task_type_id='TEST',
-            breakdown_of_task='Test task',
-            line_item_name='Test Labor',
-            line_item_description='Test labor description'
-        )
-
         # Create task template
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
-            task_mapping=self.task_mapping,
             units='hours',
             rate=Decimal('50.00')
         )
@@ -79,13 +69,17 @@ class WorksheetFinalizationTests(TestCase):
         )
 
         # Add a task to the worksheet
+        from apps.core.models import LineItemType
+        self.line_item_type, _ = LineItemType.objects.get_or_create(
+            code='LBR', defaults={'name': 'Labor'}
+        )
         self.task = Task.objects.create(
             est_worksheet=self.worksheet,
-            template=self.task_template,
             name='Test Task',
             units='hours',
             rate=Decimal('50.00'),
-            est_qty=Decimal('2.0')
+            est_qty=Decimal('2.0'),
+            line_item_type=self.line_item_type,
         )
 
     def test_worksheet_marked_final_after_generating_estimate(self):
@@ -287,21 +281,16 @@ class WorksheetEstimateIntegrationTests(TestCase):
         )
 
         # Create task mapping
-        self.task_mapping = TaskMapping.objects.create(
-            step_type='labor',
-            mapping_strategy='direct',
-            task_type_id='TEST',
-            breakdown_of_task='Test task',
-            line_item_name='Test Labor',
-            line_item_description='Test labor description'
-        )
-
         # Create task template
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
-            task_mapping=self.task_mapping,
             units='hours',
             rate=Decimal('50.00')
+        )
+
+        from apps.core.models import LineItemType
+        self.line_item_type, _ = LineItemType.objects.get_or_create(
+            code='LBR', defaults={'name': 'Labor'}
         )
 
         self.service = EstimateGenerationService()
@@ -318,11 +307,11 @@ class WorksheetEstimateIntegrationTests(TestCase):
         # Add task
         Task.objects.create(
             est_worksheet=worksheet,
-            template=self.task_template,
             name='Test Task',
             units='hours',
             rate=Decimal('50.00'),
-            est_qty=Decimal('2.0')
+            est_qty=Decimal('2.0'),
+            line_item_type=self.line_item_type,
         )
 
         # Verify worksheet is draft
@@ -366,11 +355,11 @@ class WorksheetEstimateIntegrationTests(TestCase):
         # Add task to v2
         Task.objects.create(
             est_worksheet=worksheet_v2,
-            template=self.task_template,
             name='Test Task v2',
             units='hours',
             rate=Decimal('60.00'),
-            est_qty=Decimal('3.0')
+            est_qty=Decimal('3.0'),
+            line_item_type=self.line_item_type,
         )
 
         # Generate estimate from v2

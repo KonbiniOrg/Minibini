@@ -1,12 +1,26 @@
 [
     {
+        "model": "core.lineitemtype",
+        "pk": 100,
+        "fields": {
+            "name": "Electrical Work",
+            "code": "ELEC"
+        }
+    },
+    {
+        "model": "core.lineitemtype",
+        "pk": 101,
+        "fields": {
+            "name": "Plumbing Work",
+            "code": "PLMB"
+        }
+    },
+    {
         "model": "jobs.workordertemplate",
         "pk": 1,
         "fields": {
             "template_name": "Standard Installation",
             "description": "Complete installation workflow with all standard tasks",
-            "template_type": "product",
-            "product_type": "installation",
             "base_price": "1500.00",
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
@@ -18,40 +32,8 @@
         "fields": {
             "template_name": "Maintenance Service",
             "description": "Regular maintenance service package",
-            "template_type": "service",
-            "product_type": "maintenance",
             "base_price": "750.00",
             "is_active": true,
-            "created_date": "2024-01-01T10:00:00Z"
-        }
-    },
-    {
-        "model": "jobs.taskmapping",
-        "pk": 1,
-        "fields": {
-            "task_type_id": "ELEC001",
-            "task_type_name": "Electrical",
-            "cost_code": "100-200",
-            "created_date": "2024-01-01T10:00:00Z"
-        }
-    },
-    {
-        "model": "jobs.taskmapping",
-        "pk": 2,
-        "fields": {
-            "task_type_id": "PLUMB001",
-            "task_type_name": "Plumbing",
-            "cost_code": "200-300",
-            "created_date": "2024-01-01T10:00:00Z"
-        }
-    },
-    {
-        "model": "jobs.taskmapping",
-        "pk": 3,
-        "fields": {
-            "task_type_id": "CARP001",
-            "task_type_name": "Carpentry",
-            "cost_code": "300-400",
             "created_date": "2024-01-01T10:00:00Z"
         }
     },
@@ -63,7 +45,6 @@
             "description": "Install standard electrical outlets",
             "units": "outlets",
             "rate": "45.00",
-            "task_mapping": 1,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -76,7 +57,6 @@
             "description": "Run electrical wiring through walls",
             "units": "linear feet",
             "rate": "12.50",
-            "task_mapping": 1,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -89,7 +69,6 @@
             "description": "Install bathroom and kitchen fixtures",
             "units": "fixtures",
             "rate": "85.00",
-            "task_mapping": 2,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -102,7 +81,6 @@
             "description": "Install water supply lines",
             "units": "linear feet",
             "rate": "18.75",
-            "task_mapping": 2,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -115,7 +93,6 @@
             "description": "Frame interior walls",
             "units": "square feet",
             "rate": "25.00",
-            "task_mapping": 3,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
         }
@@ -128,9 +105,30 @@
             "description": "Install and finish drywall",
             "units": "square feet",
             "rate": "15.50",
-            "task_mapping": 3,
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
+        }
+    },
+    {
+        "model": "jobs.templatebundle",
+        "pk": 1,
+        "fields": {
+            "work_order_template": 1,
+            "name": "Complete Electrical",
+            "description": "All electrical installation tasks bundled together",
+            "line_item_type": 100,
+            "sort_order": 1
+        }
+    },
+    {
+        "model": "jobs.templatebundle",
+        "pk": 2,
+        "fields": {
+            "work_order_template": 1,
+            "name": "Complete Plumbing",
+            "description": "All plumbing installation tasks bundled together",
+            "line_item_type": 101,
+            "sort_order": 2
         }
     },
     {
@@ -140,7 +138,9 @@
             "work_order_template": 1,
             "task_template": 1,
             "est_qty": "10.00",
-            "sort_order": 1
+            "sort_order": 1,
+            "mapping_strategy": "bundle",
+            "bundle": 1
         }
     },
     {
@@ -150,7 +150,9 @@
             "work_order_template": 1,
             "task_template": 2,
             "est_qty": "150.00",
-            "sort_order": 2
+            "sort_order": 2,
+            "mapping_strategy": "bundle",
+            "bundle": 1
         }
     },
     {
@@ -160,7 +162,9 @@
             "work_order_template": 1,
             "task_template": 3,
             "est_qty": "5.00",
-            "sort_order": 3
+            "sort_order": 3,
+            "mapping_strategy": "bundle",
+            "bundle": 2
         }
     },
     {
@@ -170,7 +174,9 @@
             "work_order_template": 1,
             "task_template": 4,
             "est_qty": "200.00",
-            "sort_order": 4
+            "sort_order": 4,
+            "mapping_strategy": "bundle",
+            "bundle": 2
         }
     },
     {
@@ -180,7 +186,9 @@
             "work_order_template": 1,
             "task_template": 5,
             "est_qty": "400.00",
-            "sort_order": 5
+            "sort_order": 5,
+            "mapping_strategy": "direct",
+            "bundle": null
         }
     },
     {
@@ -190,7 +198,9 @@
             "work_order_template": 1,
             "task_template": 6,
             "est_qty": "400.00",
-            "sort_order": 6
+            "sort_order": 6,
+            "mapping_strategy": "direct",
+            "bundle": null
         }
     },
     {
@@ -200,7 +210,9 @@
             "work_order_template": 2,
             "task_template": 1,
             "est_qty": "2.00",
-            "sort_order": 1
+            "sort_order": 1,
+            "mapping_strategy": "direct",
+            "bundle": null
         }
     },
     {
@@ -210,7 +222,9 @@
             "work_order_template": 2,
             "task_template": 3,
             "est_qty": "1.00",
-            "sort_order": 2
+            "sort_order": 2,
+            "mapping_strategy": "direct",
+            "bundle": null
         }
     }
 ]

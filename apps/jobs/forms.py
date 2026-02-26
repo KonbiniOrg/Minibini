@@ -2,10 +2,11 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .models import (
-    WorkOrderTemplate, TaskTemplate, TaskMapping,
+    WorkOrderTemplate, TaskTemplate,
     EstWorksheet, Task, Estimate, EstimateLineItem, Job
 )
 from apps.contacts.models import Contact
+from apps.core.models import LineItemType
 from apps.core.services import NumberGenerationService
 
 
@@ -29,7 +30,7 @@ class JobCreateForm(forms.ModelForm):
 
     class Meta:
         model = Job
-        fields = ['customer_po_number', 'description', 'due_date']
+        fields = ['name', 'customer_po_number', 'description', 'due_date']
         widgets = {
             'customer_po_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Optional'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
@@ -162,23 +163,16 @@ class JobEditForm(forms.ModelForm):
 class WorkOrderTemplateForm(forms.ModelForm):
     class Meta:
         model = WorkOrderTemplate
-        fields = ['template_name', 'description', 'is_active']
+        fields = ['template_name', 'description']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 4}),
         }
 
 
 class TaskTemplateForm(forms.ModelForm):
-    task_mapping = forms.ModelChoiceField(
-        queryset=TaskMapping.objects.all(),
-        required=False,
-        widget=forms.Select(attrs={'class': 'form-control'}),
-        empty_label="-- Select Task Mapping (Optional) --"
-    )
-
     class Meta:
         model = TaskTemplate
-        fields = ['template_name', 'description', 'units', 'rate', 'task_mapping', 'is_active']
+        fields = ['template_name', 'description', 'units', 'rate', 'line_item_type']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
             'units': forms.TextInput(attrs={'placeholder': 'e.g., hours, pieces'}),
@@ -202,11 +196,11 @@ class EstWorksheetForm(forms.ModelForm):
         self.fields['template'].empty_label = "-- No Template (Manual) --"
 
 
-class TaskForm(forms.ModelForm):
-    """Form for creating/editing Task"""
+class TaskEditForm(forms.ModelForm):
+    """Form for editing an existing Task's details."""
     class Meta:
         model = Task
-        fields = ['name', 'template', 'est_worksheet', 'est_qty', 'units', 'rate']
+        fields = ['name', 'description', 'units', 'rate', 'est_qty', 'line_item_type']
         widgets = {
             'est_qty': forms.NumberInput(attrs={'step': '0.01'}),
             'rate': forms.NumberInput(attrs={'step': '0.01'}),
@@ -232,15 +226,21 @@ class ManualLineItemForm(forms.ModelForm):
     """Form for creating a manual line item (not linked to a Price List Item)"""
     class Meta:
         model = EstimateLineItem
-        fields = ['description', 'qty', 'units', 'price_currency']
+        fields = ['description', 'qty', 'units', 'price', 'line_item_type']
         widgets = {
             'qty': forms.NumberInput(attrs={'step': '0.01'}),
-            'price_currency': forms.NumberInput(attrs={'step': '0.01'}),
+            'price': forms.NumberInput(attrs={'step': '0.01'}),
             'description': forms.Textarea(attrs={'rows': 3}),
         }
         labels = {
-            'price_currency': 'Price',
+            'price': 'Price',
+            'line_item_type': 'Type',
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
+        self.fields['line_item_type'].required = True
 
 
 class PriceListLineItemForm(forms.Form):
@@ -259,6 +259,11 @@ class PriceListLineItemForm(forms.Form):
         widget=forms.NumberInput(attrs={'step': '0.01'}),
         label="Qty"
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.invoicing.models import PriceListItem
+        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
 
 class EstimateForm(forms.ModelForm):

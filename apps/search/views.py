@@ -26,7 +26,8 @@ def search_view(request):
         'date_to': date_to,
         'price_min': price_min,
         'price_max': price_max,
-        'available_categories': SearchService.AVAILABLE_CATEGORIES,
+        'available_categories': SearchService.AVAILABLE_CATEGORIES,  # Legacy string list
+        'category_info': SearchService.get_all_category_info(),  # New structured info with IDs
     }
 
     if not query:
@@ -94,7 +95,8 @@ def search_within_results(request):
         'date_to': date_to,
         'price_min': price_min,
         'price_max': price_max,
-        'available_categories': SearchService.AVAILABLE_CATEGORIES,
+        'available_categories': SearchService.AVAILABLE_CATEGORIES,  # Legacy string list
+        'category_info': SearchService.get_all_category_info(),  # New structured info with IDs
     }
 
     if not result_ids:

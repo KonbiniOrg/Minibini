@@ -2,7 +2,11 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.views.decorators.http import require_POST
 from .models import PurchaseOrder, Bill, BillLineItem, PurchaseOrderLineItem
-from .forms import PurchaseOrderForm, PurchaseOrderLineItemForm, PurchaseOrderStatusForm, BillForm, BillLineItemForm, BillStatusForm
+from .forms import (
+    PurchaseOrderForm, PurchaseOrderLineItemForm, PurchaseOrderStatusForm,
+    BillForm, BillLineItemForm, BillStatusForm,
+    POManualLineItemForm, POPriceListLineItemForm
+)
 
 def purchase_order_list(request):
     purchase_orders = PurchaseOrder.objects.all().order_by('-po_id')
@@ -81,32 +85,59 @@ def purchase_order_create_for_job(request, job_id):
     return render(request, 'purchasing/purchase_order_create.html', {'form': form, 'job': job})
 
 def purchase_order_add_line_item(request, po_id):
-    """Add line item to PurchaseOrder from Price List"""
+    """Add line item to PurchaseOrder - manual entry or from Price List"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
 
     if request.method == 'POST':
-        form = PurchaseOrderLineItemForm(request.POST)
-        if form.is_valid():
-            price_list_item = form.cleaned_data['price_list_item']
-            qty = form.cleaned_data['qty']
+        if 'manual_submit' in request.POST:
+            # Manual line item form submitted
+            manual_form = POManualLineItemForm(request.POST)
+            if manual_form.is_valid():
+                line_item = manual_form.save(commit=False)
+                line_item.purchase_order = purchase_order
+                line_item.save()
 
-            # Create line item from price list item, copying purchase_price
-            line_item = PurchaseOrderLineItem.objects.create(
-                purchase_order=purchase_order,
-                price_list_item=price_list_item,
-                description=price_list_item.description,
-                qty=qty,
-                units=price_list_item.units,
-                price_currency=price_list_item.purchase_price  # Use purchase_price
-            )
+                messages.success(request, f'Line item "{line_item.description}" added')
+                return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
+            else:
+                # Manual form has errors, create empty price list form
+                pricelist_form = POPriceListLineItemForm()
 
-            messages.success(request, f'Line item "{line_item.description}" added from price list')
-            return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
+        elif 'pricelist_submit' in request.POST:
+            # Price list line item form submitted
+            pricelist_form = POPriceListLineItemForm(request.POST)
+            if pricelist_form.is_valid():
+                price_list_item = pricelist_form.cleaned_data['price_list_item']
+                qty = pricelist_form.cleaned_data['qty']
+
+                # Create line item from price list item, copying purchase_price and line_item_type
+                line_item = PurchaseOrderLineItem.objects.create(
+                    purchase_order=purchase_order,
+                    price_list_item=price_list_item,
+                    description=price_list_item.description,
+                    qty=qty,
+                    units=price_list_item.units,
+                    price=price_list_item.purchase_price,
+                    line_item_type=price_list_item.line_item_type
+                )
+
+                messages.success(request, f'Line item "{line_item.description}" added from price list')
+                return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
+            else:
+                # Price list form has errors, create empty manual form
+                manual_form = POManualLineItemForm()
+        else:
+            # Neither form submitted (shouldn't happen)
+            manual_form = POManualLineItemForm()
+            pricelist_form = POPriceListLineItemForm()
     else:
-        form = PurchaseOrderLineItemForm()
+        # GET request - create both empty forms
+        manual_form = POManualLineItemForm()
+        pricelist_form = POPriceListLineItemForm()
 
     return render(request, 'purchasing/purchase_order_add_line_item.html', {
-        'form': form,
+        'manual_form': manual_form,
+        'pricelist_form': pricelist_form,
         'purchase_order': purchase_order
     })
 
@@ -245,8 +276,9 @@ def bill_create_for_po(request, po_id):
                     description=po_line_item.description,
                     qty=po_line_item.qty,
                     units=po_line_item.units,
-                    price_currency=po_line_item.price_currency,
-                    line_number=po_line_item.line_number
+                    price=po_line_item.price,
+                    line_number=po_line_item.line_number,
+                    line_item_type=po_line_item.line_item_type
                 )
 
             line_items_copied = po_line_items.count()
@@ -272,14 +304,15 @@ def bill_add_line_item(request, bill_id):
             qty = form.cleaned_data['qty']
 
             if price_list_item:
-                # Create line item from price list item, copying purchase_price
+                # Create line item from price list item, copying purchase_price and line_item_type
                 line_item = BillLineItem.objects.create(
                     bill=bill,
                     price_list_item=price_list_item,
                     description=price_list_item.description,
                     qty=qty,
                     units=price_list_item.units,
-                    price_currency=price_list_item.purchase_price  # Use purchase_price
+                    price=price_list_item.purchase_price,
+                    line_item_type=price_list_item.line_item_type
                 )
                 messages.success(request, f'Line item "{line_item.description}" added from price list')
             else:
@@ -287,13 +320,15 @@ def bill_add_line_item(request, bill_id):
                 description = form.cleaned_data['description']
                 units = form.cleaned_data['units']
                 price = form.cleaned_data['price']
+                line_item_type = form.cleaned_data['line_item_type']
 
                 line_item = BillLineItem.objects.create(
                     bill=bill,
                     description=description,
                     qty=qty,
                     units=units,
-                    price_currency=price
+                    price=price,
+                    line_item_type=line_item_type
                 )
                 messages.success(request, f'Line item "{line_item.description}" added manually')
 

@@ -100,23 +100,23 @@ class TaskReorderingTestCase(TestCase):
             units='hours'
         )
 
-    def test_worksheet_tasks_have_line_numbers(self):
+    def test_worksheet_tasks_have_sort_orders(self):
         """Test that tasks are automatically assigned line numbers"""
-        self.assertIsNotNone(self.task1.line_number)
-        self.assertIsNotNone(self.task2.line_number)
-        self.assertIsNotNone(self.task3.line_number)
-        self.assertEqual(self.task1.line_number, 1)
-        self.assertEqual(self.task2.line_number, 2)
-        self.assertEqual(self.task3.line_number, 3)
+        self.assertIsNotNone(self.task1.sort_order)
+        self.assertIsNotNone(self.task2.sort_order)
+        self.assertIsNotNone(self.task3.sort_order)
+        self.assertEqual(self.task1.sort_order, 1)
+        self.assertEqual(self.task2.sort_order, 2)
+        self.assertEqual(self.task3.sort_order, 3)
 
-    def test_work_order_tasks_have_line_numbers(self):
+    def test_work_order_tasks_have_sort_orders(self):
         """Test that work order tasks are automatically assigned line numbers"""
-        self.assertIsNotNone(self.wo_task1.line_number)
-        self.assertIsNotNone(self.wo_task2.line_number)
-        self.assertIsNotNone(self.wo_task3.line_number)
-        self.assertEqual(self.wo_task1.line_number, 1)
-        self.assertEqual(self.wo_task2.line_number, 2)
-        self.assertEqual(self.wo_task3.line_number, 3)
+        self.assertIsNotNone(self.wo_task1.sort_order)
+        self.assertIsNotNone(self.wo_task2.sort_order)
+        self.assertIsNotNone(self.wo_task3.sort_order)
+        self.assertEqual(self.wo_task1.sort_order, 1)
+        self.assertEqual(self.wo_task2.sort_order, 2)
+        self.assertEqual(self.wo_task3.sort_order, 3)
 
     def test_reorder_worksheet_task_down(self):
         """Test moving a task down in the worksheet"""
@@ -134,9 +134,9 @@ class TaskReorderingTestCase(TestCase):
         self.task1.refresh_from_db()
         self.task2.refresh_from_db()
 
-        # Task 1 should now have line_number 2, Task 2 should have line_number 1
-        self.assertEqual(self.task1.line_number, 2)
-        self.assertEqual(self.task2.line_number, 1)
+        # Task 1 should now have sort_order 2, Task 2 should have sort_order 1
+        self.assertEqual(self.task1.sort_order, 2)
+        self.assertEqual(self.task2.sort_order, 1)
 
     def test_reorder_worksheet_task_up(self):
         """Test moving a task up in the worksheet"""
@@ -154,9 +154,9 @@ class TaskReorderingTestCase(TestCase):
         self.task1.refresh_from_db()
         self.task2.refresh_from_db()
 
-        # Task 2 should now have line_number 1, Task 1 should have line_number 2
-        self.assertEqual(self.task2.line_number, 1)
-        self.assertEqual(self.task1.line_number, 2)
+        # Task 2 should now have sort_order 1, Task 1 should have sort_order 2
+        self.assertEqual(self.task2.sort_order, 1)
+        self.assertEqual(self.task1.sort_order, 2)
 
     def test_cannot_move_first_task_up(self):
         """Test that first task cannot be moved up"""
@@ -173,8 +173,8 @@ class TaskReorderingTestCase(TestCase):
         # Refresh task from database
         self.task1.refresh_from_db()
 
-        # Task 1 should still have line_number 1
-        self.assertEqual(self.task1.line_number, 1)
+        # Task 1 should still have sort_order 1
+        self.assertEqual(self.task1.sort_order, 1)
 
     def test_cannot_move_last_task_down(self):
         """Test that last task cannot be moved down"""
@@ -191,8 +191,8 @@ class TaskReorderingTestCase(TestCase):
         # Refresh task from database
         self.task3.refresh_from_db()
 
-        # Task 3 should still have line_number 3
-        self.assertEqual(self.task3.line_number, 3)
+        # Task 3 should still have sort_order 3
+        self.assertEqual(self.task3.sort_order, 3)
 
     def test_cannot_reorder_non_draft_worksheet(self):
         """Test that tasks in non-draft worksheets cannot be reordered"""
@@ -213,8 +213,8 @@ class TaskReorderingTestCase(TestCase):
         # Refresh task from database
         self.task1.refresh_from_db()
 
-        # Task 1 should still have original line_number
-        self.assertEqual(self.task1.line_number, 1)
+        # Task 1 should still have original sort_order
+        self.assertEqual(self.task1.sort_order, 1)
 
     def test_reorder_work_order_task_down(self):
         """Test moving a work order task down"""
@@ -232,9 +232,9 @@ class TaskReorderingTestCase(TestCase):
         self.wo_task1.refresh_from_db()
         self.wo_task2.refresh_from_db()
 
-        # WO Task 1 should now have line_number 2, WO Task 2 should have line_number 1
-        self.assertEqual(self.wo_task1.line_number, 2)
-        self.assertEqual(self.wo_task2.line_number, 1)
+        # WO Task 1 should now have sort_order 2, WO Task 2 should have sort_order 1
+        self.assertEqual(self.wo_task1.sort_order, 2)
+        self.assertEqual(self.wo_task2.sort_order, 1)
 
     def test_reorder_work_order_task_up(self):
         """Test moving a work order task up"""
@@ -252,6 +252,6 @@ class TaskReorderingTestCase(TestCase):
         self.wo_task2.refresh_from_db()
         self.wo_task3.refresh_from_db()
 
-        # WO Task 3 should now have line_number 2, WO Task 2 should have line_number 3
-        self.assertEqual(self.wo_task3.line_number, 2)
-        self.assertEqual(self.wo_task2.line_number, 3)
+        # WO Task 3 should now have sort_order 2, WO Task 2 should have sort_order 3
+        self.assertEqual(self.wo_task3.sort_order, 2)
+        self.assertEqual(self.wo_task2.sort_order, 3)

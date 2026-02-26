@@ -6,24 +6,76 @@
 <h1>Add Line Item to Bill</h1>
 <h2>Bill ID: {{ bill.bill_id }} (Invoice: {{ bill.vendor_invoice_number }})</h2>
 
+<h3>From Price List</h3>
 <form method="post">
     {% csrf_token %}
-    <fieldset>
-        <legend><strong>Select from Price List</strong></legend>
-        <p>
-            <label for="id_price_list_item"><strong>Price List Item *</strong></label><br>
-            {{ form.price_list_item }}
-        </p>
-        <p>
-            <label for="id_qty"><strong>Quantity *</strong></label><br>
-            {{ form.qty }}
-        </p>
-    </fieldset>
     <p>
-        <button type="submit">Add Line Item</button>
-        <a href="{% url 'purchasing:bill_detail' bill.bill_id %}">Cancel</a>
+        <label for="id_price_list_item"><strong>Price List Item *</strong></label><br>
+        {{ form.price_list_item }}
+        {% if form.price_list_item.errors %}
+            <br><span style="color: red;">{{ form.price_list_item.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_qty"><strong>Quantity *</strong></label><br>
+        {{ form.qty }}
+        {% if form.qty.errors %}
+            <br><span style="color: red;">{{ form.qty.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <button type="submit">Add from Price List</button>
     </p>
 </form>
 
-<p><em>Note: The purchase price from the Price List Item will be copied to the line item.</em></p>
+<p><em>Note: The purchase price and type from the Price List Item will be copied to the line item.</em></p>
+
+<hr>
+
+<h3>Manual Entry</h3>
+<form method="post">
+    {% csrf_token %}
+    <p>
+        <label for="id_description"><strong>Description *</strong></label><br>
+        {{ form.description }}
+        {% if form.description.errors %}
+            <br><span style="color: red;">{{ form.description.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_qty"><strong>Quantity *</strong></label><br>
+        {{ form.qty }}
+        {% if form.qty.errors %}
+            <br><span style="color: red;">{{ form.qty.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_units"><strong>Units</strong></label><br>
+        {{ form.units }}
+        {% if form.units.errors %}
+            <br><span style="color: red;">{{ form.units.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_price"><strong>Price *</strong></label><br>
+        {{ form.price }}
+        {% if form.price.errors %}
+            <br><span style="color: red;">{{ form.price.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <label for="id_line_item_type"><strong>Type *</strong></label><br>
+        {{ form.line_item_type }}
+        {% if form.line_item_type.errors %}
+            <br><span style="color: red;">{{ form.line_item_type.errors }}</span>
+        {% endif %}
+    </p>
+    <p>
+        <button type="submit">Add Manual Line Item</button>
+    </p>
+</form>
+
+<p>
+    <a href="{% url 'purchasing:bill_detail' bill.bill_id %}">Back to Bill</a>
+</p>
 {% endblock %}

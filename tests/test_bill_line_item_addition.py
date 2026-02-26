@@ -102,7 +102,7 @@ class BillLineItemAdditionTests(TestCase):
         # Verify values were copied from price list item
         self.assertEqual(line_item.description, self.price_list_item.description)
         self.assertEqual(line_item.units, self.price_list_item.units)
-        self.assertEqual(line_item.price_currency, self.price_list_item.purchase_price)  # IMPORTANT: Uses purchase_price
+        self.assertEqual(line_item.price, self.price_list_item.purchase_price)  # IMPORTANT: Uses purchase_price
 
         # Verify qty came from form
         self.assertEqual(line_item.qty, Decimal('10.00'))
@@ -126,8 +126,8 @@ class BillLineItemAdditionTests(TestCase):
 
         # Check line item uses purchase_price (25.00), not selling_price (50.00)
         line_item = BillLineItem.objects.filter(bill=self.bill).first()
-        self.assertEqual(line_item.price_currency, Decimal('25.00'))
-        self.assertNotEqual(line_item.price_currency, Decimal('50.00'))
+        self.assertEqual(line_item.price, Decimal('25.00'))
+        self.assertNotEqual(line_item.price, Decimal('50.00'))
 
     def test_add_line_item_missing_qty(self):
         """Test that qty is required when adding a line item."""
@@ -190,12 +190,12 @@ class BillLineItemAdditionTests(TestCase):
         # Verify first item
         self.assertEqual(line_items[0].price_list_item, self.price_list_item)
         self.assertEqual(line_items[0].qty, Decimal('10.00'))
-        self.assertEqual(line_items[0].price_currency, Decimal('25.00'))
+        self.assertEqual(line_items[0].price, Decimal('25.00'))
 
         # Verify second item
         self.assertEqual(line_items[1].price_list_item, self.price_list_item2)
         self.assertEqual(line_items[1].qty, Decimal('5.00'))
-        self.assertEqual(line_items[1].price_currency, Decimal('15.50'))
+        self.assertEqual(line_items[1].price, Decimal('15.50'))
 
     def test_line_item_total_amount_calculation(self):
         """Test that line item total amount is calculated correctly."""
@@ -251,7 +251,7 @@ class BillLineItemAdditionTests(TestCase):
             description='Item 1',
             qty=Decimal('2.00'),
             units='each',
-            price_currency=Decimal('10.00')
+            price=Decimal('10.00')
         )
         BillLineItem.objects.create(
             bill=self.bill,
@@ -259,7 +259,7 @@ class BillLineItemAdditionTests(TestCase):
             description='Item 2',
             qty=Decimal('3.00'),
             units='each',
-            price_currency=Decimal('15.00')
+            price=Decimal('15.00')
         )
 
         url = reverse('purchasing:bill_detail', args=[self.bill.bill_id])

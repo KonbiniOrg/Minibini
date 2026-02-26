@@ -64,14 +64,14 @@ class EstimateReorderLineItemTest(ReorderRequiresPostTestBase):
             estimate=self.estimate,
             description='Line Item 1',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             units='hours'
         )
         self.line_item2 = EstimateLineItem.objects.create(
             estimate=self.estimate,
             description='Line Item 2',
             qty=Decimal('2.00'),
-            price_currency=Decimal('200.00'),
+            price=Decimal('200.00'),
             units='hours'
         )
 
@@ -122,12 +122,12 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
         self.task1 = Task.objects.create(
             est_worksheet=self.worksheet,
             name='Task 1',
-            line_number=1
+            sort_order=1
         )
         self.task2 = Task.objects.create(
             est_worksheet=self.worksheet,
             name='Task 2',
-            line_number=2
+            sort_order=2
         )
 
     def test_get_returns_405(self):
@@ -153,8 +153,8 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
         # Verify reordering occurred
         self.task1.refresh_from_db()
         self.task2.refresh_from_db()
-        self.assertEqual(self.task1.line_number, 2)
-        self.assertEqual(self.task2.line_number, 1)
+        self.assertEqual(self.task1.sort_order, 2)
+        self.assertEqual(self.task2.sort_order, 1)
 
 
 class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
@@ -181,12 +181,12 @@ class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
         self.task1 = Task.objects.create(
             work_order=self.work_order,
             name='Task 1',
-            line_number=1
+            sort_order=1
         )
         self.task2 = Task.objects.create(
             work_order=self.work_order,
             name='Task 2',
-            line_number=2
+            sort_order=2
         )
 
     def test_get_returns_405(self):
@@ -212,8 +212,8 @@ class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
         # Verify reordering occurred
         self.task1.refresh_from_db()
         self.task2.refresh_from_db()
-        self.assertEqual(self.task1.line_number, 2)
-        self.assertEqual(self.task2.line_number, 1)
+        self.assertEqual(self.task1.sort_order, 2)
+        self.assertEqual(self.task2.sort_order, 1)
 
 
 class InvoiceReorderLineItemTest(ReorderRequiresPostTestBase):
@@ -231,14 +231,14 @@ class InvoiceReorderLineItemTest(ReorderRequiresPostTestBase):
             invoice=self.invoice,
             description='Line Item 1',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             units='hours'
         )
         self.line_item2 = InvoiceLineItem.objects.create(
             invoice=self.invoice,
             description='Line Item 2',
             qty=Decimal('2.00'),
-            price_currency=Decimal('200.00'),
+            price=Decimal('200.00'),
             units='hours'
         )
 
@@ -284,14 +284,14 @@ class PurchaseOrderReorderLineItemTest(ReorderRequiresPostTestBase):
             purchase_order=self.po,
             description='Line Item 1',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             units='hours'
         )
         self.line_item2 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po,
             description='Line Item 2',
             qty=Decimal('2.00'),
-            price_currency=Decimal('200.00'),
+            price=Decimal('200.00'),
             units='hours'
         )
 
@@ -338,14 +338,14 @@ class BillReorderLineItemTest(ReorderRequiresPostTestBase):
             bill=self.bill,
             description='Line Item 1',
             qty=Decimal('1.00'),
-            price_currency=Decimal('100.00'),
+            price=Decimal('100.00'),
             units='hours'
         )
         self.line_item2 = BillLineItem.objects.create(
             bill=self.bill,
             description='Line Item 2',
             qty=Decimal('2.00'),
-            price_currency=Decimal('200.00'),
+            price=Decimal('200.00'),
             units='hours'
         )
 

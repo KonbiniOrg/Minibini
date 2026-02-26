@@ -9,7 +9,7 @@ from decimal import Decimal
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 from apps.jobs.models import (
-    Job, WorkOrder, Estimate, Task, WorkOrderTemplate, TaskTemplate, TaskMapping
+    Job, WorkOrder, Estimate, Task, WorkOrderTemplate, TaskTemplate
 )
 from apps.jobs.services import WorkOrderService, EstimateService, TaskService
 from apps.core.models import User
@@ -36,14 +36,7 @@ class WorkOrderCreationWorkflowTest(TestCase):
             description="Test job"
         )
         self.user = User.objects.create_user(username="testuser")
-        
-        # Create basic TaskMapping for template tests
-        self.task_mapping = TaskMapping.objects.create(
-            step_type="test_step",
-            task_type_id="TEST001",
-            breakdown_of_task="Test breakdown"
-        )
-    
+
     def test_direct_work_order_creation(self):
         """Test direct WorkOrder creation starts in draft status."""
         work_order = WorkOrderService.create_direct(self.job)
@@ -232,14 +225,7 @@ class TaskCreationWorkflowTest(TestCase):
         )
         self.work_order = WorkOrder.objects.create(job=self.job)
         self.user = User.objects.create_user(username="testuser")
-        
-        # Create basic TaskMapping for template tests
-        self.task_mapping = TaskMapping.objects.create(
-            step_type="test_step",
-            task_type_id="TEST001",
-            breakdown_of_task="Test breakdown"
-        )
-    
+
     def test_direct_task_creation(self):
         """Test direct Task creation."""
         task = TaskService.create_direct(
@@ -251,20 +237,17 @@ class TaskCreationWorkflowTest(TestCase):
         self.assertEqual(task.work_order, self.work_order)
         self.assertEqual(task.name, "Test Task")
         self.assertEqual(task.assignee, self.user)
-        self.assertIsNone(task.template)
-    
+
     def test_task_from_active_template(self):
         """Test Task creation from active TaskTemplate."""
         template = TaskTemplate.objects.create(
             template_name="Test Task Template",
-            task_mapping=self.task_mapping,
             is_active=True
         )
         
         task = TaskService.create_from_template(template, self.work_order, self.user)
         
         self.assertEqual(task.work_order, self.work_order)
-        self.assertEqual(task.template, template)
         self.assertEqual(task.name, template.template_name)
         self.assertEqual(task.assignee, self.user)
     
@@ -272,7 +255,6 @@ class TaskCreationWorkflowTest(TestCase):
         """Test Task creation from inactive template is rejected."""
         template = TaskTemplate.objects.create(
             template_name="Inactive Template",
-            task_mapping=self.task_mapping,
             is_active=False
         )
         
@@ -285,7 +267,6 @@ class TaskCreationWorkflowTest(TestCase):
         """Test TaskTemplate with new units and rate fields."""
         template = TaskTemplate.objects.create(
             template_name="Labor Template",
-            task_mapping=self.task_mapping,
             units="hours",
             rate=Decimal('85.00'),
             description="Standard labor template with pricing",
@@ -304,35 +285,16 @@ class TaskCreationWorkflowTest(TestCase):
         """Test TaskTemplate new fields are optional."""
         template = TaskTemplate.objects.create(
             template_name="Simple Template",
-            task_mapping=self.task_mapping,
             is_active=True
         )
         
         self.assertEqual(template.units, "")  # CharField blank=True defaults to empty
         self.assertIsNone(template.rate)  # DecimalField null=True
     
-    def test_task_template_without_task_mapping(self):
-        """Test TaskTemplate can be created without TaskMapping."""
-        template = TaskTemplate.objects.create(
-            template_name="Template Without Mapping",
-            units="items",
-            rate=Decimal('25.00'),
-            is_active=True
-        )
-        
-        self.assertIsNone(template.task_mapping)
-        self.assertEqual(template.template_name, "Template Without Mapping")
-        
-        # Test that task can still be created from template without mapping
-        task = TaskService.create_from_template(template, self.work_order, self.user)
-        self.assertEqual(task.name, "Template Without Mapping")
-        self.assertEqual(task.template, template)
-        
     def test_task_template_calculation_example(self):
         """Test using TaskTemplate fields with association for calculations."""
         template = TaskTemplate.objects.create(
             template_name="Material Template",
-            task_mapping=self.task_mapping,
             units="square_feet",
             rate=Decimal('12.75'),
             is_active=True
@@ -373,20 +335,7 @@ class TemplateIntegrationTest(TestCase):
             description="Test job"
         )
         self.user = User.objects.create_user(username="testuser")
-        
-        # Create TaskMappings
-        self.task_mapping1 = TaskMapping.objects.create(
-            step_type="preparation",
-            task_type_id="PREP001",
-            breakdown_of_task="Preparation work"
-        )
-        
-        self.task_mapping2 = TaskMapping.objects.create(
-            step_type="execution",
-            task_type_id="EXEC001",
-            breakdown_of_task="Execution work"
-        )
-    
+
     def test_full_template_workflow(self):
         """Test complete workflow: Template -> WorkOrder -> Tasks."""
         # Create WorkOrderTemplate with TaskTemplates
@@ -398,13 +347,11 @@ class TemplateIntegrationTest(TestCase):
         
         task_template1 = TaskTemplate.objects.create(
             template_name="Preparation Task",
-            task_mapping=self.task_mapping1,
             is_active=True
         )
-        
+
         task_template2 = TaskTemplate.objects.create(
             template_name="Execution Task",
-            task_mapping=self.task_mapping2,
             is_active=True
         )
         
@@ -437,10 +384,9 @@ class TemplateIntegrationTest(TestCase):
         self.assertIn("Preparation Task", task_names)
         self.assertIn("Execution Task", task_names)
         
-        # Verify task templates are linked
+        # Verify task names match template names
         for task in tasks:
-            self.assertIsNotNone(task.template)
-            self.assertIn(task.template, [task_template1, task_template2])
+            self.assertIn(task.name, [task_template1.template_name, task_template2.template_name])
 
 
 class StatusTransitionPreventionTest(TestCase):
@@ -504,43 +450,3 @@ class StatusTransitionPreventionTest(TestCase):
         # This business rule would be enforced in model validation or admin interface
         # For now, we document that this should not happen
         self.assertEqual(estimate.status, 'open')
-
-
-# Placeholder tests for TaskMapping translation chains
-# These will be implemented once TaskMapping is fully defined
-
-class TaskMappingTranslationTest(TestCase):
-    """Placeholder tests for TaskMapping translation chains."""
-    
-    def setUp(self):
-        # Create Configuration for number generation
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
-        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
-        Configuration.objects.create(key='estimate_counter', value='0')
-        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        Configuration.objects.create(key='po_counter', value='0')
-
-        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
-        self.job = Job.objects.create(
-            job_number="JOB001",
-            contact=self.contact,
-            description="Test job"
-        )
-        
-    def test_line_item_to_task_translation_placeholder(self):
-        """Placeholder: Test LineItem -> TaskMapping -> Task translation."""
-        # This will be implemented once TaskMapping is fully defined
-        pass
-    
-    def test_task_to_line_item_translation_placeholder(self):
-        """Placeholder: Test Task -> TaskMapping -> LineItem translation."""
-        # This will be implemented once TaskMapping is fully defined
-        pass
-    
-    def test_price_list_item_task_mapping_integration_placeholder(self):
-        """Placeholder: Test PriceListItem -> TaskMapping integration."""
-        # This will be implemented once TaskMapping is fully defined
-        pass

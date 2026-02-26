@@ -1,9 +1,10 @@
 from django import forms
 from django.core.exceptions import ValidationError
-from .models import PurchaseOrder, Bill
+from .models import PurchaseOrder, Bill, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.invoicing.models import PriceListItem
+from apps.core.models import LineItemType
 from apps.core.services import NumberGenerationService
 
 
@@ -72,7 +73,28 @@ class PurchaseOrderForm(forms.ModelForm):
         return instance
 
 
-class PurchaseOrderLineItemForm(forms.Form):
+class POManualLineItemForm(forms.ModelForm):
+    """Form for creating a manual PO line item (not linked to a Price List Item)"""
+    class Meta:
+        model = PurchaseOrderLineItem
+        fields = ['description', 'qty', 'units', 'price', 'line_item_type']
+        widgets = {
+            'qty': forms.NumberInput(attrs={'step': '0.01'}),
+            'price': forms.NumberInput(attrs={'step': '0.01'}),
+            'description': forms.Textarea(attrs={'rows': 3}),
+        }
+        labels = {
+            'price': 'Price',
+            'line_item_type': 'Type',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
+        self.fields['line_item_type'].required = True
+
+
+class POPriceListLineItemForm(forms.Form):
     """Form for creating a PO line item from a Price List Item"""
     price_list_item = forms.ModelChoiceField(
         queryset=PriceListItem.objects.all(),
@@ -86,6 +108,30 @@ class PurchaseOrderLineItemForm(forms.Form):
         widget=forms.NumberInput(attrs={'step': '0.01'}),
         label="Quantity"
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
+
+
+class PurchaseOrderLineItemForm(forms.Form):
+    """Form for creating a PO line item from a Price List Item (deprecated, use POPriceListLineItemForm)"""
+    price_list_item = forms.ModelChoiceField(
+        queryset=PriceListItem.objects.all(),
+        required=True,
+        label="Price List Item"
+    )
+    qty = forms.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        initial=1.0,
+        widget=forms.NumberInput(attrs={'step': '0.01'}),
+        label="Quantity"
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
 
 class BillLineItemForm(forms.Form):
@@ -128,6 +174,16 @@ class BillLineItemForm(forms.Form):
         label="Unit Price",
         help_text="Price per unit (required if not using price list item)"
     )
+    line_item_type = forms.ModelChoiceField(
+        queryset=LineItemType.objects.filter(is_active=True),
+        required=False,
+        label="Type",
+        help_text="Required if not using price list item"
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
     def clean(self):
         """Validate that either price_list_item is selected OR manual fields are filled"""
@@ -135,8 +191,9 @@ class BillLineItemForm(forms.Form):
         price_list_item = cleaned_data.get('price_list_item')
         description = cleaned_data.get('description')
         price = cleaned_data.get('price')
+        line_item_type = cleaned_data.get('line_item_type')
 
-        # If no price list item, description and price are required
+        # If no price list item, description, price, and line_item_type are required
         if not price_list_item:
             if not description:
                 raise forms.ValidationError(
@@ -145,6 +202,10 @@ class BillLineItemForm(forms.Form):
             if price is None:
                 raise forms.ValidationError(
                     'Price is required when entering a line item manually'
+                )
+            if not line_item_type:
+                raise forms.ValidationError(
+                    'Type is required when entering a line item manually'
                 )
 
         return cleaned_data

@@ -17,11 +17,13 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.views.generic import TemplateView
+from apps.core.views import settings_view, tax_config_edit
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', TemplateView.as_view(template_name='home.html'), name='home'),
-    path('settings/', TemplateView.as_view(template_name='settings.html'), name='settings'),
+    path('settings/', settings_view, name='settings'),
+    path('settings/tax/', tax_config_edit, name='tax_config_edit'),
     path('jobs/', include('apps.jobs.urls')),
     path('contacts/', include('apps.contacts.urls')),
     path('core/', include('apps.core.urls')),

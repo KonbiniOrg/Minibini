@@ -1,0 +1,172 @@
+{% comment %}
+Shared bundle table for template detail and worksheet detail pages.
+
+Expected context:
+- container_items: list of ('bundle', bundle_data, sort_order) or ('task', item, sort_order)
+    bundle_data: {id, name, line_item_type_name, items: [{id, name, description, units, rate, est_qty}]}
+    item: {id, name, description, units, rate, est_qty, mapping_strategy, remove_id}
+- reorder_container_url: URL name for container-level reorder (takes container_id, item_type, item_id, direction)
+- reorder_in_bundle_url: URL name for within-bundle reorder (takes container_id, item_id, direction)
+- container_id: PK of the parent container
+- line_item_types: queryset of LineItemType for bundle form
+- can_edit: boolean - whether editing is allowed
+{% endcomment %}
+
+<style>
+    .bundle-group-row {
+        background-color: #e8f0fe;
+    }
+    .bundle-task-row {
+        background-color: #f0f7ff;
+    }
+    .bundle-header {
+        font-weight: bold;
+        color: #2c5282;
+    }
+    .excluded-task {
+        opacity: 0.5;
+        font-style: italic;
+    }
+    .reorder-btn {
+        padding: 2px 6px;
+        font-size: 12px;
+        cursor: pointer;
+        border: 1px solid #ccc;
+        background: #fff;
+    }
+</style>
+
+{% if container_items %}
+<table border="1">
+    <tr>
+        {% if can_edit %}<th style="width: 30px;"></th>{% endif %}
+        <th>Task Name</th>
+        <th>Description</th>
+        <th>Units</th>
+        <th>Rate</th>
+        <th>Est. Qty</th>
+        <th>Mapping</th>
+        {% if can_edit %}<th>Order</th>{% endif %}
+        {% if can_edit %}<th>Action</th>{% endif %}
+    </tr>
+
+    {% for item_type, item_data, sort_order in container_items %}
+        {% if item_type == 'bundle' %}
+        <tr class="bundle-group-row">
+            {% if can_edit %}<td></td>{% endif %}
+            <td class="bundle-header" colspan="5">
+                Bundle: "{{ item_data.name }}" ({{ item_data.line_item_type_name }})
+            </td>
+            <td></td>
+            {% if can_edit %}
+            <td>
+                <form method="post" action="{% url reorder_container_url container_id 'bundle' item_data.id 'up' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9650;</button>
+                </form>
+                <form method="post" action="{% url reorder_container_url container_id 'bundle' item_data.id 'down' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9660;</button>
+                </form>
+            </td>
+            <td></td>
+            {% endif %}
+        </tr>
+        {% for bi in item_data.items %}
+        <tr class="bundle-task-row">
+            {% if can_edit %}
+            <td>
+                <input type="checkbox" name="selected_tasks" value="{{ bi.id }}" form="bundle-form">
+            </td>
+            {% endif %}
+            <td style="padding-left: 20px;">{% if bi.detail_url %}<a href="{{ bi.detail_url }}">{{ bi.name }}</a>{% else %}{{ bi.name }}{% endif %}</td>
+            <td>{{ bi.description|truncatewords:10|default:"-" }}</td>
+            <td>{{ bi.units|default:"-" }}</td>
+            <td>${{ bi.rate|default:"0.00" }}</td>
+            <td>{{ bi.est_qty }}</td>
+            <td>{{ item_data.name }}</td>
+            {% if can_edit %}
+            <td>
+                <form method="post" action="{% url reorder_in_bundle_url container_id bi.id 'up' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9650;</button>
+                </form>
+                <form method="post" action="{% url reorder_in_bundle_url container_id bi.id 'down' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9660;</button>
+                </form>
+            </td>
+            <td>
+                <form method="post" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit" name="remove_task" value="{{ bi.remove_id }}"
+                             class="reorder-btn">Unbundle</button>
+                </form>
+            </td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+
+        {% else %}
+        {# item_type == 'task' - unbundled #}
+        <tr{% if item_data.mapping_strategy == 'exclude' %} class="excluded-task"{% endif %}>
+            {% if can_edit %}
+            <td>
+                <input type="checkbox" name="selected_tasks" value="{{ item_data.id }}" form="bundle-form">
+            </td>
+            {% endif %}
+            <td>{% if item_data.detail_url %}<a href="{{ item_data.detail_url }}">{{ item_data.name }}</a>{% else %}{{ item_data.name }}{% endif %}</td>
+            <td>{{ item_data.description|truncatewords:10|default:"-" }}</td>
+            <td>{{ item_data.units|default:"-" }}</td>
+            <td>${{ item_data.rate|default:"0.00" }}</td>
+            <td>{{ item_data.est_qty }}</td>
+            <td>{% if item_data.mapping_strategy == 'exclude' %}Exclude (internal){% else %}Direct{% endif %}</td>
+            {% if can_edit %}
+            <td>
+                <form method="post" action="{% url reorder_container_url container_id 'task' item_data.id 'up' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9650;</button>
+                </form>
+                <form method="post" action="{% url reorder_container_url container_id 'task' item_data.id 'down' %}" style="display:inline">
+                    {% csrf_token %}<button type="submit" class="reorder-btn">&#9660;</button>
+                </form>
+            </td>
+            <td>
+                <form method="post" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit" name="remove_task" value="{{ item_data.remove_id }}"
+                             class="reorder-btn">Remove</button>
+                </form>
+            </td>
+            {% endif %}
+        </tr>
+        {% endif %}
+    {% endfor %}
+</table>
+{% else %}
+<p>No tasks found.</p>
+{% endif %}
+
+{% if can_edit %}
+<h4>Create Bundle from Selected Tasks</h4>
+<form method="post" id="bundle-form">
+    {% csrf_token %}
+    <div style="border: 1px solid #ccc; padding: 10px; margin: 10px 0;">
+        <div>
+            <label for="bundle_name">Bundle Name:</label>
+            <input type="text" name="bundle_name" id="bundle_name" style="width: 200px;">
+        </div>
+        <div>
+            <label for="bundle_description">Description (optional):</label>
+            <input type="text" name="bundle_description" id="bundle_description" style="width: 300px;">
+        </div>
+        <div>
+            <label for="line_item_type">Line Item Type:</label>
+            <select name="line_item_type" id="line_item_type">
+                <option value="">-- Select Type --</option>
+                {% for lit in line_item_types %}
+                <option value="{{ lit.pk }}">{{ lit.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="margin-top: 10px;">
+            <button type="submit" name="bundle_tasks">Bundle Selected Tasks</button>
+        </div>
+    </div>
+</form>
+{% endif %}

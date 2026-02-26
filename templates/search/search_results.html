@@ -130,7 +130,7 @@
                                         <ul style="margin-top: 5px;">
                                         {% for line_item in item.matching_line_items %}
                                             <li style="margin-bottom: 5px;">
-                                                {{ line_item.description }} - Qty: {{ line_item.qty }} {{ line_item.units }} @ ${{ line_item.price_currency }} = ${{ line_item.total_amount_calc }}
+                                                {{ line_item.description }} - Qty: {{ line_item.qty }} {{ line_item.units }} @ ${{ line_item.price }} = ${{ line_item.total_amount_calc }}
                                             </li>
                                         {% endfor %}
                                         </ul>
@@ -147,7 +147,7 @@
                                         <ul style="margin-top: 5px;">
                                         {% for line_item in item.matching_line_items %}
                                             <li style="margin-bottom: 5px;">
-                                                {{ line_item.description }} - Qty: {{ line_item.qty }} {{ line_item.units }} @ ${{ line_item.price_currency }} = ${{ line_item.total_amount_calc }}
+                                                {{ line_item.description }} - Qty: {{ line_item.qty }} {{ line_item.units }} @ ${{ line_item.price }} = ${{ line_item.total_amount_calc }}
                                             </li>
                                         {% endfor %}
                                         </ul>

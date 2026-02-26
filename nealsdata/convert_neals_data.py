@@ -1020,7 +1020,7 @@ class NealsDataConverter:
                     'work_order': workorder_pk,
                     'est_worksheet': None,
                     'name': task_name,
-                    'line_number': line_num,
+                    'sort_order': line_num,
                     'units': 'hours',  # Default
                     'rate': str(rate),
                     'est_qty': '0',

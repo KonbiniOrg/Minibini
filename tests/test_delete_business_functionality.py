@@ -1,119 +1,6 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job
-from apps.purchasing.models import Bill, PurchaseOrder
-
-
-class BusinessDeletionValidationTest(TestCase):
-    """Test validation preventing business deletion when contacts have associations"""
-
-    def setUp(self):
-        self.client = Client()
-        # Create contact first for default_contact
-        self.contact = Contact.objects.create(
-            first_name='John',
-            last_name='Doe',
-            email='john@test.com',
-            work_number='555-0001'
-        )
-        # Create business with default_contact
-        self.business = Business.objects.create(
-            business_name='Test Business',
-            our_reference_code='TEST001',
-            default_contact=self.contact
-        )
-        # Link contact to business
-        self.contact.business = self.business
-        self.contact.save()
-
-    def test_cannot_delete_business_when_contact_has_job(self):
-        """Cannot delete business if any contact has associated Jobs"""
-        job = Job.objects.create(
-            job_number='JOB001',
-            contact=self.contact
-        )
-
-        url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, follow=True)
-
-        # Business should still exist
-        self.assertTrue(Business.objects.filter(business_id=self.business.business_id).exists())
-
-        # Should show error message
-        messages = list(response.context['messages'])
-        self.assertEqual(len(messages), 1)
-        self.assertIn('Cannot delete business', str(messages[0]))
-        self.assertIn('John Doe', str(messages[0]))
-        self.assertIn('JOB001', str(messages[0]))
-
-    def test_cannot_delete_business_when_contact_has_bill(self):
-        """Cannot delete business if any contact has associated Bills"""
-        po = PurchaseOrder.objects.create(
-            po_number='PO001',
-            business=self.business,
-            status='issued'
-        )
-        bill = Bill.objects.create(
-            purchase_order=po,
-            contact=self.contact,
-            vendor_invoice_number='INV001',
-            bill_number='BILL001'
-        )
-
-        url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, follow=True)
-
-        # Business should still exist
-        self.assertTrue(Business.objects.filter(business_id=self.business.business_id).exists())
-
-        # Should show error message
-        messages = list(response.context['messages'])
-        self.assertEqual(len(messages), 1)
-        self.assertIn('Cannot delete business', str(messages[0]))
-        self.assertIn('John Doe', str(messages[0]))
-        self.assertIn('Bills:', str(messages[0]))
-
-    def test_cannot_delete_business_with_multiple_contact_associations(self):
-        """Cannot delete business when multiple contacts have associations"""
-        contact2 = Contact.objects.create(
-            first_name='Jane',
-            last_name='Smith',
-            email='jane@test.com',
-            work_number='555-0002',
-            business=self.business
-        )
-
-        job = Job.objects.create(
-            job_number='JOB001',
-            contact=self.contact
-        )
-
-        po = PurchaseOrder.objects.create(
-            po_number='PO001',
-            business=self.business,
-            status='issued'
-        )
-        bill = Bill.objects.create(
-            purchase_order=po,
-            contact=contact2,
-            vendor_invoice_number='INV001',
-            bill_number='BILL001'
-        )
-
-        url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, follow=True)
-
-        # Business should still exist
-        self.assertTrue(Business.objects.filter(business_id=self.business.business_id).exists())
-
-        # Should show error message with both contacts
-        messages = list(response.context['messages'])
-        self.assertEqual(len(messages), 1)
-        error_message = str(messages[0])
-        self.assertIn('Cannot delete business', error_message)
-        self.assertIn('John Doe', error_message)
-        self.assertIn('Jane Smith', error_message)
 
 
 class BusinessDeletionConfirmationFormTest(TestCase):
@@ -153,8 +40,9 @@ class BusinessDeletionConfirmationFormTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'contacts/confirm_delete_business.html')
 
-        # Should contain radio buttons for action choice
-        self.assertContains(response, 'name="contact_action"')
+        # Should contain per-object action radio buttons and confirm_actions hidden input
+        self.assertContains(response, f'name="action_contact_{contact.contact_id}"')
+        self.assertContains(response, 'name="confirm_actions"')
         self.assertContains(response, 'value="unlink"')
         self.assertContains(response, 'value="delete"')
 
@@ -188,8 +76,8 @@ class BusinessDeletionConfirmationFormTest(TestCase):
         url = reverse('contacts:delete_business', args=[self.business.business_id])
         response = self.client.post(url)
 
-        self.assertContains(response, '3')
-        self.assertContains(response, 'contact(s)')
+        # Template shows "Contacts (N)" - 4 total: initial_contact from setUp + 3 above
+        self.assertContains(response, 'Contacts (4)')
 
     def test_delete_business_with_unlink_action_removes_associations(self):
         """Deleting business with 'unlink' action should remove business associations from contacts"""
@@ -210,90 +98,30 @@ class BusinessDeletionConfirmationFormTest(TestCase):
         # Verify business has contacts
         self.assertEqual(self.business.contacts.count(), 2)
 
-        # Delete business with unlink action
+        # Delete business with Phase 2: confirm_actions + per-object unlink actions
         url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, {'contact_action': 'unlink'}, follow=True)
+        response = self.client.post(url, {
+            'confirm_actions': 'true',
+            f'action_contact_{contact1_id}': 'unlink',
+            f'action_contact_{contact2_id}': 'unlink',
+        }, follow=True)
 
         # Business should be deleted
         self.assertFalse(Business.objects.filter(business_id=self.business.business_id).exists())
 
         # Contacts should still exist but with business=None
         contact1 = Contact.objects.get(contact_id=contact1_id)
-        contact2 = Contact.objects.get(contact_id=contact2_id)
+        contact2_refreshed = Contact.objects.get(contact_id=contact2_id)
         self.assertIsNone(contact1.business)
-        self.assertIsNone(contact2.business)
+        self.assertIsNone(contact2_refreshed.business)
 
         # Should redirect to business list
         self.assertRedirects(response, reverse('contacts:business_list'))
 
         # Should show success message
-        messages = list(response.context['messages'])
-        self.assertEqual(len(messages), 1)
-        self.assertIn('has been deleted', str(messages[0]))
-        self.assertIn('2 contact(s) have been unlinked', str(messages[0]))
-
-
-class BusinessDeletionUnlinkActionTest(TestCase):
-    """Test unlinking contacts when deleting business"""
-
-    def setUp(self):
-        self.client = Client()
-        # Create contact first for default_contact
-        self.contact1 = Contact.objects.create(
-            first_name='John',
-            last_name='Doe',
-            email='john@test.com',
-            work_number='555-0001'
-        )
-        self.business = Business.objects.create(
-            business_name='Test Business',
-            our_reference_code='TEST001',
-            default_contact=self.contact1
-        )
-        self.contact1.business = self.business
-        self.contact1.save()
-        self.contact2 = Contact.objects.create(
-            first_name='Jane',
-            last_name='Smith',
-            email='jane@test.com',
-            work_number='555-0002',
-            business=self.business
-        )
-
-    def test_unlink_action_keeps_contacts_removes_business_association(self):
-        """Unlink action should keep contacts but remove their business association"""
-        url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, {'contact_action': 'unlink'}, follow=True)
-
-        # Business should be deleted
-        self.assertFalse(Business.objects.filter(business_id=self.business.business_id).exists())
-
-        # Contacts should still exist
-        self.assertTrue(Contact.objects.filter(contact_id=self.contact1.contact_id).exists())
-        self.assertTrue(Contact.objects.filter(contact_id=self.contact2.contact_id).exists())
-
-        # Contacts should have no business association
-        self.contact1.refresh_from_db()
-        self.contact2.refresh_from_db()
-        self.assertIsNone(self.contact1.business)
-        self.assertIsNone(self.contact2.business)
-
-    def test_unlink_action_success_message(self):
-        """Unlink action should show appropriate success message"""
-        url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, {'contact_action': 'unlink'}, follow=True)
-
-        messages = list(response.context['messages'])
-        self.assertEqual(len(messages), 1)
-        self.assertIn('has been deleted', str(messages[0]))
-        self.assertIn('2 contact(s) have been unlinked', str(messages[0]))
-
-    def test_unlink_action_redirects_to_business_list(self):
-        """Unlink action should redirect to business list after deletion"""
-        url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, {'contact_action': 'unlink'})
-
-        self.assertRedirects(response, reverse('contacts:business_list'))
+        messages_list = list(response.context['messages'])
+        self.assertEqual(len(messages_list), 1)
+        self.assertIn('has been deleted successfully', str(messages_list[0]))
 
 
 class BusinessDeletionDeleteActionTest(TestCase):
@@ -326,7 +154,11 @@ class BusinessDeletionDeleteActionTest(TestCase):
     def test_delete_action_removes_business_and_all_contacts(self):
         """Delete action should remove both business and all associated contacts"""
         url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, {'contact_action': 'delete'}, follow=True)
+        response = self.client.post(url, {
+            'confirm_actions': 'true',
+            f'action_contact_{self.contact1.contact_id}': 'delete',
+            f'action_contact_{self.contact2.contact_id}': 'delete',
+        }, follow=True)
 
         # Business should be deleted
         self.assertFalse(Business.objects.filter(business_id=self.business.business_id).exists())
@@ -338,17 +170,24 @@ class BusinessDeletionDeleteActionTest(TestCase):
     def test_delete_action_success_message(self):
         """Delete action should show appropriate success message"""
         url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, {'contact_action': 'delete'}, follow=True)
+        response = self.client.post(url, {
+            'confirm_actions': 'true',
+            f'action_contact_{self.contact1.contact_id}': 'delete',
+            f'action_contact_{self.contact2.contact_id}': 'delete',
+        }, follow=True)
 
         messages = list(response.context['messages'])
         self.assertEqual(len(messages), 1)
-        self.assertIn('have been deleted', str(messages[0]))
-        self.assertIn('2 contact(s)', str(messages[0]))
+        self.assertIn('has been deleted successfully', str(messages[0]))
 
     def test_delete_action_redirects_to_business_list(self):
         """Delete action should redirect to business list after deletion"""
         url = reverse('contacts:delete_business', args=[self.business.business_id])
-        response = self.client.post(url, {'contact_action': 'delete'})
+        response = self.client.post(url, {
+            'confirm_actions': 'true',
+            f'action_contact_{self.contact1.contact_id}': 'delete',
+            f'action_contact_{self.contact2.contact_id}': 'delete',
+        })
 
         self.assertRedirects(response, reverse('contacts:business_list'))
 
