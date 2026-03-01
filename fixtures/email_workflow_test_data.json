@@ -1,0 +1,216 @@
+[
+  {
+    "model": "contacts.contact",
+    "pk": 1,
+    "fields": {
+      "first_name": "Alice",
+      "last_name": "Johnson",
+      "email": "alice@acme.com",
+      "addr1": "123 Main St",
+      "addr2": "",
+      "addr3": "",
+      "city": "Anytown",
+      "municipality": "ST",
+      "postal_code": "12345",
+      "country_code": "US",
+      "mobile_number": "555-111-1111",
+      "work_number": "",
+      "home_number": "",
+      "business": null
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 1,
+    "fields": {
+      "business_name": "Acme Corp",
+      "our_reference_code": "ACME001",
+      "business_address": "100 Acme Way, Business City, ST 12345",
+      "business_phone": "555-100-1000",
+      "tax_exemption_number": "",
+      "default_contact": 1,
+      "terms": null
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 1,
+    "fields": {
+      "first_name": "Alice",
+      "last_name": "Johnson",
+      "email": "alice@acme.com",
+      "addr1": "123 Main St",
+      "addr2": "",
+      "addr3": "",
+      "city": "Anytown",
+      "municipality": "ST",
+      "postal_code": "12345",
+      "country_code": "US",
+      "mobile_number": "555-111-1111",
+      "work_number": "",
+      "home_number": "",
+      "business": 1
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 2,
+    "fields": {
+      "first_name": "TechStart",
+      "last_name": "Contact",
+      "email": "info@techstart.com",
+      "addr1": "",
+      "addr2": "",
+      "addr3": "",
+      "city": "",
+      "municipality": "",
+      "postal_code": "",
+      "country_code": "",
+      "mobile_number": "",
+      "work_number": "",
+      "home_number": "",
+      "business": null
+    }
+  },
+  {
+    "model": "contacts.business",
+    "pk": 2,
+    "fields": {
+      "business_name": "TechStart Inc",
+      "our_reference_code": "TECH001",
+      "business_address": "200 Innovation Drive, Tech City, ST 67890",
+      "business_phone": "555-200-2000",
+      "tax_exemption_number": "",
+      "default_contact": 2,
+      "terms": null
+    }
+  },
+  {
+    "model": "contacts.contact",
+    "pk": 2,
+    "fields": {
+      "first_name": "TechStart",
+      "last_name": "Contact",
+      "email": "info@techstart.com",
+      "addr1": "",
+      "addr2": "",
+      "addr3": "",
+      "city": "",
+      "municipality": "",
+      "postal_code": "",
+      "country_code": "",
+      "mobile_number": "",
+      "work_number": "",
+      "home_number": "",
+      "business": 2
+    }
+  },
+  {
+    "model": "core.emailrecord",
+    "pk": 1,
+    "fields": {
+      "message_id": "<email1@acme.com>",
+      "job": null,
+      "created_at": "2024-01-15T10:00:00Z"
+    }
+  },
+  {
+    "model": "core.emailrecord",
+    "pk": 2,
+    "fields": {
+      "message_id": "<email2@newcustomer.com>",
+      "job": null,
+      "created_at": "2024-01-15T11:00:00Z"
+    }
+  },
+  {
+    "model": "core.emailrecord",
+    "pk": 3,
+    "fields": {
+      "message_id": "<email3@techstart.com>",
+      "job": null,
+      "created_at": "2024-01-15T12:00:00Z"
+    }
+  },
+  {
+    "model": "core.emailrecord",
+    "pk": 4,
+    "fields": {
+      "message_id": "<email4@unknown.com>",
+      "job": null,
+      "created_at": "2024-01-15T13:00:00Z"
+    }
+  },
+  {
+    "model": "core.tempemail",
+    "pk": 1,
+    "fields": {
+      "email_record": 1,
+      "uid": "1001",
+      "subject": "Request for Quote - Website Development",
+      "from_email": "alice@acme.com",
+      "to_email": "info@minibini.com",
+      "cc_email": "",
+      "date_sent": "2024-01-15T10:00:00Z",
+      "is_read": false,
+      "is_starred": false,
+      "has_attachments": false,
+      "created_at": "2024-01-15T10:00:00Z",
+      "updated_at": "2024-01-15T10:00:00Z"
+    }
+  },
+  {
+    "model": "core.tempemail",
+    "pk": 2,
+    "fields": {
+      "email_record": 2,
+      "uid": "1002",
+      "subject": "New Project Inquiry",
+      "from_email": "bob.smith@newcustomer.com",
+      "to_email": "info@minibini.com",
+      "cc_email": "",
+      "date_sent": "2024-01-15T11:00:00Z",
+      "is_read": false,
+      "is_starred": false,
+      "has_attachments": true,
+      "created_at": "2024-01-15T11:00:00Z",
+      "updated_at": "2024-01-15T11:00:00Z"
+    }
+  },
+  {
+    "model": "core.tempemail",
+    "pk": 3,
+    "fields": {
+      "email_record": 3,
+      "uid": "1003",
+      "subject": "Software Development Services",
+      "from_email": "carol.williams@techstart.com",
+      "to_email": "info@minibini.com",
+      "cc_email": "",
+      "date_sent": "2024-01-15T12:00:00Z",
+      "is_read": false,
+      "is_starred": false,
+      "has_attachments": false,
+      "created_at": "2024-01-15T12:00:00Z",
+      "updated_at": "2024-01-15T12:00:00Z"
+    }
+  },
+  {
+    "model": "core.tempemail",
+    "pk": 4,
+    "fields": {
+      "email_record": 4,
+      "uid": "1004",
+      "subject": "Need Help with Project",
+      "from_email": "dave@personal-email.com",
+      "to_email": "info@minibini.com",
+      "cc_email": "",
+      "date_sent": "2024-01-15T13:00:00Z",
+      "is_read": false,
+      "is_starred": false,
+      "has_attachments": false,
+      "created_at": "2024-01-15T13:00:00Z",
+      "updated_at": "2024-01-15T13:00:00Z"
+    }
+  }
+]

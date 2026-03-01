@@ -5,19 +5,11 @@
 {% block content %}
 <h2>Add Contact</h2>
 
-{% if messages %}
-    {% for message in messages %}
-        <div style="padding: 10px; margin-bottom: 10px; background-color: {% if message.tags == 'error' %}#ffebee; color: #c62828;{% else %}#e8f5e8; color: #2e7d32;{% endif %}">
-            {{ message }}
-        </div>
-    {% endfor %}
-{% endif %}
-
-<form method="post" style="max-width: 400px;">
+<form method="post">
     {% csrf_token %}
     <div style="margin-bottom: 15px;">
         <label for="first_name" style="display: block; margin-bottom: 5px; font-weight: bold;">First Name *</label>
-        <input type="text" id="first_name" name="first_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <input type="text" id="first_name" name="first_name" value="{{ initial_first_name }}" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <div style="margin-bottom: 15px;">
@@ -27,12 +19,12 @@
 
     <div style="margin-bottom: 15px;">
         <label for="last_name" style="display: block; margin-bottom: 5px; font-weight: bold;">Last Name *</label>
-        <input type="text" id="last_name" name="last_name" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <input type="text" id="last_name" name="last_name" value="{{ initial_last_name }}" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <div style="margin-bottom: 15px;">
         <label for="email" style="display: block; margin-bottom: 5px; font-weight: bold;">Email Address *</label>
-        <input type="email" id="email" name="email" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <input type="email" id="email" name="email" value="{{ initial_email }}" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
 
     <fieldset style="border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 4px;">
@@ -54,54 +46,50 @@
         </div>
     </fieldset>
 
-    <div style="margin-bottom: 15px;">
-        <label for="address" style="display: block; margin-bottom: 5px; font-weight: bold;">Street Address</label>
-        <input type="text" id="address" name="address" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-    </div>
+    <p>
+        <label for="address"><strong>Street Address</strong></label><br>
+        <input type="text" id="address" name="address">
+    </p>
 
-    <div style="margin-bottom: 15px;">
-        <label for="city" style="display: block; margin-bottom: 5px; font-weight: bold;">City</label>
-        <input type="text" id="city" name="city" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-    </div>
+    <p>
+        <label for="city"><strong>City</strong></label><br>
+        <input type="text" id="city" name="city">
+    </p>
 
-    <div style="margin-bottom: 20px;">
-        <label for="postal_code" style="display: block; margin-bottom: 5px; font-weight: bold;">Postal Code</label>
-        <input type="text" id="postal_code" name="postal_code" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-    </div>
+    <p>
+        <label for="postal_code"><strong>Postal Code</strong></label><br>
+        <input type="text" id="postal_code" name="postal_code">
+    </p>
 
-    <!-- Business Information Section -->
-    <fieldset style="border: 2px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
-        <legend style="font-weight: bold; font-size: 16px; padding: 0 10px;">Business Information (Optional)</legend>
+    <fieldset>
+        <legend><strong>Business Association (Optional)</strong></legend>
 
-        <div style="margin-bottom: 15px;">
-            <label for="business_name" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Name</label>
-            <input type="text" id="business_name" name="business_name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-            <small style="display: block; margin-top: 5px; color: #666;">A unique reference code will be automatically generated</small>
-        </div>
+        {% if initial_business_name %}
+        <p><em>Company detected from email: "{{ initial_business_name }}"</em></p>
+        {% endif %}
 
-        <div style="margin-bottom: 15px;">
-            <label for="business_phone" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Phone</label>
-            <input type="tel" id="business_phone" name="business_phone" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <label for="business_address" style="display: block; margin-bottom: 5px; font-weight: bold;">Business Address</label>
-            <textarea id="business_address" name="business_address" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; min-height: 80px;"></textarea>
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <label for="tax_exemption_number" style="display: block; margin-bottom: 5px; font-weight: bold;">Tax Exemption Number</label>
-            <input type="text" id="tax_exemption_number" name="tax_exemption_number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <label for="website" style="display: block; margin-bottom: 5px; font-weight: bold;">Website</label>
-            <input type="url" id="website" name="website" placeholder="https://example.com" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-        </div>
+        <p>
+            <label for="business_id"><strong>Select Existing Business</strong></label><br>
+            <select id="business_id" name="business_id">
+                <option value="NONE" {% if not suggested_business_id %}selected{% endif %}>-- None --</option>
+                {% for business in all_businesses %}
+                    <option value="{{ business.business_id }}" {% if business.business_id == suggested_business_id %}selected{% endif %}>
+                        {{ business.business_name }}
+                    </option>
+                {% endfor %}
+            </select>
+            {% if suggested_business_id %}
+            <br><small>A matching business was found and pre-selected. Choose "-- None --" if you want to create a new business instead.</small>
+            {% elif initial_business_name %}
+            <br><small>No matching business found. Select an existing business or choose "-- None --" to create a new one.</small>
+            {% endif %}
+        </p>
     </fieldset>
 
-    <button type="submit" style="background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">Add Contact</button>
-    <a href="{% url 'contacts:contact_list' %}" style="background-color: #6c757d; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Cancel</a>
+    <p>
+        <button type="submit">Add Contact</button>
+        <a href="{% url 'contacts:contact_list' %}">Cancel</a>
+    </p>
 </form>
 
 <script>

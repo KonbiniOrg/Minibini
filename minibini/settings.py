@@ -105,6 +105,17 @@ DATABASES = {
 }
 
 
+# Email IMAP settings for email integration
+# WARNING: Move to environment variables for production
+EMAIL_IMAP_SERVER = 'imap.gmail.com'
+EMAIL_HOST_USER = 'minibini.test@gmail.com'
+# EMAIL_HOST_PASSWORD = 'thisisthedevpassword'  # the browser login pw
+EMAIL_HOST_PASSWORD = 'czah ufxr hjal rabb' # the app password
+EMAIL_IMAP_FOLDER = 'INBOX'  # Default folder to monitor
+EMAIL_IMAP_SSL = True  # Use SSL/TLS (port 993)
+EMAIL_IMAP_PORT = None  # None = auto-detect (993 for SSL, 143 for non-SSL)
+
+
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 

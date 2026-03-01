@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Business? - Minibini{% endblock %}
+
+{% block content %}
+<h2>Create Business for Contact?</h2>
+
+<p>You've created contact <strong>{{ contact.name }}</strong> without associating them with a business.</p>
+
+<p>A company name was detected from the email signature:</p>
+
+<p><strong>"{{ business_name }}"</strong></p>
+
+<p>Would you like to create a new business with this name and associate it with {{ contact.name }}?</p>
+
+<form method="post">
+    {% csrf_token %}
+    <p>
+        <button type="submit" name="create_business" value="yes">Yes, Create Business "{{ business_name }}"</button>
+        <button type="submit" name="create_business" value="no">No, Continue Without Business</button>
+    </p>
+</form>
+
+<p><em>Note: If you choose to create the business, you can edit its details later from the Business detail page.</em></p>
+
+{% endblock %}

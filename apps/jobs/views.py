@@ -197,6 +197,7 @@ def job_detail(request, job_id):
 def job_create(request):
     """Create a new Job"""
     initial_contact_id = request.GET.get('contact_id')
+    initial_description = request.GET.get('description', '')
     initial_contact = None
 
     if initial_contact_id:
@@ -212,10 +213,31 @@ def job_create(request):
             job = form.save(commit=False)
             # Job starts in 'draft' status by default (defined in model)
             job.save()
+
+            # Link to email if this came from email workflow
+            email_record_id = request.session.get('email_record_id_for_job')
+            if email_record_id:
+                try:
+                    from apps.core.models import EmailRecord
+                    email_record = EmailRecord.objects.get(email_record_id=email_record_id)
+                    email_record.job = job
+                    email_record.save()
+                    messages.info(request, f'Email linked to job {job.job_number}.')
+                    # Clear session
+                    request.session.pop('email_record_id_for_job', None)
+                    request.session.pop('email_body_for_job', None)
+                except EmailRecord.DoesNotExist:
+                    pass
+
             messages.success(request, f'Job {job.job_number} created successfully.')
             return redirect('jobs:detail', job_id=job.job_id)
     else:
-        form = JobCreateForm(initial_contact=initial_contact)
+        # Prepare initial data
+        initial_data = {}
+        if initial_description:
+            initial_data['description'] = initial_description
+
+        form = JobCreateForm(initial=initial_data, initial_contact=initial_contact)
 
     return render(request, 'jobs/job_create.html', {
         'form': form,

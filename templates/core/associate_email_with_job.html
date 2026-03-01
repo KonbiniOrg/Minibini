@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+
+{% block title %}Associate Email with Job - Minibini{% endblock %}
+
+{% block content %}
+<h2>Associate Email with Existing Job</h2>
+
+<p>
+    <a href="{% url 'core:email_detail' email_record.email_record_id %}">&larr; Back to Email</a>
+</p>
+
+{% if email_content %}
+<h3>Email Summary</h3>
+<table border="1">
+    <tr>
+        <th>From:</th>
+        <td>{{ email_content.from }}</td>
+    </tr>
+    <tr>
+        <th>Subject:</th>
+        <td><strong>{{ email_content.subject }}</strong></td>
+    </tr>
+    <tr>
+        <th>Date:</th>
+        <td>{{ email_content.date|date:"Y-m-d H:i:s" }}</td>
+    </tr>
+</table>
+{% elif temp_data %}
+<h3>Email Summary</h3>
+<table border="1">
+    <tr>
+        <th>From:</th>
+        <td>{{ temp_data.from_email }}</td>
+    </tr>
+    <tr>
+        <th>Subject:</th>
+        <td><strong>{{ temp_data.subject }}</strong></td>
+    </tr>
+    <tr>
+        <th>Date:</th>
+        <td>{{ temp_data.date_sent|date:"Y-m-d H:i:s" }}</td>
+    </tr>
+</table>
+{% endif %}
+
+<h3>Select Job</h3>
+
+<form method="post">
+    {% csrf_token %}
+    <p>
+        <label for="job_id"><strong>Job *</strong></label><br>
+        <select id="job_id" name="job_id" required>
+            <option value="">-- Select a Job --</option>
+            {% for job in jobs %}
+                <option value="{{ job.job_id }}">{{ job.job_number }} - {{ job.contact.name }} - {{ job.description|truncatewords:10 }}</option>
+            {% endfor %}
+        </select>
+    </p>
+
+    <p>
+        <button type="submit">Associate Email with Job</button>
+        <a href="{% url 'core:email_detail' email_record.email_record_id %}">Cancel</a>
+    </p>
+</form>
+
+{% endblock %}
