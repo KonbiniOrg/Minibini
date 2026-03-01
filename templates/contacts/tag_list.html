@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block title %}Tags - Minibini{% endblock %}
+
+{% block content %}
+<h2>Tags</h2>
+<p>Tags are shared across all users and can be applied to contacts and businesses.</p>
+
+<h3>Create New Tag</h3>
+<form method="post">
+    {% csrf_token %}
+    <p>
+        <label><strong>Tag Name</strong></label><br>
+        <input type="text" name="name" maxlength="50" required>
+        <button type="submit">Create Tag</button>
+    </p>
+</form>
+
+{% if tags %}
+<h3>All Tags</h3>
+<table border="1">
+    <tr>
+        <th>Name</th>
+        <th>Contacts</th>
+        <th>Businesses</th>
+        <th>Actions</th>
+    </tr>
+    {% for tag in tags %}
+    <tr>
+        <td>{{ tag.name }}</td>
+        <td>{{ tag.contacts.count }}</td>
+        <td>{{ tag.businesses.count }}</td>
+        <td>
+            <form method="post" action="{% url 'contacts:delete_tag' tag.tag_id %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" onclick="return confirm('Delete tag &quot;{{ tag.name }}&quot;? It will be removed from all contacts and businesses.')">Delete</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p>No tags created yet.</p>
+{% endif %}
+
+<p><a href="{% url 'contacts:contact_list' %}">Back to Contacts</a></p>
+{% endblock %}

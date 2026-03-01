@@ -1,23 +1,50 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
-from .models import Contact, Business
+from .models import Contact, Business, Tag
 
 def contact_list(request):
     contacts = Contact.objects.all().order_by('last_name', 'first_name')
-    return render(request, 'contacts/contact_list.html', {'contacts': contacts})
+    all_tags = Tag.objects.all()
+    active_tag = None
+    tag_id = request.GET.get('tag')
+    if tag_id:
+        active_tag = get_object_or_404(Tag, tag_id=tag_id)
+        contacts = contacts.filter(tags=active_tag)
+    return render(request, 'contacts/contact_list.html', {
+        'contacts': contacts,
+        'all_tags': all_tags,
+        'active_tag': active_tag,
+    })
 
 def contact_detail(request, contact_id):
     contact = get_object_or_404(Contact, contact_id=contact_id)
-    return render(request, 'contacts/contact_detail.html', {'contact': contact})
+    return render(request, 'contacts/contact_detail.html', {
+        'contact': contact,
+        'all_tags': Tag.objects.all(),
+    })
 
 def business_list(request):
     businesses = Business.objects.all().order_by('business_name')
-    return render(request, 'contacts/business_list.html', {'businesses': businesses})
+    all_tags = Tag.objects.all()
+    active_tag = None
+    tag_id = request.GET.get('tag')
+    if tag_id:
+        active_tag = get_object_or_404(Tag, tag_id=tag_id)
+        businesses = businesses.filter(tags=active_tag)
+    return render(request, 'contacts/business_list.html', {
+        'businesses': businesses,
+        'all_tags': all_tags,
+        'active_tag': active_tag,
+    })
 
 def business_detail(request, business_id):
     business = get_object_or_404(Business, business_id=business_id)
     contacts = Contact.objects.filter(business=business).order_by('last_name', 'first_name')
-    return render(request, 'contacts/business_detail.html', {'business': business, 'contacts': contacts})
+    return render(request, 'contacts/business_detail.html', {
+        'business': business,
+        'contacts': contacts,
+        'all_tags': Tag.objects.all(),
+    })
 
 def add_contact(request):
     # Get pre-filled data from session (from email workflow)
@@ -993,3 +1020,64 @@ def edit_business(request, business_id):
     return render(request, 'contacts/edit_business.html', {
         'business': business
     })
+
+
+# ---------------------------------------------------------------------------
+# Tag views
+# ---------------------------------------------------------------------------
+
+def tag_list(request):
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        if not name:
+            messages.error(request, 'Tag name cannot be empty.')
+        elif Tag.objects.filter(name=name).exists():
+            messages.error(request, f'A tag named "{name}" already exists.')
+        else:
+            Tag.objects.create(name=name)
+            messages.success(request, f'Tag "{name}" created.')
+            return redirect('contacts:tag_list')
+    tags = Tag.objects.all()
+    return render(request, 'contacts/tag_list.html', {'tags': tags})
+
+
+def delete_tag(request, tag_id):
+    tag = get_object_or_404(Tag, tag_id=tag_id)
+    if request.method == 'POST':
+        tag.delete()
+        messages.success(request, f'Tag "{tag.name}" deleted.')
+    return redirect('contacts:tag_list')
+
+
+def add_tag_to_contact(request, contact_id):
+    contact = get_object_or_404(Contact, contact_id=contact_id)
+    if request.method == 'POST':
+        tag_id = request.POST.get('tag_id')
+        tag = get_object_or_404(Tag, tag_id=tag_id)
+        contact.tags.add(tag)
+    return redirect('contacts:contact_detail', contact_id=contact_id)
+
+
+def remove_tag_from_contact(request, contact_id, tag_id):
+    contact = get_object_or_404(Contact, contact_id=contact_id)
+    tag = get_object_or_404(Tag, tag_id=tag_id)
+    if request.method == 'POST':
+        contact.tags.remove(tag)
+    return redirect('contacts:contact_detail', contact_id=contact_id)
+
+
+def add_tag_to_business(request, business_id):
+    business = get_object_or_404(Business, business_id=business_id)
+    if request.method == 'POST':
+        tag_id = request.POST.get('tag_id')
+        tag = get_object_or_404(Tag, tag_id=tag_id)
+        business.tags.add(tag)
+    return redirect('contacts:business_detail', business_id=business_id)
+
+
+def remove_tag_from_business(request, business_id, tag_id):
+    business = get_object_or_404(Business, business_id=business_id)
+    tag = get_object_or_404(Tag, tag_id=tag_id)
+    if request.method == 'POST':
+        business.tags.remove(tag)
+    return redirect('contacts:business_detail', business_id=business_id)

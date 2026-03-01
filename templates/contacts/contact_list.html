@@ -5,6 +5,18 @@
 {% block content %}
 <h2>All Contacts</h2>
 <a href="{% url 'contacts:add_contact' %}" style="display: inline-block; background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin-bottom: 20px;">Add Contact</a>
+<a href="{% url 'contacts:tag_list' %}">Manage Tags</a>
+
+{% if all_tags %}
+<fieldset style="margin: 10px 0;">
+    <legend><strong>Filter by Tag</strong></legend>
+    <a href="{% url 'contacts:contact_list' %}">{% if not active_tag %}<strong>All</strong>{% else %}All{% endif %}</a>
+    {% for tag in all_tags %}
+    &nbsp;|&nbsp;
+    <a href="{% url 'contacts:contact_list' %}?tag={{ tag.tag_id }}">{% if active_tag and active_tag.tag_id == tag.tag_id %}<strong>{{ tag.name }}</strong>{% else %}{{ tag.name }}{% endif %}</a>
+    {% endfor %}
+</fieldset>
+{% endif %}
 
 {% if contacts %}
     <table border="1">
@@ -12,6 +24,7 @@
             <th>Name</th>
             <th>Email</th>
             <th>Phone</th>
+            <th>Tags</th>
             <th>Actions</th>
         </tr>
         {% for contact in contacts %}
@@ -19,6 +32,7 @@
             <td>{{ contact }}</td>
             <td>{{ contact.email }}</td>
             <td>{{ contact.phone }}</td>
+            <td>{% for tag in contact.tags.all %}{{ tag.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
             <td><a href="{% url 'contacts:contact_detail' contact.pk %}">View</a></td>
         </tr>
         {% endfor %}

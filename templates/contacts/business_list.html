@@ -5,6 +5,18 @@
 {% block content %}
 <h2>All Businesses</h2>
 <a href="{% url 'contacts:add_business' %}" style="display: inline-block; background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin-bottom: 20px;">Add Business</a>
+<a href="{% url 'contacts:tag_list' %}">Manage Tags</a>
+
+{% if all_tags %}
+<fieldset style="margin: 10px 0;">
+    <legend><strong>Filter by Tag</strong></legend>
+    <a href="{% url 'contacts:business_list' %}">{% if not active_tag %}<strong>All</strong>{% else %}All{% endif %}</a>
+    {% for tag in all_tags %}
+    &nbsp;|&nbsp;
+    <a href="{% url 'contacts:business_list' %}?tag={{ tag.tag_id }}">{% if active_tag and active_tag.tag_id == tag.tag_id %}<strong>{{ tag.name }}</strong>{% else %}{{ tag.name }}{% endif %}</a>
+    {% endfor %}
+</fieldset>
+{% endif %}
 
 {% if businesses %}
     <table border="1">
@@ -12,6 +24,7 @@
             <th>Business Name</th>
             <th>Business Phone</th>
             <th>Reference Code</th>
+            <th>Tags</th>
             <th>Actions</th>
         </tr>
         {% for business in businesses %}
@@ -19,6 +32,7 @@
             <td>{{ business.business_name }}</td>
             <td>{{ business.business_phone }}</td>
             <td>{{ business.our_reference_code }}</td>
+            <td>{% for tag in business.tags.all %}{{ tag.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
             <td><a href="{% url 'contacts:business_detail' business.pk %}">View</a></td>
         </tr>
         {% endfor %}

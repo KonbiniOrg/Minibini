@@ -3,6 +3,17 @@ from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator
 
 
+class Tag(models.Model):
+    tag_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=50, unique=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+
+
 class Contact(models.Model):
     contact_id = models.AutoField(primary_key=True)
     first_name = models.CharField(max_length=100)
@@ -20,6 +31,7 @@ class Contact(models.Model):
     work_number = models.CharField(max_length=20, blank=True)
     home_number = models.CharField(max_length=20, blank=True)
     business = models.ForeignKey('Business', on_delete=models.SET_NULL, null=True, blank=True, related_name='contacts')
+    tags = models.ManyToManyField('Tag', blank=True, related_name='contacts')
 
     def __str__(self):
         return self.name
@@ -122,6 +134,7 @@ class Business(models.Model):
     website = models.URLField(max_length=200, blank=True)
     terms = models.ForeignKey('PaymentTerms', on_delete=models.SET_NULL, null=True, blank=True)
     default_contact = models.ForeignKey('Contact', on_delete=models.PROTECT, null=False, blank=True, related_name='default_for_business')
+    tags = models.ManyToManyField('Tag', blank=True, related_name='businesses')
 
     # Tax multiplier: null/1.0 = full rate, 0 = exempt, 0.5 = half rate
     tax_multiplier = models.DecimalField(

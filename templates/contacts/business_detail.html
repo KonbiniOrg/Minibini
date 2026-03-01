@@ -54,6 +54,39 @@
     </tr>
 </table>
 
+<h3>Tags</h3>
+{% if business.tags.all %}
+<p>
+{% for tag in business.tags.all %}
+    <strong>{{ tag.name }}</strong>
+    <form method="post" action="{% url 'contacts:remove_tag_from_business' business.business_id tag.tag_id %}" style="display:inline;">
+        {% csrf_token %}
+        <button type="submit">[remove]</button>
+    </form>
+    &nbsp;
+{% endfor %}
+</p>
+{% else %}
+<p>No tags applied.</p>
+{% endif %}
+
+<form method="post" action="{% url 'contacts:add_tag_to_business' business.business_id %}">
+    {% csrf_token %}
+    <p>
+        <label><strong>Add Tag</strong></label><br>
+        <select name="tag_id">
+            <option value="">-- select a tag --</option>
+            {% for tag in all_tags %}
+            {% if tag not in business.tags.all %}
+            <option value="{{ tag.tag_id }}">{{ tag.name }}</option>
+            {% endif %}
+            {% endfor %}
+        </select>
+        <button type="submit">Add</button>
+        <a href="{% url 'contacts:tag_list' %}">Manage Tags</a>
+    </p>
+</form>
+
 <h3>Associated Contacts</h3>
 <a href="{% url 'contacts:add_business_contact' business.business_id %}" style="display: inline-block; background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin-bottom: 20px;">Add Contact</a>
 {% if contacts %}
