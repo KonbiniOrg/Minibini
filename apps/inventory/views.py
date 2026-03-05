@@ -6,7 +6,7 @@ from .forms import InventoryItemForm
 
 def inventory_list(request):
     """Display all active inventory items with stock quantities."""
-    items = InventoryItem.objects.filter(is_active=True).order_by('code')
+    items = InventoryItem.objects.filter(is_active=True).prefetch_related('earmark_set').order_by('code')
     return render(request, 'inventory/inventory_list.html', {'items': items})
 
 
