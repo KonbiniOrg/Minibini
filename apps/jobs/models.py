@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -364,7 +365,7 @@ class EstWorksheet(AbstractWorkContainer):
         # Copy all tasks to the new worksheet
         for task in self.task_set.all():
             new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
-            Task.objects.create(
+            new_task = Task.objects.create(
                 parent_task=task.parent_task,
                 assignee=task.assignee,
                 est_worksheet=new_worksheet,
@@ -376,6 +377,18 @@ class EstWorksheet(AbstractWorkContainer):
                 mapping_strategy=task.mapping_strategy,
                 bundle=new_bundle,
             )
+
+            # Copy materials to the new task
+            for material in task.materials.all():
+                Material.objects.create(
+                    task=new_task,
+                    inventory_item=material.inventory_item,
+                    price_list_item=material.price_list_item,
+                    description=material.description,
+                    quantity=material.quantity,
+                    unit_cost=material.unit_cost,
+                    sell_price=material.sell_price,
+                )
 
         return new_worksheet
 
@@ -755,3 +768,57 @@ class EstimateLineItem(BaseLineItem):
 
     def __str__(self):
         return f"Estimate Line Item {self.pk} for {self.estimate.estimate_number}"
+
+
+class Material(models.Model):
+    material_id = models.AutoField(primary_key=True)
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='materials')
+    inventory_item = models.ForeignKey(
+        'inventory.InventoryItem', on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
+    price_list_item = models.ForeignKey(
+        'invoicing.PriceListItem', on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
+    description = models.CharField(max_length=255, blank=True, default='')
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    sell_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    @property
+    def total_cost(self):
+        return self.quantity * self.unit_cost
+
+    @property
+    def total_sell(self):
+        return self.quantity * self.sell_price
+
+    def clean(self):
+        if self.inventory_item and self.price_list_item:
+            raise ValidationError(
+                'A material cannot have both an inventory item and a price list item.'
+            )
+
+    def save(self, *args, **kwargs):
+        # Auto-fill from inventory item if linked
+        if self.inventory_item:
+            if not self.description:
+                self.description = self.inventory_item.description[:255]
+            if self.unit_cost == Decimal('0.00'):
+                self.unit_cost = self.inventory_item.purchase_price
+            if self.sell_price == Decimal('0.00'):
+                self.sell_price = self.inventory_item.selling_price
+        # Auto-fill from price list item if linked
+        elif self.price_list_item:
+            if not self.description:
+                self.description = self.price_list_item.description[:255]
+            if self.unit_cost == Decimal('0.00'):
+                self.unit_cost = self.price_list_item.purchase_price
+            if self.sell_price == Decimal('0.00'):
+                self.sell_price = self.price_list_item.selling_price
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.description} (qty: {self.quantity})"

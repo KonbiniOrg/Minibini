@@ -6,12 +6,13 @@ from django import forms
 from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
-from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet, TemplateTaskAssociation
+from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet, TemplateTaskAssociation, Material
 from apps.core.services import TaxCalculationService
 from .forms import (
     JobCreateForm, JobEditForm, WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
     TaskEditForm, TaskFromTemplateForm,
-    ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm, EstimateForm, WorkOrderStatusForm
+    ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm, EstimateForm, WorkOrderStatusForm,
+    MaterialForm
 )
 from apps.purchasing.models import PurchaseOrder
 from apps.invoicing.models import Invoice
@@ -1730,4 +1731,71 @@ def worksheet_reorder_in_bundle(request, worksheet_id, task_id, direction):
     swap.save()
 
     return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+
+def material_add(request, task_id):
+    """Add a material to a task. Only allowed on draft worksheets."""
+    task = get_object_or_404(Task, task_id=task_id)
+
+    container = task.get_container()
+    if hasattr(container, 'status') and container.status != 'draft':
+        messages.error(request, 'Cannot add materials to tasks on a non-draft worksheet.')
+        return redirect('jobs:task_detail', task_id=task_id)
+
+    if request.method == 'POST':
+        material_instance = Material(task=task)
+        form = MaterialForm(request.POST, instance=material_instance)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Material "{material_instance.description}" added.')
+            return redirect('jobs:task_detail', task_id=task_id)
+    else:
+        form = MaterialForm()
+
+    return render(request, 'jobs/material_add.html', {
+        'form': form,
+        'task': task,
+    })
+
+
+def material_edit(request, material_id):
+    """Edit a material. Only allowed on draft worksheets."""
+    material = get_object_or_404(Material, material_id=material_id)
+    task = material.task
+
+    container = task.get_container()
+    if hasattr(container, 'status') and container.status != 'draft':
+        messages.error(request, 'Cannot edit materials on a non-draft worksheet.')
+        return redirect('jobs:task_detail', task_id=task.task_id)
+
+    if request.method == 'POST':
+        form = MaterialForm(request.POST, instance=material)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Material "{material.description}" updated.')
+            return redirect('jobs:task_detail', task_id=task.task_id)
+    else:
+        form = MaterialForm(instance=material)
+
+    return render(request, 'jobs/material_edit.html', {
+        'form': form,
+        'material': material,
+        'task': task,
+    })
+
+
+def material_delete(request, material_id):
+    """Delete a material. Only allowed on draft worksheets."""
+    material = get_object_or_404(Material, material_id=material_id)
+    task = material.task
+
+    container = task.get_container()
+    if hasattr(container, 'status') and container.status != 'draft':
+        messages.error(request, 'Cannot delete materials on a non-draft worksheet.')
+        return redirect('jobs:task_detail', task_id=task.task_id)
+
+    description = material.description
+    material.delete()
+    messages.success(request, f'Material "{description}" deleted.')
+    return redirect('jobs:task_detail', task_id=task.task_id)
 
