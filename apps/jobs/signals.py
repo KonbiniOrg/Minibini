@@ -8,6 +8,9 @@ estimate_status_changed_for_worksheet = django.dispatch.Signal()
 # Custom signal for Job status updates based on Estimate changes
 estimate_status_changed_for_job = django.dispatch.Signal()
 
+# Custom signal for estimate acceptance - triggers earmarking
+estimate_accepted = django.dispatch.Signal()
+
 
 @receiver(estimate_status_changed_for_worksheet)
 def update_estworksheet_status(sender, estimate, new_worksheet_status, **kwargs):
@@ -64,3 +67,24 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             return 1
 
     return 0
+
+
+@receiver(estimate_accepted)
+def auto_earmark_inventory(sender, estimate, **kwargs):
+    """
+    Auto-create earmarks for inventory-linked materials when estimate is accepted.
+    """
+    from apps.inventory.services import EarmarkService
+
+    job = estimate.job
+    preview = EarmarkService.get_earmark_preview(job)
+
+    if preview:
+        earmark_data = [
+            {
+                'inventory_item_id': entry['inventory_item'].pk,
+                'quantity': entry['needed_qty'],
+            }
+            for entry in preview
+        ]
+        EarmarkService.create_earmarks_for_job(job, earmark_data)

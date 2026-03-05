@@ -258,7 +258,7 @@ class Estimate(models.Model):
 
     def _maybe_update_job_status(self, old_status):
         """Send signal to update job status if the change is relevant."""
-        from apps.jobs.signals import estimate_status_changed_for_job
+        from apps.jobs.signals import estimate_status_changed_for_job, estimate_accepted
 
         # Signal when estimate is accepted
         if self.status == 'accepted' and old_status != 'accepted':
@@ -266,6 +266,10 @@ class Estimate(models.Model):
                 sender=self.__class__,
                 estimate=self,
                 new_job_status='approved'
+            )
+            estimate_accepted.send(
+                sender=self.__class__,
+                estimate=self,
             )
 
         # Signal when approved estimate is superseded
