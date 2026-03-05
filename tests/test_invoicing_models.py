@@ -139,7 +139,6 @@ class InvoiceLineItemModelTest(TestCase):
         )
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
-            job=self.job,
             po_number="PO001",
             status='issued'
         )

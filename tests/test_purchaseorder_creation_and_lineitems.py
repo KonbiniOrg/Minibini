@@ -65,7 +65,6 @@ class PurchaseOrderCreationTests(TestCase):
         po = PurchaseOrder.objects.first()
         self.assertIsNotNone(po)
         self.assertEqual(po.business, self.business)
-        self.assertIsNone(po.job)
         self.assertTrue(po.po_number)  # Should have auto-generated number
 
         # Should redirect to PO detail

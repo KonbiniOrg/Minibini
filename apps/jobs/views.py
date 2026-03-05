@@ -172,7 +172,9 @@ def job_detail(request, job_id):
 
     work_orders = WorkOrder.objects.filter(job=job).order_by('-work_order_id')
     worksheets = EstWorksheet.objects.filter(job=job).order_by('-created_date')
-    purchase_orders = PurchaseOrder.objects.filter(job=job).order_by('-po_id')
+    from apps.purchasing.models import PurchaseOrderLineItem
+    po_ids = PurchaseOrderLineItem.objects.filter(job=job).values_list('purchase_order_id', flat=True).distinct()
+    purchase_orders = PurchaseOrder.objects.filter(po_id__in=po_ids).order_by('-po_id')
     invoices = Invoice.objects.filter(job=job).order_by('-invoice_id')
 
     # Get current work order (most recent non-complete)

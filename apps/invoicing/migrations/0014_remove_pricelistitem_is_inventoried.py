@@ -7,6 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('invoicing', '0013_alter_pricelistitem_units'),
+        ('inventory', '0002_copy_pricelist_to_inventory'),
     ]
 
     operations = [

@@ -27,12 +27,12 @@
         </td>
     </tr>
     <tr>
-        <td>Associated Job</td>
+        <td>Associated PO</td>
         <td>
-            {% if bill.purchase_order and bill.purchase_order.job %}
-                <a href="{% url 'jobs:detail' bill.purchase_order.job.pk %}">{{ bill.purchase_order.job }}</a>
+            {% if bill.purchase_order %}
+                <a href="{% url 'purchasing:purchase_order_detail' bill.purchase_order.po_id %}">{{ bill.purchase_order }}</a>
             {% else %}
-                No job assigned
+                No PO
             {% endif %}
         </td>
     </tr>

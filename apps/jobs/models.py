@@ -757,6 +757,10 @@ class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
+    material = models.ForeignKey(
+        'Material', on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
 
     class Meta:
         verbose_name = "Estimate Line Item"
