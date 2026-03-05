@@ -16,13 +16,66 @@ REST API for Minibini using Django Rest Framework (DRF), enabling multiple front
 
 ## Open Questions / Deferred
 
-- **Authentication & permissions:** Needed but deferred. Will need to support SPA sessions + token auth for mobile/external. Time tracking permissions will need special attention (workers manage own time, managers see/edit all). Django's model-based permission system + DRF permission classes will handle this.
+- **Authentication — kiosk/biometric:** Future requirement for quick physical auth at shared workstations (keycard tap, fingerprint). DRF's multiple auth backend support accommodates this — add a kiosk auth class that resolves a hardware credential to a user and issues a short-lived scoped token. No current design work needed, just don't preclude it.
 - **Payment processing:** `record-payment` endpoints are placeholders. Will evolve significantly with Stripe integration. Expense reimbursement workflow also deferred to payments design.
 - **Work Order / Job status overlap:** Work order status arguably *is* the job status from a business perspective. May consolidate later.
-- **Audit trail:** Planned via middleware, not per-endpoint. Exceptional actions capture `reason` as explicit user-provided data separate from the audit trail.
+- **Audit trail — storage:** Middleware approach decided, but database schema for audit entries is TBD. Tracked changes, user notes, and action reasons all feed into the same history stream. Note edits and deletes are tracked as audit entries themselves.
 - **Non-job time tracking:** Employees need to track time on non-job activities (training, maintenance, meetings). Approach TBD — could be a special "overhead" job, standalone categories, or something else.
 - **Accounting module:** Decision pending on whether to build minimal internal accounting (bank import, reconciliation) or integrate with Xero/QuickBooks. Affects expense reconciliation and bank transaction matching.
 - **Expense accounting categories:** To be added later.
+
+---
+
+## Authentication
+
+Session auth for SPA, JWT for mobile/external. Username + password credentials (username is freeform — could be an email, but we don't treat it specially).
+
+- `POST /api/auth/login/` — username + password → session cookie (SPA) or JWT access + refresh token pair (mobile/external)
+- `POST /api/auth/logout/` — end session / invalidate token
+- `GET /api/auth/me/` — current user info, permissions, groups
+- `POST /api/auth/refresh/` — refresh JWT (mobile/external only)
+
+**OAuth (optional):** Users can link an external provider (Google, Microsoft, etc.) as an alternative to username + password. Supported via `django-allauth`. Specific providers configured per deployment. OAuth and password login coexist — each user chooses their preference.
+
+**Implementation:** Django's built-in session auth + `djangorestframework-simplejwt` + `django-allauth`. DRF configured with multiple authentication backends so all methods work simultaneously.
+
+**Future:** Kiosk/biometric auth will be added as a separate DRF auth backend (see Open Questions).
+
+---
+
+## Permissions
+
+Uses Django's built-in groups and permissions system. No custom role field on User — groups are just convenient bundles of permissions. The owner can assign individual permissions to any user beyond their group defaults.
+
+### Permission Atoms
+
+| Permission | Covers |
+|---|---|
+| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, work orders, tasks, bundles |
+| `can_view_jobs` | Read-only access to all jobs and related documents |
+| `can_manage_invoicing` | Invoices, price list, send/payment actions |
+| `can_manage_purchasing` | POs, bills, send/receive actions |
+| `can_manage_time` | Edit/delete anyone's time entries (shifts + bleps) |
+| `can_approve_expenses` | Approve/reject expenses over threshold |
+| `can_manage_config` | Settings, templates, line item types, user admin |
+
+### Implicit (no permission needed)
+
+All authenticated users can:
+- Track their own time (clock in/out, start/stop bleps)
+- Submit expenses
+- View their own time entries
+
+### Default Groups
+
+| Group | Permissions |
+|---|---|
+| Worker | `can_view_jobs` |
+| Manager | `can_view_jobs`, `can_manage_jobs`, `can_manage_time`, `can_approve_expenses` |
+| Bookkeeper | `can_view_jobs`, `can_manage_invoicing`, `can_manage_purchasing`, `can_approve_expenses` |
+| Admin | All permissions |
+
+Groups are starter bundles, not rigid roles. A user can belong to multiple groups and/or have individual permissions added directly. DRF permission classes check for the relevant permission regardless of how it was granted.
 
 ---
 
@@ -60,6 +113,20 @@ Summary representations:
 ### Actions — [exceptional]
 - `POST /api/jobs/{id}/cancel/` — requires `reason`
 - `POST /api/jobs/{id}/reopen/` — requires `reason`
+
+### History
+
+Unified chronological feed combining audit trail entries (system-generated) and user notes. Audit entries are aggregated from the job and its related objects (estimates, worksheets, work orders, invoices, linked POs). User notes live on the job only. Action reasons from exceptional actions appear in the same stream.
+
+- `GET /api/jobs/{id}/history/` — paginated, newest first. Each entry has a `type` (`audit`, `action`, `note`) and carries `object_type`/`object_id` to indicate which related object it pertains to.
+
+### User Notes
+
+Free-text notes attached to a job by any authenticated user. Permissions: author can edit/delete own notes; `can_manage_jobs` can delete any note.
+
+- `POST /api/jobs/{id}/history/notes/` — add a note
+- `PATCH /api/jobs/{id}/history/notes/{note_id}/` — edit own note
+- `DELETE /api/jobs/{id}/history/notes/{note_id}/` — delete own, or any with `can_manage_jobs`
 
 ---
 
