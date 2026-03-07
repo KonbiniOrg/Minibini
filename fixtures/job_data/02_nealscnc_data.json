@@ -41672,27 +41672,10 @@
   },
   {
     "model": "invoicing.pricelistitem",
-    "pk": 3,
-    "fields": {
-      "code": "MAT001",
-      "units": "sheet",
-      "description": "Plywood - per sheet",
-      "purchase_price": "80.00",
-      "selling_price": "100.00",
-      "qty_on_hand": "0.00",
-      "qty_sold": "0.00",
-      "qty_wasted": "0.00",
-      "is_active": true,
-      "line_item_type": 5,
-      "is_inventoried": false
-    }
-  },
-  {
-    "model": "invoicing.pricelistitem",
     "pk": 4,
     "fields": {
-      "code": "MAT002",
-      "units": "board foot",
+      "code": "WOAKLUM",
+      "units": "board feet",
       "description": "White Oak Lumber - per board foot",
       "purchase_price": "5.50",
       "selling_price": "7.00",
@@ -41701,7 +41684,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -41964,7 +41947,7 @@
     "pk": 20,
     "fields": {
       "code": "ABS.125",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/8\" sheet(s) of haircell/smooth black ABS\\n*estimated price*",
       "purchase_price": "72.00",
       "selling_price": "72.00",
@@ -41973,7 +41956,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -41981,7 +41964,7 @@
     "pk": 21,
     "fields": {
       "code": "ACM.125",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3mm sheet of ACM, aluminum polyethylene composite",
       "purchase_price": "55.00",
       "selling_price": "55.00",
@@ -41990,7 +41973,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -41998,7 +41981,7 @@
     "pk": 22,
     "fields": {
       "code": "ACR.125",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/8\" sheet(s) of clear acrylic *price as of 06/25/25*",
       "purchase_price": "103.50",
       "selling_price": "103.50",
@@ -42007,7 +41990,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42032,7 +42015,7 @@
     "pk": 24,
     "fields": {
       "code": "ACR.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of clear acrylic *price as of 05/20/24*",
       "purchase_price": "300.00",
       "selling_price": "300.00",
@@ -42041,7 +42024,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42049,7 +42032,7 @@
     "pk": 25,
     "fields": {
       "code": "ACX.375",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/8\" sheet(s) of Arauco external grade ply  *price as of *7/31/25*",
       "purchase_price": "54.00",
       "selling_price": "54.00",
@@ -42058,7 +42041,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42066,7 +42049,7 @@
     "pk": 26,
     "fields": {
       "code": "ACX.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of Arauco external grade ply  *price as of 5/6/25*",
       "purchase_price": "55.80",
       "selling_price": "55.80",
@@ -42075,7 +42058,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42083,7 +42066,7 @@
     "pk": 27,
     "fields": {
       "code": "ACX.625",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 5/8\" sheet(s) of Arauco external grade ply  *price as of 5/6/25*",
       "purchase_price": "56.50",
       "selling_price": "56.50",
@@ -42092,7 +42075,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42100,7 +42083,7 @@
     "pk": 28,
     "fields": {
       "code": "ACX.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Arauco external grade ply  *price as of 5/6/25*",
       "purchase_price": "60.00",
       "selling_price": "60.00",
@@ -42109,7 +42092,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42117,7 +42100,7 @@
     "pk": 29,
     "fields": {
       "code": "ALU.05-4x12",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x12' x .05\" sheet(s) of aluminum *price as of 10/30/24*",
       "purchase_price": "180.00",
       "selling_price": "180.00",
@@ -42126,7 +42109,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42134,7 +42117,7 @@
     "pk": 30,
     "fields": {
       "code": "ALU.125",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/8\" sheet(s) of aluminum *estimated price*",
       "purchase_price": "300.00",
       "selling_price": "300.00",
@@ -42143,7 +42126,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42151,7 +42134,7 @@
     "pk": 31,
     "fields": {
       "code": "ALU.125-5x12",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x12' x .125\" sheet(s) of aluminum *price as of 07/15/25*",
       "purchase_price": "535.00",
       "selling_price": "535.00",
@@ -42160,7 +42143,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42168,7 +42151,7 @@
     "pk": 32,
     "fields": {
       "code": "APPLY.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of Apple plywood  *price as of 10/21/25*",
       "purchase_price": "203.00",
       "selling_price": "203.00",
@@ -42177,7 +42160,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42185,7 +42168,7 @@
     "pk": 33,
     "fields": {
       "code": "APPLY.5P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of prefinished Apple plywood *price as of 10/21/25* ",
       "purchase_price": "210.00",
       "selling_price": "210.00",
@@ -42194,7 +42177,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42202,7 +42185,7 @@
     "pk": 34,
     "fields": {
       "code": "APPLY.75P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of prefinished Apple plywood  *price as of 10/13/23*",
       "purchase_price": "296.00",
       "selling_price": "296.00",
@@ -42211,7 +42194,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42219,7 +42202,7 @@
     "pk": 35,
     "fields": {
       "code": "APPLY1.0",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1\" sheet(s) of C1 White Maple Appleply  *price as of 10/13/23*",
       "purchase_price": "360.00",
       "selling_price": "360.00",
@@ -42228,7 +42211,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42236,7 +42219,7 @@
     "pk": 38,
     "fields": {
       "code": "BBPLY.125-5x5",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x5' x 1/8\" sheet(s) of Baltic Birch plywood, B/BB *price as of 7/31/25*",
       "purchase_price": "38.20",
       "selling_price": "38.20",
@@ -42245,7 +42228,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42253,7 +42236,7 @@
     "pk": 39,
     "fields": {
       "code": "BBPLY.25",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/4\" sheet(s) of Baltic Birch plywood  *price as of 7/31/25*",
       "purchase_price": "78.00",
       "selling_price": "78.00",
@@ -42262,7 +42245,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42270,7 +42253,7 @@
     "pk": 40,
     "fields": {
       "code": "BBPLY.25-5x5",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x5' x 1/4\" sheet(s) of Baltic Birch plywood, B/BB *price as of 5/20/24*",
       "purchase_price": "57.00",
       "selling_price": "57.00",
@@ -42279,7 +42262,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42287,7 +42270,7 @@
     "pk": 41,
     "fields": {
       "code": "BBPLY.375",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/8\" sheet(s) of Baltic Birch plywood  *price as of 10/21/25*",
       "purchase_price": "87.00",
       "selling_price": "87.00",
@@ -42296,7 +42279,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42321,7 +42304,7 @@
     "pk": 43,
     "fields": {
       "code": "BBPLY.5-5x5",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x5' x 1/2\" sheet(s) of Baltic Birch plywood, B/BB *price as of 7/31/25*",
       "purchase_price": "71.00",
       "selling_price": "71.00",
@@ -42330,7 +42313,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42338,7 +42321,7 @@
     "pk": 44,
     "fields": {
       "code": "BBPLY.5-5x5P",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x5' x 1/2\" sheet(s) of prefinished Baltic Birch plywood *price as of 10/13/23*",
       "purchase_price": "81.00",
       "selling_price": "81.00",
@@ -42347,7 +42330,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42355,7 +42338,7 @@
     "pk": 45,
     "fields": {
       "code": "BBPLY.5BBB",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of B/BB Baltic Birch plywood *price as of 5/20/24*",
       "purchase_price": "152.00",
       "selling_price": "152.00",
@@ -42364,7 +42347,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42372,7 +42355,7 @@
     "pk": 46,
     "fields": {
       "code": "BBPLY.5P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of prefinished Baltic Birch plywood  *price as of 5/20/24*",
       "purchase_price": "108.00",
       "selling_price": "108.00",
@@ -42381,7 +42364,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42389,7 +42372,7 @@
     "pk": 47,
     "fields": {
       "code": "BBPLY.625",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 5/8\" sheet(s) of Baltic Birch plywood  *price as of 5/20/24*",
       "purchase_price": "106.00",
       "selling_price": "106.00",
@@ -42398,7 +42381,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42406,7 +42389,7 @@
     "pk": 48,
     "fields": {
       "code": "BBPLY.625P-5X5",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x5' 5/8\" sheet(s) of prefinished Baltic Birch plywood  *price as of 10/13/23*",
       "purchase_price": "102.00",
       "selling_price": "102.00",
@@ -42415,7 +42398,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42440,7 +42423,7 @@
     "pk": 50,
     "fields": {
       "code": "BBPLY.75-5x10",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x10' x 3/4\" sheet(s) of Baltic Birch plywood  *price as of 5/20/24*",
       "purchase_price": "258.00",
       "selling_price": "258.00",
@@ -42449,7 +42432,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42457,7 +42440,7 @@
     "pk": 51,
     "fields": {
       "code": "BBPLY.75-5x5",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x5' x 3/4\" sheet(s) of Baltic Birch plywood, B/BB *price as of 5/20/24*",
       "purchase_price": "102.00",
       "selling_price": "102.00",
@@ -42466,7 +42449,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42474,7 +42457,7 @@
     "pk": 52,
     "fields": {
       "code": "BBPLY.75P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of prefinished Baltic Birch plywood  *price as of 5/20/24*",
       "purchase_price": "120.00",
       "selling_price": "120.00",
@@ -42483,7 +42466,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42576,7 +42559,7 @@
     "pk": 58,
     "fields": {
       "code": "HDPE.375",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/8\" sheet(s) of natural HDPE",
       "purchase_price": "209.00",
       "selling_price": "209.00",
@@ -42585,7 +42568,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42593,7 +42576,7 @@
     "pk": 59,
     "fields": {
       "code": "HDPE.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of natural HDPE *price as of 7/1/25\"",
       "purchase_price": "205.00",
       "selling_price": "205.00",
@@ -42602,7 +42585,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42610,7 +42593,7 @@
     "pk": 60,
     "fields": {
       "code": "HDPE.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of natural HDPE *price as of 7/1/25\"",
       "purchase_price": "354.00",
       "selling_price": "354.00",
@@ -42619,7 +42602,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42627,7 +42610,7 @@
     "pk": 61,
     "fields": {
       "code": "HDU1.0",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1\" thick sheet of 15 lb HDU (Duna)",
       "purchase_price": "316.00",
       "selling_price": "316.00",
@@ -42636,7 +42619,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42678,7 +42661,7 @@
     "pk": 64,
     "fields": {
       "code": "IMPLY.25",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/4\" sheet(s) of imported Birch ply  *price as of 5/20/24*",
       "purchase_price": "28.00",
       "selling_price": "28.00",
@@ -42687,7 +42670,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42695,7 +42678,7 @@
     "pk": 65,
     "fields": {
       "code": "IMPLY.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of imported Birch ply  *price as of 5/20/24*",
       "purchase_price": "39.00",
       "selling_price": "39.00",
@@ -42704,7 +42687,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42712,7 +42695,7 @@
     "pk": 66,
     "fields": {
       "code": "IMPLY.58",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 5/8\" sheets(s) import birch ply *price as of 10-28-25*",
       "purchase_price": "52.50",
       "selling_price": "52.50",
@@ -42721,7 +42704,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42729,7 +42712,7 @@
     "pk": 67,
     "fields": {
       "code": "IMPLY.5P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of prefinished imported Birch ply  *price as of 5/20/24*",
       "purchase_price": "50.00",
       "selling_price": "50.00",
@@ -42738,7 +42721,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42746,7 +42729,7 @@
     "pk": 68,
     "fields": {
       "code": "IMPLY.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of imported Birch ply, utility grade  *price as of 3/20/25*",
       "purchase_price": "46.00",
       "selling_price": "46.00",
@@ -42755,7 +42738,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42763,7 +42746,7 @@
     "pk": 69,
     "fields": {
       "code": "IMPLY.75P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of prefinished imported Birch ply  *price as of 3/20/25*",
       "purchase_price": "52.00",
       "selling_price": "52.00",
@@ -42772,7 +42755,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42780,7 +42763,7 @@
     "pk": 70,
     "fields": {
       "code": "IMPLY1",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1\" sheet(s) of imported Birch ply  *price as of 5/20/24*",
       "purchase_price": "83.00",
       "selling_price": "83.00",
@@ -42789,7 +42772,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42865,7 +42848,7 @@
     "pk": 75,
     "fields": {
       "code": "LAUAN.25",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/4\" sheet(s) of Lauan Plywood *price as of 5/4/23*",
       "purchase_price": "27.00",
       "selling_price": "27.00",
@@ -42874,7 +42857,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42899,7 +42882,7 @@
     "pk": 77,
     "fields": {
       "code": "MAPLY.25",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/4\" sheet(s) of Maple plywood *price as of 5/4/23*",
       "purchase_price": "45.00",
       "selling_price": "45.00",
@@ -42908,7 +42891,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42916,7 +42899,7 @@
     "pk": 78,
     "fields": {
       "code": "MAPLY.25P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/4\" sheet(s) of 1-sided prefinished Maple plywood  *price as of 5/20/24*",
       "purchase_price": "53.00",
       "selling_price": "53.00",
@@ -42925,7 +42908,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42933,7 +42916,7 @@
     "pk": 79,
     "fields": {
       "code": "MAPLY.5P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of prefinished Maple plywood  *price as of 5/20/24*",
       "purchase_price": "88.00",
       "selling_price": "88.00",
@@ -42942,7 +42925,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42950,7 +42933,7 @@
     "pk": 80,
     "fields": {
       "code": "MAPLY.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Maple plywood *price as of 5/4/23*",
       "purchase_price": "104.00",
       "selling_price": "104.00",
@@ -42959,7 +42942,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42967,7 +42950,7 @@
     "pk": 81,
     "fields": {
       "code": "MAPLY.75P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of prefinished Maple plywood *price as of 5/20/24*",
       "purchase_price": "112.00",
       "selling_price": "112.00",
@@ -42976,7 +42959,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -42984,7 +42967,7 @@
     "pk": 82,
     "fields": {
       "code": "MAPLY.75P1S",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of 1-sided prefinish Maple plywood\\n*price as of 10/13/23*",
       "purchase_price": "100.00",
       "selling_price": "100.00",
@@ -42993,7 +42976,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43001,7 +42984,7 @@
     "pk": 83,
     "fields": {
       "code": "MAPLY1.0",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1\" sheet(s) of Maple plywood *price as of 5/4/23*",
       "purchase_price": "140.00",
       "selling_price": "140.00",
@@ -43010,7 +42993,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43018,7 +43001,7 @@
     "pk": 84,
     "fields": {
       "code": "MAR.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of Marine ply, Meranti Hydrotek  *price as of 5/20/24*",
       "purchase_price": "132.00",
       "selling_price": "132.00",
@@ -43027,7 +43010,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43035,7 +43018,7 @@
     "pk": 85,
     "fields": {
       "code": "MAR.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Marine ply, Meranti Hydrotek  *price as of 5/20/24*",
       "purchase_price": "191.00",
       "selling_price": "191.00",
@@ -43044,7 +43027,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43052,7 +43035,7 @@
     "pk": 86,
     "fields": {
       "code": "MAR1.0",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1\" sheet(s) of Meranti Hydrotek marine ply\\n*price as of 1/18/23*",
       "purchase_price": "255.00",
       "selling_price": "255.00",
@@ -43061,7 +43044,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43069,7 +43052,7 @@
     "pk": 87,
     "fields": {
       "code": "MARO.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Marine ply, Okoume *price as of 5/20/24*",
       "purchase_price": "114.00",
       "selling_price": "114.00",
@@ -43078,7 +43061,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43086,7 +43069,7 @@
     "pk": 88,
     "fields": {
       "code": "MDF.25",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/4\" sheet(s) of MDF  *price as of 5/20/24*",
       "purchase_price": "28.00",
       "selling_price": "28.00",
@@ -43095,7 +43078,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43103,7 +43086,7 @@
     "pk": 89,
     "fields": {
       "code": "MDF.375",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/8\" sheet(s) of MDF  *price as of 7/31/25*",
       "purchase_price": "47.00",
       "selling_price": "47.00",
@@ -43112,7 +43095,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43120,7 +43103,7 @@
     "pk": 90,
     "fields": {
       "code": "MDF.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of MDF  *price as of 7/31/25*",
       "purchase_price": "52.00",
       "selling_price": "52.00",
@@ -43129,7 +43112,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43137,7 +43120,7 @@
     "pk": 91,
     "fields": {
       "code": "MDF.625",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 5/8\" sheet(s) of MDF  *price as of 7/31/25*",
       "purchase_price": "60.00",
       "selling_price": "60.00",
@@ -43146,7 +43129,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43154,7 +43137,7 @@
     "pk": 92,
     "fields": {
       "code": "MDF.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of MDF  *price as of 7/31/25*",
       "purchase_price": "72.00",
       "selling_price": "72.00",
@@ -43163,7 +43146,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43171,7 +43154,7 @@
     "pk": 93,
     "fields": {
       "code": "MDF.75-4X10",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x10' x 3/4\" sheet(s) of MDF  *price as of 7/31/25*",
       "purchase_price": "90.00",
       "selling_price": "90.00",
@@ -43180,7 +43163,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43188,7 +43171,7 @@
     "pk": 94,
     "fields": {
       "code": "MDF.75-5x10",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x10' x 3/4\" sheet(s) of MDF  *price as of 7/31/25*",
       "purchase_price": "114.00",
       "selling_price": "114.00",
@@ -43197,7 +43180,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43205,7 +43188,7 @@
     "pk": 95,
     "fields": {
       "code": "MDF.75-5x8",
-      "units": "unit",
+      "units": "sheets",
       "description": "5'x8' 3/4\" sheet(s) of MDF *price as of 7/31/25*",
       "purchase_price": "95.00",
       "selling_price": "95.00",
@@ -43214,7 +43197,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43222,7 +43205,7 @@
     "pk": 96,
     "fields": {
       "code": "MDF.75U",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Utility MDF *price as of 10/13/23*",
       "purchase_price": "45.00",
       "selling_price": "45.00",
@@ -43231,7 +43214,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43239,7 +43222,7 @@
     "pk": 97,
     "fields": {
       "code": "MDF1.0",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1\" sheet(s) of MDF  *price as of 7/31/25*",
       "purchase_price": "90.00",
       "selling_price": "90.00",
@@ -43248,7 +43231,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43256,7 +43239,7 @@
     "pk": 98,
     "fields": {
       "code": "MDFUL.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of Ultralight MDF  *price as of 7/31/25*",
       "purchase_price": "40.00",
       "selling_price": "40.00",
@@ -43265,7 +43248,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43273,7 +43256,7 @@
     "pk": 99,
     "fields": {
       "code": "MDFUL.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Ultralight MDF  *price as of 7/31/25*",
       "purchase_price": "51.00",
       "selling_price": "51.00",
@@ -43282,7 +43265,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43290,7 +43273,7 @@
     "pk": 100,
     "fields": {
       "code": "MEL.75-5X8",
-      "units": "unit",
+      "units": "sheets",
       "description": "3/4\" sheet(s) of White Melamine on MDF *price as of 7/31/25*",
       "purchase_price": "72.00",
       "selling_price": "72.00",
@@ -43299,7 +43282,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43307,7 +43290,7 @@
     "pk": 101,
     "fields": {
       "code": "PLYBOO.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of Plyboo Bamboo ply, Amber edge grain *price as of 7/31/25*",
       "purchase_price": "264.00",
       "selling_price": "264.00",
@@ -43316,7 +43299,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43324,7 +43307,7 @@
     "pk": 102,
     "fields": {
       "code": "PLYBOO.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Plyboo Bamboo ply, Amber edge grain *price as of 7/31/25*",
       "purchase_price": "295.00",
       "selling_price": "295.00",
@@ -43333,7 +43316,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43341,7 +43324,7 @@
     "pk": 103,
     "fields": {
       "code": "PLYBOO1.0",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1\" sheet(s) of Plyboo Bamboo ply, Amber edge grain *price as of 7/31/25*",
       "purchase_price": "390.00",
       "selling_price": "390.00",
@@ -43350,7 +43333,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43392,7 +43375,7 @@
     "pk": 106,
     "fields": {
       "code": "POLY.125",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/8\" sheet(s) of clear polycarbonate *price may vary*",
       "purchase_price": "90.00",
       "selling_price": "90.00",
@@ -43401,7 +43384,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43409,7 +43392,7 @@
     "pk": 107,
     "fields": {
       "code": "POLY.25",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x10' x 1/4\" sheet(s) of clear polycarbonate *price may vary*",
       "purchase_price": "219.00",
       "selling_price": "219.00",
@@ -43418,7 +43401,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43426,7 +43409,7 @@
     "pk": 108,
     "fields": {
       "code": "PVC .25",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/4' sheet(s) of expanded PVC foam",
       "purchase_price": "72.00",
       "selling_price": "72.00",
@@ -43435,7 +43418,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43443,7 +43426,7 @@
     "pk": 109,
     "fields": {
       "code": "PVC.125",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/8\" sheet(s) of expanded PVC foam *price as of 5/20/24*",
       "purchase_price": "38.00",
       "selling_price": "38.00",
@@ -43452,7 +43435,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43460,7 +43443,7 @@
     "pk": 110,
     "fields": {
       "code": "PVC.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of expanded PVC foam",
       "purchase_price": "110.00",
       "selling_price": "110.00",
@@ -43469,7 +43452,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43630,7 +43613,7 @@
     "pk": 120,
     "fields": {
       "code": "SHOPB.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of Shop ply, Birch *price as of 5/20/24*",
       "purchase_price": "56.00",
       "selling_price": "56.00",
@@ -43639,7 +43622,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43647,7 +43630,7 @@
     "pk": 121,
     "fields": {
       "code": "SHOPB.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Shop ply, Birch *price as of 5/20/24*",
       "purchase_price": "64.00",
       "selling_price": "64.00",
@@ -43656,7 +43639,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43664,7 +43647,7 @@
     "pk": 122,
     "fields": {
       "code": "SHOPB.75P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of prefinished Shop ply, Birch*price as of 5/20/24*",
       "purchase_price": "81.00",
       "selling_price": "81.00",
@@ -43673,7 +43656,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43681,7 +43664,7 @@
     "pk": 123,
     "fields": {
       "code": "SHOPM.5P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of prefinished Shop ply, Maple *price as of 10/13/23*",
       "purchase_price": "72.00",
       "selling_price": "72.00",
@@ -43690,7 +43673,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43698,7 +43681,7 @@
     "pk": 124,
     "fields": {
       "code": "SHOPM.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Shop ply, Maple *price as of 3/20/25*",
       "purchase_price": "84.00",
       "selling_price": "84.00",
@@ -43707,7 +43690,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43715,7 +43698,7 @@
     "pk": 125,
     "fields": {
       "code": "SHOPM.75P",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of prefinished Shop ply, Maple *price as of 3/20/25*",
       "purchase_price": "93.00",
       "selling_price": "93.00",
@@ -43724,7 +43707,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43732,7 +43715,7 @@
     "pk": 126,
     "fields": {
       "code": "TIG.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of Tigerply *price as of 12/13/23*",
       "purchase_price": "120.00",
       "selling_price": "120.00",
@@ -43741,7 +43724,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43749,7 +43732,7 @@
     "pk": 127,
     "fields": {
       "code": "WAL.5",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/2\" sheet(s) of walnut veneer plywood  *price as of 4/8/25*",
       "purchase_price": "219.00",
       "selling_price": "219.00",
@@ -43758,7 +43741,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43766,7 +43749,7 @@
     "pk": 128,
     "fields": {
       "code": "WIG.25",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 1/4\" wiggle wood, barrel or column *price as of 7/31/25*",
       "purchase_price": "62.20",
       "selling_price": "62.20",
@@ -43775,7 +43758,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   },
   {
@@ -43783,7 +43766,7 @@
     "pk": 129,
     "fields": {
       "code": "WOAK.75",
-      "units": "unit",
+      "units": "sheets",
       "description": "4'x8' x 3/4\" sheet(s) of rift sawn white oak veneer plywood  *price as of 6/24/25*",
       "purchase_price": "369.00",
       "selling_price": "369.00",
@@ -43792,7 +43775,7 @@
       "qty_wasted": "0.00",
       "is_active": true,
       "line_item_type": 5,
-      "is_inventoried": false
+      "is_inventoried": true
     }
   }
 ]
