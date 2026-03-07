@@ -21,7 +21,8 @@ class PriceListItemViewsTest(TestCase):
             selling_price=Decimal('15.00'),
             qty_on_hand=Decimal('100.00'),
             qty_sold=Decimal('25.00'),
-            qty_wasted=Decimal('2.00')
+            qty_wasted=Decimal('2.00'),
+            is_inventoried=True,
         )
 
         self.item2 = PriceListItem.objects.create(
@@ -32,7 +33,8 @@ class PriceListItemViewsTest(TestCase):
             selling_price=Decimal('30.00'),
             qty_on_hand=Decimal('50.00'),
             qty_sold=Decimal('10.00'),
-            qty_wasted=Decimal('1.00')
+            qty_wasted=Decimal('1.00'),
+            is_inventoried=True,
         )
 
     def test_price_list_item_list_view(self):
@@ -73,7 +75,8 @@ class PriceListItemViewsTest(TestCase):
             'selling_price': '35.75',
             'qty_on_hand': '200.00',
             'qty_sold': '0.00',
-            'qty_wasted': '0.00'
+            'qty_wasted': '0.00',
+            'is_inventoried': True,
         }
 
         response = self.client.post(url, data, follow=True)
@@ -144,7 +147,8 @@ class PriceListItemViewsTest(TestCase):
             'selling_price': '18.00',  # Changed
             'qty_on_hand': '90.00',  # Changed
             'qty_sold': '30.00',  # Changed
-            'qty_wasted': '3.00'  # Changed
+            'qty_wasted': '3.00',  # Changed
+            'is_inventoried': True,
         }
 
         response = self.client.post(url, data, follow=True)

@@ -15,6 +15,7 @@ class PriceListItemForm(forms.ModelForm):
             'description',
             'purchase_price',
             'selling_price',
+            'is_inventoried',
             'qty_on_hand',
             'qty_sold',
             'qty_wasted',
@@ -33,11 +34,6 @@ class PriceListItemForm(forms.ModelForm):
             # For new items, remove the is_active field - they're always active by default
             del self.fields['is_active']
 
-        # Hide quantity fields for non-inventoried items
-        if not getattr(self.instance, 'is_inventoried', False):
-            del self.fields['qty_on_hand']
-            del self.fields['qty_sold']
-            del self.fields['qty_wasted']
 
     def clean_code(self):
         """Ensure code is unique when creating a new item or updating."""
