@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, EstWorksheet, Task, Material
 from apps.invoicing.models import PriceListItem
+from apps.core.models import LineItemType
 
 
 class MaterialTestBase(TestCase):
@@ -172,6 +173,34 @@ class MaterialModelTest(MaterialTestBase):
             quantity=Decimal('1.00'), unit_cost=Decimal('8.00'), sell_price=Decimal('12.00'),
         )
         self.assertEqual(self.task.materials.count(), 3)
+
+    def test_pli_auto_fills_line_item_type(self):
+        """Material linked to a PLI auto-fills line_item_type from PLI."""
+        lit, _ = LineItemType.objects.get_or_create(code='MAT', defaults={'name': 'Material'})
+        self.inventoried_item.line_item_type = lit
+        self.inventoried_item.save()
+
+        material = Material.objects.create(
+            task=self.task,
+            price_list_item=self.inventoried_item,
+            quantity=Decimal('2.00'),
+        )
+        self.assertEqual(material.line_item_type, lit)
+
+    def test_explicit_line_item_type_not_overwritten_by_pli(self):
+        """Explicit line_item_type on material is not overwritten by PLI."""
+        lit_mat, _ = LineItemType.objects.get_or_create(code='MAT', defaults={'name': 'Material'})
+        lit_labor, _ = LineItemType.objects.get_or_create(code='LBR', defaults={'name': 'Labor'})
+        self.inventoried_item.line_item_type = lit_mat
+        self.inventoried_item.save()
+
+        material = Material.objects.create(
+            task=self.task,
+            price_list_item=self.inventoried_item,
+            quantity=Decimal('2.00'),
+            line_item_type=lit_labor,
+        )
+        self.assertEqual(material.line_item_type, lit_labor)
 
     def test_str_representation(self):
         material = Material.objects.create(

@@ -387,6 +387,7 @@ class EstWorksheet(AbstractWorkContainer):
                 Material.objects.create(
                     task=new_task,
                     price_list_item=material.price_list_item,
+                    line_item_type=material.line_item_type,
                     description=material.description,
                     quantity=material.quantity,
                     unit_cost=material.unit_cost,
@@ -784,6 +785,10 @@ class Material(models.Model):
         'invoicing.PriceListItem', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
+    line_item_type = models.ForeignKey(
+        'core.LineItemType', on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
     description = models.CharField(max_length=255, blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -806,6 +811,8 @@ class Material(models.Model):
                 self.unit_cost = self.price_list_item.purchase_price
             if self.sell_price == Decimal('0.00'):
                 self.sell_price = self.price_list_item.selling_price
+            if not self.line_item_type:
+                self.line_item_type = self.price_list_item.line_item_type
         self.full_clean()
         super().save(*args, **kwargs)
 

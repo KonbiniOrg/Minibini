@@ -367,7 +367,7 @@ class MaterialForm(forms.ModelForm):
 
     class Meta:
         model = Material
-        fields = ['price_list_item', 'description', 'quantity', 'unit_cost', 'sell_price']
+        fields = ['price_list_item', 'description', 'quantity', 'unit_cost', 'sell_price', 'line_item_type']
         widgets = {
             'quantity': forms.NumberInput(attrs={'step': '0.01'}),
             'unit_cost': forms.NumberInput(attrs={'step': '0.01'}),

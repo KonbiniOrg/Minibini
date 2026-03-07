@@ -100,7 +100,7 @@ class LineItemTaskService:
     def _create_generic_task(line_item, work_order):
         """Create a generic task from manual LineItem data."""
         if line_item.description:
-            task_name = line_item.description
+            task_name = line_item.description[:255]
         elif line_item.line_number:
             task_name = f"Line Item {line_item.line_number}"
         else:
@@ -281,15 +281,9 @@ class TaskService:
         # Get line_item_type from task directly
         line_item_type = task.line_item_type
 
-        # Fall back to default LineItemType if none specified
+        # Fall back to any active LineItemType if none specified
         if line_item_type is None:
-            # Get default LineItemType (Direct/Service)
-            line_item_type = LineItemType.objects.filter(
-                code__in=['SVC', 'DIR']
-            ).first()
-            # If no standard default exists, get any active type
-            if line_item_type is None:
-                line_item_type = LineItemType.objects.filter(is_active=True).first()
+            line_item_type = LineItemType.objects.filter(is_active=True).first()
 
         line_item = EstimateLineItem.objects.create(
             estimate=estimate,
@@ -310,20 +304,11 @@ class EstimateGenerationService:
         self._default_line_item_type = None
 
     def _get_default_line_item_type(self):
-        """Get a default LineItemType to use when none is specified."""
+        """Get a fallback LineItemType when none is available from the source object."""
         if self._default_line_item_type is None:
             from apps.core.models import LineItemType
-            self._default_line_item_type = LineItemType.objects.filter(
-                code__in=['SVC', 'DIR'], is_active=True
-            ).first()
-            if self._default_line_item_type is None:
-                self._default_line_item_type = LineItemType.objects.filter(is_active=True).first()
+            self._default_line_item_type = LineItemType.objects.filter(is_active=True).first()
         return self._default_line_item_type
-
-    def _get_material_line_item_type(self):
-        """Get the MAT LineItemType for material line items."""
-        from apps.core.models import LineItemType
-        return LineItemType.objects.filter(code='MAT', is_active=True).first()
 
     @transaction.atomic
     def generate_estimate_from_worksheet(self, worksheet) -> 'Estimate':
@@ -440,7 +425,14 @@ class EstimateGenerationService:
 
     def _create_material_line_item(self, material, estimate) -> 'EstimateLineItem':
         """Create a line item for a material on a direct-mapped task."""
-        mat_type = self._get_material_line_item_type()
+        # Derive line_item_type: PLI first, then material's own field, then fallback
+        line_item_type = None
+        if material.price_list_item:
+            line_item_type = material.price_list_item.line_item_type
+        if line_item_type is None:
+            line_item_type = material.line_item_type
+        if line_item_type is None:
+            line_item_type = self._get_default_line_item_type()
 
         line_item = EstimateLineItem(
             estimate=estimate,
@@ -450,7 +442,7 @@ class EstimateGenerationService:
             qty=material.quantity,
             units='each',
             price=material.sell_price,
-            line_item_type=mat_type,
+            line_item_type=line_item_type,
         )
 
         self.line_number += 1

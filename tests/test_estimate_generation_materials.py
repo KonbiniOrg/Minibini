@@ -16,6 +16,7 @@ from apps.jobs.models import (
 from apps.jobs.services import EstimateGenerationService
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType, Configuration
+from apps.invoicing.models import PriceListItem
 
 
 class EstimateGenerationMaterialsTest(TestCase):
@@ -38,6 +39,12 @@ class EstimateGenerationMaterialsTest(TestCase):
         )
         self.lit_material, _ = LineItemType.objects.get_or_create(
             code="MAT", defaults={"name": "Material"}
+        )
+        # PLI with line_item_type for testing type propagation
+        self.pli_plywood = PriceListItem.objects.create(
+            code='PLY.75', description='Plywood',
+            purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
+            line_item_type=self.lit_material,
         )
 
     def test_direct_task_with_materials(self):
@@ -79,7 +86,7 @@ class EstimateGenerationMaterialsTest(TestCase):
         self.assertEqual(plywood_li.description, 'Plywood')
         self.assertEqual(plywood_li.qty, Decimal('3.00'))
         self.assertEqual(plywood_li.price, Decimal('90.00'))
-        self.assertEqual(plywood_li.line_item_type, self.lit_material)
+        self.assertIsNotNone(plywood_li.line_item_type)
         self.assertIsNotNone(plywood_li.material)
 
         screws_li = line_items[2]
@@ -109,7 +116,7 @@ class EstimateGenerationMaterialsTest(TestCase):
         li = estimate.estimatelineitem_set.first()
         self.assertEqual(li.description, 'Special order hardware')
         self.assertEqual(li.price, Decimal('100.00'))
-        self.assertEqual(li.line_item_type, self.lit_material)
+        self.assertIsNotNone(li.line_item_type)
 
     def test_pass_through_task_zero_rate(self):
         """Task with rate=0 is also pass-through — no labor line item."""
@@ -243,8 +250,8 @@ class EstimateGenerationMaterialsTest(TestCase):
         self.assertIsNotNone(material_li)
         self.assertEqual(material_li.material, material)
 
-    def test_material_line_item_type_is_mat(self):
-        """Material line items use the MAT LineItemType."""
+    def test_material_line_item_type_from_pli(self):
+        """Material line items get their line_item_type from the PLI."""
         worksheet = EstWorksheet.objects.create(job=self.job)
         task = Task.objects.create(
             est_worksheet=worksheet, name="Task",
@@ -252,8 +259,52 @@ class EstimateGenerationMaterialsTest(TestCase):
             mapping_strategy='direct',
         )
         Material.objects.create(
-            task=task, description='Bracket',
+            task=task, price_list_item=self.pli_plywood,
+            quantity=Decimal('4.00'),
+        )
+
+        service = EstimateGenerationService()
+        estimate = service.generate_estimate_from_worksheet(worksheet)
+
+        material_li = estimate.estimatelineitem_set.filter(
+            material__isnull=False
+        ).first()
+        self.assertEqual(material_li.line_item_type, self.lit_material)
+
+    def test_freeform_material_uses_own_line_item_type(self):
+        """Freeform materials (no PLI) use their own line_item_type."""
+        worksheet = EstWorksheet.objects.create(job=self.job)
+        task = Task.objects.create(
+            est_worksheet=worksheet, name="Task",
+            rate=Decimal('50.00'), est_qty=Decimal('1.00'),
+            mapping_strategy='direct',
+        )
+        Material.objects.create(
+            task=task, description='Custom bracket',
             quantity=Decimal('4.00'), unit_cost=Decimal('5.00'),
+            sell_price=Decimal('10.00'),
+            line_item_type=self.lit_material,
+        )
+
+        service = EstimateGenerationService()
+        estimate = service.generate_estimate_from_worksheet(worksheet)
+
+        material_li = estimate.estimatelineitem_set.filter(
+            material__isnull=False
+        ).first()
+        self.assertEqual(material_li.line_item_type, self.lit_material)
+
+    def test_freeform_material_no_type_gets_fallback(self):
+        """Freeform materials with no line_item_type get fallback."""
+        worksheet = EstWorksheet.objects.create(job=self.job)
+        task = Task.objects.create(
+            est_worksheet=worksheet, name="Task",
+            rate=Decimal('50.00'), est_qty=Decimal('1.00'),
+            mapping_strategy='direct',
+        )
+        Material.objects.create(
+            task=task, description='Mystery part',
+            quantity=Decimal('1.00'), unit_cost=Decimal('5.00'),
             sell_price=Decimal('10.00'),
         )
 
@@ -263,4 +314,5 @@ class EstimateGenerationMaterialsTest(TestCase):
         material_li = estimate.estimatelineitem_set.filter(
             material__isnull=False
         ).first()
-        self.assertEqual(material_li.line_item_type.code, 'MAT')
+        # Should get some type (first active), not None
+        self.assertIsNotNone(material_li.line_item_type)

@@ -423,27 +423,24 @@ def work_order_create_from_estimate(request, estimate_id):
 
     if request.method == 'POST':
         with transaction.atomic():
+            worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
+
             # Create the WorkOrder
             work_order = WorkOrder.objects.create(
                 job=estimate.job,
                 status='draft',
-                template=None
+                template=worksheet.template if worksheet else None,
             )
 
-            # Generate tasks from all EstimateLineItems
-            from .services import LineItemTaskService
-            total_tasks = 0
-            line_items = estimate.estimatelineitem_set.all().order_by('line_number', 'pk')
-
-            for line_item in line_items:
-                generated_tasks = LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
-                total_tasks += len(generated_tasks)
-
-            # If we have worksheet-based tasks, try to set template from worksheet
-            worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
             if worksheet:
-                work_order.template = worksheet.template
-                work_order.save()
+                # Copy worksheet tasks, bundles, and materials directly
+                _copy_worksheet_to_work_order(worksheet, work_order)
+            else:
+                # No worksheet — generate tasks from estimate line items
+                from .services import LineItemTaskService
+                line_items = estimate.estimatelineitem_set.all().order_by('line_number', 'pk')
+                for line_item in line_items:
+                    LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
 
             messages.success(request, f'Work Order {work_order.work_order_id} created successfully from Estimate {estimate.estimate_number}.')
             return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
@@ -763,12 +760,13 @@ def _build_container_items_from_tasks(worksheet):
     """Normalize worksheet Tasks/TaskBundles into the shared container_items format."""
     tasks = Task.objects.filter(
         est_worksheet=worksheet
-    ).select_related('bundle').order_by('sort_order', 'task_id')
+    ).select_related('bundle').prefetch_related('materials').order_by('sort_order', 'task_id')
 
     bundles_by_id = {}
     unbundled = []
 
     for task in tasks:
+        materials = list(task.materials.all())
         item = {
             'id': task.task_id,
             'name': task.name,
@@ -780,6 +778,7 @@ def _build_container_items_from_tasks(worksheet):
             'remove_id': task.task_id,
             'sort_order': task.sort_order or 0,
             'detail_url': reverse('jobs:task_detail', args=[task.task_id]),
+            'materials': materials,
         }
         if task.mapping_strategy == 'bundle' and task.bundle:
             bid = task.bundle_id
@@ -817,6 +816,52 @@ def _next_worksheet_sort_order(worksheet):
         est_worksheet=worksheet
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
     return max(max_task, max_bundle) + 1
+
+
+def _copy_worksheet_to_work_order(worksheet, work_order):
+    """Copy a worksheet's bundles, tasks, and materials to a work order."""
+    from .models import TaskBundle, Material
+
+    # Copy TaskBundles, mapping old bundle PKs to new ones
+    bundle_mapping = {}
+    for bundle in TaskBundle.objects.filter(est_worksheet=worksheet):
+        new_bundle = TaskBundle.objects.create(
+            work_order=work_order,
+            name=bundle.name,
+            description=bundle.description,
+            line_item_type=bundle.line_item_type,
+            sort_order=bundle.sort_order,
+            source_template_bundle=bundle.source_template_bundle,
+        )
+        bundle_mapping[bundle.pk] = new_bundle
+
+    # Copy tasks with their materials
+    for task in Task.objects.filter(est_worksheet=worksheet).prefetch_related('materials'):
+        new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
+        new_task = Task.objects.create(
+            work_order=work_order,
+            name=task.name,
+            description=task.description,
+            units=task.units,
+            rate=task.rate,
+            est_qty=task.est_qty,
+            assignee=task.assignee,
+            line_item_type=task.line_item_type,
+            mapping_strategy=task.mapping_strategy,
+            bundle=new_bundle,
+            sort_order=task.sort_order,
+        )
+
+        for material in task.materials.all():
+            Material.objects.create(
+                task=new_task,
+                price_list_item=material.price_list_item,
+                line_item_type=material.line_item_type,
+                description=material.description,
+                quantity=material.quantity,
+                unit_cost=material.unit_cost,
+                sell_price=material.sell_price,
+            )
 
 
 def estworksheet_detail(request, worksheet_id):
@@ -1000,7 +1045,7 @@ def estworksheet_generate_estimate(request, worksheet_id):
             return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
 
     # Show confirmation page
-    tasks = Task.objects.filter(est_worksheet=worksheet)
+    tasks = Task.objects.filter(est_worksheet=worksheet).prefetch_related('materials')
     total_cost = sum(task.rate * task.est_qty for task in tasks if task.rate and task.est_qty)
 
     # Find direct tasks missing line_item_type
