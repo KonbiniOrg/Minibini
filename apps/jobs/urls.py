@@ -45,4 +45,7 @@ urlpatterns = [
     path('templates/<int:template_id>/reorder-in-bundle/<int:association_id>/<str:direction>/', views.template_reorder_in_bundle, name='template_reorder_in_bundle'),
     path('worksheets/<int:worksheet_id>/reorder/<str:item_type>/<int:item_id>/<str:direction>/', views.worksheet_reorder_item, name='worksheet_reorder_item'),
     path('worksheets/<int:worksheet_id>/reorder-in-bundle/<int:task_id>/<str:direction>/', views.worksheet_reorder_in_bundle, name='worksheet_reorder_in_bundle'),
+    path('tasks/<int:task_id>/add-material/', views.material_add, name='material_add'),
+    path('materials/<int:material_id>/edit/', views.material_edit, name='material_edit'),
+    path('materials/<int:material_id>/delete/', views.material_delete, name='material_delete'),
 ]

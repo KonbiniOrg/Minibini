@@ -26,18 +26,17 @@
     </tr>
 </table>
 
-<h3>Line Items Analysis</h3>
-<p>The Work Order will be created from {{ total_line_items }} line item{{ total_line_items|pluralize }}:</p>
-
-{% if worksheet_items %}
-<h4>From Worksheet Tasks ({{ worksheet_items|length }})</h4>
+{% if worksheet %}
+<h3>Source: Worksheet (v{{ worksheet.version }})</h3>
+<p>Tasks, bundles, and materials will be copied directly from the worksheet.</p>
 <ul>
-    {% for item in worksheet_items %}
-    <li>{{ item.description|default:item.task.name }} - ${{ item.price }} (Qty: {{ item.qty }})</li>
-    {% endfor %}
+    <li>Tasks: {{ worksheet.task_set.count }}</li>
+    {% if worksheet.bundles.exists %}<li>Bundles: {{ worksheet.bundles.count }}</li>{% endif %}
+    {% if worksheet.template %}<li>Template: {{ worksheet.template.template_name }}</li>{% endif %}
 </ul>
-<p><em>These will copy existing task details and hierarchy.</em></p>
-{% endif %}
+{% else %}
+<h3>Source: Estimate Line Items</h3>
+<p>No worksheet is associated with this estimate. Tasks will be generated from the {{ total_line_items }} line item{{ total_line_items|pluralize }} and may need manual refinement.</p>
 
 {% if catalog_items %}
 <h4>From Catalog Items ({{ catalog_items|length }})</h4>
@@ -46,7 +45,6 @@
     <li>{{ item.price_list_item.code }}{% if not item.price_list_item.is_active %} <strong>(Archived)</strong>{% endif %}: {{ item.description|default:item.price_list_item.description }} - ${{ item.price }} (Qty: {{ item.qty }})</li>
     {% endfor %}
 </ul>
-<p><em>These will create new tasks based on catalog item details.</em></p>
 {% endif %}
 
 {% if manual_items %}
@@ -56,7 +54,7 @@
     <li>{% if item.description %}{{ item.description }}{% else %}Line item #{{ item.line_number|default:item.pk }}{% endif %} - ${{ item.price }} (Qty: {{ item.qty }})</li>
     {% endfor %}
 </ul>
-<p><em>These will create generic tasks that may need manual refinement.</em></p>
+{% endif %}
 {% endif %}
 
 <h3>Work Order Details</h3>
@@ -64,10 +62,6 @@
 <ul>
     <li>Status: Draft</li>
     <li>Job: {{ estimate.job.job_number }}</li>
-    <li>Tasks generated from all line items above</li>
-    {% if worksheet %}
-    <li>Template: {{ worksheet.template.template_name|default:"No template" }}</li>
-    {% endif %}
 </ul>
 
 <form method="post" style="margin-top: 20px;">

@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Material - {{ material.description }} - Minibini{% endblock %}
+
+{% block content %}
+<h2>Edit Material: {{ material.description }}</h2>
+
+<form method="post">
+    {% csrf_token %}
+    <table>
+        {{ form.as_table }}
+    </table>
+    <button type="submit">Save Changes</button>
+</form>
+
+<p>
+    <a href="{% url 'jobs:task_detail' task.task_id %}">Cancel</a>
+</p>
+{% endblock %}

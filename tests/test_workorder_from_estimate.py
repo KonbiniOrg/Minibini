@@ -25,7 +25,8 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.client.login(username='testuser', password='testpass123')
 
     def test_create_workorder_from_accepted_estimate_with_worksheet(self):
-        """Test creating a WorkOrder from an accepted estimate with an associated worksheet"""
+        """Test creating a WorkOrder from an accepted estimate with an associated worksheet.
+        When a worksheet exists, tasks are copied directly from the worksheet (not from line items)."""
         estimate = Estimate.objects.get(pk=100)
         worksheet = EstWorksheet.objects.get(pk=100)
 
@@ -41,7 +42,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Create Work Order from Estimate')
         self.assertContains(response, estimate.estimate_number)
-        self.assertContains(response, 'The Work Order will be created from 3 line item')
+        self.assertContains(response, 'Tasks, bundles, and materials will be copied directly from the worksheet.')
 
         # POST request - create the WorkOrder
         response = self.client.post(url, follow=True)
@@ -56,9 +57,9 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.assertEqual(work_order.job_id, estimate.job_id)
         self.assertEqual(work_order.template_id, worksheet.template_id)
 
-        # Verify tasks were created from line items (3 line items = 3 tasks)
+        # Verify tasks were copied from worksheet (5 tasks, not 3 line items)
         wo_tasks = Task.objects.filter(work_order=work_order).order_by('task_id')
-        self.assertEqual(wo_tasks.count(), 3)
+        self.assertEqual(wo_tasks.count(), 5)
 
         # Check success message
         messages = list(response.context['messages'])
@@ -130,13 +131,14 @@ class WorkOrderFromEstimateTestCase(TestCase):
                 work_orders = WorkOrder.objects.filter(job=estimate.job)
                 self.assertEqual(work_orders.count(), 0)
 
-    def test_tasks_created_from_line_items(self):
-        """Test that tasks are created from estimate line items (not worksheet tasks directly)"""
+    def test_tasks_copied_from_worksheet(self):
+        """Test that tasks are copied from worksheet when one exists (not from line items)."""
         estimate = Estimate.objects.get(pk=100)
+        worksheet = EstWorksheet.objects.get(pk=100)
 
-        # Verify we have 3 line items in the estimate
-        line_items = estimate.estimatelineitem_set.all()
-        self.assertEqual(line_items.count(), 3)
+        # Verify worksheet has 5 tasks
+        ws_task_count = Task.objects.filter(est_worksheet=worksheet).count()
+        self.assertEqual(ws_task_count, 5)
 
         # Create WorkOrder
         url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
@@ -145,17 +147,17 @@ class WorkOrderFromEstimateTestCase(TestCase):
         # Get the created WorkOrder
         work_order = WorkOrder.objects.filter(job=estimate.job).first()
 
-        # Verify 3 tasks created (one per line item)
+        # Verify 5 tasks created (copied from worksheet, not 3 from line items)
         wo_tasks = Task.objects.filter(work_order=work_order)
-        self.assertEqual(wo_tasks.count(), 3)
+        self.assertEqual(wo_tasks.count(), 5)
 
-        # Verify task names match line items
-        task_names = set(wo_tasks.values_list('name', flat=True))
-        expected_names = {'Parent Task - Assembly', 'Standalone Task - Material Delivery', 'Standalone Task - Quality Check'}
-        self.assertEqual(task_names, expected_names)
+        # Verify task names match worksheet tasks
+        ws_task_names = set(Task.objects.filter(est_worksheet=worksheet).values_list('name', flat=True))
+        wo_task_names = set(wo_tasks.values_list('name', flat=True))
+        self.assertEqual(wo_task_names, ws_task_names)
 
-    def test_task_template_references_preserved(self):
-        """Test that TaskTemplate references are preserved for future Invoice generation"""
+    def test_worksheet_tasks_copied_to_work_order(self):
+        """Test that worksheet tasks are copied with correct names to work order."""
         estimate = Estimate.objects.get(pk=100)
 
         # Create WorkOrder
@@ -164,18 +166,18 @@ class WorkOrderFromEstimateTestCase(TestCase):
 
         work_order = WorkOrder.objects.filter(job=estimate.job).first()
 
-        # Check task with template (Parent Task - Assembly has template_id=50)
+        # Verify tasks from worksheet exist on work order
         parent_task = Task.objects.get(
             work_order=work_order,
             name="Parent Task - Assembly"
         )
+        self.assertIsNotNone(parent_task)
 
-        # Verify standalone task exists
-        task_no_template = Task.objects.get(
+        task_delivery = Task.objects.get(
             work_order=work_order,
             name="Standalone Task - Material Delivery"
         )
-        self.assertIsNotNone(task_no_template)
+        self.assertIsNotNone(task_delivery)
 
     def test_confirmation_page_displays_correct_info(self):
         """Test that the confirmation page shows correct information before creating WorkOrder"""
@@ -189,13 +191,12 @@ class WorkOrderFromEstimateTestCase(TestCase):
         # Check context data
         self.assertEqual(response.context['estimate'], estimate)
         self.assertIsNotNone(response.context['worksheet'])
-        self.assertEqual(response.context['total_line_items'], 3)
 
         # Check displayed information
         self.assertContains(response, estimate.estimate_number)
         self.assertContains(response, estimate.job.job_number)
         self.assertContains(response, "Status: Draft")
-        self.assertContains(response, "The Work Order will be created from 3 line item")
+        self.assertContains(response, "Tasks, bundles, and materials will be copied directly from the worksheet.")
         self.assertContains(response, "Test Product Template")
 
     def test_confirmation_page_no_worksheet(self):
@@ -209,8 +210,8 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.assertIsNone(response.context['worksheet'])
         self.assertEqual(response.context['total_line_items'], 0)
 
-        self.assertContains(response, "The Work Order will be created from 0 line items:")
-        self.assertContains(response, "Tasks generated from all line items above")
+        self.assertContains(response, "No worksheet is associated with this estimate")
+        self.assertContains(response, "may need manual refinement")
 
     def test_create_workorder_link_visibility(self):
         """Test that Create Work Order link only shows for accepted estimates"""
@@ -261,7 +262,7 @@ class WorkOrderFromEstimateIntegrationTest(TestCase):
         create_url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.get(create_url)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'You are about to create a Work Order')
+        self.assertContains(response, 'Create Work Order from Estimate')
 
         # Step 3: Confirm creation (POST request)
         response = self.client.post(create_url)

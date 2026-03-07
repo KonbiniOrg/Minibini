@@ -6,12 +6,13 @@ from django import forms
 from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
-from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet, TemplateTaskAssociation
+from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet, TemplateTaskAssociation, Material
 from apps.core.services import TaxCalculationService
 from .forms import (
     JobCreateForm, JobEditForm, WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
     TaskEditForm, TaskFromTemplateForm,
-    ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm, EstimateForm, WorkOrderStatusForm
+    ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm, EstimateForm, WorkOrderStatusForm,
+    MaterialForm
 )
 from apps.purchasing.models import PurchaseOrder
 from apps.invoicing.models import Invoice
@@ -171,7 +172,9 @@ def job_detail(request, job_id):
 
     work_orders = WorkOrder.objects.filter(job=job).order_by('-work_order_id')
     worksheets = EstWorksheet.objects.filter(job=job).order_by('-created_date')
-    purchase_orders = PurchaseOrder.objects.filter(job=job).order_by('-po_id')
+    from apps.purchasing.models import PurchaseOrderLineItem
+    po_ids = PurchaseOrderLineItem.objects.filter(job=job).values_list('purchase_order_id', flat=True).distinct()
+    purchase_orders = PurchaseOrder.objects.filter(po_id__in=po_ids).order_by('-po_id')
     invoices = Invoice.objects.filter(job=job).order_by('-invoice_id')
 
     # Get current work order (most recent non-complete)
@@ -420,27 +423,24 @@ def work_order_create_from_estimate(request, estimate_id):
 
     if request.method == 'POST':
         with transaction.atomic():
+            worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
+
             # Create the WorkOrder
             work_order = WorkOrder.objects.create(
                 job=estimate.job,
                 status='draft',
-                template=None
+                template=worksheet.template if worksheet else None,
             )
 
-            # Generate tasks from all EstimateLineItems
-            from .services import LineItemTaskService
-            total_tasks = 0
-            line_items = estimate.estimatelineitem_set.all().order_by('line_number', 'pk')
-
-            for line_item in line_items:
-                generated_tasks = LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
-                total_tasks += len(generated_tasks)
-
-            # If we have worksheet-based tasks, try to set template from worksheet
-            worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
             if worksheet:
-                work_order.template = worksheet.template
-                work_order.save()
+                # Copy worksheet tasks, bundles, and materials directly
+                _copy_worksheet_to_work_order(worksheet, work_order)
+            else:
+                # No worksheet — generate tasks from estimate line items
+                from .services import LineItemTaskService
+                line_items = estimate.estimatelineitem_set.all().order_by('line_number', 'pk')
+                for line_item in line_items:
+                    LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
 
             messages.success(request, f'Work Order {work_order.work_order_id} created successfully from Estimate {estimate.estimate_number}.')
             return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
@@ -760,12 +760,13 @@ def _build_container_items_from_tasks(worksheet):
     """Normalize worksheet Tasks/TaskBundles into the shared container_items format."""
     tasks = Task.objects.filter(
         est_worksheet=worksheet
-    ).select_related('bundle').order_by('sort_order', 'task_id')
+    ).select_related('bundle').prefetch_related('materials').order_by('sort_order', 'task_id')
 
     bundles_by_id = {}
     unbundled = []
 
     for task in tasks:
+        materials = list(task.materials.all())
         item = {
             'id': task.task_id,
             'name': task.name,
@@ -777,6 +778,7 @@ def _build_container_items_from_tasks(worksheet):
             'remove_id': task.task_id,
             'sort_order': task.sort_order or 0,
             'detail_url': reverse('jobs:task_detail', args=[task.task_id]),
+            'materials': materials,
         }
         if task.mapping_strategy == 'bundle' and task.bundle:
             bid = task.bundle_id
@@ -814,6 +816,52 @@ def _next_worksheet_sort_order(worksheet):
         est_worksheet=worksheet
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
     return max(max_task, max_bundle) + 1
+
+
+def _copy_worksheet_to_work_order(worksheet, work_order):
+    """Copy a worksheet's bundles, tasks, and materials to a work order."""
+    from .models import TaskBundle, Material
+
+    # Copy TaskBundles, mapping old bundle PKs to new ones
+    bundle_mapping = {}
+    for bundle in TaskBundle.objects.filter(est_worksheet=worksheet):
+        new_bundle = TaskBundle.objects.create(
+            work_order=work_order,
+            name=bundle.name,
+            description=bundle.description,
+            line_item_type=bundle.line_item_type,
+            sort_order=bundle.sort_order,
+            source_template_bundle=bundle.source_template_bundle,
+        )
+        bundle_mapping[bundle.pk] = new_bundle
+
+    # Copy tasks with their materials
+    for task in Task.objects.filter(est_worksheet=worksheet).prefetch_related('materials'):
+        new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
+        new_task = Task.objects.create(
+            work_order=work_order,
+            name=task.name,
+            description=task.description,
+            units=task.units,
+            rate=task.rate,
+            est_qty=task.est_qty,
+            assignee=task.assignee,
+            line_item_type=task.line_item_type,
+            mapping_strategy=task.mapping_strategy,
+            bundle=new_bundle,
+            sort_order=task.sort_order,
+        )
+
+        for material in task.materials.all():
+            Material.objects.create(
+                task=new_task,
+                price_list_item=material.price_list_item,
+                line_item_type=material.line_item_type,
+                description=material.description,
+                quantity=material.quantity,
+                unit_cost=material.unit_cost,
+                sell_price=material.sell_price,
+            )
 
 
 def estworksheet_detail(request, worksheet_id):
@@ -997,7 +1045,7 @@ def estworksheet_generate_estimate(request, worksheet_id):
             return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
 
     # Show confirmation page
-    tasks = Task.objects.filter(est_worksheet=worksheet)
+    tasks = Task.objects.filter(est_worksheet=worksheet).prefetch_related('materials')
     total_cost = sum(task.rate * task.est_qty for task in tasks if task.rate and task.est_qty)
 
     # Find direct tasks missing line_item_type
@@ -1730,4 +1778,71 @@ def worksheet_reorder_in_bundle(request, worksheet_id, task_id, direction):
     swap.save()
 
     return redirect('jobs:estworksheet_detail', worksheet_id=worksheet_id)
+
+
+def material_add(request, task_id):
+    """Add a material to a task. Only allowed on draft worksheets."""
+    task = get_object_or_404(Task, task_id=task_id)
+
+    container = task.get_container()
+    if hasattr(container, 'status') and container.status != 'draft':
+        messages.error(request, 'Cannot add materials to tasks on a non-draft worksheet.')
+        return redirect('jobs:task_detail', task_id=task_id)
+
+    if request.method == 'POST':
+        material_instance = Material(task=task)
+        form = MaterialForm(request.POST, instance=material_instance)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Material "{material_instance.description}" added.')
+            return redirect('jobs:task_detail', task_id=task_id)
+    else:
+        form = MaterialForm()
+
+    return render(request, 'jobs/material_add.html', {
+        'form': form,
+        'task': task,
+    })
+
+
+def material_edit(request, material_id):
+    """Edit a material. Only allowed on draft worksheets."""
+    material = get_object_or_404(Material, material_id=material_id)
+    task = material.task
+
+    container = task.get_container()
+    if hasattr(container, 'status') and container.status != 'draft':
+        messages.error(request, 'Cannot edit materials on a non-draft worksheet.')
+        return redirect('jobs:task_detail', task_id=task.task_id)
+
+    if request.method == 'POST':
+        form = MaterialForm(request.POST, instance=material)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Material "{material.description}" updated.')
+            return redirect('jobs:task_detail', task_id=task.task_id)
+    else:
+        form = MaterialForm(instance=material)
+
+    return render(request, 'jobs/material_edit.html', {
+        'form': form,
+        'material': material,
+        'task': task,
+    })
+
+
+def material_delete(request, material_id):
+    """Delete a material. Only allowed on draft worksheets."""
+    material = get_object_or_404(Material, material_id=material_id)
+    task = material.task
+
+    container = task.get_container()
+    if hasattr(container, 'status') and container.status != 'draft':
+        messages.error(request, 'Cannot delete materials on a non-draft worksheet.')
+        return redirect('jobs:task_detail', task_id=task.task_id)
+
+    description = material.description
+    material.delete()
+    messages.success(request, f'Material "{description}" deleted.')
+    return redirect('jobs:task_detail', task_id=task.task_id)
 

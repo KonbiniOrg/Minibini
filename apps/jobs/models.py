@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -257,7 +258,7 @@ class Estimate(models.Model):
 
     def _maybe_update_job_status(self, old_status):
         """Send signal to update job status if the change is relevant."""
-        from apps.jobs.signals import estimate_status_changed_for_job
+        from apps.jobs.signals import estimate_status_changed_for_job, estimate_accepted
 
         # Signal when estimate is accepted
         if self.status == 'accepted' and old_status != 'accepted':
@@ -265,6 +266,10 @@ class Estimate(models.Model):
                 sender=self.__class__,
                 estimate=self,
                 new_job_status='approved'
+            )
+            estimate_accepted.send(
+                sender=self.__class__,
+                estimate=self,
             )
 
         # Signal when approved estimate is superseded
@@ -364,7 +369,7 @@ class EstWorksheet(AbstractWorkContainer):
         # Copy all tasks to the new worksheet
         for task in self.task_set.all():
             new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
-            Task.objects.create(
+            new_task = Task.objects.create(
                 parent_task=task.parent_task,
                 assignee=task.assignee,
                 est_worksheet=new_worksheet,
@@ -376,6 +381,18 @@ class EstWorksheet(AbstractWorkContainer):
                 mapping_strategy=task.mapping_strategy,
                 bundle=new_bundle,
             )
+
+            # Copy materials to the new task
+            for material in task.materials.all():
+                Material.objects.create(
+                    task=new_task,
+                    price_list_item=material.price_list_item,
+                    line_item_type=material.line_item_type,
+                    description=material.description,
+                    quantity=material.quantity,
+                    unit_cost=material.unit_cost,
+                    sell_price=material.sell_price,
+                )
 
         return new_worksheet
 
@@ -744,6 +761,10 @@ class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
+    material = models.ForeignKey(
+        'Material', on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
 
     class Meta:
         verbose_name = "Estimate Line Item"
@@ -755,3 +776,45 @@ class EstimateLineItem(BaseLineItem):
 
     def __str__(self):
         return f"Estimate Line Item {self.pk} for {self.estimate.estimate_number}"
+
+
+class Material(models.Model):
+    material_id = models.AutoField(primary_key=True)
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='materials')
+    price_list_item = models.ForeignKey(
+        'invoicing.PriceListItem', on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
+    line_item_type = models.ForeignKey(
+        'core.LineItemType', on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
+    description = models.CharField(max_length=255, blank=True, default='')
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    sell_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    @property
+    def total_cost(self):
+        return self.quantity * self.unit_cost
+
+    @property
+    def total_sell(self):
+        return self.quantity * self.sell_price
+
+    def save(self, *args, **kwargs):
+        # Auto-fill from price list item if linked
+        if self.price_list_item:
+            if not self.description:
+                self.description = self.price_list_item.description[:255]
+            if self.unit_cost == Decimal('0.00'):
+                self.unit_cost = self.price_list_item.purchase_price
+            if self.sell_price == Decimal('0.00'):
+                self.sell_price = self.price_list_item.selling_price
+            if not self.line_item_type:
+                self.line_item_type = self.price_list_item.line_item_type
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.description} (qty: {self.quantity})"

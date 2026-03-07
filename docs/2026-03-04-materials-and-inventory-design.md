@@ -129,3 +129,52 @@ This is a front-end UX flow backed by API endpoints — probably:
 - What triggers consumption — task completion, explicit "consume" action, or both?
 - How to handle partial consumption (used 15 of 20 earmarked sheets)?
 - Should earmarking happen at job approval, or when the work order is created?
+
+
+------
+Combined InventoryItem into PriceListItem and deleted it:
+
+  Summary
+  Models
+  - PriceListItem — added is_inventoried field (default False) and qty_earmarked/qty_available properties. Updated
+  can_be_deleted to check earmarks/adjustments.
+  - InventoryItem — deleted entirely
+  - Earmark & InventoryAdjustment — FK changed from inventory_item → price_list_item; unique constraint updated
+  - Material — removed inventory_item FK, removed clean() mutual-exclusion validation, simplified save() to one
+  auto-fill branch
+  - PurchaseOrderLineItem — removed inventory_item FK (uses inherited price_list_item from BaseLineItem)
+  - EstWorksheet.create_new_version() — removed inventory_item from material copy
+
+  Services & Signals
+
+  - InventoryService — all methods now check price_list_item.is_inventoried instead of inventory_item
+  - EarmarkService — queries price_list_item__is_inventoried=True instead of inventory_item__isnull=False
+  - auto_earmark_inventory signal — uses price_list_item_id keys
+
+  Views, Forms, Templates
+
+  - Inventory views — query PriceListItem.objects.filter(is_inventoried=True)
+  - InventoryItemForm — wraps PriceListItem, auto-sets is_inventoried=True on save
+  - MaterialForm — removed inventory_item from fields
+  - inventory_list.html — uses price_list_item_id for edit URL
+  - task_detail.html — simplified source display (checks is_inventoried flag)
+
+  Migrations
+
+  - Deleted all old inventory migrations (0001-0003), purchasing migrations (0011-0013), jobs migrations (0034-0035),
+  and invoicing migrations (0013-0016)
+  - Created merge migration for invoicing branches
+  - Auto-generated fresh migrations for inventory, jobs, purchasing
+
+  Tests (9 files updated)
+
+  - All InventoryItem.objects.create(...) → PriceListItem.objects.create(is_inventoried=True, ...)
+  - All inventory_item= kwargs → price_list_item=
+  - Removed "cannot have both" test, added tests for is_inventoried flag and non-inventoried filtering
+
+  Fixtures
+
+  - Removed inventory.inventoryitem entries from 02_nealscnc_data.json
+  - Added is_inventoried: true to the 4 corresponding PLIs (ACR.25, BBPLY.5, BBPLY.75, BBPLY1.0)
+  - Removed inventory_item field from PO line items in both fixture files
+  - Added is_inventoried: false to all other PLIs in both fixture files

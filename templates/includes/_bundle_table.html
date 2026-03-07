@@ -101,6 +101,18 @@ Expected context:
             </td>
             {% endif %}
         </tr>
+        {% for mat in bi.materials %}
+        <tr style="background-color: #f9f5e8;">
+            {% if can_edit %}<td></td>{% endif %}
+            <td style="padding-left: 40px; font-size: 0.9em;">&#9642; {{ mat.description }}</td>
+            <td></td>
+            <td>{{ mat.quantity }}</td>
+            <td>${{ mat.sell_price }}</td>
+            <td></td>
+            <td></td>
+            {% if can_edit %}<td></td><td></td>{% endif %}
+        </tr>
+        {% endfor %}
         {% endfor %}
 
         {% else %}
@@ -135,6 +147,18 @@ Expected context:
             </td>
             {% endif %}
         </tr>
+        {% for mat in item_data.materials %}
+        <tr style="background-color: #f9f5e8;">
+            {% if can_edit %}<td></td>{% endif %}
+            <td style="padding-left: 20px; font-size: 0.9em;">&#9642; {{ mat.description }}</td>
+            <td></td>
+            <td>{{ mat.quantity }}</td>
+            <td>${{ mat.sell_price }}</td>
+            <td></td>
+            <td></td>
+            {% if can_edit %}<td></td><td></td>{% endif %}
+        </tr>
+        {% endfor %}
         {% endif %}
     {% endfor %}
 </table>

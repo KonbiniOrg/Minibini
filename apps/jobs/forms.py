@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .models import (
     WorkOrderTemplate, TaskTemplate,
-    EstWorksheet, Task, Estimate, EstimateLineItem, Job
+    EstWorksheet, Task, Estimate, EstimateLineItem, Job, Material
 )
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType
@@ -359,3 +359,17 @@ class WorkOrderStatusForm(forms.Form):
         status = self.cleaned_data['status']
         # Additional validation if needed
         return status
+
+
+class MaterialForm(forms.ModelForm):
+    """Form for adding/editing a Material on a Task."""
+    description = forms.CharField(max_length=255, required=False)
+
+    class Meta:
+        model = Material
+        fields = ['price_list_item', 'description', 'quantity', 'unit_cost', 'sell_price', 'line_item_type']
+        widgets = {
+            'quantity': forms.NumberInput(attrs={'step': '0.01'}),
+            'unit_cost': forms.NumberInput(attrs={'step': '0.01'}),
+            'sell_price': forms.NumberInput(attrs={'step': '0.01'}),
+        }

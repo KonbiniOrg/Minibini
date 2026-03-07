@@ -123,8 +123,9 @@ class LineItemTaskGenerationTestCase(TestCase):
         self.assertIn(f'Line Item {line_item.line_number}', task.name)
 
     def test_mixed_estimate_task_generation(self):
-        """Test WorkOrder creation from estimate with mixed LineItem types"""
+        """Test WorkOrder creation from estimate with worksheet copies worksheet tasks."""
         estimate = Estimate.objects.get(pk=200)
+        worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
 
         # Create WorkOrder via the view
         url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
@@ -134,27 +135,16 @@ class LineItemTaskGenerationTestCase(TestCase):
         work_order = WorkOrder.objects.filter(job=estimate.job).first()
         self.assertIsNotNone(work_order)
 
-        # Verify all line items generated tasks
-        total_tasks = Task.objects.filter(work_order=work_order).count()
-        total_line_items = EstimateLineItem.objects.filter(estimate=estimate).count()
-        self.assertEqual(total_tasks, total_line_items)  # Should be 5 tasks from 5 line items
+        # When worksheet exists, tasks are copied from worksheet (not line items)
+        ws_task_count = Task.objects.filter(est_worksheet=worksheet).count()
+        wo_task_count = Task.objects.filter(work_order=work_order).count()
+        self.assertEqual(wo_task_count, ws_task_count)
 
-        # Verify task sources
-        tasks = Task.objects.filter(work_order=work_order).order_by('task_id')
+        # Verify the worksheet task was copied
+        self.assertTrue(Task.objects.filter(work_order=work_order, name="Mixed Assembly Task").exists())
 
-        # First task should be from worksheet
-        self.assertEqual(tasks[0].name, "Mixed Assembly Task")
-
-        # Second and third tasks should be from catalog (specific naming)
-        self.assertIn("WOOD001", tasks[1].name)
-        self.assertIn("FINISH001", tasks[2].name)
-
-        # Fourth and fifth tasks should be manual (use description)
-        self.assertEqual(tasks[3].name, "Custom hardware installation")
-        self.assertEqual(tasks[4].name, "Delivery and setup")
-
-    def test_confirmation_page_shows_mixed_items(self):
-        """Test that confirmation page correctly categorizes mixed line items"""
+    def test_confirmation_page_shows_worksheet_source(self):
+        """Test that confirmation page shows worksheet as source when one exists."""
         estimate = Estimate.objects.get(pk=200)
 
         url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
@@ -162,20 +152,9 @@ class LineItemTaskGenerationTestCase(TestCase):
 
         self.assertEqual(response.status_code, 200)
 
-        # Check context data
-        self.assertEqual(len(response.context['worksheet_items']), 1)  # 1 from worksheet
-        self.assertEqual(len(response.context['catalog_items']), 2)    # 2 from catalog
-        self.assertEqual(len(response.context['manual_items']), 2)     # 2 manual
-        self.assertEqual(response.context['total_line_items'], 5)      # Total 5
-
-        # Check template content
-        self.assertContains(response, 'From Worksheet Tasks (1)')
-        self.assertContains(response, 'From Catalog Items (2)')
-        self.assertContains(response, 'Manual Line Items (2)')
-        self.assertContains(response, 'Assembly work from worksheet')
-        self.assertContains(response, 'WOOD001')
-        self.assertContains(response, 'Custom hardware installation')
-        self.assertContains(response, 'Delivery and setup')
+        # When worksheet exists, shows worksheet info (not line item breakdown)
+        self.assertIsNotNone(response.context['worksheet'])
+        self.assertContains(response, 'Tasks, bundles, and materials will be copied directly from the worksheet.')
 
     def test_empty_estimate_handling(self):
         """Test WorkOrder creation from estimate with no line items"""

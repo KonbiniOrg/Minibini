@@ -1,17 +1,19 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from .models import InventoryItem
+from apps.invoicing.models import PriceListItem
 from .forms import InventoryItemForm
 
 
 def inventory_list(request):
-    """Display all active inventory items with stock quantities."""
-    items = InventoryItem.objects.filter(is_active=True).order_by('code')
+    """Display all active inventoried items with stock quantities."""
+    items = PriceListItem.objects.filter(
+        is_inventoried=True, is_active=True,
+    ).prefetch_related('earmark_set').order_by('code')
     return render(request, 'inventory/inventory_list.html', {'items': items})
 
 
 def inventory_item_add(request):
-    """Add a new item to the inventory."""
+    """Add a new inventoried item."""
     if request.method == 'POST':
         form = InventoryItemForm(request.POST)
         if form.is_valid():
@@ -29,8 +31,8 @@ def inventory_item_add(request):
 
 
 def inventory_item_edit(request, item_id):
-    """Edit an existing inventory item."""
-    item = get_object_or_404(InventoryItem, inventory_item_id=item_id)
+    """Edit an existing inventoried item."""
+    item = get_object_or_404(PriceListItem, price_list_item_id=item_id, is_inventoried=True)
 
     if request.method == 'POST':
         form = InventoryItemForm(request.POST, instance=item)

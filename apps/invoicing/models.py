@@ -57,6 +57,7 @@ class PriceListItem(models.Model):
     qty_sold = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     qty_wasted = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     is_active = models.BooleanField(default=True)  # For soft-delete - use instead of hard deletion
+    is_inventoried = models.BooleanField(default=False)
 
     # LineItemType for categorization and taxability
     line_item_type = models.ForeignKey(
@@ -66,6 +67,19 @@ class PriceListItem(models.Model):
         null=True,  # Nullable initially for migration; will be made required after data migration
         blank=True
     )
+
+    @property
+    def qty_earmarked(self):
+        """Total quantity earmarked across all jobs."""
+        total = self.earmark_set.aggregate(
+            total=models.Sum('quantity')
+        )['total']
+        return total or Decimal('0.00')
+
+    @property
+    def qty_available(self):
+        """Quantity available (on hand minus earmarked)."""
+        return self.qty_on_hand - self.qty_earmarked
 
     def __str__(self):
         return f"{self.code} - {self.description[:50]}"
@@ -86,7 +100,9 @@ class PriceListItem(models.Model):
             EstimateLineItem.objects.filter(price_list_item=self).exists() or
             InvoiceLineItem.objects.filter(price_list_item=self).exists() or
             PurchaseOrderLineItem.objects.filter(price_list_item=self).exists() or
-            BillLineItem.objects.filter(price_list_item=self).exists()
+            BillLineItem.objects.filter(price_list_item=self).exists() or
+            self.earmark_set.exists() or
+            self.inventoryadjustment_set.exists()
         )
 
 

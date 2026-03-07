@@ -140,6 +140,51 @@
 </table>
 {% endif %}
 
+<h3>Materials</h3>
+{% if task.materials.exists %}
+<table border="1">
+    <tr>
+        <th>Description</th>
+        <th>Qty</th>
+        <th>Unit Cost</th>
+        <th>Sell Price</th>
+        <th>Total Cost</th>
+        <th>Total Sell</th>
+        <th>Source</th>
+        <th>Actions</th>
+    </tr>
+    {% for material in task.materials.all %}
+    <tr>
+        <td>{{ material.description }}</td>
+        <td>{{ material.quantity }}</td>
+        <td>${{ material.unit_cost }}</td>
+        <td>${{ material.sell_price }}</td>
+        <td>${{ material.total_cost }}</td>
+        <td>${{ material.total_sell }}</td>
+        <td>
+            {% if material.price_list_item %}{% if material.price_list_item.is_inventoried %}Inventory{% else %}Price List{% endif %}: {{ material.price_list_item.code }}
+            {% else %}Freeform{% endif %}
+        </td>
+        <td>
+            {% if task.est_worksheet and task.est_worksheet.status == 'draft' %}
+                <a href="{% url 'jobs:material_edit' material.material_id %}">Edit</a>
+                <form method="post" action="{% url 'jobs:material_delete' material.material_id %}" style="display:inline">
+                    {% csrf_token %}
+                    <button type="submit">Delete</button>
+                </form>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p>No materials attached to this task.</p>
+{% endif %}
+
+{% if task.est_worksheet and task.est_worksheet.status == 'draft' %}
+<p><a href="{% url 'jobs:material_add' task.task_id %}">Add Material</a></p>
+{% endif %}
+
 <p>
     {% if task.est_worksheet and task.est_worksheet.status == 'draft' %}
         <a href="{% url 'jobs:task_edit' task.task_id %}">Edit</a> |

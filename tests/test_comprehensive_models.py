@@ -135,7 +135,6 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         purchase_order = PurchaseOrder.objects.create(
             business=self.business,
-            job=job,
             po_number="PO001",
             status='draft'
         )
@@ -361,7 +360,6 @@ class LineItemValidationTest(TestCase):
         )
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
-            job=self.job,
             po_number="PO_VALID001",
             status='draft'
         )

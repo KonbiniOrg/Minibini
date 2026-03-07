@@ -2,7 +2,6 @@ from django import forms
 from django.core.exceptions import ValidationError
 from .models import PurchaseOrder, Bill, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job
 from apps.invoicing.models import PriceListItem
 from apps.core.models import LineItemType
 from apps.core.services import NumberGenerationService
@@ -23,11 +22,6 @@ class PurchaseOrderForm(forms.ModelForm):
         empty_label="-- Select Contact (optional) --",
         help_text='If selected, Business will be auto-assigned from Contact'
     )
-    job = forms.ModelChoiceField(
-        queryset=Job.objects.filter(status='approved'),
-        required=False,
-        empty_label="-- Select Job (optional) --"
-    )
     requested_date = forms.DateField(
         required=False,
         widget=forms.DateInput(attrs={'type': 'date'}),
@@ -36,16 +30,11 @@ class PurchaseOrderForm(forms.ModelForm):
 
     class Meta:
         model = PurchaseOrder
-        fields = ['business', 'contact', 'job', 'requested_date']
+        fields = ['business', 'contact', 'requested_date']
 
     def __init__(self, *args, **kwargs):
-        job = kwargs.pop('job', None)
+        kwargs.pop('job', None)  # Accept but ignore job kwarg for backward compat
         super().__init__(*args, **kwargs)
-
-        # Job is optional, but if provided, pre-select it
-        self.fields['job'].required = False
-        if job:
-            self.fields['job'].initial = job
 
     def clean(self):
         """Validate that if contact is provided, it must have a business."""

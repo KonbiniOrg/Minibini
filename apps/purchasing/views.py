@@ -189,7 +189,7 @@ def bill_detail(request, bill_id):
     })
 
 def purchase_order_edit(request, po_id):
-    """Edit an existing PurchaseOrder (job and requested_date only)"""
+    """Edit an existing PurchaseOrder"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
 
     if request.method == 'POST':

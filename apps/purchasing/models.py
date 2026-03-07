@@ -29,7 +29,6 @@ class PurchaseOrder(models.Model):
     # Business is required; Contact is optional but if provided, must have a Business
     business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
-    job = models.ForeignKey('jobs.Job', on_delete=models.SET_NULL, null=True, blank=True)
     po_number = models.CharField(max_length=50, unique=True)
     status = models.CharField(max_length=20, choices=PO_STATUS_CHOICES, default='draft')
 
@@ -326,6 +325,10 @@ class PurchaseOrderLineItem(BaseLineItem):
     """Line item for purchase orders - inherits shared functionality from BaseLineItem."""
 
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE)
+    job = models.ForeignKey(
+        'jobs.Job', on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
 
     class Meta:
         verbose_name = "Purchase Order Line Item"

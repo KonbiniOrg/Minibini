@@ -1,7 +1,6 @@
 from django.test import TestCase
 from django.db import models
 from apps.purchasing.models import PurchaseOrder, Bill
-from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
 
 
@@ -14,21 +13,15 @@ class PurchaseOrderModelFixtureTest(TestCase):
     def test_purchase_orders_exist_from_fixture(self):
         """Test that purchase orders from fixture data exist and have correct properties"""
         po1 = PurchaseOrder.objects.get(po_number="PO-2024-0001")
-        self.assertEqual(po1.job.job_number, "JOB-2024-0001")
+        self.assertEqual(po1.business.business_name, "XYZ Industries")
 
         po2 = PurchaseOrder.objects.get(po_number="PO-2024-0002")
-        self.assertEqual(po2.job.job_number, "JOB-2024-0002")
+        self.assertEqual(po2.business.business_name, "XYZ Industries")
 
     def test_purchase_order_str_method_with_fixture_data(self):
         """Test purchase order string representation with fixture data"""
         po = PurchaseOrder.objects.get(po_number="PO-2024-0001")
         self.assertEqual(str(po), "PO PO-2024-0001")
-
-    def test_purchase_order_job_relationships(self):
-        """Test that purchase orders are properly linked to jobs"""
-        po = PurchaseOrder.objects.get(po_number="PO-2024-0001")
-        job = Job.objects.get(job_number="JOB-2024-0001")
-        self.assertEqual(po.job, job)
 
     def test_purchase_order_unique_po_number(self):
         """Test that PO numbers are unique using fixture data as baseline"""
@@ -40,52 +33,23 @@ class PurchaseOrderModelFixtureTest(TestCase):
         with self.assertRaises(Exception):
             PurchaseOrder.objects.create(business=business, po_number="PO-2024-0001")
 
-    def test_create_new_purchase_order_with_existing_job(self):
-        """Test creating a new purchase order for existing job from fixtures"""
-        job = Job.objects.get(job_number="JOB-2024-0001")
+    def test_create_new_purchase_order(self):
+        """Test creating a new purchase order"""
         business = Business.objects.get(pk=2)  # XYZ Industries from fixture
         new_po = PurchaseOrder.objects.create(
             business=business,
-            job=job,
             po_number="PO-2024-0003"
         )
-        self.assertEqual(new_po.job, job)
         self.assertEqual(PurchaseOrder.objects.count(), 3)  # 2 from fixture + 1 new
 
-    def test_purchase_order_without_job(self):
-        """Test creating purchase order without job relationship"""
+    def test_purchase_order_without_contact(self):
+        """Test creating purchase order without contact"""
         business = Business.objects.get(pk=2)  # XYZ Industries from fixture
-        po_without_job = PurchaseOrder.objects.create(
+        po = PurchaseOrder.objects.create(
             business=business,
             po_number="PO-2024-0004"
         )
-        self.assertIsNone(po_without_job.job)
-
-    def test_purchase_order_set_null_on_job_delete(self):
-        """Test purchase order job is set to NULL when related job is deleted"""
-        # Create a new job for this test
-        contact = Contact.objects.get(first_name="John", last_name="Doe")
-        test_job = Job.objects.create(
-            job_number="JOB-TEST-DELETE",
-            contact=contact,
-            description="Test job for deletion"
-        )
-
-        # Create PO linked to this job
-        business = Business.objects.get(pk=2)  # XYZ Industries from fixture
-        test_po = PurchaseOrder.objects.create(
-            business=business,
-            job=test_job,
-            po_number="PO-TEST-DELETE"
-        )
-        po_id = test_po.po_id
-
-        # Delete the job - PO should have job set to NULL (not deleted)
-        test_job.delete()
-
-        # PO should still exist with job=None due to SET_NULL
-        test_po.refresh_from_db()
-        self.assertIsNone(test_po.job)
+        self.assertIsNone(po.contact)
 
 
 class BillModelFixtureTest(TestCase):
@@ -192,17 +156,3 @@ class BillModelFixtureTest(TestCase):
 
         # Bill should still exist
         Bill.objects.get(bill_id=bill_id)  # Should not raise DoesNotExist
-
-    def test_bill_relationships_through_job(self):
-        """Test bill relationships that trace back to jobs through purchase orders"""
-        bill = Bill.objects.get(vendor_invoice_number="ACME-INV-001")
-
-        # Trace relationship: Bill -> PO -> Job
-        job_through_po = bill.purchase_order.job
-        expected_job = Job.objects.get(job_number="JOB-2024-0001")
-        self.assertEqual(job_through_po, expected_job)
-
-        # Verify we can get the customer contact through this relationship
-        customer_contact = job_through_po.contact
-        expected_customer = Contact.objects.get(first_name="John", last_name="Doe")
-        self.assertEqual(customer_contact, expected_customer)
