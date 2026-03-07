@@ -360,7 +360,7 @@
       "postal_code": "",
       "country_code": "",
       "mobile_number": "",
-      "work_number": "",
+      "work_number": "555-0000",
       "home_number": "",
       "business": 7,
       "first_name": "Elliott",
@@ -380,7 +380,7 @@
       "postal_code": "",
       "country_code": "",
       "mobile_number": "",
-      "work_number": "",
+      "work_number": "555-0000",
       "home_number": "",
       "business": 7,
       "first_name": "Jack",
@@ -400,7 +400,7 @@
       "postal_code": "",
       "country_code": "",
       "mobile_number": "",
-      "work_number": "",
+      "work_number": "555-0000",
       "home_number": "",
       "business": 7,
       "first_name": "Priscilla",
@@ -420,7 +420,7 @@
       "postal_code": "",
       "country_code": "",
       "mobile_number": "",
-      "work_number": "",
+      "work_number": "555-0000",
       "home_number": "",
       "business": 8,
       "first_name": "Jane",
@@ -809,7 +809,7 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 1
     }
   },
   {
@@ -825,7 +825,7 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 1
     }
   },
   {
@@ -841,7 +841,7 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 5
     }
   },
   {
@@ -857,7 +857,7 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 5
     }
   },
   {
@@ -873,7 +873,7 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 5
     }
   },
   {
@@ -889,7 +889,7 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "is_active": true,
-      "line_item_type": null
+      "line_item_type": 1
     }
   }
 ]
