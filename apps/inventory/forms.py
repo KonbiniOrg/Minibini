@@ -1,5 +1,5 @@
 from django import forms
-from .models import InventoryItem
+from apps.invoicing.models import PriceListItem
 
 UNIT_CHOICES = [
     ('sq ft', 'sq ft (square feet)'),
@@ -21,13 +21,13 @@ UNIT_CHOICES = [
 
 
 class InventoryItemForm(forms.ModelForm):
-    """Form for adding and editing inventory items."""
+    """Form for adding and editing inventoried price list items."""
 
     units_select = forms.ChoiceField(choices=UNIT_CHOICES, label='Units')
     units_custom = forms.CharField(required=False, label='Custom units')
 
     class Meta:
-        model = InventoryItem
+        model = PriceListItem
         fields = [
             'code',
             'description',
@@ -58,11 +58,11 @@ class InventoryItemForm(forms.ModelForm):
 
     def clean_code(self):
         code = self.cleaned_data['code']
-        existing_query = InventoryItem.objects.filter(code=code)
+        existing_query = PriceListItem.objects.filter(code=code, is_inventoried=True)
         if self.instance.pk:
             existing_query = existing_query.exclude(pk=self.instance.pk)
         if existing_query.exists():
-            raise forms.ValidationError(f'Item with code "{code}" already exists.')
+            raise forms.ValidationError(f'Inventoried item with code "{code}" already exists.')
         return code
 
     def clean_purchase_price(self):
@@ -85,6 +85,7 @@ class InventoryItemForm(forms.ModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
+        instance.is_inventoried = True
         if self.cleaned_data['units_select'] == 'other':
             instance.units = self.cleaned_data['units_custom'].strip()
         else:

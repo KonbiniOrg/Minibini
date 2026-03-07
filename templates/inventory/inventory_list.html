@@ -34,7 +34,7 @@
             <td>{{ item.qty_wasted|floatformat:2 }}</td>
             <td>${{ item.purchase_price|floatformat:2 }}</td>
             <td>${{ item.selling_price|floatformat:2 }}</td>
-            <td><a href="{% url 'inventory:inventory_item_edit' item.inventory_item_id %}">Edit</a></td>
+            <td><a href="{% url 'inventory:inventory_item_edit' item.price_list_item_id %}">Edit</a></td>
         </tr>
         {% empty %}
         <tr>

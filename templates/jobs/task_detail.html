@@ -162,8 +162,7 @@
         <td>${{ material.total_cost }}</td>
         <td>${{ material.total_sell }}</td>
         <td>
-            {% if material.inventory_item %}Inventory: {{ material.inventory_item.code }}
-            {% elif material.price_list_item %}Price List: {{ material.price_list_item.code }}
+            {% if material.price_list_item %}{% if material.price_list_item.is_inventoried %}Inventory{% else %}Price List{% endif %}: {{ material.price_list_item.code }}
             {% else %}Freeform{% endif %}
         </td>
         <td>

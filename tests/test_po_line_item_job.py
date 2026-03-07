@@ -1,13 +1,13 @@
 """
-Tests for Phase 3: PO line item-level job FK.
-Validates that job association has moved from PurchaseOrder to PurchaseOrderLineItem.
+Tests for PO line item-level job FK.
+Validates that job association is on PurchaseOrderLineItem.
 """
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
-from apps.inventory.models import InventoryItem
+from apps.invoicing.models import PriceListItem
 from apps.core.models import Configuration
 
 
@@ -42,12 +42,13 @@ class POLineItemJobTest(TestCase):
             job_number='J-PO-002', contact=self.contact, description='Job B',
         )
 
-        self.inventory_item = InventoryItem.objects.create(
+        self.inventoried_item = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Plywood',
             units='sheet',
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
+            is_inventoried=True,
         )
 
     def test_line_item_has_job_fk(self):
@@ -64,8 +65,8 @@ class POLineItemJobTest(TestCase):
         )
         self.assertEqual(li.job, self.job_a)
 
-    def test_line_item_has_inventory_item_fk(self):
-        """PurchaseOrderLineItem can be linked to an inventory item."""
+    def test_line_item_has_price_list_item_fk(self):
+        """PurchaseOrderLineItem can be linked to a price list item."""
         po = PurchaseOrder.objects.create(
             business=self.business, po_number='PO-TEST-002',
         )
@@ -74,9 +75,9 @@ class POLineItemJobTest(TestCase):
             description='Plywood',
             qty=Decimal('5.00'),
             price=Decimal('45.00'),
-            inventory_item=self.inventory_item,
+            price_list_item=self.inventoried_item,
         )
-        self.assertEqual(li.inventory_item, self.inventory_item)
+        self.assertEqual(li.price_list_item, self.inventoried_item)
 
     def test_line_items_different_jobs_same_po(self):
         """A single PO can have line items for different jobs."""
@@ -113,8 +114,8 @@ class POLineItemJobTest(TestCase):
         )
         self.assertIsNone(li.job)
 
-    def test_line_item_inventory_item_is_optional(self):
-        """Line items can exist without an inventory item."""
+    def test_line_item_price_list_item_is_optional(self):
+        """Line items can exist without a price list item."""
         po = PurchaseOrder.objects.create(
             business=self.business, po_number='PO-TEST-005',
         )
@@ -124,7 +125,7 @@ class POLineItemJobTest(TestCase):
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
         )
-        self.assertIsNone(li.inventory_item)
+        self.assertIsNone(li.price_list_item)
 
     def test_derive_po_jobs_from_line_items(self):
         """Can derive the set of jobs associated with a PO from its line items."""
@@ -168,17 +169,3 @@ class POLineItemJobTest(TestCase):
         self.job_a.delete()
         li.refresh_from_db()
         self.assertIsNone(li.job)
-
-    def test_inventory_item_set_null_on_delete(self):
-        """Line item inventory_item FK set to null when inventory item is deleted."""
-        po = PurchaseOrder.objects.create(
-            business=self.business, po_number='PO-TEST-008',
-        )
-        li = PurchaseOrderLineItem.objects.create(
-            purchase_order=po, description='Item',
-            qty=Decimal('1.00'), price=Decimal('10.00'),
-            inventory_item=self.inventory_item,
-        )
-        self.inventory_item.delete()
-        li.refresh_from_db()
-        self.assertIsNone(li.inventory_item)

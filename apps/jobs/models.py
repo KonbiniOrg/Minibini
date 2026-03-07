@@ -386,7 +386,6 @@ class EstWorksheet(AbstractWorkContainer):
             for material in task.materials.all():
                 Material.objects.create(
                     task=new_task,
-                    inventory_item=material.inventory_item,
                     price_list_item=material.price_list_item,
                     description=material.description,
                     quantity=material.quantity,
@@ -781,10 +780,6 @@ class EstimateLineItem(BaseLineItem):
 class Material(models.Model):
     material_id = models.AutoField(primary_key=True)
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='materials')
-    inventory_item = models.ForeignKey(
-        'inventory.InventoryItem', on_delete=models.SET_NULL,
-        null=True, blank=True,
-    )
     price_list_item = models.ForeignKey(
         'invoicing.PriceListItem', on_delete=models.SET_NULL,
         null=True, blank=True,
@@ -802,23 +797,9 @@ class Material(models.Model):
     def total_sell(self):
         return self.quantity * self.sell_price
 
-    def clean(self):
-        if self.inventory_item and self.price_list_item:
-            raise ValidationError(
-                'A material cannot have both an inventory item and a price list item.'
-            )
-
     def save(self, *args, **kwargs):
-        # Auto-fill from inventory item if linked
-        if self.inventory_item:
-            if not self.description:
-                self.description = self.inventory_item.description[:255]
-            if self.unit_cost == Decimal('0.00'):
-                self.unit_cost = self.inventory_item.purchase_price
-            if self.sell_price == Decimal('0.00'):
-                self.sell_price = self.inventory_item.selling_price
         # Auto-fill from price list item if linked
-        elif self.price_list_item:
+        if self.price_list_item:
             if not self.description:
                 self.description = self.price_list_item.description[:255]
             if self.unit_cost == Decimal('0.00'):

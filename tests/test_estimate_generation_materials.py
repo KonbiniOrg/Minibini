@@ -16,7 +16,6 @@ from apps.jobs.models import (
 from apps.jobs.services import EstimateGenerationService
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType, Configuration
-from apps.inventory.models import InventoryItem
 
 
 class EstimateGenerationMaterialsTest(TestCase):

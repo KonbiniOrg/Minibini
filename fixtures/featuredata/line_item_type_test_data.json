@@ -394,7 +394,8 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "line_item_type": 1,
-      "is_active": true
+      "is_active": true,
+      "is_inventoried": false
     },
     "_section": "=== PRICE LIST ITEMS (7) - one per LineItemType + extra ==="
   },
@@ -411,7 +412,8 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "line_item_type": 2,
-      "is_active": true
+      "is_active": true,
+      "is_inventoried": false
     }
   },
   {
@@ -427,7 +429,8 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "line_item_type": 3,
-      "is_active": true
+      "is_active": true,
+      "is_inventoried": false
     }
   },
   {
@@ -443,7 +446,8 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "line_item_type": 4,
-      "is_active": true
+      "is_active": true,
+      "is_inventoried": false
     }
   },
   {
@@ -459,7 +463,8 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "line_item_type": 5,
-      "is_active": true
+      "is_active": true,
+      "is_inventoried": false
     }
   },
   {
@@ -475,7 +480,8 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "line_item_type": 6,
-      "is_active": true
+      "is_active": true,
+      "is_inventoried": false
     }
   },
   {
@@ -491,7 +497,8 @@
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "line_item_type": 2,
-      "is_active": true
+      "is_active": true,
+      "is_inventoried": false
     }
   },
   {
@@ -1048,7 +1055,8 @@
       "price": "95.00",
       "line_item_type": 1,
       "taxable_override": null,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "material": null
     },
     "_section": "=== ESTIMATE LINE ITEMS (7) ==="
   },
@@ -1066,7 +1074,8 @@
       "price": "25.00",
       "line_item_type": 2,
       "taxable_override": null,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "material": null
     }
   },
   {
@@ -1083,7 +1092,8 @@
       "price": "45.00",
       "line_item_type": 5,
       "taxable_override": null,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "material": null
     }
   },
   {
@@ -1100,7 +1110,8 @@
       "price": "75.00",
       "line_item_type": 1,
       "taxable_override": null,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "material": null
     }
   },
   {
@@ -1117,7 +1128,8 @@
       "price": "12.50",
       "line_item_type": 2,
       "taxable_override": true,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "material": null
     }
   },
   {
@@ -1134,7 +1146,8 @@
       "price": "150.00",
       "line_item_type": 6,
       "taxable_override": null,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "material": null
     }
   },
   {
@@ -1151,7 +1164,8 @@
       "price": "600.00",
       "line_item_type": 4,
       "taxable_override": null,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "material": null
     }
   },
   {
@@ -1160,7 +1174,6 @@
     "fields": {
       "business": 1,
       "contact": 4,
-      "job": 4,
       "po_number": "PO-TEST-0001",
       "status": "draft",
       "created_date": "2025-01-16T10:00:00Z",
@@ -1177,7 +1190,6 @@
     "fields": {
       "business": 1,
       "contact": 4,
-      "job": null,
       "po_number": "PO-TEST-0002",
       "status": "draft",
       "created_date": "2025-01-16T10:00:00Z",
@@ -1201,7 +1213,8 @@
       "price": "6.50",
       "line_item_type": 2,
       "taxable_override": null,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "job": null
     },
     "_section": "=== PURCHASE ORDER LINE ITEMS (3) ==="
   },
@@ -1219,7 +1232,8 @@
       "price": "25.00",
       "line_item_type": 5,
       "taxable_override": null,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "job": null
     }
   },
   {
@@ -1236,7 +1250,8 @@
       "price": "15.00",
       "line_item_type": 2,
       "taxable_override": null,
-      "tax_rate_override": null
+      "tax_rate_override": null,
+      "job": null
     }
   },
   {

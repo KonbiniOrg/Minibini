@@ -329,10 +329,6 @@ class PurchaseOrderLineItem(BaseLineItem):
         'jobs.Job', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
-    inventory_item = models.ForeignKey(
-        'inventory.InventoryItem', on_delete=models.SET_NULL,
-        null=True, blank=True,
-    )
 
     class Meta:
         verbose_name = "Purchase Order Line Item"

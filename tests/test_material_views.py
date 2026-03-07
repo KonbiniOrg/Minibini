@@ -3,7 +3,6 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, EstWorksheet, Task, Material
-from apps.inventory.models import InventoryItem
 from apps.invoicing.models import PriceListItem
 
 
@@ -36,12 +35,13 @@ class MaterialViewTestBase(TestCase):
             rate=Decimal('50.00'),
             est_qty=Decimal('4.00'),
         )
-        self.inventory_item = InventoryItem.objects.create(
+        self.inventoried_item = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheet',
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
+            is_inventoried=True,
         )
         self.price_list_item = PriceListItem.objects.create(
             code='EDGE.OAK',
@@ -75,11 +75,11 @@ class MaterialAddViewTest(MaterialViewTestBase):
         self.assertEqual(material.task, self.task)
         self.assertEqual(material.quantity, Decimal('4.00'))
 
-    def test_add_material_post_with_inventory_item(self):
-        """POST with inventory_item auto-fills fields."""
+    def test_add_material_post_with_price_list_item(self):
+        """POST with price_list_item auto-fills fields."""
         url = reverse('jobs:material_add', args=[self.task.task_id])
         response = self.client.post(url, {
-            'inventory_item': self.inventory_item.pk,
+            'price_list_item': self.inventoried_item.pk,
             'quantity': '3.00',
             'description': '',
             'unit_cost': '0.00',

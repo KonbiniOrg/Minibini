@@ -72,7 +72,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
 @receiver(estimate_accepted)
 def auto_earmark_inventory(sender, estimate, **kwargs):
     """
-    Auto-create earmarks for inventory-linked materials when estimate is accepted.
+    Auto-create earmarks for inventoried materials when estimate is accepted.
     """
     from apps.inventory.services import EarmarkService
 
@@ -82,7 +82,7 @@ def auto_earmark_inventory(sender, estimate, **kwargs):
     if preview:
         earmark_data = [
             {
-                'inventory_item_id': entry['inventory_item'].pk,
+                'price_list_item_id': entry['price_list_item'].pk,
                 'quantity': entry['needed_qty'],
             }
             for entry in preview
