@@ -11,9 +11,9 @@
 
 <p>
     {% if show_archived %}
-    <a href="{% url 'invoicing:price_list_item_list' %}">Hide Archived</a>
+    <a href="{% url 'inventory:price_list_item_list' %}">Hide Archived</a>
     {% else %}
-    <a href="{% url 'invoicing:price_list_item_list' %}?show_archived=1">Show Archived</a>
+    <a href="{% url 'inventory:price_list_item_list' %}?show_archived=1">Show Archived</a>
     {% endif %}
 </p>
 
@@ -51,7 +51,7 @@
             {% endif %}
             <td>{% if not item.is_active %}<strong>Archived</strong>{% elif item.is_inventoried %}Inventoried{% else %}Active{% endif %}</td>
             <td>
-                <a href="{% url 'invoicing:price_list_item_edit' item.price_list_item_id %}">Edit</a>
+                <a href="{% url 'inventory:price_list_item_edit' item.price_list_item_id %}">Edit</a>
             </td>
         </tr>
         {% empty %}
@@ -62,6 +62,6 @@
     </table>
 </div>
 
-<p><a href="{% url 'invoicing:price_list_item_add' %}">Add New Price List Item</a></p>
+<p><a href="{% url 'inventory:price_list_item_add' %}">Add New Price List Item</a></p>
 
 {% endblock %}

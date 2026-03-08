@@ -41,7 +41,7 @@ class EstimateCreationFromJobTests(TestCase):
 
     def test_estimate_create_for_job_get(self):
         """Test GET request creates estimate directly and redirects."""
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.get(url)
 
         # Should redirect to estimate detail page after creation
@@ -56,7 +56,7 @@ class EstimateCreationFromJobTests(TestCase):
 
     def test_estimate_create_for_job_post(self):
         """Test POST request creates estimate directly (same as GET)."""
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.post(url)
 
         # Check redirect after successful creation
@@ -74,7 +74,7 @@ class EstimateCreationFromJobTests(TestCase):
     def test_estimate_versioning(self):
         """Test that versioning works when revising an estimate."""
         # Create first estimate directly
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.get(url)
 
         # Get the created estimate and mark it as open
@@ -84,7 +84,7 @@ class EstimateCreationFromJobTests(TestCase):
         estimate.save()
 
         # Now revise it to create version 2
-        url = reverse('jobs:estimate_revise', args=[estimate.estimate_id])
+        url = reverse('estimates:estimate_revise', args=[estimate.estimate_id])
         response = self.client.post(url)
 
         # Check both estimates exist with correct versions
@@ -96,7 +96,7 @@ class EstimateCreationFromJobTests(TestCase):
     def test_estimate_number_auto_generated(self):
         """Test that estimate number is auto-generated (not user-provided)."""
         # Create estimate directly
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.get(url)
 
         # Verify estimate was created with auto-generated number

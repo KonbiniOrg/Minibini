@@ -10,7 +10,8 @@ from apps.contacts.models import Contact
 from apps.core.models import Configuration
 from apps.jobs.models import Job, WorkOrder, Task
 from apps.estimates.models import Estimate, WorkOrderTemplate, TaskTemplate
-from apps.jobs.services import WorkOrderService, EstimateService, TaskService
+from apps.jobs.services import WorkOrderService, TaskService
+from apps.estimates.services import EstimateService
 from apps.core.models import User
 
 

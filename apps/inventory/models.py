@@ -11,6 +11,7 @@ class Earmark(models.Model):
     notes = models.TextField(blank=True, default='')
 
     class Meta:
+        db_table = 'earmarks'
         unique_together = [('price_list_item', 'job')]
 
     def __str__(self):
@@ -23,6 +24,9 @@ class InventoryAdjustment(models.Model):
     quantity_change = models.DecimalField(max_digits=10, decimal_places=2)
     reason = models.TextField(blank=True, default='')
     created_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'inv_adjustments'
 
     def __str__(self):
         return f"{self.price_list_item.code} adjusted by {self.quantity_change}"
@@ -62,6 +66,9 @@ class PriceListItem(models.Model):
     def qty_available(self):
         """Quantity available (on hand minus earmarked)."""
         return self.qty_on_hand - self.qty_earmarked
+
+    class Meta:
+        db_table = 'price_list'
 
     def __str__(self):
         return f"{self.code} - {self.description[:50]}"
@@ -123,6 +130,9 @@ class Material(models.Model):
                 self.line_item_type = self.price_list_item.line_item_type
         self.full_clean()
         super().save(*args, **kwargs)
+
+    class Meta:
+        db_table = 'materials'
 
     def __str__(self):
         return f"{self.description} (qty: {self.quantity})"

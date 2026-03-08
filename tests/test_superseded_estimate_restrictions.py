@@ -73,7 +73,7 @@ class SupersededEstimateRestrictionTests(TestCase):
 
     def test_cannot_add_line_item_to_superseded_estimate(self):
         """Test that adding a line item to a superseded estimate is rejected."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.superseded_estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.superseded_estimate.estimate_id])
 
         # Attempt to add a line item via POST
         response = self.client.post(url, {
@@ -87,7 +87,7 @@ class SupersededEstimateRestrictionTests(TestCase):
         # Should redirect to estimate detail
         self.assertRedirects(
             response,
-            reverse('jobs:estimate_detail', args=[self.superseded_estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.superseded_estimate.estimate_id])
         )
 
         # Check that no line item was created
@@ -100,7 +100,7 @@ class SupersededEstimateRestrictionTests(TestCase):
 
     def test_cannot_update_status_of_superseded_estimate(self):
         """Test that updating the status of a superseded estimate is rejected."""
-        url = reverse('jobs:estimate_update_status', args=[self.superseded_estimate.estimate_id])
+        url = reverse('estimates:estimate_update_status', args=[self.superseded_estimate.estimate_id])
 
         # Attempt to update status via POST
         response = self.client.post(url, {
@@ -110,7 +110,7 @@ class SupersededEstimateRestrictionTests(TestCase):
         # Should redirect to estimate detail
         self.assertRedirects(
             response,
-            reverse('jobs:estimate_detail', args=[self.superseded_estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.superseded_estimate.estimate_id])
         )
 
         # Verify status hasn't changed
@@ -123,7 +123,7 @@ class SupersededEstimateRestrictionTests(TestCase):
 
     def test_cannot_add_line_item_to_active_estimate(self):
         """Test that active estimates can still be modified (control test)."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.active_estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.active_estimate.estimate_id])
 
         # Add a line item via POST using the price list form
         response = self.client.post(url, {
@@ -135,7 +135,7 @@ class SupersededEstimateRestrictionTests(TestCase):
         # Should redirect to estimate detail
         self.assertRedirects(
             response,
-            reverse('jobs:estimate_detail', args=[self.active_estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.active_estimate.estimate_id])
         )
 
         # Check that line item wasn't created
@@ -145,7 +145,7 @@ class SupersededEstimateRestrictionTests(TestCase):
 
     def test_superseded_estimate_displays_restriction_message(self):
         """Test that superseded estimates show a restriction message in the UI."""
-        url = reverse('jobs:estimate_detail', args=[self.superseded_estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[self.superseded_estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -159,7 +159,7 @@ class SupersededEstimateRestrictionTests(TestCase):
 
     def test_active_estimate_shows_modification_links(self):
         """Test that active estimates show modification links (control test)."""
-        url = reverse('jobs:estimate_detail', args=[self.active_estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[self.active_estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -184,7 +184,7 @@ class SupersededEstimateRestrictionTests(TestCase):
         )
 
         # Test draft estimate shows Add Line Item
-        url = reverse('jobs:estimate_detail', args=[draft_estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[draft_estimate.estimate_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Add Line Item')
@@ -193,7 +193,7 @@ class SupersededEstimateRestrictionTests(TestCase):
         self.assertNotContains(response, 'Revise Estimate')  # Not shown for draft
 
         # Test open estimate (already created as self.active_estimate)
-        url = reverse('jobs:estimate_detail', args=[self.active_estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[self.active_estimate.estimate_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'Add Line Item')  # Not shown for open

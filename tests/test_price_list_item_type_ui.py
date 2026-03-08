@@ -30,13 +30,13 @@ class PriceListItemTypeUITest(TestCase):
 
     def test_create_form_includes_line_item_type(self):
         """Test that create form shows LineItemType field."""
-        response = self.client.get(reverse('invoicing:price_list_item_add'))
+        response = self.client.get(reverse('inventory:price_list_item_add'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'line_item_type')
 
     def test_create_form_shows_only_active_types(self):
         """Test that only active LineItemTypes are shown in the form."""
-        response = self.client.get(reverse('invoicing:price_list_item_add'))
+        response = self.client.get(reverse('inventory:price_list_item_add'))
         self.assertEqual(response.status_code, 200)
         # Active types should be in the form
         self.assertContains(response, 'Product')
@@ -46,7 +46,7 @@ class PriceListItemTypeUITest(TestCase):
 
     def test_create_with_line_item_type(self):
         """Test creating PriceListItem with LineItemType."""
-        response = self.client.post(reverse('invoicing:price_list_item_add'), {
+        response = self.client.post(reverse('inventory:price_list_item_add'), {
             'code': 'TEST-001',
             'units': 'each',
             'description': 'Test Product',
@@ -72,7 +72,7 @@ class PriceListItemTypeUITest(TestCase):
             line_item_type=self.service_type
         )
         response = self.client.get(
-            reverse('invoicing:price_list_item_edit', args=[item.price_list_item_id])
+            reverse('inventory:price_list_item_edit', args=[item.price_list_item_id])
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'line_item_type')
@@ -88,7 +88,7 @@ class PriceListItemTypeUITest(TestCase):
             line_item_type=self.product_type
         )
         response = self.client.post(
-            reverse('invoicing:price_list_item_edit', args=[item.price_list_item_id]),
+            reverse('inventory:price_list_item_edit', args=[item.price_list_item_id]),
             {
                 'code': 'UPDATE-001',
                 'units': '',
@@ -108,7 +108,7 @@ class PriceListItemTypeUITest(TestCase):
 
     def test_create_without_line_item_type_allowed(self):
         """Test that line_item_type is optional (for now)."""
-        response = self.client.post(reverse('invoicing:price_list_item_add'), {
+        response = self.client.post(reverse('inventory:price_list_item_add'), {
             'code': 'NO-TYPE-001',
             'units': 'each',
             'description': 'No Type Product',

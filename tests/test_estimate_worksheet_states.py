@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.contrib.auth.models import User
 from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate
-from apps.jobs.services import EstimateGenerationService
+from apps.estimates.services import EstimateGenerationService
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 
@@ -59,7 +59,7 @@ class EstimateStateTests(TestCase):
 
     def test_mark_estimate_as_open(self):
         """Test marking a draft estimate as open."""
-        url = reverse('jobs:estimate_mark_open', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_mark_open', args=[self.estimate.estimate_id])
         response = self.client.post(url)
 
         # Reload from database
@@ -78,7 +78,7 @@ class EstimateStateTests(TestCase):
         self.estimate.status = 'open'
         self.estimate.save()
 
-        url = reverse('jobs:estimate_mark_open', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_mark_open', args=[self.estimate.estimate_id])
         response = self.client.post(url)
 
         # Reload from database
@@ -166,14 +166,14 @@ class EstWorksheetStateTests(TestCase):
 
         # The template should not show the generate estimate option
         response = self.client.get(
-            reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+            reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         )
         self.assertNotContains(response, 'Generate Estimate')
         self.assertContains(response, 'Revise Worksheet')
 
     def test_revise_worksheet_creates_new_draft(self):
         """Test that revising a worksheet creates a new draft version."""
-        url = reverse('jobs:estworksheet_revise', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_revise', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url)
 
         # Check that a new worksheet was created
@@ -192,7 +192,7 @@ class EstWorksheetStateTests(TestCase):
 
     def test_revise_worksheet_copies_tasks(self):
         """Test that revising a worksheet copies all tasks to the new version."""
-        url = reverse('jobs:estworksheet_revise', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_revise', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url)
 
         # Get the new worksheet
@@ -219,7 +219,7 @@ class EstWorksheetStateTests(TestCase):
             version=1
         )
 
-        url = reverse('jobs:estworksheet_revise', args=[draft_worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_revise', args=[draft_worksheet.est_worksheet_id])
         response = self.client.post(url)
 
         # No new worksheet should be created
@@ -245,7 +245,7 @@ class EstWorksheetStateTests(TestCase):
         self.worksheet.estimate = estimate
         self.worksheet.save()
 
-        url = reverse('jobs:estworksheet_revise', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_revise', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url)
 
         # Get the new worksheet
@@ -433,7 +433,7 @@ class IntegrationTests(TestCase):
         self.assertEqual(estimate_v1.version, 1)
 
         # 3. Mark estimate as open
-        url = reverse('jobs:estimate_mark_open', args=[estimate_v1.estimate_id])
+        url = reverse('estimates:estimate_mark_open', args=[estimate_v1.estimate_id])
         response = self.client.post(url)
 
         estimate_v1.refresh_from_db()
@@ -443,7 +443,7 @@ class IntegrationTests(TestCase):
         self.assertEqual(worksheet_v1.status, 'final')
 
         # 4. Revise the worksheet
-        url = reverse('jobs:estworksheet_revise', args=[worksheet_v1.est_worksheet_id])
+        url = reverse('estimates:estworksheet_revise', args=[worksheet_v1.est_worksheet_id])
         response = self.client.post(url)
 
         worksheet_v2 = EstWorksheet.objects.filter(parent=worksheet_v1).first()
@@ -466,7 +466,7 @@ class IntegrationTests(TestCase):
         self.assertEqual(estimate_v1.status, 'superseded')
 
         # 6. Mark new estimate as open
-        url = reverse('jobs:estimate_mark_open', args=[estimate_v2.estimate_id])
+        url = reverse('estimates:estimate_mark_open', args=[estimate_v2.estimate_id])
         response = self.client.post(url)
 
         estimate_v2.refresh_from_db()

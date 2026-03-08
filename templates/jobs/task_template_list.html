@@ -10,7 +10,7 @@
 <h2>Task Templates</h2>
 <p>Reusable task definitions that can be used across multiple WorkOrder templates.</p>
 
-<p><a href="{% url 'jobs:add_task_template_standalone' %}">Add New Task Template</a></p>
+<p><a href="{% url 'estimates:add_task_template_standalone' %}">Add New Task Template</a></p>
 
 {% if templates %}
     <table border="1">
@@ -34,7 +34,7 @@
             <td>
                 {% if template.work_order_templates.all %}
                     {% for wot in template.work_order_templates.all %}
-                        <a href="{% url 'jobs:work_order_template_detail' template_id=wot.template_id %}">{{ wot.template_name }}</a>{% if not forloop.last %}, {% endif %}
+                        <a href="{% url 'estimates:work_order_template_detail' template_id=wot.template_id %}">{{ wot.template_name }}</a>{% if not forloop.last %}, {% endif %}
                     {% endfor %}
                 {% else %}
                     <em>Not used</em>
@@ -42,7 +42,7 @@
             </td>
             <td>{{ template.created_date|date:"M j, Y" }}</td>
             <td>
-                <a href="{% url 'jobs:task_template_edit' template.template_id %}">Edit</a>
+                <a href="{% url 'estimates:task_template_edit' template.template_id %}">Edit</a>
             </td>
         </tr>
         {% endfor %}

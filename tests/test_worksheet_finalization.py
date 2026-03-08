@@ -9,7 +9,7 @@ from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate
 from apps.core.models import Configuration
 from apps.contacts.models import Contact
-from apps.jobs.services import EstimateGenerationService
+from apps.estimates.services import EstimateGenerationService
 from decimal import Decimal
 
 User = get_user_model()
@@ -89,7 +89,7 @@ class WorksheetFinalizationTests(TestCase):
         self.assertEqual(self.worksheet.status, 'draft')
 
         # Generate estimate via POST request
-        url = reverse('jobs:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url, follow=True)
 
         # Check response redirects to estimate detail
@@ -112,13 +112,13 @@ class WorksheetFinalizationTests(TestCase):
         self.worksheet.save()
 
         # Attempt to generate estimate
-        url = reverse('jobs:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url)
 
         # Should redirect back to worksheet detail
         self.assertRedirects(
             response,
-            reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+            reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         )
 
         # Check for error message
@@ -136,13 +136,13 @@ class WorksheetFinalizationTests(TestCase):
         self.worksheet.save()
 
         # Attempt to generate estimate
-        url = reverse('jobs:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url)
 
         # Should redirect back to worksheet detail
         self.assertRedirects(
             response,
-            reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+            reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         )
 
         # Check for error message
@@ -160,7 +160,7 @@ class WorksheetFinalizationTests(TestCase):
         self.worksheet.save()
 
         # Get worksheet detail page
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -177,7 +177,7 @@ class WorksheetFinalizationTests(TestCase):
         self.assertEqual(self.worksheet.status, 'draft')
 
         # Get worksheet detail page
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -191,7 +191,7 @@ class WorksheetFinalizationTests(TestCase):
     def test_cannot_generate_multiple_estimates_from_same_worksheet(self):
         """Test that a worksheet cannot generate multiple estimates."""
         # Generate first estimate
-        url = reverse('jobs:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
         response1 = self.client.post(url, follow=True)
 
         # Check first estimate was created
@@ -209,7 +209,7 @@ class WorksheetFinalizationTests(TestCase):
         # Should redirect back to worksheet detail
         self.assertRedirects(
             response2,
-            reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+            reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         )
 
         # Check for error message
@@ -222,7 +222,7 @@ class WorksheetFinalizationTests(TestCase):
 
     def test_get_request_shows_confirmation_page_for_draft(self):
         """Test that GET request shows confirmation page for draft worksheet."""
-        url = reverse('jobs:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -238,13 +238,13 @@ class WorksheetFinalizationTests(TestCase):
         self.worksheet.status = 'final'
         self.worksheet.save()
 
-        url = reverse('jobs:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
 
         # Should redirect back to worksheet detail
         self.assertRedirects(
             response,
-            reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+            reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         )
 
         # Check for error message

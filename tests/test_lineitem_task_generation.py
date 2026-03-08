@@ -126,7 +126,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
 
         # Create WorkOrder via the view
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.post(url, follow=True)
 
         # Verify WorkOrder was created
@@ -145,7 +145,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         """Test that confirmation page shows worksheet as source when one exists."""
         estimate = Estimate.objects.get(pk=200)
 
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -165,7 +165,7 @@ class LineItemTaskGenerationTestCase(TestCase):
             status='accepted'
         )
 
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': empty_estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': empty_estimate.estimate_id})
         response = self.client.post(url, follow=True)
 
         # Should still create WorkOrder, just with no tasks

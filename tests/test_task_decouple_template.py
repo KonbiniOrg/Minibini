@@ -10,7 +10,8 @@ from django.db.models import ProtectedError
 
 from apps.jobs.models import TaskBundle, Job, Task, WorkOrder
 from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
-from apps.jobs.services import EstimateGenerationService, TaskService, LineItemTaskService
+from apps.estimates.services import EstimateGenerationService
+from apps.jobs.services import TaskService, LineItemTaskService
 from apps.core.models import LineItemType, Configuration, User
 from apps.contacts.models import Contact
 
@@ -226,7 +227,7 @@ class EstimateGenerationReviewPageTests(TestCase):
             est_qty=Decimal("1.00"),
         )
 
-        url = reverse('jobs:estworksheet_generate_estimate', args=[ws.pk])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertIn('untyped_tasks', response.context)
@@ -242,7 +243,7 @@ class EstimateGenerationReviewPageTests(TestCase):
             est_qty=Decimal("1.00"),
         )
 
-        url = reverse('jobs:estworksheet_generate_estimate', args=[ws.pk])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
         response = self.client.get(url)
         self.assertIn('line_item_types', response.context)
 
@@ -254,7 +255,7 @@ class EstimateGenerationReviewPageTests(TestCase):
             est_qty=Decimal("1.00"), mapping_strategy='exclude',
         )
 
-        url = reverse('jobs:estworksheet_generate_estimate', args=[ws.pk])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
         response = self.client.get(url)
         untyped = response.context['untyped_tasks']
         self.assertEqual(len(untyped), 0)
@@ -270,7 +271,7 @@ class EstimateGenerationReviewPageTests(TestCase):
             est_qty=Decimal("1.00"), mapping_strategy='bundle', bundle=bundle,
         )
 
-        url = reverse('jobs:estworksheet_generate_estimate', args=[ws.pk])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
         response = self.client.get(url)
         untyped = response.context['untyped_tasks']
         self.assertEqual(len(untyped), 0)
@@ -283,7 +284,7 @@ class EstimateGenerationReviewPageTests(TestCase):
             est_qty=Decimal("2.00"),
         )
 
-        url = reverse('jobs:estworksheet_generate_estimate', args=[ws.pk])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
         response = self.client.post(url, {
             f'task_line_item_type_{task.pk}': self.lit_labor.pk,
         })
@@ -307,7 +308,7 @@ class EstimateGenerationReviewPageTests(TestCase):
             est_qty=Decimal("2.00"),
         )
 
-        url = reverse('jobs:estworksheet_generate_estimate', args=[ws.pk])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
         # POST without any task_line_item_type assignments
         response = self.client.post(url)
 
@@ -323,7 +324,7 @@ class EstimateGenerationReviewPageTests(TestCase):
             est_qty=Decimal("2.00"), line_item_type=self.lit_labor,
         )
 
-        url = reverse('jobs:estworksheet_generate_estimate', args=[ws.pk])
+        url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
         response = self.client.post(url)
 
         # Should redirect to new estimate

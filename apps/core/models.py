@@ -55,6 +55,7 @@ class Configuration(models.Model):
         return f"{self.key}: {self.value}"
 
     class Meta:
+        db_table = 'config'
         verbose_name = "Configuration"
         verbose_name_plural = "Configurations"
 
@@ -160,6 +161,7 @@ class LineItemType(models.Model):
     is_active = models.BooleanField(default=True)  # Soft delete support
 
     class Meta:
+        db_table = 'li_types'
         ordering = ['name']
 
     def __str__(self):

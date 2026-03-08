@@ -62,14 +62,14 @@ class TemplateOrderingTestBase(TestCase):
     def _detail_url(self, template=None):
         t = template or self.wo_template
         return reverse(
-            'jobs:work_order_template_detail',
+            'estimates:work_order_template_detail',
             kwargs={'template_id': t.template_id},
         )
 
     def _container_reorder_url(self, item_type, item_id, direction, template=None):
         t = template or self.wo_template
         return reverse(
-            'jobs:template_reorder_item',
+            'estimates:template_reorder_item',
             kwargs={
                 'template_id': t.template_id,
                 'item_type': item_type,
@@ -81,7 +81,7 @@ class TemplateOrderingTestBase(TestCase):
     def _bundle_reorder_url(self, association_id, direction, template=None):
         t = template or self.wo_template
         return reverse(
-            'jobs:template_reorder_in_bundle',
+            'estimates:template_reorder_in_bundle',
             kwargs={
                 'template_id': t.template_id,
                 'association_id': association_id,

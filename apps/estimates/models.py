@@ -140,7 +140,7 @@ class Estimate(models.Model):
 
         # Only send signal if worksheet status should change
         if old_ws_status != new_ws_status and new_ws_status is not None:
-            from apps.jobs.signals import estimate_status_changed_for_worksheet
+            from apps.estimates.signals import estimate_status_changed_for_worksheet
             estimate_status_changed_for_worksheet.send(
                 sender=self.__class__,
                 estimate=self,
@@ -159,7 +159,7 @@ class Estimate(models.Model):
 
     def _maybe_update_job_status(self, old_status):
         """Send signal to update job status if the change is relevant."""
-        from apps.jobs.signals import estimate_status_changed_for_job, estimate_accepted
+        from apps.estimates.signals import estimate_status_changed_for_job, estimate_accepted
 
         # Signal when estimate is accepted
         if self.status == 'accepted' and old_status != 'accepted':
@@ -185,6 +185,7 @@ class Estimate(models.Model):
         return f"Estimate {self.estimate_number}"
 
     class Meta:
+        db_table = 'estimates'
         unique_together = ['estimate_number', 'version']
 
 
@@ -276,6 +277,9 @@ class EstWorksheet(AbstractWorkContainer):
 
         return new_worksheet
 
+    class Meta:
+        db_table = 'worksheets'
+
     def __str__(self):
         return f"EstWorksheet {self.pk} v{self.version}"
 
@@ -293,6 +297,9 @@ class WorkOrderTemplate(models.Model):
     # is_active no longer used but kept in case we change our minds later and to avoid a migration
     is_active = models.BooleanField(default=True)
     created_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'wo_templates'
 
     def __str__(self):
         return self.template_name
@@ -367,6 +374,7 @@ class TemplateBundle(models.Model):
     sort_order = models.IntegerField(default=0)
 
     class Meta:
+        db_table = 'template_bundles'
         unique_together = ['work_order_template', 'name']
         ordering = ['sort_order', 'name']
 
@@ -399,6 +407,7 @@ class TemplateTaskAssociation(models.Model):
     )
 
     class Meta:
+        db_table = 'template_task_assoc'
         unique_together = ['work_order_template', 'task_template']
         ordering = ['sort_order']
 
@@ -436,6 +445,9 @@ class TaskTemplate(models.Model):
     created_date = models.DateTimeField(auto_now_add=True)
     # is_active no longer used but kept in case we change our minds later and to avoid a migration
     is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'task_templates'
 
     def __str__(self):
         return self.template_name
@@ -485,6 +497,7 @@ class EstimateLineItem(BaseLineItem):
     )
 
     class Meta:
+        db_table = 'est_li'
         verbose_name = "Estimate Line Item"
         verbose_name_plural = "Estimate Line Items"
 

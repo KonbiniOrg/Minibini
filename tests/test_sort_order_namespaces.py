@@ -127,7 +127,7 @@ class BundleCreationSortOrderTest(TestCase):
             est_worksheet=self.worksheet, name='Task C', rate=30, sort_order=12
         )
 
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         self.client.post(url, {
             'bundle_tasks': '1',
             'selected_tasks': [t1.task_id, t2.task_id, t3.task_id],
@@ -186,7 +186,7 @@ class UnbundleSortOrderTest(TestCase):
         )
 
         # Unbundle t1
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         self.client.post(url, {'remove_task': t1.task_id})
 
         t1.refresh_from_db()
@@ -218,7 +218,7 @@ class UnbundleSortOrderTest(TestCase):
             mapping_strategy='bundle', bundle=bundle, sort_order=2
         )
 
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         self.client.post(url, {'remove_task': t1.task_id})
 
         t1.refresh_from_db()
@@ -249,7 +249,7 @@ class UnbundleSortOrderTest(TestCase):
         )
 
         # Unbundle t1 — only t2 remains, triggers auto-dissolve
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         self.client.post(url, {'remove_task': t1.task_id})
 
         t1.refresh_from_db()
@@ -401,7 +401,7 @@ class TemplateUnbundleSortOrderTest(TestCase):
             est_qty=1, mapping_strategy='direct', sort_order=6
         )
 
-        url = reverse('jobs:work_order_template_detail', args=[wot.template_id])
+        url = reverse('estimates:work_order_template_detail', args=[wot.template_id])
         self.client.post(url, {'remove_task': tt1.template_id})
 
         a1.refresh_from_db()

@@ -351,7 +351,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 1,
         "fields": {
             "job": 1,
@@ -364,7 +364,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 2,
         "fields": {
             "job": 2,
@@ -377,7 +377,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 3,
         "fields": {
             "job": 2,
@@ -430,7 +430,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 1,
         "fields": {
             "code": "SCREW001",
@@ -444,7 +444,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 2,
         "fields": {
             "code": "LABOR001",
@@ -476,7 +476,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 1,
         "fields": {
             "estimate": 1,
@@ -490,7 +490,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 2,
         "fields": {
             "estimate": 1,
@@ -560,7 +560,7 @@
         }
     },
     {
-        "model": "jobs.workordertemplate",
+        "model": "estimates.workordertemplate",
         "pk": 1,
         "fields": {
             "template_name": "Standard Kitchen Renovation",
@@ -570,7 +570,7 @@
         }
     },
     {
-        "model": "jobs.workordertemplate",
+        "model": "estimates.workordertemplate",
         "pk": 2,
         "fields": {
             "template_name": "Basic Maintenance",
@@ -580,7 +580,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 1,
         "fields": {
             "template_name": "Site Preparation",
@@ -592,7 +592,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 2,
         "fields": {
             "template_name": "Material Delivery",
@@ -604,7 +604,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 3,
         "fields": {
             "template_name": "Electrical Installation",
@@ -616,7 +616,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 4,
         "fields": {
             "template_name": "Construction Work",
@@ -628,7 +628,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 1,
         "fields": {
             "work_order_template": 1,
@@ -638,7 +638,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 2,
         "fields": {
             "work_order_template": 1,
@@ -648,7 +648,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 3,
         "fields": {
             "work_order_template": 1,
@@ -658,7 +658,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 4,
         "fields": {
             "work_order_template": 1,

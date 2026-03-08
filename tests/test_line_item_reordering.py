@@ -85,7 +85,7 @@ class EstimateLineItemReorderingTestCase(TestCase):
 
     def test_reorder_line_item_down(self):
         """Test moving a line item down in the estimate"""
-        url = reverse('jobs:estimate_reorder_line_item', kwargs={
+        url = reverse('estimates:estimate_reorder_line_item', kwargs={
             'estimate_id': self.estimate.estimate_id,
             'line_item_id': self.line_item1.line_item_id,
             'direction': 'down'
@@ -105,7 +105,7 @@ class EstimateLineItemReorderingTestCase(TestCase):
 
     def test_reorder_line_item_up(self):
         """Test moving a line item up in the estimate"""
-        url = reverse('jobs:estimate_reorder_line_item', kwargs={
+        url = reverse('estimates:estimate_reorder_line_item', kwargs={
             'estimate_id': self.estimate.estimate_id,
             'line_item_id': self.line_item2.line_item_id,
             'direction': 'up'
@@ -125,7 +125,7 @@ class EstimateLineItemReorderingTestCase(TestCase):
 
     def test_cannot_move_first_line_item_up(self):
         """Test that first line item cannot be moved up"""
-        url = reverse('jobs:estimate_reorder_line_item', kwargs={
+        url = reverse('estimates:estimate_reorder_line_item', kwargs={
             'estimate_id': self.estimate.estimate_id,
             'line_item_id': self.line_item1.line_item_id,
             'direction': 'up'
@@ -143,7 +143,7 @@ class EstimateLineItemReorderingTestCase(TestCase):
 
     def test_cannot_move_last_line_item_down(self):
         """Test that last line item cannot be moved down"""
-        url = reverse('jobs:estimate_reorder_line_item', kwargs={
+        url = reverse('estimates:estimate_reorder_line_item', kwargs={
             'estimate_id': self.estimate.estimate_id,
             'line_item_id': self.line_item3.line_item_id,
             'direction': 'down'
@@ -165,7 +165,7 @@ class EstimateLineItemReorderingTestCase(TestCase):
         self.estimate.status = 'open'
         self.estimate.save()
 
-        url = reverse('jobs:estimate_reorder_line_item', kwargs={
+        url = reverse('estimates:estimate_reorder_line_item', kwargs={
             'estimate_id': self.estimate.estimate_id,
             'line_item_id': self.line_item1.line_item_id,
             'direction': 'down'
@@ -184,7 +184,7 @@ class EstimateLineItemReorderingTestCase(TestCase):
     def test_multiple_reorders(self):
         """Test multiple sequential reorders"""
         # Move item 1 down
-        url = reverse('jobs:estimate_reorder_line_item', kwargs={
+        url = reverse('estimates:estimate_reorder_line_item', kwargs={
             'estimate_id': self.estimate.estimate_id,
             'line_item_id': self.line_item1.line_item_id,
             'direction': 'down'

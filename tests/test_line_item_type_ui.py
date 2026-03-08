@@ -169,14 +169,14 @@ class TaskAddManualLineItemTypeTests(TestCase):
 
     def test_add_manual_form_shows_line_item_type(self):
         """Manual task add form should include line_item_type field."""
-        url = reverse('jobs:task_add_manual', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_manual', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'line_item_type')
 
     def test_add_manual_post_with_line_item_type(self):
         """POST on manual add should create task with line_item_type."""
-        url = reverse('jobs:task_add_manual', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_manual', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url, {
             'name': 'New Manual Task',
             'units': 'hours',
@@ -186,7 +186,7 @@ class TaskAddManualLineItemTypeTests(TestCase):
         })
         self.assertRedirects(
             response,
-            reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+            reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         )
         task = Task.objects.get(name='New Manual Task')
         self.assertEqual(task.line_item_type, self.lit)
@@ -202,14 +202,14 @@ class TaskTemplateFormLineItemTypeTests(TestCase):
 
     def test_create_form_shows_line_item_type(self):
         """TaskTemplate create form should include line_item_type field."""
-        url = reverse('jobs:add_task_template_standalone')
+        url = reverse('estimates:add_task_template_standalone')
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'line_item_type')
 
     def test_create_post_with_line_item_type(self):
         """POST to create TaskTemplate should save line_item_type."""
-        url = reverse('jobs:add_task_template_standalone')
+        url = reverse('estimates:add_task_template_standalone')
         response = self.client.post(url, {
             'template_name': 'New Template',
             'description': 'Test',
@@ -217,7 +217,7 @@ class TaskTemplateFormLineItemTypeTests(TestCase):
             'rate': '50.00',
             'line_item_type': self.lit.pk,
         })
-        self.assertRedirects(response, reverse('jobs:task_template_list'))
+        self.assertRedirects(response, reverse('estimates:task_template_list'))
         tt = TaskTemplate.objects.get(template_name='New Template')
         self.assertEqual(tt.line_item_type, self.lit)
 
@@ -227,7 +227,7 @@ class TaskTemplateFormLineItemTypeTests(TestCase):
             template_name='Existing', units='hours', rate=Decimal('50.00'),
             line_item_type=self.lit,
         )
-        url = reverse('jobs:task_template_edit', args=[tt.template_id])
+        url = reverse('estimates:task_template_edit', args=[tt.template_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'line_item_type')
@@ -238,7 +238,7 @@ class TaskTemplateFormLineItemTypeTests(TestCase):
             template_name='Existing', units='hours', rate=Decimal('50.00'),
             line_item_type=self.lit,
         )
-        url = reverse('jobs:task_template_edit', args=[tt.template_id])
+        url = reverse('estimates:task_template_edit', args=[tt.template_id])
         response = self.client.post(url, {
             'template_name': 'Existing',
             'description': '',
@@ -246,7 +246,7 @@ class TaskTemplateFormLineItemTypeTests(TestCase):
             'rate': '50.00',
             'line_item_type': self.lit2.pk,
         })
-        self.assertRedirects(response, reverse('jobs:task_template_list'))
+        self.assertRedirects(response, reverse('estimates:task_template_list'))
         tt.refresh_from_db()
         self.assertEqual(tt.line_item_type, self.lit2)
 
@@ -264,7 +264,7 @@ class TaskTemplateListLineItemTypeTests(TestCase):
             template_name='Test Template', units='hours',
             rate=Decimal('50.00'), line_item_type=self.lit,
         )
-        url = reverse('jobs:task_template_list')
+        url = reverse('estimates:task_template_list')
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Line Item Type')
@@ -275,6 +275,6 @@ class TaskTemplateListLineItemTypeTests(TestCase):
             template_name='Test Template', units='hours',
             rate=Decimal('50.00'), line_item_type=self.lit,
         )
-        url = reverse('jobs:task_template_list')
+        url = reverse('estimates:task_template_list')
         response = self.client.get(url)
         self.assertContains(response, 'Service')

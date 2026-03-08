@@ -65,12 +65,12 @@ class TaskDetailViewTests(TestCase):
         """Task detail should link back to its worksheet, not the task list."""
         url = reverse('jobs:task_detail', args=[self.draft_task.task_id])
         response = self.client.get(url)
-        worksheet_url = reverse('jobs:estworksheet_detail', args=[self.draft_worksheet.est_worksheet_id])
+        worksheet_url = reverse('estimates:estworksheet_detail', args=[self.draft_worksheet.est_worksheet_id])
         self.assertContains(response, worksheet_url)
 
     def test_worksheet_detail_shows_task_links(self):
         """Worksheet detail should link task names to their detail pages."""
-        url = reverse('jobs:estworksheet_detail', args=[self.draft_worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.draft_worksheet.est_worksheet_id])
         response = self.client.get(url)
         task_detail_url = reverse('jobs:task_detail', args=[self.draft_task.task_id])
         self.assertContains(response, task_detail_url)

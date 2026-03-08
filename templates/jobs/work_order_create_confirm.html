@@ -67,7 +67,7 @@
 <form method="post" style="margin-top: 20px;">
     {% csrf_token %}
     <button type="submit" class="btn-primary">Create Work Order</button>
-    <a href="{% url 'jobs:estimate_detail' estimate.estimate_id %}" class="btn-secondary">Cancel</a>
+    <a href="{% url 'estimates:estimate_detail' estimate.estimate_id %}" class="btn-secondary">Cancel</a>
 </form>
 
 {% endblock %}

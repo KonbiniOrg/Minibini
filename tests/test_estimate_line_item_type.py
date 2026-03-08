@@ -39,14 +39,14 @@ class EstimateLineItemTypeTest(TestCase):
     def test_manual_form_includes_line_item_type_field(self):
         """Test that manual line item form shows LineItemType field."""
         response = self.client.get(
-            reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+            reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
         )
         self.assertContains(response, 'line_item_type')
 
     def test_manual_form_creates_line_item_with_type(self):
         """Test that manual form creates line item with LineItemType."""
         response = self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id]),
             {
                 'manual_submit': '1',
                 'description': 'Test Service',
@@ -63,7 +63,7 @@ class EstimateLineItemTypeTest(TestCase):
     def test_manual_form_requires_line_item_type(self):
         """Test that manual form requires LineItemType."""
         response = self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id]),
             {
                 'manual_submit': '1',
                 'description': 'Test Service',
@@ -117,7 +117,7 @@ class EstimateLineItemFromPriceListTest(TestCase):
     def test_pricelist_form_copies_line_item_type(self):
         """Test that adding from price list copies the LineItemType."""
         response = self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id]),
             {
                 'pricelist_submit': '1',
                 'price_list_item': self.price_list_item.pk,

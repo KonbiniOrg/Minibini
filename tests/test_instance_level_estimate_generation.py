@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.jobs.models import Task, TaskBundle, Job
 from apps.estimates.models import EstWorksheet, EstimateLineItem
-from apps.jobs.services import EstimateGenerationService
+from apps.estimates.services import EstimateGenerationService
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType, Configuration
 

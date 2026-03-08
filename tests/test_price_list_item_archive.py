@@ -4,8 +4,8 @@ from django.test import TestCase, Client
 from django.urls import reverse
 
 from apps.inventory.models import PriceListItem
-from apps.invoicing.forms import PriceListItemForm
-from apps.jobs.forms import PriceListLineItemForm
+from apps.inventory.forms import PriceListItemForm
+from apps.estimates.forms import PriceListLineItemForm
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.purchasing.forms import POPriceListLineItemForm, PurchaseOrderLineItemForm, BillLineItemForm
@@ -46,7 +46,7 @@ class PriceListItemArchiveListViewTest(TestCase):
 
     def test_list_view_defaults_to_active_only(self):
         """Test that list view shows only active items by default."""
-        response = self.client.get(reverse('invoicing:price_list_item_list'))
+        response = self.client.get(reverse('inventory:price_list_item_list'))
         self.assertEqual(response.status_code, 200)
 
         # Should show active items
@@ -60,7 +60,7 @@ class PriceListItemArchiveListViewTest(TestCase):
     def test_list_view_show_archived_parameter(self):
         """Test that show_archived=1 shows all items including archived."""
         response = self.client.get(
-            reverse('invoicing:price_list_item_list') + '?show_archived=1'
+            reverse('inventory:price_list_item_list') + '?show_archived=1'
         )
         self.assertEqual(response.status_code, 200)
 
@@ -73,7 +73,7 @@ class PriceListItemArchiveListViewTest(TestCase):
     def test_list_view_shows_archived_indicator(self):
         """Test that archived items show 'Archived' status."""
         response = self.client.get(
-            reverse('invoicing:price_list_item_list') + '?show_archived=1'
+            reverse('inventory:price_list_item_list') + '?show_archived=1'
         )
         self.assertEqual(response.status_code, 200)
 
@@ -84,14 +84,14 @@ class PriceListItemArchiveListViewTest(TestCase):
 
     def test_list_view_show_archived_link(self):
         """Test that 'Show Archived' link appears when not showing archived."""
-        response = self.client.get(reverse('invoicing:price_list_item_list'))
+        response = self.client.get(reverse('inventory:price_list_item_list'))
         self.assertContains(response, 'Show Archived')
         self.assertNotContains(response, 'Hide Archived')
 
     def test_list_view_hide_archived_link(self):
         """Test that 'Hide Archived' link appears when showing archived."""
         response = self.client.get(
-            reverse('invoicing:price_list_item_list') + '?show_archived=1'
+            reverse('inventory:price_list_item_list') + '?show_archived=1'
         )
         self.assertContains(response, 'Hide Archived')
         self.assertNotContains(response, 'Show Archived')
@@ -99,12 +99,12 @@ class PriceListItemArchiveListViewTest(TestCase):
     def test_show_archived_context_variable(self):
         """Test that show_archived context variable is set correctly."""
         # Without parameter
-        response = self.client.get(reverse('invoicing:price_list_item_list'))
+        response = self.client.get(reverse('inventory:price_list_item_list'))
         self.assertFalse(response.context['show_archived'])
 
         # With parameter
         response = self.client.get(
-            reverse('invoicing:price_list_item_list') + '?show_archived=1'
+            reverse('inventory:price_list_item_list') + '?show_archived=1'
         )
         self.assertTrue(response.context['show_archived'])
 
@@ -215,7 +215,7 @@ class PriceListItemFormArchiveViewTest(TestCase):
         )
 
         response = self.client.get(
-            reverse('invoicing:price_list_item_edit', args=[item.price_list_item_id])
+            reverse('inventory:price_list_item_edit', args=[item.price_list_item_id])
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'This item is archived')
@@ -230,7 +230,7 @@ class PriceListItemFormArchiveViewTest(TestCase):
         )
 
         response = self.client.get(
-            reverse('invoicing:price_list_item_edit', args=[item.price_list_item_id])
+            reverse('inventory:price_list_item_edit', args=[item.price_list_item_id])
         )
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'This item is archived')
@@ -336,7 +336,7 @@ class ArchivedPriceListItemDisplayTest(TestCase):
         )
 
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '(Archived)')
@@ -353,7 +353,7 @@ class ArchivedPriceListItemDisplayTest(TestCase):
         )
 
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         )
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, '(Archived)')
@@ -390,7 +390,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
         """Test full workflow: create item, archive it, restore it."""
         # 1. Create a new item via form
         response = self.client.post(
-            reverse('invoicing:price_list_item_add'),
+            reverse('inventory:price_list_item_add'),
             {
                 'code': 'WORKFLOW001',
                 'description': 'Workflow Test Item',
@@ -401,14 +401,14 @@ class PriceListItemArchiveIntegrationTest(TestCase):
                 'qty_wasted': '0.00',
             }
         )
-        self.assertRedirects(response, reverse('invoicing:price_list_item_list'))
+        self.assertRedirects(response, reverse('inventory:price_list_item_list'))
 
         item = PriceListItem.objects.get(code='WORKFLOW001')
         self.assertTrue(item.is_active)
 
         # 2. Archive the item via edit form
         response = self.client.post(
-            reverse('invoicing:price_list_item_edit', args=[item.price_list_item_id]),
+            reverse('inventory:price_list_item_edit', args=[item.price_list_item_id]),
             {
                 'code': 'WORKFLOW001',
                 'description': 'Workflow Test Item',
@@ -420,24 +420,24 @@ class PriceListItemArchiveIntegrationTest(TestCase):
                 # is_active not included = False (unchecked checkbox)
             }
         )
-        self.assertRedirects(response, reverse('invoicing:price_list_item_list'))
+        self.assertRedirects(response, reverse('inventory:price_list_item_list'))
 
         item.refresh_from_db()
         self.assertFalse(item.is_active)
 
         # 3. Verify it doesn't show in default list
-        response = self.client.get(reverse('invoicing:price_list_item_list'))
+        response = self.client.get(reverse('inventory:price_list_item_list'))
         self.assertNotContains(response, 'WORKFLOW001')
 
         # 4. Verify it shows in archived list
         response = self.client.get(
-            reverse('invoicing:price_list_item_list') + '?show_archived=1'
+            reverse('inventory:price_list_item_list') + '?show_archived=1'
         )
         self.assertContains(response, 'WORKFLOW001')
 
         # 5. Restore the item
         response = self.client.post(
-            reverse('invoicing:price_list_item_edit', args=[item.price_list_item_id]),
+            reverse('inventory:price_list_item_edit', args=[item.price_list_item_id]),
             {
                 'code': 'WORKFLOW001',
                 'description': 'Workflow Test Item',
@@ -449,13 +449,13 @@ class PriceListItemArchiveIntegrationTest(TestCase):
                 'is_active': 'on',  # Checkbox checked
             }
         )
-        self.assertRedirects(response, reverse('invoicing:price_list_item_list'))
+        self.assertRedirects(response, reverse('inventory:price_list_item_list'))
 
         item.refresh_from_db()
         self.assertTrue(item.is_active)
 
         # 6. Verify it shows in default list again
-        response = self.client.get(reverse('invoicing:price_list_item_list'))
+        response = self.client.get(reverse('inventory:price_list_item_list'))
         self.assertContains(response, 'WORKFLOW001')
 
     def test_archived_item_not_selectable_in_forms(self):
@@ -483,7 +483,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
 
         # Try to add line item with archived price list item
         response = self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'pricelist_submit': '1',
                 'price_list_item': item.price_list_item_id,

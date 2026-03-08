@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 from apps.contacts.models import Contact
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstWorksheet
-from apps.jobs.signals import estimate_status_changed_for_worksheet
+from apps.estimates.signals import estimate_status_changed_for_worksheet
 
 
 class EstWorksheetSignalEfficiencyTest(TestCase):
@@ -41,7 +41,7 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
         )
 
         # Mock the signal to check if it's called
-        with patch('apps.jobs.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
+        with patch('apps.estimates.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
             # Change non-status field
             reset_queries()
             estimate.estimate_number = "EST002"
@@ -73,7 +73,7 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
             status='final'
         )
 
-        with patch('apps.jobs.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
+        with patch('apps.estimates.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
             reset_queries()
             # Change from 'open' to 'accepted' - both map to 'final' for worksheets
             estimate.status = 'accepted'
@@ -99,7 +99,7 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
             status='draft'
         )
 
-        with patch('apps.jobs.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
+        with patch('apps.estimates.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
             # Change from 'draft' to 'open' - should trigger signal
             estimate.status = 'open'
             estimate.save()

@@ -95,7 +95,7 @@ class TaskDescriptionFromTemplateTests(TestCase):
         )
         client.login(username='testuser', password='testpass')
 
-        url = reverse('jobs:task_add_from_template', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_from_template', args=[self.worksheet.est_worksheet_id])
         client.post(url, {
             'template': self.task_template.template_id,
             'est_qty': '50.0',
@@ -193,7 +193,7 @@ class WorksheetDescriptionFromTaskTests(TestCase):
 
     def test_worksheet_detail_shows_task_own_description(self):
         """Worksheet detail should show the task's own description, not the template's."""
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
         self.assertContains(response, 'My own description')
 
@@ -220,14 +220,14 @@ class TaskAddManualDescriptionTests(TestCase):
 
     def test_manual_add_form_includes_description_field(self):
         """The manual add task form should include a description field."""
-        url = reverse('jobs:task_add_manual', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_manual', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'description')
 
     def test_manual_add_saves_description(self):
         """Manually adding a task with a description should save it."""
-        url = reverse('jobs:task_add_manual', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_manual', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url, {
             'name': 'Manual Task',
             'description': 'Do the thing carefully',
@@ -237,14 +237,14 @@ class TaskAddManualDescriptionTests(TestCase):
         })
         self.assertRedirects(
             response,
-            reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+            reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         )
         task = Task.objects.get(est_worksheet=self.worksheet)
         self.assertEqual(task.description, 'Do the thing carefully')
 
     def test_manual_add_page_extends_base_template(self):
         """The manual add page should extend base.html like other pages."""
-        url = reverse('jobs:task_add_manual', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_manual', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
         # base.html renders the <title> tag via block
         self.assertContains(response, '<title>')

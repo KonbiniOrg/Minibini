@@ -1,6 +1,6 @@
 [
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 1,
     "fields": {
       "code": "SCREW001",
@@ -14,7 +14,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 2,
     "fields": {
       "code": "LABOR001",
@@ -46,7 +46,7 @@
     }
   },
   {
-    "model": "jobs.estimatelineitem",
+    "model": "estimates.estimatelineitem",
     "pk": 1,
     "fields": {
       "estimate": 1,
@@ -60,7 +60,7 @@
     }
   },
   {
-    "model": "jobs.estimatelineitem",
+    "model": "estimates.estimatelineitem",
     "pk": 2,
     "fields": {
       "estimate": 1,

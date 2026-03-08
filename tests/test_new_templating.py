@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 
 from apps.jobs.models import TaskBundle, Job, Task
 from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
-from apps.jobs.services import EstimateGenerationService
+from apps.estimates.services import EstimateGenerationService
 from apps.core.models import LineItemType
 from apps.contacts.models import Contact
 from django.db import IntegrityError

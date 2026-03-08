@@ -101,6 +101,9 @@ class Job(models.Model):
         # Call parent save
         super().save(*args, **kwargs)
 
+    class Meta:
+        db_table = 'jobs'
+
     def __str__(self):
         return f"{self.job_number}"
 
@@ -115,6 +118,9 @@ class WorkOrder(AbstractWorkContainer):
 
     work_order_id = models.AutoField(primary_key=True)
     status = models.CharField(max_length=20, choices=WORK_ORDER_STATUS_CHOICES, default='draft')
+
+    class Meta:
+        db_table = 'workorders'
 
     def __str__(self):
         return f"Work Order {self.pk}"
@@ -220,6 +226,9 @@ class Task(models.Model):
         related_name='tasks'
     )
 
+    class Meta:
+        db_table = 'tasks'
+
     def __str__(self):
         return self.name
 
@@ -257,6 +266,7 @@ class TaskBundle(models.Model):
     )
 
     class Meta:
+        db_table = 'task_bundles'
         ordering = ['sort_order', 'name']
 
     def get_container(self):
@@ -278,6 +288,9 @@ class Blep(models.Model):
     task = models.ForeignKey(Task, on_delete=models.PROTECT)  # Changed from CASCADE - protect audit trail
     start_time = models.DateTimeField(null=True, blank=True)
     end_time = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'bleps'
 
     def __str__(self):
         return f"Blep {self.pk} for Task {self.task.pk}"

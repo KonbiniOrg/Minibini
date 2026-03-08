@@ -19,7 +19,7 @@ class EstWorksheetCreateFromJobTest(TestCase):
             description="Template for testing",
             is_active=True
         )
-        self.url = reverse('jobs:estworksheet_create_for_job', args=[self.job.job_id])
+        self.url = reverse('estimates:estworksheet_create_for_job', args=[self.job.job_id])
 
     def test_estworksheet_create_for_job_get(self):
         """Test GET request to worksheet creation form from job"""

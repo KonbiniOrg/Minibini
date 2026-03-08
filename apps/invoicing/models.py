@@ -41,6 +41,9 @@ class Invoice(models.Model):
         # Call parent save
         super().save(*args, **kwargs)
 
+    class Meta:
+        db_table = 'invoices'
+
     def __str__(self):
         return f"Invoice {self.invoice_number}"
 
@@ -51,6 +54,7 @@ class InvoiceLineItem(BaseLineItem):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
 
     class Meta:
+        db_table = 'invoice_li'
         verbose_name = "Invoice Line Item"
         verbose_name_plural = "Invoice Line Items"
 
