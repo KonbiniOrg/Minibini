@@ -1,10 +1,8 @@
 """Tests that within-bundle items are displayed in sort_order, not by ID."""
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import (
-    Task, TaskBundle, EstWorksheet, Job,
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
-)
+from apps.jobs.models import Task, TaskBundle, Job
+from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType
 

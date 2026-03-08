@@ -1,5 +1,5 @@
 from django import forms
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 UNIT_CHOICES = [
     ('sq ft', 'sq ft (square feet)'),

@@ -2,10 +2,8 @@
 
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import (
-    Job, Estimate, EstWorksheet, Task, TaskTemplate,
-    EstimateLineItem, WorkOrderTemplate
-)
+from apps.jobs.models import Job, Task
+from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate, EstimateLineItem, WorkOrderTemplate
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType
 

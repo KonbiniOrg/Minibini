@@ -11,11 +11,12 @@ from django.db import transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from .models import (
-    Job, WorkOrder, Estimate, Task, WorkOrderTemplate, TaskTemplate,
+from .models import Job, WorkOrder, Task
+from apps.estimates.models import (
+    Estimate, WorkOrderTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem
 )
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from apps.core.services import NumberGenerationService
 
 
@@ -161,7 +162,7 @@ class WorkOrderService:
         )
         
         # Generate Tasks from TaskTemplate associations
-        from .models import TemplateTaskAssociation
+        from apps.estimates.models import TemplateTaskAssociation
         associations = TemplateTaskAssociation.objects.filter(
             work_order_template=template,
             task_template__is_active=True
@@ -208,7 +209,7 @@ class EstimateService:
         )
 
         # Convert Tasks to LineItems
-        from .models import EstimateLineItem
+        from apps.estimates.models import EstimateLineItem
         for task in work_order.task_set.all():
             TaskService.create_line_item_from_task(task, estimate)
 
@@ -275,7 +276,7 @@ class TaskService:
         """
         Create LineItem from Task.
         """
-        from .models import EstimateLineItem
+        from apps.estimates.models import EstimateLineItem
         from apps.core.models import LineItemType
 
         # Get line_item_type from task directly

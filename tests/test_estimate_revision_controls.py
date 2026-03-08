@@ -3,10 +3,11 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils import timezone
-from apps.jobs.models import Job, Estimate, EstimateLineItem
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.core.models import Configuration, LineItemType
 from apps.contacts.models import Contact
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 
 class EstimateCreationControlTests(TestCase):

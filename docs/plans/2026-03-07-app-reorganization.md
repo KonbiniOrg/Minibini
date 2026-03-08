@@ -14,8 +14,7 @@
 
 ## Prerequisites
 
-- Clean working tree on main branch
-- Create a feature branch: `git checkout -b feature/app-reorg`
+- Working on branch: `feature/model-reorg` (already created)
 
 ---
 
@@ -253,7 +252,7 @@ After moving, update any imports within the moved files that still reference `ap
 grep -rn "from apps.jobs" apps/estimates/ --include="*.py"
 ```
 
-Should return nothing (estimates should not import from jobs, though jobs may import from estimates).
+Estimates will legitimately import from jobs (EstWorksheet references Task/TaskBundle, Estimate references Job). This check verifies no imports of *moved* models from their old locations — e.g., no `from apps.jobs.models import Estimate`.
 
 **Step 8: Commit**
 

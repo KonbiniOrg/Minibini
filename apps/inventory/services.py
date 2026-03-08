@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.db.models import F, Sum
 from apps.inventory.models import Earmark, InventoryAdjustment
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 
 class InventoryService:
@@ -105,7 +105,7 @@ class EarmarkService:
         """Get preview of inventoried items needed for a job's materials.
         Aggregates by price_list_item across all tasks on the job's worksheets.
         Returns list of dicts with price_list_item, needed_qty, available_qty, shortfall."""
-        from apps.jobs.models import Material
+        from apps.inventory.models import Material
 
         # Find all materials with inventoried price list items across the job's worksheets
         materials = Material.objects.filter(

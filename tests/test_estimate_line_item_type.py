@@ -4,7 +4,8 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import LineItemType
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Estimate, EstimateLineItem
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
 
 
 class EstimateLineItemTypeTest(TestCase):
@@ -102,7 +103,7 @@ class EstimateLineItemFromPriceListTest(TestCase):
             defaults={'name': 'Product', 'taxable': True}
         )
         # Import here to avoid circular import
-        from apps.invoicing.models import PriceListItem
+        from apps.inventory.models import PriceListItem
         cls.price_list_item = PriceListItem.objects.create(
             code='ITEM-001',
             description='Test Product',

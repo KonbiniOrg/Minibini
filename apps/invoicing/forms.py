@@ -1,5 +1,6 @@
 from django import forms
-from .models import PriceListItem, Invoice
+from .models import Invoice
+from apps.inventory.models import PriceListItem
 from apps.core.models import LineItemType
 from apps.core.services import NumberGenerationService
 

@@ -3,13 +3,11 @@ from django.urls import reverse
 from django.contrib.auth import get_user_model
 from decimal import Decimal
 
-from apps.jobs.models import (
-    Job, Estimate, EstimateLineItem, WorkOrder, Task,
-    EstWorksheet, WorkOrderTemplate, TaskTemplate
-)
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate, TaskTemplate
 from apps.jobs.services import LineItemTaskService
 from apps.contacts.models import Contact
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 User = get_user_model()
 

@@ -8,10 +8,8 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.db.models import ProtectedError
 
-from apps.jobs.models import (
-    TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle,
-    TaskBundle, Job, EstWorksheet, Task, Estimate, EstimateLineItem, WorkOrder
-)
+from apps.jobs.models import TaskBundle, Job, Task, WorkOrder
+from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.jobs.services import EstimateGenerationService, TaskService, LineItemTaskService
 from apps.core.models import LineItemType, Configuration, User
 from apps.contacts.models import Contact

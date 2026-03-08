@@ -9,7 +9,8 @@ from django.db import reset_queries
 from unittest.mock import patch, MagicMock
 
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Estimate, EstWorksheet
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstWorksheet
 from apps.jobs.signals import estimate_status_changed_for_worksheet
 
 

@@ -18,7 +18,7 @@ def update_estworksheet_status(sender, estimate, new_worksheet_status, **kwargs)
     Update EstWorksheet status based on Estimate status change.
     This is only called when a relevant status change occurs.
     """
-    from apps.jobs.models import EstWorksheet
+    from apps.estimates.models import EstWorksheet
 
     # Single efficient UPDATE query - affects 0 rows if no worksheets exist
     updated_count = EstWorksheet.objects.filter(

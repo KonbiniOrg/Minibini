@@ -1,7 +1,8 @@
 from django.test import TestCase
 from django.urls import reverse
 from decimal import Decimal
-from apps.jobs.models import Estimate, EstimateLineItem, Job
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact, Business
 from apps.core.models import User
 

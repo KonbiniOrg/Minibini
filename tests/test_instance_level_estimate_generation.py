@@ -4,9 +4,8 @@ Task fields (mapping_strategy, bundle) rather than reaching back to templates.
 """
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import (
-    Task, TaskBundle, EstWorksheet, Job, EstimateLineItem,
-)
+from apps.jobs.models import Task, TaskBundle, Job
+from apps.estimates.models import EstWorksheet, EstimateLineItem
 from apps.jobs.services import EstimateGenerationService
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType, Configuration
@@ -146,7 +145,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
     def test_instance_mapping_overrides_template(self):
         """If a task has a template but instance-level mapping_strategy='exclude',
         the instance-level config wins."""
-        from apps.jobs.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation
+        from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation
 
         wot = WorkOrderTemplate.objects.create(template_name="Job Template")
         tt = TaskTemplate.objects.create(

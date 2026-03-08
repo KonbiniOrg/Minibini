@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.purchasing.models import PurchaseOrder, Bill, BillLineItem, PurchaseOrderLineItem
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration

@@ -7,10 +7,8 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 
 from apps.contacts.models import Contact
-from apps.jobs.models import (
-    Job, WorkOrder, Estimate, Task, EstWorksheet, 
-    WorkOrderTemplate, TaskTemplate
-)
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.estimates.models import Estimate, EstWorksheet, WorkOrderTemplate, TaskTemplate
 from apps.core.models import User
 
 

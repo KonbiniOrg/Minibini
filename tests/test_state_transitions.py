@@ -2,7 +2,8 @@ from django.test import TestCase
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import timedelta
-from apps.jobs.models import Job, Estimate
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 

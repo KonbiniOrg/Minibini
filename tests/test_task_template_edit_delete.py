@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 
-from apps.jobs.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation
+from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation
 
 
 class TaskTemplateEditViewTest(TestCase):

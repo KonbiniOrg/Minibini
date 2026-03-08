@@ -2,7 +2,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 
-from apps.jobs.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.core.models import LineItemType
 
 

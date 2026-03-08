@@ -3,9 +3,8 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth.models import User
-from apps.jobs.models import (
-    Job, Estimate, EstWorksheet, Task, TaskTemplate
-)
+from apps.jobs.models import Job, Task
+from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate
 from apps.jobs.services import EstimateGenerationService
 from apps.contacts.models import Contact
 from apps.core.models import Configuration

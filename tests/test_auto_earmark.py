@@ -4,8 +4,10 @@ Tests for automatic earmarking when an estimate is accepted.
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Estimate, EstWorksheet, Task, Material
-from apps.invoicing.models import PriceListItem
+from apps.jobs.models import Job, Task
+from apps.estimates.models import Estimate, EstWorksheet
+from apps.inventory.models import Material
+from apps.inventory.models import PriceListItem
 from apps.inventory.models import Earmark
 
 

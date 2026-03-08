@@ -10,13 +10,13 @@ Phase 2: Materials produce their own line items on estimates.
 """
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import (
-    Task, TaskBundle, EstWorksheet, Job, EstimateLineItem, Material,
-)
+from apps.jobs.models import Task, TaskBundle, Job
+from apps.estimates.models import EstWorksheet, EstimateLineItem
+from apps.inventory.models import Material
 from apps.jobs.services import EstimateGenerationService
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType, Configuration
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 
 class EstimateGenerationMaterialsTest(TestCase):

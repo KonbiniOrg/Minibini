@@ -7,10 +7,8 @@ from django.test import TestCase
 from django.db.models import ProtectedError
 from django.core.exceptions import ValidationError
 
-from apps.jobs.models import (
-    TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle,
-    TaskBundle, Job, EstWorksheet, Task, Estimate, EstimateLineItem
-)
+from apps.jobs.models import TaskBundle, Job, Task
+from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.jobs.services import EstimateGenerationService
 from apps.core.models import LineItemType
 from apps.contacts.models import Contact

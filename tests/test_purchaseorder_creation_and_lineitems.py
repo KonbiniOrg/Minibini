@@ -5,7 +5,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from apps.core.models import Configuration
 
 

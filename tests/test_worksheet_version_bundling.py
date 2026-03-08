@@ -1,7 +1,8 @@
 """Tests that create_new_version copies TaskBundles and task mapping config."""
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import Task, TaskBundle, EstWorksheet, Job
+from apps.jobs.models import Task, TaskBundle, Job
+from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType
 

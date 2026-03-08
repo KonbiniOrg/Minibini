@@ -4,8 +4,9 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import Configuration, LineItemType
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Estimate, EstimateLineItem
-from apps.invoicing.models import PriceListItem
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
+from apps.inventory.models import PriceListItem
 
 
 class LineItemTypeIntegrationTest(TestCase):

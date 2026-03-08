@@ -1,7 +1,8 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.views.decorators.http import require_POST
-from .models import Invoice, InvoiceLineItem, PriceListItem
+from .models import Invoice, InvoiceLineItem
+from apps.inventory.models import PriceListItem
 from .forms import PriceListItemForm
 
 def invoice_list(request):

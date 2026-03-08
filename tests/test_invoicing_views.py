@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from apps.invoicing.forms import PriceListItemForm
 
 

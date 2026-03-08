@@ -6,7 +6,9 @@ from django import forms
 from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
-from .models import Job, Estimate, EstimateLineItem, Task, WorkOrder, WorkOrderTemplate, TaskTemplate, EstWorksheet, TemplateTaskAssociation, Material
+from .models import Job, Task, WorkOrder
+from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation
+from apps.inventory.models import Material
 from apps.core.services import TaxCalculationService
 from .forms import (
     JobCreateForm, JobEditForm, WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
@@ -565,7 +567,7 @@ def _build_container_items_from_associations(associations):
 
 def _next_container_sort_order(template):
     """Get the next sort_order in the shared container-level space (bundles + unbundled associations)."""
-    from .models import TemplateTaskAssociation, TemplateBundle
+    from apps.estimates.models import TemplateTaskAssociation, TemplateBundle
     max_assoc = TemplateTaskAssociation.objects.filter(
         work_order_template=template, bundle__isnull=True
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
@@ -583,7 +585,7 @@ def work_order_template_detail(request, template_id):
         task_template_id = request.POST.get('task_template_id')
         est_qty = request.POST.get('est_qty', '1.00')
         if task_template_id:
-            from .models import TemplateTaskAssociation
+            from apps.estimates.models import TemplateTaskAssociation
             task_template = get_object_or_404(TaskTemplate, template_id=task_template_id)
 
             next_sort_order = _next_container_sort_order(template)
@@ -603,7 +605,7 @@ def work_order_template_detail(request, template_id):
     if request.method == 'POST' and 'remove_task' in request.POST:
         task_template_id = request.POST.get('remove_task')
         if task_template_id:
-            from .models import TemplateTaskAssociation, TemplateBundle
+            from apps.estimates.models import TemplateTaskAssociation, TemplateBundle
             task_template = get_object_or_404(TaskTemplate, template_id=task_template_id)
             assoc = TemplateTaskAssociation.objects.filter(
                 work_order_template=template,
@@ -650,7 +652,7 @@ def work_order_template_detail(request, template_id):
 
     # Handle bundle creation
     if request.method == 'POST' and 'bundle_tasks' in request.POST:
-        from .models import TemplateTaskAssociation, TemplateBundle
+        from apps.estimates.models import TemplateTaskAssociation, TemplateBundle
         from apps.core.models import LineItemType
 
         # Get selected association IDs
@@ -720,7 +722,7 @@ def work_order_template_detail(request, template_id):
         return redirect('jobs:work_order_template_detail', template_id=template_id)
 
     # Get task template associations with bundle info
-    from .models import TemplateTaskAssociation, TemplateBundle
+    from apps.estimates.models import TemplateTaskAssociation, TemplateBundle
     from apps.core.models import LineItemType
 
     associations = TemplateTaskAssociation.objects.filter(
@@ -820,7 +822,8 @@ def _next_worksheet_sort_order(worksheet):
 
 def _copy_worksheet_to_work_order(worksheet, work_order):
     """Copy a worksheet's bundles, tasks, and materials to a work order."""
-    from .models import TaskBundle, Material
+    from .models import TaskBundle
+    from apps.inventory.models import Material
 
     # Copy TaskBundles, mapping old bundle PKs to new ones
     bundle_mapping = {}
@@ -1575,7 +1578,7 @@ def template_reorder_item(request, template_id, item_type, item_id, direction):
     Bundles and unbundled associations share the same sort_order space.
     item_type is 'bundle' or 'task' (for unbundled TemplateTaskAssociation).
     """
-    from .models import TemplateTaskAssociation, TemplateBundle
+    from apps.estimates.models import TemplateTaskAssociation, TemplateBundle
 
     template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
 
@@ -1634,7 +1637,7 @@ def template_reorder_item(request, template_id, item_type, item_id, direction):
 @require_POST
 def template_reorder_in_bundle(request, template_id, association_id, direction):
     """Reorder a task within its bundle."""
-    from .models import TemplateTaskAssociation
+    from apps.estimates.models import TemplateTaskAssociation
 
     template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
     assoc = get_object_or_404(

@@ -5,7 +5,8 @@ Test that worksheets are properly finalized after generating estimates.
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, Estimate, EstWorksheet, Task, TaskTemplate
+from apps.jobs.models import Job, Task
+from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate
 from apps.core.models import Configuration
 from apps.contacts.models import Contact
 from apps.jobs.services import EstimateGenerationService

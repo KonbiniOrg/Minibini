@@ -1,9 +1,8 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import (
-    Job, Estimate, WorkOrder, Task, EstWorksheet, WorkOrderTemplate, TaskTemplate
-)
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.estimates.models import Estimate, EstWorksheet, WorkOrderTemplate, TaskTemplate
 from apps.contacts.models import Contact
 
 User = get_user_model()

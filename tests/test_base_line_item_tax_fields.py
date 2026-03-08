@@ -6,7 +6,8 @@ from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.core.models import LineItemType
-from apps.jobs.models import Job, Estimate, EstimateLineItem
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact, Business
 
 

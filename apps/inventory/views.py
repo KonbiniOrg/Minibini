@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from .forms import InventoryItemForm
 
 

@@ -1,10 +1,12 @@
 from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from .models import (
+from .models import Task, Job
+from apps.estimates.models import (
     WorkOrderTemplate, TaskTemplate,
-    EstWorksheet, Task, Estimate, EstimateLineItem, Job, Material
+    EstWorksheet, Estimate, EstimateLineItem
 )
+from apps.inventory.models import Material
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType
 from apps.core.services import NumberGenerationService
@@ -245,7 +247,7 @@ class ManualLineItemForm(forms.ModelForm):
 
 class PriceListLineItemForm(forms.Form):
     """Form for creating a line item from a Price List Item"""
-    from apps.invoicing.models import PriceListItem
+    from apps.inventory.models import PriceListItem
 
     price_list_item = forms.ModelChoiceField(
         queryset=PriceListItem.objects.all(),
@@ -262,7 +264,7 @@ class PriceListLineItemForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        from apps.invoicing.models import PriceListItem
+        from apps.inventory.models import PriceListItem
         self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
 

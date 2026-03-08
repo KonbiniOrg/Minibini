@@ -8,9 +8,8 @@ from decimal import Decimal
 
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
-from apps.jobs.models import (
-    Job, WorkOrder, Estimate, Task, WorkOrderTemplate, TaskTemplate
-)
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.estimates.models import Estimate, WorkOrderTemplate, TaskTemplate
 from apps.jobs.services import WorkOrderService, EstimateService, TaskService
 from apps.core.models import User
 
@@ -301,7 +300,7 @@ class TaskCreationWorkflowTest(TestCase):
         )
         
         # Create association with quantity
-        from apps.jobs.models import TemplateTaskAssociation, WorkOrderTemplate
+        from apps.estimates.models import TemplateTaskAssociation, WorkOrderTemplate
         work_order_template = WorkOrderTemplate.objects.create(template_name="Test WO Template")
         association = TemplateTaskAssociation.objects.create(
             work_order_template=work_order_template,
@@ -356,7 +355,7 @@ class TemplateIntegrationTest(TestCase):
         )
         
         # Create associations with quantities
-        from apps.jobs.models import TemplateTaskAssociation
+        from apps.estimates.models import TemplateTaskAssociation
         TemplateTaskAssociation.objects.create(
             work_order_template=work_order_template,
             task_template=task_template1,

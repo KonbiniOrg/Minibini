@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.urls import reverse
-from apps.jobs.models import Task, EstWorksheet, WorkOrder, Job
+from apps.jobs.models import Task, WorkOrder, Job
+from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import User
 

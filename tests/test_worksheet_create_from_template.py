@@ -2,10 +2,8 @@
 from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
-from apps.jobs.models import (
-    Task, TaskBundle, EstWorksheet, Job,
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
-)
+from apps.jobs.models import Task, TaskBundle, Job
+from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact, Business
 from apps.core.models import User, LineItemType
 

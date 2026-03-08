@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import LineItemType
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 
 class PriceListItemTypeUITest(TestCase):

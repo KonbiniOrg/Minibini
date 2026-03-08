@@ -9,7 +9,8 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
 from apps.core.models import User
-from apps.jobs.models import Job, Estimate, EstimateLineItem, WorkOrder, Task, EstWorksheet
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
 

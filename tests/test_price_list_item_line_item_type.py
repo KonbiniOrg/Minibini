@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.db.models import ProtectedError
 from apps.core.models import LineItemType
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 
 class PriceListItemLineItemTypeTest(TestCase):

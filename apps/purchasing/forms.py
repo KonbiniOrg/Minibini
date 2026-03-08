@@ -2,7 +2,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from .models import PurchaseOrder, Bill, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from apps.core.models import LineItemType
 from apps.core.services import NumberGenerationService
 

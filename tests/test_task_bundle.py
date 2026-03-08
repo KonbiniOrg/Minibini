@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Task, TaskBundle, EstWorksheet, WorkOrder, Job
+from apps.jobs.models import Task, TaskBundle, WorkOrder, Job
+from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import LineItemType
 

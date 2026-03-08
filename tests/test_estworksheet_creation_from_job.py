@@ -1,6 +1,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job, EstWorksheet, WorkOrderTemplate
+from apps.jobs.models import Job
+from apps.estimates.models import EstWorksheet, WorkOrderTemplate
 from apps.contacts.models import Contact
 
 
@@ -119,7 +120,7 @@ class EstWorksheetCreateFromJobTest(TestCase):
     def test_template_selection_creates_tasks(self):
         """Test that selecting a template creates tasks from it"""
         # Create some task templates for the template
-        from apps.jobs.models import TaskTemplate, TemplateTaskAssociation
+        from apps.estimates.models import TaskTemplate, TemplateTaskAssociation
 
         task_template1 = TaskTemplate.objects.create(
             template_name="Test Task 1",

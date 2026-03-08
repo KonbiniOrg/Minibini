@@ -187,7 +187,8 @@ class Command(BaseCommand):
     # ── Estimates ─────────────────────────────────────────────
 
     def check_estimates(self):
-        from apps.jobs.models import Estimate, Job
+        from apps.estimates.models import Estimate
+        from apps.jobs.models import Job
         valid_statuses = {s[0] for s in Estimate.ESTIMATE_STATUS_CHOICES}
 
         for e in Estimate.objects.select_related('job').all():
@@ -213,7 +214,7 @@ class Command(BaseCommand):
     # ── Worksheets ────────────────────────────────────────────
 
     def check_worksheets(self):
-        from apps.jobs.models import EstWorksheet
+        from apps.estimates.models import EstWorksheet
         valid_statuses = {s[0] for s in EstWorksheet.EST_WORKSHEET_STATUS_CHOICES}
         for ws in EstWorksheet.objects.all():
             if ws.status not in valid_statuses:
@@ -254,7 +255,7 @@ class Command(BaseCommand):
     # ── Materials ─────────────────────────────────────────────
 
     def check_materials(self):
-        from apps.jobs.models import Material
+        from apps.inventory.models import Material
         for m in Material.objects.select_related('price_list_item', 'task').all():
             if not m.description and not m.price_list_item:
                 self.errors.append(
@@ -275,7 +276,7 @@ class Command(BaseCommand):
     # ── Line Items (all types) ────────────────────────────────
 
     def check_line_items(self):
-        from apps.jobs.models import EstimateLineItem
+        from apps.estimates.models import EstimateLineItem
         from apps.invoicing.models import InvoiceLineItem
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 
@@ -362,7 +363,7 @@ class Command(BaseCommand):
     # ── Price List Items ──────────────────────────────────────
 
     def check_price_list_items(self):
-        from apps.invoicing.models import PriceListItem
+        from apps.inventory.models import PriceListItem
         for pli in PriceListItem.objects.all():
             if not pli.line_item_type_id:
                 self.errors.append(
@@ -435,7 +436,7 @@ class Command(BaseCommand):
         be in 'superseded' status). The unique_together on
         (estimate_number, version) is DB-enforced, but the status
         invariant is not."""
-        from apps.jobs.models import Estimate
+        from apps.estimates.models import Estimate
         from collections import defaultdict
 
         # Group estimates by estimate_number
@@ -474,7 +475,8 @@ class Command(BaseCommand):
         - Job 'draft'/'submitted' should not have an accepted estimate.
         - Accepted estimate's job should be 'approved' or later
           (completed/cancelled are OK - job progressed past approval)."""
-        from apps.jobs.models import Job, Estimate
+        from apps.jobs.models import Job
+        from apps.estimates.models import Estimate
 
         for job in Job.objects.all():
             accepted = Estimate.objects.filter(job=job, status='accepted')
@@ -515,7 +517,7 @@ class Command(BaseCommand):
         estimate 'draft' -> worksheet 'draft', which is a bug. The correct
         behavior is that generating an estimate locks the worksheet to 'final'.
         """
-        from apps.jobs.models import EstWorksheet
+        from apps.estimates.models import EstWorksheet
 
         for ws in EstWorksheet.objects.select_related('estimate').filter(estimate__isnull=False):
             if ws.estimate.status == 'superseded':
@@ -535,7 +537,7 @@ class Command(BaseCommand):
 
     def check_worksheet_job_consistency(self):
         """Worksheet's job must match its estimate's job (if estimate is linked)."""
-        from apps.jobs.models import EstWorksheet
+        from apps.estimates.models import EstWorksheet
 
         for ws in EstWorksheet.objects.select_related('estimate', 'job').filter(estimate__isnull=False):
             if ws.job_id != ws.estimate.job_id:
@@ -548,7 +550,7 @@ class Command(BaseCommand):
         """Worksheet version chains: parent worksheet should have lower version,
         and superseded worksheets should have a child or be the result of
         explicit supersession."""
-        from apps.jobs.models import EstWorksheet
+        from apps.estimates.models import EstWorksheet
 
         for ws in EstWorksheet.objects.select_related('parent').filter(parent__isnull=False):
             if ws.parent.version >= ws.version:
@@ -614,7 +616,7 @@ class Command(BaseCommand):
     def check_estimate_line_item_job_consistency(self):
         """EstimateLineItems with a task source: the task's worksheet should
         belong to the same job as the estimate."""
-        from apps.jobs.models import EstimateLineItem
+        from apps.estimates.models import EstimateLineItem
 
         for li in EstimateLineItem.objects.select_related(
             'estimate__job', 'task__est_worksheet__job', 'task__work_order__job'

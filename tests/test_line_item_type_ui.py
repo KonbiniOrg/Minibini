@@ -7,7 +7,8 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
-from apps.jobs.models import Job, EstWorksheet, Task, TaskTemplate
+from apps.jobs.models import Job, Task
+from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType
 

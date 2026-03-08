@@ -1,8 +1,10 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job, Estimate, Task, WorkOrder, EstWorksheet
+from apps.jobs.models import Job, Task, WorkOrder
+from apps.estimates.models import Estimate, EstWorksheet
 from apps.contacts.models import Contact, Business
-from apps.invoicing.models import Invoice, PriceListItem
+from apps.invoicing.models import Invoice
+from apps.inventory.models import PriceListItem
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.core.models import User
 from decimal import Decimal

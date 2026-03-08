@@ -5,8 +5,10 @@ EarmarkService: get_earmark_preview() and create_earmarks_for_job().
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, EstWorksheet, Task, Material
-from apps.invoicing.models import PriceListItem
+from apps.jobs.models import Job, Task
+from apps.estimates.models import EstWorksheet
+from apps.inventory.models import Material
+from apps.inventory.models import PriceListItem
 from apps.inventory.models import Earmark
 from apps.inventory.services import EarmarkService
 
