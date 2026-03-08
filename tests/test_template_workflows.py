@@ -154,55 +154,6 @@ class EstimateCreationWorkflowTest(TestCase):
         # Estimate number is auto-generated
         self.assertTrue(estimate.estimate_number.startswith('EST-'))
     
-    def test_estimate_from_draft_work_order(self):
-        """Test Estimate creation from Draft WorkOrder."""
-        work_order = WorkOrder.objects.create(
-            job=self.job,
-            status='draft'
-        )
-        
-        estimate = EstimateService.create_from_work_order(work_order)
-        
-        self.assertEqual(estimate.status, 'draft')
-        self.assertEqual(estimate.job, self.job)
-    
-    def test_estimate_from_incomplete_work_order_rejected(self):
-        """Test Estimate creation from Incomplete WorkOrder is rejected."""
-        work_order = WorkOrder.objects.create(
-            job=self.job,
-            status='incomplete'
-        )
-        
-        with self.assertRaises(ValidationError) as context:
-            EstimateService.create_from_work_order(work_order)
-        
-        self.assertIn("Only Draft WorkOrders", str(context.exception))
-    
-    def test_estimate_from_complete_work_order_rejected(self):
-        """Test Estimate creation from Complete WorkOrder is rejected."""
-        work_order = WorkOrder.objects.create(
-            job=self.job,
-            status='complete'
-        )
-        
-        with self.assertRaises(ValidationError) as context:
-            EstimateService.create_from_work_order(work_order)
-        
-        self.assertIn("Only Draft WorkOrders", str(context.exception))
-    
-    def test_estimate_from_blocked_work_order_rejected(self):
-        """Test Estimate creation from Blocked WorkOrder is rejected."""
-        work_order = WorkOrder.objects.create(
-            job=self.job,
-            status='blocked'
-        )
-        
-        with self.assertRaises(ValidationError) as context:
-            EstimateService.create_from_work_order(work_order)
-        
-        self.assertIn("Only Draft WorkOrders", str(context.exception))
-
-
 class TaskCreationWorkflowTest(TestCase):
     """Test Task creation workflows."""
     
@@ -430,10 +381,6 @@ class StatusTransitionPreventionTest(TestCase):
         # Open estimate can create WorkOrder (incomplete status)
         work_order = WorkOrderService.create_from_estimate(estimate)
         self.assertEqual(work_order.status, 'incomplete')
-        
-        # Incomplete WorkOrder cannot create Estimate
-        with self.assertRaises(ValidationError):
-            EstimateService.create_from_work_order(work_order)
     
     def test_estimate_never_returns_to_draft(self):
         """Test business rule: Estimate never goes back to draft once moved to open."""

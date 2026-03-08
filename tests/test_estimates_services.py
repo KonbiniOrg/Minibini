@@ -8,6 +8,8 @@ from apps.estimates.models import (
 )
 from apps.estimates.services import EstimateService
 from apps.jobs.models import Job, Task, WorkOrder
+from apps.jobs.services import WorkOrderService
+from apps.inventory.models import Material
 from apps.core.services import NotFoundError
 from apps.core.models import LineItemType
 from apps.contacts.models import Contact, Business
@@ -279,6 +281,69 @@ class EstimateServiceAddLineItemTest(EstimatesTestBase):
             )
 
 
+class EstimateServiceReorderLineItemTest(EstimatesTestBase):
+    """Tests for EstimateService.reorder_line_item."""
+
+    def setUp(self):
+        super().setUp()
+        self.est = EstimateService.create_for_job(self.job.pk)
+        self.li1 = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, description='Item 1',
+            qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+        )
+        self.li2 = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, description='Item 2',
+            qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+        )
+
+    def test_reorder_down(self):
+        EstimateService.reorder_line_item(self.li1.pk, 'down')
+        self.li1.refresh_from_db()
+        self.li2.refresh_from_db()
+        self.assertEqual(self.li1.line_number, 2)
+        self.assertEqual(self.li2.line_number, 1)
+
+    def test_reorder_non_draft_raises(self):
+        EstimateService.update_status(self.est.pk, 'open')
+        with self.assertRaises(ValidationError):
+            EstimateService.reorder_line_item(self.li1.pk, 'down')
+
+    def test_reorder_not_found(self):
+        with self.assertRaises(NotFoundError):
+            EstimateService.reorder_line_item(99999, 'down')
+
+
+class EstimateServiceDeleteLineItemTest(EstimatesTestBase):
+    """Tests for EstimateService.delete_line_item."""
+
+    def setUp(self):
+        super().setUp()
+        self.est = EstimateService.create_for_job(self.job.pk)
+        self.li1 = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, description='Item 1',
+            qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+        )
+        self.li2 = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, description='Item 2',
+            qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+        )
+
+    def test_delete_and_renumber(self):
+        EstimateService.delete_line_item(self.li1.pk)
+        self.assertFalse(EstimateLineItem.objects.filter(pk=self.li1.pk).exists())
+        self.li2.refresh_from_db()
+        self.assertEqual(self.li2.line_number, 1)
+
+    def test_delete_non_draft_raises(self):
+        EstimateService.update_status(self.est.pk, 'open')
+        with self.assertRaises(ValidationError):
+            EstimateService.delete_line_item(self.li1.pk)
+
+    def test_delete_not_found(self):
+        with self.assertRaises(NotFoundError):
+            EstimateService.delete_line_item(99999)
+
+
 # --- WorksheetService ---
 
 class WorksheetServiceCreateTest(EstimatesTestBase):
@@ -365,3 +430,117 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
             WorksheetService.add_task_manual(
                 self.ws.pk, name='X', units='ea',
             )
+
+
+# --- WorkOrderTemplateService.delete_association ---
+
+class WorkOrderTemplateServiceDeleteAssociationTest(EstimatesTestBase):
+    """Tests for WorkOrderTemplateService.delete_association."""
+
+    def test_delete_unbundled_association(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tmpl = WorkOrderTemplateService.create_template(template_name='T')
+        tt = WorkOrderTemplateService.create_task_template(
+            template_name='Task', line_item_type=self.lit,
+        )
+        assoc = TemplateTaskAssociation.objects.create(
+            work_order_template=tmpl, task_template=tt,
+            mapping_strategy='direct', sort_order=1,
+        )
+        pk = assoc.pk
+        WorkOrderTemplateService.delete_association(tmpl.pk, pk)
+        self.assertFalse(TemplateTaskAssociation.objects.filter(pk=pk).exists())
+
+    def test_delete_association_not_found(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tmpl = WorkOrderTemplateService.create_template(template_name='T')
+        with self.assertRaises(NotFoundError):
+            WorkOrderTemplateService.delete_association(tmpl.pk, 99999)
+
+    def test_delete_association_wrong_template(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tmpl1 = WorkOrderTemplateService.create_template(template_name='T1')
+        tmpl2 = WorkOrderTemplateService.create_template(template_name='T2')
+        tt = WorkOrderTemplateService.create_task_template(
+            template_name='Task', line_item_type=self.lit,
+        )
+        assoc = TemplateTaskAssociation.objects.create(
+            work_order_template=tmpl1, task_template=tt,
+            mapping_strategy='direct', sort_order=1,
+        )
+        with self.assertRaises(NotFoundError):
+            WorkOrderTemplateService.delete_association(tmpl2.pk, assoc.pk)
+
+
+# --- WorksheetService.finalize ---
+
+class WorksheetServiceFinalizeTest(EstimatesTestBase):
+    """Tests for WorksheetService.finalize."""
+
+    def test_finalize_draft_worksheet(self):
+        from apps.estimates.services import WorksheetService
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        updated = WorksheetService.finalize(ws.pk)
+        self.assertEqual(updated.status, 'final')
+
+    def test_finalize_non_draft_raises(self):
+        from apps.estimates.services import WorksheetService
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        ws.status = 'final'
+        ws.save()
+        with self.assertRaises(ValidationError):
+            WorksheetService.finalize(ws.pk)
+
+    def test_finalize_not_found(self):
+        from apps.estimates.services import WorksheetService
+        with self.assertRaises(NotFoundError):
+            WorksheetService.finalize(99999)
+
+
+# --- WorkOrderService.copy_from_worksheet ---
+
+class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
+    """Tests for WorkOrderService.copy_from_worksheet."""
+
+    def test_copy_tasks(self):
+        from apps.estimates.services import WorksheetService
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        Task.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
+        Task.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
+
+        wo = WorkOrder.objects.create(job=self.job, status='draft')
+        WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
+        self.assertEqual(Task.objects.filter(work_order=wo).count(), 2)
+
+    def test_copy_bundles(self):
+        from apps.estimates.services import WorksheetService
+        from apps.jobs.models import TaskBundle
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        bundle = TaskBundle.objects.create(
+            est_worksheet=ws, name='Bundle 1',
+            line_item_type=self.lit, sort_order=1,
+        )
+        Task.objects.create(
+            est_worksheet=ws, name='Bundled', sort_order=1,
+            mapping_strategy='bundle', bundle=bundle,
+        )
+
+        wo = WorkOrder.objects.create(job=self.job, status='draft')
+        WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
+        wo_bundles = TaskBundle.objects.filter(work_order=wo)
+        self.assertEqual(wo_bundles.count(), 1)
+        self.assertEqual(wo_bundles.first().name, 'Bundle 1')
+
+    def test_copy_materials(self):
+        from apps.estimates.services import WorksheetService
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        task = Task.objects.create(est_worksheet=ws, name='Task', sort_order=1)
+        Material.objects.create(
+            task=task, description='Steel', quantity=Decimal('5.00'),
+        )
+
+        wo = WorkOrder.objects.create(job=self.job, status='draft')
+        WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
+        wo_task = Task.objects.get(work_order=wo)
+        self.assertEqual(wo_task.materials.count(), 1)
+        self.assertEqual(wo_task.materials.first().description, 'Steel')

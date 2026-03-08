@@ -143,53 +143,6 @@ def _next_worksheet_sort_order(worksheet):
     return max(max_task, max_bundle) + 1
 
 
-def _copy_worksheet_to_work_order(worksheet, work_order):
-    """Copy a worksheet's bundles, tasks, and materials to a work order."""
-    from apps.jobs.models import TaskBundle
-    from apps.inventory.models import Material
-
-    # Copy TaskBundles, mapping old bundle PKs to new ones
-    bundle_mapping = {}
-    for bundle in TaskBundle.objects.filter(est_worksheet=worksheet):
-        new_bundle = TaskBundle.objects.create(
-            work_order=work_order,
-            name=bundle.name,
-            description=bundle.description,
-            line_item_type=bundle.line_item_type,
-            sort_order=bundle.sort_order,
-            source_template_bundle=bundle.source_template_bundle,
-        )
-        bundle_mapping[bundle.pk] = new_bundle
-
-    # Copy tasks with their materials
-    for task in Task.objects.filter(est_worksheet=worksheet).prefetch_related('materials'):
-        new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
-        new_task = Task.objects.create(
-            work_order=work_order,
-            name=task.name,
-            description=task.description,
-            units=task.units,
-            rate=task.rate,
-            est_qty=task.est_qty,
-            assignee=task.assignee,
-            line_item_type=task.line_item_type,
-            mapping_strategy=task.mapping_strategy,
-            bundle=new_bundle,
-            sort_order=task.sort_order,
-        )
-
-        for material in task.materials.all():
-            Material.objects.create(
-                task=new_task,
-                price_list_item=material.price_list_item,
-                line_item_type=material.line_item_type,
-                description=material.description,
-                quantity=material.quantity,
-                unit_cost=material.unit_cost,
-                sell_price=material.sell_price,
-            )
-
-
 def estimate_list(request):
     estimates = Estimate.objects.all().order_by('-estimate_id')
     return render(request, 'jobs/estimate_list.html', {'estimates': estimates})
@@ -335,7 +288,7 @@ def work_order_template_detail(request, template_id):
                 WorkOrderTemplateService.unbundle_association(template.pk, assoc.pk)
                 messages.success(request, f'"{task_template.template_name}" unbundled.')
             elif assoc:
-                assoc.delete()
+                WorkOrderTemplateService.delete_association(template.pk, assoc.pk)
                 messages.success(request, f'Task Template "{task_template.template_name}" removed.')
         return redirect('estimates:work_order_template_detail', template_id=template_id)
 
@@ -514,8 +467,7 @@ def estworksheet_generate_estimate(request, worksheet_id):
             estimate = service.generate_estimate_from_worksheet(worksheet)
 
             # Mark worksheet as final after generating estimate
-            worksheet.status = 'final'
-            worksheet.save()  # TODO: route through WorksheetService when status method exists
+            WorksheetService.finalize(worksheet.pk)
 
             messages.success(request, f'Estimate {estimate.estimate_number} generated successfully!')
             return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
@@ -727,16 +679,14 @@ def task_add_manual(request, worksheet_id):
 
 def estimate_delete_line_item(request, estimate_id, line_item_id):
     """Delete a line item from an estimate and renumber remaining items"""
-    from apps.core.services import LineItemService
     from django.core.exceptions import ValidationError
 
     estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
-    line_item = get_object_or_404(EstimateLineItem, line_item_id=line_item_id, estimate=estimate)
+    get_object_or_404(EstimateLineItem, line_item_id=line_item_id, estimate=estimate)
 
     if request.method == 'POST':
         try:
-            # Use the service to delete and renumber
-            parent_container, deleted_line_number = LineItemService.delete_line_item_with_renumber(line_item)
+            EstimateService.delete_line_item(line_item_id)
             messages.success(request, f'Line item deleted and remaining items renumbered.')
         except ValidationError as e:
             messages.error(request, str(e))
@@ -891,15 +841,13 @@ def task_reorder_worksheet(request, worksheet_id, task_id, direction):
 @require_POST
 def estimate_reorder_line_item(request, estimate_id, line_item_id, direction):
     """Reorder line items within an Estimate by swapping line numbers."""
-    from apps.core.services import LineItemService
     from django.core.exceptions import ValidationError
 
     estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
-    line_item = get_object_or_404(EstimateLineItem, line_item_id=line_item_id, estimate=estimate)
+    get_object_or_404(EstimateLineItem, line_item_id=line_item_id, estimate=estimate)
 
     try:
-        # Use the service to reorder
-        LineItemService.reorder_line_item(line_item, direction)
+        EstimateService.reorder_line_item(line_item_id, direction)
     except ValidationError as e:
         messages.error(request, str(e))
 
@@ -974,7 +922,7 @@ def work_order_create_from_estimate(request, estimate_id):
 
             if worksheet:
                 # Copy worksheet tasks, bundles, and materials directly
-                _copy_worksheet_to_work_order(worksheet, work_order)
+                WorkOrderService.copy_from_worksheet(work_order.pk, worksheet.pk)
             else:
                 # No worksheet — generate tasks from estimate line items
                 from apps.jobs.services import LineItemTaskService

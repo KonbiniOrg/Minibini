@@ -121,11 +121,12 @@ class InventoryItemFormTest(TestCase):
         )
         self.assertTrue(form.is_valid())
 
-    def test_duplicate_code_allowed_if_not_inventoried(self):
-        """Non-inventoried PLI with same code should not block."""
+    def test_duplicate_code_rejected_even_if_not_inventoried(self):
+        """Duplicate code is always rejected (unique constraint at model level)."""
         PriceListItem.objects.create(code='DUPE.002', is_inventoried=False)
         form = InventoryItemForm(data=self._form_data(code='DUPE.002'))
-        self.assertTrue(form.is_valid())
+        self.assertFalse(form.is_valid())
+        self.assertIn('code', form.errors)
 
     def test_negative_purchase_price_rejected(self):
         form = InventoryItemForm(data=self._form_data(purchase_price='-10.00'))

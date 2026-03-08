@@ -11,7 +11,7 @@ from django.db import transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from .models import Job, WorkOrder, Task
+from .models import Job, WorkOrder, Task, TaskBundle
 from apps.estimates.models import (
     Estimate, WorkOrderTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem
@@ -220,6 +220,62 @@ class WorkOrderService:
         wo.save()
         return wo
 
+    @staticmethod
+    def copy_from_worksheet(work_order_pk, worksheet_pk):
+        """Copy a worksheet's bundles, tasks, and materials to a work order."""
+        from apps.estimates.models import EstWorksheet
+        from apps.jobs.models import TaskBundle
+        from apps.inventory.models import Material
+
+        try:
+            wo = WorkOrder.objects.get(pk=work_order_pk)
+        except WorkOrder.DoesNotExist:
+            raise NotFoundError(f'WorkOrder {work_order_pk} not found')
+        try:
+            ws = EstWorksheet.objects.get(pk=worksheet_pk)
+        except EstWorksheet.DoesNotExist:
+            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
+
+        # Copy TaskBundles, mapping old bundle PKs to new ones
+        bundle_mapping = {}
+        for bundle in TaskBundle.objects.filter(est_worksheet=ws):
+            new_bundle = TaskBundle.objects.create(
+                work_order=wo,
+                name=bundle.name,
+                description=bundle.description,
+                line_item_type=bundle.line_item_type,
+                sort_order=bundle.sort_order,
+                source_template_bundle=bundle.source_template_bundle,
+            )
+            bundle_mapping[bundle.pk] = new_bundle
+
+        # Copy tasks with their materials
+        for task in Task.objects.filter(est_worksheet=ws).prefetch_related('materials'):
+            new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
+            new_task = Task.objects.create(
+                work_order=wo,
+                name=task.name,
+                description=task.description,
+                units=task.units,
+                rate=task.rate,
+                est_qty=task.est_qty,
+                assignee=task.assignee,
+                line_item_type=task.line_item_type,
+                mapping_strategy=task.mapping_strategy,
+                bundle=new_bundle,
+                sort_order=task.sort_order,
+            )
+            for material in task.materials.all():
+                Material.objects.create(
+                    task=new_task,
+                    price_list_item=material.price_list_item,
+                    line_item_type=material.line_item_type,
+                    description=material.description,
+                    quantity=material.quantity,
+                    unit_cost=material.unit_cost,
+                    sell_price=material.sell_price,
+                )
+
 
 class TaskService:
     """Service class for Task creation workflows."""
@@ -275,7 +331,9 @@ class TaskService:
 
     @staticmethod
     def reorder_tasks(task_id, direction):
-        """Reorder a task within its container by swapping sort_order."""
+        """Reorder a task within its container — delegates to BundlingService."""
+        from apps.core.services import BundlingService
+
         try:
             task = Task.objects.get(pk=task_id)
         except Task.DoesNotExist:
@@ -285,36 +343,17 @@ class TaskService:
         if container is None:
             raise ValidationError('Task has no container.')
 
-        # Determine filter for sibling tasks
+        # Build queryset for the container
         if task.work_order:
-            siblings = list(Task.objects.filter(
-                work_order=task.work_order
-            ).order_by('sort_order', 'task_id'))
+            items_qs = Task.objects.filter(work_order=task.work_order)
         else:
-            siblings = list(Task.objects.filter(
-                est_worksheet=task.est_worksheet
-            ).order_by('sort_order', 'task_id'))
+            items_qs = Task.objects.filter(est_worksheet=task.est_worksheet)
 
-        try:
-            current_index = next(
-                i for i, t in enumerate(siblings) if t.task_id == task.task_id
-            )
-        except StopIteration:
-            raise ValidationError('Task not found in container.')
-
-        if direction == 'up' and current_index > 0:
-            swap_index = current_index - 1
-        elif direction == 'down' and current_index < len(siblings) - 1:
-            swap_index = current_index + 1
-        else:
-            raise ValidationError(f'Cannot move task {direction} from current position.')
-
-        current = siblings[current_index]
-        swap = siblings[swap_index]
-        current.sort_order, swap.sort_order = swap.sort_order, current.sort_order
-        current.save()
-        swap.save()
-        return current
+        BundlingService.reorder_container_items(
+            items_qs, 'task', task_id, direction,
+        )
+        task.refresh_from_db()
+        return task
 
     @staticmethod
     def create_line_item_from_task(task, estimate):

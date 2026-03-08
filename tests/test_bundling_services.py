@@ -241,9 +241,9 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
     def test_move_task_down(self):
         """Move unbundled task down past a bundle."""
         items_qs = Task.objects.filter(est_worksheet=self.ws)
-        bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
+
         BundlingService.reorder_container_items(
-            items_qs, bundles_qs, 'task', self.t1.pk, 'down',
+            items_qs, 'task', self.t1.pk, 'down',
         )
         self.t1.refresh_from_db()
         self.bundle.refresh_from_db()
@@ -253,9 +253,9 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
     def test_move_bundle_down(self):
         """Move a bundle down past an unbundled task."""
         items_qs = Task.objects.filter(est_worksheet=self.ws)
-        bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
+
         BundlingService.reorder_container_items(
-            items_qs, bundles_qs, 'bundle', self.bundle.pk, 'down',
+            items_qs, 'bundle', self.bundle.pk, 'down',
         )
         self.bundle.refresh_from_db()
         self.t2.refresh_from_db()
@@ -265,11 +265,82 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
     def test_cannot_move_past_boundary(self):
         """Moving beyond boundaries raises ValidationError."""
         items_qs = Task.objects.filter(est_worksheet=self.ws)
-        bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
         with self.assertRaises(ValidationError):
             BundlingService.reorder_container_items(
-                items_qs, bundles_qs, 'task', self.t1.pk, 'up',
+                items_qs, 'task', self.t1.pk, 'up',
             )
+
+    def test_swap_two_bundles(self):
+        """Two adjacent bundles can swap positions."""
+        from apps.estimates.models import EstWorksheet
+        ws2 = EstWorksheet.objects.create(job=self.job, status='draft')
+        bundle_a = TaskBundle.objects.create(
+            est_worksheet=ws2, name='Bundle A',
+            line_item_type=self.lit, sort_order=1,
+        )
+        Task.objects.create(
+            est_worksheet=ws2, name='A1', sort_order=1,
+            mapping_strategy='bundle', bundle=bundle_a,
+        )
+        bundle_b = TaskBundle.objects.create(
+            est_worksheet=ws2, name='Bundle B',
+            line_item_type=self.lit, sort_order=2,
+        )
+        Task.objects.create(
+            est_worksheet=ws2, name='B1', sort_order=1,
+            mapping_strategy='bundle', bundle=bundle_b,
+        )
+        # Container: bundle_a(1), bundle_b(2) — move bundle_b up
+        items_qs = Task.objects.filter(est_worksheet=ws2)
+        BundlingService.reorder_container_items(
+            items_qs, 'bundle', bundle_b.pk, 'up',
+        )
+        bundle_a.refresh_from_db()
+        bundle_b.refresh_from_db()
+        self.assertEqual(bundle_b.sort_order, 1)
+        self.assertEqual(bundle_a.sort_order, 2)
+
+    def test_unbundled_only_swap(self):
+        """Simple swap with no bundles present."""
+        from apps.estimates.models import EstWorksheet
+        ws2 = EstWorksheet.objects.create(job=self.job, status='draft')
+        a = Task.objects.create(est_worksheet=ws2, name='A', sort_order=1)
+        b = Task.objects.create(est_worksheet=ws2, name='B', sort_order=2)
+        c = Task.objects.create(est_worksheet=ws2, name='C', sort_order=3)
+
+        items_qs = Task.objects.filter(est_worksheet=ws2)
+        BundlingService.reorder_container_items(
+            items_qs, 'task', b.pk, 'down',
+        )
+        b.refresh_from_db()
+        c.refresh_from_db()
+        a.refresh_from_db()
+        self.assertEqual(a.sort_order, 1)
+        self.assertEqual(b.sort_order, 3)
+        self.assertEqual(c.sort_order, 2)
+
+    def test_multi_member_bundle_moves_as_unit(self):
+        """A bundle with multiple members moves as one unit; member sort_orders unchanged."""
+        # Add a second member to the existing bundle
+        bt2 = Task.objects.create(
+            est_worksheet=self.ws, name='BT2', sort_order=2,
+            mapping_strategy='bundle', bundle=self.bundle,
+        )
+        # Container: t1(1), bundle(2), t2(3) — move bundle down
+        items_qs = Task.objects.filter(est_worksheet=self.ws)
+        BundlingService.reorder_container_items(
+            items_qs, 'bundle', self.bundle.pk, 'down',
+        )
+        self.bundle.refresh_from_db()
+        self.t2.refresh_from_db()
+        self.bt1.refresh_from_db()
+        bt2.refresh_from_db()
+        # Bundle and t2 swapped
+        self.assertEqual(self.bundle.sort_order, 3)
+        self.assertEqual(self.t2.sort_order, 2)
+        # Member sort_orders within the bundle are untouched
+        self.assertEqual(self.bt1.sort_order, 1)
+        self.assertEqual(bt2.sort_order, 2)
 
 
 class BundlingServiceReorderInBundleTest(BundlingTestBase):

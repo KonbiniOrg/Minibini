@@ -20,34 +20,6 @@ class EstimateService:
     """Service class for Estimate creation and management."""
 
     @staticmethod
-    def create_from_work_order(work_order):
-        """
-        Create Estimate from WorkOrder.
-        Only Draft WorkOrders can create Estimates.
-        Created Estimate starts in 'draft' status.
-        """
-        from apps.jobs.services import TaskService
-
-        if work_order.status != 'draft':
-            raise ValidationError(
-                f"Only Draft WorkOrders can create Estimates. "
-                f"WorkOrder {work_order.pk} is {work_order.status}."
-            )
-
-        estimate_number = NumberGenerationService.generate_next_number('estimate')
-
-        estimate = Estimate.objects.create(
-            job=work_order.job,
-            estimate_number=estimate_number,
-            status='draft'
-        )
-
-        for task in work_order.task_set.all():
-            TaskService.create_line_item_from_task(task, estimate)
-
-        return estimate
-
-    @staticmethod
     def create_direct(job, **kwargs):
         """
         Create Estimate directly. Starts in 'draft' status.
@@ -164,6 +136,34 @@ class EstimateService:
         return li
 
     @staticmethod
+    def reorder_line_item(line_item_id, direction):
+        """Reorder an estimate line item — validates draft status, delegates to LineItemService."""
+        from apps.core.services import LineItemService
+        try:
+            li = EstimateLineItem.objects.get(pk=line_item_id)
+        except EstimateLineItem.DoesNotExist:
+            raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
+        if li.estimate.status != 'draft':
+            raise ValidationError(
+                'Cannot modify line items on a non-draft estimate.'
+            )
+        return LineItemService.reorder_line_item(li, direction)
+
+    @staticmethod
+    def delete_line_item(line_item_id):
+        """Delete an estimate line item and renumber — validates draft status."""
+        from apps.core.services import LineItemService
+        try:
+            li = EstimateLineItem.objects.get(pk=line_item_id)
+        except EstimateLineItem.DoesNotExist:
+            raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
+        if li.estimate.status != 'draft':
+            raise ValidationError(
+                'Cannot modify line items on a non-draft estimate.'
+            )
+        return LineItemService.delete_line_item_with_renumber(li)
+
+    @staticmethod
     def add_line_item_from_pli(estimate_pk, pli_pk, qty):
         """Add a line item from a PriceListItem to a draft estimate."""
         try:
@@ -261,6 +261,23 @@ class WorkOrderTemplateService:
             )
         tt.delete()
 
+    # --- Association management ---
+
+    @staticmethod
+    def delete_association(template_pk, assoc_pk):
+        """Delete an unbundled association from a template."""
+        try:
+            tmpl = WorkOrderTemplate.objects.get(pk=template_pk)
+        except WorkOrderTemplate.DoesNotExist:
+            raise NotFoundError(f'WorkOrderTemplate {template_pk} not found')
+        try:
+            assoc = TemplateTaskAssociation.objects.get(
+                pk=assoc_pk, work_order_template=tmpl,
+            )
+        except TemplateTaskAssociation.DoesNotExist:
+            raise NotFoundError(f'TemplateTaskAssociation {assoc_pk} not found')
+        assoc.delete()
+
     # --- Bundling operations ---
 
     @staticmethod
@@ -345,7 +362,6 @@ class WorkOrderTemplateService:
     def reorder_items(template_pk, item_type, item_id, direction):
         """Reorder items at container level on a template."""
         from apps.core.services import BundlingService
-        from apps.estimates.models import TemplateBundle
 
         try:
             tmpl = WorkOrderTemplate.objects.get(pk=template_pk)
@@ -355,9 +371,8 @@ class WorkOrderTemplateService:
         items_qs = TemplateTaskAssociation.objects.filter(
             work_order_template=tmpl,
         )
-        bundles_qs = TemplateBundle.objects.filter(work_order_template=tmpl)
         BundlingService.reorder_container_items(
-            items_qs, bundles_qs, item_type, item_id, direction,
+            items_qs, item_type, item_id, direction,
         )
 
     @staticmethod
@@ -536,9 +551,8 @@ class WorksheetService:
             raise ValidationError('Cannot reorder on a non-draft worksheet.')
 
         items_qs = Task.objects.filter(est_worksheet=ws)
-        bundles_qs = TaskBundle.objects.filter(est_worksheet=ws)
         BundlingService.reorder_container_items(
-            items_qs, bundles_qs, item_type, item_id, direction,
+            items_qs, item_type, item_id, direction,
         )
 
     @staticmethod
@@ -561,6 +575,21 @@ class WorksheetService:
             raise NotFoundError(f'Task {task_pk} not found in bundle')
         bundle_items_qs = Task.objects.filter(bundle=task.bundle)
         BundlingService.reorder_in_bundle(bundle_items_qs, task, direction)
+
+    @staticmethod
+    def finalize(worksheet_pk):
+        """Mark a draft worksheet as final."""
+        try:
+            ws = EstWorksheet.objects.get(pk=worksheet_pk)
+        except EstWorksheet.DoesNotExist:
+            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
+        if ws.status != 'draft':
+            raise ValidationError(
+                f'Cannot finalize a {ws.get_status_display().lower()} worksheet.'
+            )
+        ws.status = 'final'
+        ws.save()
+        return ws
 
 
 class EstimateGenerationService:

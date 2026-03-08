@@ -224,15 +224,12 @@ def job_create(request):
             email_record_id = request.session.get('email_record_id_for_job')
             if email_record_id:
                 try:
-                    from apps.core.models import EmailRecord
-                    email_record = EmailRecord.objects.get(email_record_id=email_record_id)
-                    email_record.job = job
-                    email_record.save()
+                    from apps.core.services import EmailService
+                    EmailService.associate_with_job(email_record_id, job.pk)
                     messages.info(request, f'Email linked to job {job.job_number}.')
-                    # Clear session
                     request.session.pop('email_record_id_for_job', None)
                     request.session.pop('email_body_for_job', None)
-                except EmailRecord.DoesNotExist:
+                except (NotFoundError, Exception):
                     pass
 
             messages.success(request, f'Job {job.job_number} created successfully.')

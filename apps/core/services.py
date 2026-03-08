@@ -640,7 +640,7 @@ class BundlingService:
                 bundle.delete()
 
     @staticmethod
-    def reorder_container_items(items_qs, bundles_qs, item_type, item_id, direction):
+    def reorder_container_items(items_qs, item_type, item_id, direction):
         """
         Reorder items at the container level. Bundles and unbundled items
         share the same sort_order space.
@@ -718,59 +718,12 @@ class LineItemService:
     Service for managing line items across different container types.
 
     Works with any container object (Estimate, Invoice, PurchaseOrder, Bill)
-    that has a 'status' field and line items inheriting from BaseLineItem.
+    that has line items inheriting from BaseLineItem.
 
-    All operations validate that the container is in 'draft' status before
-    allowing modifications, ensuring consistency across all document types.
-
-    Example usage:
-        # Delete a line item
-        try:
-            parent, line_num = LineItemService.delete_line_item_with_renumber(line_item)
-            messages.success(request, f'Line item {line_num} deleted successfully.')
-        except ValidationError as e:
-            messages.error(request, str(e))
-
-        # Reorder a line item
-        try:
-            parent = LineItemService.reorder_line_item(line_item, 'up')
-            messages.success(request, 'Line item moved up.')
-        except ValidationError as e:
-            messages.error(request, str(e))
+    Status validation is the responsibility of calling domain services
+    (e.g. EstimateService, PurchaseOrderService), not LineItemService.
+    This matches how BundlingService delegates status checks to callers.
     """
-
-    EDITABLE_STATUS = 'draft'
-
-    @classmethod
-    def can_modify_line_items(cls, container):
-        """
-        Check if line items can be modified on this container.
-
-        Args:
-            container: An object with a 'status' attribute (Estimate, Invoice, PO, Bill)
-
-        Returns:
-            bool: True if line items can be modified
-        """
-        return container.status == cls.EDITABLE_STATUS
-
-    @classmethod
-    def validate_modification(cls, container):
-        """
-        Validate that the container allows line item modifications.
-
-        Args:
-            container: An object with a 'status' attribute
-
-        Raises:
-            ValidationError: If modifications are not allowed
-        """
-        if not cls.can_modify_line_items(container):
-            container_type = container.__class__.__name__
-            raise ValidationError(
-                f'Cannot modify line items on a {container.get_status_display().lower()} '
-                f'{container_type.lower()}. Only draft {container_type.lower()}s can be modified.'
-            )
 
     @classmethod
     def get_line_item_model(cls, line_item):
@@ -805,23 +758,16 @@ class LineItemService:
         """
         Delete a line item and renumber remaining items in the container.
 
-        This is the primary method for deleting line items. It:
-        1. Validates the parent container is in draft status
-        2. Deletes the line item
-        3. Renumbers remaining line items sequentially
+        Callers must validate container status before calling this method.
 
         Args:
             line_item: An instance of a BaseLineItem subclass
 
-        Raises:
-            ValidationError: If the parent container doesn't allow modifications
-
         Returns:
             tuple: (parent_container, deleted_line_number)
         """
-        # Get parent container and validate
+        # Get parent container
         parent_container = cls.get_parent_container(line_item)
-        cls.validate_modification(parent_container)
 
         # Store info before deletion
         deleted_line_number = line_item.line_number
@@ -850,19 +796,20 @@ class LineItemService:
         """
         Reorder a line item within its container by swapping line numbers.
 
+        Callers must validate container status before calling this method.
+
         Args:
             line_item: An instance of a BaseLineItem subclass
             direction: 'up' or 'down'
 
         Raises:
-            ValidationError: If modifications not allowed or invalid direction
+            ValidationError: If direction is invalid or item can't move
 
         Returns:
             The parent container object
         """
-        # Get parent container and validate
+        # Get parent container
         parent_container = cls.get_parent_container(line_item)
-        cls.validate_modification(parent_container)
 
         # Get all line items for this container
         line_item_model = cls.get_line_item_model(line_item)

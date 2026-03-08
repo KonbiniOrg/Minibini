@@ -71,3 +71,59 @@ class InvoiceServiceReorderTest(TestCase):
         self.invoice.save()
         with self.assertRaises(ValidationError):
             InvoiceService.reorder_line_item(self.li1.pk, 'down')
+
+
+class InvoiceServiceDeleteLineItemTest(TestCase):
+    """Tests for InvoiceService.delete_line_item."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='User',
+            email='test@test.com', work_number='555-1234',
+        )
+        self.business = Business.objects.create(
+            business_name='Test Biz', business_phone='555-1234',
+            default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
+        self.job = Job.objects.create(
+            name='Test Job', job_number='J2026-0001',
+            contact=self.contact, status='draft',
+        )
+        self.lit = LineItemType.objects.create(
+            code='SVC', name='Service', taxable=True,
+        )
+        self.invoice = Invoice.objects.create(
+            job=self.job, invoice_number='INV-0001', status='draft',
+        )
+        self.li1 = InvoiceLineItem.objects.create(
+            invoice=self.invoice, line_number=1,
+            description='Item 1', qty=1, price=Decimal('10.00'),
+            line_item_type=self.lit,
+        )
+        self.li2 = InvoiceLineItem.objects.create(
+            invoice=self.invoice, line_number=2,
+            description='Item 2', qty=1, price=Decimal('20.00'),
+            line_item_type=self.lit,
+        )
+
+    def test_delete_line_item(self):
+        """Delete an invoice line item and renumber."""
+        InvoiceService.delete_line_item(self.li1.pk)
+        self.assertFalse(InvoiceLineItem.objects.filter(pk=self.li1.pk).exists())
+        self.li2.refresh_from_db()
+        self.assertEqual(self.li2.line_number, 1)
+
+    def test_delete_line_item_non_draft_raises(self):
+        """Cannot delete line items on a non-draft invoice."""
+        self.invoice.status = 'open'
+        self.invoice.save()
+        with self.assertRaises(ValidationError):
+            InvoiceService.delete_line_item(self.li1.pk)
+
+    def test_delete_line_item_not_found(self):
+        """Raises NotFoundError for missing line item."""
+        from apps.core.services import NotFoundError
+        with self.assertRaises(NotFoundError):
+            InvoiceService.delete_line_item(99999)

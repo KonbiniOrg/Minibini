@@ -112,22 +112,30 @@ class PurchaseOrderService:
 
     @staticmethod
     def reorder_line_item(line_item_id, direction):
-        """Reorder a PO line item — delegates to LineItemService."""
+        """Reorder a PO line item — validates draft status, delegates to LineItemService."""
         from apps.core.services import LineItemService
         try:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
+        if li.purchase_order.status != 'draft':
+            raise ValidationError(
+                'Cannot modify line items on a non-draft purchase order.'
+            )
         return LineItemService.reorder_line_item(li, direction)
 
     @staticmethod
     def delete_line_item(line_item_id):
-        """Delete a PO line item and renumber — delegates to LineItemService."""
+        """Delete a PO line item and renumber — validates draft status, delegates to LineItemService."""
         from apps.core.services import LineItemService
         try:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
+        if li.purchase_order.status != 'draft':
+            raise ValidationError(
+                'Cannot modify line items on a non-draft purchase order.'
+            )
         return LineItemService.delete_line_item_with_renumber(li)
 
 
@@ -246,20 +254,28 @@ class BillService:
 
     @staticmethod
     def reorder_line_item(line_item_id, direction):
-        """Reorder a bill line item — delegates to LineItemService."""
+        """Reorder a bill line item — validates draft status, delegates to LineItemService."""
         from apps.core.services import LineItemService
         try:
             li = BillLineItem.objects.get(pk=line_item_id)
         except BillLineItem.DoesNotExist:
             raise NotFoundError(f'BillLineItem {line_item_id} not found')
+        if li.bill.status != 'draft':
+            raise ValidationError(
+                'Cannot modify line items on a non-draft bill.'
+            )
         return LineItemService.reorder_line_item(li, direction)
 
     @staticmethod
     def delete_line_item(line_item_id):
-        """Delete a bill line item and renumber — delegates to LineItemService."""
+        """Delete a bill line item and renumber — validates draft status, delegates to LineItemService."""
         from apps.core.services import LineItemService
         try:
             li = BillLineItem.objects.get(pk=line_item_id)
         except BillLineItem.DoesNotExist:
             raise NotFoundError(f'BillLineItem {line_item_id} not found')
+        if li.bill.status != 'draft':
+            raise ValidationError(
+                'Cannot modify line items on a non-draft bill.'
+            )
         return LineItemService.delete_line_item_with_renumber(li)
