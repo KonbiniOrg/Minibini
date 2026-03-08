@@ -6,10 +6,13 @@ from django import forms
 from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
+from django.core.exceptions import ValidationError
 from .models import Job, Task, WorkOrder
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.inventory.models import Material
-from apps.core.services import TaxCalculationService
+from apps.core.services import TaxCalculationService, NotFoundError
+from .services import JobService, WorkOrderService, TaskService
+from apps.inventory.services import InventoryService
 from .forms import (
     JobCreateForm, JobEditForm,
     TaskEditForm, WorkOrderStatusForm,
@@ -214,9 +217,8 @@ def job_create(request):
     if request.method == 'POST':
         form = JobCreateForm(request.POST)
         if form.is_valid():
-            job = form.save(commit=False)
-            # Job starts in 'draft' status by default (defined in model)
-            job.save()
+            data = form.cleaned_data.copy()
+            job = JobService.create_job(**data)
 
             # Link to email if this came from email workflow
             email_record_id = request.session.get('email_record_id_for_job')
@@ -256,7 +258,7 @@ def job_edit(request, job_id):
     if request.method == 'POST':
         form = JobEditForm(request.POST, instance=job)
         if form.is_valid():
-            job = form.save()
+            job = JobService.update_job(job.pk, **form.cleaned_data)
             messages.success(request, f'Job {job.job_number} updated successfully.')
             return redirect('jobs:detail', job_id=job.job_id)
     else:
@@ -296,7 +298,7 @@ def task_edit(request, task_id):
     if request.method == 'POST':
         form = TaskEditForm(request.POST, instance=task)
         if form.is_valid():
-            form.save()
+            TaskService.update_task(task.pk, **form.cleaned_data)
             messages.success(request, f'Task "{task.name}" updated.')
             return redirect('jobs:task_detail', task_id=task_id)
     else:
@@ -322,8 +324,7 @@ def work_order_detail(request, work_order_id):
             if form.is_valid():
                 new_status = form.cleaned_data['status']
                 if new_status != work_order.status:
-                    work_order.status = new_status
-                    work_order.save()
+                    WorkOrderService.update_status(work_order.pk, new_status)
                     messages.success(request, f'Work Order status updated to {new_status.title()}')
             return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
         else:
@@ -349,37 +350,11 @@ def work_order_detail(request, work_order_id):
 
 @require_POST
 def task_reorder_work_order(request, work_order_id, task_id, direction):
-    """Reorder tasks within a WorkOrder by swapping line numbers."""
-    work_order = get_object_or_404(WorkOrder, work_order_id=work_order_id)
-    task = get_object_or_404(Task, task_id=task_id, work_order=work_order)
-
-    # Get all tasks for this work order ordered by sort_order
-    all_tasks = list(Task.objects.filter(work_order=work_order).order_by('sort_order', 'task_id'))
-
-    # Find the index of the current task
+    """Reorder tasks within a WorkOrder by swapping sort_order."""
     try:
-        current_index = next(i for i, t in enumerate(all_tasks) if t.task_id == task.task_id)
-    except StopIteration:
-        messages.error(request, 'Task not found in work order.')
-        return redirect('jobs:work_order_detail', work_order_id=work_order_id)
-
-    # Determine the swap target
-    if direction == 'up' and current_index > 0:
-        swap_index = current_index - 1
-    elif direction == 'down' and current_index < len(all_tasks) - 1:
-        swap_index = current_index + 1
-    else:
-        messages.error(request, 'Cannot move task in that direction.')
-        return redirect('jobs:work_order_detail', work_order_id=work_order_id)
-
-    # Swap sort_order
-    current_task = all_tasks[current_index]
-    swap_task = all_tasks[swap_index]
-    current_task.sort_order, swap_task.sort_order = swap_task.sort_order, current_task.sort_order
-
-    current_task.save()
-    swap_task.save()
-
+        TaskService.reorder_tasks(task_id, direction)
+    except (ValidationError, NotFoundError) as e:
+        messages.error(request, str(e.message if hasattr(e, 'message') else e))
     return redirect('jobs:work_order_detail', work_order_id=work_order_id)
 
 
@@ -396,8 +371,8 @@ def material_add(request, task_id):
         material_instance = Material(task=task)
         form = MaterialForm(request.POST, instance=material_instance)
         if form.is_valid():
-            form.save()
-            messages.success(request, f'Material "{material_instance.description}" added.')
+            mat = InventoryService.create_material(task.pk, **form.cleaned_data)
+            messages.success(request, f'Material "{mat.description}" added.')
             return redirect('jobs:task_detail', task_id=task_id)
     else:
         form = MaterialForm()
@@ -421,7 +396,7 @@ def material_edit(request, material_id):
     if request.method == 'POST':
         form = MaterialForm(request.POST, instance=material)
         if form.is_valid():
-            form.save()
+            material = InventoryService.update_material(material.pk, **form.cleaned_data)
             messages.success(request, f'Material "{material.description}" updated.')
             return redirect('jobs:task_detail', task_id=task.task_id)
     else:
@@ -445,6 +420,6 @@ def material_delete(request, material_id):
         return redirect('jobs:task_detail', task_id=task.task_id)
 
     description = material.description
-    material.delete()
+    InventoryService.delete_material(material.pk)
     messages.success(request, f'Material "{description}" deleted.')
     return redirect('jobs:task_detail', task_id=task.task_id)

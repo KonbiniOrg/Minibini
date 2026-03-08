@@ -724,8 +724,8 @@ class WithinBundleReorderTests(TemplateOrderingTestBase):
         self.assertEqual(self.assoc2.sort_order, 2)
         self.assertEqual(self.assoc3.sort_order, 3)
 
-    def test_reorder_non_bundled_association_returns_404(self):
-        """D20: Reorder with a non-bundled association returns 404."""
+    def test_reorder_non_bundled_association_redirects_with_error(self):
+        """D20: Reorder with a non-bundled association redirects with error."""
         direct_assoc = TemplateTaskAssociation.objects.create(
             work_order_template=self.wo_template,
             task_template=self.task4,
@@ -735,7 +735,7 @@ class WithinBundleReorderTests(TemplateOrderingTestBase):
 
         url = self._bundle_reorder_url(direct_assoc.pk, 'down')
         response = self.client.post(url)
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 302)
 
 
 # ---------------------------------------------------------------------------

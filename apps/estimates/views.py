@@ -10,9 +10,13 @@ from .models import (
     Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate,
     TaskTemplate, TemplateTaskAssociation, TemplateBundle
 )
+from django.core.exceptions import ValidationError
 from apps.jobs.models import Job, Task, WorkOrder, TaskBundle
 from apps.inventory.models import Material
-from apps.core.services import TaxCalculationService
+from apps.core.services import TaxCalculationService, NotFoundError
+from .services import (
+    EstimateService, WorkOrderTemplateService, WorksheetService,
+)
 from .forms import (
     WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
     ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm, EstimateForm
@@ -202,8 +206,7 @@ def estimate_detail(request, estimate_id):
                 new_status = form.cleaned_data['status']
                 if new_status != estimate.status:
                     try:
-                        estimate.status = new_status
-                        estimate.save()
+                        EstimateService.update_status(estimate.pk, new_status)
                         messages.success(request, f'Estimate status updated to {new_status.title()}')
                     except Exception as e:
                         messages.error(request, f'Error updating status: {str(e)}')
@@ -255,7 +258,7 @@ def add_work_order_template(request):
     if request.method == 'POST':
         form = WorkOrderTemplateForm(request.POST)
         if form.is_valid():
-            template = form.save()
+            template = WorkOrderTemplateService.create_template(**form.cleaned_data)
             messages.success(request, f'Work Order Template "{template.template_name}" created successfully.')
             return redirect('estimates:work_order_template_detail', template_id=template.template_id)
     else:
@@ -270,7 +273,7 @@ def work_order_template_edit(request, template_id):
     if request.method == 'POST':
         form = WorkOrderTemplateForm(request.POST, instance=template)
         if form.is_valid():
-            form.save()
+            WorkOrderTemplateService.update_template(template.pk, **form.cleaned_data)
             messages.success(request, f'Work Order Template "{template.template_name}" updated successfully.')
             return redirect('estimates:work_order_template_detail', template_id=template.template_id)
     else:
@@ -286,7 +289,7 @@ def work_order_template_edit(request, template_id):
 def work_order_template_delete(request, template_id):
     template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
     template_name = template.template_name
-    template.delete()
+    WorkOrderTemplateService.delete_template(template.pk)
     messages.success(request, f'Work Order Template "{template_name}" deleted successfully.')
     return redirect('estimates:work_order_template_list')
 
@@ -304,7 +307,6 @@ def work_order_template_detail(request, template_id):
         task_template_id = request.POST.get('task_template_id')
         est_qty = request.POST.get('est_qty', '1.00')
         if task_template_id:
-            from .models import TemplateTaskAssociation
             task_template = get_object_or_404(TaskTemplate, template_id=task_template_id)
 
             next_sort_order = _next_container_sort_order(template)
@@ -324,46 +326,14 @@ def work_order_template_detail(request, template_id):
     if request.method == 'POST' and 'remove_task' in request.POST:
         task_template_id = request.POST.get('remove_task')
         if task_template_id:
-            from .models import TemplateTaskAssociation, TemplateBundle
             task_template = get_object_or_404(TaskTemplate, template_id=task_template_id)
             assoc = TemplateTaskAssociation.objects.filter(
                 work_order_template=template,
                 task_template=task_template
             ).first()
             if assoc and assoc.mapping_strategy == 'bundle' and assoc.bundle:
-                # Unbundle: place just after the bundle in container-level ordering
-                bundle = assoc.bundle
-                insert_point = bundle.sort_order + 1
-
-                # Bump container-level items at >= insert_point to make room
-                TemplateTaskAssociation.objects.filter(
-                    work_order_template=template, bundle__isnull=True,
-                    sort_order__gte=insert_point
-                ).update(sort_order=models.F('sort_order') + 1)
-                TemplateBundle.objects.filter(
-                    work_order_template=template, sort_order__gte=insert_point
-                ).update(sort_order=models.F('sort_order') + 1)
-
-                assoc.mapping_strategy = 'direct'
-                assoc.bundle = None
-                assoc.sort_order = insert_point
-                assoc.save()
-                # Clean up: dissolve bundle if 0 or 1 tasks remain
-                remaining = TemplateTaskAssociation.objects.filter(bundle=bundle)
-                if remaining.count() == 0:
-                    bundle.delete()
-                    messages.success(request, f'"{task_template.template_name}" unbundled. Bundle "{bundle.name}" removed (empty).')
-                elif remaining.count() == 1:
-                    # Auto-unbundle the last task
-                    last_assoc = remaining.first()
-                    last_assoc.mapping_strategy = 'direct'
-                    last_assoc.sort_order = bundle.sort_order
-                    last_assoc.bundle = None
-                    last_assoc.save()
-                    bundle.delete()
-                    messages.success(request, f'"{task_template.template_name}" unbundled. Bundle "{bundle.name}" dissolved (only 1 task remained).')
-                else:
-                    messages.success(request, f'"{task_template.template_name}" removed from bundle "{bundle.name}".')
+                WorkOrderTemplateService.unbundle_association(template.pk, assoc.pk)
+                messages.success(request, f'"{task_template.template_name}" unbundled.')
             elif assoc:
                 assoc.delete()
                 messages.success(request, f'Task Template "{task_template.template_name}" removed.')
@@ -371,77 +341,34 @@ def work_order_template_detail(request, template_id):
 
     # Handle bundle creation
     if request.method == 'POST' and 'bundle_tasks' in request.POST:
-        from .models import TemplateTaskAssociation, TemplateBundle
         from apps.core.models import LineItemType
 
-        # Get selected association IDs
         selected_ids = request.POST.getlist('selected_tasks')
         bundle_name = request.POST.get('bundle_name', '').strip()
         bundle_description = request.POST.get('bundle_description', '').strip()
         line_item_type_id = request.POST.get('line_item_type')
 
-        if len(selected_ids) < 2:
-            messages.error(request, 'Please select at least 2 tasks to bundle.')
-        elif not bundle_name:
+        if not bundle_name:
             messages.error(request, 'Bundle name is required.')
         elif not line_item_type_id:
             messages.error(request, 'Line item type is required.')
         else:
             line_item_type = get_object_or_404(LineItemType, pk=line_item_type_id)
-
-            # Use existing bundle if name matches, otherwise create new
-            bundle, created = TemplateBundle.objects.get_or_create(
-                work_order_template=template,
-                name=bundle_name,
-                defaults={
-                    'description': bundle_description,
-                    'line_item_type': line_item_type,
-                    'sort_order': _next_container_sort_order(template),
-                }
-            )
-
-            # Update selected associations and assign sequential within-bundle sort_order
-            selected_assocs = TemplateTaskAssociation.objects.filter(
-                pk__in=selected_ids,
-                work_order_template=template
-            ).order_by('sort_order', 'pk')
-
-            # Find the current max sort_order within the bundle (for adding to existing)
-            existing_max = TemplateTaskAssociation.objects.filter(
-                bundle=bundle
-            ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-
-            for i, assoc in enumerate(selected_assocs, start=existing_max + 1):
-                assoc.mapping_strategy = 'bundle'
-                assoc.bundle = bundle
-                assoc.sort_order = i
-                assoc.save()
-
-            updated = selected_assocs.count()
-
-            # Check if any other bundles were reduced to 1 or 0 tasks
-            for other_bundle in TemplateBundle.objects.filter(work_order_template=template).exclude(pk=bundle.pk):
-                remaining = TemplateTaskAssociation.objects.filter(bundle=other_bundle)
-                if remaining.count() == 0:
-                    other_bundle.delete()
-                elif remaining.count() == 1:
-                    # Auto-unbundle the last task
-                    last_assoc = remaining.first()
-                    last_assoc.mapping_strategy = 'direct'
-                    last_assoc.sort_order = other_bundle.sort_order
-                    last_assoc.bundle = None
-                    last_assoc.save()
-                    other_bundle.delete()
-
-            if created:
-                messages.success(request, f'Bundle "{bundle_name}" created with {updated} tasks.')
-            else:
-                messages.success(request, f'{updated} tasks added to existing bundle "{bundle_name}".')
+            try:
+                WorkOrderTemplateService.bundle_associations(
+                    template.pk,
+                    [int(i) for i in selected_ids],
+                    bundle_name,
+                    line_item_type,
+                    description=bundle_description,
+                )
+                messages.success(request, f'Bundle "{bundle_name}" updated.')
+            except ValidationError as e:
+                messages.error(request, str(e.message if hasattr(e, 'message') else e))
 
         return redirect('estimates:work_order_template_detail', template_id=template_id)
 
     # Get task template associations with bundle info
-    from .models import TemplateTaskAssociation, TemplateBundle
     from apps.core.models import LineItemType
 
     associations = TemplateTaskAssociation.objects.filter(
@@ -484,7 +411,6 @@ def estworksheet_detail(request, worksheet_id):
 
     # Handle bundle creation
     if request.method == 'POST' and 'bundle_tasks' in request.POST and can_edit:
-        from apps.jobs.models import TaskBundle
         from apps.core.models import LineItemType
 
         selected_ids = request.POST.getlist('selected_tasks')
@@ -492,93 +418,34 @@ def estworksheet_detail(request, worksheet_id):
         bundle_description = request.POST.get('bundle_description', '').strip()
         line_item_type_id = request.POST.get('line_item_type')
 
-        if len(selected_ids) < 2:
-            messages.error(request, 'Please select at least 2 tasks to bundle.')
-        elif not bundle_name:
+        if not bundle_name:
             messages.error(request, 'Bundle name is required.')
         elif not line_item_type_id:
             messages.error(request, 'Line item type is required.')
         else:
             line_item_type = get_object_or_404(LineItemType, pk=line_item_type_id)
-
-            bundle, created = TaskBundle.objects.get_or_create(
-                est_worksheet=worksheet,
-                name=bundle_name,
-                defaults={
-                    'description': bundle_description,
-                    'line_item_type': line_item_type,
-                    'sort_order': _next_worksheet_sort_order(worksheet),
-                }
-            )
-
-            selected_tasks = Task.objects.filter(
-                task_id__in=selected_ids, est_worksheet=worksheet
-            ).order_by('sort_order', 'task_id')
-
-            for i, task in enumerate(selected_tasks, start=1):
-                task.mapping_strategy = 'bundle'
-                task.bundle = bundle
-                task.sort_order = i  # Within-bundle position
-                task.save()
-
-            # Auto-dissolve other bundles reduced to 0 or 1 tasks
-            for other_bundle in TaskBundle.objects.filter(est_worksheet=worksheet).exclude(pk=bundle.pk):
-                remaining = Task.objects.filter(bundle=other_bundle)
-                if remaining.count() == 0:
-                    other_bundle.delete()
-                elif remaining.count() == 1:
-                    last_task = remaining.first()
-                    last_task.mapping_strategy = 'direct'
-                    last_task.sort_order = other_bundle.sort_order
-                    last_task.bundle = None
-                    last_task.save()
-                    other_bundle.delete()
-
-            if created:
-                messages.success(request, f'Bundle "{bundle_name}" created with {selected_tasks.count()} tasks.')
-            else:
-                messages.success(request, f'{selected_tasks.count()} tasks added to existing bundle "{bundle_name}".')
+            try:
+                WorksheetService.bundle_tasks(
+                    worksheet.pk,
+                    [int(i) for i in selected_ids],
+                    bundle_name,
+                    line_item_type,
+                    description=bundle_description,
+                )
+                messages.success(request, f'Bundle "{bundle_name}" updated.')
+            except ValidationError as e:
+                messages.error(request, str(e.message if hasattr(e, 'message') else e))
 
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     # Handle unbundle / remove
     if request.method == 'POST' and 'remove_task' in request.POST and can_edit:
-        from apps.jobs.models import TaskBundle
         task_id = request.POST.get('remove_task')
         task = get_object_or_404(Task, task_id=task_id, est_worksheet=worksheet)
 
         if task.mapping_strategy == 'bundle' and task.bundle:
-            bundle = task.bundle
-            insert_point = bundle.sort_order + 1
-
-            # Bump container-level items at >= insert_point to make room
-            Task.objects.filter(
-                est_worksheet=worksheet, bundle__isnull=True,
-                sort_order__gte=insert_point
-            ).update(sort_order=models.F('sort_order') + 1)
-            TaskBundle.objects.filter(
-                est_worksheet=worksheet, sort_order__gte=insert_point
-            ).update(sort_order=models.F('sort_order') + 1)
-
-            task.mapping_strategy = 'direct'
-            task.bundle = None
-            task.sort_order = insert_point
-            task.save()
-
-            remaining = Task.objects.filter(bundle=bundle)
-            if remaining.count() == 0:
-                bundle.delete()
-                messages.success(request, f'"{task.name}" unbundled. Bundle "{bundle.name}" removed (empty).')
-            elif remaining.count() == 1:
-                last_task = remaining.first()
-                last_task.mapping_strategy = 'direct'
-                last_task.sort_order = bundle.sort_order
-                last_task.bundle = None
-                last_task.save()
-                bundle.delete()
-                messages.success(request, f'"{task.name}" unbundled. Bundle "{bundle.name}" dissolved (only 1 task remained).')
-            else:
-                messages.success(request, f'"{task.name}" removed from bundle "{bundle.name}".')
+            WorksheetService.unbundle_task(worksheet.pk, task.pk)
+            messages.success(request, f'"{task.name}" unbundled.')
         else:
             messages.info(request, f'Task "{task.name}" is not bundled.')
 
@@ -618,16 +485,16 @@ def estworksheet_generate_estimate(request, worksheet_id):
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':
-        # Save any line_item_type assignments from the form
+        # Save any line_item_type assignments from the form via TaskService
         from apps.core.models import LineItemType
+        from apps.jobs.services import TaskService
         for key, value in request.POST.items():
             if key.startswith('task_line_item_type_') and value:
                 task_pk = key.replace('task_line_item_type_', '')
                 try:
-                    task = Task.objects.get(pk=task_pk, est_worksheet=worksheet)
-                    task.line_item_type = LineItemType.objects.get(pk=value)
-                    task.save()
-                except (Task.DoesNotExist, LineItemType.DoesNotExist):
+                    lit = LineItemType.objects.get(pk=value)
+                    TaskService.update_task(int(task_pk), line_item_type=lit)
+                except (NotFoundError, LineItemType.DoesNotExist):
                     pass
 
         # Check if any direct tasks still lack line_item_type
@@ -648,7 +515,7 @@ def estworksheet_generate_estimate(request, worksheet_id):
 
             # Mark worksheet as final after generating estimate
             worksheet.status = 'final'
-            worksheet.save()
+            worksheet.save()  # TODO: route through WorksheetService when status method exists
 
             messages.success(request, f'Estimate {estimate.estimate_number} generated successfully!')
             return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
@@ -685,19 +552,10 @@ def estimate_mark_open(request, estimate_id):
     estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
 
     if request.method == 'POST':
-        if estimate.status == 'draft':
-            # Mark estimate as open
-            estimate.status = 'open'
-            estimate.save()
-
-            # Update associated worksheet to final if exists
-            worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
-            if worksheet and worksheet.status == 'draft':
-                worksheet.status = 'final'
-                worksheet.save()
-
+        try:
+            EstimateService.mark_open(estimate.pk)
             messages.success(request, f'Estimate {estimate.estimate_number} marked as Open')
-        else:
+        except ValidationError:
             messages.warning(request, 'Only Draft estimates can be marked as Open')
 
     return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
@@ -709,30 +567,7 @@ def estworksheet_revise(request, worksheet_id):
 
     if request.method == 'POST':
         if parent_worksheet.status != 'draft':
-            # Create new draft worksheet
-            new_worksheet = EstWorksheet.objects.create(
-                job=parent_worksheet.job,
-                parent=parent_worksheet,
-                status='draft',
-                version=parent_worksheet.version + 1
-            )
-
-            # Copy tasks from parent to new worksheet
-            parent_tasks = Task.objects.filter(est_worksheet=parent_worksheet)
-            for task in parent_tasks:
-                Task.objects.create(
-                    name=task.name,
-                    line_item_type=task.line_item_type,
-                    est_worksheet=new_worksheet,
-                    est_qty=task.est_qty,
-                    units=task.units,
-                    rate=task.rate
-                )
-
-            # Mark parent as superseded and increment version
-            parent_worksheet.status = 'superseded'
-            parent_worksheet.save()
-
+            new_worksheet = WorksheetService.revise_worksheet(parent_worksheet.pk)
             messages.success(request, f'New worksheet revision created (v{new_worksheet.version})')
             return redirect('estimates:estworksheet_detail', worksheet_id=new_worksheet.est_worksheet_id)
         else:
@@ -752,7 +587,7 @@ def add_task_template_standalone(request):
     if request.method == 'POST':
         form = TaskTemplateForm(request.POST)
         if form.is_valid():
-            task_template = form.save()
+            task_template = WorkOrderTemplateService.create_task_template(**form.cleaned_data)
             messages.success(request, f'Task Template "{task_template.template_name}" created successfully.')
             return redirect('estimates:task_template_list')
     else:
@@ -768,7 +603,7 @@ def task_template_edit(request, template_id):
     if request.method == 'POST':
         form = TaskTemplateForm(request.POST, instance=template)
         if form.is_valid():
-            form.save()
+            WorkOrderTemplateService.update_task_template(template.pk, **form.cleaned_data)
             messages.success(request, f'Task Template "{template.template_name}" updated successfully.')
             return redirect('estimates:task_template_list')
     else:
@@ -791,15 +626,13 @@ def task_template_edit(request, template_id):
 def task_template_delete(request, template_id):
     """Delete a TaskTemplate."""
     template = get_object_or_404(TaskTemplate, template_id=template_id)
-
-    # Check if template is used in any WorkOrderTemplate
-    if TemplateTaskAssociation.objects.filter(task_template=template).exists():
-        messages.error(request, f'Task Template "{template.template_name}" cannot be deleted because it is used in one or more Work Order Templates.')
+    try:
+        template_name = template.template_name
+        WorkOrderTemplateService.delete_task_template(template.pk)
+        messages.success(request, f'Task Template "{template_name}" deleted successfully.')
+    except ValidationError as e:
+        messages.error(request, str(e.message))
         return redirect('estimates:task_template_edit', template_id=template_id)
-
-    template_name = template.template_name
-    template.delete()
-    messages.success(request, f'Task Template "{template_name}" deleted successfully.')
     return redirect('estimates:task_template_list')
 
 
@@ -810,12 +643,12 @@ def estworksheet_create_for_job(request, job_id):
     if request.method == 'POST':
         form = EstWorksheetForm(request.POST, initial={'job': job})
         if form.is_valid():
-            worksheet = form.save(commit=False)
-            worksheet.job = job  # Ensure job is set
-            worksheet.save()
+            template = form.cleaned_data.get('template')
+            worksheet = WorksheetService.create_worksheet(
+                job.pk, template=template,
+            )
 
             # If a template was selected, generate tasks (and bundles) from it
-            template = form.cleaned_data.get('template')
             if template:
                 template.generate_tasks_for_worksheet(worksheet)
                 messages.success(request, f'Worksheet created from template "{template.template_name}" for Job {job.job_number}')
@@ -849,14 +682,8 @@ def task_add_from_template(request, worksheet_id):
             template = form.cleaned_data['template']
             est_qty = form.cleaned_data['est_qty']
 
-            task = Task.objects.create(
-                name=template.template_name,
-                description=template.description,
-                line_item_type=template.line_item_type,
-                est_worksheet=worksheet,
-                est_qty=est_qty,
-                units=template.units,
-                rate=template.rate
+            task = WorksheetService.add_task_from_template(
+                worksheet.pk, template.pk, est_qty=est_qty,
             )
 
             messages.success(request, f'Task "{task.name}" added from template')
@@ -883,9 +710,11 @@ def task_add_manual(request, worksheet_id):
         task_instance = Task(est_worksheet=worksheet)
         form = TaskEditForm(request.POST, instance=task_instance)
         if form.is_valid():
-            form.save()
+            task = WorksheetService.add_task_manual(
+                worksheet.pk, **form.cleaned_data,
+            )
 
-            messages.success(request, f'Task "{task_instance.name}" added manually')
+            messages.success(request, f'Task "{task.name}" added manually')
             return redirect('estimates:estworksheet_detail', worksheet_id=worksheet.est_worksheet_id)
     else:
         form = TaskEditForm()
@@ -933,9 +762,9 @@ def estimate_add_line_item(request, estimate_id):
             # Manual line item form submitted
             manual_form = ManualLineItemForm(request.POST)
             if manual_form.is_valid():
-                line_item = manual_form.save(commit=False)
-                line_item.estimate = estimate
-                line_item.save()
+                line_item = EstimateService.add_line_item(
+                    estimate.pk, **manual_form.cleaned_data,
+                )
 
                 messages.success(request, f'Line item "{line_item.description}" added')
                 return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
@@ -950,15 +779,8 @@ def estimate_add_line_item(request, estimate_id):
                 price_list_item = pricelist_form.cleaned_data['price_list_item']
                 qty = pricelist_form.cleaned_data['qty']
 
-                # Create line item from price list item
-                line_item = EstimateLineItem.objects.create(
-                    estimate=estimate,
-                    price_list_item=price_list_item,
-                    description=price_list_item.description,
-                    qty=qty,
-                    units=price_list_item.units,
-                    price=price_list_item.selling_price,
-                    line_item_type=price_list_item.line_item_type
+                line_item = EstimateService.add_line_item_from_pli(
+                    estimate.pk, price_list_item.pk, qty=qty,
                 )
 
                 messages.success(request, f'Line item "{line_item.description}" added from price list')
@@ -996,8 +818,7 @@ def estimate_update_status(request, estimate_id):
         if form.is_valid():
             new_status = form.cleaned_data['status']
             if new_status != estimate.status:
-                estimate.status = new_status
-                estimate.save()
+                EstimateService.update_status(estimate.pk, new_status)
                 messages.success(request, f'Estimate status updated to {new_status.title()}')
             return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
     else:
@@ -1011,29 +832,19 @@ def estimate_update_status(request, estimate_id):
 
 def estimate_create_for_job(request, job_id):
     """Create a new Estimate for a specific Job - creates directly with defaults"""
-    from apps.core.services import NumberGenerationService
-
     job = get_object_or_404(Job, job_id=job_id)
 
     # Check if an estimate already exists for this job
     existing_estimate = Estimate.objects.filter(job=job).exclude(status='superseded').first()
     if existing_estimate:
         if existing_estimate.status == 'draft':
-            # Redirect to existing draft estimate for editing
             messages.info(request, f'A draft estimate already exists for this job. You can edit it here.')
             return redirect('estimates:estimate_detail', estimate_id=existing_estimate.estimate_id)
         else:
-            # For non-draft estimates, user must use revise functionality
             messages.error(request, f'An estimate already exists for this job. Use the Revise option to create a new version.')
             return redirect('estimates:estimate_detail', estimate_id=existing_estimate.estimate_id)
 
-    # Create estimate directly with defaults
-    estimate = Estimate.objects.create(
-        job=job,
-        estimate_number=NumberGenerationService.generate_next_number('estimate'),
-        version=1,
-        status='draft'
-    )
+    estimate = EstimateService.create_for_job(job.pk)
 
     messages.success(request, f'Estimate {estimate.estimate_number} (v{estimate.version}) created successfully')
     return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
@@ -1044,37 +855,11 @@ def estimate_revise(request, estimate_id):
     parent_estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
 
     if request.method == 'POST':
-        if parent_estimate.status != 'draft':
-            # Create new draft estimate
-            new_estimate = Estimate.objects.create(
-                job=parent_estimate.job,
-                estimate_number=parent_estimate.estimate_number,
-                version=parent_estimate.version + 1,
-                status='draft',
-                parent=parent_estimate
-            )
-
-            # Copy line items from parent to new estimate
-            parent_line_items = EstimateLineItem.objects.filter(estimate=parent_estimate)
-            for line_item in parent_line_items:
-                EstimateLineItem.objects.create(
-                    estimate=new_estimate,
-                    task=line_item.task,
-                    price_list_item=line_item.price_list_item,
-                    qty=line_item.qty,
-                    units=line_item.units,
-                    description=line_item.description,
-                    price=line_item.price,
-                    line_item_type=line_item.line_item_type,
-                )
-
-            # Mark parent as superseded (closed_date is set automatically by model.save())
-            parent_estimate.status = 'superseded'
-            parent_estimate.save()
-
+        try:
+            new_estimate = EstimateService.revise_estimate(parent_estimate.pk)
             messages.success(request, f'Created new revision of estimate {new_estimate.estimate_number} (v{new_estimate.version})')
             return redirect('estimates:estimate_detail', estimate_id=new_estimate.estimate_id)
-        else:
+        except ValidationError:
             messages.info(request, 'Cannot revise a draft estimate. Please edit it directly.')
             return redirect('estimates:estimate_detail', estimate_id=parent_estimate.estimate_id)
 
@@ -1085,41 +870,20 @@ def estimate_revise(request, estimate_id):
 
 @require_POST
 def task_reorder_worksheet(request, worksheet_id, task_id, direction):
-    """Reorder tasks within an EstWorksheet by swapping line numbers."""
+    """Reorder tasks within an EstWorksheet by swapping sort_order."""
+    from apps.jobs.services import TaskService
+
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-    task = get_object_or_404(Task, task_id=task_id, est_worksheet=worksheet)
 
     # Prevent reordering non-draft worksheets
     if worksheet.status != 'draft':
         messages.error(request, f'Cannot reorder tasks in a {worksheet.get_status_display().lower()} worksheet.')
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
-    # Get all tasks for this worksheet ordered by sort_order
-    all_tasks = list(Task.objects.filter(est_worksheet=worksheet).order_by('sort_order', 'task_id'))
-
-    # Find the index of the current task
     try:
-        current_index = next(i for i, t in enumerate(all_tasks) if t.task_id == task.task_id)
-    except StopIteration:
-        messages.error(request, 'Task not found in worksheet.')
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    # Determine the swap target
-    if direction == 'up' and current_index > 0:
-        swap_index = current_index - 1
-    elif direction == 'down' and current_index < len(all_tasks) - 1:
-        swap_index = current_index + 1
-    else:
-        messages.error(request, 'Cannot move task in that direction.')
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    # Swap sort_order
-    current_task = all_tasks[current_index]
-    swap_task = all_tasks[swap_index]
-    current_task.sort_order, swap_task.sort_order = swap_task.sort_order, current_task.sort_order
-
-    current_task.save()
-    swap_task.save()
+        TaskService.reorder_tasks(task_id, direction)
+    except (ValidationError, NotFoundError) as e:
+        messages.error(request, str(e.message if hasattr(e, 'message') else e))
 
     return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
@@ -1144,170 +908,34 @@ def estimate_reorder_line_item(request, estimate_id, line_item_id, direction):
 
 @require_POST
 def template_reorder_item(request, template_id, item_type, item_id, direction):
-    """Reorder items at the container level within a WorkOrderTemplate.
-
-    Bundles and unbundled associations share the same sort_order space.
-    item_type is 'bundle' or 'task' (for unbundled TemplateTaskAssociation).
-    """
-    from .models import TemplateTaskAssociation, TemplateBundle
-
+    """Reorder items at the container level within a WorkOrderTemplate."""
     template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
-
-    # Build the container-level list: unbundled associations + bundles
-    associations = TemplateTaskAssociation.objects.filter(
-        work_order_template=template,
-    ).select_related('bundle')
-
-    container_items = []  # (sort_order, item_type, object)
-    seen_bundles = set()
-
-    for assoc in associations:
-        if assoc.mapping_strategy == 'bundle' and assoc.bundle:
-            if assoc.bundle.pk not in seen_bundles:
-                seen_bundles.add(assoc.bundle.pk)
-                container_items.append((assoc.bundle.sort_order, 'bundle', assoc.bundle))
-        else:
-            container_items.append((assoc.sort_order, 'task', assoc))
-
-    container_items.sort(key=lambda x: x[0])
-
-    # Find the item being moved
-    current_index = None
-    for i, (_, itype, obj) in enumerate(container_items):
-        if itype == item_type:
-            if item_type == 'bundle' and obj.pk == item_id:
-                current_index = i
-                break
-            elif item_type == 'task' and obj.pk == item_id:
-                current_index = i
-                break
-
-    if current_index is None:
-        messages.error(request, 'Item not found.')
-        return redirect('estimates:work_order_template_detail', template_id=template_id)
-
-    # Determine swap target
-    if direction == 'up' and current_index > 0:
-        swap_index = current_index - 1
-    elif direction == 'down' and current_index < len(container_items) - 1:
-        swap_index = current_index + 1
-    else:
-        return redirect('estimates:work_order_template_detail', template_id=template_id)
-
-    # Swap sort_order values
-    _, _, current_obj = container_items[current_index]
-    _, _, swap_obj = container_items[swap_index]
-
-    current_obj.sort_order, swap_obj.sort_order = swap_obj.sort_order, current_obj.sort_order
-    current_obj.save()
-    swap_obj.save()
-
+    try:
+        WorkOrderTemplateService.reorder_items(template.pk, item_type, item_id, direction)
+    except (NotFoundError, ValidationError) as e:
+        messages.error(request, str(e))
     return redirect('estimates:work_order_template_detail', template_id=template_id)
 
 
 @require_POST
 def template_reorder_in_bundle(request, template_id, association_id, direction):
     """Reorder a task within its bundle."""
-    from .models import TemplateTaskAssociation
-
     template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
-    assoc = get_object_or_404(
-        TemplateTaskAssociation,
-        pk=association_id,
-        work_order_template=template,
-        mapping_strategy='bundle',
-        bundle__isnull=False
-    )
-
-    # Get all associations in this bundle, ordered by sort_order
-    bundle_assocs = list(
-        TemplateTaskAssociation.objects.filter(
-            bundle=assoc.bundle
-        ).order_by('sort_order', 'pk')
-    )
-
-    current_index = None
-    for i, a in enumerate(bundle_assocs):
-        if a.pk == assoc.pk:
-            current_index = i
-            break
-
-    if current_index is None:
-        return redirect('estimates:work_order_template_detail', template_id=template_id)
-
-    if direction == 'up' and current_index > 0:
-        swap_index = current_index - 1
-    elif direction == 'down' and current_index < len(bundle_assocs) - 1:
-        swap_index = current_index + 1
-    else:
-        return redirect('estimates:work_order_template_detail', template_id=template_id)
-
-    # Swap sort_order values
-    current = bundle_assocs[current_index]
-    swap = bundle_assocs[swap_index]
-    current.sort_order, swap.sort_order = swap.sort_order, current.sort_order
-    current.save()
-    swap.save()
-
+    try:
+        WorkOrderTemplateService.reorder_in_bundle(template.pk, association_id, direction)
+    except (NotFoundError, ValidationError) as e:
+        messages.error(request, str(e))
     return redirect('estimates:work_order_template_detail', template_id=template_id)
 
 
 @require_POST
 def worksheet_reorder_item(request, worksheet_id, item_type, item_id, direction):
-    """Reorder items at the container level within a worksheet.
-
-    Bundles and unbundled tasks share the same sort_order space.
-    item_type is 'bundle' or 'task'.
-    """
-    from apps.jobs.models import TaskBundle
-
+    """Reorder items at the container level within a worksheet."""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-
-    if worksheet.status != 'draft':
-        messages.error(request, f'Cannot reorder in a {worksheet.get_status_display().lower()} worksheet.')
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    # Build container-level list: unbundled tasks + bundles
-    tasks = Task.objects.filter(est_worksheet=worksheet).select_related('bundle')
-
-    container_items = []  # (sort_order, item_type, object)
-    seen_bundles = set()
-
-    for task in tasks:
-        if task.mapping_strategy == 'bundle' and task.bundle:
-            if task.bundle_id not in seen_bundles:
-                seen_bundles.add(task.bundle_id)
-                container_items.append((task.bundle.sort_order, 'bundle', task.bundle))
-        else:
-            container_items.append((task.sort_order or 0, 'task', task))
-
-    container_items.sort(key=lambda x: x[0])
-
-    # Find the item being moved
-    current_index = None
-    for i, (_, itype, obj) in enumerate(container_items):
-        if itype == item_type and obj.pk == item_id:
-            current_index = i
-            break
-
-    if current_index is None:
-        messages.error(request, 'Item not found.')
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    if direction == 'up' and current_index > 0:
-        swap_index = current_index - 1
-    elif direction == 'down' and current_index < len(container_items) - 1:
-        swap_index = current_index + 1
-    else:
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    _, _, current_obj = container_items[current_index]
-    _, _, swap_obj = container_items[swap_index]
-
-    current_obj.sort_order, swap_obj.sort_order = swap_obj.sort_order, current_obj.sort_order
-    current_obj.save()
-    swap_obj.save()
-
+    try:
+        WorksheetService.reorder_items(worksheet.pk, item_type, item_id, direction)
+    except (NotFoundError, ValidationError) as e:
+        messages.error(request, str(e))
     return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
 
@@ -1315,42 +943,10 @@ def worksheet_reorder_item(request, worksheet_id, item_type, item_id, direction)
 def worksheet_reorder_in_bundle(request, worksheet_id, task_id, direction):
     """Reorder a task within its bundle on a worksheet."""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-
-    if worksheet.status != 'draft':
-        messages.error(request, f'Cannot reorder in a {worksheet.get_status_display().lower()} worksheet.')
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    task = get_object_or_404(
-        Task, task_id=task_id, est_worksheet=worksheet,
-        mapping_strategy='bundle', bundle__isnull=False
-    )
-
-    bundle_tasks = list(
-        Task.objects.filter(bundle=task.bundle).order_by('sort_order', 'task_id')
-    )
-
-    current_index = None
-    for i, t in enumerate(bundle_tasks):
-        if t.task_id == task.task_id:
-            current_index = i
-            break
-
-    if current_index is None:
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    if direction == 'up' and current_index > 0:
-        swap_index = current_index - 1
-    elif direction == 'down' and current_index < len(bundle_tasks) - 1:
-        swap_index = current_index + 1
-    else:
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    current = bundle_tasks[current_index]
-    swap = bundle_tasks[swap_index]
-    current.sort_order, swap.sort_order = swap.sort_order, current.sort_order
-    current.save()
-    swap.save()
-
+    try:
+        WorksheetService.reorder_in_bundle(worksheet.pk, task_id, direction)
+    except (NotFoundError, ValidationError) as e:
+        messages.error(request, str(e))
     return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
 
@@ -1366,13 +962,13 @@ def work_order_create_from_estimate(request, estimate_id):
         return redirect('estimates:estimate_detail', estimate_id=estimate_id)
 
     if request.method == 'POST':
+        from apps.jobs.services import WorkOrderService
         with transaction.atomic():
             worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
 
             # Create the WorkOrder
-            work_order = WorkOrder.objects.create(
-                job=estimate.job,
-                status='draft',
+            work_order = WorkOrderService.create_direct(
+                estimate.job,
                 template=worksheet.template if worksheet else None,
             )
 

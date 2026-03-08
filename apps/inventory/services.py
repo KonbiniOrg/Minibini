@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.db.models import F, Sum
-from apps.inventory.models import Earmark, InventoryAdjustment
+from apps.inventory.models import Earmark, InventoryAdjustment, Material
 from apps.inventory.models import PriceListItem
 
 
@@ -122,6 +122,44 @@ class InventoryService:
             quantity_change=quantity_change,
             reason=reason,
         )
+
+    # --- Material CRUD ---
+
+    @staticmethod
+    def create_material(task_pk, **kwargs):
+        """Create a new Material on a task."""
+        from apps.core.services import NotFoundError
+        from apps.jobs.models import Task
+        try:
+            task = Task.objects.get(pk=task_pk)
+        except Task.DoesNotExist:
+            raise NotFoundError(f'Task {task_pk} not found')
+        mat = Material(task=task, **kwargs)
+        mat.save()
+        return mat
+
+    @staticmethod
+    def update_material(pk, **kwargs):
+        """Update an existing Material by PK."""
+        from apps.core.services import NotFoundError
+        try:
+            mat = Material.objects.get(pk=pk)
+        except Material.DoesNotExist:
+            raise NotFoundError(f'Material {pk} not found')
+        for field, value in kwargs.items():
+            setattr(mat, field, value)
+        mat.save()
+        return mat
+
+    @staticmethod
+    def delete_material(pk):
+        """Delete a Material by PK."""
+        from apps.core.services import NotFoundError
+        try:
+            mat = Material.objects.get(pk=pk)
+        except Material.DoesNotExist:
+            raise NotFoundError(f'Material {pk} not found')
+        mat.delete()
 
     # --- Earmark operations ---
 

@@ -558,6 +558,161 @@ class EmailService:
         return email_record
 
 
+class BundlingService:
+    """
+    Shared low-level service for bundle/unbundle/reorder operations.
+
+    Works with any item model that has `mapping_strategy`, `bundle` (FK), and
+    `sort_order` fields, and any bundle model with `sort_order`. Domain services
+    (WorksheetService, WorkOrderTemplateService) call BundlingService after
+    handling domain-specific validation (e.g. status checks).
+    """
+
+    @staticmethod
+    def bundle_items(items_qs, bundle):
+        """
+        Assign items to a bundle with sequential within-bundle sort_order.
+        Additive: starts from existing max sort_order in the bundle + 1.
+        """
+        from django.db.models import Max
+        existing_max = bundle.tasks.aggregate(
+            Max('sort_order')
+        )['sort_order__max'] if hasattr(bundle, 'tasks') else None
+        if existing_max is None:
+            # Try associations (TemplateBundle)
+            existing_max = bundle.associations.aggregate(
+                Max('sort_order')
+            )['sort_order__max'] if hasattr(bundle, 'associations') else None
+        existing_max = existing_max or 0
+
+        for i, item in enumerate(items_qs.order_by('sort_order', 'pk'), start=existing_max + 1):
+            item.mapping_strategy = 'bundle'
+            item.bundle = bundle
+            item.sort_order = i
+            item.save()
+
+    @staticmethod
+    def unbundle_item(item, container_items_qs, container_bundles_qs):
+        """
+        Remove an item from its bundle, re-inserting at container level.
+        Bumps sort_order of existing container-level items at or after the insert point.
+        """
+        from django.db.models import F
+
+        bundle = item.bundle
+        insert_point = bundle.sort_order + 1
+
+        # Bump container-level items at >= insert_point
+        container_items_qs.filter(
+            sort_order__gte=insert_point,
+        ).update(sort_order=F('sort_order') + 1)
+        container_bundles_qs.filter(
+            sort_order__gte=insert_point,
+        ).update(sort_order=F('sort_order') + 1)
+
+        item.mapping_strategy = 'direct'
+        item.bundle = None
+        item.sort_order = insert_point
+        item.save()
+
+    @staticmethod
+    def auto_dissolve_bundles(bundles_qs, items_model, exclude_pk=None):
+        """
+        Check bundles and dissolve any with 0 or 1 remaining items.
+        - 0 items: delete the bundle
+        - 1 item: unbundle the last item (inherits bundle's sort_order), delete bundle
+        """
+        qs = bundles_qs
+        if exclude_pk is not None:
+            qs = qs.exclude(pk=exclude_pk)
+
+        for bundle in list(qs):
+            remaining = items_model.objects.filter(bundle=bundle)
+            count = remaining.count()
+            if count == 0:
+                bundle.delete()
+            elif count == 1:
+                last_item = remaining.first()
+                last_item.mapping_strategy = 'direct'
+                last_item.sort_order = bundle.sort_order
+                last_item.bundle = None
+                last_item.save()
+                bundle.delete()
+
+    @staticmethod
+    def reorder_container_items(items_qs, bundles_qs, item_type, item_id, direction):
+        """
+        Reorder items at the container level. Bundles and unbundled items
+        share the same sort_order space.
+        """
+        container_items = []
+        seen_bundles = set()
+
+        for item in items_qs.select_related('bundle'):
+            if item.mapping_strategy == 'bundle' and item.bundle:
+                if item.bundle_id not in seen_bundles:
+                    seen_bundles.add(item.bundle_id)
+                    container_items.append(
+                        (item.bundle.sort_order, 'bundle', item.bundle)
+                    )
+            else:
+                container_items.append(
+                    (item.sort_order or 0, 'task', item)
+                )
+
+        container_items.sort(key=lambda x: x[0])
+
+        # Find current item
+        current_index = None
+        for i, (_, itype, obj) in enumerate(container_items):
+            if itype == item_type and obj.pk == item_id:
+                current_index = i
+                break
+
+        if current_index is None:
+            raise ValidationError('Item not found in container.')
+
+        if direction == 'up' and current_index > 0:
+            swap_index = current_index - 1
+        elif direction == 'down' and current_index < len(container_items) - 1:
+            swap_index = current_index + 1
+        else:
+            raise ValidationError(f'Cannot move item {direction} from current position.')
+
+        _, _, current_obj = container_items[current_index]
+        _, _, swap_obj = container_items[swap_index]
+        current_obj.sort_order, swap_obj.sort_order = swap_obj.sort_order, current_obj.sort_order
+        current_obj.save()
+        swap_obj.save()
+
+    @staticmethod
+    def reorder_in_bundle(bundle_items_qs, item, direction):
+        """Reorder an item within its bundle by swapping sort_order."""
+        items = list(bundle_items_qs.order_by('sort_order', 'pk'))
+
+        current_index = None
+        for i, obj in enumerate(items):
+            if obj.pk == item.pk:
+                current_index = i
+                break
+
+        if current_index is None:
+            raise ValidationError('Item not found in bundle.')
+
+        if direction == 'up' and current_index > 0:
+            swap_index = current_index - 1
+        elif direction == 'down' and current_index < len(items) - 1:
+            swap_index = current_index + 1
+        else:
+            raise ValidationError(f'Cannot move item {direction} from current position.')
+
+        current = items[current_index]
+        swap = items[swap_index]
+        current.sort_order, swap.sort_order = swap.sort_order, current.sort_order
+        current.save()
+        swap.save()
+
+
 class LineItemService:
     """
     Service for managing line items across different container types.

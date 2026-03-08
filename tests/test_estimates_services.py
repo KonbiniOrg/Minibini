@@ -1,0 +1,367 @@
+"""Tests for estimates app service methods (service-mediated saves)."""
+from decimal import Decimal
+from django.test import TestCase
+from django.core.exceptions import ValidationError
+from apps.estimates.models import (
+    Estimate, EstimateLineItem, EstWorksheet,
+    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation,
+)
+from apps.estimates.services import EstimateService
+from apps.jobs.models import Job, Task, WorkOrder
+from apps.core.services import NotFoundError
+from apps.core.models import LineItemType
+from apps.contacts.models import Contact, Business
+
+
+class EstimatesTestBase(TestCase):
+    """Shared setUp for estimates service tests."""
+    fixtures = ['unit_test_data.json']
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='User',
+            email='test@test.com', work_number='555-1234',
+        )
+        self.business = Business.objects.create(
+            business_name='Test Biz', business_phone='555-1234',
+            default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
+        self.lit = LineItemType.objects.create(
+            code='SVC', name='Service', taxable=True,
+        )
+        from apps.jobs.services import JobService
+        self.job = JobService.create_job(name='Test Job', contact=self.contact)
+
+
+# --- WorkOrderTemplate CRUD ---
+
+class WorkOrderTemplateServiceCreateTest(EstimatesTestBase):
+    """Tests for WorkOrderTemplateService.create_template."""
+
+    def test_create_template(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tmpl = WorkOrderTemplateService.create_template(
+            template_name='Test Template', description='A template',
+        )
+        self.assertIsNotNone(tmpl.pk)
+        self.assertEqual(tmpl.template_name, 'Test Template')
+
+    def test_create_template_minimal(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tmpl = WorkOrderTemplateService.create_template(template_name='Min')
+        self.assertIsNotNone(tmpl.pk)
+
+
+class WorkOrderTemplateServiceUpdateTest(EstimatesTestBase):
+    """Tests for WorkOrderTemplateService.update_template."""
+
+    def test_update_template(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tmpl = WorkOrderTemplateService.create_template(template_name='Old')
+        updated = WorkOrderTemplateService.update_template(
+            tmpl.pk, template_name='New',
+        )
+        self.assertEqual(updated.template_name, 'New')
+
+    def test_update_template_not_found(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        with self.assertRaises(NotFoundError):
+            WorkOrderTemplateService.update_template(99999, template_name='X')
+
+
+class WorkOrderTemplateServiceDeleteTest(EstimatesTestBase):
+    """Tests for WorkOrderTemplateService.delete_template."""
+
+    def test_delete_template(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tmpl = WorkOrderTemplateService.create_template(template_name='Del')
+        pk = tmpl.pk
+        WorkOrderTemplateService.delete_template(pk)
+        self.assertFalse(WorkOrderTemplate.objects.filter(pk=pk).exists())
+
+    def test_delete_template_not_found(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        with self.assertRaises(NotFoundError):
+            WorkOrderTemplateService.delete_template(99999)
+
+
+# --- TaskTemplate CRUD ---
+
+class TaskTemplateServiceCreateTest(EstimatesTestBase):
+    """Tests for WorkOrderTemplateService.create_task_template."""
+
+    def test_create_task_template(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tt = WorkOrderTemplateService.create_task_template(
+            template_name='Welding', units='hours',
+            rate=Decimal('85.00'), line_item_type=self.lit,
+        )
+        self.assertIsNotNone(tt.pk)
+        self.assertEqual(tt.template_name, 'Welding')
+        self.assertEqual(tt.rate, Decimal('85.00'))
+
+
+class TaskTemplateServiceUpdateTest(EstimatesTestBase):
+    """Tests for WorkOrderTemplateService.update_task_template."""
+
+    def test_update_task_template(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tt = WorkOrderTemplateService.create_task_template(
+            template_name='Old', line_item_type=self.lit,
+        )
+        updated = WorkOrderTemplateService.update_task_template(
+            tt.pk, template_name='New',
+        )
+        self.assertEqual(updated.template_name, 'New')
+
+    def test_update_task_template_not_found(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        with self.assertRaises(NotFoundError):
+            WorkOrderTemplateService.update_task_template(99999, template_name='X')
+
+
+class TaskTemplateServiceDeleteTest(EstimatesTestBase):
+    """Tests for WorkOrderTemplateService.delete_task_template."""
+
+    def test_delete_unused_task_template(self):
+        from apps.estimates.services import WorkOrderTemplateService
+        tt = WorkOrderTemplateService.create_task_template(
+            template_name='Del', line_item_type=self.lit,
+        )
+        pk = tt.pk
+        WorkOrderTemplateService.delete_task_template(pk)
+        self.assertFalse(TaskTemplate.objects.filter(pk=pk).exists())
+
+    def test_delete_used_task_template_raises(self):
+        """Cannot delete a task template used in a work order template."""
+        from apps.estimates.services import WorkOrderTemplateService
+        wo_tmpl = WorkOrderTemplateService.create_template(template_name='WO')
+        tt = WorkOrderTemplateService.create_task_template(
+            template_name='Used', line_item_type=self.lit,
+        )
+        TemplateTaskAssociation.objects.create(
+            work_order_template=wo_tmpl, task_template=tt,
+        )
+        with self.assertRaises(ValidationError):
+            WorkOrderTemplateService.delete_task_template(tt.pk)
+
+
+# --- EstimateService CRUD/status ---
+
+class EstimateServiceCreateTest(EstimatesTestBase):
+    """Tests for EstimateService.create_for_job."""
+
+    def test_create_for_job(self):
+        est = EstimateService.create_for_job(self.job.pk)
+        self.assertIsNotNone(est.pk)
+        self.assertEqual(est.status, 'draft')
+        self.assertEqual(est.job, self.job)
+        self.assertTrue(est.estimate_number.startswith('EST'))
+
+    def test_create_for_job_not_found(self):
+        with self.assertRaises(NotFoundError):
+            EstimateService.create_for_job(99999)
+
+
+class EstimateServiceStatusTest(EstimatesTestBase):
+    """Tests for EstimateService.update_status."""
+
+    def test_update_status_draft_to_open(self):
+        est = EstimateService.create_for_job(self.job.pk)
+        updated = EstimateService.update_status(est.pk, 'open')
+        self.assertEqual(updated.status, 'open')
+
+    def test_update_status_not_found(self):
+        with self.assertRaises(NotFoundError):
+            EstimateService.update_status(99999, 'open')
+
+    def test_update_status_invalid_transition(self):
+        est = EstimateService.create_for_job(self.job.pk)
+        with self.assertRaises(ValidationError):
+            EstimateService.update_status(est.pk, 'accepted')
+
+
+class EstimateServiceMarkOpenTest(EstimatesTestBase):
+    """Tests for EstimateService.mark_open."""
+
+    def test_mark_open(self):
+        est = EstimateService.create_for_job(self.job.pk)
+        updated = EstimateService.mark_open(est.pk)
+        self.assertEqual(updated.status, 'open')
+
+    def test_mark_open_updates_worksheet(self):
+        est = EstimateService.create_for_job(self.job.pk)
+        ws = EstWorksheet.objects.create(
+            job=self.job, estimate=est, status='draft',
+        )
+        EstimateService.mark_open(est.pk)
+        ws.refresh_from_db()
+        self.assertEqual(ws.status, 'final')
+
+    def test_mark_open_non_draft_raises(self):
+        est = EstimateService.create_for_job(self.job.pk)
+        EstimateService.update_status(est.pk, 'open')
+        with self.assertRaises(ValidationError):
+            EstimateService.mark_open(est.pk)
+
+
+class EstimateServiceReviseTest(EstimatesTestBase):
+    """Tests for EstimateService.revise_estimate."""
+
+    def test_revise_estimate(self):
+        est = EstimateService.create_for_job(self.job.pk)
+        # Must be non-draft to revise
+        EstimateService.update_status(est.pk, 'open')
+        new_est = EstimateService.revise_estimate(est.pk)
+        self.assertEqual(new_est.version, 2)
+        self.assertEqual(new_est.status, 'draft')
+        self.assertEqual(new_est.parent_id, est.pk)
+        est.refresh_from_db()
+        self.assertEqual(est.status, 'superseded')
+
+    def test_revise_copies_line_items(self):
+        est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(
+            estimate=est, description='Item 1', line_number=1,
+            qty=Decimal('1.00'), price=Decimal('10.00'),
+            line_item_type=self.lit,
+        )
+        EstimateService.update_status(est.pk, 'open')
+        new_est = EstimateService.revise_estimate(est.pk)
+        new_items = EstimateLineItem.objects.filter(estimate=new_est)
+        self.assertEqual(new_items.count(), 1)
+        self.assertEqual(new_items.first().description, 'Item 1')
+
+    def test_revise_draft_raises(self):
+        est = EstimateService.create_for_job(self.job.pk)
+        with self.assertRaises(ValidationError):
+            EstimateService.revise_estimate(est.pk)
+
+
+class EstimateServiceAddLineItemTest(EstimatesTestBase):
+    """Tests for EstimateService.add_line_item and add_line_item_from_pli."""
+
+    def setUp(self):
+        super().setUp()
+        self.est = EstimateService.create_for_job(self.job.pk)
+
+    def test_add_line_item_manual(self):
+        li = EstimateService.add_line_item(
+            self.est.pk, description='Custom work',
+            qty=Decimal('2.00'), units='hours',
+            price=Decimal('50.00'), line_item_type=self.lit,
+        )
+        self.assertEqual(li.estimate, self.est)
+        self.assertEqual(li.description, 'Custom work')
+
+    def test_add_line_item_from_pli(self):
+        from apps.inventory.models import PriceListItem
+        pli = PriceListItem.objects.create(
+            code='WLD-001', description='Welding rod', units='each',
+            purchase_price=Decimal('5.00'), selling_price=Decimal('10.00'),
+            line_item_type=self.lit,
+        )
+        li = EstimateService.add_line_item_from_pli(
+            self.est.pk, pli.pk, qty=Decimal('20.00'),
+        )
+        self.assertEqual(li.price_list_item, pli)
+        self.assertEqual(li.price, Decimal('10.00'))
+        self.assertEqual(li.description, 'Welding rod')
+
+    def test_add_line_item_to_non_draft_raises(self):
+        EstimateService.update_status(self.est.pk, 'open')
+        with self.assertRaises(ValidationError):
+            EstimateService.add_line_item(
+                self.est.pk, description='X', qty=1, units='ea',
+                price=Decimal('1.00'), line_item_type=self.lit,
+            )
+
+
+# --- WorksheetService ---
+
+class WorksheetServiceCreateTest(EstimatesTestBase):
+    """Tests for WorksheetService.create_worksheet."""
+
+    def test_create_worksheet(self):
+        from apps.estimates.services import WorksheetService
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        self.assertIsNotNone(ws.pk)
+        self.assertEqual(ws.job, self.job)
+        self.assertEqual(ws.status, 'draft')
+
+    def test_create_worksheet_from_template(self):
+        from apps.estimates.services import WorksheetService, WorkOrderTemplateService
+        tmpl = WorkOrderTemplateService.create_template(template_name='Tmpl')
+        ws = WorksheetService.create_worksheet(self.job.pk, template=tmpl)
+        self.assertEqual(ws.template, tmpl)
+
+    def test_create_worksheet_job_not_found(self):
+        from apps.estimates.services import WorksheetService
+        with self.assertRaises(NotFoundError):
+            WorksheetService.create_worksheet(99999)
+
+
+class WorksheetServiceReviseTest(EstimatesTestBase):
+    """Tests for WorksheetService.revise_worksheet."""
+
+    def test_revise_worksheet(self):
+        from apps.estimates.services import WorksheetService
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        # Add a task to make it non-empty
+        Task.objects.create(est_worksheet=ws, name='Task 1', sort_order=1)
+        new_ws = WorksheetService.revise_worksheet(ws.pk)
+        self.assertEqual(new_ws.version, 2)
+        self.assertEqual(new_ws.status, 'draft')
+        ws.refresh_from_db()
+        self.assertEqual(ws.status, 'superseded')
+
+    def test_revise_copies_tasks(self):
+        from apps.estimates.services import WorksheetService
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        Task.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
+        Task.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
+        new_ws = WorksheetService.revise_worksheet(ws.pk)
+        new_tasks = Task.objects.filter(est_worksheet=new_ws)
+        self.assertEqual(new_tasks.count(), 2)
+
+
+class WorksheetServiceAddTaskTest(EstimatesTestBase):
+    """Tests for WorksheetService task-adding methods."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.estimates.services import WorksheetService
+        self.ws = WorksheetService.create_worksheet(self.job.pk)
+
+    def test_add_task_from_template(self):
+        from apps.estimates.services import WorksheetService, WorkOrderTemplateService
+        tt = WorkOrderTemplateService.create_task_template(
+            template_name='Welding', units='hours',
+            rate=Decimal('85.00'), line_item_type=self.lit,
+        )
+        task = WorksheetService.add_task_from_template(
+            self.ws.pk, tt.pk, est_qty=Decimal('4.00'),
+        )
+        self.assertEqual(task.name, 'Welding')
+        self.assertEqual(task.est_qty, Decimal('4.00'))
+        self.assertEqual(task.est_worksheet, self.ws)
+
+    def test_add_task_manual(self):
+        from apps.estimates.services import WorksheetService
+        task = WorksheetService.add_task_manual(
+            self.ws.pk, name='Custom task', units='each',
+            rate=Decimal('50.00'), est_qty=Decimal('1.00'),
+        )
+        self.assertEqual(task.name, 'Custom task')
+        self.assertEqual(task.est_worksheet, self.ws)
+
+    def test_add_task_to_non_draft_raises(self):
+        from apps.estimates.services import WorksheetService
+        self.ws.status = 'final'
+        self.ws.save()
+        with self.assertRaises(ValidationError):
+            WorksheetService.add_task_manual(
+                self.ws.pk, name='X', units='ea',
+            )

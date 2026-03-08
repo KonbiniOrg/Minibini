@@ -399,12 +399,12 @@ Extend: **`ConfigurationService`** ✅ (absorbs LineItemTypeService — line ite
 Work app-by-app, from simplest to most complex:
 
 1. **core** — ✅ DONE — services + views + tests
-2. **inventory** — services consolidated (EarmarkService merged into InventoryService, PLI CRUD added); views not yet updated
-3. **invoicing** — just reorder (use existing LineItemService)
-4. **purchasing** — CRUD + status transitions (19 operations)
-5. **jobs** — CRUD + status + reorder (11 operations)
-6. **estimates** — largest, most complex: status, revisions, bundles, templates (45+ operations)
-7. **contacts** — complex cascading deletion logic (32 operations)
+2. **inventory** — ✅ DONE — services consolidated, views updated, material CRUD added
+3. **invoicing** — ✅ DONE — reorder delegates to LineItemService
+4. **purchasing** — ✅ DONE — CRUD + status + line items, 23 tests
+5. **jobs** — ✅ DONE — CRUD + status + reorder + materials, 15 tests
+6. **estimates** — ✅ DONE — status, revisions, bundles, templates, bundling service (45+ operations)
+7. **contacts** — ✅ DONE — CRUD, cascading deletion, 28 tests
 
 For each app:
 1. Create/extend service class with methods

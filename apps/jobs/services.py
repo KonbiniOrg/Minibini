@@ -17,7 +17,33 @@ from apps.estimates.models import (
     EstWorksheet, EstimateLineItem
 )
 from apps.inventory.models import PriceListItem
-from apps.core.services import NumberGenerationService
+from apps.core.services import NumberGenerationService, NotFoundError
+
+
+class JobService:
+    """Service for Job CRUD operations."""
+
+    @staticmethod
+    def create_job(**kwargs):
+        """Create a new Job with auto-generated number."""
+        job_number = NumberGenerationService.generate_next_number('job')
+        job = Job(job_number=job_number, **kwargs)
+        job.full_clean()
+        job.save()
+        return job
+
+    @staticmethod
+    def update_job(pk, **kwargs):
+        """Update an existing Job by PK."""
+        try:
+            job = Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {pk} not found')
+        for field, value in kwargs.items():
+            setattr(job, field, value)
+        job.full_clean()
+        job.save()
+        return job
 
 
 class LineItemTaskService:
@@ -182,6 +208,18 @@ class WorkOrderService:
             **kwargs
         )
 
+    @staticmethod
+    def update_status(pk, new_status):
+        """Update work order status."""
+        try:
+            wo = WorkOrder.objects.get(pk=pk)
+        except WorkOrder.DoesNotExist:
+            raise NotFoundError(f'WorkOrder {pk} not found')
+        wo.status = new_status
+        wo.full_clean()
+        wo.save()
+        return wo
+
 
 class TaskService:
     """Service class for Task creation workflows."""
@@ -221,6 +259,62 @@ class TaskService:
             name=name,
             **kwargs
         )
+
+    @staticmethod
+    def update_task(pk, **kwargs):
+        """Update an existing Task by PK."""
+        try:
+            task = Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            raise NotFoundError(f'Task {pk} not found')
+        for field, value in kwargs.items():
+            setattr(task, field, value)
+        task.full_clean()
+        task.save()
+        return task
+
+    @staticmethod
+    def reorder_tasks(task_id, direction):
+        """Reorder a task within its container by swapping sort_order."""
+        try:
+            task = Task.objects.get(pk=task_id)
+        except Task.DoesNotExist:
+            raise NotFoundError(f'Task {task_id} not found')
+
+        container = task.get_container()
+        if container is None:
+            raise ValidationError('Task has no container.')
+
+        # Determine filter for sibling tasks
+        if task.work_order:
+            siblings = list(Task.objects.filter(
+                work_order=task.work_order
+            ).order_by('sort_order', 'task_id'))
+        else:
+            siblings = list(Task.objects.filter(
+                est_worksheet=task.est_worksheet
+            ).order_by('sort_order', 'task_id'))
+
+        try:
+            current_index = next(
+                i for i, t in enumerate(siblings) if t.task_id == task.task_id
+            )
+        except StopIteration:
+            raise ValidationError('Task not found in container.')
+
+        if direction == 'up' and current_index > 0:
+            swap_index = current_index - 1
+        elif direction == 'down' and current_index < len(siblings) - 1:
+            swap_index = current_index + 1
+        else:
+            raise ValidationError(f'Cannot move task {direction} from current position.')
+
+        current = siblings[current_index]
+        swap = siblings[swap_index]
+        current.sort_order, swap.sort_order = swap.sort_order, current.sort_order
+        current.save()
+        swap.save()
+        return current
 
     @staticmethod
     def create_line_item_from_task(task, estimate):
