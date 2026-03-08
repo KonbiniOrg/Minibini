@@ -1,8 +1,8 @@
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.invoicing.models import PriceListItem
-from apps.invoicing.forms import PriceListItemForm
+from apps.inventory.models import PriceListItem
+from apps.inventory.forms import PriceListItemForm
 
 
 class PriceListItemViewsTest(TestCase):
@@ -39,7 +39,7 @@ class PriceListItemViewsTest(TestCase):
 
     def test_price_list_item_list_view(self):
         """Test the list view displays all price list items."""
-        url = reverse('invoicing:price_list_item_list')
+        url = reverse('inventory:price_list_item_list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -54,7 +54,7 @@ class PriceListItemViewsTest(TestCase):
 
     def test_price_list_item_add_view_get(self):
         """Test the add view displays the form."""
-        url = reverse('invoicing:price_list_item_add')
+        url = reverse('inventory:price_list_item_add')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -66,7 +66,7 @@ class PriceListItemViewsTest(TestCase):
 
     def test_price_list_item_add_view_post_valid(self):
         """Test successfully adding a new price list item."""
-        url = reverse('invoicing:price_list_item_add')
+        url = reverse('inventory:price_list_item_add')
         data = {
             'code': 'NEW001',
             'units': 'kg',
@@ -82,7 +82,7 @@ class PriceListItemViewsTest(TestCase):
         response = self.client.post(url, data, follow=True)
 
         # Check redirect to list view
-        self.assertRedirects(response, reverse('invoicing:price_list_item_list'))
+        self.assertRedirects(response, reverse('inventory:price_list_item_list'))
 
         # Check item was created
         new_item = PriceListItem.objects.get(code='NEW001')
@@ -99,7 +99,7 @@ class PriceListItemViewsTest(TestCase):
 
     def test_price_list_item_add_view_post_duplicate_code(self):
         """Test that duplicate item codes are rejected."""
-        url = reverse('invoicing:price_list_item_add')
+        url = reverse('inventory:price_list_item_add')
         data = {
             'code': 'TEST001',  # Duplicate code
             'units': 'each',
@@ -123,7 +123,7 @@ class PriceListItemViewsTest(TestCase):
 
     def test_price_list_item_edit_view_get(self):
         """Test the edit view displays the form with existing data."""
-        url = reverse('invoicing:price_list_item_edit',
+        url = reverse('inventory:price_list_item_edit',
                      kwargs={'item_id': self.item1.price_list_item_id})
         response = self.client.get(url)
 
@@ -137,7 +137,7 @@ class PriceListItemViewsTest(TestCase):
 
     def test_price_list_item_edit_view_post_valid(self):
         """Test successfully editing an existing price list item."""
-        url = reverse('invoicing:price_list_item_edit',
+        url = reverse('inventory:price_list_item_edit',
                      kwargs={'item_id': self.item1.price_list_item_id})
         data = {
             'code': 'TEST001',  # Keep same code
@@ -154,7 +154,7 @@ class PriceListItemViewsTest(TestCase):
         response = self.client.post(url, data, follow=True)
 
         # Check redirect to list view
-        self.assertRedirects(response, reverse('invoicing:price_list_item_list'))
+        self.assertRedirects(response, reverse('inventory:price_list_item_list'))
 
         # Check item was updated
         self.item1.refresh_from_db()
@@ -173,7 +173,7 @@ class PriceListItemViewsTest(TestCase):
 
     def test_price_list_item_edit_view_nonexistent(self):
         """Test editing a non-existent price list item returns 404."""
-        url = reverse('invoicing:price_list_item_edit', kwargs={'item_id': 99999})
+        url = reverse('inventory:price_list_item_edit', kwargs={'item_id': 99999})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 404)
@@ -237,7 +237,7 @@ class PriceListItemViewsTest(TestCase):
             selling_price=Decimal('10.00')
         )
 
-        url = reverse('invoicing:price_list_item_list')
+        url = reverse('inventory:price_list_item_list')
         response = self.client.get(url)
 
         items = response.context['items']

@@ -25,6 +25,7 @@ urlpatterns = [
     path('settings/', settings_view, name='settings'),
     path('settings/tax/', tax_config_edit, name='tax_config_edit'),
     path('jobs/', include('apps.jobs.urls')),
+    path('estimates/', include('apps.estimates.urls')),
     path('contacts/', include('apps.contacts.urls')),
     path('core/', include('apps.core.urls')),
     path('purchasing/', include('apps.purchasing.urls')),

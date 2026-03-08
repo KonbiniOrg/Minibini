@@ -41,70 +41,11 @@ class Invoice(models.Model):
         # Call parent save
         super().save(*args, **kwargs)
 
+    class Meta:
+        db_table = 'invoices'
+
     def __str__(self):
         return f"Invoice {self.invoice_number}"
-
-
-
-class PriceListItem(models.Model):
-    price_list_item_id = models.AutoField(primary_key=True)
-    code = models.CharField(max_length=50)
-    units = models.CharField(max_length=50, blank=True)
-    description = models.TextField(blank=True)
-    purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    qty_on_hand = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    qty_sold = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    qty_wasted = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    is_active = models.BooleanField(default=True)  # For soft-delete - use instead of hard deletion
-    is_inventoried = models.BooleanField(default=False)
-
-    # LineItemType for categorization and taxability
-    line_item_type = models.ForeignKey(
-        'core.LineItemType',
-        on_delete=models.PROTECT,
-        related_name='price_list_items',
-        null=True,  # Nullable initially for migration; will be made required after data migration
-        blank=True
-    )
-
-    @property
-    def qty_earmarked(self):
-        """Total quantity earmarked across all jobs."""
-        total = self.earmark_set.aggregate(
-            total=models.Sum('quantity')
-        )['total']
-        return total or Decimal('0.00')
-
-    @property
-    def qty_available(self):
-        """Quantity available (on hand minus earmarked)."""
-        return self.qty_on_hand - self.qty_earmarked
-
-    def __str__(self):
-        return f"{self.code} - {self.description[:50]}"
-
-    @property
-    def can_be_deleted(self):
-        """
-        Check if this price list item can be safely deleted.
-        Returns False if any line items reference it.
-
-        Note: With PROTECT on_delete, this check is now enforced at the database level.
-        This property is useful for UI to show/hide delete buttons.
-        """
-        from apps.jobs.models import EstimateLineItem
-        from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
-
-        return not (
-            EstimateLineItem.objects.filter(price_list_item=self).exists() or
-            InvoiceLineItem.objects.filter(price_list_item=self).exists() or
-            PurchaseOrderLineItem.objects.filter(price_list_item=self).exists() or
-            BillLineItem.objects.filter(price_list_item=self).exists() or
-            self.earmark_set.exists() or
-            self.inventoryadjustment_set.exists()
-        )
-
 
 
 class InvoiceLineItem(BaseLineItem):
@@ -113,6 +54,7 @@ class InvoiceLineItem(BaseLineItem):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
 
     class Meta:
+        db_table = 'invoice_li'
         verbose_name = "Invoice Line Item"
         verbose_name_plural = "Invoice Line Items"
 

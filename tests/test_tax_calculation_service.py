@@ -7,7 +7,8 @@ from django.test import TestCase
 from apps.core.models import Configuration, LineItemType
 from apps.core.services import TaxCalculationService
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Estimate, EstimateLineItem
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
 
 
 class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):

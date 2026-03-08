@@ -1,9 +1,8 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import (
-    Job, Estimate, WorkOrder, Task, EstWorksheet, WorkOrderTemplate, TaskTemplate
-)
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.estimates.models import Estimate, EstWorksheet, WorkOrderTemplate, TaskTemplate
 from apps.contacts.models import Contact
 
 User = get_user_model()
@@ -37,7 +36,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.assertEqual(initial_task_count, 5)  # 1 parent + 2 children + 2 standalone
 
         # GET request - should show confirmation page
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Create Work Order from Estimate')
@@ -81,7 +80,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.assertEqual(worksheet_count, 0)
 
         # POST request - create the WorkOrder
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.post(url, follow=True)
 
         # Check WorkOrder was created
@@ -114,13 +113,13 @@ class WorkOrderFromEstimateTestCase(TestCase):
                 estimate = Estimate.objects.get(pk=estimate_id)
                 self.assertEqual(estimate.status, expected_status)
 
-                url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate_id})
+                url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate_id})
                 response = self.client.post(url, follow=True)
 
                 # Should redirect back to estimate detail with error message
                 self.assertRedirects(
                     response,
-                    reverse('jobs:estimate_detail', kwargs={'estimate_id': estimate_id})
+                    reverse('estimates:estimate_detail', kwargs={'estimate_id': estimate_id})
                 )
 
                 # Check error message
@@ -141,7 +140,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.assertEqual(ws_task_count, 5)
 
         # Create WorkOrder
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.post(url, follow=True)
 
         # Get the created WorkOrder
@@ -161,7 +160,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         estimate = Estimate.objects.get(pk=100)
 
         # Create WorkOrder
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.post(url)
 
         work_order = WorkOrder.objects.filter(job=estimate.job).first()
@@ -183,7 +182,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         """Test that the confirmation page shows correct information before creating WorkOrder"""
         estimate = Estimate.objects.get(pk=100)
 
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -203,7 +202,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         """Test confirmation page when estimate has no worksheet"""
         estimate = Estimate.objects.get(pk=103)
 
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -217,19 +216,19 @@ class WorkOrderFromEstimateTestCase(TestCase):
         """Test that Create Work Order link only shows for accepted estimates"""
         # Test accepted estimate - should show link
         estimate_accepted = Estimate.objects.get(pk=100)
-        url = reverse('jobs:estimate_detail', kwargs={'estimate_id': estimate_accepted.estimate_id})
+        url = reverse('estimates:estimate_detail', kwargs={'estimate_id': estimate_accepted.estimate_id})
         response = self.client.get(url)
         self.assertContains(response, 'Create Work Order')
 
         # Test open estimate - should not show link
         estimate_open = Estimate.objects.get(pk=101)
-        url = reverse('jobs:estimate_detail', kwargs={'estimate_id': estimate_open.estimate_id})
+        url = reverse('estimates:estimate_detail', kwargs={'estimate_id': estimate_open.estimate_id})
         response = self.client.get(url)
         self.assertNotContains(response, 'Create Work Order')
 
         # Test draft estimate - should not show link
         estimate_draft = Estimate.objects.get(pk=102)
-        url = reverse('jobs:estimate_detail', kwargs={'estimate_id': estimate_draft.estimate_id})
+        url = reverse('estimates:estimate_detail', kwargs={'estimate_id': estimate_draft.estimate_id})
         response = self.client.get(url)
         self.assertNotContains(response, 'Create Work Order')
 
@@ -253,13 +252,13 @@ class WorkOrderFromEstimateIntegrationTest(TestCase):
         estimate = Estimate.objects.get(pk=100)
 
         # Step 1: View estimate detail page
-        estimate_url = reverse('jobs:estimate_detail', kwargs={'estimate_id': estimate.estimate_id})
+        estimate_url = reverse('estimates:estimate_detail', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.get(estimate_url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Create Work Order')
 
         # Step 2: Click on Create Work Order (GET request to confirmation page)
-        create_url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        create_url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.get(create_url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Create Work Order from Estimate')
@@ -284,12 +283,12 @@ class WorkOrderFromEstimateIntegrationTest(TestCase):
         """Test that multiple WorkOrders can be created for the same job from different estimates"""
         # Create first WorkOrder from estimate 100
         estimate1 = Estimate.objects.get(pk=100)
-        url1 = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate1.estimate_id})
+        url1 = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate1.estimate_id})
         response1 = self.client.post(url1)
 
         # Create second WorkOrder from estimate 103 (same job, different estimate)
         estimate2 = Estimate.objects.get(pk=103)
-        url2 = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate2.estimate_id})
+        url2 = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate2.estimate_id})
         response2 = self.client.post(url2)
 
         # Verify both WorkOrders exist for the same job

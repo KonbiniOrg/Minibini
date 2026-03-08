@@ -1,10 +1,8 @@
 """Tests that within-bundle items are displayed in sort_order, not by ID."""
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import (
-    Task, TaskBundle, EstWorksheet, Job,
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
-)
+from apps.jobs.models import Task, TaskBundle, Job
+from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType
 
@@ -21,7 +19,7 @@ class WithinBundleDisplayOrderTest(TestCase):
 
     def test_worksheet_bundle_items_sorted_by_sort_order(self):
         """_build_container_items_from_tasks should sort within-bundle items by sort_order."""
-        from apps.jobs.views import _build_container_items_from_tasks
+        from apps.estimates.views import _build_container_items_from_tasks
 
         worksheet = EstWorksheet.objects.create(job=self.job)
         bundle = TaskBundle.objects.create(
@@ -56,7 +54,7 @@ class WithinBundleDisplayOrderTest(TestCase):
 
     def test_template_bundle_items_sorted_by_sort_order(self):
         """_build_container_items_from_associations should sort within-bundle items by sort_order."""
-        from apps.jobs.views import _build_container_items_from_associations
+        from apps.estimates.views import _build_container_items_from_associations
 
         wot = WorkOrderTemplate.objects.create(template_name='Test')
         template_bundle = TemplateBundle.objects.create(

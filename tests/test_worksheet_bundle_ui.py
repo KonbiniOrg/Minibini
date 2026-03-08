@@ -2,7 +2,8 @@
 from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
-from apps.jobs.models import Task, TaskBundle, EstWorksheet, Job
+from apps.jobs.models import Task, TaskBundle, Job
+from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import User, LineItemType
 
@@ -53,7 +54,7 @@ class WorksheetBundleCreationTest(WorksheetBundleUITestBase):
 
     def test_bundle_selected_tasks(self):
         """POSTing bundle_tasks creates a TaskBundle and assigns selected tasks."""
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url, {
             'bundle_tasks': '',
             'selected_tasks': [self.task1.task_id, self.task2.task_id],
@@ -83,7 +84,7 @@ class WorksheetBundleCreationTest(WorksheetBundleUITestBase):
 
     def test_bundle_requires_two_tasks(self):
         """Bundling fewer than 2 tasks shows error."""
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url, {
             'bundle_tasks': '',
             'selected_tasks': [self.task1.task_id],
@@ -94,7 +95,7 @@ class WorksheetBundleCreationTest(WorksheetBundleUITestBase):
 
     def test_bundle_requires_name(self):
         """Bundling without a name shows error."""
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         self.client.post(url, {
             'bundle_tasks': '',
             'selected_tasks': [self.task1.task_id, self.task2.task_id],
@@ -121,7 +122,7 @@ class WorksheetUnbundleTest(WorksheetBundleUITestBase):
 
     def test_unbundle_task(self):
         """Removing a task from a bundle sets it to direct."""
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url, {
             'remove_task': self.task1.task_id,
         })
@@ -133,7 +134,7 @@ class WorksheetUnbundleTest(WorksheetBundleUITestBase):
 
     def test_unbundle_last_two_dissolves_bundle(self):
         """Unbundling a task when only 2 remain dissolves the bundle entirely."""
-        url = reverse('jobs:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         self.client.post(url, {'remove_task': self.task1.task_id})
 
         # Only 1 task left in bundle -> auto-dissolve
@@ -163,7 +164,7 @@ class WorksheetBundleReorderTest(WorksheetBundleUITestBase):
         self.task3.save()
 
         # Move bundle down (swap with task3)
-        url = reverse('jobs:worksheet_reorder_item', args=[
+        url = reverse('estimates:worksheet_reorder_item', args=[
             self.worksheet.est_worksheet_id, 'bundle', bundle.pk, 'down'
         ])
         response = self.client.post(url)
@@ -190,7 +191,7 @@ class WorksheetBundleReorderTest(WorksheetBundleUITestBase):
         self.task2.save()
 
         # Move task1 down within bundle
-        url = reverse('jobs:worksheet_reorder_in_bundle', args=[
+        url = reverse('estimates:worksheet_reorder_in_bundle', args=[
             self.worksheet.est_worksheet_id, self.task1.task_id, 'down'
         ])
         response = self.client.post(url)

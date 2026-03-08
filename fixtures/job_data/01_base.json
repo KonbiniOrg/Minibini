@@ -553,7 +553,7 @@
     "fields": {}
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 1,
     "fields": {
       "template_name": "RESEARCH",
@@ -567,7 +567,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 2,
     "fields": {
       "template_name": "CAD",
@@ -581,7 +581,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 3,
     "fields": {
       "template_name": "CUT",
@@ -595,7 +595,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 4,
     "fields": {
       "template_name": "ASSEMBLE",
@@ -609,7 +609,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 5,
     "fields": {
       "template_name": "FINISH",
@@ -623,7 +623,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 6,
     "fields": {
       "template_name": "PALLET",
@@ -637,7 +637,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 7,
     "fields": {
       "template_name": "SITE VISIT",
@@ -651,7 +651,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 8,
     "fields": {
       "template_name": "JIG",
@@ -665,7 +665,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 9,
     "fields": {
       "template_name": "DELIVERY",
@@ -679,7 +679,7 @@
     }
   },
   {
-    "model": "jobs.workordertemplate",
+    "model": "estimates.workordertemplate",
     "pk": 3,
     "fields": {
       "template_name": "Table",
@@ -690,7 +690,7 @@
     }
   },
   {
-    "model": "jobs.workordertemplate",
+    "model": "estimates.workordertemplate",
     "pk": 4,
     "fields": {
       "template_name": "SIGN",
@@ -701,7 +701,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 1,
     "fields": {
       "work_order_template": 4,
@@ -713,7 +713,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 2,
     "fields": {
       "work_order_template": 4,
@@ -725,7 +725,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 3,
     "fields": {
       "work_order_template": 4,
@@ -737,7 +737,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 4,
     "fields": {
       "work_order_template": 4,
@@ -749,7 +749,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 5,
     "fields": {
       "work_order_template": 3,
@@ -761,7 +761,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 6,
     "fields": {
       "work_order_template": 3,
@@ -773,7 +773,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 7,
     "fields": {
       "work_order_template": 3,
@@ -785,7 +785,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 8,
     "fields": {
       "work_order_template": 3,
@@ -797,7 +797,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 1,
     "fields": {
       "code": "LAB001",
@@ -813,7 +813,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 2,
     "fields": {
       "code": "LAB002",
@@ -829,7 +829,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 3,
     "fields": {
       "code": "MAT001",
@@ -837,7 +837,7 @@
       "description": "Plywood - per sheet",
       "purchase_price": "80.00",
       "selling_price": "100.00",
-      "qty_on_hand": "100.00",
+      "qty_on_hand": "0.00",
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "is_active": true,
@@ -845,7 +845,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 4,
     "fields": {
       "code": "MAT002",
@@ -861,7 +861,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 5,
     "fields": {
       "code": "MAT003",
@@ -877,7 +877,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 6,
     "fields": {
       "code": "RENT",

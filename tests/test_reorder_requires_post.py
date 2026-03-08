@@ -9,7 +9,8 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
 from apps.core.models import User
-from apps.jobs.models import Job, Estimate, EstimateLineItem, WorkOrder, Task, EstWorksheet
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
 
@@ -77,7 +78,7 @@ class EstimateReorderLineItemTest(ReorderRequiresPostTestBase):
 
     def test_get_returns_405(self):
         """GET request to reorder should return 405 Method Not Allowed."""
-        url = reverse('jobs:estimate_reorder_line_item', kwargs={
+        url = reverse('estimates:estimate_reorder_line_item', kwargs={
             'estimate_id': self.estimate.estimate_id,
             'line_item_id': self.line_item1.line_item_id,
             'direction': 'down'
@@ -87,7 +88,7 @@ class EstimateReorderLineItemTest(ReorderRequiresPostTestBase):
 
     def test_post_reorders_successfully(self):
         """POST request to reorder should work correctly."""
-        url = reverse('jobs:estimate_reorder_line_item', kwargs={
+        url = reverse('estimates:estimate_reorder_line_item', kwargs={
             'estimate_id': self.estimate.estimate_id,
             'line_item_id': self.line_item1.line_item_id,
             'direction': 'down'
@@ -132,7 +133,7 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
 
     def test_get_returns_405(self):
         """GET request to reorder should return 405 Method Not Allowed."""
-        url = reverse('jobs:task_reorder_worksheet', kwargs={
+        url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
             'task_id': self.task1.task_id,
             'direction': 'down'
@@ -142,7 +143,7 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
 
     def test_post_reorders_successfully(self):
         """POST request to reorder should work correctly."""
-        url = reverse('jobs:task_reorder_worksheet', kwargs={
+        url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
             'task_id': self.task1.task_id,
             'direction': 'down'

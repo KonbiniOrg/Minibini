@@ -3,13 +3,11 @@ from django.urls import reverse
 from django.contrib.auth import get_user_model
 from decimal import Decimal
 
-from apps.jobs.models import (
-    Job, Estimate, EstimateLineItem, WorkOrder, Task,
-    EstWorksheet, WorkOrderTemplate, TaskTemplate
-)
-from apps.jobs.services import LineItemTaskService
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate, TaskTemplate
+from apps.jobs.services import TaskService
 from apps.contacts.models import Contact
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 User = get_user_model()
 
@@ -39,7 +37,7 @@ class LineItemTaskGenerationTestCase(TestCase):
 
         # Create WorkOrder and generate tasks
         work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
-        generated_tasks = LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
+        generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         # Verify task was created
         self.assertEqual(len(generated_tasks), 1)
@@ -64,7 +62,7 @@ class LineItemTaskGenerationTestCase(TestCase):
 
         # Create WorkOrder and generate tasks
         work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
-        generated_tasks = LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
+        generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         # Verify task was created
         self.assertEqual(len(generated_tasks), 1)
@@ -88,7 +86,7 @@ class LineItemTaskGenerationTestCase(TestCase):
 
         # Create WorkOrder and generate tasks
         work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
-        generated_tasks = LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
+        generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         # Verify task was created
         self.assertEqual(len(generated_tasks), 1)
@@ -116,7 +114,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         )
 
         work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
-        generated_tasks = LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
+        generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         self.assertEqual(len(generated_tasks), 1)
         task = generated_tasks[0]
@@ -128,7 +126,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
 
         # Create WorkOrder via the view
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.post(url, follow=True)
 
         # Verify WorkOrder was created
@@ -147,7 +145,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         """Test that confirmation page shows worksheet as source when one exists."""
         estimate = Estimate.objects.get(pk=200)
 
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': estimate.estimate_id})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -167,7 +165,7 @@ class LineItemTaskGenerationTestCase(TestCase):
             status='accepted'
         )
 
-        url = reverse('jobs:work_order_create_from_estimate', kwargs={'estimate_id': empty_estimate.estimate_id})
+        url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': empty_estimate.estimate_id})
         response = self.client.post(url, follow=True)
 
         # Should still create WorkOrder, just with no tasks
@@ -198,7 +196,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         )
 
         work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
-        generated_tasks = LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
+        generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         self.assertEqual(len(generated_tasks), 1)
         task = generated_tasks[0]
@@ -244,7 +242,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
         )
 
         work_order = WorkOrder.objects.create(job=self.job, status='draft')
-        generated_tasks = LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
+        generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         self.assertEqual(len(generated_tasks), 1)
         task = generated_tasks[0]
@@ -275,7 +273,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
         )
 
         work_order = WorkOrder.objects.create(job=self.job, status='draft')
-        generated_tasks = LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
+        generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         self.assertEqual(len(generated_tasks), 1)
         task = generated_tasks[0]

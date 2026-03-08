@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.db import IntegrityError
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from apps.inventory.models import Earmark, InventoryAdjustment
 
 

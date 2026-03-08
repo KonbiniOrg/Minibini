@@ -3,10 +3,11 @@
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job, Estimate, EstimateLineItem
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact
 from apps.core.models import Configuration, LineItemType
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 
 class EstimateLineItemAdditionTests(TestCase):
@@ -66,7 +67,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
     def test_get_add_line_item_page(self):
         """Test GET request to add line item page shows both forms."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -77,7 +78,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
     def test_add_manual_line_item(self):
         """Test adding a manual line item via POST."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
 
         form_data = {
             'description': 'Custom line item',
@@ -92,7 +93,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
         # Should redirect to estimate detail page
         self.assertEqual(response.status_code, 302)
-        self.assertRedirects(response, reverse('jobs:estimate_detail', args=[self.estimate.estimate_id]))
+        self.assertRedirects(response, reverse('estimates:estimate_detail', args=[self.estimate.estimate_id]))
 
         # Check line item was created
         line_item = EstimateLineItem.objects.filter(estimate=self.estimate).first()
@@ -107,7 +108,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
     def test_add_pricelist_line_item(self):
         """Test adding a line item from price list via POST."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
 
         form_data = {
             'price_list_item': str(self.price_list_item.price_list_item_id),
@@ -119,7 +120,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
         # Should redirect to estimate detail page
         self.assertEqual(response.status_code, 302)
-        self.assertRedirects(response, reverse('jobs:estimate_detail', args=[self.estimate.estimate_id]))
+        self.assertRedirects(response, reverse('estimates:estimate_detail', args=[self.estimate.estimate_id]))
 
         # Check line item was created
         line_item = EstimateLineItem.objects.filter(estimate=self.estimate).first()
@@ -141,7 +142,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
     def test_add_manual_line_item_missing_required_fields(self):
         """Test adding a manual line item with missing required fields shows errors."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
 
         form_data = {
             'description': '',  # Missing description
@@ -163,7 +164,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
     def test_add_pricelist_line_item_missing_qty(self):
         """Test adding a price list line item with missing qty shows errors."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
 
         form_data = {
             'price_list_item': str(self.price_list_item.price_list_item_id),
@@ -187,14 +188,14 @@ class EstimateLineItemAdditionTests(TestCase):
         self.estimate.save()
 
         # Create a revision, which marks the parent as superseded
-        url_revise = reverse('jobs:estimate_revise', args=[self.estimate.estimate_id])
+        url_revise = reverse('estimates:estimate_revise', args=[self.estimate.estimate_id])
         response = self.client.post(url_revise)
 
         # Get the superseded estimate
         self.estimate.refresh_from_db()
         self.assertEqual(self.estimate.status, 'superseded')
 
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
 
         form_data = {
             'description': 'Should not be added',
@@ -216,7 +217,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
     def test_multiple_line_items_can_be_added(self):
         """Test that multiple line items can be added to an estimate."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
 
         # Add first manual line item
         form_data_1 = {
@@ -250,7 +251,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
     def test_line_item_total_amount_calculation(self):
         """Test that line item total amount is calculated correctly."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
 
         # Add line item with qty and price
         form_data = {
@@ -320,12 +321,12 @@ class EstimateLineItemDeletionTests(TestCase):
             price=Decimal('10.00')
         )
 
-        url = reverse('jobs:estimate_delete_line_item', args=[self.estimate.estimate_id, line_item.line_item_id])
+        url = reverse('estimates:estimate_delete_line_item', args=[self.estimate.estimate_id, line_item.line_item_id])
         response = self.client.post(url)
 
         # Should redirect to estimate detail
         self.assertEqual(response.status_code, 302)
-        self.assertRedirects(response, reverse('jobs:estimate_detail', args=[self.estimate.estimate_id]))
+        self.assertRedirects(response, reverse('estimates:estimate_detail', args=[self.estimate.estimate_id]))
 
         # Line item should be deleted
         self.assertFalse(EstimateLineItem.objects.filter(line_item_id=line_item.line_item_id).exists())
@@ -364,7 +365,7 @@ class EstimateLineItemDeletionTests(TestCase):
         self.assertEqual(item3.line_number, 3)
 
         # Delete item 2
-        url = reverse('jobs:estimate_delete_line_item', args=[self.estimate.estimate_id, item2.line_item_id])
+        url = reverse('estimates:estimate_delete_line_item', args=[self.estimate.estimate_id, item2.line_item_id])
         response = self.client.post(url)
 
         # Item 2 should be deleted
@@ -408,7 +409,7 @@ class EstimateLineItemDeletionTests(TestCase):
         )
 
         # Delete item 1
-        url = reverse('jobs:estimate_delete_line_item', args=[self.estimate.estimate_id, item1.line_item_id])
+        url = reverse('estimates:estimate_delete_line_item', args=[self.estimate.estimate_id, item1.line_item_id])
         response = self.client.post(url)
 
         # Item 1 should be deleted
@@ -448,7 +449,7 @@ class EstimateLineItemDeletionTests(TestCase):
         )
 
         # Delete item 3
-        url = reverse('jobs:estimate_delete_line_item', args=[self.estimate.estimate_id, item3.line_item_id])
+        url = reverse('estimates:estimate_delete_line_item', args=[self.estimate.estimate_id, item3.line_item_id])
         response = self.client.post(url)
 
         # Item 3 should be deleted
@@ -476,7 +477,7 @@ class EstimateLineItemDeletionTests(TestCase):
         self.estimate.save()
 
         # Create a revision (marks parent as superseded)
-        url_revise = reverse('jobs:estimate_revise', args=[self.estimate.estimate_id])
+        url_revise = reverse('estimates:estimate_revise', args=[self.estimate.estimate_id])
         self.client.post(url_revise)
 
         # Refresh to get superseded status
@@ -484,7 +485,7 @@ class EstimateLineItemDeletionTests(TestCase):
         self.assertEqual(self.estimate.status, 'superseded')
 
         # Try to delete the line item
-        url = reverse('jobs:estimate_delete_line_item', args=[self.estimate.estimate_id, line_item.line_item_id])
+        url = reverse('estimates:estimate_delete_line_item', args=[self.estimate.estimate_id, line_item.line_item_id])
         response = self.client.post(url)
 
         # Should redirect
@@ -508,11 +509,11 @@ class EstimateLineItemDeletionTests(TestCase):
             items.append(item)
 
         # Delete item 2
-        url = reverse('jobs:estimate_delete_line_item', args=[self.estimate.estimate_id, items[1].line_item_id])
+        url = reverse('estimates:estimate_delete_line_item', args=[self.estimate.estimate_id, items[1].line_item_id])
         self.client.post(url)
 
         # Delete item 4 (which should now be #3 after first deletion)
-        url = reverse('jobs:estimate_delete_line_item', args=[self.estimate.estimate_id, items[3].line_item_id])
+        url = reverse('estimates:estimate_delete_line_item', args=[self.estimate.estimate_id, items[3].line_item_id])
         self.client.post(url)
 
         # Check remaining items are numbered 1, 2, 3
@@ -534,7 +535,7 @@ class EstimateLineItemDeletionTests(TestCase):
         )
 
         # Check draft estimate shows delete button
-        url = reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         response = self.client.get(url)
         self.assertContains(response, 'Actions')
         self.assertContains(response, 'Delete')

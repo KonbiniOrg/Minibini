@@ -12,7 +12,8 @@ Business Rules:
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from apps.jobs.models import Job, Estimate, EstWorksheet
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstWorksheet
 from apps.contacts.models import Contact
 from apps.core.models import User
 

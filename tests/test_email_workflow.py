@@ -776,6 +776,9 @@ class EmailJobAssociationTest(TestCase):
     @patch('apps.core.views.EmailService')
     def test_associate_email_post_success(self, mock_service_class):
         """Test POST request successfully associates email with job"""
+        from apps.core.services import EmailService as RealEmailService
+        mock_service_class.associate_with_job = RealEmailService.associate_with_job
+
         # Create a job
         contact = Contact.objects.get(pk=1)
         job = Job.objects.create(
@@ -819,6 +822,9 @@ class EmailJobAssociationTest(TestCase):
     @patch('apps.core.views.EmailService')
     def test_associate_email_post_invalid_job_id(self, mock_service_class):
         """Test POST request with invalid job ID shows error"""
+        from apps.core.services import EmailService as RealEmailService
+        mock_service_class.associate_with_job = RealEmailService.associate_with_job
+
         email_record = EmailRecord.objects.get(pk=1)
         url = reverse('core:associate_email_with_job', args=[email_record.email_record_id])
 

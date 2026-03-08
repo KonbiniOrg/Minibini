@@ -291,7 +291,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 1,
         "fields": {
             "job": 1,
@@ -304,7 +304,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 2,
         "fields": {
             "job": 1,
@@ -317,7 +317,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 3,
         "fields": {
             "job": 2,
@@ -330,7 +330,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 4,
         "fields": {
             "job": 3,
@@ -343,7 +343,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 5,
         "fields": {
             "job": 5,
@@ -356,7 +356,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 6,
         "fields": {
             "job": 6,
@@ -369,7 +369,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 7,
         "fields": {
             "job": 7,
@@ -751,7 +751,7 @@
         }
     },
     {
-        "model": "jobs.workordertemplate",
+        "model": "estimates.workordertemplate",
         "pk": 1,
         "fields": {
             "template_name": "TEST1",
@@ -762,7 +762,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 1,
         "fields": {
             "template_name": "RESEARCH",
@@ -774,7 +774,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 2,
         "fields": {
             "template_name": "CAD",
@@ -786,7 +786,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 3,
         "fields": {
             "template_name": "CUT",
@@ -798,7 +798,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 4,
         "fields": {
             "template_name": "ASSEMBLE",
@@ -810,7 +810,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 5,
         "fields": {
             "template_name": "FINISH",
@@ -822,7 +822,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 6,
         "fields": {
             "template_name": "PALLET",
@@ -834,7 +834,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 1,
         "fields": {
             "task": null,
@@ -848,7 +848,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 2,
         "fields": {
             "task": null,
@@ -862,7 +862,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 3,
         "fields": {
             "task": null,
@@ -876,7 +876,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 4,
         "fields": {
             "task": null,
@@ -890,7 +890,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 5,
         "fields": {
             "task": null,
@@ -904,7 +904,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 6,
         "fields": {
             "task": null,
@@ -918,7 +918,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 7,
         "fields": {
             "task": null,
@@ -932,7 +932,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 8,
         "fields": {
             "task": null,
@@ -946,7 +946,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 9,
         "fields": {
             "task": null,
@@ -960,7 +960,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 10,
         "fields": {
             "task": null,
@@ -974,7 +974,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 11,
         "fields": {
             "task": null,
@@ -988,7 +988,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 12,
         "fields": {
             "task": null,
@@ -1002,7 +1002,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 13,
         "fields": {
             "task": null,
@@ -1016,7 +1016,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 14,
         "fields": {
             "task": null,
@@ -1030,7 +1030,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 15,
         "fields": {
             "task": null,
@@ -1044,7 +1044,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 16,
         "fields": {
             "task": null,
@@ -1058,7 +1058,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 17,
         "fields": {
             "task": 1,
@@ -1276,7 +1276,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 1,
         "fields": {
             "code": "LAB001",
@@ -1290,7 +1290,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 2,
         "fields": {
             "code": "LAB002",
@@ -1304,7 +1304,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 3,
         "fields": {
             "code": "MAT001",
@@ -1318,7 +1318,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 4,
         "fields": {
             "code": "MAT002",
@@ -1332,7 +1332,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 5,
         "fields": {
             "code": "MAT003",
@@ -1346,7 +1346,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 6,
         "fields": {
             "code": "EQP001",
@@ -1360,7 +1360,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 7,
         "fields": {
             "code": "SUP001",
@@ -1475,7 +1475,7 @@
         }
     },
     {
-        "model": "jobs.estworksheet",
+        "model": "estimates.estworksheet",
         "pk": 1,
         "fields": {
             "job": 1,
@@ -1488,7 +1488,7 @@
         }
     },
     {
-        "model": "jobs.estworksheet",
+        "model": "estimates.estworksheet",
         "pk": 2,
         "fields": {
             "job": 2,
@@ -1501,7 +1501,7 @@
         }
     },
     {
-        "model": "jobs.estworksheet",
+        "model": "estimates.estworksheet",
         "pk": 3,
         "fields": {
             "job": 3,
@@ -1818,7 +1818,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 1,
         "fields": {
             "work_order_template": 1,
@@ -1828,7 +1828,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 2,
         "fields": {
             "work_order_template": 1,
@@ -1838,7 +1838,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 3,
         "fields": {
             "work_order_template": 1,
@@ -1848,7 +1848,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 4,
         "fields": {
             "work_order_template": 1,
@@ -1858,7 +1858,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 5,
         "fields": {
             "work_order_template": 1,
@@ -1868,7 +1868,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 6,
         "fields": {
             "work_order_template": 1,

@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.urls import reverse
 from .models import User, LineItemType, Configuration, EmailRecord, TempEmail
-from .services import EmailService
+from .services import EmailService, ConfigurationService, NotFoundError
 from .email_utils import parse_email_address, extract_company_from_signature, extract_email_body
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
@@ -169,12 +169,10 @@ def associate_email_with_job(request, email_record_id):
             return redirect('core:associate_email_with_job', email_record_id=email_record_id)
 
         try:
-            job = Job.objects.get(pk=job_id)
-            email_record.job = job
-            email_record.save()
-            messages.success(request, f'Email associated with job {job.job_number}.')
+            updated = EmailService.associate_with_job(email_record_id, int(job_id))
+            messages.success(request, f'Email associated with job {updated.job.job_number}.')
             return redirect('core:email_detail', email_record_id=email_record_id)
-        except Job.DoesNotExist:
+        except NotFoundError:
             messages.error(request, 'Selected job does not exist.')
             return redirect('core:associate_email_with_job', email_record_id=email_record_id)
 
@@ -217,8 +215,7 @@ def disassociate_email_from_job(request, email_record_id):
         return redirect('core:email_detail', email_record_id=email_record_id)
 
     job_number = email_record.job.job_number
-    email_record.job = None
-    email_record.save()
+    EmailService.disassociate_from_job(email_record_id)
 
     messages.success(request, f'Email disassociated from job {job_number}.')
     return redirect('core:email_detail', email_record_id=email_record_id)
@@ -251,7 +248,7 @@ def line_item_type_create(request):
     if request.method == 'POST':
         form = LineItemTypeForm(request.POST)
         if form.is_valid():
-            line_item_type = form.save()
+            line_item_type = ConfigurationService.create_line_item_type(**form.cleaned_data)
             messages.success(request, f'Line item type "{line_item_type.name}" created successfully.')
             return redirect('core:line_item_type_list')
     else:
@@ -271,7 +268,7 @@ def line_item_type_edit(request, pk):
     if request.method == 'POST':
         form = LineItemTypeForm(request.POST, instance=line_item_type)
         if form.is_valid():
-            form.save()
+            ConfigurationService.update_line_item_type(pk, **form.cleaned_data)
             messages.success(request, f'Line item type "{line_item_type.name}" updated successfully.')
             return redirect('core:line_item_type_detail', pk=line_item_type.pk)
     else:
@@ -322,21 +319,10 @@ def tax_config_edit(request):
     if request.method == 'POST':
         form = TaxConfigurationForm(request.POST)
         if form.is_valid():
-            # Update or create default_tax_rate
-            tax_rate = form.cleaned_data.get('default_tax_rate')
-            if tax_rate is not None:
-                Configuration.objects.update_or_create(
-                    key='default_tax_rate',
-                    defaults={'value': str(tax_rate)}
-                )
-
-            # Update or create org_tax_multiplier
-            multiplier = form.cleaned_data.get('org_tax_multiplier')
-            if multiplier is not None:
-                Configuration.objects.update_or_create(
-                    key='org_tax_multiplier',
-                    defaults={'value': str(multiplier)}
-                )
+            ConfigurationService.update_tax_config(
+                default_tax_rate=form.cleaned_data.get('default_tax_rate'),
+                org_tax_multiplier=form.cleaned_data.get('org_tax_multiplier'),
+            )
 
             messages.success(request, 'Tax configuration updated successfully.')
             return redirect('settings')

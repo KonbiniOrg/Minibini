@@ -21,6 +21,9 @@ class Contact(models.Model):
     home_number = models.CharField(max_length=20, blank=True)
     business = models.ForeignKey('Business', on_delete=models.SET_NULL, null=True, blank=True, related_name='contacts')
 
+    class Meta:
+        db_table = 'contacts'
+
     def __str__(self):
         return self.name
 
@@ -131,6 +134,9 @@ class Business(models.Model):
         blank=True
     )
 
+    class Meta:
+        db_table = 'businesses'
+
     def __str__(self):
         return self.business_name
 
@@ -230,5 +236,6 @@ class PaymentTerms(models.Model):
     # Additional fields not visible in diagram
 
     class Meta:
+        db_table = 'terms'
         verbose_name = "Payment Terms"
         verbose_name_plural = "Payment Terms"

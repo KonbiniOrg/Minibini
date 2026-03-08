@@ -1,8 +1,10 @@
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from decimal import Decimal
-from apps.invoicing.models import Invoice, InvoiceLineItem, PriceListItem
-from apps.jobs.models import Job, Estimate, Task, WorkOrder
+from apps.invoicing.models import Invoice, InvoiceLineItem
+from apps.inventory.models import PriceListItem
+from apps.jobs.models import Job, Task, WorkOrder
+from apps.estimates.models import Estimate
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration

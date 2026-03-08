@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.urls import reverse
-from apps.jobs.models import Task, EstWorksheet, WorkOrder, Job
+from apps.jobs.models import Task, WorkOrder, Job
+from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import User
 
@@ -120,7 +121,7 @@ class TaskReorderingTestCase(TestCase):
 
     def test_reorder_worksheet_task_down(self):
         """Test moving a task down in the worksheet"""
-        url = reverse('jobs:task_reorder_worksheet', kwargs={
+        url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
             'task_id': self.task1.task_id,
             'direction': 'down'
@@ -140,7 +141,7 @@ class TaskReorderingTestCase(TestCase):
 
     def test_reorder_worksheet_task_up(self):
         """Test moving a task up in the worksheet"""
-        url = reverse('jobs:task_reorder_worksheet', kwargs={
+        url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
             'task_id': self.task2.task_id,
             'direction': 'up'
@@ -160,7 +161,7 @@ class TaskReorderingTestCase(TestCase):
 
     def test_cannot_move_first_task_up(self):
         """Test that first task cannot be moved up"""
-        url = reverse('jobs:task_reorder_worksheet', kwargs={
+        url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
             'task_id': self.task1.task_id,
             'direction': 'up'
@@ -178,7 +179,7 @@ class TaskReorderingTestCase(TestCase):
 
     def test_cannot_move_last_task_down(self):
         """Test that last task cannot be moved down"""
-        url = reverse('jobs:task_reorder_worksheet', kwargs={
+        url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
             'task_id': self.task3.task_id,
             'direction': 'down'
@@ -200,7 +201,7 @@ class TaskReorderingTestCase(TestCase):
         self.worksheet.status = 'final'
         self.worksheet.save()
 
-        url = reverse('jobs:task_reorder_worksheet', kwargs={
+        url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
             'task_id': self.task1.task_id,
             'direction': 'down'

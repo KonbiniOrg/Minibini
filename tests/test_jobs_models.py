@@ -3,7 +3,8 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import timedelta
 from decimal import Decimal
-from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, WorkOrderTemplate, TaskTemplate
+from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.estimates.models import Estimate, WorkOrderTemplate, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import User
 
@@ -411,7 +412,7 @@ class TaskTemplateModelTest(TestCase):
         )
 
         # Create association with quantity
-        from apps.jobs.models import TemplateTaskAssociation
+        from apps.estimates.models import TemplateTaskAssociation
         association = TemplateTaskAssociation.objects.create(
             work_order_template=self.work_order_template,
             task_template=template,
@@ -460,7 +461,7 @@ class TaskTemplateModelTest(TestCase):
         )
 
         # Create association with quantity
-        from apps.jobs.models import TemplateTaskAssociation
+        from apps.estimates.models import TemplateTaskAssociation
         association = TemplateTaskAssociation.objects.create(
             work_order_template=self.work_order_template,
             task_template=template,
@@ -479,7 +480,7 @@ class TaskTemplateModelTest(TestCase):
 
     def test_template_task_association_sort_order(self):
         """Test that TaskTemplates added to WorkOrderTemplate maintain sort order."""
-        from apps.jobs.models import TemplateTaskAssociation
+        from apps.estimates.models import TemplateTaskAssociation
 
         # Create multiple task templates
         task_template1 = TaskTemplate.objects.create(
@@ -529,7 +530,7 @@ class TaskTemplateModelTest(TestCase):
 
     def test_template_task_association_auto_increment_sort_order(self):
         """Test that sort_order auto-increments when adding tasks sequentially."""
-        from apps.jobs.models import TemplateTaskAssociation
+        from apps.estimates.models import TemplateTaskAssociation
         from django.db import models as db_models
 
         # Create multiple task templates

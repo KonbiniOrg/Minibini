@@ -48,7 +48,7 @@
         }
     },
     {
-        "model": "jobs.workordertemplate",
+        "model": "estimates.workordertemplate",
         "pk": 50,
         "fields": {
             "template_name": "Test Product Template",
@@ -59,7 +59,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 50,
         "fields": {
             "template_name": "Parent Task Template",
@@ -72,7 +72,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 51,
         "fields": {
             "template_name": "Child Task Template",
@@ -85,7 +85,7 @@
         }
     },
     {
-        "model": "jobs.estworksheet",
+        "model": "estimates.estworksheet",
         "pk": 100,
         "fields": {
             "job": 100,
@@ -98,7 +98,7 @@
         }
     },
     {
-        "model": "jobs.estworksheet",
+        "model": "estimates.estworksheet",
         "pk": 101,
         "fields": {
             "job": 101,
@@ -111,7 +111,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 100,
         "fields": {
             "job": 100,
@@ -124,7 +124,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 101,
         "fields": {
             "job": 100,
@@ -137,7 +137,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 102,
         "fields": {
             "job": 101,
@@ -150,7 +150,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 103,
         "fields": {
             "job": 100,
@@ -258,7 +258,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 100,
         "fields": {
             "estimate": 100,
@@ -272,7 +272,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 103,
         "fields": {
             "estimate": 100,
@@ -286,7 +286,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 104,
         "fields": {
             "estimate": 100,

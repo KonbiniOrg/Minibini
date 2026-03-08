@@ -1,11 +1,38 @@
 from decimal import Decimal
 from django.db.models import F, Sum
-from apps.inventory.models import Earmark, InventoryAdjustment
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import Earmark, InventoryAdjustment, Material
+from apps.inventory.models import PriceListItem
 
 
 class InventoryService:
-    """Service for automatic inventory QOH updates."""
+    """Service for inventory operations: PriceListItem CRUD, QOH updates, and earmarks."""
+
+    # --- PriceListItem CRUD ---
+
+    @staticmethod
+    def create_item(**kwargs):
+        """Create a new PriceListItem."""
+        from apps.core.services import NotFoundError
+        pli = PriceListItem(**kwargs)
+        pli.full_clean()
+        pli.save()
+        return pli
+
+    @staticmethod
+    def update_item(pk, **kwargs):
+        """Update an existing PriceListItem by PK."""
+        from apps.core.services import NotFoundError
+        try:
+            pli = PriceListItem.objects.get(pk=pk)
+        except PriceListItem.DoesNotExist:
+            raise NotFoundError(f'PriceListItem {pk} not found')
+        for field, value in kwargs.items():
+            setattr(pli, field, value)
+        pli.full_clean()
+        pli.save()
+        return pli
+
+    # --- QOH operations ---
 
     @staticmethod
     def receive_po_line_item(po_line_item):
@@ -96,16 +123,52 @@ class InventoryService:
             reason=reason,
         )
 
+    # --- Material CRUD ---
 
-class EarmarkService:
-    """Service for earmarking inventory when a job is approved."""
+    @staticmethod
+    def create_material(task_pk, **kwargs):
+        """Create a new Material on a task."""
+        from apps.core.services import NotFoundError
+        from apps.jobs.models import Task
+        try:
+            task = Task.objects.get(pk=task_pk)
+        except Task.DoesNotExist:
+            raise NotFoundError(f'Task {task_pk} not found')
+        mat = Material(task=task, **kwargs)
+        mat.save()
+        return mat
+
+    @staticmethod
+    def update_material(pk, **kwargs):
+        """Update an existing Material by PK."""
+        from apps.core.services import NotFoundError
+        try:
+            mat = Material.objects.get(pk=pk)
+        except Material.DoesNotExist:
+            raise NotFoundError(f'Material {pk} not found')
+        for field, value in kwargs.items():
+            setattr(mat, field, value)
+        mat.save()
+        return mat
+
+    @staticmethod
+    def delete_material(pk):
+        """Delete a Material by PK."""
+        from apps.core.services import NotFoundError
+        try:
+            mat = Material.objects.get(pk=pk)
+        except Material.DoesNotExist:
+            raise NotFoundError(f'Material {pk} not found')
+        mat.delete()
+
+    # --- Earmark operations ---
 
     @staticmethod
     def get_earmark_preview(job):
         """Get preview of inventoried items needed for a job's materials.
         Aggregates by price_list_item across all tasks on the job's worksheets.
         Returns list of dicts with price_list_item, needed_qty, available_qty, shortfall."""
-        from apps.jobs.models import Material
+        from apps.inventory.models import Material
 
         # Find all materials with inventoried price list items across the job's worksheets
         materials = Material.objects.filter(

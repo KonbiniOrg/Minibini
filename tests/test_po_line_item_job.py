@@ -7,7 +7,7 @@ from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from apps.core.models import Configuration
 
 

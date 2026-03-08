@@ -22,6 +22,6 @@
 <form method="post">
     {% csrf_token %}
     <button type="submit">Create New Revision</button>
-    <a href="{% url 'jobs:estimate_detail' estimate.estimate_id %}">Cancel</a>
+    <a href="{% url 'estimates:estimate_detail' estimate.estimate_id %}">Cancel</a>
 </form>
 {% endblock %}

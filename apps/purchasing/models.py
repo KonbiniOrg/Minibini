@@ -159,6 +159,9 @@ class PurchaseOrder(models.Model):
             )
         return super().delete(*args, **kwargs)
 
+    class Meta:
+        db_table = 'pos'
+
     def __str__(self):
         return f"PO {self.po_number}"
 
@@ -317,6 +320,9 @@ class Bill(models.Model):
             )
         return super().delete(*args, **kwargs)
 
+    class Meta:
+        db_table = 'bills'
+
     def __str__(self):
         return f"Bill {self.bill_number}"
 
@@ -331,6 +337,7 @@ class PurchaseOrderLineItem(BaseLineItem):
     )
 
     class Meta:
+        db_table = 'po_li'
         verbose_name = "Purchase Order Line Item"
         verbose_name_plural = "Purchase Order Line Items"
 
@@ -348,6 +355,7 @@ class BillLineItem(BaseLineItem):
     bill = models.ForeignKey(Bill, on_delete=models.CASCADE)
 
     class Meta:
+        db_table = 'bill_li'
         verbose_name = "Bill Line Item"
         verbose_name_plural = "Bill Line Items"
 

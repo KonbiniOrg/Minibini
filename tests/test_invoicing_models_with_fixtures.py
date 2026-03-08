@@ -1,9 +1,11 @@
 from django.test import TestCase
 from decimal import Decimal
-from apps.invoicing.models import Invoice, InvoiceLineItem, PriceListItem
-from apps.jobs.models import EstimateLineItem
+from apps.invoicing.models import Invoice, InvoiceLineItem
+from apps.inventory.models import PriceListItem
+from apps.estimates.models import EstimateLineItem
 from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
-from apps.jobs.models import Job, Estimate, Task
+from apps.jobs.models import Job, Task
+from apps.estimates.models import Estimate
 from .base import FixtureTestCase
 
 
@@ -229,7 +231,8 @@ class LineItemModelFixtureTest(FixtureTestCase):
         
     def test_create_new_line_items_with_existing_relationships(self):
         """Test creating new line items with existing related objects from fixtures"""
-        from apps.jobs.models import Estimate, Task
+        from apps.jobs.models import Task
+        from apps.estimates.models import Estimate
         
         estimate = Estimate.objects.get(estimate_number="EST-2024-0001")
         invoice = Invoice.objects.get(invoice_number="INV-2024-0001")

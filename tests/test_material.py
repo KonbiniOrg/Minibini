@@ -2,8 +2,10 @@ from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, EstWorksheet, Task, Material
-from apps.invoicing.models import PriceListItem
+from apps.jobs.models import Job, Task
+from apps.estimates.models import EstWorksheet
+from apps.inventory.models import Material
+from apps.inventory.models import PriceListItem
 from apps.core.models import LineItemType
 
 

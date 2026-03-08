@@ -24,7 +24,7 @@
             {% if task.work_order %}
                 <a href="{% url 'jobs:work_order_detail' task.work_order.pk %}">Work Order (v{{ task.work_order.version|default:"1" }})</a>
             {% elif task.est_worksheet %}
-                <a href="{% url 'jobs:estworksheet_detail' task.est_worksheet.pk %}">Estimate Worksheet (v{{ task.est_worksheet.version }})</a>
+                <a href="{% url 'estimates:estworksheet_detail' task.est_worksheet.pk %}">Estimate Worksheet (v{{ task.est_worksheet.version }})</a>
             {% else %}
                 None
             {% endif %}
@@ -190,7 +190,7 @@
         <a href="{% url 'jobs:task_edit' task.task_id %}">Edit</a> |
     {% endif %}
     {% if task.est_worksheet %}
-        <a href="{% url 'jobs:estworksheet_detail' task.est_worksheet.pk %}">Back to Worksheet</a>
+        <a href="{% url 'estimates:estworksheet_detail' task.est_worksheet.pk %}">Back to Worksheet</a>
     {% elif task.work_order %}
         <a href="{% url 'jobs:work_order_detail' task.work_order.pk %}">Back to Work Order</a>
     {% else %}

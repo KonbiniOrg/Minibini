@@ -13,9 +13,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
-from apps.jobs.models import (
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
-)
+from apps.estimates.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.core.models import LineItemType
 
 User = get_user_model()
@@ -64,14 +62,14 @@ class TemplateOrderingTestBase(TestCase):
     def _detail_url(self, template=None):
         t = template or self.wo_template
         return reverse(
-            'jobs:work_order_template_detail',
+            'estimates:work_order_template_detail',
             kwargs={'template_id': t.template_id},
         )
 
     def _container_reorder_url(self, item_type, item_id, direction, template=None):
         t = template or self.wo_template
         return reverse(
-            'jobs:template_reorder_item',
+            'estimates:template_reorder_item',
             kwargs={
                 'template_id': t.template_id,
                 'item_type': item_type,
@@ -83,7 +81,7 @@ class TemplateOrderingTestBase(TestCase):
     def _bundle_reorder_url(self, association_id, direction, template=None):
         t = template or self.wo_template
         return reverse(
-            'jobs:template_reorder_in_bundle',
+            'estimates:template_reorder_in_bundle',
             kwargs={
                 'template_id': t.template_id,
                 'association_id': association_id,
@@ -726,8 +724,8 @@ class WithinBundleReorderTests(TemplateOrderingTestBase):
         self.assertEqual(self.assoc2.sort_order, 2)
         self.assertEqual(self.assoc3.sort_order, 3)
 
-    def test_reorder_non_bundled_association_returns_404(self):
-        """D20: Reorder with a non-bundled association returns 404."""
+    def test_reorder_non_bundled_association_redirects_with_error(self):
+        """D20: Reorder with a non-bundled association redirects with error."""
         direct_assoc = TemplateTaskAssociation.objects.create(
             work_order_template=self.wo_template,
             task_template=self.task4,
@@ -737,7 +735,7 @@ class WithinBundleReorderTests(TemplateOrderingTestBase):
 
         url = self._bundle_reorder_url(direct_assoc.pk, 'down')
         response = self.client.post(url)
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 302)
 
 
 # ---------------------------------------------------------------------------

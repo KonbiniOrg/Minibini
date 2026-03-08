@@ -2,10 +2,8 @@
 
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import (
-    Job, Estimate, EstWorksheet, Task, TaskTemplate,
-    EstimateLineItem, WorkOrderTemplate
-)
+from apps.jobs.models import Job, Task
+from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate, EstimateLineItem, WorkOrderTemplate
 from apps.contacts.models import Contact
 from apps.core.models import LineItemType
 
@@ -84,7 +82,7 @@ class TaskCRUDTests(TestCase):
 
     def test_add_task_from_template_get(self):
         """Test GET request to add task from template form."""
-        url = reverse('jobs:task_add_from_template', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_from_template', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -92,7 +90,7 @@ class TaskCRUDTests(TestCase):
 
     def test_add_task_from_template_post(self):
         """Test POST request to add task from template."""
-        url = reverse('jobs:task_add_from_template', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_from_template', args=[self.worksheet.est_worksheet_id])
         data = {
             'template': self.task_template.template_id,
             'est_qty': 5.0
@@ -111,7 +109,7 @@ class TaskCRUDTests(TestCase):
 
     def test_add_task_manual_get(self):
         """Test GET request to add task manually form."""
-        url = reverse('jobs:task_add_manual', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_manual', args=[self.worksheet.est_worksheet_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -119,7 +117,7 @@ class TaskCRUDTests(TestCase):
 
     def test_add_task_manual_post(self):
         """Test POST request to add task manually."""
-        url = reverse('jobs:task_add_manual', args=[self.worksheet.est_worksheet_id])
+        url = reverse('estimates:task_add_manual', args=[self.worksheet.est_worksheet_id])
         data = {
             'name': 'Manual Task',
             'est_qty': 10.0,
@@ -172,7 +170,7 @@ class EstimateCRUDTests(TestCase):
 
     def test_add_line_item_get(self):
         """Test GET request to add line item form."""
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -185,7 +183,7 @@ class EstimateCRUDTests(TestCase):
             code='SVC',
             defaults={'name': 'Service', 'taxable': False, 'is_active': True}
         )
-        url = reverse('jobs:estimate_add_line_item', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
         data = {
             'description': 'Test Line Item',
             'qty': 5.0,
@@ -209,7 +207,7 @@ class EstimateCRUDTests(TestCase):
 
     def test_update_status_get(self):
         """Test GET request to update status form."""
-        url = reverse('jobs:estimate_update_status', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_update_status', args=[self.estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -217,7 +215,7 @@ class EstimateCRUDTests(TestCase):
 
     def test_update_status_post(self):
         """Test POST request to update status."""
-        url = reverse('jobs:estimate_update_status', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_update_status', args=[self.estimate.estimate_id])
         data = {
             'status': 'open'
         }
@@ -236,7 +234,7 @@ class EstimateCRUDTests(TestCase):
         self.estimate.status = 'open'
         self.estimate.save()
 
-        url = reverse('jobs:estimate_update_status', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_update_status', args=[self.estimate.estimate_id])
         data = {
             'status': 'draft'
         }
@@ -302,7 +300,7 @@ class NavigationLinksTests(TestCase):
 
     def test_estimate_shows_parent_link(self):
         """Test that child estimate shows link to parent."""
-        url = reverse('jobs:estimate_detail', args=[self.child_estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[self.child_estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -315,7 +313,7 @@ class NavigationLinksTests(TestCase):
         self.assertEqual(self.child_estimate.parent, self.parent_estimate)
         self.assertTrue(self.parent_estimate.children.exists())
 
-        url = reverse('jobs:estimate_detail', args=[self.parent_estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[self.parent_estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -324,7 +322,7 @@ class NavigationLinksTests(TestCase):
 
     def test_worksheet_shows_parent_link(self):
         """Test that child worksheet shows link to parent."""
-        url = reverse('jobs:estworksheet_detail', args=[self.child_worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.child_worksheet.est_worksheet_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -333,7 +331,7 @@ class NavigationLinksTests(TestCase):
 
     def test_worksheet_shows_child_links(self):
         """Test that parent worksheet shows links to children."""
-        url = reverse('jobs:estworksheet_detail', args=[self.parent_worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.parent_worksheet.est_worksheet_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -379,7 +377,7 @@ class SupersededStylingTests(TestCase):
 
     def test_superseded_estimate_has_styling(self):
         """Test that superseded estimate has greyed out styling."""
-        url = reverse('jobs:estimate_detail', args=[self.superseded_estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[self.superseded_estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -387,7 +385,7 @@ class SupersededStylingTests(TestCase):
 
     def test_superseded_worksheet_has_styling(self):
         """Test that superseded worksheet has greyed out styling."""
-        url = reverse('jobs:estworksheet_detail', args=[self.superseded_worksheet.est_worksheet_id])
+        url = reverse('estimates:estworksheet_detail', args=[self.superseded_worksheet.est_worksheet_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -403,7 +401,7 @@ class SupersededStylingTests(TestCase):
             status='draft'
         )
 
-        url = reverse('jobs:estimate_detail', args=[estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)

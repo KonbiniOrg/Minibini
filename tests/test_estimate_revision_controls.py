@@ -3,10 +3,11 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils import timezone
-from apps.jobs.models import Job, Estimate, EstimateLineItem
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.core.models import Configuration, LineItemType
 from apps.contacts.models import Contact
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 
 class EstimateCreationControlTests(TestCase):
@@ -42,7 +43,7 @@ class EstimateCreationControlTests(TestCase):
 
     def test_can_create_first_estimate(self):
         """Test that first estimate can be created for a job."""
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.get(url)
 
         # Should create directly and redirect to estimate detail
@@ -67,12 +68,12 @@ class EstimateCreationControlTests(TestCase):
         )
 
         # Try to create second estimate
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.get(url)
 
         # Should redirect to existing estimate
         self.assertEqual(response.status_code, 302)
-        self.assertRedirects(response, reverse('jobs:estimate_detail', args=[estimate1.estimate_id]))
+        self.assertRedirects(response, reverse('estimates:estimate_detail', args=[estimate1.estimate_id]))
 
     def test_cannot_create_second_estimate_open(self):
         """Test that second estimate cannot be created when open estimate exists."""
@@ -85,12 +86,12 @@ class EstimateCreationControlTests(TestCase):
         )
 
         # Try to create second estimate
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.get(url)
 
         # Should redirect to existing estimate
         self.assertEqual(response.status_code, 302)
-        self.assertRedirects(response, reverse('jobs:estimate_detail', args=[estimate1.estimate_id]))
+        self.assertRedirects(response, reverse('estimates:estimate_detail', args=[estimate1.estimate_id]))
 
     def test_can_create_estimate_after_superseded(self):
         """Test that new estimate can be created if only superseded exists."""
@@ -104,7 +105,7 @@ class EstimateCreationControlTests(TestCase):
         )
 
         # Should be able to create new estimate directly
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.get(url)
 
         # Should create directly and redirect to estimate detail
@@ -209,7 +210,7 @@ class EstimateRevisionTests(TestCase):
 
     def test_revise_confirmation_page(self):
         """Test that revise confirmation page shows correctly."""
-        url = reverse('jobs:estimate_revise', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_revise', args=[self.estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -219,7 +220,7 @@ class EstimateRevisionTests(TestCase):
 
     def test_can_revise_open_estimate(self):
         """Test that open estimate can be revised."""
-        url = reverse('jobs:estimate_revise', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_revise', args=[self.estimate.estimate_id])
         response = self.client.post(url)
 
         # Should redirect to new estimate
@@ -251,12 +252,12 @@ class EstimateRevisionTests(TestCase):
             status='draft'
         )
 
-        url = reverse('jobs:estimate_revise', args=[draft_estimate.estimate_id])
+        url = reverse('estimates:estimate_revise', args=[draft_estimate.estimate_id])
         response = self.client.post(url)
 
         # Should redirect back to estimate
         self.assertEqual(response.status_code, 302)
-        self.assertRedirects(response, reverse('jobs:estimate_detail', args=[draft_estimate.estimate_id]))
+        self.assertRedirects(response, reverse('estimates:estimate_detail', args=[draft_estimate.estimate_id]))
 
         # No new estimate should be created
         new_estimate = Estimate.objects.filter(
@@ -271,7 +272,7 @@ class EstimateRevisionTests(TestCase):
 
     def test_line_items_copied_during_revision(self):
         """Test that line items are copied to new revision."""
-        url = reverse('jobs:estimate_revise', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_revise', args=[self.estimate.estimate_id])
         response = self.client.post(url)
 
         # Get new estimate
@@ -312,7 +313,7 @@ class EstimateRevisionTests(TestCase):
         self.line_item1.save()
 
         # Revise the estimate
-        url = reverse('jobs:estimate_revise', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_revise', args=[self.estimate.estimate_id])
         response = self.client.post(url)
 
         # Get new estimate
@@ -332,7 +333,7 @@ class EstimateRevisionTests(TestCase):
 
     def test_revise_button_shows_for_non_draft(self):
         """Test that revise button shows for non-draft estimates."""
-        url = reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -348,7 +349,7 @@ class EstimateRevisionTests(TestCase):
             status='draft'
         )
 
-        url = reverse('jobs:estimate_detail', args=[draft_estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[draft_estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -359,7 +360,7 @@ class EstimateRevisionTests(TestCase):
         self.estimate.status = 'superseded'
         self.estimate.save()
 
-        url = reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -368,7 +369,7 @@ class EstimateRevisionTests(TestCase):
     def test_parent_child_relationships(self):
         """Test that parent-child relationships are properly maintained."""
         # Create first revision
-        url = reverse('jobs:estimate_revise', args=[self.estimate.estimate_id])
+        url = reverse('estimates:estimate_revise', args=[self.estimate.estimate_id])
         self.client.post(url)
 
         rev1 = Estimate.objects.filter(
@@ -380,7 +381,7 @@ class EstimateRevisionTests(TestCase):
         rev1.status = 'open'
         rev1.save()
 
-        url = reverse('jobs:estimate_revise', args=[rev1.estimate_id])
+        url = reverse('estimates:estimate_revise', args=[rev1.estimate_id])
         self.client.post(url)
 
         rev2 = Estimate.objects.filter(
@@ -440,7 +441,7 @@ class EstimateWorkflowIntegrationTests(TestCase):
     def test_complete_workflow(self):
         """Test complete workflow from creation through multiple revisions."""
         # Step 1: Create first estimate directly
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.get(url)
 
         # Should redirect after creation
@@ -460,7 +461,7 @@ class EstimateWorkflowIntegrationTests(TestCase):
         estimate_v1.save()
 
         # Step 4: Revise the estimate
-        url = reverse('jobs:estimate_revise', args=[estimate_v1.estimate_id])
+        url = reverse('estimates:estimate_revise', args=[estimate_v1.estimate_id])
         response = self.client.post(url)
 
         estimate_v2 = Estimate.objects.filter(job=self.job, version=2).first()
@@ -473,6 +474,6 @@ class EstimateWorkflowIntegrationTests(TestCase):
         self.assertEqual(estimate_v1.status, 'superseded')
 
         # Step 6: Cannot create new estimate while v2 exists
-        url = reverse('jobs:estimate_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)

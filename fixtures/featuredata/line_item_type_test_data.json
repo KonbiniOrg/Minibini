@@ -382,7 +382,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 1,
     "fields": {
       "code": "PLI-SVC-01",
@@ -400,7 +400,7 @@
     "_section": "=== PRICE LIST ITEMS (7) - one per LineItemType + extra ==="
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 2,
     "fields": {
       "code": "PLI-MAT-01",
@@ -417,7 +417,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 3,
     "fields": {
       "code": "PLI-MFR-01",
@@ -434,7 +434,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 4,
     "fields": {
       "code": "PLI-PRD-01",
@@ -451,7 +451,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 5,
     "fields": {
       "code": "PLI-FRT-01",
@@ -468,7 +468,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 6,
     "fields": {
       "code": "PLI-OVH-01",
@@ -485,7 +485,7 @@
     }
   },
   {
-    "model": "invoicing.pricelistitem",
+    "model": "inventory.pricelistitem",
     "pk": 7,
     "fields": {
       "code": "PLI-MAT-02",
@@ -502,7 +502,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 1,
     "fields": {
       "template_name": "Basic Labor",
@@ -517,7 +517,7 @@
     "_section": "=== TASK TEMPLATES (6) ==="
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 2,
     "fields": {
       "template_name": "Material Handling",
@@ -531,7 +531,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 3,
     "fields": {
       "template_name": "Cabinet Frame",
@@ -545,7 +545,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 4,
     "fields": {
       "template_name": "Cabinet Doors",
@@ -559,7 +559,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 5,
     "fields": {
       "template_name": "Cabinet Finish",
@@ -573,7 +573,7 @@
     }
   },
   {
-    "model": "jobs.tasktemplate",
+    "model": "estimates.tasktemplate",
     "pk": 6,
     "fields": {
       "template_name": "Shop Overhead",
@@ -587,7 +587,7 @@
     }
   },
   {
-    "model": "jobs.workordertemplate",
+    "model": "estimates.workordertemplate",
     "pk": 1,
     "fields": {
       "template_name": "Simple Service",
@@ -599,7 +599,7 @@
     "_section": "=== WORK ORDER TEMPLATES (2) ==="
   },
   {
-    "model": "jobs.workordertemplate",
+    "model": "estimates.workordertemplate",
     "pk": 2,
     "fields": {
       "template_name": "Cabinet Build",
@@ -610,7 +610,7 @@
     }
   },
   {
-    "model": "jobs.templatebundle",
+    "model": "estimates.templatebundle",
     "pk": 1,
     "fields": {
       "work_order_template": 2,
@@ -622,7 +622,7 @@
     "_section": "=== TEMPLATE BUNDLES (1) ==="
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 1,
     "fields": {
       "work_order_template": 1,
@@ -635,7 +635,7 @@
     "_section": "=== TEMPLATE TASK ASSOCIATIONS (6) ==="
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 2,
     "fields": {
       "work_order_template": 1,
@@ -647,7 +647,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 3,
     "fields": {
       "work_order_template": 2,
@@ -659,7 +659,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 4,
     "fields": {
       "work_order_template": 2,
@@ -671,7 +671,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 5,
     "fields": {
       "work_order_template": 2,
@@ -683,7 +683,7 @@
     }
   },
   {
-    "model": "jobs.templatetaskassociation",
+    "model": "estimates.templatetaskassociation",
     "pk": 6,
     "fields": {
       "work_order_template": 2,
@@ -776,7 +776,7 @@
     }
   },
   {
-    "model": "jobs.estworksheet",
+    "model": "estimates.estworksheet",
     "pk": 1,
     "fields": {
       "job": 2,
@@ -790,7 +790,7 @@
     "_section": "=== EST WORKSHEETS (3) ==="
   },
   {
-    "model": "jobs.estworksheet",
+    "model": "estimates.estworksheet",
     "pk": 2,
     "fields": {
       "job": 5,
@@ -803,7 +803,7 @@
     }
   },
   {
-    "model": "jobs.estworksheet",
+    "model": "estimates.estworksheet",
     "pk": 3,
     "fields": {
       "job": 4,
@@ -996,7 +996,7 @@
     }
   },
   {
-    "model": "jobs.estimate",
+    "model": "estimates.estimate",
     "pk": 1,
     "fields": {
       "job": 3,
@@ -1012,7 +1012,7 @@
     "_section": "=== ESTIMATES (3) ==="
   },
   {
-    "model": "jobs.estimate",
+    "model": "estimates.estimate",
     "pk": 2,
     "fields": {
       "job": 4,
@@ -1027,7 +1027,7 @@
     }
   },
   {
-    "model": "jobs.estimate",
+    "model": "estimates.estimate",
     "pk": 3,
     "fields": {
       "job": 5,
@@ -1042,7 +1042,7 @@
     }
   },
   {
-    "model": "jobs.estimatelineitem",
+    "model": "estimates.estimatelineitem",
     "pk": 1,
     "fields": {
       "estimate": 2,
@@ -1061,7 +1061,7 @@
     "_section": "=== ESTIMATE LINE ITEMS (7) ==="
   },
   {
-    "model": "jobs.estimatelineitem",
+    "model": "estimates.estimatelineitem",
     "pk": 2,
     "fields": {
       "estimate": 2,
@@ -1079,7 +1079,7 @@
     }
   },
   {
-    "model": "jobs.estimatelineitem",
+    "model": "estimates.estimatelineitem",
     "pk": 3,
     "fields": {
       "estimate": 2,
@@ -1097,7 +1097,7 @@
     }
   },
   {
-    "model": "jobs.estimatelineitem",
+    "model": "estimates.estimatelineitem",
     "pk": 4,
     "fields": {
       "estimate": 3,
@@ -1115,7 +1115,7 @@
     }
   },
   {
-    "model": "jobs.estimatelineitem",
+    "model": "estimates.estimatelineitem",
     "pk": 5,
     "fields": {
       "estimate": 3,
@@ -1133,7 +1133,7 @@
     }
   },
   {
-    "model": "jobs.estimatelineitem",
+    "model": "estimates.estimatelineitem",
     "pk": 6,
     "fields": {
       "estimate": 3,
@@ -1151,7 +1151,7 @@
     }
   },
   {
-    "model": "jobs.estimatelineitem",
+    "model": "estimates.estimatelineitem",
     "pk": 7,
     "fields": {
       "estimate": 3,
@@ -1395,7 +1395,7 @@
     }
   },
   {
-    "model": "jobs.estworksheet",
+    "model": "estimates.estworksheet",
     "pk": 4,
     "fields": {
       "job": 6,

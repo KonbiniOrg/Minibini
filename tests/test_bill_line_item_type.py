@@ -5,7 +5,7 @@ from django.urls import reverse
 from apps.core.models import LineItemType, Configuration
 from apps.contacts.models import Contact, Business
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 
 
 class BillLineItemTypeFormTest(TestCase):
