@@ -338,27 +338,3 @@ class TaskService:
         task.refresh_from_db()
         return task
 
-    @staticmethod
-    def create_line_item_from_task(task, estimate):
-        """
-        Create LineItem from Task.
-        """
-        from apps.estimates.models import EstimateLineItem
-        from apps.core.models import LineItemType
-
-        # Get line_item_type from task directly
-        line_item_type = task.line_item_type
-
-        # Fall back to any active LineItemType if none specified
-        if line_item_type is None:
-            line_item_type = LineItemType.objects.filter(is_active=True).first()
-
-        line_item = EstimateLineItem.objects.create(
-            estimate=estimate,
-            description=f"LineItem from {task.name}",
-            qty=1,
-            units="each",
-            price=0,
-            line_item_type=line_item_type,
-        )
-        return line_item

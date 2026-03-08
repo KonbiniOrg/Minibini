@@ -162,24 +162,6 @@ class NumberGenerationService:
 
         return formatted
 
-    @classmethod
-    def reset_counter(cls, document_type: str, new_value: int = 0):
-        """
-        Reset a counter to a specific value. Use with caution!
-
-        Args:
-            document_type: One of 'job', 'estimate', 'invoice', 'po'
-            new_value: The value to reset the counter to (default: 0)
-        """
-        if document_type not in cls.COUNTER_KEYS:
-            raise ValidationError(f"Invalid document_type '{document_type}'")
-
-        counter_key = cls.COUNTER_KEYS[document_type]
-
-        with transaction.atomic():
-            counter_config = Configuration.objects.select_for_update().get(key=counter_key)
-            counter_config.value = str(new_value)
-            counter_config.save()
 
 
 class EmailService:
@@ -485,25 +467,6 @@ class EmailService:
         ).delete()
 
         return deleted_count
-
-    def link_email_to_job(self, email_record_id, job_id):
-        """
-        Associate an EmailRecord with a Job.
-
-        Args:
-            email_record_id: Primary key of EmailRecord
-            job_id: Primary key of Job
-
-        Returns:
-            EmailRecord: Updated email record, or None if not found
-        """
-        try:
-            email_record = EmailRecord.objects.get(email_record_id=email_record_id)
-            email_record.job_id = job_id
-            email_record.save()
-            return email_record
-        except EmailRecord.DoesNotExist:
-            return None
 
     def _validate_config(self):
         """Check if required IMAP configuration is present."""

@@ -364,28 +364,33 @@ class EmailServiceTest(TestCase):
         service = EmailService()
         self.assertTrue(service._validate_config())
 
-    def test_link_email_to_job(self):
-        """Test linking an EmailRecord to a Job."""
-        service = EmailService()
+    def test_associate_with_job(self):
+        """Test associating an EmailRecord with a Job."""
         email_record = EmailRecord.objects.create(message_id="<link@example.com>")
 
-        result = service.link_email_to_job(
+        result = EmailService.associate_with_job(
             email_record.email_record_id,
             self.job.job_id
         )
 
-        self.assertIsNotNone(result)
         self.assertEqual(result.job, self.job)
 
         # Verify in database
         email_record.refresh_from_db()
         self.assertEqual(email_record.job, self.job)
 
-    def test_link_email_to_job_not_found(self):
-        """Test linking non-existent EmailRecord."""
-        service = EmailService()
-        result = service.link_email_to_job(99999, self.job.job_id)
-        self.assertIsNone(result)
+    def test_associate_with_job_email_not_found(self):
+        """Test associating non-existent EmailRecord raises NotFoundError."""
+        from apps.core.services import NotFoundError
+        with self.assertRaises(NotFoundError):
+            EmailService.associate_with_job(99999, self.job.job_id)
+
+    def test_associate_with_job_job_not_found(self):
+        """Test associating with non-existent Job raises NotFoundError."""
+        from apps.core.services import NotFoundError
+        email_record = EmailRecord.objects.create(message_id="<link2@example.com>")
+        with self.assertRaises(NotFoundError):
+            EmailService.associate_with_job(email_record.email_record_id, 99999)
 
     def test_cleanup_old_temp_emails(self):
         """Test cleanup of old TempEmail records."""
