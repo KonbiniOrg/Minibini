@@ -56,8 +56,10 @@ Cross-model relationship checks:
   Est versioning   E  lower-version estimate with same number must be 'superseded'
                    W  parent chain should link sequential versions
   Job/Est status   E  approved job must have exactly one accepted estimate
+                   W  completed job: missing accepted estimate (may predate estimate workflow)
                    E  draft/submitted job must not have accepted estimate
                    E  accepted estimate's job must not be draft/submitted/rejected
+                   E  completed/cancelled job must not have draft/open estimates
   Est/Worksheet    E  worksheet with linked estimate must be 'final' (not 'draft')
                    E  worksheet with superseded estimate must be 'superseded'
   Worksheet/Job    E  worksheet's job must match its linked estimate's job
@@ -471,10 +473,13 @@ class Command(BaseCommand):
 
     def check_job_estimate_status_alignment(self):
         """Job status and estimate status should be consistent.
-        - Job 'approved' should have exactly one accepted estimate.
+        - Job 'approved' must have exactly one accepted estimate.
+        - Job 'completed' should have an accepted estimate (warning — older
+          jobs may predate the estimate workflow).
         - Job 'draft'/'submitted' should not have an accepted estimate.
         - Accepted estimate's job should be 'approved' or later
-          (completed/cancelled are OK - job progressed past approval)."""
+          (completed/cancelled are OK - job progressed past approval).
+        - Completed/cancelled jobs should not have draft/open estimates."""
         from apps.jobs.models import Job
         from apps.estimates.models import Estimate
 
@@ -486,6 +491,11 @@ class Command(BaseCommand):
                 if accepted_count == 0:
                     self.errors.append(
                         f'Job {job.job_number}: status is "approved" but has no accepted estimate'
+                    )
+            elif job.status == 'completed':
+                if accepted_count == 0:
+                    self.warnings.append(
+                        f'Job {job.job_number}: status is "completed" but has no accepted estimate'
                     )
             elif job.status in ('draft', 'submitted'):
                 if accepted_count > 0:
@@ -500,6 +510,17 @@ class Command(BaseCommand):
                     self.errors.append(
                         f'Estimate {e.estimate_number} v{e.version}: accepted but '
                         f'job {job.job_number} status is "{job.status}"'
+                    )
+
+            # Completed/cancelled jobs should not have unresolved estimates
+            if job.status in ('completed', 'cancelled'):
+                unresolved = Estimate.objects.filter(
+                    job=job, status__in=('draft', 'open')
+                )
+                for e in unresolved:
+                    self.errors.append(
+                        f'Estimate {e.estimate_number} v{e.version}: status is "{e.status}" '
+                        f'but job {job.job_number} is "{job.status}"'
                     )
 
     def check_estimate_worksheet_status_alignment(self):

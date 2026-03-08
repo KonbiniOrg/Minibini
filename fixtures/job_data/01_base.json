@@ -837,7 +837,7 @@
       "description": "Plywood - per sheet",
       "purchase_price": "80.00",
       "selling_price": "100.00",
-      "qty_on_hand": "100.00",
+      "qty_on_hand": "0.00",
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
       "is_active": true,
