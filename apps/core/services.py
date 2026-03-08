@@ -905,37 +905,8 @@ class TaxCalculationService:
         return total_tax
 
 
-class LineItemTypeService:
-    """Service for creating and updating LineItemTypes."""
-
-    @staticmethod
-    def create_type(**kwargs):
-        """Create a new LineItemType from field values."""
-        lit = LineItemType(**kwargs)
-        lit.full_clean()
-        lit.save()
-        return lit
-
-    @staticmethod
-    def update_type(pk, **kwargs):
-        """Update an existing LineItemType by PK.
-
-        Raises:
-            NotFoundError: if LineItemType not found
-        """
-        try:
-            lit = LineItemType.objects.get(pk=pk)
-        except LineItemType.DoesNotExist:
-            raise NotFoundError(f'LineItemType {pk} not found')
-        for field, value in kwargs.items():
-            setattr(lit, field, value)
-        lit.full_clean()
-        lit.save()
-        return lit
-
-
 class ConfigurationService:
-    """Service for managing Configuration key-value settings."""
+    """Service for managing configuration: key-value settings and line item types."""
 
     @staticmethod
     def update_tax_config(*, default_tax_rate=None, org_tax_multiplier=None):
@@ -950,3 +921,28 @@ class ConfigurationService:
                 key='org_tax_multiplier',
                 defaults={'value': str(org_tax_multiplier)}
             )
+
+    @staticmethod
+    def create_line_item_type(**kwargs):
+        """Create a new LineItemType from field values."""
+        lit = LineItemType(**kwargs)
+        lit.full_clean()
+        lit.save()
+        return lit
+
+    @staticmethod
+    def update_line_item_type(pk, **kwargs):
+        """Update an existing LineItemType by PK.
+
+        Raises:
+            NotFoundError: if LineItemType not found
+        """
+        try:
+            lit = LineItemType.objects.get(pk=pk)
+        except LineItemType.DoesNotExist:
+            raise NotFoundError(f'LineItemType {pk} not found')
+        for field, value in kwargs.items():
+            setattr(lit, field, value)
+        lit.full_clean()
+        lit.save()
+        return lit

@@ -74,10 +74,10 @@ def auto_earmark_inventory(sender, estimate, **kwargs):
     """
     Auto-create earmarks for inventoried materials when estimate is accepted.
     """
-    from apps.inventory.services import EarmarkService
+    from apps.inventory.services import InventoryService
 
     job = estimate.job
-    preview = EarmarkService.get_earmark_preview(job)
+    preview = InventoryService.get_earmark_preview(job)
 
     if preview:
         earmark_data = [
@@ -87,4 +87,4 @@ def auto_earmark_inventory(sender, estimate, **kwargs):
             }
             for entry in preview
         ]
-        EarmarkService.create_earmarks_for_job(job, earmark_data)
+        InventoryService.create_earmarks_for_job(job, earmark_data)

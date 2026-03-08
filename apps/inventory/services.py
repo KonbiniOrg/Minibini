@@ -5,7 +5,34 @@ from apps.inventory.models import PriceListItem
 
 
 class InventoryService:
-    """Service for automatic inventory QOH updates."""
+    """Service for inventory operations: PriceListItem CRUD, QOH updates, and earmarks."""
+
+    # --- PriceListItem CRUD ---
+
+    @staticmethod
+    def create_item(**kwargs):
+        """Create a new PriceListItem."""
+        from apps.core.services import NotFoundError
+        pli = PriceListItem(**kwargs)
+        pli.full_clean()
+        pli.save()
+        return pli
+
+    @staticmethod
+    def update_item(pk, **kwargs):
+        """Update an existing PriceListItem by PK."""
+        from apps.core.services import NotFoundError
+        try:
+            pli = PriceListItem.objects.get(pk=pk)
+        except PriceListItem.DoesNotExist:
+            raise NotFoundError(f'PriceListItem {pk} not found')
+        for field, value in kwargs.items():
+            setattr(pli, field, value)
+        pli.full_clean()
+        pli.save()
+        return pli
+
+    # --- QOH operations ---
 
     @staticmethod
     def receive_po_line_item(po_line_item):
@@ -96,9 +123,7 @@ class InventoryService:
             reason=reason,
         )
 
-
-class EarmarkService:
-    """Service for earmarking inventory when a job is approved."""
+    # --- Earmark operations ---
 
     @staticmethod
     def get_earmark_preview(job):

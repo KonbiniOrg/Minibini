@@ -2,19 +2,19 @@
 from django.test import TestCase
 from apps.core.models import LineItemType, Configuration, EmailRecord
 from apps.core.services import (
-    LineItemTypeService, ConfigurationService, EmailService,
+    ConfigurationService, EmailService,
     NotFoundError,
 )
 from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
 
 
-class LineItemTypeServiceTest(TestCase):
-    """Tests for LineItemTypeService create/update methods."""
+class LineItemTypeConfigTest(TestCase):
+    """Tests for ConfigurationService line item type methods."""
 
     def test_create_type(self):
         """Create a new LineItemType via service."""
-        lit = LineItemTypeService.create_type(
+        lit = ConfigurationService.create_line_item_type(
             code='SVC', name='Service', taxable=True
         )
         self.assertEqual(lit.code, 'SVC')
@@ -25,14 +25,14 @@ class LineItemTypeServiceTest(TestCase):
 
     def test_create_type_with_defaults(self):
         """Create with minimal args — defaults should apply."""
-        lit = LineItemTypeService.create_type(code='FRT', name='Freight')
+        lit = ConfigurationService.create_line_item_type(code='FRT', name='Freight')
         self.assertTrue(lit.taxable)  # model default
         self.assertTrue(lit.is_active)  # model default
         self.assertEqual(lit.default_description, '')
 
     def test_create_type_with_optional_fields(self):
         """Create with all optional fields."""
-        lit = LineItemTypeService.create_type(
+        lit = ConfigurationService.create_line_item_type(
             code='MSC', name='Misc', taxable=False,
             default_description='Miscellaneous charge', is_active=False
         )
@@ -42,14 +42,14 @@ class LineItemTypeServiceTest(TestCase):
 
     def test_create_type_duplicate_code_raises(self):
         """Duplicate code should raise ValidationError."""
-        LineItemTypeService.create_type(code='SVC', name='Service')
+        ConfigurationService.create_line_item_type(code='SVC', name='Service')
         with self.assertRaises(Exception):
-            LineItemTypeService.create_type(code='SVC', name='Service 2')
+            ConfigurationService.create_line_item_type(code='SVC', name='Service 2')
 
     def test_update_type(self):
         """Update an existing LineItemType by PK."""
         lit = LineItemType.objects.create(code='SVC', name='Service', taxable=True)
-        updated = LineItemTypeService.update_type(lit.pk, name='Labor', taxable=False)
+        updated = ConfigurationService.update_line_item_type(lit.pk, name='Labor', taxable=False)
         self.assertEqual(updated.name, 'Labor')
         self.assertFalse(updated.taxable)
         self.assertEqual(updated.code, 'SVC')
@@ -57,14 +57,14 @@ class LineItemTypeServiceTest(TestCase):
     def test_update_type_persists(self):
         """Update should be persisted to database."""
         lit = LineItemType.objects.create(code='SVC', name='Service', taxable=True)
-        LineItemTypeService.update_type(lit.pk, name='Labor')
+        ConfigurationService.update_line_item_type(lit.pk, name='Labor')
         refreshed = LineItemType.objects.get(pk=lit.pk)
         self.assertEqual(refreshed.name, 'Labor')
 
     def test_update_type_not_found(self):
         """Updating a nonexistent PK raises NotFoundError."""
         with self.assertRaises(NotFoundError):
-            LineItemTypeService.update_type(99999, name='Nope')
+            ConfigurationService.update_line_item_type(99999, name='Nope')
 
 
 class ConfigurationServiceTest(TestCase):

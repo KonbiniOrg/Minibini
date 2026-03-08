@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.urls import reverse
 from .models import User, LineItemType, Configuration, EmailRecord, TempEmail
-from .services import EmailService, LineItemTypeService, ConfigurationService, NotFoundError
+from .services import EmailService, ConfigurationService, NotFoundError
 from .email_utils import parse_email_address, extract_company_from_signature, extract_email_body
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
@@ -248,7 +248,7 @@ def line_item_type_create(request):
     if request.method == 'POST':
         form = LineItemTypeForm(request.POST)
         if form.is_valid():
-            line_item_type = LineItemTypeService.create_type(**form.cleaned_data)
+            line_item_type = ConfigurationService.create_line_item_type(**form.cleaned_data)
             messages.success(request, f'Line item type "{line_item_type.name}" created successfully.')
             return redirect('core:line_item_type_list')
     else:
@@ -268,7 +268,7 @@ def line_item_type_edit(request, pk):
     if request.method == 'POST':
         form = LineItemTypeForm(request.POST, instance=line_item_type)
         if form.is_valid():
-            LineItemTypeService.update_type(pk, **form.cleaned_data)
+            ConfigurationService.update_line_item_type(pk, **form.cleaned_data)
             messages.success(request, f'Line item type "{line_item_type.name}" updated successfully.')
             return redirect('core:line_item_type_detail', pk=line_item_type.pk)
     else:

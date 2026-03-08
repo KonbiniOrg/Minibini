@@ -33,13 +33,12 @@ This works today but creates a problem: side effects (signals, related model upd
 | `core/services.py` | `EmailService` | `fetch_new_emails`, `link_email_to_job`, etc. |
 | `core/services.py` | `LineItemService` | `delete_line_item_with_renumber`, `reorder_line_item`, `can_modify_line_items`, `calculate_total` |
 | `core/services.py` | `TaxCalculationService` | `get_effective_taxability`, `calculate_line_item_tax`, `calculate_document_tax` |
-| `estimates/services.py` | `EstimateService` | `create_from_work_order`, `create_direct` |
-| `estimates/services.py` | `EstimateGenerationService` | `generate_estimate_from_worksheet` |
+| `estimates/services.py` | `EstimateService` | `create_from_work_order`, `create_direct` (will absorb `EstimateGenerationService`) |
+| `estimates/services.py` | `EstimateGenerationService` | `generate_estimate_from_worksheet` (→ merge into `EstimateService`) |
 | `jobs/services.py` | `LineItemTaskService` | `generate_tasks_for_work_order` |
 | `jobs/services.py` | `WorkOrderService` | `create_from_estimate`, `create_from_template`, `create_direct` |
 | `jobs/services.py` | `TaskService` | `create_from_line_item`, `create_from_template`, `create_direct`, `create_line_item_from_task` |
-| `inventory/services.py` | `InventoryService` | `receive_po_line_item`, `consume_material`, `manual_adjustment` |
-| `inventory/services.py` | `EarmarkService` | `get_earmark_preview`, `create_earmarks_for_job` |
+| `inventory/services.py` | `InventoryService` | `create_item`, `update_item`, `receive_po_line_item`, `consume_material`, `manual_adjustment`, `get_earmark_preview`, `create_earmarks_for_job` |
 
 ### Inline Saves by App (View Audit)
 
@@ -259,118 +258,139 @@ class NotFoundError(ServiceError):
 
 ## Service Methods Needed
 
-All service methods accept model instances and plain kwargs — never forms or serializers.
+All service methods accept IDs and primitives — never model instances, forms, or serializers.
+Services do their own lookups internally and raise domain exceptions (`NotFoundError`, etc.).
 Views extract `form.cleaned_data` or `serializer.validated_data` before calling.
 
 ### Jobs App — `apps/jobs/services.py`
 
 New class: **`JobService`**
 - `create_job(**kwargs)` — create with number generation
-- `update_job(job, **kwargs)` — field updates
-- `delete_job(job)` — delete with cascading cleanup
+- `update_job(pk, **kwargs)` — field updates
+- `delete_job(pk)` — delete with cascading cleanup
 
 Extend: **`WorkOrderService`** (already exists)
-- `update_status(wo, new_status)` — status transition
-
-New class: **`MaterialService`**
-- `create_material(task, **kwargs)` — create material on task
-- `update_material(material, **kwargs)` — update material
-- `delete_material(material)` — delete material
+- `update_status(pk, new_status)` — status transition
+- `bundle_tasks(work_order_id, task_ids, bundle_name)` — validates status, delegates to BundlingService
+- `unbundle_task(work_order_id, task_id)` — validates status, delegates to BundlingService
+- `reorder_items(work_order_id, item_id, direction)` — validates status, delegates to BundlingService
+- `reorder_in_bundle(work_order_id, task_id, direction)` — validates status, delegates to BundlingService
 
 Extend: **`TaskService`** (already exists)
-- `update_task(task, **kwargs)` — update task fields
-- `reorder_tasks(task, direction)` — swap sort_order
+- `update_task(pk, **kwargs)` — update task fields
+- `reorder_tasks(pk, direction)` — swap sort_order
+
+### Shared Service — `apps/core/services.py` (or `apps/estimates/services.py`)
+
+New class: **`BundlingService`**
+
+Low-level shared service for bundling, unbundling, and reorder operations.
+Works with any item model that has `mapping_strategy`, `bundle` (FK), and `sort_order`
+fields, and any bundle model with `sort_order`. Domain services (WorksheetService,
+WorkOrderTemplateService, WorkOrderService) call BundlingService after handling
+domain-specific validation (e.g. status checks).
+
+- `bundle_items(items, bundle, ...)` — assign items to bundle with sequential sort_order
+- `unbundle_item(item)` — remove from bundle, re-insert at container level, auto-dissolve empty bundles
+- `reorder_container_item(container_items, item, direction)` — swap sort_order at container level
+- `reorder_in_bundle(item, direction)` — swap sort_order within bundle
+
+This follows the same pattern as `LineItemService` — a shared low-level service
+that domain services delegate to after applying their own rules.
 
 ### Estimates App — `apps/estimates/services.py`
 
-Extend: **`EstimateService`** (already exists)
-- `update_status(estimate, new_status)` — status transition (covers accept, reject, send, etc.)
-- `mark_open(estimate)` — set open + update worksheet
-- `revise_estimate(estimate)` — create revision, copy line items, supersede parent
-- `add_line_item(estimate, **kwargs)` — add line item (manual or from PLI)
+Extend: **`EstimateService`** (already exists — merge EstimateGenerationService into this)
+- `update_status(pk, new_status)` — status transition (covers accept, reject, send, etc.)
+- `mark_open(pk)` — set open + update worksheet
+- `revise_estimate(pk)` — create revision, copy line items, supersede parent
+- `add_line_item(estimate_id, **kwargs)` — add line item (manual or from PLI)
+- `generate_from_worksheet(worksheet_id)` — convert worksheet to estimate (was `EstimateGenerationService`)
+- `create_from_work_order(work_order_id)` — create estimate from work order (already exists)
+- `create_direct(job_id, **kwargs)` — create blank estimate (already exists)
 
 New class: **`WorksheetService`**
-- `create_worksheet(job, **kwargs)` — create worksheet
-- `revise_worksheet(worksheet)` — create revision, copy tasks, supersede parent
-- `prepare_for_generation(worksheet, task_types)` — assign line_item_types, set status final
-- `bundle_tasks(worksheet, task_ids, bundle_name)` — bundle operations
-- `unbundle_task(worksheet, task)` — unbundle operations
-- `add_task_from_template(worksheet, template)` — add task from template
-- `add_task_manual(worksheet, **kwargs)` — add task manually
-- `reorder_items(container, item_id, direction)` — reorder tasks/bundles
-- `reorder_in_bundle(bundle, task_id, direction)` — reorder within bundle
+- `create_worksheet(job_id, **kwargs)` — create worksheet
+- `revise_worksheet(pk)` — create revision, copy tasks, supersede parent
+- `prepare_for_generation(pk, task_types)` — assign line_item_types, set status final
+- `bundle_tasks(worksheet_id, task_ids, bundle_name)` — validates draft status, then delegates to BundlingService
+- `unbundle_task(worksheet_id, task_id)` — validates draft status, then delegates to BundlingService
+- `add_task_from_template(worksheet_id, template_id)` — add task from template
+- `add_task_manual(worksheet_id, **kwargs)` — add task manually
+- `reorder_items(worksheet_id, item_id, direction)` — validates draft status, then delegates to BundlingService
+- `reorder_in_bundle(worksheet_id, task_id, direction)` — validates draft status, then delegates to BundlingService
 
 New class: **`WorkOrderTemplateService`**
 - `create_template(**kwargs)` — create template
-- `update_template(template, **kwargs)` — update template
-- `delete_template(template)` — delete template
-- `bundle_associations(template, assoc_ids, bundle)` — bundle operations
-- `unbundle_association(assoc)` — unbundle operations
-- `reorder_items(template, item_id, direction)` — reorder
-- `reorder_in_bundle(bundle, assoc_id, direction)` — reorder within bundle
-
-New class: **`TaskTemplateService`**
-- `create_template(**kwargs)` — create task template
-- `update_template(template, **kwargs)` — update template
-- `delete_template(template)` — delete (with usage check)
+- `update_template(pk, **kwargs)` — update template
+- `delete_template(pk)` — delete template
+- `bundle_associations(template_id, assoc_ids, bundle_name)` — delegates to BundlingService (no status check)
+- `unbundle_association(template_id, assoc_id)` — delegates to BundlingService
+- `reorder_items(template_id, item_id, direction)` — delegates to BundlingService
+- `reorder_in_bundle(template_id, assoc_id, direction)` — delegates to BundlingService
+- `create_task_template(**kwargs)` — create task template
+- `update_task_template(pk, **kwargs)` — update template
+- `delete_task_template(pk)` — delete (with usage check)
 
 ### Contacts App — `apps/contacts/services.py` (new file)
 
 New class: **`ContactService`**
 - `create_contact(**kwargs)` — create contact
-- `update_contact(contact, **kwargs)` — update contact fields
-- `delete_contact(contact)` — delete with default_contact reassignment
-
-New class: **`BusinessService`**
+- `update_contact(pk, **kwargs)` — update contact fields
+- `delete_contact(pk)` — delete with default_contact reassignment
 - `create_business(contacts_data, **kwargs)` — create business with contacts
-- `create_business_for_contact(contact, **kwargs)` — create business and link contact
-- `update_business(business, **kwargs)` — update business fields
-- `set_default_contact(business, contact)` — set default contact
-- `delete_business(business, reassignment_plan)` — complex cascading deletion
+- `create_business_for_contact(contact_id, **kwargs)` — create business and link contact
+- `update_business(pk, **kwargs)` — update business fields
+- `set_default_contact(business_id, contact_id)` — set default contact
+- `delete_business(pk, reassignment_plan)` — complex cascading deletion
 
 ### Purchasing App — `apps/purchasing/services.py` (new file)
 
 New class: **`PurchaseOrderService`**
 - `create_po(**kwargs)` — create PO
-- `create_po_for_job(job, **kwargs)` — create PO for job
-- `update_po(po, **kwargs)` — update PO
-- `update_status(po, new_status)` — status transition
-- `cancel_po(po)` — cancel PO
-- `delete_po(po)` — delete draft PO
-- `add_line_item(po, **kwargs)` — add line item
-- `reorder_line_items(line_item, direction)` — swap line_number
+- `create_po_for_job(job_id, **kwargs)` — create PO for job
+- `update_po(pk, **kwargs)` — update PO
+- `update_status(pk, new_status)` — status transition
+- `cancel_po(pk)` — cancel PO
+- `delete_po(pk)` — delete draft PO
+- `add_line_item(po_id, **kwargs)` — add line item
+- Reorder: use existing `LineItemService.reorder_line_item()` from core
 
 New class: **`BillService`**
 - `create_bill(**kwargs)` — create bill
-- `create_bill_from_po(po, **kwargs)` — create bill with PO line items copied
-- `update_status(bill, new_status)` — status transition
-- `delete_bill(bill)` — delete draft bill
-- `add_line_item(bill, **kwargs)` — add line item
-- `reorder_line_items(line_item, direction)` — swap line_number
+- `create_bill_from_po(po_id, **kwargs)` — create bill with PO line items copied
+- `update_status(pk, new_status)` — status transition
+- `delete_bill(pk)` — delete draft bill
+- `add_line_item(bill_id, **kwargs)` — add line item
+- Reorder: use existing `LineItemService.reorder_line_item()` from core
 
 ### Invoicing App — `apps/invoicing/services.py` (new file)
 
 New class: **`InvoiceService`**
-- `reorder_line_items(line_item, direction)` — swap line_number
+- `reorder_line_item(line_item_id, direction)` — delegates to `LineItemService.reorder_line_item()`
+- (Invoice CRUD views don't exist yet — create, update, status transitions, add/delete line items will be added here when built)
 
-### Inventory App — `apps/inventory/services.py` (extend)
+### Inventory App — `apps/inventory/services.py` — DONE (consolidated)
 
-New class: **`PriceListItemService`**
-- `create_item(**kwargs)` — create PLI
-- `update_item(pli, **kwargs)` — update PLI
+Extend: **`InventoryService`** (already exists — QOH ops + earmarks)
+- `create_item(**kwargs)` — create PLI ✅
+- `update_item(pk, **kwargs)` — update PLI ✅
+- `get_earmark_preview(job)` — preview earmarks needed for job ✅ (was EarmarkService)
+- `create_earmarks_for_job(job, earmark_data)` — create/update earmarks ✅ (was EarmarkService)
+- `receive_po_line_item(po_line_item)` — QOH increase on PO receipt ✅
+- `consume_material(material)` — QOH decrease on task start ✅
+- `manual_adjustment(price_list_item, quantity_change, reason)` — manual QOH adjust ✅
 
-### Core App — `apps/core/services.py` (extend)
+### Core App — `apps/core/services.py` — DONE
 
 Extend: **`EmailService`** (already exists)
-- `associate_with_job(email_record, job)` — link email to job (method exists but view doesn't use it)
-- `disassociate_from_job(email_record)` — unlink email
+- `associate_with_job(email_record_id, job_id)` — link email to job ✅
+- `disassociate_from_job(email_record_id)` — unlink email ✅
 
-New class: **`ConfigurationService`**
+Extend: **`ConfigurationService`** ✅ (absorbs LineItemTypeService — line item types are configuration)
 - `update_tax_config(**kwargs)` — update tax configuration values
-
-New class: **`LineItemTypeService`**
-- `create_type(**kwargs)` — create line item type
-- `update_type(lit, **kwargs)` — update line item type
+- `create_line_item_type(**kwargs)` — create line item type
+- `update_line_item_type(pk, **kwargs)` — update line item type
 
 ---
 
@@ -378,9 +398,9 @@ New class: **`LineItemTypeService`**
 
 Work app-by-app, from simplest to most complex:
 
-1. **core** — small, simple form saves + config updates (6 operations)
-2. **inventory** — simple form saves (4 operations)
-3. **invoicing** — just reorder (2 operations)
+1. **core** — ✅ DONE — services + views + tests
+2. **inventory** — services consolidated (EarmarkService merged into InventoryService, PLI CRUD added); views not yet updated
+3. **invoicing** — just reorder (use existing LineItemService)
 4. **purchasing** — CRUD + status transitions (19 operations)
 5. **jobs** — CRUD + status + reorder (11 operations)
 6. **estimates** — largest, most complex: status, revisions, bundles, templates (45+ operations)
