@@ -10,7 +10,17 @@ from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
 from imap_tools import MailBox, AND
-from .models import Configuration, EmailRecord, TempEmail
+from .models import Configuration, EmailRecord, TempEmail, LineItemType
+
+
+class ServiceError(Exception):
+    """Base exception for service-layer errors."""
+    pass
+
+
+class NotFoundError(ServiceError):
+    """Raised when a requested object does not exist."""
+    pass
 
 
 class NumberGenerationService:
@@ -498,6 +508,56 @@ class EmailService:
     def _validate_config(self):
         """Check if required IMAP configuration is present."""
         return all([self.imap_server, self.email, self.password])
+
+    @staticmethod
+    def associate_with_job(email_record_id, job_id):
+        """Associate an EmailRecord with a Job.
+
+        Args:
+            email_record_id: PK of EmailRecord
+            job_id: PK of Job
+
+        Returns:
+            EmailRecord with job set
+
+        Raises:
+            NotFoundError: if email_record or job not found
+        """
+        from apps.jobs.models import Job
+        try:
+            email_record = EmailRecord.objects.get(pk=email_record_id)
+        except EmailRecord.DoesNotExist:
+            raise NotFoundError(f'EmailRecord {email_record_id} not found')
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {job_id} not found')
+        email_record.job = job
+        email_record.save()
+        return email_record
+
+    @staticmethod
+    def disassociate_from_job(email_record_id):
+        """Remove job association from an EmailRecord.
+
+        Args:
+            email_record_id: PK of EmailRecord
+
+        Returns:
+            EmailRecord with job cleared
+
+        Raises:
+            NotFoundError: if email_record not found
+        """
+        try:
+            email_record = EmailRecord.objects.get(pk=email_record_id)
+        except EmailRecord.DoesNotExist:
+            raise NotFoundError(f'EmailRecord {email_record_id} not found')
+        email_record.job = None
+        email_record.save()
+        return email_record
+
+
 class LineItemService:
     """
     Service for managing line items across different container types.
@@ -843,3 +903,50 @@ class TaxCalculationService:
             total_tax += TaxCalculationService.calculate_line_item_tax(line_item, customer)
 
         return total_tax
+
+
+class LineItemTypeService:
+    """Service for creating and updating LineItemTypes."""
+
+    @staticmethod
+    def create_type(**kwargs):
+        """Create a new LineItemType from field values."""
+        lit = LineItemType(**kwargs)
+        lit.full_clean()
+        lit.save()
+        return lit
+
+    @staticmethod
+    def update_type(pk, **kwargs):
+        """Update an existing LineItemType by PK.
+
+        Raises:
+            NotFoundError: if LineItemType not found
+        """
+        try:
+            lit = LineItemType.objects.get(pk=pk)
+        except LineItemType.DoesNotExist:
+            raise NotFoundError(f'LineItemType {pk} not found')
+        for field, value in kwargs.items():
+            setattr(lit, field, value)
+        lit.full_clean()
+        lit.save()
+        return lit
+
+
+class ConfigurationService:
+    """Service for managing Configuration key-value settings."""
+
+    @staticmethod
+    def update_tax_config(*, default_tax_rate=None, org_tax_multiplier=None):
+        """Update tax configuration values. Skips None values."""
+        if default_tax_rate is not None:
+            Configuration.objects.update_or_create(
+                key='default_tax_rate',
+                defaults={'value': str(default_tax_rate)}
+            )
+        if org_tax_multiplier is not None:
+            Configuration.objects.update_or_create(
+                key='org_tax_multiplier',
+                defaults={'value': str(org_tax_multiplier)}
+            )
