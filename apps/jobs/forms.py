@@ -5,7 +5,6 @@ from .models import Task, Job
 from apps.estimates.models import TaskTemplate
 from apps.inventory.models import Material
 from apps.contacts.models import Contact
-from apps.core.services import NumberGenerationService
 
 
 class JobCreateForm(forms.ModelForm):
@@ -54,19 +53,6 @@ class JobCreateForm(forms.ModelForm):
             return f"{contact} ({contact.business.business_name})"
         return str(contact)
 
-    def save(self, commit=True):
-        """Override save to generate job number using NumberGenerationService"""
-        instance = super().save(commit=False)
-
-        # Set the contact from cleaned_data (may have been set from business)
-        instance.contact = self.cleaned_data['contact']
-
-        # Generate the actual job number (increments counter)
-        instance.job_number = NumberGenerationService.generate_next_number('job')
-
-        if commit:
-            instance.save()
-        return instance
 
 
 class JobEditForm(forms.ModelForm):

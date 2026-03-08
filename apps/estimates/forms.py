@@ -1,10 +1,9 @@
 from django import forms
 from apps.estimates.models import (
     WorkOrderTemplate, TaskTemplate,
-    EstWorksheet, Estimate, EstimateLineItem
+    EstWorksheet, EstimateLineItem
 )
 from apps.core.models import LineItemType
-from apps.core.services import NumberGenerationService
 
 
 class WorkOrderTemplateForm(forms.ModelForm):
@@ -86,35 +85,6 @@ class PriceListLineItemForm(forms.Form):
         from apps.inventory.models import PriceListItem
         self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
-
-class EstimateForm(forms.ModelForm):
-    """Form for creating/editing Estimate"""
-    class Meta:
-        model = Estimate
-        fields = ['status']
-        widgets = {
-            'status': forms.Select(choices=Estimate.ESTIMATE_STATUS_CHOICES)
-        }
-        help_texts = {
-            'status': 'Estimate number will be assigned automatically on save.',
-        }
-
-    def __init__(self, *args, **kwargs):
-        job = kwargs.pop('job', None)
-        super().__init__(*args, **kwargs)
-        # Store job for use in save method
-        self._job = job
-
-    def save(self, commit=True):
-        """Override save to generate estimate number using NumberGenerationService"""
-        instance = super().save(commit=False)
-
-        # Generate the actual estimate number (increments counter)
-        instance.estimate_number = NumberGenerationService.generate_next_number('estimate')
-
-        if commit:
-            instance.save()
-        return instance
 
 
 class EstimateStatusForm(forms.Form):

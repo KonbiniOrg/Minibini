@@ -19,7 +19,7 @@ from .services import (
 )
 from .forms import (
     WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
-    ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm, EstimateForm
+    ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm
 )
 from apps.jobs.forms import TaskEditForm, TaskFromTemplateForm
 
@@ -925,10 +925,10 @@ def work_order_create_from_estimate(request, estimate_id):
                 WorkOrderService.copy_from_worksheet(work_order.pk, worksheet.pk)
             else:
                 # No worksheet — generate tasks from estimate line items
-                from apps.jobs.services import LineItemTaskService
+                from apps.jobs.services import TaskService
                 line_items = estimate.estimatelineitem_set.all().order_by('line_number', 'pk')
                 for line_item in line_items:
-                    LineItemTaskService.generate_tasks_for_work_order(line_item, work_order)
+                    TaskService.create_from_line_item(line_item, work_order)
 
             messages.success(request, f'Work Order {work_order.work_order_id} created successfully from Estimate {estimate.estimate_number}.')
             return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)

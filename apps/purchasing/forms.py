@@ -4,7 +4,6 @@ from .models import PurchaseOrder, Bill, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 from apps.inventory.models import PriceListItem
 from apps.core.models import LineItemType
-from apps.core.services import NumberGenerationService
 
 
 class PurchaseOrderForm(forms.ModelForm):
@@ -49,17 +48,6 @@ class PurchaseOrderForm(forms.ModelForm):
 
         return cleaned_data
 
-    def save(self, commit=True):
-        """Override save to generate PO number using NumberGenerationService"""
-        instance = super().save(commit=False)
-
-        # Only generate PO number for new instances (not when editing)
-        if not instance.pk:
-            instance.po_number = NumberGenerationService.generate_next_number('po')
-
-        if commit:
-            instance.save()
-        return instance
 
 
 class POManualLineItemForm(forms.ModelForm):
@@ -102,25 +90,6 @@ class POPriceListLineItemForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
-
-class PurchaseOrderLineItemForm(forms.Form):
-    """Form for creating a PO line item from a Price List Item (deprecated, use POPriceListLineItemForm)"""
-    price_list_item = forms.ModelChoiceField(
-        queryset=PriceListItem.objects.all(),
-        required=True,
-        label="Price List Item"
-    )
-    qty = forms.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        initial=1.0,
-        widget=forms.NumberInput(attrs={'step': '0.01'}),
-        label="Quantity"
-    )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
 
 
 class BillLineItemForm(forms.Form):
@@ -335,13 +304,3 @@ class BillForm(forms.ModelForm):
 
         return cleaned_data
 
-    def save(self, commit=True):
-        """Override save to set contact from cleaned_data"""
-        instance = super().save(commit=False)
-
-        # Set the contact from cleaned_data (may have been set from business)
-        instance.contact = self.cleaned_data['contact']
-
-        if commit:
-            instance.save()
-        return instance

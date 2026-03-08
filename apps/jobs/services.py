@@ -46,105 +46,6 @@ class JobService:
         return job
 
 
-class LineItemTaskService:
-    """Service class for generating tasks from EstimateLineItems."""
-
-    @staticmethod
-    def generate_tasks_for_work_order(line_item, work_order):
-        """
-        Generate appropriate Task(s) for a LineItem in a WorkOrder.
-
-        Args:
-            line_item (EstimateLineItem): The line item to generate tasks from
-            work_order (WorkOrder): The WorkOrder to create tasks for
-
-        Returns:
-            List[Task]: Tasks created for this LineItem
-        """
-        if line_item.task:
-            # Case 1: LineItem derived from worksheet task - copy existing task(s)
-            return LineItemTaskService._copy_worksheet_tasks(line_item, work_order)
-        elif line_item.price_list_item:
-            # Case 2: LineItem from catalog - create task from catalog item
-            return LineItemTaskService._create_task_from_catalog_item(line_item, work_order)
-        else:
-            # Case 3: Manual LineItem - create generic task
-            return LineItemTaskService._create_generic_task(line_item, work_order)
-
-    @staticmethod
-    def _copy_worksheet_tasks(line_item, work_order):
-        """Copy the task that contributed to this EstimateLineItem."""
-        tasks = []
-        source_tasks = [line_item.task]
-
-        # Create mapping for parent-child relationships
-        task_id_mapping = {}
-
-        # First pass: create all tasks
-        for source_task in source_tasks:
-            new_task = Task.objects.create(
-                work_order=work_order,
-                name=source_task.name,
-                units=source_task.units,
-                rate=source_task.rate,
-                est_qty=source_task.est_qty,
-                assignee=source_task.assignee,
-                line_item_type=source_task.line_item_type,
-                parent_task=None  # Set in second pass
-            )
-            task_id_mapping[source_task.task_id] = new_task
-            tasks.append(new_task)
-
-        # Second pass: set parent relationships within this set of tasks
-        for source_task in source_tasks:
-            if source_task.parent_task and source_task.parent_task_id in task_id_mapping:
-                new_task = task_id_mapping[source_task.task_id]
-                new_parent = task_id_mapping[source_task.parent_task_id]
-                new_task.parent_task = new_parent
-                new_task.save()
-
-        return tasks
-
-    @staticmethod
-    def _create_task_from_catalog_item(line_item, work_order):
-        """Create a task from PriceListItem data."""
-        task_name = f"{line_item.price_list_item.code} - {line_item.price_list_item.description[:50]}"
-        if len(line_item.price_list_item.description) > 50:
-            task_name += "..."
-
-        task = Task.objects.create(
-            work_order=work_order,
-            name=task_name,
-            units=line_item.units or line_item.price_list_item.units,
-            rate=line_item.price or line_item.price_list_item.selling_price,
-            est_qty=line_item.qty,
-            assignee=None,
-            parent_task=None
-        )
-        return [task]
-
-    @staticmethod
-    def _create_generic_task(line_item, work_order):
-        """Create a generic task from manual LineItem data."""
-        if line_item.description:
-            task_name = line_item.description[:255]
-        elif line_item.line_number:
-            task_name = f"Line Item {line_item.line_number}"
-        else:
-            task_name = f"Line Item {line_item.pk}"
-
-        task = Task.objects.create(
-            work_order=work_order,
-            name=task_name,
-            units=line_item.units,
-            rate=line_item.price,
-            est_qty=line_item.qty,
-            assignee=None,
-            parent_task=None
-        )
-        return [task]
-
-
 class WorkOrderService:
     """Service class for WorkOrder creation workflows."""
 
@@ -283,13 +184,95 @@ class TaskService:
     @staticmethod
     def create_from_line_item(line_item, work_order):
         """
-        Create Task from LineItem.
+        Generate appropriate Task(s) for a LineItem in a WorkOrder.
+
+        Dispatches to the right strategy based on line item source:
+        - Worksheet task: copies the source task with all fields
+        - Catalog PLI: creates task from PriceListItem data
+        - Manual: creates task from line item fields
+
+        Returns:
+            List[Task]: Tasks created for this LineItem
         """
+        if line_item.task:
+            return TaskService._copy_worksheet_tasks(line_item, work_order)
+        elif line_item.price_list_item:
+            return TaskService._create_task_from_catalog_item(line_item, work_order)
+        else:
+            return TaskService._create_generic_task(line_item, work_order)
+
+    @staticmethod
+    def _copy_worksheet_tasks(line_item, work_order):
+        """Copy the task that contributed to this EstimateLineItem."""
+        tasks = []
+        source_tasks = [line_item.task]
+
+        # Create mapping for parent-child relationships
+        task_id_mapping = {}
+
+        # First pass: create all tasks
+        for source_task in source_tasks:
+            new_task = Task.objects.create(
+                work_order=work_order,
+                name=source_task.name,
+                units=source_task.units,
+                rate=source_task.rate,
+                est_qty=source_task.est_qty,
+                assignee=source_task.assignee,
+                line_item_type=source_task.line_item_type,
+                parent_task=None  # Set in second pass
+            )
+            task_id_mapping[source_task.task_id] = new_task
+            tasks.append(new_task)
+
+        # Second pass: set parent relationships within this set of tasks
+        for source_task in source_tasks:
+            if source_task.parent_task and source_task.parent_task_id in task_id_mapping:
+                new_task = task_id_mapping[source_task.task_id]
+                new_parent = task_id_mapping[source_task.parent_task_id]
+                new_task.parent_task = new_parent
+                new_task.save()
+
+        return tasks
+
+    @staticmethod
+    def _create_task_from_catalog_item(line_item, work_order):
+        """Create a task from PriceListItem data."""
+        task_name = f"{line_item.price_list_item.code} - {line_item.price_list_item.description[:50]}"
+        if len(line_item.price_list_item.description) > 50:
+            task_name += "..."
+
         task = Task.objects.create(
             work_order=work_order,
-            name=f"Task from {line_item.description or 'LineItem'}",
+            name=task_name,
+            units=line_item.units or line_item.price_list_item.units,
+            rate=line_item.price or line_item.price_list_item.selling_price,
+            est_qty=line_item.qty,
+            assignee=None,
+            parent_task=None
         )
-        return task
+        return [task]
+
+    @staticmethod
+    def _create_generic_task(line_item, work_order):
+        """Create a generic task from manual LineItem data."""
+        if line_item.description:
+            task_name = line_item.description[:255]
+        elif line_item.line_number:
+            task_name = f"Line Item {line_item.line_number}"
+        else:
+            task_name = f"Line Item {line_item.pk}"
+
+        task = Task.objects.create(
+            work_order=work_order,
+            name=task_name,
+            units=line_item.units,
+            rate=line_item.price,
+            est_qty=line_item.qty,
+            assignee=None,
+            parent_task=None
+        )
+        return [task]
 
     @staticmethod
     def create_from_template(template, work_order, assignee=None):

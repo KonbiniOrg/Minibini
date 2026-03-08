@@ -11,7 +11,7 @@ from django.db.models import ProtectedError
 from apps.jobs.models import TaskBundle, Job, Task, WorkOrder
 from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.estimates.services import EstimateGenerationService
-from apps.jobs.services import TaskService, LineItemTaskService
+from apps.jobs.services import TaskService
 from apps.core.models import LineItemType, Configuration, User
 from apps.contacts.models import Contact
 
@@ -138,7 +138,7 @@ class CopyPointsPreserveLineItemTypeTests(TestCase):
         line_item = estimate.estimatelineitem_set.first()
 
         wo = WorkOrder.objects.create(job=self.job)
-        tasks = LineItemTaskService._copy_worksheet_tasks(line_item, wo)
+        tasks = TaskService._copy_worksheet_tasks(line_item, wo)
         self.assertEqual(tasks[0].line_item_type, self.lit)
 
 

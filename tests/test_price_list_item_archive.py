@@ -8,7 +8,7 @@ from apps.inventory.forms import PriceListItemForm
 from apps.estimates.forms import PriceListLineItemForm
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
-from apps.purchasing.forms import POPriceListLineItemForm, PurchaseOrderLineItemForm, BillLineItemForm
+from apps.purchasing.forms import POPriceListLineItemForm, BillLineItemForm
 from apps.contacts.models import Contact
 
 
@@ -264,14 +264,6 @@ class PriceListItemSelectionFormFilterTest(TestCase):
     def test_po_price_list_line_item_form_filters_archived(self):
         """Test POPriceListLineItemForm only shows active items."""
         form = POPriceListLineItemForm()
-        queryset = form.fields['price_list_item'].queryset
-
-        self.assertIn(self.active_item, queryset)
-        self.assertNotIn(self.archived_item, queryset)
-
-    def test_purchase_order_line_item_form_filters_archived(self):
-        """Test PurchaseOrderLineItemForm only shows active items."""
-        form = PurchaseOrderLineItemForm()
         queryset = form.fields['price_list_item'].queryset
 
         self.assertIn(self.active_item, queryset)
