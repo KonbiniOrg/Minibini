@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from apps.inventory.models import PriceListItem
+from apps.inventory.services import InventoryService
 from .forms import InventoryItemForm, PriceListItemForm
 
 
@@ -17,7 +18,11 @@ def inventory_item_add(request):
     if request.method == 'POST':
         form = InventoryItemForm(request.POST)
         if form.is_valid():
-            item = form.save()
+            data = form.cleaned_data.copy()
+            data.pop('units_select', None)
+            data.pop('units_custom', None)
+            data['is_inventoried'] = True
+            item = InventoryService.create_item(**data)
             messages.success(request, f'Inventory item "{item.code}" added successfully.')
             return redirect('inventory:inventory_list')
     else:
@@ -37,7 +42,11 @@ def inventory_item_edit(request, item_id):
     if request.method == 'POST':
         form = InventoryItemForm(request.POST, instance=item)
         if form.is_valid():
-            item = form.save()
+            data = form.cleaned_data.copy()
+            data.pop('units_select', None)
+            data.pop('units_custom', None)
+            data['is_inventoried'] = True
+            item = InventoryService.update_item(item.pk, **data)
             messages.success(request, f'Inventory item "{item.code}" updated successfully.')
             return redirect('inventory:inventory_list')
     else:
@@ -71,7 +80,7 @@ def price_list_item_add(request):
     if request.method == 'POST':
         form = PriceListItemForm(request.POST)
         if form.is_valid():
-            item = form.save()
+            item = InventoryService.create_item(**form.cleaned_data)
             messages.success(request, f'Price List Item "{item.code}" created successfully.')
             return redirect('inventory:price_list_item_list')
     else:
@@ -91,7 +100,7 @@ def price_list_item_edit(request, item_id):
     if request.method == 'POST':
         form = PriceListItemForm(request.POST, instance=item)
         if form.is_valid():
-            item = form.save()
+            InventoryService.update_item(item.pk, **form.cleaned_data)
             messages.success(request, f'Price List Item "{item.code}" updated successfully.')
             return redirect('inventory:price_list_item_list')
     else:

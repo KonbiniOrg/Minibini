@@ -55,6 +55,10 @@ class InventoryItemForm(forms.ModelForm):
         if units_select == 'other':
             if not units_custom:
                 self.add_error('units_custom', 'Please enter a custom unit.')
+            else:
+                cleaned_data['units'] = units_custom
+        else:
+            cleaned_data['units'] = units_select
         return cleaned_data
 
     def clean_code(self):

@@ -1,7 +1,9 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.views.decorators.http import require_POST
 from .models import Invoice, InvoiceLineItem
+from .services import InvoiceService
 
 def invoice_list(request):
     invoices = Invoice.objects.all().order_by('-invoice_id')
@@ -25,39 +27,8 @@ def invoice_detail(request, invoice_id):
 @require_POST
 def invoice_reorder_line_item(request, invoice_id, line_item_id, direction):
     """Reorder line items within an Invoice by swapping line numbers."""
-    invoice = get_object_or_404(Invoice, invoice_id=invoice_id)
-    line_item = get_object_or_404(InvoiceLineItem, line_item_id=line_item_id, invoice=invoice)
-
-    # Prevent reordering non-draft invoices
-    if invoice.status != 'draft':
-        messages.error(request, f'Cannot reorder line items in a {invoice.get_status_display().lower()} invoice.')
-        return redirect('invoicing:invoice_detail', invoice_id=invoice_id)
-
-    # Get all line items for this invoice ordered by line_number
-    all_items = list(InvoiceLineItem.objects.filter(invoice=invoice).order_by('line_number', 'line_item_id'))
-
-    # Find the index of the current line item
     try:
-        current_index = next(i for i, item in enumerate(all_items) if item.line_item_id == line_item.line_item_id)
-    except StopIteration:
-        messages.error(request, 'Line item not found in invoice.')
-        return redirect('invoicing:invoice_detail', invoice_id=invoice_id)
-
-    # Determine the swap target
-    if direction == 'up' and current_index > 0:
-        swap_index = current_index - 1
-    elif direction == 'down' and current_index < len(all_items) - 1:
-        swap_index = current_index + 1
-    else:
-        messages.error(request, 'Cannot move line item in that direction.')
-        return redirect('invoicing:invoice_detail', invoice_id=invoice_id)
-
-    # Swap line numbers
-    current_item = all_items[current_index]
-    swap_item = all_items[swap_index]
-    current_item.line_number, swap_item.line_number = swap_item.line_number, current_item.line_number
-
-    current_item.save()
-    swap_item.save()
-
+        InvoiceService.reorder_line_item(line_item_id, direction)
+    except ValidationError as e:
+        messages.error(request, str(e.message))
     return redirect('invoicing:invoice_detail', invoice_id=invoice_id)
