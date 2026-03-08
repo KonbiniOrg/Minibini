@@ -166,6 +166,15 @@ class LineItemType(models.Model):
         return self.name
 
 
+class AbstractWorkContainer(models.Model):
+    """Abstract base class for WorkOrder and EstWorksheet containing common fields."""
+    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
+    template = models.ForeignKey('estimates.WorkOrderTemplate', on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        abstract = True
+
+
 class BaseLineItem(models.Model):
     """
     Abstract base class for all line item types.
@@ -174,7 +183,7 @@ class BaseLineItem(models.Model):
     """
     line_item_id = models.AutoField(primary_key=True)
     task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect document integrity
-    price_list_item = models.ForeignKey('invoicing.PriceListItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
+    price_list_item = models.ForeignKey('inventory.PriceListItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
     line_number = models.PositiveIntegerField(blank=True, null=True)
     qty = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     units = models.CharField(max_length=50, blank=True)
