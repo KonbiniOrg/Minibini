@@ -11,6 +11,12 @@ from apps.api.work_orders.views import WorkOrderViewSet
 from apps.api.invoicing.views import InvoiceViewSet
 from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
 from apps.api.inventory.views import PriceListItemViewSet
+from apps.api.search.views import search_view
+from apps.api.stubs import stub_501
+from apps.api.templates_config.views import (
+    WorkOrderTemplateViewSet, TaskTemplateViewSet,
+    LineItemTypeViewSet, settings_view,
+)
 
 
 @api_view(['GET'])
@@ -54,8 +60,18 @@ router.register(r'invoices', InvoiceViewSet, basename='invoice')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchase-order')
 router.register(r'bills', BillViewSet, basename='bill')
 router.register(r'price-list-items', PriceListItemViewSet, basename='price-list-item')
+router.register(r'work-order-templates', WorkOrderTemplateViewSet, basename='work-order-template')
+router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
+router.register(r'line-item-types', LineItemTypeViewSet, basename='line-item-type')
 
 urlpatterns = [
     path('', api_root, name='api-root'),
     path('auth/', include('apps.api.auth.urls')),
+    path('emails/', include('apps.api.email.urls')),
+    path('search/', search_view, name='api-search'),
+    path('settings/', settings_view, name='api-settings'),
+    path('shifts/', include('apps.api.time_tracking.urls')),
+    path('expenses/', include('apps.api.expenses.urls')),
+    path('time-tracking/status/', stub_501('GET /api/time-tracking/status/'), name='time-tracking-status'),
+    path('time-tracking/active/', stub_501('GET /api/time-tracking/active/'), name='time-tracking-active'),
 ] + router.urls
