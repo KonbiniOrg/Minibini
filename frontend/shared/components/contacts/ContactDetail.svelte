@@ -38,7 +38,13 @@
   {/if}
 
   <dt>Business</dt>
-  <dd>{contact.business || 'None'}</dd>
+  <dd>
+    {#if contact.business}
+      <a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>
+    {:else}
+      None
+    {/if}
+  </dd>
 </dl>
 
 <p>

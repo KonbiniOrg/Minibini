@@ -9,34 +9,26 @@
   <dt>Name</dt>
   <dd>{business.business_name}</dd>
 
-  {#if business.business_phone}
-    <dt>Phone</dt>
-    <dd>{business.business_phone}</dd>
-  {/if}
+  <dt>Phone</dt>
+  <dd>{business.business_phone}</dd>
 
-  {#if business.business_address}
-    <dt>Address</dt>
-    <dd>{business.business_address}</dd>
-  {/if}
+  <dt>Address</dt>
+  <dd>{business.business_address}</dd>
 
-  {#if business.website}
-    <dt>Website</dt>
-    <dd>{business.website}</dd>
-  {/if}
+  <dt>Website</dt>
+  <dd>{business.website}</dd>
 
-  {#if business.tax_exemption_number}
-    <dt>Tax Exemption</dt>
-    <dd>{business.tax_exemption_number}</dd>
-  {/if}
+  <dt>Tax Exemption</dt>
+  <dd>{business.tax_exemption_number || "(Not exempt)"}</dd>
 
   <dt>Tax Multiplier</dt>
-  <dd>{business.tax_multiplier ?? 'Default (full rate)'}</dd>
+  <dd>{business.tax_multiplier ?? '(full rate)'}</dd>
 
   <dt>Payment Terms</dt>
   <dd>{business.terms || 'None'}</dd>
 
   <dt>Default Contact</dt>
-  <dd>{business.default_contact || 'None'}</dd>
+  <dd><a href="#/contacts/{business.default_contact.contact_id}">{business.default_contact.name}</a></dd>
 </dl>
 
 <p>

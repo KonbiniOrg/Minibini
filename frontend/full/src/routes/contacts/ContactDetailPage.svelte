@@ -7,16 +7,18 @@
 
   let contact = $state(null);
   let loading = $state(true);
+  let loadError = $state(null);
   let error = $state(null);
+  let success = $state(null);
   let deleteConfirm = $state(null);
 
   async function loadContact() {
     loading = true;
-    error = null;
+    loadError = null;
     try {
       contact = await api.get(`/api/contacts/${params.id}/`);
     } catch (e) {
-      error = e.message;
+      loadError = e.message;
     } finally {
       loading = false;
     }
@@ -35,9 +37,10 @@
       return;
     }
 
+    deleteConfirm = null;
     try {
-      await api.delete(`/api/contacts/${params.id}/?confirm=true`);
-      push('/contacts');
+      const result = await api.delete(`/api/contacts/${params.id}/?confirm=true`);
+      success = result.message || 'Contact deleted.';
     } catch (e) {
       error = e.message;
     }
@@ -49,10 +52,28 @@
   });
 </script>
 
+{#if success}
+  <div class="success-overlay">
+    <div class="success-overlay-content">
+      <button class="success-overlay-close" onclick={() => push('/contacts')}>&times;</button>
+      <p>{success}</p>
+    </div>
+  </div>
+{/if}
+
+{#if error}
+  <div class="error-overlay">
+    <div class="error-overlay-content">
+      <button class="error-overlay-close" onclick={() => { error = null; }}>&times;</button>
+      <p><strong>Error:</strong> {error}</p>
+    </div>
+  </div>
+{/if}
+
 {#if loading}
   <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
+{:else if loadError}
+  <p>Error: {loadError}</p>
 {:else if contact}
   <h2>{contact.name}</h2>
   <ContactDetail

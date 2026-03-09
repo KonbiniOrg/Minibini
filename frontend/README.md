@@ -51,3 +51,42 @@ npx vite build
 ```
 
 Output goes to `frontend/full/dist/`. In production, nginx serves these files directly.
+
+## Design Decisions
+
+### API Responses
+
+- All API responses return JSON with a 200 status, even for operations like DELETE that normally have no meaningful data to return. No 204 responses. An empty response is `{}`.
+- Error responses return JSON with a `detail` field and an appropriate 4xx status code.
+- Successful delete responses may return a `message` field with a human-readable confirmation (e.g., `{"message": "\"Acme Corp\" has been deleted. 2 contact(s) were disassociated."}`).
+
+### Serializers
+
+- Nested read-only serializers are used to include related object data in responses (e.g., `BusinessSerializer` includes a full `ContactSerializer` for `default_contact`).
+- Use summary serializers (e.g., `BusinessSummarySerializer`) for nested objects that don't need full detail, to avoid excessive nesting depth.
+- Write-only `PrimaryKeyRelatedField` fields (e.g., `business_id`) are added alongside read-only nested serializers to accept foreign key IDs on create/update.
+
+### Error Handling
+
+- The API client (`shared/lib/api.js`) checks `content-type` before parsing JSON to guard against HTML error pages from Django.
+- Action errors (delete failures, validation errors) display in an overlay on top of the current page, preserving the content underneath.
+- Load errors (page/object not found) replace the page content.
+- Views catch `ProtectedError`, `ValidationError`, and `ServiceError` from services, returning user-friendly messages.
+
+### CSS
+
+- Global styles live in `frontend/full/src/css/app.css`, imported via `main.js`.
+- No CSS frameworks. Semantic HTML with minimal global styles.
+- Error overlays (`.error-overlay`) have a red border; success overlays (`.success-overlay`) have a green border. Both share the same layout pattern.
+
+### Routing
+
+- Hash-based routing (`#/path`). All internal links use the `#/` prefix.
+- The `svelte-spa-router` library handles client-side navigation.
+
+### Delete Flow
+
+- First DELETE request (no `?confirm=true`) returns impact information and `confirm_required: true`.
+- Frontend shows a confirmation prompt with the impact details.
+- On confirm, the confirmation prompt is cleared immediately (returning the page to its normal state) and the confirmed DELETE is sent.
+- On success, a success overlay displays the server's message. On error, an error overlay is shown.

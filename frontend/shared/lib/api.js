@@ -21,8 +21,10 @@ async function request(method, url, data = null) {
 
   const response = await fetch(url, options);
 
-  if (response.status === 204) {
-    return null;
+  const contentType = response.headers.get('content-type') || '';
+
+  if (!contentType.includes('application/json')) {
+    throw new Error(`Server error (${response.status})`);
   }
 
   const json = await response.json();

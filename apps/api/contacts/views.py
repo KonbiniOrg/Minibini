@@ -1,3 +1,5 @@
+from django.core.exceptions import ValidationError
+from django.db.models.deletion import ProtectedError
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -46,9 +48,17 @@ class ContactViewSet(viewsets.ModelViewSet):
 
         try:
             ContactService.delete_contact(contact.pk)
-        except ServiceError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProtectedError:
+            return Response(
+                {'detail': 'Cannot delete this contact — it is still referenced by other records.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except (ServiceError, ValidationError) as e:
+            msg = e.message if hasattr(e, 'message') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'message': f'"{contact}" has been deleted.',
+        })
 
 
 class BusinessViewSet(viewsets.ModelViewSet):
@@ -88,11 +98,24 @@ class BusinessViewSet(viewsets.ModelViewSet):
                 'impact': impact,
             })
 
+        contact_count = Contact.objects.filter(business=business).count()
+        business_name = business.business_name
+
         try:
             ContactService.delete_business(business.pk)
-        except ServiceError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProtectedError:
+            return Response(
+                {'detail': 'Cannot delete this business — it is still referenced by purchase orders or bills.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except (ServiceError, ValidationError) as e:
+            msg = e.message if hasattr(e, 'message') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        msg = f'"{business_name}" has been deleted.'
+        if contact_count:
+            msg += f' {contact_count} contact(s) were disassociated.'
+        return Response({'message': msg})
 
     @action(detail=True, methods=['post'], url_path='set-default-contact')
     def set_default_contact(self, request, pk=None):
@@ -104,8 +127,9 @@ class BusinessViewSet(viewsets.ModelViewSet):
             )
         try:
             ContactService.set_default_contact(pk, contact_id)
-        except (ServiceError, NotFoundError) as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except (ServiceError, NotFoundError, ValidationError) as e:
+            msg = e.message if hasattr(e, 'message') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         business = self.get_object()
         return Response(BusinessSerializer(business).data)
 
