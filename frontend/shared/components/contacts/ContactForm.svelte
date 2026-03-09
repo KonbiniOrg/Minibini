@@ -7,6 +7,7 @@
     errors = null,
   } = $props();
 
+  // Intentionally captures initial prop value — form state is then independent
   let form = $state({
     first_name: contact?.first_name || '',
     middle_initial: contact?.middle_initial || '',

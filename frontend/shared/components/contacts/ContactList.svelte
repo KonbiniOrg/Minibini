@@ -18,9 +18,9 @@
         <tr>
           <td>
             {#if onSelect}
-              <a href="#" onclick={(e) => { e.preventDefault(); onSelect(contact); }}>
+              <button onclick={() => onSelect(contact)}>
                 {contact.name}
-              </a>
+              </button>
             {:else}
               {contact.name}
             {/if}

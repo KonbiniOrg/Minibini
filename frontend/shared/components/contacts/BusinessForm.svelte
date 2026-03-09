@@ -8,6 +8,7 @@
     errors = null,
   } = $props();
 
+  // Intentionally captures initial prop value — form state is then independent
   let form = $state({
     business_name: business?.business_name || '',
     business_address: business?.business_address || '',

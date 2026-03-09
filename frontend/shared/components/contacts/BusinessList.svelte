@@ -19,9 +19,9 @@
           <td>{business.our_reference_code}</td>
           <td>
             {#if onSelect}
-              <a href="#" onclick={(e) => { e.preventDefault(); onSelect(business); }}>
+              <button onclick={() => onSelect(business)}>
                 {business.business_name}
-              </a>
+              </button>
             {:else}
               {business.business_name}
             {/if}
