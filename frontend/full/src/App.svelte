@@ -7,6 +7,7 @@
   import ContactFormPage from './routes/contacts/ContactFormPage.svelte';
   import BusinessListPage from './routes/contacts/BusinessListPage.svelte';
   import BusinessDetailPage from './routes/contacts/BusinessDetailPage.svelte';
+  import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
 
   const routes = {
     '/': Home,
@@ -15,6 +16,8 @@
     '/contacts/:id/edit': ContactFormPage,
     '/contacts/:id': ContactDetailPage,
     '/businesses': BusinessListPage,
+    '/businesses/new': BusinessFormPage,
+    '/businesses/:id/edit': BusinessFormPage,
     '/businesses/:id': BusinessDetailPage,
   };
 </script>
