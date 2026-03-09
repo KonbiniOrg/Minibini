@@ -30,39 +30,43 @@ class StatusTransitionMixin:
         service_fn = config['service']
         requires_reason = config.get('requires_reason', False)
 
-        @action(detail=True, methods=['post'], url_path=action_name, url_name=action_name)
-        def action_view(self, request, pk=None):
-            if requires_reason:
-                reason = request.data.get('reason', '').strip()
-                if not reason:
+        def make_action(svc, needs_reason):
+            def action_fn(self, request, pk=None):
+                if needs_reason:
+                    reason = request.data.get('reason', '').strip()
+                    if not reason:
+                        return Response(
+                            {'reason': ['This field is required.']},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+                try:
+                    kwargs = {}
+                    if needs_reason:
+                        kwargs['reason'] = request.data['reason']
+                    svc(pk, **kwargs)
+                except NotFoundError:
                     return Response(
-                        {'reason': ['This field is required.']},
+                        {'detail': 'Not found.'},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+                except ServiceError as e:
+                    return Response(
+                        {'detail': str(e)},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-            try:
-                kwargs = {}
-                if requires_reason:
-                    kwargs['reason'] = request.data['reason']
-                service_fn(pk, **kwargs)
-            except NotFoundError:
-                return Response(
-                    {'detail': 'Not found.'},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-            except ServiceError as e:
-                return Response(
-                    {'detail': str(e)},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                instance = self.get_object()
+                serializer = self.get_serializer(instance)
+                return Response(serializer.data)
+            return action_fn
 
-            instance = self.get_object()
-            serializer = self.get_serializer(instance)
-            return Response(serializer.data)
-
-        action_view.__name__ = action_name
-        action_view.__qualname__ = f'{cls.__name__}.{action_name}'
-        setattr(cls, action_name, action_view)
+        fn = make_action(service_fn, requires_reason)
+        # Set __name__ BEFORE @action so DRF's mapping uses the correct name
+        fn.__name__ = action_name
+        fn.__qualname__ = f'{cls.__name__}.{action_name}'
+        decorated = action(detail=True, methods=['post'], url_path=action_name, url_name=action_name)(fn)
+        setattr(cls, action_name, decorated)
 
 
 class LineItemMixin:

@@ -2,6 +2,9 @@ from django.urls import path, include
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.routers import DefaultRouter
+from apps.api.jobs.views import JobViewSet
+from apps.api.contacts.views import ContactViewSet, BusinessViewSet, PaymentTermsViewSet
 
 
 @api_view(['GET'])
@@ -33,7 +36,13 @@ def api_root(request):
 
 app_name = 'api'
 
+router = DefaultRouter()
+router.register(r'jobs', JobViewSet, basename='job')
+router.register(r'contacts', ContactViewSet, basename='contact')
+router.register(r'businesses', BusinessViewSet, basename='business')
+router.register(r'payment-terms', PaymentTermsViewSet, basename='payment-terms')
+
 urlpatterns = [
     path('', api_root, name='api-root'),
-    # Submodule URLs added in subsequent tasks
-]
+    path('auth/', include('apps.api.auth.urls')),
+] + router.urls
