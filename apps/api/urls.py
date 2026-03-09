@@ -5,6 +5,9 @@ from rest_framework.response import Response
 from rest_framework.routers import DefaultRouter
 from apps.api.jobs.views import JobViewSet
 from apps.api.contacts.views import ContactViewSet, BusinessViewSet, PaymentTermsViewSet
+from apps.api.estimates.views import EstimateViewSet
+from apps.api.worksheets.views import EstWorksheetViewSet
+from apps.api.work_orders.views import WorkOrderViewSet
 
 
 @api_view(['GET'])
@@ -41,6 +44,9 @@ router.register(r'jobs', JobViewSet, basename='job')
 router.register(r'contacts', ContactViewSet, basename='contact')
 router.register(r'businesses', BusinessViewSet, basename='business')
 router.register(r'payment-terms', PaymentTermsViewSet, basename='payment-terms')
+router.register(r'estimates', EstimateViewSet, basename='estimate')
+router.register(r'est-worksheets', EstWorksheetViewSet, basename='est-worksheet')
+router.register(r'work-orders', WorkOrderViewSet, basename='work-order')
 
 urlpatterns = [
     path('', api_root, name='api-root'),
