@@ -56,9 +56,9 @@ Each frontend variant is its own Vite project with its own `package.json`, impor
 ## Django Integration
 
 ### Development
-- Run Vite dev server from `frontend/full/` (port 5173)
+- Run Vite dev server from `frontend/full/` (port 9000)
 - Vite proxies `/api/*` to Django on port 8000
-- Session auth works because browser sees single origin (localhost:5173)
+- Session auth works because browser sees single origin (localhost:9000)
 - `AutoLoginMiddleware` continues to work
 
 ### Production
