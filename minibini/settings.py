@@ -55,6 +55,8 @@ INSTALLED_APPS = [
     'apps.purchasing',
     'apps.search',
     'apps.inventory',
+    'rest_framework',
+    'apps.api',
 ]
 
 MIDDLEWARE = [
@@ -171,6 +173,17 @@ FIXTURE_DIRS = [
 
 # Session settings
 SESSION_COOKIE_AGE = 86400  # 1 day (24 * 60 * 60 seconds) instead of default 14 days
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'apps.api.pagination.StandardPagination',
+    'PAGE_SIZE': 25,
+}
 
 LOGGING = {
     'version': 1,
