@@ -35,7 +35,8 @@ ALLOWED_HOSTS = [
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://minibini.me'
+    'https://minibini.me',
+    'http://localhost:9000',
 ]
 
 # Application definition
