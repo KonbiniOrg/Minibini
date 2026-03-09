@@ -44,6 +44,7 @@
   }
 
   $effect(() => {
+    void params.id;
     loadBusiness();
   });
 </script>

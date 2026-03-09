@@ -6,12 +6,14 @@ function getCsrfToken() {
 async function request(method, url, data = null) {
   const options = {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRFToken': getCsrfToken(),
-    },
+    headers: {},
     credentials: 'same-origin',
   };
+
+  if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
+    options.headers['Content-Type'] = 'application/json';
+    options.headers['X-CSRFToken'] = getCsrfToken();
+  }
 
   if (data !== null) {
     options.body = JSON.stringify(data);

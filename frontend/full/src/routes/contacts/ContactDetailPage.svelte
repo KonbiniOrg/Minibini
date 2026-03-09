@@ -44,6 +44,7 @@
   }
 
   $effect(() => {
+    void params.id;
     loadContact();
   });
 </script>

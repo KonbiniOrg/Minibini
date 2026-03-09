@@ -28,6 +28,7 @@
   }
 
   $effect(() => {
+    void page;
     loadContacts();
   });
 </script>

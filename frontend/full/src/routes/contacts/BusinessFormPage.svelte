@@ -56,6 +56,7 @@
   }
 
   $effect(() => {
+    void params.id;
     load();
   });
 </script>
