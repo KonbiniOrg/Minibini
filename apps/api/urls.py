@@ -8,6 +8,9 @@ from apps.api.contacts.views import ContactViewSet, BusinessViewSet, PaymentTerm
 from apps.api.estimates.views import EstimateViewSet
 from apps.api.worksheets.views import EstWorksheetViewSet
 from apps.api.work_orders.views import WorkOrderViewSet
+from apps.api.invoicing.views import InvoiceViewSet
+from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
+from apps.api.inventory.views import PriceListItemViewSet
 
 
 @api_view(['GET'])
@@ -47,6 +50,10 @@ router.register(r'payment-terms', PaymentTermsViewSet, basename='payment-terms')
 router.register(r'estimates', EstimateViewSet, basename='estimate')
 router.register(r'est-worksheets', EstWorksheetViewSet, basename='est-worksheet')
 router.register(r'work-orders', WorkOrderViewSet, basename='work-order')
+router.register(r'invoices', InvoiceViewSet, basename='invoice')
+router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchase-order')
+router.register(r'bills', BillViewSet, basename='bill')
+router.register(r'price-list-items', PriceListItemViewSet, basename='price-list-item')
 
 urlpatterns = [
     path('', api_root, name='api-root'),
