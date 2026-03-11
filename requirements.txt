@@ -16,3 +16,6 @@ sqlparse==0.5.3
 cryptography==45.0.7
 cffi==2.0.0
 pycparser==2.23
+
+# REST API
+djangorestframework==3.16.1

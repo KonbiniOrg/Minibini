@@ -1,0 +1,41 @@
+from rest_framework.test import APIClient
+from tests.base import BaseTestCase
+from apps.core.models import User
+from apps.invoicing.models import Invoice, InvoiceLineItem
+
+
+class InvoiceAPITest(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+
+    def test_list_invoices(self):
+        response = self.client.get('/api/invoices/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_retrieve_invoice(self):
+        invoice = Invoice.objects.first()
+        if invoice:
+            response = self.client.get(f'/api/invoices/{invoice.pk}/')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('line_items', response.data)
+
+    def test_add_line_item(self):
+        invoice = Invoice.objects.first()
+        if invoice:
+            response = self.client.post(f'/api/invoices/{invoice.pk}/line-items/', {
+                'qty': '1.00',
+                'units': 'hr',
+                'description': 'Consulting',
+                'price': '150.00',
+            }, format='json')
+            self.assertIn(response.status_code, [200, 201])
+
+    def test_cancel_invoice_requires_reason(self):
+        invoice = Invoice.objects.first()
+        if invoice:
+            response = self.client.post(f'/api/invoices/{invoice.pk}/cancel/', {}, format='json')
+            self.assertEqual(response.status_code, 400)

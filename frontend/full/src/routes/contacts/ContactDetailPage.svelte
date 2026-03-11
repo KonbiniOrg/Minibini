@@ -1,0 +1,95 @@
+<script>
+  import { api } from '$shared/lib/api.js';
+  import ContactDetail from '$shared/components/contacts/ContactDetail.svelte';
+  import { push } from 'svelte-spa-router';
+
+  const { params = {} } = $props();
+
+  let contact = $state(null);
+  let loading = $state(true);
+  let loadError = $state(null);
+  let error = $state(null);
+  let success = $state(null);
+  let deleteConfirm = $state(null);
+
+  async function loadContact() {
+    loading = true;
+    loadError = null;
+    try {
+      contact = await api.get(`/api/contacts/${params.id}/`);
+    } catch (e) {
+      loadError = e.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteConfirm) {
+      try {
+        const result = await api.delete(`/api/contacts/${params.id}/`);
+        if (result && result.confirm_required) {
+          deleteConfirm = result.impact;
+        }
+      } catch (e) {
+        error = e.message;
+      }
+      return;
+    }
+
+    deleteConfirm = null;
+    try {
+      const result = await api.delete(`/api/contacts/${params.id}/?confirm=true`);
+      success = result.message || 'Contact deleted.';
+    } catch (e) {
+      error = e.message;
+    }
+  }
+
+  $effect(() => {
+    void params.id;
+    loadContact();
+  });
+</script>
+
+{#if success}
+  <div class="success-overlay">
+    <div class="success-overlay-content">
+      <button class="success-overlay-close" onclick={() => push('/contacts')}>&times;</button>
+      <p>{success}</p>
+    </div>
+  </div>
+{/if}
+
+{#if error}
+  <div class="error-overlay">
+    <div class="error-overlay-content">
+      <button class="error-overlay-close" onclick={() => { error = null; }}>&times;</button>
+      <p><strong>Error:</strong> {error}</p>
+    </div>
+  </div>
+{/if}
+
+{#if loading}
+  <p>Loading...</p>
+{:else if loadError}
+  <p>Error: {loadError}</p>
+{:else if contact}
+  <h2>{contact.name}</h2>
+  <ContactDetail
+    {contact}
+    onEdit={() => push(`/contacts/${params.id}/edit`)}
+    onDelete={handleDelete}
+  />
+
+  {#if deleteConfirm}
+    <p>
+      <strong>Are you sure?</strong>
+      This contact is associated with {deleteConfirm.jobs} job(s).
+      <button onclick={handleDelete}>Yes, delete</button>
+      <button onclick={() => { deleteConfirm = null; }}>Cancel</button>
+    </p>
+  {/if}
+
+  <p><a href="#/contacts">Back to list</a></p>
+{/if}
