@@ -6,6 +6,8 @@
   const { params = {} } = $props();
 
   let contact = $state(null);
+  let purchaseOrders = $state(null);
+  let bills = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
   let error = $state(null);
@@ -17,11 +19,20 @@
     loadError = null;
     try {
       contact = await api.get(`/api/contacts/${params.id}/`);
+      await Promise.all([loadPOs(1), loadBills(1)]);
     } catch (e) {
       loadError = e.message;
     } finally {
       loading = false;
     }
+  }
+
+  async function loadPOs(page) {
+    purchaseOrders = await api.get(`/api/purchase-orders/?contact=${params.id}&page=${page}`);
+  }
+
+  async function loadBills(page) {
+    bills = await api.get(`/api/bills/?contact=${params.id}&page=${page}`);
   }
 
   async function handleDelete() {
@@ -78,8 +89,12 @@
   <h2>{contact.name}</h2>
   <ContactDetail
     {contact}
+    {purchaseOrders}
+    {bills}
     onEdit={() => push(`/contacts/${params.id}/edit`)}
     onDelete={handleDelete}
+    onPOPageChange={loadPOs}
+    onBillPageChange={loadBills}
   />
 
   {#if deleteConfirm}

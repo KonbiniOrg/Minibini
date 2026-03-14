@@ -19,6 +19,9 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         business = self.request.query_params.get('business')
         if business:
             qs = qs.filter(business_id=business)
+        contact = self.request.query_params.get('contact')
+        if contact:
+            qs = qs.filter(contact_id=contact)
         return qs
 
     line_item_serializer_class = POLineItemSerializer
@@ -54,6 +57,9 @@ class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
         business = self.request.query_params.get('business')
         if business:
             qs = qs.filter(business_id=business)
+        contact = self.request.query_params.get('contact')
+        if contact:
+            qs = qs.filter(contact_id=contact)
         return qs
 
     line_item_serializer_class = BillLineItemSerializer

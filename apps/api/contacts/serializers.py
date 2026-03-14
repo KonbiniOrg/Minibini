@@ -61,6 +61,18 @@ class BusinessDetailSerializer(BusinessSerializer):
         return JobSummarySerializer(jobs, many=True).data
 
 
+class ContactDetailSerializer(ContactSerializer):
+    business = BusinessSerializer(read_only=True)
+    jobs = serializers.SerializerMethodField()
+
+    class Meta(ContactSerializer.Meta):
+        fields = ContactSerializer.Meta.fields + ['jobs']
+
+    def get_jobs(self, obj):
+        jobs = Job.objects.filter(contact=obj).order_by('-created_date')
+        return JobSummarySerializer(jobs, many=True).data
+
+
 class PaymentTermsSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentTerms
