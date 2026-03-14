@@ -1,6 +1,7 @@
 <script>
   import Router from 'svelte-spa-router';
   import Nav from './components/Nav.svelte';
+  import { viewMode, toggleViewMode } from './stores/viewMode.js';
   import Home from './routes/Home.svelte';
   import ContactListPage from './routes/contacts/ContactListPage.svelte';
   import ContactDetailPage from './routes/contacts/ContactDetailPage.svelte';
@@ -25,3 +26,9 @@
 <h1>Minibini</h1>
 <Nav />
 <Router {routes} />
+<hr>
+<footer>
+  <a href="#" onclick={(e) => { e.preventDefault(); toggleViewMode(); }}>
+    Switch to {$viewMode === 'full' ? 'lite' : 'full'} view
+  </a>
+</footer>

@@ -60,10 +60,29 @@ Output goes to `frontend/dist/`. In production, nginx serves these files directl
 - Error responses return JSON with a `detail` field and an appropriate 4xx status code.
 - Successful delete responses may return a `message` field with a human-readable confirmation (e.g., `{"message": "\"Acme Corp\" has been deleted. 2 contact(s) were disassociated."}`).
 
-### Serializers
+### Serializer Tiers
 
-- Nested read-only serializers are used to include related object data in responses (e.g., `BusinessSerializer` includes a full `ContactSerializer` for `default_contact`).
-- Use summary serializers (e.g., `BusinessSummarySerializer`) for nested objects that don't need full detail, to avoid excessive nesting depth.
+Each model has up to three serializer tiers, used in different contexts:
+
+| Tier | Naming | Used when | Example fields |
+|---|---|---|---|
+| **Summary** | `FooSummarySerializer` | Nested inside other objects as supporting data | id, name, status |
+| **Standard** | `FooSerializer` | List views, create, update | All own fields + summary-level nested objects |
+| **Detail** | `FooDetailSerializer` | Retrieve (detail view) — the object is the main focus | All standard fields + related object lists |
+
+The ViewSet switches serializers based on the action:
+
+```python
+def get_serializer_class(self):
+    if self.action == 'retrieve':
+        return FooDetailSerializer
+    return FooSerializer
+```
+
+Key rules:
+- **Detail serializers** include related object lists (e.g., `BusinessDetailSerializer` includes contacts and jobs). These use summary serializers for the nested objects to avoid deep nesting.
+- **Standard serializers** include key FKs as nested summary objects for display (e.g., `ContactSerializer` includes `BusinessSummarySerializer` for the contact's business) but not reverse relation lists.
+- **Summary serializers** include only what's needed to identify and link to the object (id, name/title, maybe status).
 - Write-only `PrimaryKeyRelatedField` fields (e.g., `business_id`) are added alongside read-only nested serializers to accept foreign key IDs on create/update.
 
 ### Error Handling

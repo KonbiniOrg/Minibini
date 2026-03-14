@@ -2,16 +2,10 @@
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VARIANT="${1:-lite}"
-FRONTEND_DIR="$PROJECT_DIR/frontend/$VARIANT"
+FRONTEND_DIR="$PROJECT_DIR/frontend"
 PYTHON="${PYTHON:-$(command -v python3 || command -v python)}"
 
-if [ ! -d "$FRONTEND_DIR" ]; then
-    echo "Error: frontend variant '$VARIANT' not found at $FRONTEND_DIR"
-    exit 1
-fi
-
-echo "=== Building frontend ($VARIANT) ==="
+echo "=== Building frontend ==="
 cd "$FRONTEND_DIR"
 npx vite build
 echo "=== Build complete ==="
@@ -40,7 +34,7 @@ npx vite &
 VITE_PID=$!
 
 echo ""
-echo "=== Both servers running ($VARIANT). Ctrl+C to stop. ==="
+echo "=== Both servers running. Ctrl+C to stop. ==="
 echo ""
 
 wait

@@ -4,22 +4,22 @@ Notes for the release engineer on integrating the SPA frontend into the Docker d
 
 ## What Needs to Happen
 
-The SPA is a static site after building. Vite compiles Svelte components into plain HTML/CSS/JS in `frontend/full/dist/`. Nginx serves these files and proxies API requests to Django.
+The SPA is a static site after building. Vite compiles Svelte components into plain HTML/CSS/JS in `frontend/dist/`. Nginx serves these files and proxies API requests to Django.
 
 ## Build Step
 
 The frontend needs a Node.js build step that produces static files:
 
 ```bash
-cd frontend/full
+cd frontend
 npm ci                # Install exact versions from package-lock.json
-npx vite build        # Output: frontend/full/dist/
+npx vite build        # Output: frontend/dist/
 ```
 
 This can be a multi-stage Docker build or a separate build container. The output is:
 
 ```
-frontend/full/dist/
+frontend/dist/
 ├── index.html
 └── assets/
     ├── index-XXXX.js
@@ -36,7 +36,7 @@ The SPA needs two nginx rules:
 ```nginx
 # SPA static files
 location /app/ {
-    alias /path/to/frontend/full/dist/;
+    alias /path/to/frontend/dist/;
     try_files $uri /app/index.html;
 }
 
@@ -55,15 +55,15 @@ location /api/ {
 ```dockerfile
 # Stage 1: Build frontend
 FROM node:20-alpine AS frontend-build
-WORKDIR /app/frontend/full
-COPY frontend/full/package*.json ./
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ /app/frontend/
 RUN npx vite build
 
 # Stage 2: Nginx (copy built files in)
 FROM nginx:alpine
-COPY --from=frontend-build /app/frontend/full/dist/ /usr/share/nginx/html/app/
+COPY --from=frontend-build /app/frontend/dist/ /usr/share/nginx/html/app/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 ```
 

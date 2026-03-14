@@ -14,6 +14,13 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     serializer_class = PurchaseOrderSerializer
     lookup_field = 'pk'
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        business = self.request.query_params.get('business')
+        if business:
+            qs = qs.filter(business_id=business)
+        return qs
+
     line_item_serializer_class = POLineItemSerializer
     line_item_parent_field = 'purchase_order'
 
@@ -41,6 +48,13 @@ class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
     queryset = Bill.objects.all().order_by('-created_date')
     serializer_class = BillSerializer
     lookup_field = 'pk'
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        business = self.request.query_params.get('business')
+        if business:
+            qs = qs.filter(business_id=business)
+        return qs
 
     line_item_serializer_class = BillLineItemSerializer
     line_item_parent_field = 'bill'

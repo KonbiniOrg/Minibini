@@ -1,6 +1,6 @@
 <script>
-  import { api } from '$shared/lib/api.js';
-  import BusinessForm from '$shared/components/contacts/BusinessForm.svelte';
+  import { api } from '../../lib/api.js';
+  import BusinessForm from '../../components/contacts/BusinessForm.svelte';
   import { push } from 'svelte-spa-router';
 
   const { params = {} } = $props();

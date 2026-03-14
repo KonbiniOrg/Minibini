@@ -1,22 +1,22 @@
 <script>
-  import { api } from '$shared/lib/api.js';
-  import BusinessDetail from '$shared/components/contacts/BusinessDetail.svelte';
+  import { api } from '../../lib/api.js';
+  import ContactDetail from '../../components/contacts/ContactDetail.svelte';
   import { push } from 'svelte-spa-router';
 
   const { params = {} } = $props();
 
-  let business = $state(null);
+  let contact = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
   let error = $state(null);
   let success = $state(null);
   let deleteConfirm = $state(null);
 
-  async function loadBusiness() {
+  async function loadContact() {
     loading = true;
     loadError = null;
     try {
-      business = await api.get(`/api/businesses/${params.id}/`);
+      contact = await api.get(`/api/contacts/${params.id}/`);
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -27,7 +27,7 @@
   async function handleDelete() {
     if (!deleteConfirm) {
       try {
-        const result = await api.delete(`/api/businesses/${params.id}/`);
+        const result = await api.delete(`/api/contacts/${params.id}/`);
         if (result && result.confirm_required) {
           deleteConfirm = result.impact;
         }
@@ -39,8 +39,8 @@
 
     deleteConfirm = null;
     try {
-      const result = await api.delete(`/api/businesses/${params.id}/?confirm=true`);
-      success = result.message || 'Business deleted.';
+      const result = await api.delete(`/api/contacts/${params.id}/?confirm=true`);
+      success = result.message || 'Contact deleted.';
     } catch (e) {
       error = e.message;
     }
@@ -48,14 +48,14 @@
 
   $effect(() => {
     void params.id;
-    loadBusiness();
+    loadContact();
   });
 </script>
 
 {#if success}
   <div class="success-overlay">
     <div class="success-overlay-content">
-      <button class="success-overlay-close" onclick={() => push('/businesses')}>&times;</button>
+      <button class="success-overlay-close" onclick={() => push('/contacts')}>&times;</button>
       <p>{success}</p>
     </div>
   </div>
@@ -74,25 +74,22 @@
   <p>Loading...</p>
 {:else if loadError}
   <p>Error: {loadError}</p>
-{:else if business}
-  <h2>{business.business_name}</h2>
-  <BusinessDetail
-    {business}
-    onEdit={() => push(`/businesses/${params.id}/edit`)}
+{:else if contact}
+  <h2>{contact.name}</h2>
+  <ContactDetail
+    {contact}
+    onEdit={() => push(`/contacts/${params.id}/edit`)}
     onDelete={handleDelete}
   />
 
   {#if deleteConfirm}
     <p>
-      <strong>Are you sure?</strong> This business is associated with:
-      {deleteConfirm.jobs} job(s),
-      {deleteConfirm.purchase_orders} PO(s),
-      {deleteConfirm.bills} bill(s),
-      {deleteConfirm.contacts} contact(s).
+      <strong>Are you sure?</strong>
+      This contact is associated with {deleteConfirm.jobs} job(s).
       <button onclick={handleDelete}>Yes, delete</button>
       <button onclick={() => { deleteConfirm = null; }}>Cancel</button>
     </p>
   {/if}
 
-  <p><a href="#/businesses">Back to list</a></p>
+  <p><a href="#/contacts">Back to list</a></p>
 {/if}

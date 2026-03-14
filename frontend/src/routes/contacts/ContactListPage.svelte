@@ -1,20 +1,20 @@
 <script>
-  import { api } from '$shared/lib/api.js';
-  import BusinessList from '$shared/components/contacts/BusinessList.svelte';
+  import { api } from '../../lib/api.js';
+  import ContactList from '../../components/contacts/ContactList.svelte';
   import { push } from 'svelte-spa-router';
 
-  let businesses = $state([]);
+  let contacts = $state([]);
   let count = $state(0);
   let page = $state(1);
   let loading = $state(true);
   let error = $state(null);
 
-  async function loadBusinesses() {
+  async function loadContacts() {
     loading = true;
     error = null;
     try {
-      const data = await api.get(`/api/businesses/?page=${page}`);
-      businesses = data.results;
+      const data = await api.get(`/api/contacts/?page=${page}`);
+      contacts = data.results;
       count = data.count;
     } catch (e) {
       error = e.message;
@@ -23,26 +23,26 @@
     }
   }
 
-  function handleSelect(business) {
-    push(`/businesses/${business.business_id}`);
+  function handleSelect(contact) {
+    push(`/contacts/${contact.contact_id}`);
   }
 
   $effect(() => {
     void page;
-    loadBusinesses();
+    loadContacts();
   });
 </script>
 
-<h2>Businesses ({count})</h2>
+<h2>Contacts ({count})</h2>
 
-<p><a href="#/businesses/new">New Business</a></p>
+<p><a href="#/contacts/new">New Contact</a></p>
 
 {#if loading}
   <p>Loading...</p>
 {:else if error}
   <p>Error: {error}</p>
 {:else}
-  <BusinessList {businesses} onSelect={handleSelect} />
+  <ContactList {contacts} onSelect={handleSelect} />
 
   {#if count > 25}
     <p>

@@ -2,6 +2,12 @@ from rest_framework import serializers
 from apps.jobs.models import Job
 
 
+class JobSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Job
+        fields = ['job_id', 'job_number', 'name', 'status']
+
+
 class JobSerializer(serializers.ModelSerializer):
     class Meta:
         model = Job
