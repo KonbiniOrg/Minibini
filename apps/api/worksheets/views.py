@@ -22,6 +22,13 @@ class EstWorksheetViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.Model
         'revise': {'service': WorksheetService.revise_worksheet},
     }
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        job = self.request.query_params.get('job')
+        if job:
+            qs = qs.filter(job_id=job)
+        return qs
+
     def perform_create(self, serializer):
         data = serializer.validated_data
         job = data.get('job')

@@ -6,20 +6,20 @@ Svelte 5 SPA that consumes the Django REST API.
 
 ```
 frontend/
-├── shared/          # Reusable components and API client (shared across all variants)
-│   ├── lib/         # API client, utilities
-│   ├── components/  # Shared Svelte components
-│   └── stores/      # Shared state (if needed)
-├── full/            # "Full" frontend variant
-│   ├── src/         # App source (routes, layout, CSS)
-│   ├── index.html   # Entry point
-│   ├── package.json # Dependencies
-│   └── vite.config.js
-├── mobile/          # Future: mobile-optimized variant
-└── lite/            # Future: lightweight variant
+├── src/
+│   ├── lib/              # API client, utilities
+│   ├── stores/           # Shared state (viewMode, etc.)
+│   ├── components/       # Reusable components
+│   ├── routes/           # Page-level components (routing, wiring)
+│   ├── css/              # Global styles
+│   ├── App.svelte        # Root: nav + router outlet
+│   └── main.js           # Entry point
+├── index.html
+├── package.json
+└── vite.config.js
 ```
 
-Each variant is its own Vite project with its own `package.json`. They import shared code from `../shared/` via a Vite alias (`$shared`).
+Flat structure with relative imports, no aliases. `components/` holds reusable pieces, `routes/` holds page-level wiring. Content density (full vs lite) is handled by a runtime view mode toggle, not separate builds. See `docs/plans/2026-03-13-view-mode-design.md`.
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ Each variant is its own Vite project with its own `package.json`. They import sh
 ## Setup
 
 ```bash
-cd frontend/full
+cd frontend
 npm install
 ```
 
@@ -37,20 +37,20 @@ npm install
 Start the Vite dev server:
 
 ```bash
-cd frontend/full
+cd frontend
 npx vite
 ```
 
-This runs on http://localhost:9000 and proxies `/api/*` requests to Django on http://localhost:8000. You need Django running separately (`python manage.py runserver`).
+This runs on http://localhost:9000 and proxies `/api/*` requests to Django on http://localhost:8000. You need Django running separately (`python manage.py runserver`), or use `./dev.sh` from the project root to start both.
 
 ## Build
 
 ```bash
-cd frontend/full
+cd frontend
 npx vite build
 ```
 
-Output goes to `frontend/full/dist/`. In production, nginx serves these files directly.
+Output goes to `frontend/dist/`. In production, nginx serves these files directly.
 
 ## Design Decisions
 
@@ -60,22 +60,41 @@ Output goes to `frontend/full/dist/`. In production, nginx serves these files di
 - Error responses return JSON with a `detail` field and an appropriate 4xx status code.
 - Successful delete responses may return a `message` field with a human-readable confirmation (e.g., `{"message": "\"Acme Corp\" has been deleted. 2 contact(s) were disassociated."}`).
 
-### Serializers
+### Serializer Tiers
 
-- Nested read-only serializers are used to include related object data in responses (e.g., `BusinessSerializer` includes a full `ContactSerializer` for `default_contact`).
-- Use summary serializers (e.g., `BusinessSummarySerializer`) for nested objects that don't need full detail, to avoid excessive nesting depth.
+Each model has up to three serializer tiers, used in different contexts:
+
+| Tier | Naming | Used when | Example fields |
+|---|---|---|---|
+| **Summary** | `FooSummarySerializer` | Nested inside other objects as supporting data | id, name, status |
+| **Standard** | `FooSerializer` | List views, create, update | All own fields + summary-level nested objects |
+| **Detail** | `FooDetailSerializer` | Retrieve (detail view) — the object is the main focus | All standard fields + related object lists |
+
+The ViewSet switches serializers based on the action:
+
+```python
+def get_serializer_class(self):
+    if self.action == 'retrieve':
+        return FooDetailSerializer
+    return FooSerializer
+```
+
+Key rules:
+- **Detail serializers** include related object lists (e.g., `BusinessDetailSerializer` includes contacts and jobs). These use summary serializers for the nested objects to avoid deep nesting.
+- **Standard serializers** include key FKs as nested summary objects for display (e.g., `ContactSerializer` includes `BusinessSummarySerializer` for the contact's business) but not reverse relation lists.
+- **Summary serializers** include only what's needed to identify and link to the object (id, name/title, maybe status).
 - Write-only `PrimaryKeyRelatedField` fields (e.g., `business_id`) are added alongside read-only nested serializers to accept foreign key IDs on create/update.
 
 ### Error Handling
 
-- The API client (`shared/lib/api.js`) checks `content-type` before parsing JSON to guard against HTML error pages from Django.
+- The API client (`src/lib/api.js`) checks `content-type` before parsing JSON to guard against HTML error pages from Django.
 - Action errors (delete failures, validation errors) display in an overlay on top of the current page, preserving the content underneath.
 - Load errors (page/object not found) replace the page content.
 - Views catch `ProtectedError`, `ValidationError`, and `ServiceError` from services, returning user-friendly messages.
 
 ### CSS
 
-- Global styles live in `frontend/full/src/css/app.css`, imported via `main.js`.
+- Global styles live in `frontend/src/css/app.css`, imported via `main.js`.
 - No CSS frameworks. Semantic HTML with minimal global styles.
 - Error overlays (`.error-overlay`) have a red border; success overlays (`.success-overlay`) have a green border. Both share the same layout pattern.
 
@@ -83,6 +102,14 @@ Output goes to `frontend/full/dist/`. In production, nginx serves these files di
 
 - Hash-based routing (`#/path`). All internal links use the `#/` prefix.
 - The `svelte-spa-router` library handles client-side navigation.
+
+### View Mode (Full / Lite)
+
+- A `viewMode` Svelte store (`'full'` or `'lite'`) controls content density at runtime.
+- Defaults to `'lite'`, persisted in `localStorage`. (Server-side user preference planned.)
+- Components use a `<FullOnly>` wrapper to hide sections in lite mode — avoids scattering `$viewMode` checks throughout components.
+- Lite mode still fetches full data; hidden sections can be expanded inline without extra API calls.
+- Responsive layout (mobile, kiosk) is handled separately via CSS media queries, independent of view mode.
 
 ### Delete Flow
 

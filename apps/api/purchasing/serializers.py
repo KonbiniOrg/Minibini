@@ -2,6 +2,18 @@ from rest_framework import serializers
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
 
 
+class PurchaseOrderSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseOrder
+        fields = ['po_id', 'po_number', 'status', 'created_date']
+
+
+class BillSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bill
+        fields = ['bill_id', 'bill_number', 'status', 'vendor_invoice_number', 'created_date']
+
+
 class POLineItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseOrderLineItem

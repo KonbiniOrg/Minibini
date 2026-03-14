@@ -10,6 +10,13 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     serializer_class = JobSerializer
     lookup_field = 'pk'
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        contact = self.request.query_params.get('contact')
+        if contact:
+            qs = qs.filter(contact_id=contact)
+        return qs
+
     status_actions = {
         'complete': {'service': lambda pk: JobService.update_job(pk, status='completed')},
         'cancel': {
