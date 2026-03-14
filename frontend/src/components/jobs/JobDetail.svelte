@@ -1,0 +1,204 @@
+<script>
+  import FullOnly from '../FullOnly.svelte';
+  import { viewMode } from '../../stores/viewMode.js';
+
+  const {
+    job,
+    contact = null,
+    estimates = null,
+    worksheets = null,
+    workOrders = null,
+    invoices = null,
+  } = $props();
+
+  const terminalInvoiceStatuses = ['paid', 'cancelled', 'defaulted', 'superseded'];
+
+  let visibleEstimates = $derived(
+    estimates?.results
+      ? $viewMode === 'full'
+        ? estimates.results
+        : (() => {
+            const accepted = estimates.results.filter(e => e.status === 'accepted');
+            if (accepted.length > 0) return accepted;
+            return estimates.results.length > 0 ? [estimates.results[0]] : [];
+          })()
+      : []
+  );
+
+  let visibleWorksheets = $derived(
+    worksheets?.results
+      ? $viewMode === 'full'
+        ? worksheets.results
+        : estimates?.results?.length > 0
+          ? []
+          : worksheets.results.filter(w => w.status !== 'superseded')
+      : []
+  );
+
+  let visibleWorkOrders = $derived(
+    workOrders?.results
+      ? $viewMode === 'full'
+        ? workOrders.results
+        : workOrders.results
+      : []
+  );
+
+  let visibleInvoices = $derived(
+    invoices?.results
+      ? $viewMode === 'full'
+        ? invoices.results
+        : invoices.results.filter(i => !terminalInvoiceStatuses.includes(i.status))
+      : []
+  );
+
+  let showWorksheetSection = $derived(
+    $viewMode === 'full' || (visibleWorksheets.length > 0)
+  );
+
+  let showWorkOrderSection = $derived(
+    $viewMode === 'full' || (visibleWorkOrders.length > 0)
+  );
+
+  let showEstimateSection = $derived(
+    $viewMode === 'full' || (visibleEstimates.length > 0)
+  );
+
+  let showInvoiceSection = $derived(
+    $viewMode === 'full' || (visibleInvoices.length > 0)
+  );
+</script>
+
+<dl>
+  <dt>Job Number</dt>
+  <dd>{job.job_number}</dd>
+
+  <dt>Name</dt>
+  <dd>{job.name}</dd>
+
+  <dt>Status</dt>
+  <dd>{job.status}</dd>
+
+  {#if job.customer_po_number}
+    <dt>Customer PO</dt>
+    <dd>{job.customer_po_number}</dd>
+  {/if}
+
+  {#if job.description}
+    <dt>Description</dt>
+    <dd>{job.description}</dd>
+  {/if}
+
+  <dt>Created Date</dt>
+  <dd>{job.created_date}</dd>
+
+  {#if job.start_date}
+    <dt>Start Date</dt>
+    <dd>{job.start_date}</dd>
+  {/if}
+
+  {#if job.due_date}
+    <dt>Due Date</dt>
+    <dd>{job.due_date}</dd>
+  {/if}
+</dl>
+
+<h3>Contact</h3>
+{#if contact}
+  <p>
+    <a href="#/contacts/{contact.contact_id}">{contact.name}</a>
+    {#if contact.business}
+      (<a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>)
+    {/if}
+  </p>
+{:else}
+  <p>No contact.</p>
+{/if}
+
+{#if showEstimateSection}
+  <h3>Estimates</h3>
+  {#if visibleEstimates.length > 0}
+    <table border="1">
+      <thead>
+        <tr><th>Estimate #</th><th>Version</th><th>Status</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {#each visibleEstimates as estimate}
+          <tr>
+            <td>{estimate.estimate_number}</td>
+            <td>{estimate.version}</td>
+            <td>{estimate.status}</td>
+            <td>{estimate.created_date}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p>No estimates.</p>
+  {/if}
+{/if}
+
+{#if showWorksheetSection}
+  <h3>Est Worksheets</h3>
+  {#if visibleWorksheets.length > 0}
+    <table border="1">
+      <thead>
+        <tr><th>Worksheet ID</th><th>Status</th><th>Version</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {#each visibleWorksheets as ws}
+          <tr>
+            <td>{ws.est_worksheet_id}</td>
+            <td>{ws.status}</td>
+            <td>{ws.version}</td>
+            <td>{ws.created_date}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p>No est worksheets.</p>
+  {/if}
+{/if}
+
+{#if showWorkOrderSection}
+  <h3>Work Orders</h3>
+  {#if visibleWorkOrders.length > 0}
+    <table border="1">
+      <thead>
+        <tr><th>Work Order ID</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {#each visibleWorkOrders as wo}
+          <tr>
+            <td>{wo.work_order_id}</td>
+            <td>{wo.status}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p>No work orders.</p>
+  {/if}
+{/if}
+
+{#if showInvoiceSection}
+  <h3>Invoices</h3>
+  {#if visibleInvoices.length > 0}
+    <table border="1">
+      <thead>
+        <tr><th>Invoice #</th><th>Status</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {#each visibleInvoices as invoice}
+          <tr>
+            <td>{invoice.invoice_number}</td>
+            <td>{invoice.status}</td>
+            <td>{invoice.created_date}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p>No {$viewMode === 'lite' ? 'active ' : ''}invoices.</p>
+  {/if}
+{/if}
