@@ -9,6 +9,8 @@
   import BusinessListPage from './routes/contacts/BusinessListPage.svelte';
   import BusinessDetailPage from './routes/contacts/BusinessDetailPage.svelte';
   import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
+  import JobListPage from './routes/jobs/JobListPage.svelte';
+  import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
 
   const routes = {
     '/': Home,
@@ -20,6 +22,8 @@
     '/businesses/new': BusinessFormPage,
     '/businesses/:id/edit': BusinessFormPage,
     '/businesses/:id': BusinessDetailPage,
+    '/jobs': JobListPage,
+    '/jobs/:id': JobDetailPage,
   };
 </script>
 
