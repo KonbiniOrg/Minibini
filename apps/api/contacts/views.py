@@ -1,11 +1,14 @@
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.db.models.deletion import ProtectedError
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.contacts.services import ContactService
+from apps.core.models import HistoryEntry
 from apps.core.services import ServiceError, NotFoundError
+from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import ContactSerializer, ContactDetailSerializer, BusinessSerializer, BusinessDetailSerializer, PaymentTermsSerializer
 
 
@@ -64,6 +67,19 @@ class ContactViewSet(viewsets.ModelViewSet):
         return Response({
             'message': f'"{contact}" has been deleted.',
         })
+
+    @action(detail=True, methods=['get'], url_path='history', url_name='history')
+    def history(self, request, pk=None):
+        contact = self.get_object()
+        entries = HistoryEntry.objects.filter(
+            object_type='contact', object_id=contact.pk
+        ).select_related('user')
+        page = self.paginate_queryset(entries)
+        if page is not None:
+            serializer = HistoryEntrySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = HistoryEntrySerializer(entries, many=True)
+        return Response(serializer.data)
 
 
 class BusinessViewSet(viewsets.ModelViewSet):
@@ -142,6 +158,21 @@ class BusinessViewSet(viewsets.ModelViewSet):
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         business = self.get_object()
         return Response(BusinessSerializer(business).data)
+
+    @action(detail=True, methods=['get'], url_path='history', url_name='history')
+    def history(self, request, pk=None):
+        business = self.get_object()
+        contact_ids = list(Contact.objects.filter(business=business).values_list('pk', flat=True))
+        q = Q(object_type='business', object_id=business.pk)
+        if contact_ids:
+            q |= Q(object_type='contact', object_id__in=contact_ids)
+        entries = HistoryEntry.objects.filter(q).select_related('user')
+        page = self.paginate_queryset(entries)
+        if page is not None:
+            serializer = HistoryEntrySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = HistoryEntrySerializer(entries, many=True)
+        return Response(serializer.data)
 
 
 class PaymentTermsViewSet(viewsets.ReadOnlyModelViewSet):
