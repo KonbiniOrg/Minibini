@@ -1,0 +1,67 @@
+from django.test import TestCase
+from apps.core.models import HistoryEntry, User
+
+
+class HistoryEntryModelTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='testuser', password='testpass')
+
+    def test_create_audit_entry(self):
+        entry = HistoryEntry.objects.create(
+            entry_type='audit',
+            object_type='estimate',
+            object_id=1,
+            user=self.user,
+            changes={'status': {'old': 'draft', 'new': 'open'}},
+        )
+        self.assertEqual(entry.entry_type, 'audit')
+        self.assertEqual(entry.object_type, 'estimate')
+        self.assertEqual(entry.object_id, 1)
+        self.assertEqual(entry.user, self.user)
+        self.assertIsNotNone(entry.timestamp)
+        self.assertEqual(entry.changes['status']['old'], 'draft')
+        self.assertEqual(entry.text, '')
+
+    def test_create_action_entry_with_reason(self):
+        entry = HistoryEntry.objects.create(
+            entry_type='action',
+            object_type='job',
+            object_id=1,
+            user=None,
+            changes={'status': {'old': 'submitted', 'new': 'approved'}},
+            text='Estimate EST-2025-0001 accepted',
+        )
+        self.assertEqual(entry.entry_type, 'action')
+        self.assertEqual(entry.text, 'Estimate EST-2025-0001 accepted')
+        self.assertIsNone(entry.user)
+
+    def test_create_note_entry(self):
+        entry = HistoryEntry.objects.create(
+            entry_type='note',
+            object_type='job',
+            object_id=1,
+            user=self.user,
+            text='Customer called to confirm delivery date.',
+        )
+        self.assertEqual(entry.entry_type, 'note')
+        self.assertIsNone(entry.changes)
+        self.assertEqual(entry.text, 'Customer called to confirm delivery date.')
+
+    def test_ordering_newest_first(self):
+        e1 = HistoryEntry.objects.create(
+            entry_type='audit', object_type='job', object_id=1,
+            changes={'name': {'old': 'A', 'new': 'B'}},
+        )
+        e2 = HistoryEntry.objects.create(
+            entry_type='note', object_type='job', object_id=1,
+            text='A note',
+        )
+        entries = list(HistoryEntry.objects.all())
+        self.assertEqual(entries[0].pk, e2.pk)
+        self.assertEqual(entries[1].pk, e1.pk)
+
+    def test_entry_type_choices(self):
+        valid_types = ['audit', 'action', 'note']
+        for t in valid_types:
+            entry = HistoryEntry(entry_type=t, object_type='job', object_id=1)
+            entry.full_clean()  # should not raise
