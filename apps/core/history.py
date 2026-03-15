@@ -69,7 +69,7 @@ def _compute_diff(instance):
         # New object — record all non-empty fields as old=None -> new=value
         for attname in fields:
             new_val = getattr(instance, attname)
-            if new_val is not None and new_val != '' and new_val != 0:
+            if new_val is not None and new_val != '':
                 changes[attname] = {'old': None, 'new': _serialize_value(new_val)}
     else:
         for attname, old_val in original.items():
