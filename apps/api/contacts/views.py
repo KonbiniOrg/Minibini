@@ -114,12 +114,11 @@ class BusinessViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         data = serializer.validated_data
         default_contact = data.pop('default_contact', None)
-        if default_contact and hasattr(default_contact, 'pk'):
-            default_contact = default_contact.pk
-        contacts_data = []
         if default_contact:
-            contacts_data = [{'contact_pk': default_contact}]
-        business = ContactService.create_business(contacts_data=contacts_data, **data)
+            contact_pk = default_contact.pk if hasattr(default_contact, 'pk') else default_contact
+            business = ContactService.create_business_for_contact(contact_pk, **data)
+        else:
+            raise ServiceError('default_contact_id is required when creating a business')
         serializer.instance = business
 
     def perform_update(self, serializer):

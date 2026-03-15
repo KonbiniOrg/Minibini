@@ -49,5 +49,6 @@ class HistoryMiddleware:
                 object_type=entry_data['object_type'],
                 object_id=object_id,
                 changes=entry_data['changes'],
+                text=entry_data.get('text', ''),
                 user=user,
             )

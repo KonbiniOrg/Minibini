@@ -8,19 +8,13 @@
 
   let business = $state(null);
   let paymentTerms = $state([]);
-  let contacts = $state([]);
   let loading = $state(true);
   let errors = $state(null);
 
   async function load() {
     loading = true;
     try {
-      const [termsData, contactsData] = await Promise.all([
-        api.get('/api/payment-terms/'),
-        api.get('/api/contacts/?page_size=100'),
-      ]);
-      paymentTerms = termsData;
-      contacts = contactsData.results;
+      paymentTerms = await api.get('/api/payment-terms/');
 
       if (isEdit) {
         business = await api.get(`/api/businesses/${params.id}/`);
@@ -39,6 +33,12 @@
         await api.patch(`/api/businesses/${params.id}/`, data);
         push(`/businesses/${params.id}`);
       } else {
+        const contactData = data._contact;
+        delete data._contact;
+        // Create the contact first
+        const contact = await api.post('/api/contacts/', contactData);
+        // Then create the business with default_contact_id
+        data.default_contact_id = contact.contact_id;
         const created = await api.post('/api/businesses/', data);
         push(`/businesses/${created.business_id}`);
       }
@@ -69,7 +69,6 @@
   <BusinessForm
     {business}
     {paymentTerms}
-    {contacts}
     {errors}
     onSubmit={handleSubmit}
     onCancel={handleCancel}

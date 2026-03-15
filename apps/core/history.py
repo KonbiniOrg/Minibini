@@ -67,11 +67,8 @@ def _compute_diff(instance):
 
     changes = {}
     if original is None:
-        # New object — record all non-empty fields as old=None -> new=value
-        for attname in fields:
-            new_val = getattr(instance, attname)
-            if new_val is not None and new_val != '':
-                changes[attname] = {'old': None, 'new': _serialize_value(new_val)}
+        # New object — just mark as created, no field-level diff
+        return None
     else:
         for attname, old_val in original.items():
             if attname not in fields:
@@ -90,9 +87,12 @@ def _on_pre_save(sender, instance, **kwargs):
     if not getattr(sender, '_history_tracked', False):
         return
 
+    is_new = not bool(instance.pk)
     changes = _compute_diff(instance)
-    if not changes:
-        return
+    if changes is None and not is_new:
+        return  # no changes on an existing object
+    if not changes and not is_new:
+        return  # empty diff on an existing object
 
     ctx = get_history_context()
     entry_data = {
@@ -100,8 +100,9 @@ def _on_pre_save(sender, instance, **kwargs):
         'object_type': _get_object_type(sender),
         'object_id': instance.pk,  # may be None for new objects
         'changes': changes,
+        'text': 'created' if is_new else '',
         '_instance': instance,  # reference to get pk after save
-        '_is_new': not bool(instance.pk),
+        '_is_new': is_new,
     }
 
     if ctx is not None:
@@ -115,6 +116,7 @@ def _on_pre_save(sender, instance, **kwargs):
                 object_type=entry_data['object_type'],
                 object_id=instance.pk,
                 changes=changes,
+                text=entry_data.get('text', ''),
                 user=None,
             )
         else:
@@ -135,6 +137,7 @@ def _on_post_save(sender, instance, created, **kwargs):
             object_type=pending['object_type'],
             object_id=instance.pk,
             changes=pending['changes'],
+            text=pending.get('text', ''),
             user=None,
         )
         del instance._history_pending_create

@@ -125,7 +125,7 @@
     <tbody>
       {#each visibleJobs as job}
         <tr>
-          <td>{job.job_number}</td>
+          <td><a href="#/jobs/{job.job_id}">{job.job_number}</a></td>
           <td>{job.name}</td>
           <td>{job.status}</td>
         </tr>
@@ -145,7 +145,7 @@
     <tbody>
       {#each visiblePOs as po}
         <tr>
-          <td>{po.po_number}</td>
+          <td><a href="#/purchase-orders/{po.po_id}">{po.po_number}</a></td>
           <td>{po.status}</td>
         </tr>
       {/each}
@@ -175,7 +175,7 @@
     <tbody>
       {#each visibleBills as bill}
         <tr>
-          <td>{bill.bill_number}</td>
+          <td><a href="#/bills/{bill.bill_id}">{bill.bill_number}</a></td>
           <td>{bill.vendor_invoice_number}</td>
           <td>{bill.status}</td>
         </tr>

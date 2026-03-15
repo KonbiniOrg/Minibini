@@ -26,8 +26,6 @@
     '/jobs/:id': JobDetailPage,
   };
 </script>
-
-<h1>Minibini</h1>
 <Nav />
 <Router {routes} />
 <hr>

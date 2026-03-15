@@ -81,9 +81,8 @@ class HistoryMiddlewareAPITest(BaseTestCase):
         self.assertEqual(entries.count(), 1)
         entry = entries.first()
         self.assertEqual(entry.entry_type, 'audit')
-        self.assertIn('first_name', entry.changes)
-        self.assertEqual(entry.changes['first_name']['old'], None)
-        self.assertEqual(entry.changes['first_name']['new'], 'Brand')
+        self.assertIsNone(entry.changes)
+        self.assertEqual(entry.text, 'created')
 
     def test_entry_user_is_request_user(self):
         """History entries record the authenticated user from the request."""
