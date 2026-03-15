@@ -1,4 +1,4 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
@@ -72,3 +72,22 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         serializer = HistoryEntrySerializer(entries, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='notes', url_name='notes')
+    def notes(self, request, pk=None):
+        obj = self.get_object()
+        text = request.data.get('text', '').strip()
+        if not text:
+            return Response(
+                {'text': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        entry = HistoryEntry.objects.create(
+            entry_type='note',
+            object_type='job',
+            object_id=obj.pk,
+            user=request.user,
+            text=text,
+        )
+        serializer = HistoryEntrySerializer(entry)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
