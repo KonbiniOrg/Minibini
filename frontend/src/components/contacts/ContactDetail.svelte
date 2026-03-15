@@ -6,11 +6,15 @@
     contact,
     purchaseOrders = null,
     bills = null,
+    history = null,
     onEdit = null,
     onDelete = null,
     onPOPageChange = null,
     onBillPageChange = null,
+    onAddNote = null,
   } = $props();
+
+  let noteText = $state('');
 
   const closedJobStatuses = ['completed', 'cancelled'];
   const closedPOStatuses = ['received_in_full', 'cancelled'];
@@ -39,6 +43,20 @@
         : bills.results.filter(b => !closedBillStatuses.includes(b.status))
       : []
   );
+
+  let visibleHistory = $derived(
+    history?.results
+      ? $viewMode === 'full'
+        ? history.results
+        : history.results.filter(h => h.entry_type === 'note')
+      : []
+  );
+
+  async function submitNote() {
+    if (!noteText.trim() || !onAddNote) return;
+    await onAddNote(noteText.trim());
+    noteText = '';
+  }
 
 </script>
 
@@ -197,6 +215,39 @@
   {/if}
 {:else}
   <p>No {$viewMode === 'lite' ? 'open ' : ''}bills.</p>
+{/if}
+
+<h3>History</h3>
+{#if onAddNote}
+  <p>
+    <textarea bind:value={noteText} rows="2" placeholder="Add a note..."></textarea><br>
+    <button onclick={submitNote} disabled={!noteText.trim()}>Add Note</button>
+  </p>
+{/if}
+{#if visibleHistory.length > 0}
+  {#each visibleHistory as entry}
+    {#if entry.entry_type === 'note'}
+      <p>
+        <strong>{entry.username || 'Unknown'}</strong>
+        ({new Date(entry.timestamp).toLocaleString()}):<br>
+        {entry.text}
+      </p>
+    {:else}
+      <p><small>
+        <strong>{entry.username || 'System'}</strong>
+        ({new Date(entry.timestamp).toLocaleString()})
+        [{entry.entry_type}] {entry.object_type}
+        {#if entry.changes}
+          — {Object.entries(entry.changes).map(([k, v]) => `${k}: ${v.old} → ${v.new}`).join(', ')}
+        {/if}
+        {#if entry.text}
+          — {entry.text}
+        {/if}
+      </small></p>
+    {/if}
+  {/each}
+{:else}
+  <p>No {$viewMode === 'lite' ? 'notes' : 'history'}.</p>
 {/if}
 
 <p>
