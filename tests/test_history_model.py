@@ -1,5 +1,6 @@
 from django.test import TestCase
 from apps.core.models import HistoryEntry, User
+from tests.base import BaseTestCase
 
 
 class HistoryEntryModelTest(TestCase):
@@ -65,3 +66,11 @@ class HistoryEntryModelTest(TestCase):
         for t in valid_types:
             entry = HistoryEntry(entry_type=t, object_type='job', object_id=1)
             entry.full_clean()  # should not raise
+
+
+class SystemUserTest(BaseTestCase):
+    def test_system_user_exists(self):
+        system = User.objects.get(username='system')
+        self.assertTrue(system.is_active)
+        self.assertFalse(system.is_superuser)
+        self.assertFalse(system.is_staff)
