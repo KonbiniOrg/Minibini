@@ -544,6 +544,470 @@ info "Job: $JOB4_NUM (id=$JOB4_ID) — draft, no work yet"
 post "/api/businesses/$BIZ2_ID/notes/" '{"text":"Good local client. Tomoko handles project decisions, Ray handles facilities and logistics."}' > /dev/null
 info "Added note to Bayside Brewing"
 
+# ═══════════════════════════════════════════════
+# SCENARIO 4: Cascade Event Rentals — 3 jobs at various stages
+# ═══════════════════════════════════════════════
+
+log "Creating contacts at Cascade Event Rentals..."
+
+CONTACT6_RESP=$(post "/api/contacts/" '{
+    "first_name": "Priya",
+    "last_name": "Sharma",
+    "email": "psharma@cascaderentals.example.com",
+    "work_number": "503-555-0420",
+    "mobile_number": "503-555-0429",
+    "addr1": "1800 NW Industrial Way",
+    "city": "Portland",
+    "municipality": "OR",
+    "postal_code": "97209",
+    "country_code": "US"
+}')
+CONTACT6_ID=$(echo "$CONTACT6_RESP" | jval "contact_id")
+info "Contact: Priya Sharma (id=$CONTACT6_ID)"
+
+BIZ3_RESP=$(post "/api/businesses/" '{
+    "business_name": "Cascade Event Rentals",
+    "business_address": "1800 NW Industrial Way, Portland OR 97209",
+    "business_phone": "503-555-0400",
+    "website": "https://cascaderentals.example.com",
+    "default_contact_id": '"$CONTACT6_ID"'
+}')
+BIZ3_ID=$(echo "$BIZ3_RESP" | jval "business_id")
+info "Business: Cascade Event Rentals (id=$BIZ3_ID)"
+
+CONTACT7_RESP=$(post "/api/contacts/" '{
+    "first_name": "Ben",
+    "last_name": "Nakamura",
+    "email": "bnakamura@cascaderentals.example.com",
+    "work_number": "503-555-0421",
+    "addr1": "1800 NW Industrial Way",
+    "city": "Portland",
+    "municipality": "OR",
+    "postal_code": "97209",
+    "country_code": "US",
+    "business_id": '"$BIZ3_ID"'
+}')
+CONTACT7_ID=$(echo "$CONTACT7_RESP" | jval "contact_id")
+info "Contact: Ben Nakamura (id=$CONTACT7_ID)"
+
+post "/api/businesses/$BIZ3_ID/notes/" '{"text":"Event rental company. Priya manages client projects, Ben runs the warehouse. They rent furniture and decor for weddings and corporate events."}' > /dev/null
+
+# --- Job 5: DRAFT — worksheet + estimate, nothing sent yet ---
+log "Creating draft job with worksheet and estimate (Ben)..."
+JOB5_RESP=$(post "/api/jobs/" '{
+    "name": "Storage rack system for rental inventory",
+    "contact": '"$CONTACT7_ID"',
+    "description": "Heavy-duty wooden storage racks for warehouse. 4 units, each 8ft tall x 6ft wide x 3ft deep, with adjustable shelf heights. Must hold stacked chairs and folding tables."
+}')
+JOB5_ID=$(echo "$JOB5_RESP" | jval "job_id")
+JOB5_NUM=$(echo "$JOB5_RESP" | jval "job_number")
+info "Job: $JOB5_NUM (id=$JOB5_ID) — draft"
+
+post "/api/jobs/$JOB5_ID/notes/" '{"text":"Ben wants these ASAP but budget is tight. Discussed using construction-grade lumber to keep costs down. Needs to hold 500lbs per shelf."}' > /dev/null
+
+WS5_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB5_ID"'}')
+WS5_ID=$(echo "$WS5_RESP" | jval "est_worksheet_id")
+post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Design","description":"Layout and cut list for 4 rack units","units":"hours","rate":"100.00","est_qty":"4","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Cut lumber","description":"Cut all framing and shelf pieces","units":"hours","rate":"85.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Assemble racks","description":"Assemble 4 rack units with lag bolts","units":"hours","rate":"85.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Delivery","description":"Deliver to warehouse and position","units":"hours","rate":"85.00","est_qty":"2","line_item_type":'"$LIT_DLV"'}' > /dev/null
+info "Worksheet with 4 tasks"
+
+EST5_GEN_RESP=$(post "/api/est-worksheets/$WS5_ID/generate-estimate/")
+EST5_ID=$(echo "$EST5_GEN_RESP" | jval "estimate_id")
+EST5_NUM=$(echo "$EST5_GEN_RESP" | jval "estimate_number")
+info "Estimate $EST5_NUM generated (still draft) — job $JOB5_NUM stays draft"
+
+# --- Job 6: SUBMITTED — estimate sent, worksheet frozen ---
+log "Creating submitted job with sent estimate (Priya)..."
+JOB6_RESP=$(post "/api/jobs/" '{
+    "name": "Portable bar units (set of 4)",
+    "contact": '"$CONTACT6_ID"',
+    "customer_po_number": "CER-2026-031",
+    "description": "4 portable bar units for event rental fleet. Each 5ft wide, 42in high, fold-flat for transport. Plywood construction with laminate top and brass foot rail."
+}')
+JOB6_ID=$(echo "$JOB6_RESP" | jval "job_id")
+JOB6_NUM=$(echo "$JOB6_RESP" | jval "job_number")
+info "Job: $JOB6_NUM (id=$JOB6_ID)"
+
+post "/api/jobs/$JOB6_ID/notes/" '{"text":"Priya needs these before wedding season starts in June. Wants them to look upscale but be durable enough for weekly rentals. Showed photos of bars at a recent gala."}' > /dev/null
+
+WS6_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB6_ID"'}')
+WS6_ID=$(echo "$WS6_RESP" | jval "est_worksheet_id")
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Design & prototyping","description":"Design fold-flat mechanism, build one prototype","units":"hours","rate":"150.00","est_qty":"8","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"CNC cutting","description":"Cut plywood panels for 4 units","units":"hours","rate":"85.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Edge banding & laminate","description":"Apply edge banding and laminate tops","units":"hours","rate":"75.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges, latches, foot rails, assemble","units":"hours","rate":"85.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Finishing","description":"Seal and clear coat all surfaces","units":"hours","rate":"70.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+info "Worksheet with 5 tasks"
+
+EST6_GEN_RESP=$(post "/api/est-worksheets/$WS6_ID/generate-estimate/")
+EST6_ID=$(echo "$EST6_GEN_RESP" | jval "estimate_id")
+EST6_NUM=$(echo "$EST6_GEN_RESP" | jval "estimate_number")
+post "/api/estimates/$EST6_ID/mark-open/" '{}' > /dev/null
+info "Estimate $EST6_NUM sent (open) — worksheet frozen"
+
+# Manually move job to submitted since estimate being sent doesn't auto-transition
+patch "/api/jobs/$JOB6_ID/" '{"status":"submitted"}' > /dev/null
+info "Job $JOB6_NUM marked submitted"
+
+# --- Job 7: APPROVED (in progress), WO incomplete, no deposit invoice ---
+log "Creating in-progress job with WO, some work done (Priya)..."
+JOB7_RESP=$(post "/api/jobs/" '{
+    "name": "10 folding display easels",
+    "contact": '"$CONTACT6_ID"',
+    "customer_po_number": "CER-2026-027",
+    "description": "10 large folding easels for displaying seating charts and signage at events. 5ft tall, adjustable tilt, fold flat. Oak with satin finish."
+}')
+JOB7_ID=$(echo "$JOB7_RESP" | jval "job_id")
+JOB7_NUM=$(echo "$JOB7_RESP" | jval "job_number")
+info "Job: $JOB7_NUM (id=$JOB7_ID)"
+
+post "/api/jobs/$JOB7_ID/notes/" '{"text":"Priya ordered 10 to start. If clients like them she will order 20 more. Needs a sample by end of month."}' > /dev/null
+
+WS7_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB7_ID"'}')
+WS7_ID=$(echo "$WS7_RESP" | jval "est_worksheet_id")
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Design","description":"Design folding mechanism and template for batch production","units":"hours","rate":"100.00","est_qty":"3","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Cut parts","description":"Cut all pieces for 10 easels","units":"hours","rate":"85.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Shape and sand","description":"Round edges, sand all pieces to 220 grit","units":"hours","rate":"75.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges and chain stops, assemble 10 units","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Finish","description":"Apply satin finish, 2 coats","units":"hours","rate":"70.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
+info "Worksheet with 5 tasks"
+
+EST7_GEN_RESP=$(post "/api/est-worksheets/$WS7_ID/generate-estimate/")
+EST7_ID=$(echo "$EST7_GEN_RESP" | jval "estimate_id")
+EST7_NUM=$(echo "$EST7_GEN_RESP" | jval "estimate_number")
+post "/api/estimates/$EST7_ID/mark-open/" '{}' > /dev/null
+patch "/api/estimates/$EST7_ID/" '{"status":"accepted"}' > /dev/null
+info "Estimate $EST7_NUM accepted — job auto-approved"
+
+WO7_RESP=$(post "/api/work-orders/" '{"job": '"$JOB7_ID"'}')
+WO7_ID=$(echo "$WO7_RESP" | jval "work_order_id")
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Design","description":"Design folding mechanism and template for batch production","units":"hours","rate":"100.00","est_qty":"3","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Cut parts","description":"Cut all pieces for 10 easels","units":"hours","rate":"85.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Shape and sand","description":"Round edges, sand all pieces to 220 grit","units":"hours","rate":"75.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges and chain stops, assemble 10 units","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Finish","description":"Apply satin finish, 2 coats","units":"hours","rate":"70.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
+info "Work order with 5 tasks (design and cutting done, rest in progress)"
+
+post "/api/jobs/$JOB7_ID/notes/" '{"text":"Design complete. All parts cut. Currently shaping and sanding — about halfway through the batch."}' > /dev/null
+
+# ═══════════════════════════════════════════════
+# SCENARIO 5: Pacific Crest Hospitality — approved jobs
+# ═══════════════════════════════════════════════
+
+log "Creating contact at Pacific Crest Hospitality..."
+
+CONTACT8_RESP=$(post "/api/contacts/" '{
+    "first_name": "Elena",
+    "last_name": "Vasquez",
+    "email": "evasquez@pacificcrest.example.com",
+    "work_number": "206-555-0540",
+    "mobile_number": "206-555-0549",
+    "addr1": "900 Pike St",
+    "addr2": "Floor 14",
+    "city": "Seattle",
+    "municipality": "WA",
+    "postal_code": "98101",
+    "country_code": "US"
+}')
+CONTACT8_ID=$(echo "$CONTACT8_RESP" | jval "contact_id")
+info "Contact: Elena Vasquez (id=$CONTACT8_ID)"
+
+BIZ4_RESP=$(post "/api/businesses/" '{
+    "business_name": "Pacific Crest Hospitality Group",
+    "business_address": "900 Pike St, Floor 14, Seattle WA 98101",
+    "business_phone": "206-555-0500",
+    "website": "https://pacificcrest.example.com",
+    "default_contact_id": '"$CONTACT8_ID"'
+}')
+BIZ4_ID=$(echo "$BIZ4_RESP" | jval "business_id")
+info "Business: Pacific Crest Hospitality Group (id=$BIZ4_ID)"
+
+post "/api/businesses/$BIZ4_ID/notes/" '{"text":"Hotel management group. Elena handles all FF&E procurement for renovations. Net 30 terms, always pays on time. Big potential for repeat work."}' > /dev/null
+
+# --- Job 8: APPROVED — est accepted, WO created, no invoice yet ---
+log "Creating approved job with WO, no invoice (Elena)..."
+JOB8_RESP=$(post "/api/jobs/" '{
+    "name": "Hotel lobby accent wall panels",
+    "contact": '"$CONTACT8_ID"',
+    "customer_po_number": "PCH-2026-114",
+    "description": "6 accent wall panels for lobby renovation at The Pinnacle Hotel. Slatted white oak over painted MDF backing, each panel 4ft x 8ft. Integrated LED uplighting."
+}')
+JOB8_ID=$(echo "$JOB8_RESP" | jval "job_id")
+JOB8_NUM=$(echo "$JOB8_RESP" | jval "job_number")
+info "Job: $JOB8_NUM (id=$JOB8_ID)"
+
+post "/api/jobs/$JOB8_ID/notes/" '{"text":"Elena sent architectural drawings from their designer. Panels need to match existing millwork in the elevator lobby. White oak sourced from same mill as original build."}' > /dev/null
+
+WS8_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB8_ID"'}')
+WS8_ID=$(echo "$WS8_RESP" | jval "est_worksheet_id")
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Site visit & measure","description":"Measure walls at The Pinnacle Hotel lobby","units":"hours","rate":"200.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"CAD & shop drawings","description":"Detailed drawings for 6 panels with LED routing","units":"hours","rate":"150.00","est_qty":"10","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Mill white oak slats","description":"Mill slats to 3/4 x 1-1/2 in strips, 8ft long","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Build MDF backing panels","description":"Cut and paint 6 MDF backing panels","units":"hours","rate":"75.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Assemble panels","description":"Attach slats to backing with spacing jig","units":"hours","rate":"85.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"LED integration","description":"Route channels, install LED strips and drivers","units":"hours","rate":"75.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Finish","description":"Sand and apply 3 coats satin clear","units":"hours","rate":"70.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Install on-site","description":"Transport and install at hotel, 2 person crew","units":"hours","rate":"100.00","est_qty":"8","line_item_type":'"$LIT_DLV"'}' > /dev/null
+info "Worksheet with 8 tasks"
+
+EST8_GEN_RESP=$(post "/api/est-worksheets/$WS8_ID/generate-estimate/")
+EST8_ID=$(echo "$EST8_GEN_RESP" | jval "estimate_id")
+EST8_NUM=$(echo "$EST8_GEN_RESP" | jval "estimate_number")
+post "/api/estimates/$EST8_ID/mark-open/" '{}' > /dev/null
+patch "/api/estimates/$EST8_ID/" '{"status":"accepted"}' > /dev/null
+info "Estimate $EST8_NUM accepted — job auto-approved"
+
+WO8_RESP=$(post "/api/work-orders/" '{"job": '"$JOB8_ID"'}')
+WO8_ID=$(echo "$WO8_RESP" | jval "work_order_id")
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Site visit & measure","description":"Measure walls at The Pinnacle Hotel lobby","units":"hours","rate":"200.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"CAD & shop drawings","description":"Detailed drawings for 6 panels with LED routing","units":"hours","rate":"150.00","est_qty":"10","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Mill white oak slats","description":"Mill slats to 3/4 x 1-1/2 in strips, 8ft long","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Build MDF backing panels","description":"Cut and paint 6 MDF backing panels","units":"hours","rate":"75.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Assemble panels","description":"Attach slats to backing with spacing jig","units":"hours","rate":"85.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"LED integration","description":"Route channels, install LED strips and drivers","units":"hours","rate":"75.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Finish","description":"Sand and apply 3 coats satin clear","units":"hours","rate":"70.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Install on-site","description":"Transport and install at hotel, 2 person crew","units":"hours","rate":"100.00","est_qty":"8","line_item_type":'"$LIT_DLV"'}' > /dev/null
+info "Work order with 8 tasks — approved, no invoice, not started yet"
+
+# --- Job 9: APPROVED — est accepted, WO created, deposit invoice sent ---
+log "Creating approved job with deposit invoice sent (Elena)..."
+JOB9_RESP=$(post "/api/jobs/" '{
+    "name": "Custom headboards for hotel renovation (12 units)",
+    "contact": '"$CONTACT8_ID"',
+    "customer_po_number": "PCH-2026-118",
+    "description": "12 upholstered headboards with white oak frame, king size. Integrated reading lights and USB charging. For rooms 801-812 at The Pinnacle Hotel."
+}')
+JOB9_ID=$(echo "$JOB9_RESP" | jval "job_id")
+JOB9_NUM=$(echo "$JOB9_RESP" | jval "job_number")
+info "Job: $JOB9_NUM (id=$JOB9_ID)"
+
+post "/api/jobs/$JOB9_ID/notes/" '{"text":"Elena wants these to match the lobby panels project. Same white oak, same finish. Upholstery subcontracted to her preferred vendor after we build the frames."}' > /dev/null
+
+WS9_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB9_ID"'}')
+WS9_ID=$(echo "$WS9_RESP" | jval "est_worksheet_id")
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"CAD & detailing","description":"Shop drawings for headboard frame with electrical routing","units":"hours","rate":"150.00","est_qty":"6","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Jig fabrication","description":"Build assembly jig for batch of 12","units":"hours","rate":"150.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Mill & cut","description":"Mill white oak frame pieces for 12 headboards","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Route electrical","description":"Route channels for reading lights and USB, 12 units","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Assemble frames","description":"Assemble 12 headboard frames with jig","units":"hours","rate":"85.00","est_qty":"16","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Finish","description":"Sand and finish 12 frames, satin clear","units":"hours","rate":"70.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Deliver to upholsterer","description":"Deliver finished frames to upholstery vendor","units":"-","rate":"150.00","est_qty":"1","line_item_type":'"$LIT_DLV"'}' > /dev/null
+info "Worksheet with 7 tasks"
+
+EST9_GEN_RESP=$(post "/api/est-worksheets/$WS9_ID/generate-estimate/")
+EST9_ID=$(echo "$EST9_GEN_RESP" | jval "estimate_id")
+EST9_NUM=$(echo "$EST9_GEN_RESP" | jval "estimate_number")
+post "/api/estimates/$EST9_ID/mark-open/" '{}' > /dev/null
+patch "/api/estimates/$EST9_ID/" '{"status":"accepted"}' > /dev/null
+info "Estimate $EST9_NUM accepted — job auto-approved"
+
+WO9_RESP=$(post "/api/work-orders/" '{"job": '"$JOB9_ID"'}')
+WO9_ID=$(echo "$WO9_RESP" | jval "work_order_id")
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"CAD & detailing","description":"Shop drawings for headboard frame with electrical routing","units":"hours","rate":"150.00","est_qty":"6","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Jig fabrication","description":"Build assembly jig for batch of 12","units":"hours","rate":"150.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Mill & cut","description":"Mill white oak frame pieces for 12 headboards","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Route electrical","description":"Route channels for reading lights and USB, 12 units","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Assemble frames","description":"Assemble 12 headboard frames with jig","units":"hours","rate":"85.00","est_qty":"16","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Finish","description":"Sand and finish 12 frames, satin clear","units":"hours","rate":"70.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Deliver to upholsterer","description":"Deliver finished frames to upholstery vendor","units":"-","rate":"150.00","est_qty":"1","line_item_type":'"$LIT_DLV"'}' > /dev/null
+info "Work order with 7 tasks"
+
+# Deposit invoice — 50% upfront
+INV9_RESP=$(post "/api/invoices/" '{"job": '"$JOB9_ID"'}')
+INV9_ID=$(echo "$INV9_RESP" | jval "invoice_id")
+INV9_NUM=$(echo "$INV9_RESP" | jval "invoice_number")
+post "/api/invoices/$INV9_ID/line-items/" '{"description":"Deposit — 50% of estimated project total","qty":"1","units":"lot","price":"4500.00"}' > /dev/null
+patch "/api/invoices/$INV9_ID/" '{"status":"open"}' > /dev/null
+info "Deposit invoice $INV9_NUM sent (open)"
+
+post "/api/jobs/$JOB9_ID/notes/" '{"text":"Deposit invoice sent to Elena. She said AP will process within 2 weeks. Not starting fabrication until deposit clears."}' > /dev/null
+
+# ═══════════════════════════════════════════════
+# SCENARIO 6: Solo contact — rejected job
+# ═══════════════════════════════════════════════
+
+log "Creating solo contact (James Whitfield)..."
+CONTACT9_RESP=$(post "/api/contacts/" '{
+    "first_name": "James",
+    "last_name": "Whitfield",
+    "email": "jwhitfield@example.com",
+    "mobile_number": "971-555-0612",
+    "addr1": "3422 SE Hawthorne Blvd",
+    "city": "Portland",
+    "municipality": "OR",
+    "postal_code": "97214",
+    "country_code": "US"
+}')
+CONTACT9_ID=$(echo "$CONTACT9_RESP" | jval "contact_id")
+info "Contact: James Whitfield (id=$CONTACT9_ID) — no business"
+
+# --- Job 10: REJECTED ---
+log "Creating rejected job (James)..."
+JOB10_RESP=$(post "/api/jobs/" '{
+    "name": "Backyard pergola with built-in planters",
+    "contact": '"$CONTACT9_ID"',
+    "description": "Cedar pergola, 12ft x 10ft, with integrated planter boxes at each post. Needs to support wisteria vine. Residential backyard installation."
+}')
+JOB10_ID=$(echo "$JOB10_RESP" | jval "job_id")
+JOB10_NUM=$(echo "$JOB10_RESP" | jval "job_number")
+info "Job: $JOB10_NUM (id=$JOB10_ID)"
+
+post "/api/jobs/$JOB10_ID/notes/" '{"text":"James found us through Yelp. Wants a pergola but seems surprised by custom pricing. Mentioned a Home Depot kit as an alternative."}' > /dev/null
+
+WS10_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB10_ID"'}')
+WS10_ID=$(echo "$WS10_RESP" | jval "est_worksheet_id")
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Site visit","description":"Measure backyard, check for utilities, assess ground conditions","units":"hours","rate":"200.00","est_qty":"1.5","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Design","description":"Pergola and planter design with structural calcs","units":"hours","rate":"150.00","est_qty":"4","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Cut cedar","description":"Mill and cut all cedar members","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Build planters","description":"Fabricate 4 planter boxes with drainage","units":"hours","rate":"85.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Install","description":"On-site assembly, set posts in concrete, 2 crew","units":"hours","rate":"100.00","est_qty":"12","line_item_type":'"$LIT_DLV"'}' > /dev/null
+info "Worksheet with 5 tasks"
+
+EST10_GEN_RESP=$(post "/api/est-worksheets/$WS10_ID/generate-estimate/")
+EST10_ID=$(echo "$EST10_GEN_RESP" | jval "estimate_id")
+EST10_NUM=$(echo "$EST10_GEN_RESP" | jval "estimate_number")
+post "/api/estimates/$EST10_ID/mark-open/" '{}' > /dev/null
+info "Estimate $EST10_NUM sent"
+
+# Client rejects the estimate, then we reject the job
+patch "/api/estimates/$EST10_ID/" '{"status":"rejected"}' > /dev/null
+patch "/api/jobs/$JOB10_ID/" '{"status":"rejected"}' > /dev/null
+info "Estimate rejected, job $JOB10_NUM rejected"
+
+post "/api/jobs/$JOB10_ID/notes/" '{"text":"James called back — says the estimate is way above his budget. Going to buy a kit from a big box store instead. Politely declined to negotiate."}' > /dev/null
+
+# ═══════════════════════════════════════════════
+# SCENARIO 7: Solo contact — two jobs, in-progress and completed
+# ═══════════════════════════════════════════════
+
+log "Creating solo contact (Aisha Okafor)..."
+CONTACT10_RESP=$(post "/api/contacts/" '{
+    "first_name": "Aisha",
+    "last_name": "Okafor",
+    "email": "aisha@spiceroutepdx.example.com",
+    "mobile_number": "503-555-0715",
+    "addr1": "2815 NE Alberta St",
+    "city": "Portland",
+    "municipality": "OR",
+    "postal_code": "97211",
+    "country_code": "US"
+}')
+CONTACT10_ID=$(echo "$CONTACT10_RESP" | jval "contact_id")
+info "Contact: Aisha Okafor (id=$CONTACT10_ID) — no business"
+
+post "/api/contacts/$CONTACT10_ID/notes/" '{"text":"Owns Spice Route restaurant on Alberta. Hands-on owner, very particular about design. Prefers texting over email."}' > /dev/null
+
+# --- Job 11: APPROVED — deposit paid, WO complete, ready for final invoice ---
+log "Creating in-progress job, deposit paid, WO complete (Aisha)..."
+JOB11_RESP=$(post "/api/jobs/" '{
+    "name": "Restaurant service counter with display case",
+    "contact": '"$CONTACT10_ID"',
+    "description": "L-shaped service counter, 10ft x 6ft, walnut top with steel frame. Integrated pastry display case with glass panels. Power and data at 3 POS stations."
+}')
+JOB11_ID=$(echo "$JOB11_RESP" | jval "job_id")
+JOB11_NUM=$(echo "$JOB11_RESP" | jval "job_number")
+info "Job: $JOB11_NUM (id=$JOB11_ID)"
+
+post "/api/jobs/$JOB11_ID/notes/" '{"text":"Aisha closing the restaurant for 2 weeks for renovation. Counter needs to be ready for install on day 3 of the closure. Very tight timeline."}' > /dev/null
+
+WS11_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB11_ID"'}')
+WS11_ID=$(echo "$WS11_RESP" | jval "est_worksheet_id")
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Site measure","description":"Measure restaurant, coordinate with electrician","units":"hours","rate":"200.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Design","description":"CAD drawings, steel frame shop drawings","units":"hours","rate":"150.00","est_qty":"8","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Steel frame fabrication","description":"Weld steel base frame, powder coat","units":"hours","rate":"100.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Walnut top","description":"Glue up, flatten, and shape walnut counter top","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Display case","description":"Build display case frame, install glass panels","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Finish","description":"Sand and oil walnut, final assembly","units":"hours","rate":"70.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Install","description":"Deliver, set counter, connect power, 2 person crew","units":"hours","rate":"100.00","est_qty":"6","line_item_type":'"$LIT_DLV"'}' > /dev/null
+info "Worksheet with 7 tasks"
+
+EST11_GEN_RESP=$(post "/api/est-worksheets/$WS11_ID/generate-estimate/")
+EST11_ID=$(echo "$EST11_GEN_RESP" | jval "estimate_id")
+EST11_NUM=$(echo "$EST11_GEN_RESP" | jval "estimate_number")
+post "/api/estimates/$EST11_ID/mark-open/" '{}' > /dev/null
+patch "/api/estimates/$EST11_ID/" '{"status":"accepted"}' > /dev/null
+info "Estimate $EST11_NUM accepted — job auto-approved"
+
+WO11_RESP=$(post "/api/work-orders/" '{"job": '"$JOB11_ID"'}')
+WO11_ID=$(echo "$WO11_RESP" | jval "work_order_id")
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Site measure","description":"Measure restaurant, coordinate with electrician","units":"hours","rate":"200.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Design","description":"CAD drawings, steel frame shop drawings","units":"hours","rate":"150.00","est_qty":"8","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Steel frame fabrication","description":"Weld steel base frame, powder coat","units":"hours","rate":"100.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Walnut top","description":"Glue up, flatten, and shape walnut counter top","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Display case","description":"Build display case frame, install glass panels","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Finish","description":"Sand and oil walnut, final assembly","units":"hours","rate":"70.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Install","description":"Deliver, set counter, connect power, 2 person crew","units":"hours","rate":"100.00","est_qty":"6","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/complete/" '{}' > /dev/null
+info "Work order complete — all fabrication and install done"
+
+# Deposit invoice — paid
+INV11_RESP=$(post "/api/invoices/" '{"job": '"$JOB11_ID"'}')
+INV11_ID=$(echo "$INV11_RESP" | jval "invoice_id")
+INV11_NUM=$(echo "$INV11_RESP" | jval "invoice_number")
+post "/api/invoices/$INV11_ID/line-items/" '{"description":"Deposit — 50% of project total","qty":"1","units":"lot","price":"3800.00"}' > /dev/null
+patch "/api/invoices/$INV11_ID/" '{"status":"open"}' > /dev/null
+patch "/api/invoices/$INV11_ID/" '{"status":"paid"}' > /dev/null
+info "Deposit invoice $INV11_NUM paid — ready for final invoice"
+
+post "/api/jobs/$JOB11_ID/notes/" '{"text":"All fabrication complete. Counter installed during closure week, Aisha is thrilled. Need to generate final invoice for remaining balance."}' > /dev/null
+
+# --- Job 12: COMPLETED — all done, final invoice sent ---
+log "Creating completed job with final invoice sent (Aisha)..."
+JOB12_RESP=$(post "/api/jobs/" '{
+    "name": "Spice display shelving unit",
+    "contact": '"$CONTACT10_ID"',
+    "description": "Wall-mounted spice display, 6ft wide x 4ft tall. Walnut shelves with steel brackets, matching the service counter. Backlit with warm LED strip."
+}')
+JOB12_ID=$(echo "$JOB12_RESP" | jval "job_id")
+JOB12_NUM=$(echo "$JOB12_RESP" | jval "job_number")
+info "Job: $JOB12_NUM (id=$JOB12_ID)"
+
+post "/api/jobs/$JOB12_ID/notes/" '{"text":"Follow-up project from the counter job. Aisha wants the same walnut and steel look for a spice display behind the register. Small job, quick turnaround."}' > /dev/null
+
+WS12_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB12_ID"'}')
+WS12_ID=$(echo "$WS12_RESP" | jval "est_worksheet_id")
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Design","description":"Layout and bracket design","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Cut & shape walnut","description":"Mill shelves from walnut offcuts","units":"hours","rate":"85.00","est_qty":"3","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Weld brackets","description":"Fabricate 8 steel shelf brackets","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Finish & LED","description":"Oil shelves, install LED strip on top shelf","units":"hours","rate":"70.00","est_qty":"3","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Install","description":"Mount brackets and shelves on-site","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_DLV"'}' > /dev/null
+info "Worksheet with 5 tasks"
+
+EST12_GEN_RESP=$(post "/api/est-worksheets/$WS12_ID/generate-estimate/")
+EST12_ID=$(echo "$EST12_GEN_RESP" | jval "estimate_id")
+EST12_NUM=$(echo "$EST12_GEN_RESP" | jval "estimate_number")
+post "/api/estimates/$EST12_ID/mark-open/" '{}' > /dev/null
+patch "/api/estimates/$EST12_ID/" '{"status":"accepted"}' > /dev/null
+info "Estimate $EST12_NUM accepted — job auto-approved"
+
+WO12_RESP=$(post "/api/work-orders/" '{"job": '"$JOB12_ID"'}')
+WO12_ID=$(echo "$WO12_RESP" | jval "work_order_id")
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Design","description":"Layout and bracket design","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Cut & shape walnut","description":"Mill shelves from walnut offcuts","units":"hours","rate":"85.00","est_qty":"3","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Weld brackets","description":"Fabricate 8 steel shelf brackets","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Finish & LED","description":"Oil shelves, install LED strip on top shelf","units":"hours","rate":"70.00","est_qty":"3","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Install","description":"Mount brackets and shelves on-site","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/complete/" '{}' > /dev/null
+info "Work order completed"
+
+# Final invoice
+INV12_RESP=$(post "/api/invoices/" '{"job": '"$JOB12_ID"'}')
+INV12_ID=$(echo "$INV12_RESP" | jval "invoice_id")
+INV12_NUM=$(echo "$INV12_RESP" | jval "invoice_number")
+post "/api/invoices/$INV12_ID/line-items/" '{"description":"Design — layout and bracket design","qty":"2","units":"hours","price":"100.00"}' > /dev/null
+post "/api/invoices/$INV12_ID/line-items/" '{"description":"Walnut shelves — milling and shaping","qty":"3","units":"hours","price":"85.00"}' > /dev/null
+post "/api/invoices/$INV12_ID/line-items/" '{"description":"Steel brackets — fabrication (8 pcs)","qty":"2","units":"hours","price":"100.00"}' > /dev/null
+post "/api/invoices/$INV12_ID/line-items/" '{"description":"Finishing and LED installation","qty":"3","units":"hours","price":"70.00"}' > /dev/null
+post "/api/invoices/$INV12_ID/line-items/" '{"description":"On-site installation","qty":"2","units":"hours","price":"100.00"}' > /dev/null
+patch "/api/invoices/$INV12_ID/" '{"status":"open"}' > /dev/null
+info "Final invoice $INV12_NUM sent (open)"
+
+post "/api/jobs/$JOB12_ID/complete/" '{}' > /dev/null
+post "/api/jobs/$JOB12_ID/notes/" '{"text":"Installed and looks great. Aisha posted photos on Instagram. Final invoice sent, awaiting payment."}' > /dev/null
+info "Job $JOB12_NUM completed"
+
 # ─────────────────────────────────────────────
 # Done
 # ─────────────────────────────────────────────
@@ -568,6 +1032,28 @@ echo "  Business:  Bayside Brewing Co (id=$BIZ2_ID)"
 echo "  Contacts:  Tomoko Sato (id=$CONTACT4_ID), Ray Dominguez (id=$CONTACT5_ID)"
 echo "  Job:       $JOB3_NUM (id=$JOB3_ID) — completed"
 echo "  Job:       $JOB4_NUM (id=$JOB4_ID) — draft"
+echo ""
+echo "  === Scenario 4: Cascade Event Rentals ==="
+echo "  Business:  Cascade Event Rentals (id=$BIZ3_ID)"
+echo "  Contacts:  Priya Sharma (id=$CONTACT6_ID), Ben Nakamura (id=$CONTACT7_ID)"
+echo "  Job:       $JOB5_NUM (id=$JOB5_ID) — DRAFT (worksheet + estimate, nothing sent)"
+echo "  Job:       $JOB6_NUM (id=$JOB6_ID) — SUBMITTED (estimate sent, worksheet frozen)"
+echo "  Job:       $JOB7_NUM (id=$JOB7_ID) — APPROVED (in progress, WO active, no deposit)"
+echo ""
+echo "  === Scenario 5: Pacific Crest Hospitality ==="
+echo "  Business:  Pacific Crest Hospitality Group (id=$BIZ4_ID)"
+echo "  Contact:   Elena Vasquez (id=$CONTACT8_ID)"
+echo "  Job:       $JOB8_NUM (id=$JOB8_ID) — APPROVED (est accepted, WO ready, no invoice)"
+echo "  Job:       $JOB9_NUM (id=$JOB9_ID) — APPROVED (est accepted, WO ready, deposit sent)"
+echo ""
+echo "  === Scenario 6: Solo — rejected ==="
+echo "  Contact:   James Whitfield (id=$CONTACT9_ID) — no business"
+echo "  Job:       $JOB10_NUM (id=$JOB10_ID) — REJECTED"
+echo ""
+echo "  === Scenario 7: Solo — in-progress + completed ==="
+echo "  Contact:   Aisha Okafor (id=$CONTACT10_ID) — no business"
+echo "  Job:       $JOB11_NUM (id=$JOB11_ID) — APPROVED (WO complete, deposit paid, needs final invoice)"
+echo "  Job:       $JOB12_NUM (id=$JOB12_ID) — COMPLETED (final invoice sent)"
 echo ""
 
 rm -f "$COOKIE_JAR"
