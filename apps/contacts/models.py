@@ -1,8 +1,10 @@
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator
+from apps.core.history import history
 
 
+@history(exclude=[])
 class Contact(models.Model):
     contact_id = models.AutoField(primary_key=True)
     first_name = models.CharField(max_length=100)
