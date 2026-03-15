@@ -117,6 +117,7 @@ class Contact(models.Model):
         return ""
 
 
+@history(exclude=['business_id'])
 class Business(models.Model):
     business_id = models.AutoField(primary_key=True)
     our_reference_code = models.CharField(max_length=50, blank=True, unique=True)

@@ -2,6 +2,7 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from apps.core.models import BaseLineItem
+from apps.core.history import history
 
 
 # Status choices for PurchaseOrder
@@ -24,6 +25,7 @@ BILL_STATUS_CHOICES = [
 ]
 
 
+@history(exclude=['po_id'])
 class PurchaseOrder(models.Model):
     po_id = models.AutoField(primary_key=True)
     # Business is required; Contact is optional but if provided, must have a Business
@@ -166,6 +168,7 @@ class PurchaseOrder(models.Model):
         return f"PO {self.po_number}"
 
 
+@history(exclude=['bill_id'])
 class Bill(models.Model):
     bill_id = models.AutoField(primary_key=True)
     bill_number = models.CharField(max_length=50, unique=True)

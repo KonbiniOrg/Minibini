@@ -3,8 +3,10 @@ from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from apps.core.models import AbstractWorkContainer
+from apps.core.history import history
 
 
+@history(exclude=['job_id'])
 class Job(models.Model):
     JOB_STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -108,6 +110,7 @@ class Job(models.Model):
         return f"{self.job_number}"
 
 
+@history(exclude=['work_order_id'])
 class WorkOrder(AbstractWorkContainer):
     WORK_ORDER_STATUS_CHOICES = [
         ('draft', 'Draft'),

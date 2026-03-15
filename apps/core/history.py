@@ -28,10 +28,11 @@ def _snapshot_fields(instance):
         instance._history_original = None
         return
     exclude = instance.__class__._history_exclude
+    deferred = instance.get_deferred_fields()
     instance._history_original = {
         f.attname: getattr(instance, f.attname)
         for f in instance.__class__._meta.concrete_fields
-        if f.attname not in exclude
+        if f.attname not in exclude and f.attname not in deferred
     }
 
 

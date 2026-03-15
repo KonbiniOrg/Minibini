@@ -3,8 +3,10 @@ from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from apps.core.models import BaseLineItem, AbstractWorkContainer
+from apps.core.history import history
 
 
+@history(exclude=['estimate_id'])
 class Estimate(models.Model):
     ESTIMATE_STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -189,6 +191,7 @@ class Estimate(models.Model):
         unique_together = ['estimate_number', 'version']
 
 
+@history(exclude=['est_worksheet_id'])
 class EstWorksheet(AbstractWorkContainer):
     EST_WORKSHEET_STATUS_CHOICES = [
         ('draft', 'Draft'),
