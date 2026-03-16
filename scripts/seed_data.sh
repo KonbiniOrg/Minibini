@@ -76,6 +76,22 @@ patch() {
 # Helper: extract field from JSON
 jval() { python3 -c "import sys,json; print(json.load(sys.stdin)['$1'])"; }
 
+# Helper: get task IDs from a work order as a space-separated list
+get_wo_task_ids() {
+    local wo_id="$1"
+    curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" "$BASE/api/work-orders/$wo_id/tasks/" \
+        | python3 -c "import sys,json; [print(t['task_id']) for t in json.load(sys.stdin)]"
+}
+
+# Helper: start and complete all tasks on a work order (auto-completes WO)
+complete_all_tasks() {
+    local wo_id="$1"
+    for tid in $(get_wo_task_ids "$wo_id"); do
+        post "/api/work-orders/$wo_id/tasks/$tid/start/" '{}' > /dev/null
+        post "/api/work-orders/$wo_id/tasks/$tid/complete/" '{}' > /dev/null
+    done
+}
+
 # Helper: POST form data to HTML views (for endpoints not yet in the API).
 # TODO: Replace with API calls once association endpoints are added.
 form_post() {
@@ -513,8 +529,8 @@ WO3_ID=$(echo "$WO3_RESP" | jval "work_order_id")
 post "/api/work-orders/$WO3_ID/tasks/" '{"name":"CNC setup","description":"Program and set up CNC for 3 shapes","units":"hours","rate":"150.00","est_qty":"1","line_item_type":'"$LIT_SVC"'}' > /dev/null
 post "/api/work-orders/$WO3_ID/tasks/" '{"name":"Cut aluminum","description":"Cut 3 shapes from 1/8 in aluminum sheet","units":"minutes","rate":"22.00","est_qty":"45","line_item_type":'"$LIT_PRD"'}' > /dev/null
 post "/api/work-orders/$WO3_ID/tasks/" '{"name":"Deburr and finish edges","description":"File and sand cut edges smooth","units":"hours","rate":"85.00","est_qty":"1","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO3_ID/complete/" '{}' > /dev/null
-info "Work order completed"
+complete_all_tasks "$WO3_ID"
+info "All tasks started+completed (WO auto-completed)"
 
 # Invoice and complete the job
 INV3_RESP=$(post "/api/invoices/" '{"job": '"$JOB3_ID"'}')
@@ -688,7 +704,16 @@ post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Cut parts","description":"Cut a
 post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Shape and sand","description":"Round edges, sand all pieces to 220 grit","units":"hours","rate":"75.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
 post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges and chain stops, assemble 10 units","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
 post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Finish","description":"Apply satin finish, 2 coats","units":"hours","rate":"70.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
-info "Work order with 5 tasks (design and cutting done, rest in progress)"
+info "Work order with 5 tasks"
+
+# Start and complete first 2 tasks, start 3rd (in progress)
+WO7_TIDS=($(get_wo_task_ids "$WO7_ID"))
+post "/api/work-orders/$WO7_ID/tasks/${WO7_TIDS[0]}/start/" '{}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/${WO7_TIDS[0]}/complete/" '{}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/${WO7_TIDS[1]}/start/" '{}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/${WO7_TIDS[1]}/complete/" '{}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/${WO7_TIDS[2]}/start/" '{}' > /dev/null
+info "2 tasks complete, 1 in progress, 2 pending"
 
 post "/api/jobs/$JOB7_ID/notes/" '{"text":"Design complete. All parts cut. Currently shaping and sanding — about halfway through the batch."}' > /dev/null
 
@@ -939,8 +964,8 @@ post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Walnut top","description":"Glu
 post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Display case","description":"Build display case frame, install glass panels","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
 post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Finish","description":"Sand and oil walnut, final assembly","units":"hours","rate":"70.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
 post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Install","description":"Deliver, set counter, connect power, 2 person crew","units":"hours","rate":"100.00","est_qty":"6","line_item_type":'"$LIT_DLV"'}' > /dev/null
-post "/api/work-orders/$WO11_ID/complete/" '{}' > /dev/null
-info "Work order complete — all fabrication and install done"
+complete_all_tasks "$WO11_ID"
+info "All tasks started+completed (WO auto-completed)"
 
 # Deposit invoice — paid
 INV11_RESP=$(post "/api/invoices/" '{"job": '"$JOB11_ID"'}')
@@ -989,8 +1014,8 @@ post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Cut & shape walnut","descripti
 post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Weld brackets","description":"Fabricate 8 steel shelf brackets","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_PRD"'}' > /dev/null
 post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Finish & LED","description":"Oil shelves, install LED strip on top shelf","units":"hours","rate":"70.00","est_qty":"3","line_item_type":'"$LIT_PRD"'}' > /dev/null
 post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Install","description":"Mount brackets and shelves on-site","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_DLV"'}' > /dev/null
-post "/api/work-orders/$WO12_ID/complete/" '{}' > /dev/null
-info "Work order completed"
+complete_all_tasks "$WO12_ID"
+info "All tasks started+completed (WO auto-completed)"
 
 # Final invoice
 INV12_RESP=$(post "/api/invoices/" '{"job": '"$JOB12_ID"'}')
@@ -1038,7 +1063,7 @@ echo "  Business:  Cascade Event Rentals (id=$BIZ3_ID)"
 echo "  Contacts:  Priya Sharma (id=$CONTACT6_ID), Ben Nakamura (id=$CONTACT7_ID)"
 echo "  Job:       $JOB5_NUM (id=$JOB5_ID) — DRAFT (worksheet + estimate, nothing sent)"
 echo "  Job:       $JOB6_NUM (id=$JOB6_ID) — SUBMITTED (estimate sent, worksheet frozen)"
-echo "  Job:       $JOB7_NUM (id=$JOB7_ID) — APPROVED (in progress, WO active, no deposit)"
+echo "  Job:       $JOB7_NUM (id=$JOB7_ID) — APPROVED (2 tasks complete, 1 in progress, 2 pending)"
 echo ""
 echo "  === Scenario 5: Pacific Crest Hospitality ==="
 echo "  Business:  Pacific Crest Hospitality Group (id=$BIZ4_ID)"
