@@ -47,11 +47,10 @@ New service class in `apps/jobs/services.py`. All methods wrapped in `transactio
 Transition: `pending → in_progress`
 
 1. Validate task is `pending` and belongs to a WorkOrder (not a worksheet).
-2. Validate the WorkOrder is not in `draft` status (must be at least `incomplete`).
-3. Close any open Blep the user has on any task (enforces one active task per worker).
-4. Set task status to `in_progress`.
-5. Consume all associated Materials via `InventoryService.consume_material()`.
-6. Create a Blep with `start_time=now()`, `user=user`.
+2. Close any open Blep the user has on any task (enforces one active task per worker).
+3. Set task status to `in_progress`.
+4. Consume all associated Materials via `InventoryService.consume_material()`.
+5. Create a Blep with `start_time=now()`, `user=user`.
 
 No worker conflict check here — a `pending` task cannot have open Bleps. Conflicts only arise in `start_work` on `in_progress` tasks.
 
@@ -135,7 +134,7 @@ When a task is completed or cancelled, the service checks whether all tasks on t
 
 This means in normal workflow, manual WO completion is unnecessary — the last task drives it.
 
-**Prerequisite:** `WorkOrderService.update_status()` currently has no transition validation — it accepts any status from any state. Before implementing auto-completion, add transition validation (either in the service or in `WorkOrder.clean()`) to prevent invalid transitions like `draft → complete`. This aligns with how `Job.clean()` already works.
+**Prerequisite:** `WorkOrderService.update_status()` currently has no transition validation — it accepts any status from any state. Before implementing auto-completion, add transition validation (either in the service or in `WorkOrder.clean()`) to prevent invalid transitions. This aligns with how `Job.clean()` already works.
 
 ## API Endpoints
 
@@ -143,7 +142,7 @@ Task lifecycle actions are nested actions on the existing `WorkOrderViewSet`, re
 
 Implementation: a dedicated `TaskLifecycleMixin` (similar to the existing `TaskBundleMixin`) with `@action` methods using explicit `url_path` patterns like `tasks/(?P<task_id>[0-9]+)/start`. These must not collide with the existing `TaskBundleMixin.task_detail` route which handles PATCH/DELETE at `tasks/(?P<task_id>[0-9]+)` — the trailing action segment keeps them distinct.
 
-All lifecycle actions validate that the task belongs to a WorkOrder that is not in `draft` status. Use `select_for_update()` on the Task row within the transaction to prevent TOCTOU race conditions on concurrent operations (consistent with the existing `NumberGenerationService` pattern).
+Use `select_for_update()` on the Task row within the transaction to prevent TOCTOU race conditions on concurrent operations (consistent with the existing `NumberGenerationService` pattern).
 
 ```
 POST /api/work-orders/{pk}/tasks/{task_id}/start/
@@ -172,6 +171,33 @@ Bleps are individual work sessions. A task accumulates multiple Bleps over its l
 - One worker can only have one open Blep at a time across all tasks.
 - Starting work on a new task auto-closes the worker's previous open Blep.
 - Multiple workers can have open Bleps on the same task simultaneously (the "join" option).
+
+## WorkOrder: Eliminate Draft State
+
+WorkOrders should never be in `draft` — unlike estimates, they are living documents that are always open to changes as work progresses. The `draft` state currently exists but serves no purpose (tasks can't be started on a draft WO, but there's no meaningful distinction between a draft WO and an incomplete one).
+
+**Change:** Remove `draft` from `WORK_ORDER_STATUS_CHOICES`. All WorkOrders start in `incomplete`. Update `WorkOrderService.create_direct()` and `create_from_template()` to use `status='incomplete'` (already the case for `create_from_estimate()`).
+
+Updated WorkOrder status choices:
+
+```python
+WORK_ORDER_STATUS_CHOICES = [
+    ('incomplete', 'Incomplete'),
+    ('blocked', 'Blocked'),
+    ('complete', 'Complete'),
+]
+```
+
+Valid transitions:
+
+```
+incomplete → blocked
+incomplete → complete
+blocked → incomplete
+complete → (terminal)
+```
+
+This eliminates the need for a `draft → incomplete` activation step and removes the `reopen` action's dual-purpose confusion.
 
 ## Scope of Task Status
 
