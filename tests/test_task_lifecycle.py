@@ -1,7 +1,12 @@
+from unittest.mock import patch
+
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from tests.base import BaseTestCase
-from apps.jobs.models import Task, WorkOrder
+from apps.jobs.models import Job, Task, WorkOrder, Blep
+from apps.jobs.services import TaskLifecycleService
+from apps.core.models import User
 
 
 class TaskStatusFieldTest(BaseTestCase):
@@ -175,3 +180,282 @@ class WorkOrderStatusTest(BaseTestCase):
         wo.status = 'incomplete'
         with self.assertRaises(ValidationError):
             wo.full_clean()
+
+
+class StartTaskTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status='incomplete')
+        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        self.user = User.objects.get(username='admin')
+
+    def test_start_task_changes_status(self):
+        result = TaskLifecycleService.start_task(self.task.pk, self.user)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'in_progress')
+
+    def test_start_task_creates_blep(self):
+        result = TaskLifecycleService.start_task(self.task.pk, self.user)
+        blep = result['blep']
+        self.assertIsNotNone(blep.start_time)
+        self.assertIsNone(blep.end_time)
+        self.assertEqual(blep.user, self.user)
+        self.assertEqual(blep.task, self.task)
+
+    def test_start_task_rejects_non_pending(self):
+        Task.objects.filter(pk=self.task.pk).update(status='in_progress')
+        self.task.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.start_task(self.task.pk, self.user)
+
+    def test_start_task_rejects_worksheet_task(self):
+        from apps.estimates.models import EstWorksheet
+        ws = EstWorksheet.objects.create(job=self.job)
+        ws_task = Task.objects.create(name='WS Task', est_worksheet=ws)
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.start_task(ws_task.pk, self.user)
+
+    def test_start_task_closes_users_other_open_blep(self):
+        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
+        Task.objects.filter(pk=other_task.pk).update(status='in_progress')
+        old_blep = Blep.objects.create(
+            task=other_task, user=self.user, start_time=timezone.now()
+        )
+        TaskLifecycleService.start_task(self.task.pk, self.user)
+        old_blep.refresh_from_db()
+        self.assertIsNotNone(old_blep.end_time)
+
+    @patch('apps.inventory.services.InventoryService.consume_material')
+    def test_start_task_consumes_materials(self, mock_consume):
+        from apps.inventory.models import Material
+        mat = Material.objects.create(task=self.task, description='Test Material')
+        TaskLifecycleService.start_task(self.task.pk, self.user)
+        mock_consume.assert_called_once_with(mat)
+
+
+class CompleteTaskTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status='incomplete')
+        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        self.user = User.objects.get(username='admin')
+
+    def test_complete_from_in_progress(self):
+        Task.objects.filter(pk=self.task.pk).update(status='in_progress')
+        self.task.refresh_from_db()
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'complete')
+
+    def test_complete_from_pending(self):
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'complete')
+
+    def test_complete_closes_open_bleps(self):
+        Task.objects.filter(pk=self.task.pk).update(status='in_progress')
+        self.task.refresh_from_db()
+        blep = Blep.objects.create(
+            task=self.task, user=self.user, start_time=timezone.now()
+        )
+        TaskLifecycleService.complete_task(self.task.pk)
+        blep.refresh_from_db()
+        self.assertIsNotNone(blep.end_time)
+
+    def test_complete_rejects_blocked(self):
+        Task.objects.filter(pk=self.task.pk).update(status='blocked')
+        self.task.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.complete_task(self.task.pk)
+
+    def test_complete_last_task_auto_completes_wo(self):
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.wo.refresh_from_db()
+        self.assertEqual(self.wo.status, 'complete')
+
+    def test_complete_task_does_not_auto_complete_wo_if_others_remain(self):
+        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.wo.refresh_from_db()
+        self.assertEqual(self.wo.status, 'incomplete')
+
+    def test_complete_with_cancelled_siblings_auto_completes_wo(self):
+        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
+        Task.objects.filter(pk=other_task.pk).update(status='cancelled')
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.wo.refresh_from_db()
+        self.assertEqual(self.wo.status, 'complete')
+
+
+class BlockTaskTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status='incomplete')
+        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        self.user = User.objects.get(username='admin')
+
+    def test_block_from_pending(self):
+        TaskLifecycleService.block_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'blocked')
+
+    def test_block_from_in_progress(self):
+        Task.objects.filter(pk=self.task.pk).update(status='in_progress')
+        self.task.refresh_from_db()
+        TaskLifecycleService.block_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'blocked')
+
+    def test_block_rejects_if_open_bleps(self):
+        Task.objects.filter(pk=self.task.pk).update(status='in_progress')
+        self.task.refresh_from_db()
+        Blep.objects.create(
+            task=self.task, user=self.user, start_time=timezone.now()
+        )
+        result = TaskLifecycleService.block_task(self.task.pk)
+        self.assertIn('conflict', result)
+        self.assertEqual(result['conflict'], 'active_workers')
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'in_progress')
+
+    def test_block_rejects_complete(self):
+        Task.objects.filter(pk=self.task.pk).update(status='complete')
+        self.task.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.block_task(self.task.pk)
+
+    def test_unblock(self):
+        Task.objects.filter(pk=self.task.pk).update(status='blocked')
+        self.task.refresh_from_db()
+        TaskLifecycleService.unblock_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'in_progress')
+
+    def test_unblock_rejects_non_blocked(self):
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.unblock_task(self.task.pk)
+
+
+class CancelTaskTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status='incomplete')
+        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        self.user = User.objects.get(username='admin')
+
+    def test_cancel_from_pending(self):
+        TaskLifecycleService.cancel_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'cancelled')
+
+    def test_cancel_from_in_progress_closes_bleps(self):
+        Task.objects.filter(pk=self.task.pk).update(status='in_progress')
+        self.task.refresh_from_db()
+        blep = Blep.objects.create(
+            task=self.task, user=self.user, start_time=timezone.now()
+        )
+        TaskLifecycleService.cancel_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'cancelled')
+        blep.refresh_from_db()
+        self.assertIsNotNone(blep.end_time)
+
+    def test_cancel_from_blocked(self):
+        Task.objects.filter(pk=self.task.pk).update(status='blocked')
+        self.task.refresh_from_db()
+        TaskLifecycleService.cancel_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, 'cancelled')
+
+    def test_cancel_rejects_complete(self):
+        Task.objects.filter(pk=self.task.pk).update(status='complete')
+        self.task.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.cancel_task(self.task.pk)
+
+    def test_cancel_last_non_terminal_triggers_wo_auto_complete(self):
+        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
+        Task.objects.filter(pk=other_task.pk).update(status='complete')
+        TaskLifecycleService.cancel_task(self.task.pk)
+        self.wo.refresh_from_db()
+        self.assertEqual(self.wo.status, 'complete')
+
+
+class StartStopWorkTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status='incomplete')
+        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        Task.objects.filter(pk=self.task.pk).update(status='in_progress')
+        self.task.refresh_from_db()
+        self.user = User.objects.get(username='admin')
+        self.worker2 = User.objects.create_user(username='worker2', password='test')
+
+    def test_start_work_creates_blep(self):
+        result = TaskLifecycleService.start_work(self.task.pk, self.user)
+        blep = result['blep']
+        self.assertIsNotNone(blep.start_time)
+        self.assertIsNone(blep.end_time)
+        self.assertEqual(blep.user, self.user)
+
+    def test_start_work_rejects_non_in_progress(self):
+        Task.objects.filter(pk=self.task.pk).update(status='pending')
+        self.task.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.start_work(self.task.pk, self.user)
+
+    def test_start_work_closes_users_other_blep(self):
+        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
+        Task.objects.filter(pk=other_task.pk).update(status='in_progress')
+        old_blep = Blep.objects.create(
+            task=other_task, user=self.user, start_time=timezone.now()
+        )
+        TaskLifecycleService.start_work(self.task.pk, self.user)
+        old_blep.refresh_from_db()
+        self.assertIsNotNone(old_blep.end_time)
+
+    def test_start_work_conflict_returns_worker_info(self):
+        Blep.objects.create(
+            task=self.task, user=self.worker2, start_time=timezone.now()
+        )
+        result = TaskLifecycleService.start_work(self.task.pk, self.user)
+        self.assertIn('conflict', result)
+        self.assertEqual(result['conflict'], 'active_worker')
+        self.assertIn('join', result['options'])
+        self.assertIn('takeover', result['options'])
+
+    def test_start_work_join(self):
+        Blep.objects.create(
+            task=self.task, user=self.worker2, start_time=timezone.now()
+        )
+        result = TaskLifecycleService.start_work(self.task.pk, self.user, action='join')
+        self.assertIn('blep', result)
+        # Both bleps should be open
+        open_bleps = Blep.objects.filter(task=self.task, end_time__isnull=True)
+        self.assertEqual(open_bleps.count(), 2)
+
+    def test_start_work_takeover(self):
+        other_blep = Blep.objects.create(
+            task=self.task, user=self.worker2, start_time=timezone.now()
+        )
+        result = TaskLifecycleService.start_work(self.task.pk, self.user, action='takeover')
+        self.assertIn('blep', result)
+        other_blep.refresh_from_db()
+        self.assertIsNotNone(other_blep.end_time)
+
+    def test_stop_work_closes_blep(self):
+        blep = Blep.objects.create(
+            task=self.task, user=self.user, start_time=timezone.now()
+        )
+        TaskLifecycleService.stop_work(self.task.pk, self.user)
+        blep.refresh_from_db()
+        self.assertIsNotNone(blep.end_time)
+
+    def test_stop_work_no_open_blep_raises(self):
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.stop_work(self.task.pk, self.user)
