@@ -7,11 +7,11 @@ class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
-            'task_id', 'name', 'description', 'sort_order',
+            'task_id', 'name', 'description', 'sort_order', 'status',
             'units', 'rate', 'est_qty', 'line_item_type',
             'mapping_strategy', 'bundle', 'parent_task', 'assignee',
         ]
-        read_only_fields = ['task_id', 'sort_order']
+        read_only_fields = ['task_id', 'sort_order', 'status']
 
 
 class TaskBundleSerializer(serializers.ModelSerializer):

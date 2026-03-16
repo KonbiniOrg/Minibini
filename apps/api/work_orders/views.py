@@ -1,12 +1,12 @@
 from rest_framework import viewsets
 from apps.jobs.models import WorkOrder
 from apps.jobs.services import WorkOrderService
-from apps.api.mixins import StatusTransitionMixin, TaskBundleMixin
+from apps.api.mixins import StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixin
 from apps.api.worksheets.serializers import TaskSerializer, TaskBundleSerializer
 from .serializers import WorkOrderSerializer
 
 
-class WorkOrderViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.ModelViewSet):
+class WorkOrderViewSet(StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixin, viewsets.ModelViewSet):
     queryset = WorkOrder.objects.all().order_by('-pk')
     serializer_class = WorkOrderSerializer
     lookup_field = 'pk'

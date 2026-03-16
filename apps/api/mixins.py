@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -262,5 +263,110 @@ class TaskBundleMixin:
         try:
             return TaskBundle.objects.get(pk=bundle_id, **{self.container_field: container})
         except TaskBundle.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+
+
+class TaskLifecycleMixin:
+    """Adds task lifecycle action endpoints to a WorkOrder viewset."""
+
+    @action(detail=True, methods=['post'],
+            url_path='tasks/(?P<task_id>[0-9]+)/start', url_name='task-start')
+    def task_start(self, request, pk=None, task_id=None):
+        from apps.jobs.services import TaskLifecycleService
+        task = self._get_lifecycle_task_or_404(pk, task_id)
+        try:
+            result = TaskLifecycleService.start_task(task.pk, request.user)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': 'in_progress', 'blep_id': result['blep'].blep_id})
+
+    @action(detail=True, methods=['post'],
+            url_path='tasks/(?P<task_id>[0-9]+)/complete', url_name='task-complete')
+    def task_complete(self, request, pk=None, task_id=None):
+        from apps.jobs.services import TaskLifecycleService
+        task = self._get_lifecycle_task_or_404(pk, task_id)
+        try:
+            TaskLifecycleService.complete_task(task.pk)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': 'complete'})
+
+    @action(detail=True, methods=['post'],
+            url_path='tasks/(?P<task_id>[0-9]+)/block', url_name='task-block')
+    def task_block(self, request, pk=None, task_id=None):
+        from apps.jobs.services import TaskLifecycleService
+        task = self._get_lifecycle_task_or_404(pk, task_id)
+        try:
+            result = TaskLifecycleService.block_task(task.pk)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        if isinstance(result, dict) and 'conflict' in result:
+            return Response(result)
+        return Response({'status': 'blocked'})
+
+    @action(detail=True, methods=['post'],
+            url_path='tasks/(?P<task_id>[0-9]+)/unblock', url_name='task-unblock')
+    def task_unblock(self, request, pk=None, task_id=None):
+        from apps.jobs.services import TaskLifecycleService
+        task = self._get_lifecycle_task_or_404(pk, task_id)
+        try:
+            TaskLifecycleService.unblock_task(task.pk)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': 'in_progress'})
+
+    @action(detail=True, methods=['post'],
+            url_path='tasks/(?P<task_id>[0-9]+)/cancel', url_name='task-cancel')
+    def task_cancel(self, request, pk=None, task_id=None):
+        from apps.jobs.services import TaskLifecycleService
+        task = self._get_lifecycle_task_or_404(pk, task_id)
+        try:
+            TaskLifecycleService.cancel_task(task.pk)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': 'cancelled'})
+
+    @action(detail=True, methods=['post'],
+            url_path='tasks/(?P<task_id>[0-9]+)/start-work', url_name='task-start-work')
+    def task_start_work(self, request, pk=None, task_id=None):
+        from apps.jobs.services import TaskLifecycleService
+        task = self._get_lifecycle_task_or_404(pk, task_id)
+        try:
+            result = TaskLifecycleService.start_work(
+                task.pk, request.user, action=request.data.get('action')
+            )
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        if isinstance(result, dict) and 'conflict' in result:
+            return Response(result)
+        return Response({'status': 'ok', 'blep_id': result['blep'].blep_id})
+
+    @action(detail=True, methods=['post'],
+            url_path='tasks/(?P<task_id>[0-9]+)/stop-work', url_name='task-stop-work')
+    def task_stop_work(self, request, pk=None, task_id=None):
+        from apps.jobs.services import TaskLifecycleService
+        task = self._get_lifecycle_task_or_404(pk, task_id)
+        try:
+            TaskLifecycleService.stop_work(task.pk, request.user)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': 'ok'})
+
+    @action(detail=True, methods=['get'],
+            url_path='tasks/(?P<task_id>[0-9]+)/bleps', url_name='task-bleps')
+    def task_bleps(self, request, pk=None, task_id=None):
+        from apps.jobs.models import Blep
+        from apps.api.work_orders.serializers import BlepSerializer
+        task = self._get_lifecycle_task_or_404(pk, task_id)
+        bleps = Blep.objects.filter(task=task)
+        serializer = BlepSerializer(bleps, many=True)
+        return Response(serializer.data)
+
+    def _get_lifecycle_task_or_404(self, wo_pk, task_id):
+        from apps.jobs.models import Task
+        try:
+            return Task.objects.get(pk=task_id, work_order_id=wo_pk)
+        except Task.DoesNotExist:
             from rest_framework.exceptions import NotFound
             raise NotFound()
