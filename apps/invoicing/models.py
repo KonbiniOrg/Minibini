@@ -2,8 +2,10 @@ from django.db import models
 from django.utils import timezone
 from decimal import Decimal
 from apps.core.models import BaseLineItem
+from apps.core.history import history
 
 
+@history(exclude=['invoice_id'])
 class Invoice(models.Model):
     INVOICE_STATUS_CHOICES = [
         ('draft', 'Draft'),

@@ -205,6 +205,25 @@
         }
     },
     {
+        "model": "core.user",
+        "pk": 4,
+        "fields": {
+            "password": "pbkdf2_sha256$870000$test$hash",
+            "last_login": null,
+            "is_superuser": false,
+            "username": "system",
+            "first_name": "System",
+            "last_name": "",
+            "email": "system@minibini.com",
+            "is_staff": false,
+            "is_active": true,
+            "date_joined": "2024-01-01T00:00:00Z",
+            "contact": null,
+            "groups": [],
+            "user_permissions": []
+        }
+    },
+    {
         "model": "core.configuration",
         "pk": "job_number_sequence",
         "fields": {

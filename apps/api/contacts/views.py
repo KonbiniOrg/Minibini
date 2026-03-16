@@ -1,11 +1,14 @@
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.db.models.deletion import ProtectedError
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.contacts.services import ContactService
+from apps.core.models import HistoryEntry
 from apps.core.services import ServiceError, NotFoundError
+from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import ContactSerializer, ContactDetailSerializer, BusinessSerializer, BusinessDetailSerializer, PaymentTermsSerializer
 
 
@@ -65,6 +68,38 @@ class ContactViewSet(viewsets.ModelViewSet):
             'message': f'"{contact}" has been deleted.',
         })
 
+    @action(detail=True, methods=['get'], url_path='history', url_name='history')
+    def history(self, request, pk=None):
+        contact = self.get_object()
+        entries = HistoryEntry.objects.filter(
+            object_type='contact', object_id=contact.pk
+        ).select_related('user')
+        page = self.paginate_queryset(entries)
+        if page is not None:
+            serializer = HistoryEntrySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = HistoryEntrySerializer(entries, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='notes', url_name='notes')
+    def notes(self, request, pk=None):
+        obj = self.get_object()
+        text = request.data.get('text', '').strip()
+        if not text:
+            return Response(
+                {'text': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        entry = HistoryEntry.objects.create(
+            entry_type='note',
+            object_type='contact',
+            object_id=obj.pk,
+            user=request.user,
+            text=text,
+        )
+        serializer = HistoryEntrySerializer(entry)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 class BusinessViewSet(viewsets.ModelViewSet):
     queryset = Business.objects.all().order_by('business_name')
@@ -79,12 +114,11 @@ class BusinessViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         data = serializer.validated_data
         default_contact = data.pop('default_contact', None)
-        if default_contact and hasattr(default_contact, 'pk'):
-            default_contact = default_contact.pk
-        contacts_data = []
         if default_contact:
-            contacts_data = [{'contact_pk': default_contact}]
-        business = ContactService.create_business(contacts_data=contacts_data, **data)
+            contact_pk = default_contact.pk if hasattr(default_contact, 'pk') else default_contact
+            business = ContactService.create_business_for_contact(contact_pk, **data)
+        else:
+            raise ServiceError('default_contact_id is required when creating a business')
         serializer.instance = business
 
     def perform_update(self, serializer):
@@ -142,6 +176,40 @@ class BusinessViewSet(viewsets.ModelViewSet):
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         business = self.get_object()
         return Response(BusinessSerializer(business).data)
+
+    @action(detail=True, methods=['get'], url_path='history', url_name='history')
+    def history(self, request, pk=None):
+        business = self.get_object()
+        contact_ids = list(Contact.objects.filter(business=business).values_list('pk', flat=True))
+        q = Q(object_type='business', object_id=business.pk)
+        if contact_ids:
+            q |= Q(object_type='contact', object_id__in=contact_ids)
+        entries = HistoryEntry.objects.filter(q).select_related('user')
+        page = self.paginate_queryset(entries)
+        if page is not None:
+            serializer = HistoryEntrySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = HistoryEntrySerializer(entries, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='notes', url_name='notes')
+    def notes(self, request, pk=None):
+        obj = self.get_object()
+        text = request.data.get('text', '').strip()
+        if not text:
+            return Response(
+                {'text': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        entry = HistoryEntry.objects.create(
+            entry_type='note',
+            object_type='business',
+            object_id=obj.pk,
+            user=request.user,
+            text=text,
+        )
+        serializer = HistoryEntrySerializer(entry)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class PaymentTermsViewSet(viewsets.ReadOnlyModelViewSet):

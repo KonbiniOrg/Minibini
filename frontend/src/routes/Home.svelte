@@ -1,2 +1,2 @@
 <h2>Home</h2>
-<p>Welcome to Minibini.</p>
+<p>User's configured front page will go here.</p>

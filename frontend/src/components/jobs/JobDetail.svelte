@@ -9,7 +9,11 @@
     worksheets = null,
     workOrders = null,
     invoices = null,
+    history = null,
+    onAddNote = null,
   } = $props();
+
+  let noteText = $state('');
 
   const terminalInvoiceStatuses = ['paid', 'cancelled', 'defaulted', 'superseded'];
 
@@ -66,6 +70,20 @@
   let showInvoiceSection = $derived(
     $viewMode === 'full' || (visibleInvoices.length > 0)
   );
+
+  let visibleHistory = $derived(
+    history?.results
+      ? $viewMode === 'full'
+        ? history.results
+        : history.results.filter(h => h.entry_type === 'note')
+      : []
+  );
+
+  async function submitNote() {
+    if (!noteText.trim() || !onAddNote) return;
+    await onAddNote(noteText.trim());
+    noteText = '';
+  }
 </script>
 
 <dl>
@@ -124,7 +142,7 @@
       <tbody>
         {#each visibleEstimates as estimate}
           <tr>
-            <td>{estimate.estimate_number}</td>
+            <td><a href="#/estimates/{estimate.estimate_id}">{estimate.estimate_number}</a></td>
             <td>{estimate.version}</td>
             <td>{estimate.status}</td>
             <td>{estimate.created_date}</td>
@@ -147,7 +165,7 @@
       <tbody>
         {#each visibleWorksheets as ws}
           <tr>
-            <td>{ws.est_worksheet_id}</td>
+            <td><a href="#/worksheets/{ws.est_worksheet_id}">{ws.est_worksheet_id}</a></td>
             <td>{ws.status}</td>
             <td>{ws.version}</td>
             <td>{ws.created_date}</td>
@@ -170,7 +188,7 @@
       <tbody>
         {#each visibleWorkOrders as wo}
           <tr>
-            <td>{wo.work_order_id}</td>
+            <td><a href="#/work-orders/{wo.work_order_id}">{wo.work_order_id}</a></td>
             <td>{wo.status}</td>
           </tr>
         {/each}
@@ -191,7 +209,7 @@
       <tbody>
         {#each visibleInvoices as invoice}
           <tr>
-            <td>{invoice.invoice_number}</td>
+            <td><a href="#/invoices/{invoice.invoice_id}">{invoice.invoice_number}</a></td>
             <td>{invoice.status}</td>
             <td>{invoice.created_date}</td>
           </tr>
@@ -201,4 +219,37 @@
   {:else}
     <p>No {$viewMode === 'lite' ? 'active ' : ''}invoices.</p>
   {/if}
+{/if}
+
+<h3>History</h3>
+{#if onAddNote}
+  <p>
+    <textarea bind:value={noteText} rows="2" placeholder="Add a note..."></textarea><br>
+    <button onclick={submitNote} disabled={!noteText.trim()}>Add Note</button>
+  </p>
+{/if}
+{#if visibleHistory.length > 0}
+  {#each visibleHistory as entry}
+    {#if entry.entry_type === 'note'}
+      <p>
+        <strong>{entry.username || 'Unknown'}</strong>
+        ({new Date(entry.timestamp).toLocaleString()}):<br>
+        {entry.text}
+      </p>
+    {:else}
+      <p><small>
+        <strong>{entry.username || 'System'}</strong>
+        ({new Date(entry.timestamp).toLocaleString()})
+        [{entry.entry_type}] {entry.object_type}
+        {#if entry.changes}
+          — {Object.entries(entry.changes).map(([k, v]) => `${k}: ${v.old} → ${v.new}`).join(', ')}
+        {/if}
+        {#if entry.text}
+          — {entry.text}
+        {/if}
+      </small></p>
+    {/if}
+  {/each}
+{:else}
+  <p>No {$viewMode === 'lite' ? 'notes' : 'history'}.</p>
 {/if}

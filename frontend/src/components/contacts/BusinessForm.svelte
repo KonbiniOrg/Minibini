@@ -2,11 +2,12 @@
   const {
     business = null,
     paymentTerms = [],
-    contacts = [],
     onSubmit,
     onCancel,
     errors = null,
   } = $props();
+
+  const isEdit = $derived(!!business);
 
   // Intentionally captures initial prop value — form state is then independent
   let form = $state({
@@ -17,15 +18,25 @@
     website: business?.website || '',
     tax_multiplier: business?.tax_multiplier ?? '',
     terms: business?.terms || '',
-    default_contact: business?.default_contact || '',
+    default_contact_id: business?.default_contact?.contact_id || '',
+  });
+
+  let contactForm = $state({
+    first_name: '',
+    last_name: '',
+    email: '',
+    mobile_number: '',
   });
 
   function handleSubmit(e) {
     e.preventDefault();
     const data = { ...form };
     if (data.terms === '') data.terms = null;
-    if (data.default_contact === '') data.default_contact = null;
+    if (data.default_contact_id === '') data.default_contact_id = null;
     if (data.tax_multiplier === '') data.tax_multiplier = null;
+    if (!isEdit) {
+      data._contact = { ...contactForm };
+    }
     onSubmit(data);
   }
 </script>
@@ -74,15 +85,37 @@
     </select>
   </p>
 
-  <p>
-    <label for="default_contact"><strong>Default Contact</strong></label><br>
-    <select id="default_contact" bind:value={form.default_contact}>
-      <option value="">-- None --</option>
-      {#each contacts as c}
-        <option value={c.contact_id}>{c.name}</option>
-      {/each}
-    </select>
-  </p>
+  {#if isEdit}
+    <p>
+      <label for="default_contact_id"><strong>Default Contact</strong></label><br>
+      <select id="default_contact_id" bind:value={form.default_contact_id}>
+        <option value="">-- None --</option>
+        {#each business.contacts || [] as c}
+          <option value={c.contact_id}>{c.name}</option>
+        {/each}
+      </select>
+    </p>
+  {:else}
+    <fieldset>
+      <legend><strong>Default Contact</strong></legend>
+      <p>
+        <label for="contact_first_name"><strong>First Name *</strong></label><br>
+        <input type="text" id="contact_first_name" bind:value={contactForm.first_name} required>
+      </p>
+      <p>
+        <label for="contact_last_name"><strong>Last Name *</strong></label><br>
+        <input type="text" id="contact_last_name" bind:value={contactForm.last_name} required>
+      </p>
+      <p>
+        <label for="contact_email"><strong>Email *</strong></label><br>
+        <input type="email" id="contact_email" bind:value={contactForm.email} required>
+      </p>
+      <p>
+        <label for="contact_mobile"><strong>Mobile *</strong></label><br>
+        <input type="text" id="contact_mobile" bind:value={contactForm.mobile_number} required>
+      </p>
+    </fieldset>
+  {/if}
 
   <p>
     <button type="submit">{business ? 'Save' : 'Create'}</button>

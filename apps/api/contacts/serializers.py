@@ -38,13 +38,16 @@ class ContactSerializer(serializers.ModelSerializer):
 
 class BusinessSerializer(serializers.ModelSerializer):
     default_contact = ContactSerializer(read_only=True)
+    default_contact_id = serializers.PrimaryKeyRelatedField(
+        queryset=Contact.objects.all(), source='default_contact', write_only=True, required=False,
+    )
 
     class Meta:
         model = Business
         fields = [
             'business_id', 'our_reference_code', 'business_name',
             'business_address', 'business_phone', 'tax_exemption_number',
-            'website', 'terms', 'default_contact', 'tax_multiplier',
+            'website', 'terms', 'default_contact', 'default_contact_id', 'tax_multiplier',
         ]
         read_only_fields = ['business_id', 'our_reference_code']
 

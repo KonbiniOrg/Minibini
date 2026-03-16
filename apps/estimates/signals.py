@@ -42,7 +42,9 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
     - When estimate is accepted, job becomes approved (unless already complete)
     - When approved estimate is superseded, job becomes blocked (unless already complete)
     - Respects state transition rules: must go through intermediate states
+    - Creates an action-type HistoryEntry for each status change
     """
+    from apps.core.models import HistoryEntry, User
     from apps.jobs.models import Job
 
     job = estimate.job
@@ -53,17 +55,49 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
 
     # Update job status if needed, respecting state transition rules
     if job.status != new_job_status:
+        system_user, _ = User.objects.get_or_create(
+            username='system',
+            defaults={'first_name': 'System', 'is_active': False},
+        )
+        reason = f"Estimate {estimate.estimate_number} accepted"
+
         # If trying to go to 'approved' from 'draft', first go through 'submitted'
         if new_job_status == 'approved' and job.status == 'draft':
+            old_status = job.status
             job.status = 'submitted'
             job.save()
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='job',
+                object_id=job.pk,
+                user=system_user,
+                changes={'status': {'old': old_status, 'new': 'submitted'}},
+                text=reason,
+            )
             # Now transition to approved
             job.status = 'approved'
             job.save()
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='job',
+                object_id=job.pk,
+                user=system_user,
+                changes={'status': {'old': 'submitted', 'new': 'approved'}},
+                text=reason,
+            )
             return 2  # Two transitions made
         else:
+            old_status = job.status
             job.status = new_job_status
             job.save()
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='job',
+                object_id=job.pk,
+                user=system_user,
+                changes={'status': {'old': old_status, 'new': new_job_status}},
+                text=reason,
+            )
             return 1
 
     return 0
