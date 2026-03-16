@@ -15,6 +15,10 @@
         <td>{{ task.name }}</td>
     </tr>
     <tr>
+        <td>Status</td>
+        <td>{{ task.get_status_display }}</td>
+    </tr>
+    <tr>
         <td>Description</td>
         <td>{{ task.description|default:"-" }}</td>
     </tr>
@@ -183,6 +187,30 @@
 
 {% if task.est_worksheet and task.est_worksheet.status == 'draft' %}
 <p><a href="{% url 'jobs:material_add' task.task_id %}">Add Material</a></p>
+{% endif %}
+
+{% if task.work_order %}
+<h3>Work Sessions</h3>
+{% if bleps %}
+<table border="1">
+    <tr>
+        <th>Worker</th>
+        <th>Start</th>
+        <th>End</th>
+        <th>Elapsed</th>
+    </tr>
+    {% for blep in bleps %}
+    <tr>
+        <td>{{ blep.user.get_full_name|default:blep.user.username }}</td>
+        <td>{{ blep.start_time|date:"M j, Y g:i A"|default:"-" }}</td>
+        <td>{% if blep.end_time %}{{ blep.end_time|date:"M j, Y g:i A" }}{% else %}<strong>Active</strong>{% endif %}</td>
+        <td>{{ blep.elapsed_display }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p>No work sessions recorded.</p>
+{% endif %}
 {% endif %}
 
 <p>

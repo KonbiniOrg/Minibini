@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
 from django.core.exceptions import ValidationError
-from .models import Job, Task, WorkOrder
+from .models import Job, Task, WorkOrder, Blep
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.inventory.models import Material
 from apps.core.services import TaxCalculationService, NotFoundError
@@ -279,7 +279,8 @@ def task_list(request):
 
 def task_detail(request, task_id):
     task = get_object_or_404(Task, task_id=task_id)
-    return render(request, 'jobs/task_detail.html', {'task': task})
+    bleps = Blep.objects.filter(task=task).select_related('user').order_by('-start_time')
+    return render(request, 'jobs/task_detail.html', {'task': task, 'bleps': bleps})
 
 
 def task_edit(request, task_id):
@@ -328,9 +329,35 @@ def work_order_detail(request, work_order_id):
             messages.error(request, 'Cannot update the status of a completed work order.')
             return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
 
-    # Get all tasks for this work order
+    # Get all tasks for this work order with blep summaries
     all_tasks = Task.objects.filter(work_order=work_order).order_by('sort_order', 'task_id')
     tasks_with_levels = _build_task_hierarchy(all_tasks)
+
+    # Calculate blep summary for each task
+    bleps_by_task = {}
+    for blep in Blep.objects.filter(task__work_order=work_order).select_related('user'):
+        bleps_by_task.setdefault(blep.task_id, []).append(blep)
+
+    for item in tasks_with_levels:
+        task_bleps = bleps_by_task.get(item['task'].task_id, [])
+        if not task_bleps:
+            item['blep_summary'] = "-"
+        else:
+            from datetime import timedelta
+            total = timedelta()
+            for b in task_bleps:
+                if b.elapsed:
+                    total += b.elapsed
+            total_seconds = int(total.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            count = len(task_bleps)
+            active = any(b.end_time is None for b in task_bleps)
+            time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+            parts = [time_str, f"({count} session{'s' if count != 1 else ''})"]
+            if active:
+                parts.append("ACTIVE")
+            item['blep_summary'] = " ".join(parts)
 
     # Create status form for display (unless completed)
     status_form = WorkOrderStatusForm(current_status=work_order.status) if work_order.status != 'complete' else None

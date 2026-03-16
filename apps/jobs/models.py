@@ -349,5 +349,26 @@ class Blep(models.Model):
     class Meta:
         db_table = 'bleps'
 
+    @property
+    def elapsed(self):
+        """Return elapsed timedelta, or None if no start_time."""
+        if not self.start_time:
+            return None
+        end = self.end_time or timezone.now()
+        return end - self.start_time
+
+    @property
+    def elapsed_display(self):
+        """Human-readable elapsed time string."""
+        delta = self.elapsed
+        if delta is None:
+            return "-"
+        total_seconds = int(delta.total_seconds())
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        if hours > 0:
+            return f"{hours}h {minutes}m"
+        return f"{minutes}m"
+
     def __str__(self):
         return f"Blep {self.pk} for Task {self.task.pk}"

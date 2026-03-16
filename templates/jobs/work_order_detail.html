@@ -38,11 +38,13 @@
     <table border="1">
         <tr>
             <th>Task Name</th>
+            <th>Status</th>
             <th>Assignee</th>
             <th>Estimated Qty</th>
             <th>Units</th>
             <th>Rate</th>
             <th>Total</th>
+            <th>Time Logged</th>
             <th>Actions</th>
         </tr>
         {% for item in tasks %}
@@ -57,6 +59,7 @@
                     {{ item.task.name }}
                 {% endif %}
             </td>
+            <td>{{ item.task.get_status_display }}</td>
             <td>{{ item.task.assignee.username|default:"Unassigned" }}</td>
             <td>{{ item.task.est_qty|default:"-" }}</td>
             <td>{{ item.task.units|default:"-" }}</td>
@@ -74,6 +77,7 @@
                     -
                 {% endif %}
             </td>
+            <td>{{ item.blep_summary }}</td>
             <td><a href="{% url 'jobs:task_detail' item.task.pk %}">View</a></td>
         </tr>
         {% endfor %}
