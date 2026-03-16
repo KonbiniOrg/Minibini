@@ -127,6 +127,20 @@ class WorkOrder(AbstractWorkContainer):
 
 
 class Task(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_IN_PROGRESS = 'in_progress'
+    STATUS_BLOCKED = 'blocked'
+    STATUS_COMPLETE = 'complete'
+    STATUS_CANCELLED = 'cancelled'
+
+    TASK_STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_IN_PROGRESS, 'In Progress'),
+        (STATUS_BLOCKED, 'Blocked'),
+        (STATUS_COMPLETE, 'Complete'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
+
     task_id = models.AutoField(primary_key=True)
     parent_task = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks')
     assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
@@ -138,6 +152,7 @@ class Task(models.Model):
     units = models.CharField(max_length=50, blank=True)
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
     line_item_type = models.ForeignKey(
         'core.LineItemType',
         on_delete=models.PROTECT,
@@ -146,8 +161,25 @@ class Task(models.Model):
         help_text="Type of line item this task produces when mapped directly"
     )
 
+    VALID_TRANSITIONS = {
+        STATUS_PENDING: [STATUS_IN_PROGRESS, STATUS_BLOCKED, STATUS_COMPLETE, STATUS_CANCELLED],
+        STATUS_IN_PROGRESS: [STATUS_BLOCKED, STATUS_COMPLETE, STATUS_CANCELLED],
+        STATUS_BLOCKED: [STATUS_IN_PROGRESS, STATUS_CANCELLED],
+        STATUS_COMPLETE: [],
+        STATUS_CANCELLED: [],
+    }
+
     def clean(self):
         from django.core.exceptions import ValidationError
+        # Validate status transitions on existing tasks
+        if self.pk:
+            old_status = Task.objects.get(pk=self.pk).status
+            if old_status != self.status:
+                allowed = self.VALID_TRANSITIONS.get(old_status, [])
+                if self.status not in allowed:
+                    raise ValidationError(
+                        {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
+                    )
         # Must belong to exactly one container
         if self.work_order and self.est_worksheet:
             raise ValidationError("Task cannot be attached to both WorkOrder and EstWorksheet")
