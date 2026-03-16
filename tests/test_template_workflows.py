@@ -38,10 +38,10 @@ class WorkOrderCreationWorkflowTest(TestCase):
         self.user = User.objects.create_user(username="testuser")
 
     def test_direct_work_order_creation(self):
-        """Test direct WorkOrder creation starts in draft status."""
+        """Test direct WorkOrder creation starts in incomplete status."""
         work_order = WorkOrderService.create_direct(self.job)
-        
-        self.assertEqual(work_order.status, 'draft')
+
+        self.assertEqual(work_order.status, 'incomplete')
         self.assertEqual(work_order.job, self.job)
         self.assertIsNone(work_order.template)
     
@@ -107,7 +107,7 @@ class WorkOrderCreationWorkflowTest(TestCase):
         
         work_order = WorkOrderService.create_from_template(template, self.job)
         
-        self.assertEqual(work_order.status, 'draft')
+        self.assertEqual(work_order.status, 'incomplete')
         self.assertEqual(work_order.job, self.job)
         self.assertEqual(work_order.template, template)
     
@@ -323,7 +323,7 @@ class TemplateIntegrationTest(TestCase):
         work_order = WorkOrderService.create_from_template(work_order_template, self.job)
         
         # Verify WorkOrder
-        self.assertEqual(work_order.status, 'draft')
+        self.assertEqual(work_order.status, 'incomplete')
         self.assertEqual(work_order.job, self.job)
         self.assertEqual(work_order.template, work_order_template)
         

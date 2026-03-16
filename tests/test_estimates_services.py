@@ -508,7 +508,7 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
         Task.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
         Task.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
 
-        wo = WorkOrder.objects.create(job=self.job, status='draft')
+        wo = WorkOrder.objects.create(job=self.job)
         WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
         self.assertEqual(Task.objects.filter(work_order=wo).count(), 2)
 
@@ -525,7 +525,7 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
             mapping_strategy='bundle', bundle=bundle,
         )
 
-        wo = WorkOrder.objects.create(job=self.job, status='draft')
+        wo = WorkOrder.objects.create(job=self.job)
         WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
         wo_bundles = TaskBundle.objects.filter(work_order=wo)
         self.assertEqual(wo_bundles.count(), 1)
@@ -539,7 +539,7 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
             task=task, description='Steel', quantity=Decimal('5.00'),
         )
 
-        wo = WorkOrder.objects.create(job=self.job, status='draft')
+        wo = WorkOrder.objects.create(job=self.job)
         WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
         wo_task = Task.objects.get(work_order=wo)
         self.assertEqual(wo_task.materials.count(), 1)

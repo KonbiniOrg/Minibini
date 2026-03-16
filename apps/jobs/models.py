@@ -110,14 +110,36 @@ class Job(models.Model):
 
 class WorkOrder(AbstractWorkContainer):
     WORK_ORDER_STATUS_CHOICES = [
-        ('draft', 'Draft'),
         ('incomplete', 'Incomplete'),
         ('blocked', 'Blocked'),
         ('complete', 'Complete'),
     ]
 
+    VALID_TRANSITIONS = {
+        'incomplete': ['blocked', 'complete'],
+        'blocked': ['incomplete'],
+        'complete': [],
+    }
+
     work_order_id = models.AutoField(primary_key=True)
-    status = models.CharField(max_length=20, choices=WORK_ORDER_STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=20, choices=WORK_ORDER_STATUS_CHOICES, default='incomplete')
+
+    def clean(self):
+        super().clean()
+        if self.pk:
+            try:
+                old_wo = WorkOrder.objects.get(pk=self.pk)
+                old_status = old_wo.status
+                if old_status != self.status:
+                    valid_next = self.VALID_TRANSITIONS.get(old_status, [])
+                    if self.status not in valid_next:
+                        from django.core.exceptions import ValidationError
+                        raise ValidationError(
+                            f'Cannot transition WorkOrder from {old_status} to {self.status}. '
+                            f'Valid transitions: {", ".join(valid_next) if valid_next else "none (terminal state)"}'
+                        )
+            except WorkOrder.DoesNotExist:
+                pass
 
     class Meta:
         db_table = 'workorders'

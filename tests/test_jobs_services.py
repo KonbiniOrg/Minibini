@@ -87,13 +87,13 @@ class WorkOrderServiceStatusTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.wo = WorkOrder.objects.create(
-            job=self.job, status='draft',
+            job=self.job,
         )
 
     def test_update_status(self):
         """Update work order status."""
-        updated = WorkOrderService.update_status(self.wo.pk, 'incomplete')
-        self.assertEqual(updated.status, 'incomplete')
+        updated = WorkOrderService.update_status(self.wo.pk, 'blocked')
+        self.assertEqual(updated.status, 'blocked')
 
     def test_update_status_not_found(self):
         """Nonexistent WO raises NotFoundError."""
@@ -108,7 +108,7 @@ class TaskServiceUpdateTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.wo = WorkOrder.objects.create(
-            job=self.job, status='draft',
+            job=self.job,
         )
         self.task = Task.objects.create(
             work_order=self.wo, name='Task 1', sort_order=1,
@@ -132,7 +132,7 @@ class TaskServiceReorderTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.wo = WorkOrder.objects.create(
-            job=self.job, status='draft',
+            job=self.job,
         )
         self.t1 = Task.objects.create(
             work_order=self.wo, name='Task 1', sort_order=1,
@@ -165,7 +165,7 @@ class MaterialServiceTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.wo = WorkOrder.objects.create(
-            job=self.job, status='draft',
+            job=self.job,
         )
         self.task = Task.objects.create(
             work_order=self.wo, name='Task 1', sort_order=1,
@@ -331,7 +331,7 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
         self.assertIsNotNone(wo.pk)
         self.assertEqual(wo.job, self.job)
         self.assertEqual(wo.template, self.template)
-        self.assertEqual(wo.status, 'draft')
+        self.assertEqual(wo.status, 'incomplete')
 
     def test_generates_tasks_from_template(self):
         """Each active template association generates a task."""
@@ -389,12 +389,12 @@ class WorkOrderServiceCreateDirectTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
 
-    def test_creates_draft_work_order(self):
-        """Creates a work order in draft status."""
+    def test_creates_incomplete_work_order(self):
+        """Creates a work order in incomplete status."""
         wo = WorkOrderService.create_direct(self.job)
         self.assertIsNotNone(wo.pk)
         self.assertEqual(wo.job, self.job)
-        self.assertEqual(wo.status, 'draft')
+        self.assertEqual(wo.status, 'incomplete')
 
     def test_accepts_kwargs(self):
         """Passes extra kwargs through to WorkOrder.create."""

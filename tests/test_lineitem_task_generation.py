@@ -36,7 +36,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         self.assertIsNone(line_item.price_list_item)
 
         # Create WorkOrder and generate tasks
-        work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
+        work_order = WorkOrder.objects.create(job=estimate.job)
         generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         # Verify task was created
@@ -61,7 +61,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         self.assertIsNotNone(line_item.price_list_item)
 
         # Create WorkOrder and generate tasks
-        work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
+        work_order = WorkOrder.objects.create(job=estimate.job)
         generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         # Verify task was created
@@ -85,7 +85,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         self.assertIsNone(line_item.price_list_item)
 
         # Create WorkOrder and generate tasks
-        work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
+        work_order = WorkOrder.objects.create(job=estimate.job)
         generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         # Verify task was created
@@ -113,7 +113,7 @@ class LineItemTaskGenerationTestCase(TestCase):
             price=Decimal('100.00')
         )
 
-        work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
+        work_order = WorkOrder.objects.create(job=estimate.job)
         generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         self.assertEqual(len(generated_tasks), 1)
@@ -195,7 +195,7 @@ class LineItemTaskGenerationTestCase(TestCase):
             price=Decimal('0.00')  # Zero price
         )
 
-        work_order = WorkOrder.objects.create(job=estimate.job, status='draft')
+        work_order = WorkOrder.objects.create(job=estimate.job)
         generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         self.assertEqual(len(generated_tasks), 1)
@@ -241,7 +241,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
             price=Decimal('0.00')  # Zero price
         )
 
-        work_order = WorkOrder.objects.create(job=self.job, status='draft')
+        work_order = WorkOrder.objects.create(job=self.job)
         generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         self.assertEqual(len(generated_tasks), 1)
@@ -272,7 +272,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
             price=Decimal('10.00')
         )
 
-        work_order = WorkOrder.objects.create(job=self.job, status='draft')
+        work_order = WorkOrder.objects.create(job=self.job)
         generated_tasks = TaskService.create_from_line_item(line_item, work_order)
 
         self.assertEqual(len(generated_tasks), 1)

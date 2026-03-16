@@ -77,7 +77,7 @@ class WorkOrderService:
     def create_from_template(template, job):
         """
         Create WorkOrder from WorkOrderTemplate.
-        Created WorkOrder starts in 'draft' status.
+        Created WorkOrder starts in 'incomplete' status.
         """
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
@@ -85,7 +85,6 @@ class WorkOrderService:
         work_order = WorkOrder.objects.create(
             job=job,
             template=template,
-            status='draft'
         )
 
         # Generate Tasks from TaskTemplate associations
@@ -102,10 +101,9 @@ class WorkOrderService:
 
     @staticmethod
     def create_direct(job, **kwargs):
-        """Create WorkOrder directly. Starts in 'draft' status."""
+        """Create WorkOrder directly. Starts in 'incomplete' status."""
         return WorkOrder.objects.create(
             job=job,
-            status='draft',
             **kwargs
         )
 

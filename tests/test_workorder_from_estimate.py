@@ -52,7 +52,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         work_order = work_orders.first()
 
         # Verify WorkOrder properties
-        self.assertEqual(work_order.status, 'draft')
+        self.assertEqual(work_order.status, 'incomplete')
         self.assertEqual(work_order.job_id, estimate.job_id)
         self.assertEqual(work_order.template_id, worksheet.template_id)
 
@@ -89,7 +89,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         work_order = work_orders.last()  # Get the most recently created
 
         # Verify WorkOrder properties
-        self.assertEqual(work_order.status, 'draft')
+        self.assertEqual(work_order.status, 'incomplete')
         self.assertEqual(work_order.job_id, estimate.job_id)
         self.assertIsNone(work_order.template)
 

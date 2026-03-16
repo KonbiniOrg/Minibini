@@ -130,3 +130,48 @@ class TaskTransitionValidationTest(BaseTestCase):
             status='in_progress',
         )
         task.full_clean()  # should not raise
+
+
+class WorkOrderStatusTest(BaseTestCase):
+    """Test WorkOrder status: no draft state, transition validation."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.jobs.models import Job
+        self.job = Job.objects.first()
+
+    def _make_wo(self, status='incomplete'):
+        wo = WorkOrder.objects.create(job=self.job)
+        if status != 'incomplete':
+            WorkOrder.objects.filter(pk=wo.pk).update(status=status)
+            wo.refresh_from_db()
+        return wo
+
+    def test_new_wo_starts_incomplete(self):
+        wo = WorkOrder.objects.create(job=self.job)
+        self.assertEqual(wo.status, 'incomplete')
+
+    def test_draft_not_in_choices(self):
+        values = {c[0] for c in WorkOrder.WORK_ORDER_STATUS_CHOICES}
+        self.assertNotIn('draft', values)
+
+    def test_incomplete_to_complete(self):
+        wo = self._make_wo('incomplete')
+        wo.status = 'complete'
+        wo.full_clean()  # Should not raise
+
+    def test_incomplete_to_blocked(self):
+        wo = self._make_wo('incomplete')
+        wo.status = 'blocked'
+        wo.full_clean()  # Should not raise
+
+    def test_blocked_to_incomplete(self):
+        wo = self._make_wo('blocked')
+        wo.status = 'incomplete'
+        wo.full_clean()  # Should not raise
+
+    def test_complete_is_terminal(self):
+        wo = self._make_wo('complete')
+        wo.status = 'incomplete'
+        with self.assertRaises(ValidationError):
+            wo.full_clean()
