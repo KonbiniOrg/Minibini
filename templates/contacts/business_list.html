@@ -8,14 +8,23 @@
 <a href="{% url 'contacts:tag_list' %}">Manage Tags</a>
 
 {% if all_tags %}
-<fieldset style="margin: 10px 0;">
-    <legend><strong>Filter by Tag</strong></legend>
-    <a href="{% url 'contacts:business_list' %}">{% if not active_tag %}<strong>All</strong>{% else %}All{% endif %}</a>
-    {% for tag in all_tags %}
-    &nbsp;|&nbsp;
-    <a href="{% url 'contacts:business_list' %}?tag={{ tag.tag_id }}">{% if active_tag and active_tag.tag_id == tag.tag_id %}<strong>{{ tag.name }}</strong>{% else %}{{ tag.name }}{% endif %}</a>
-    {% endfor %}
-</fieldset>
+<form method="get" action="{% url 'contacts:business_list' %}" id="tagFilterForm">
+    <fieldset style="margin: 10px 0;">
+        <legend><strong>Filter by Tag</strong></legend>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+            {% for tag in all_tags %}
+                <label style="display: inline-flex; align-items: center; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; {% if tag.tag_id|stringformat:'s' in active_tag_ids %}background-color: #007bff; color: white;{% else %}background-color: #f8f9fa;{% endif %}">
+                    <input type="checkbox" name="tag" value="{{ tag.tag_id }}"
+                           {% if tag.tag_id|stringformat:'s' in active_tag_ids %}checked{% endif %}
+                           onchange="document.getElementById('tagFilterForm').submit();"
+                           style="margin-right: 4px;">
+                    {{ tag.name }}
+                </label>
+            {% endfor %}
+            {% if active_tag_ids %}<a href="{% url 'contacts:business_list' %}">Clear</a>{% endif %}
+        </div>
+    </fieldset>
+</form>
 {% endif %}
 
 {% if businesses %}

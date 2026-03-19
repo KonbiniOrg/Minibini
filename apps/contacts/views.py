@@ -5,15 +5,13 @@ from .models import Contact, Business, Tag
 def contact_list(request):
     contacts = Contact.objects.all().order_by('last_name', 'first_name')
     all_tags = Tag.objects.all()
-    active_tag = None
-    tag_id = request.GET.get('tag')
-    if tag_id:
-        active_tag = get_object_or_404(Tag, tag_id=tag_id)
-        contacts = contacts.filter(tags=active_tag)
+    tag_ids = request.GET.getlist('tag')
+    if tag_ids:
+        contacts = contacts.filter(tags__in=tag_ids).distinct()
     return render(request, 'contacts/contact_list.html', {
         'contacts': contacts,
         'all_tags': all_tags,
-        'active_tag': active_tag,
+        'active_tag_ids': tag_ids,
     })
 
 def contact_detail(request, contact_id):
@@ -26,15 +24,13 @@ def contact_detail(request, contact_id):
 def business_list(request):
     businesses = Business.objects.all().order_by('business_name')
     all_tags = Tag.objects.all()
-    active_tag = None
-    tag_id = request.GET.get('tag')
-    if tag_id:
-        active_tag = get_object_or_404(Tag, tag_id=tag_id)
-        businesses = businesses.filter(tags=active_tag)
+    tag_ids = request.GET.getlist('tag')
+    if tag_ids:
+        businesses = businesses.filter(tags__in=tag_ids).distinct()
     return render(request, 'contacts/business_list.html', {
         'businesses': businesses,
         'all_tags': all_tags,
-        'active_tag': active_tag,
+        'active_tag_ids': tag_ids,
     })
 
 def business_detail(request, business_id):

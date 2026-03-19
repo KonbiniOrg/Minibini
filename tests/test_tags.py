@@ -284,10 +284,25 @@ class ContactListTagFilterTest(TestCase):
         self.assertIn('all_tags', response.context)
         self.assertIn(self.tag, response.context['all_tags'])
 
-    def test_active_tag_passed_to_template(self):
+    def test_active_tag_ids_passed_to_template(self):
         url = reverse('contacts:contact_list') + f'?tag={self.tag.tag_id}'
         response = self.client.get(url)
-        self.assertEqual(response.context['active_tag'], self.tag)
+        self.assertIn(str(self.tag.tag_id), response.context['active_tag_ids'])
+
+    def test_multi_tag_filter_shows_union(self):
+        tag2 = Tag.objects.create(name='vip')
+        contact2 = make_contact(first_name='Carol', last_name='Vip', email='carol@vip.com')
+        contact2.tags.add(tag2)
+        url = reverse('contacts:contact_list') + f'?tag={self.tag.tag_id}&tag={tag2.tag_id}'
+        response = self.client.get(url)
+        self.assertContains(response, 'Alice')
+        self.assertContains(response, 'Carol')
+        self.assertNotContains(response, 'Bob')
+
+    def test_no_tags_selected_shows_all(self):
+        url = reverse('contacts:contact_list')
+        response = self.client.get(url)
+        self.assertEqual(response.context['active_tag_ids'], [])
 
 
 # ---------------------------------------------------------------------------
@@ -321,10 +336,25 @@ class BusinessListTagFilterTest(TestCase):
         self.assertIn('all_tags', response.context)
         self.assertIn(self.tag, response.context['all_tags'])
 
-    def test_active_tag_passed_to_template(self):
+    def test_active_tag_ids_passed_to_template(self):
         url = reverse('contacts:business_list') + f'?tag={self.tag.tag_id}'
         response = self.client.get(url)
-        self.assertEqual(response.context['active_tag'], self.tag)
+        self.assertIn(str(self.tag.tag_id), response.context['active_tag_ids'])
+
+    def test_multi_tag_filter_shows_union(self):
+        tag2 = Tag.objects.create(name='retail')
+        biz2 = make_business('Retail Corp')
+        biz2.tags.add(tag2)
+        url = reverse('contacts:business_list') + f'?tag={self.tag.tag_id}&tag={tag2.tag_id}'
+        response = self.client.get(url)
+        self.assertContains(response, 'Tagged Corp')
+        self.assertContains(response, 'Retail Corp')
+        self.assertNotContains(response, 'Normal Corp')
+
+    def test_no_tags_selected_shows_all(self):
+        url = reverse('contacts:business_list')
+        response = self.client.get(url)
+        self.assertEqual(response.context['active_tag_ids'], [])
 
 
 # ---------------------------------------------------------------------------
