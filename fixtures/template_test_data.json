@@ -16,7 +16,7 @@
         }
     },
     {
-        "model": "jobs.workordertemplate",
+        "model": "estimates.workordertemplate",
         "pk": 1,
         "fields": {
             "template_name": "Standard Installation",
@@ -27,7 +27,7 @@
         }
     },
     {
-        "model": "jobs.workordertemplate",
+        "model": "estimates.workordertemplate",
         "pk": 2,
         "fields": {
             "template_name": "Maintenance Service",
@@ -38,7 +38,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 1,
         "fields": {
             "template_name": "Install Electrical Outlets",
@@ -50,7 +50,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 2,
         "fields": {
             "template_name": "Run Electrical Wiring",
@@ -62,7 +62,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 3,
         "fields": {
             "template_name": "Install Plumbing Fixtures",
@@ -74,7 +74,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 4,
         "fields": {
             "template_name": "Run Water Lines",
@@ -86,7 +86,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 5,
         "fields": {
             "template_name": "Frame Walls",
@@ -98,7 +98,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 6,
         "fields": {
             "template_name": "Install Drywall",
@@ -110,7 +110,7 @@
         }
     },
     {
-        "model": "jobs.templatebundle",
+        "model": "estimates.templatebundle",
         "pk": 1,
         "fields": {
             "work_order_template": 1,
@@ -121,7 +121,7 @@
         }
     },
     {
-        "model": "jobs.templatebundle",
+        "model": "estimates.templatebundle",
         "pk": 2,
         "fields": {
             "work_order_template": 1,
@@ -132,7 +132,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 1,
         "fields": {
             "work_order_template": 1,
@@ -144,7 +144,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 2,
         "fields": {
             "work_order_template": 1,
@@ -156,7 +156,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 3,
         "fields": {
             "work_order_template": 1,
@@ -168,7 +168,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 4,
         "fields": {
             "work_order_template": 1,
@@ -180,7 +180,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 5,
         "fields": {
             "work_order_template": 1,
@@ -192,7 +192,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 6,
         "fields": {
             "work_order_template": 1,
@@ -204,7 +204,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 7,
         "fields": {
             "work_order_template": 2,
@@ -216,7 +216,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 8,
         "fields": {
             "work_order_template": 2,

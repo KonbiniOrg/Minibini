@@ -76,7 +76,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 1,
         "fields": {
             "job": 1,
@@ -89,7 +89,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 2,
         "fields": {
             "job": 2,
@@ -102,7 +102,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 3,
         "fields": {
             "job": 2,

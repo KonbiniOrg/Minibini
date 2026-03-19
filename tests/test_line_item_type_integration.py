@@ -4,8 +4,9 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import Configuration, LineItemType
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Estimate, EstimateLineItem
-from apps.invoicing.models import PriceListItem
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
+from apps.inventory.models import PriceListItem
 
 
 class LineItemTypeIntegrationTest(TestCase):
@@ -31,7 +32,7 @@ class LineItemTypeIntegrationTest(TestCase):
         self.assertTrue(hardware_type.taxable)
 
         # 2. Create PriceListItem with that type
-        response = self.client.post(reverse('invoicing:price_list_item_add'), {
+        response = self.client.post(reverse('inventory:price_list_item_add'), {
             'code': 'BOLT-001',
             'description': 'Steel Bolt',
             'selling_price': '10.00',
@@ -41,7 +42,7 @@ class LineItemTypeIntegrationTest(TestCase):
             'qty_wasted': '0.00',
             'line_item_type': hardware_type.pk,
         })
-        self.assertRedirects(response, reverse('invoicing:price_list_item_list'))
+        self.assertRedirects(response, reverse('inventory:price_list_item_list'))
         price_list_item = PriceListItem.objects.get(code='BOLT-001')
         self.assertEqual(price_list_item.line_item_type, hardware_type)
 
@@ -61,7 +62,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # 4. Add line item from PriceListItem
         response = self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'pricelist_submit': '1',
                 'price_list_item': price_list_item.pk,
@@ -76,7 +77,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # 6. Verify tax calculation on estimate detail
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[estimate.estimate_id])
         )
         self.assertContains(response, 'Subtotal')
         self.assertContains(response, '100.00')
@@ -110,7 +111,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Add manual service line item
         response = self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'manual_submit': '1',
                 'description': 'Consulting',
@@ -123,7 +124,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Verify tax is zero
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[estimate.estimate_id])
         )
         self.assertContains(response, '500.00')  # Subtotal
         self.assertContains(response, '$0.00')   # Tax is zero
@@ -163,7 +164,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Add taxable item
         response = self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'manual_submit': '1',
                 'description': 'Metal Sheet',
@@ -176,7 +177,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Verify tax is zero due to exemption
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[estimate.estimate_id])
         )
         self.assertContains(response, '200.00')  # Subtotal
         self.assertContains(response, 'exempt')   # Exemption indicator
@@ -291,7 +292,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Add line item from price list
         response = self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'pricelist_submit': '1',
                 'price_list_item': pli.pk,
@@ -340,7 +341,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Add taxable product
         self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'manual_submit': '1',
                 'description': 'Physical Product',
@@ -353,7 +354,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Add non-taxable service
         self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'manual_submit': '1',
                 'description': 'Installation Service',
@@ -366,7 +367,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Verify totals on estimate detail
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[estimate.estimate_id])
         )
 
         # Subtotal should be $250 (2 x $100 + $50)
@@ -413,7 +414,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Add taxable item worth $100
         self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'manual_submit': '1',
                 'description': 'Parts',
@@ -426,7 +427,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Verify tax is 50% of normal (5% instead of 10%)
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[estimate.estimate_id])
         )
         self.assertContains(response, '100.00')  # Subtotal
         # Tax should be $5 (10% x 50% = 5% of $100)
@@ -468,7 +469,7 @@ class LineItemTypeFormIntegrationTest(TestCase):
 
         # Get add line item form
         response = self.client.get(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id])
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id])
         )
 
         self.assertEqual(response.status_code, 200)
@@ -509,7 +510,7 @@ class LineItemTypeFormIntegrationTest(TestCase):
 
         # Get add line item form
         response = self.client.get(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id])
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id])
         )
 
         self.assertEqual(response.status_code, 200)
@@ -527,7 +528,7 @@ class LineItemTypeFormIntegrationTest(TestCase):
         )
 
         # Get price list item add form
-        response = self.client.get(reverse('invoicing:price_list_item_add'))
+        response = self.client.get(reverse('inventory:price_list_item_add'))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'line_item_type')
@@ -567,7 +568,7 @@ class TaxCalculationIntegrationTest(TestCase):
 
         # Add item worth exactly $100
         self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'manual_submit': '1',
                 'description': 'Test Item',
@@ -580,7 +581,7 @@ class TaxCalculationIntegrationTest(TestCase):
 
         # Verify tax is 8.25% of $100 = $8.25
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[estimate.estimate_id])
         )
         self.assertContains(response, '8.25')  # Tax amount
         self.assertContains(response, '108.25')  # Total
@@ -611,7 +612,7 @@ class TaxCalculationIntegrationTest(TestCase):
 
         # Add non-taxable item
         self.client.post(
-            reverse('jobs:estimate_add_line_item', args=[estimate.estimate_id]),
+            reverse('estimates:estimate_add_line_item', args=[estimate.estimate_id]),
             {
                 'manual_submit': '1',
                 'description': 'Labor Service',
@@ -624,7 +625,7 @@ class TaxCalculationIntegrationTest(TestCase):
 
         # Verify tax is $0
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[estimate.estimate_id])
         )
         self.assertContains(response, '750.00')  # Subtotal
         self.assertContains(response, '$0.00')   # Tax

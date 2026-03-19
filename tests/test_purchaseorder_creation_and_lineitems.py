@@ -5,7 +5,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from apps.core.models import Configuration
 
 
@@ -65,7 +65,6 @@ class PurchaseOrderCreationTests(TestCase):
         po = PurchaseOrder.objects.first()
         self.assertIsNotNone(po)
         self.assertEqual(po.business, self.business)
-        self.assertIsNone(po.job)
         self.assertTrue(po.po_number)  # Should have auto-generated number
 
         # Should redirect to PO detail

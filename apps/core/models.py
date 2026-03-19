@@ -55,6 +55,7 @@ class Configuration(models.Model):
         return f"{self.key}: {self.value}"
 
     class Meta:
+        db_table = 'config'
         verbose_name = "Configuration"
         verbose_name_plural = "Configurations"
 
@@ -160,10 +161,20 @@ class LineItemType(models.Model):
     is_active = models.BooleanField(default=True)  # Soft delete support
 
     class Meta:
+        db_table = 'li_types'
         ordering = ['name']
 
     def __str__(self):
         return self.name
+
+
+class AbstractWorkContainer(models.Model):
+    """Abstract base class for WorkOrder and EstWorksheet containing common fields."""
+    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
+    template = models.ForeignKey('estimates.WorkOrderTemplate', on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        abstract = True
 
 
 class BaseLineItem(models.Model):
@@ -174,7 +185,7 @@ class BaseLineItem(models.Model):
     """
     line_item_id = models.AutoField(primary_key=True)
     task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect document integrity
-    price_list_item = models.ForeignKey('invoicing.PriceListItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
+    price_list_item = models.ForeignKey('inventory.PriceListItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
     line_number = models.PositiveIntegerField(blank=True, null=True)
     qty = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     units = models.CharField(max_length=50, blank=True)
@@ -253,3 +264,29 @@ class BaseLineItem(models.Model):
         elif self.price_list_item:
             return self.price_list_item.description
         return "No source"
+
+
+class HistoryEntry(models.Model):
+    ENTRY_TYPES = [
+        ('audit', 'Audit'),
+        ('action', 'Action'),
+        ('note', 'Note'),
+    ]
+
+    entry_type = models.CharField(max_length=10, choices=ENTRY_TYPES)
+    object_type = models.CharField(max_length=50)
+    object_id = models.IntegerField()
+    user = models.ForeignKey(
+        'core.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='history_entries',
+    )
+    timestamp = models.DateTimeField(auto_now_add=True)
+    changes = models.JSONField(null=True, blank=True)
+    text = models.TextField(blank=True, default='')
+
+    class Meta:
+        db_table = 'history'
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.entry_type}: {self.object_type} #{self.object_id}"

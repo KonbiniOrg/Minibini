@@ -11,9 +11,9 @@
 
 <p>
     {% if show_archived %}
-    <a href="{% url 'invoicing:price_list_item_list' %}">Hide Archived</a>
+    <a href="{% url 'inventory:price_list_item_list' %}">Hide Archived</a>
     {% else %}
-    <a href="{% url 'invoicing:price_list_item_list' %}?show_archived=1">Show Archived</a>
+    <a href="{% url 'inventory:price_list_item_list' %}?show_archived=1">Show Archived</a>
     {% endif %}
 </p>
 
@@ -26,6 +26,9 @@
             <th>Units</th>
             <th>Purchase Price</th>
             <th>Selling Price</th>
+            <th>Qty On Hand</th>
+            <th>Qty Sold</th>
+            <th>Qty Wasted</th>
             <th>Status</th>
             <th>Actions</th>
         </tr>
@@ -37,19 +40,28 @@
             <td>{{ item.units|default:"-" }}</td>
             <td>${{ item.purchase_price|floatformat:2 }}</td>
             <td>${{ item.selling_price|floatformat:2 }}</td>
-            <td>{% if not item.is_active %}<strong>Archived</strong>{% else %}Active{% endif %}</td>
+            {% if item.is_inventoried %}
+            <td>{{ item.qty_on_hand|floatformat:2 }}</td>
+            <td>{{ item.qty_sold|floatformat:2 }}</td>
+            <td>{{ item.qty_wasted|floatformat:2 }}</td>
+            {% else %}
+            <td style="color: #ccc">—</td>
+            <td style="color: #ccc">—</td>
+            <td style="color: #ccc">—</td>
+            {% endif %}
+            <td>{% if not item.is_active %}<strong>Archived</strong>{% elif item.is_inventoried %}Inventoried{% else %}Active{% endif %}</td>
             <td>
-                <a href="{% url 'invoicing:price_list_item_edit' item.price_list_item_id %}">Edit</a>
+                <a href="{% url 'inventory:price_list_item_edit' item.price_list_item_id %}">Edit</a>
             </td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="8">No price list items found.</td>
+            <td colspan="11">No price list items found.</td>
         </tr>
         {% endfor %}
     </table>
 </div>
 
-<p><a href="{% url 'invoicing:price_list_item_add' %}">Add New Price List Item</a></p>
+<p><a href="{% url 'inventory:price_list_item_add' %}">Add New Price List Item</a></p>
 
 {% endblock %}

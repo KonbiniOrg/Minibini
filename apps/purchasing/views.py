@@ -1,9 +1,12 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.views.decorators.http import require_POST
 from .models import PurchaseOrder, Bill, BillLineItem, PurchaseOrderLineItem
+from .services import PurchaseOrderService, BillService
+from apps.core.services import NotFoundError
 from .forms import (
-    PurchaseOrderForm, PurchaseOrderLineItemForm, PurchaseOrderStatusForm,
+    PurchaseOrderForm, PurchaseOrderStatusForm,
     BillForm, BillLineItemForm, BillStatusForm,
     POManualLineItemForm, POPriceListLineItemForm
 )
@@ -24,8 +27,7 @@ def purchase_order_detail(request, po_id):
                 new_status = form.cleaned_data['status']
                 if new_status != purchase_order.status:
                     try:
-                        purchase_order.status = new_status
-                        purchase_order.save()
+                        PurchaseOrderService.update_status(purchase_order.pk, new_status)
                         messages.success(request, f'Purchase Order status updated to {purchase_order.get_status_display()}')
                     except Exception as e:
                         messages.error(request, f'Error updating status: {str(e)}')
@@ -60,7 +62,7 @@ def purchase_order_create(request):
     if request.method == 'POST':
         form = PurchaseOrderForm(request.POST)
         if form.is_valid():
-            purchase_order = form.save()
+            purchase_order = PurchaseOrderService.create_po(**form.cleaned_data)
             messages.success(request, f'Purchase Order {purchase_order.po_number} created successfully.')
             return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
     else:
@@ -76,7 +78,7 @@ def purchase_order_create_for_job(request, job_id):
     if request.method == 'POST':
         form = PurchaseOrderForm(request.POST, job=job)
         if form.is_valid():
-            purchase_order = form.save()
+            purchase_order = PurchaseOrderService.create_po(**form.cleaned_data)
             messages.success(request, f'Purchase Order {purchase_order.po_number} created successfully for Job {job.job_number}.')
             return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
     else:
@@ -93,10 +95,9 @@ def purchase_order_add_line_item(request, po_id):
             # Manual line item form submitted
             manual_form = POManualLineItemForm(request.POST)
             if manual_form.is_valid():
-                line_item = manual_form.save(commit=False)
-                line_item.purchase_order = purchase_order
-                line_item.save()
-
+                line_item = PurchaseOrderService.add_line_item(
+                    purchase_order.pk, **manual_form.cleaned_data,
+                )
                 messages.success(request, f'Line item "{line_item.description}" added')
                 return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
             else:
@@ -110,17 +111,9 @@ def purchase_order_add_line_item(request, po_id):
                 price_list_item = pricelist_form.cleaned_data['price_list_item']
                 qty = pricelist_form.cleaned_data['qty']
 
-                # Create line item from price list item, copying purchase_price and line_item_type
-                line_item = PurchaseOrderLineItem.objects.create(
-                    purchase_order=purchase_order,
-                    price_list_item=price_list_item,
-                    description=price_list_item.description,
-                    qty=qty,
-                    units=price_list_item.units,
-                    price=price_list_item.purchase_price,
-                    line_item_type=price_list_item.line_item_type
+                line_item = PurchaseOrderService.add_line_item_from_pli(
+                    purchase_order.pk, price_list_item.pk, qty,
                 )
-
                 messages.success(request, f'Line item "{line_item.description}" added from price list')
                 return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
             else:
@@ -157,8 +150,7 @@ def bill_detail(request, bill_id):
                 new_status = form.cleaned_data['status']
                 if new_status != bill.status:
                     try:
-                        bill.status = new_status
-                        bill.save()
+                        BillService.update_status(bill.pk, new_status)
                         messages.success(request, f'Bill status updated to {bill.get_status_display()}')
                     except Exception as e:
                         messages.error(request, f'Error updating status: {str(e)}')
@@ -189,13 +181,13 @@ def bill_detail(request, bill_id):
     })
 
 def purchase_order_edit(request, po_id):
-    """Edit an existing PurchaseOrder (job and requested_date only)"""
+    """Edit an existing PurchaseOrder"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
 
     if request.method == 'POST':
         form = PurchaseOrderForm(request.POST, instance=purchase_order)
         if form.is_valid():
-            form.save()
+            PurchaseOrderService.update_po(purchase_order.pk, **form.cleaned_data)
             messages.success(request, f'Purchase Order {purchase_order.po_number} updated successfully.')
             return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
     else:
@@ -210,16 +202,20 @@ def purchase_order_delete(request, po_id):
     """Delete a PurchaseOrder (only allowed in Draft status)"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
 
-    # Only allow deletion if PO is in Draft status
+    if request.method == 'POST':
+        try:
+            po_number = purchase_order.po_number
+            PurchaseOrderService.delete_po(purchase_order.pk)
+            messages.success(request, f'Purchase Order {po_number} deleted successfully.')
+            return redirect('purchasing:purchase_order_list')
+        except ValidationError as e:
+            messages.error(request, str(e.message))
+            return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
+
+    # Only show confirmation page if PO is draft
     if purchase_order.status != 'draft':
         messages.error(request, f'Cannot delete Purchase Order {purchase_order.po_number}. Only Draft POs can be deleted.')
         return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
-
-    if request.method == 'POST':
-        po_number = purchase_order.po_number
-        purchase_order.delete()
-        messages.success(request, f'Purchase Order {po_number} deleted successfully.')
-        return redirect('purchasing:purchase_order_list')
 
     return render(request, 'purchasing/purchase_order_delete.html', {
         'purchase_order': purchase_order
@@ -229,15 +225,17 @@ def purchase_order_cancel(request, po_id):
     """Cancel a PurchaseOrder (only allowed in Issued status)"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
 
-    # Only allow cancellation if PO is in Issued status
-    if purchase_order.status != 'issued':
-        messages.error(request, f'Cannot cancel Purchase Order {purchase_order.po_number}. Only Issued POs can be cancelled.')
+    if request.method == 'POST':
+        try:
+            PurchaseOrderService.cancel_po(purchase_order.pk)
+            messages.success(request, f'Purchase Order {purchase_order.po_number} has been cancelled.')
+        except ValidationError as e:
+            messages.error(request, str(e.message))
         return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
 
-    if request.method == 'POST':
-        purchase_order.status = 'cancelled'
-        purchase_order.save()
-        messages.success(request, f'Purchase Order {purchase_order.po_number} has been cancelled.')
+    # Only show confirmation page if PO is issued
+    if purchase_order.status != 'issued':
+        messages.error(request, f'Cannot cancel Purchase Order {purchase_order.po_number}. Only Issued POs can be cancelled.')
         return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
 
     return render(request, 'purchasing/purchase_order_cancel.html', {
@@ -249,7 +247,7 @@ def bill_create(request):
     if request.method == 'POST':
         form = BillForm(request.POST)
         if form.is_valid():
-            bill = form.save()
+            bill = BillService.create_bill(**form.cleaned_data)
             messages.success(request, f'Bill for vendor invoice {bill.vendor_invoice_number} created successfully.')
             return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
     else:
@@ -264,24 +262,13 @@ def bill_create_for_po(request, po_id):
     if request.method == 'POST':
         form = BillForm(request.POST, purchase_order=purchase_order)
         if form.is_valid():
-            bill = form.save()
+            bill = BillService.create_bill_from_po(
+                purchase_order.pk,
+                vendor_invoice_number=form.cleaned_data['vendor_invoice_number'],
+                due_date=form.cleaned_data.get('due_date'),
+            )
 
-            # Copy line items from PurchaseOrder to Bill
-            po_line_items = PurchaseOrderLineItem.objects.filter(purchase_order=purchase_order).order_by('line_number')
-            for po_line_item in po_line_items:
-                BillLineItem.objects.create(
-                    bill=bill,
-                    price_list_item=po_line_item.price_list_item,
-                    task=po_line_item.task,
-                    description=po_line_item.description,
-                    qty=po_line_item.qty,
-                    units=po_line_item.units,
-                    price=po_line_item.price,
-                    line_number=po_line_item.line_number,
-                    line_item_type=po_line_item.line_item_type
-                )
-
-            line_items_copied = po_line_items.count()
+            line_items_copied = BillLineItem.objects.filter(bill=bill).count()
             if line_items_copied > 0:
                 messages.success(request, f'Bill for vendor invoice {bill.vendor_invoice_number} created successfully for PO {purchase_order.po_number} with {line_items_copied} line item(s) copied.')
             else:
@@ -304,31 +291,18 @@ def bill_add_line_item(request, bill_id):
             qty = form.cleaned_data['qty']
 
             if price_list_item:
-                # Create line item from price list item, copying purchase_price and line_item_type
-                line_item = BillLineItem.objects.create(
-                    bill=bill,
-                    price_list_item=price_list_item,
-                    description=price_list_item.description,
-                    qty=qty,
-                    units=price_list_item.units,
-                    price=price_list_item.purchase_price,
-                    line_item_type=price_list_item.line_item_type
+                line_item = BillService.add_line_item_from_pli(
+                    bill.pk, price_list_item.pk, qty,
                 )
                 messages.success(request, f'Line item "{line_item.description}" added from price list')
             else:
-                # Create line item from manual entry
-                description = form.cleaned_data['description']
-                units = form.cleaned_data['units']
-                price = form.cleaned_data['price']
-                line_item_type = form.cleaned_data['line_item_type']
-
-                line_item = BillLineItem.objects.create(
-                    bill=bill,
-                    description=description,
+                line_item = BillService.add_line_item(
+                    bill.pk,
+                    description=form.cleaned_data['description'],
                     qty=qty,
-                    units=units,
-                    price=price,
-                    line_item_type=line_item_type
+                    units=form.cleaned_data['units'],
+                    price=form.cleaned_data['price'],
+                    line_item_type=form.cleaned_data['line_item_type'],
                 )
                 messages.success(request, f'Line item "{line_item.description}" added manually')
 
@@ -345,82 +319,20 @@ def bill_add_line_item(request, bill_id):
 @require_POST
 def purchase_order_reorder_line_item(request, po_id, line_item_id, direction):
     """Reorder line items within a PurchaseOrder by swapping line numbers."""
-    purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
-    line_item = get_object_or_404(PurchaseOrderLineItem, line_item_id=line_item_id, purchase_order=purchase_order)
-
-    # Prevent reordering non-draft purchase orders
-    if purchase_order.status != 'draft':
-        messages.error(request, f'Cannot reorder line items in a {purchase_order.get_status_display().lower()} purchase order.')
-        return redirect('purchasing:purchase_order_detail', po_id=po_id)
-
-    # Get all line items for this purchase order ordered by line_number
-    all_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=purchase_order).order_by('line_number', 'line_item_id'))
-
-    # Find the index of the current line item
     try:
-        current_index = next(i for i, item in enumerate(all_items) if item.line_item_id == line_item.line_item_id)
-    except StopIteration:
-        messages.error(request, 'Line item not found in purchase order.')
-        return redirect('purchasing:purchase_order_detail', po_id=po_id)
-
-    # Determine the swap target
-    if direction == 'up' and current_index > 0:
-        swap_index = current_index - 1
-    elif direction == 'down' and current_index < len(all_items) - 1:
-        swap_index = current_index + 1
-    else:
-        messages.error(request, 'Cannot move line item in that direction.')
-        return redirect('purchasing:purchase_order_detail', po_id=po_id)
-
-    # Swap line numbers
-    current_item = all_items[current_index]
-    swap_item = all_items[swap_index]
-    current_item.line_number, swap_item.line_number = swap_item.line_number, current_item.line_number
-
-    current_item.save()
-    swap_item.save()
-
+        PurchaseOrderService.reorder_line_item(line_item_id, direction)
+    except ValidationError as e:
+        messages.error(request, str(e.message))
     return redirect('purchasing:purchase_order_detail', po_id=po_id)
 
 
 @require_POST
 def bill_reorder_line_item(request, bill_id, line_item_id, direction):
     """Reorder line items within a Bill by swapping line numbers."""
-    bill = get_object_or_404(Bill, bill_id=bill_id)
-    line_item = get_object_or_404(BillLineItem, line_item_id=line_item_id, bill=bill)
-
-    # Prevent reordering non-draft bills
-    if bill.status != 'draft':
-        messages.error(request, f'Cannot reorder line items in a {bill.get_status_display().lower()} bill.')
-        return redirect('purchasing:bill_detail', bill_id=bill_id)
-
-    # Get all line items for this bill ordered by line_number
-    all_items = list(BillLineItem.objects.filter(bill=bill).order_by('line_number', 'line_item_id'))
-
-    # Find the index of the current line item
     try:
-        current_index = next(i for i, item in enumerate(all_items) if item.line_item_id == line_item.line_item_id)
-    except StopIteration:
-        messages.error(request, 'Line item not found in bill.')
-        return redirect('purchasing:bill_detail', bill_id=bill_id)
-
-    # Determine the swap target
-    if direction == 'up' and current_index > 0:
-        swap_index = current_index - 1
-    elif direction == 'down' and current_index < len(all_items) - 1:
-        swap_index = current_index + 1
-    else:
-        messages.error(request, 'Cannot move line item in that direction.')
-        return redirect('purchasing:bill_detail', bill_id=bill_id)
-
-    # Swap line numbers
-    current_item = all_items[current_index]
-    swap_item = all_items[swap_index]
-    current_item.line_number, swap_item.line_number = swap_item.line_number, current_item.line_number
-
-    current_item.save()
-    swap_item.save()
-
+        BillService.reorder_line_item(line_item_id, direction)
+    except ValidationError as e:
+        messages.error(request, str(e.message))
     return redirect('purchasing:bill_detail', bill_id=bill_id)
 
 
@@ -428,16 +340,20 @@ def bill_delete(request, bill_id):
     """Delete a Bill (only allowed in Draft status)"""
     bill = get_object_or_404(Bill, bill_id=bill_id)
 
-    # Only allow deletion if Bill is in Draft status
+    if request.method == 'POST':
+        try:
+            bill_number = bill.bill_number
+            BillService.delete_bill(bill.pk)
+            messages.success(request, f'Bill {bill_number} deleted successfully.')
+            return redirect('purchasing:bill_list')
+        except ValidationError as e:
+            messages.error(request, str(e.message))
+            return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
+
+    # Only show confirmation page if bill is draft
     if bill.status != 'draft':
         messages.error(request, f'Cannot delete Bill {bill.bill_number}. Only Draft Bills can be deleted.')
         return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
-
-    if request.method == 'POST':
-        bill_number = bill.bill_number
-        bill.delete()
-        messages.success(request, f'Bill {bill_number} deleted successfully.')
-        return redirect('purchasing:bill_list')
 
     return render(request, 'purchasing/bill_delete.html', {
         'bill': bill
@@ -446,18 +362,13 @@ def bill_delete(request, bill_id):
 
 def purchase_order_delete_line_item(request, po_id, line_item_id):
     """Delete a line item from a purchase order and renumber remaining items"""
-    from apps.core.services import LineItemService
-    from django.core.exceptions import ValidationError
-
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
-    line_item = get_object_or_404(PurchaseOrderLineItem, line_item_id=line_item_id, purchase_order=purchase_order)
 
     if request.method == 'POST':
         try:
-            # Use the service to delete and renumber
-            parent_container, deleted_line_number = LineItemService.delete_line_item_with_renumber(line_item)
+            PurchaseOrderService.delete_line_item(line_item_id)
             messages.success(request, f'Line item deleted and remaining items renumbered.')
-        except ValidationError as e:
+        except (ValidationError, NotFoundError) as e:
             messages.error(request, str(e))
 
         return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
@@ -468,18 +379,13 @@ def purchase_order_delete_line_item(request, po_id, line_item_id):
 
 def bill_delete_line_item(request, bill_id, line_item_id):
     """Delete a line item from a bill and renumber remaining items"""
-    from apps.core.services import LineItemService
-    from django.core.exceptions import ValidationError
-
     bill = get_object_or_404(Bill, bill_id=bill_id)
-    line_item = get_object_or_404(BillLineItem, line_item_id=line_item_id, bill=bill)
 
     if request.method == 'POST':
         try:
-            # Use the service to delete and renumber
-            parent_container, deleted_line_number = LineItemService.delete_line_item_with_renumber(line_item)
+            BillService.delete_line_item(line_item_id)
             messages.success(request, f'Line item deleted and remaining items renumbered.')
-        except ValidationError as e:
+        except (ValidationError, NotFoundError) as e:
             messages.error(request, str(e))
 
         return redirect('purchasing:bill_detail', bill_id=bill.bill_id)

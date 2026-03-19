@@ -1,6 +1,7 @@
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator
+from apps.core.history import history
 
 
 class Tag(models.Model):
@@ -14,6 +15,7 @@ class Tag(models.Model):
         ordering = ['name']
 
 
+@history(exclude=[])
 class Contact(models.Model):
     contact_id = models.AutoField(primary_key=True)
     first_name = models.CharField(max_length=100)
@@ -124,6 +126,7 @@ class Contact(models.Model):
         return ""
 
 
+@history(exclude=['business_id'])
 class Business(models.Model):
     business_id = models.AutoField(primary_key=True)
     our_reference_code = models.CharField(max_length=50, blank=True, unique=True)
@@ -143,6 +146,9 @@ class Business(models.Model):
         null=True,
         blank=True
     )
+
+    class Meta:
+        db_table = 'businesses'
 
     def __str__(self):
         return self.business_name
@@ -243,5 +249,6 @@ class PaymentTerms(models.Model):
     # Additional fields not visible in diagram
 
     class Meta:
+        db_table = 'terms'
         verbose_name = "Payment Terms"
         verbose_name_plural = "Payment Terms"

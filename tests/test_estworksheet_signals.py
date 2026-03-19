@@ -9,8 +9,9 @@ from django.db import reset_queries
 from unittest.mock import patch, MagicMock
 
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Estimate, EstWorksheet
-from apps.jobs.signals import estimate_status_changed_for_worksheet
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstWorksheet
+from apps.estimates.signals import estimate_status_changed_for_worksheet
 
 
 class EstWorksheetSignalEfficiencyTest(TestCase):
@@ -40,7 +41,7 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
         )
 
         # Mock the signal to check if it's called
-        with patch('apps.jobs.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
+        with patch('apps.estimates.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
             # Change non-status field
             reset_queries()
             estimate.estimate_number = "EST002"
@@ -49,13 +50,14 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
             # Signal should NOT have been called
             mock_signal.assert_not_called()
 
-            # Check query count - 5 queries due to validation and status checks:
+            # Check query count - 6 queries due to validation, status checks, and history:
             # 1. SELECT old status in save()
             # 2. SELECT to verify job exists (validation)
             # 3. SELECT old status again in clean()
             # 4. SELECT to check unique constraint
             # 5. UPDATE query
-            self.assertEqual(len(connection.queries), 5)
+            # 6. INSERT history entry (audit trail for estimate_number change)
+            self.assertEqual(len(connection.queries), 6)
 
     @override_settings(DEBUG=True)
     def test_no_signal_on_irrelevant_status_change(self):
@@ -72,7 +74,7 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
             status='final'
         )
 
-        with patch('apps.jobs.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
+        with patch('apps.estimates.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
             reset_queries()
             # Change from 'open' to 'accepted' - both map to 'final' for worksheets
             estimate.status = 'accepted'
@@ -98,7 +100,7 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
             status='draft'
         )
 
-        with patch('apps.jobs.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
+        with patch('apps.estimates.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
             # Change from 'draft' to 'open' - should trigger signal
             estimate.status = 'open'
             estimate.save()

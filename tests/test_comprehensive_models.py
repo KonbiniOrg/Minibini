@@ -7,9 +7,11 @@ from decimal import Decimal
 from datetime import timedelta
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.core.models import User, Configuration
-from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, TaskTemplate
-from apps.invoicing.models import Invoice, InvoiceLineItem, PriceListItem
-from apps.jobs.models import EstimateLineItem
+from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.estimates.models import Estimate, TaskTemplate
+from apps.invoicing.models import Invoice, InvoiceLineItem
+from apps.inventory.models import PriceListItem
+from apps.estimates.models import EstimateLineItem
 from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 from apps.purchasing.models import PurchaseOrder, Bill
 
@@ -135,7 +137,6 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         purchase_order = PurchaseOrder.objects.create(
             business=self.business,
-            job=job,
             po_number="PO001",
             status='draft'
         )
@@ -361,7 +362,6 @@ class LineItemValidationTest(TestCase):
         )
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
-            job=self.job,
             po_number="PO_VALID001",
             status='draft'
         )

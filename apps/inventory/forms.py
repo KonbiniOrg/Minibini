@@ -1,5 +1,6 @@
 from django import forms
-from .models import InventoryItem
+from apps.inventory.models import PriceListItem
+from apps.core.models import LineItemType
 
 UNIT_CHOICES = [
     ('sq ft', 'sq ft (square feet)'),
@@ -21,13 +22,13 @@ UNIT_CHOICES = [
 
 
 class InventoryItemForm(forms.ModelForm):
-    """Form for adding and editing inventory items."""
+    """Form for adding and editing inventoried price list items."""
 
     units_select = forms.ChoiceField(choices=UNIT_CHOICES, label='Units')
     units_custom = forms.CharField(required=False, label='Custom units')
 
     class Meta:
-        model = InventoryItem
+        model = PriceListItem
         fields = [
             'code',
             'description',
@@ -54,15 +55,19 @@ class InventoryItemForm(forms.ModelForm):
         if units_select == 'other':
             if not units_custom:
                 self.add_error('units_custom', 'Please enter a custom unit.')
+            else:
+                cleaned_data['units'] = units_custom
+        else:
+            cleaned_data['units'] = units_select
         return cleaned_data
 
     def clean_code(self):
         code = self.cleaned_data['code']
-        existing_query = InventoryItem.objects.filter(code=code)
+        existing_query = PriceListItem.objects.filter(code=code, is_inventoried=True)
         if self.instance.pk:
             existing_query = existing_query.exclude(pk=self.instance.pk)
         if existing_query.exists():
-            raise forms.ValidationError(f'Item with code "{code}" already exists.')
+            raise forms.ValidationError(f'Inventoried item with code "{code}" already exists.')
         return code
 
     def clean_purchase_price(self):
@@ -85,6 +90,7 @@ class InventoryItemForm(forms.ModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
+        instance.is_inventoried = True
         if self.cleaned_data['units_select'] == 'other':
             instance.units = self.cleaned_data['units_custom'].strip()
         else:
@@ -92,3 +98,92 @@ class InventoryItemForm(forms.ModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class PriceListItemForm(forms.ModelForm):
+    """Form for creating and editing PriceListItem."""
+
+    class Meta:
+        model = PriceListItem
+        fields = [
+            'code',
+            'units',
+            'description',
+            'purchase_price',
+            'selling_price',
+            'is_inventoried',
+            'qty_on_hand',
+            'qty_sold',
+            'qty_wasted',
+            'line_item_type',
+            'is_active',
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Only show active LineItemTypes in the dropdown
+        self.fields['line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
+        # Only show is_active field when editing existing items (not on create)
+        if self.instance.pk:
+            self.fields['is_active'].label = "Active (uncheck to archive)"
+        else:
+            # For new items, remove the is_active field - they're always active by default
+            del self.fields['is_active']
+
+        # Hide quantity fields for non-inventoried items
+        # Check both the instance (for GET) and submitted data (for POST)
+        is_inventoried = self.instance.is_inventoried
+        if self.data:
+            is_inventoried = 'is_inventoried' in self.data
+        if not is_inventoried:
+            del self.fields['qty_on_hand']
+            del self.fields['qty_sold']
+            del self.fields['qty_wasted']
+
+
+    def clean_code(self):
+        """Ensure code is unique when creating a new item or updating."""
+        code = self.cleaned_data['code']
+        # Check for duplicates, excluding the current instance if it's an update
+        existing_query = PriceListItem.objects.filter(code=code)
+        if self.instance.pk:
+            existing_query = existing_query.exclude(pk=self.instance.pk)
+
+        if existing_query.exists():
+            raise forms.ValidationError(f'Item with code "{code}" already exists.')
+        return code
+
+    def clean_purchase_price(self):
+        """Ensure purchase price is not negative."""
+        purchase_price = self.cleaned_data['purchase_price']
+        if purchase_price < 0:
+            raise forms.ValidationError('Purchase price cannot be negative.')
+        return purchase_price
+
+    def clean_selling_price(self):
+        """Ensure selling price is not negative."""
+        selling_price = self.cleaned_data['selling_price']
+        if selling_price < 0:
+            raise forms.ValidationError('Selling price cannot be negative.')
+        return selling_price
+
+    def clean_qty_on_hand(self):
+        """Ensure quantity on hand is not negative."""
+        qty_on_hand = self.cleaned_data['qty_on_hand']
+        if qty_on_hand < 0:
+            raise forms.ValidationError('Quantity on hand cannot be negative.')
+        return qty_on_hand
+
+    def clean_qty_sold(self):
+        """Ensure quantity sold is not negative."""
+        qty_sold = self.cleaned_data['qty_sold']
+        if qty_sold < 0:
+            raise forms.ValidationError('Quantity sold cannot be negative.')
+        return qty_sold
+
+    def clean_qty_wasted(self):
+        """Ensure quantity wasted is not negative."""
+        qty_wasted = self.cleaned_data['qty_wasted']
+        if qty_wasted < 0:
+            raise forms.ValidationError('Quantity wasted cannot be negative.')
+        return qty_wasted

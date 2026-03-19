@@ -25,10 +25,12 @@ urlpatterns = [
     path('settings/', settings_view, name='settings'),
     path('settings/tax/', tax_config_edit, name='tax_config_edit'),
     path('jobs/', include('apps.jobs.urls')),
+    path('estimates/', include('apps.estimates.urls')),
     path('contacts/', include('apps.contacts.urls')),
     path('core/', include('apps.core.urls')),
     path('purchasing/', include('apps.purchasing.urls')),
     path('invoicing/', include('apps.invoicing.urls')),
     path('search/', include('apps.search.urls')),
     path('inventory/', include('apps.inventory.urls')),
+    path('api/', include('apps.api.urls')),
 ]

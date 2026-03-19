@@ -205,6 +205,25 @@
         }
     },
     {
+        "model": "core.user",
+        "pk": 4,
+        "fields": {
+            "password": "pbkdf2_sha256$870000$test$hash",
+            "last_login": null,
+            "is_superuser": false,
+            "username": "system",
+            "first_name": "System",
+            "last_name": "",
+            "email": "system@minibini.com",
+            "is_staff": false,
+            "is_active": true,
+            "date_joined": "2024-01-01T00:00:00Z",
+            "contact": null,
+            "groups": [],
+            "user_permissions": []
+        }
+    },
+    {
         "model": "core.configuration",
         "pk": "job_number_sequence",
         "fields": {
@@ -351,7 +370,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 1,
         "fields": {
             "job": 1,
@@ -364,7 +383,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 2,
         "fields": {
             "job": 2,
@@ -377,7 +396,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 3,
         "fields": {
             "job": 2,
@@ -394,7 +413,6 @@
         "pk": 1,
         "fields": {
             "business": 2,
-            "job": 1,
             "po_number": "PO-2024-0001",
             "status": "issued"
         }
@@ -404,7 +422,6 @@
         "pk": 2,
         "fields": {
             "business": 2,
-            "job": 2,
             "po_number": "PO-2024-0002",
             "status": "issued"
         }
@@ -432,7 +449,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 1,
         "fields": {
             "code": "SCREW001",
@@ -446,7 +463,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 2,
         "fields": {
             "code": "LABOR001",
@@ -478,7 +495,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 1,
         "fields": {
             "estimate": 1,
@@ -492,7 +509,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 2,
         "fields": {
             "estimate": 1,
@@ -562,7 +579,7 @@
         }
     },
     {
-        "model": "jobs.workordertemplate",
+        "model": "estimates.workordertemplate",
         "pk": 1,
         "fields": {
             "template_name": "Standard Kitchen Renovation",
@@ -572,7 +589,7 @@
         }
     },
     {
-        "model": "jobs.workordertemplate",
+        "model": "estimates.workordertemplate",
         "pk": 2,
         "fields": {
             "template_name": "Basic Maintenance",
@@ -582,7 +599,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 1,
         "fields": {
             "template_name": "Site Preparation",
@@ -594,7 +611,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 2,
         "fields": {
             "template_name": "Material Delivery",
@@ -606,7 +623,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 3,
         "fields": {
             "template_name": "Electrical Installation",
@@ -618,7 +635,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 4,
         "fields": {
             "template_name": "Construction Work",
@@ -630,7 +647,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 1,
         "fields": {
             "work_order_template": 1,
@@ -640,7 +657,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 2,
         "fields": {
             "work_order_template": 1,
@@ -650,7 +667,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 3,
         "fields": {
             "work_order_template": 1,
@@ -660,7 +677,7 @@
         }
     },
     {
-        "model": "jobs.templatetaskassociation",
+        "model": "estimates.templatetaskassociation",
         "pk": 4,
         "fields": {
             "work_order_template": 1,

@@ -41,13 +41,18 @@
         </td>
     </tr>
     <tr>
-        <td>Job</td>
+        <td>Jobs</td>
         <td>
-            {% if purchase_order.job %}
-                <a href="{% url 'jobs:detail' purchase_order.job.pk %}">{{ purchase_order.job }}</a>
-            {% else %}
-                No job assigned
-            {% endif %}
+            {% with jobs=purchase_order.purchaseorderlineitem_set.all %}
+                {% regroup jobs by job as job_groups %}
+                {% for group in job_groups %}
+                    {% if group.grouper %}
+                        <a href="{% url 'jobs:detail' group.grouper.pk %}">{{ group.grouper }}</a>{% if not forloop.last %}, {% endif %}
+                    {% endif %}
+                {% empty %}
+                    No jobs assigned
+                {% endfor %}
+            {% endwith %}
         </td>
     </tr>
     <tr>

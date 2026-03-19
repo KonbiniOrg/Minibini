@@ -1,0 +1,82 @@
+from rest_framework import serializers
+from apps.contacts.models import Contact, Business, PaymentTerms
+from apps.jobs.models import Job
+from apps.api.jobs.serializers import JobSummarySerializer
+
+
+class BusinessSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Business
+        fields = ['business_id', 'business_name', 'our_reference_code']
+
+
+class ContactSummarySerializer(serializers.ModelSerializer):
+    name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Contact
+        fields = ['contact_id', 'name', 'email', 'mobile_number']
+
+
+class ContactSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(read_only=True)
+    business = BusinessSummarySerializer(read_only=True)
+    business_id = serializers.PrimaryKeyRelatedField(
+        queryset=Business.objects.all(), source='business', write_only=True, required=False, allow_null=True,
+    )
+
+    class Meta:
+        model = Contact
+        fields = [
+            'contact_id', 'first_name', 'middle_initial', 'last_name', 'name',
+            'email', 'mobile_number', 'work_number', 'home_number',
+            'addr1', 'addr2', 'addr3', 'city', 'municipality',
+            'postal_code', 'country_code', 'business', 'business_id',
+        ]
+        read_only_fields = ['contact_id']
+
+
+class BusinessSerializer(serializers.ModelSerializer):
+    default_contact = ContactSerializer(read_only=True)
+    default_contact_id = serializers.PrimaryKeyRelatedField(
+        queryset=Contact.objects.all(), source='default_contact', write_only=True, required=False,
+    )
+
+    class Meta:
+        model = Business
+        fields = [
+            'business_id', 'our_reference_code', 'business_name',
+            'business_address', 'business_phone', 'tax_exemption_number',
+            'website', 'terms', 'default_contact', 'default_contact_id', 'tax_multiplier',
+        ]
+        read_only_fields = ['business_id', 'our_reference_code']
+
+
+class BusinessDetailSerializer(BusinessSerializer):
+    contacts = ContactSummarySerializer(many=True, read_only=True)
+    jobs = serializers.SerializerMethodField()
+
+    class Meta(BusinessSerializer.Meta):
+        fields = BusinessSerializer.Meta.fields + ['contacts', 'jobs']
+
+    def get_jobs(self, obj):
+        jobs = Job.objects.filter(contact__business=obj).order_by('-created_date')
+        return JobSummarySerializer(jobs, many=True).data
+
+
+class ContactDetailSerializer(ContactSerializer):
+    business = BusinessSerializer(read_only=True)
+    jobs = serializers.SerializerMethodField()
+
+    class Meta(ContactSerializer.Meta):
+        fields = ContactSerializer.Meta.fields + ['jobs']
+
+    def get_jobs(self, obj):
+        jobs = Job.objects.filter(contact=obj).order_by('-created_date')
+        return JobSummarySerializer(jobs, many=True).data
+
+
+class PaymentTermsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentTerms
+        fields = '__all__'

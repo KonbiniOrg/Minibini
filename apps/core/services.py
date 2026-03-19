@@ -10,7 +10,17 @@ from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
 from imap_tools import MailBox, AND
-from .models import Configuration, EmailRecord, TempEmail
+from .models import Configuration, EmailRecord, TempEmail, LineItemType
+
+
+class ServiceError(Exception):
+    """Base exception for service-layer errors."""
+    pass
+
+
+class NotFoundError(ServiceError):
+    """Raised when a requested object does not exist."""
+    pass
 
 
 class NumberGenerationService:
@@ -152,24 +162,6 @@ class NumberGenerationService:
 
         return formatted
 
-    @classmethod
-    def reset_counter(cls, document_type: str, new_value: int = 0):
-        """
-        Reset a counter to a specific value. Use with caution!
-
-        Args:
-            document_type: One of 'job', 'estimate', 'invoice', 'po'
-            new_value: The value to reset the counter to (default: 0)
-        """
-        if document_type not in cls.COUNTER_KEYS:
-            raise ValidationError(f"Invalid document_type '{document_type}'")
-
-        counter_key = cls.COUNTER_KEYS[document_type]
-
-        with transaction.atomic():
-            counter_config = Configuration.objects.select_for_update().get(key=counter_key)
-            counter_config.value = str(new_value)
-            counter_config.save()
 
 
 class EmailService:
@@ -476,86 +468,225 @@ class EmailService:
 
         return deleted_count
 
-    def link_email_to_job(self, email_record_id, job_id):
-        """
-        Associate an EmailRecord with a Job.
-
-        Args:
-            email_record_id: Primary key of EmailRecord
-            job_id: Primary key of Job
-
-        Returns:
-            EmailRecord: Updated email record, or None if not found
-        """
-        try:
-            email_record = EmailRecord.objects.get(email_record_id=email_record_id)
-            email_record.job_id = job_id
-            email_record.save()
-            return email_record
-        except EmailRecord.DoesNotExist:
-            return None
-
     def _validate_config(self):
         """Check if required IMAP configuration is present."""
         return all([self.imap_server, self.email, self.password])
+
+    @staticmethod
+    def associate_with_job(email_record_id, job_id):
+        """Associate an EmailRecord with a Job.
+
+        Args:
+            email_record_id: PK of EmailRecord
+            job_id: PK of Job
+
+        Returns:
+            EmailRecord with job set
+
+        Raises:
+            NotFoundError: if email_record or job not found
+        """
+        from apps.jobs.models import Job
+        try:
+            email_record = EmailRecord.objects.get(pk=email_record_id)
+        except EmailRecord.DoesNotExist:
+            raise NotFoundError(f'EmailRecord {email_record_id} not found')
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {job_id} not found')
+        email_record.job = job
+        email_record.save()
+        return email_record
+
+    @staticmethod
+    def disassociate_from_job(email_record_id):
+        """Remove job association from an EmailRecord.
+
+        Args:
+            email_record_id: PK of EmailRecord
+
+        Returns:
+            EmailRecord with job cleared
+
+        Raises:
+            NotFoundError: if email_record not found
+        """
+        try:
+            email_record = EmailRecord.objects.get(pk=email_record_id)
+        except EmailRecord.DoesNotExist:
+            raise NotFoundError(f'EmailRecord {email_record_id} not found')
+        email_record.job = None
+        email_record.save()
+        return email_record
+
+
+class BundlingService:
+    """
+    Shared low-level service for bundle/unbundle/reorder operations.
+
+    Works with any item model that has `mapping_strategy`, `bundle` (FK), and
+    `sort_order` fields, and any bundle model with `sort_order`. Domain services
+    (WorksheetService, WorkOrderTemplateService) call BundlingService after
+    handling domain-specific validation (e.g. status checks).
+    """
+
+    @staticmethod
+    def bundle_items(items_qs, bundle):
+        """
+        Assign items to a bundle with sequential within-bundle sort_order.
+        Additive: starts from existing max sort_order in the bundle + 1.
+        """
+        from django.db.models import Max
+        existing_max = bundle.tasks.aggregate(
+            Max('sort_order')
+        )['sort_order__max'] if hasattr(bundle, 'tasks') else None
+        if existing_max is None:
+            # Try associations (TemplateBundle)
+            existing_max = bundle.associations.aggregate(
+                Max('sort_order')
+            )['sort_order__max'] if hasattr(bundle, 'associations') else None
+        existing_max = existing_max or 0
+
+        for i, item in enumerate(items_qs.order_by('sort_order', 'pk'), start=existing_max + 1):
+            item.mapping_strategy = 'bundle'
+            item.bundle = bundle
+            item.sort_order = i
+            item.save()
+
+    @staticmethod
+    def unbundle_item(item, container_items_qs, container_bundles_qs):
+        """
+        Remove an item from its bundle, re-inserting at container level.
+        Bumps sort_order of existing container-level items at or after the insert point.
+        """
+        from django.db.models import F
+
+        bundle = item.bundle
+        insert_point = bundle.sort_order + 1
+
+        # Bump container-level items at >= insert_point
+        container_items_qs.filter(
+            sort_order__gte=insert_point,
+        ).update(sort_order=F('sort_order') + 1)
+        container_bundles_qs.filter(
+            sort_order__gte=insert_point,
+        ).update(sort_order=F('sort_order') + 1)
+
+        item.mapping_strategy = 'direct'
+        item.bundle = None
+        item.sort_order = insert_point
+        item.save()
+
+    @staticmethod
+    def auto_dissolve_bundles(bundles_qs, items_model, exclude_pk=None):
+        """
+        Check bundles and dissolve any with 0 or 1 remaining items.
+        - 0 items: delete the bundle
+        - 1 item: unbundle the last item (inherits bundle's sort_order), delete bundle
+        """
+        qs = bundles_qs
+        if exclude_pk is not None:
+            qs = qs.exclude(pk=exclude_pk)
+
+        for bundle in list(qs):
+            remaining = items_model.objects.filter(bundle=bundle)
+            count = remaining.count()
+            if count == 0:
+                bundle.delete()
+            elif count == 1:
+                last_item = remaining.first()
+                last_item.mapping_strategy = 'direct'
+                last_item.sort_order = bundle.sort_order
+                last_item.bundle = None
+                last_item.save()
+                bundle.delete()
+
+    @staticmethod
+    def reorder_container_items(items_qs, item_type, item_id, direction):
+        """
+        Reorder items at the container level. Bundles and unbundled items
+        share the same sort_order space.
+        """
+        container_items = []
+        seen_bundles = set()
+
+        for item in items_qs.select_related('bundle'):
+            if item.mapping_strategy == 'bundle' and item.bundle:
+                if item.bundle_id not in seen_bundles:
+                    seen_bundles.add(item.bundle_id)
+                    container_items.append(
+                        (item.bundle.sort_order, 'bundle', item.bundle)
+                    )
+            else:
+                container_items.append(
+                    (item.sort_order or 0, 'task', item)
+                )
+
+        container_items.sort(key=lambda x: x[0])
+
+        # Find current item
+        current_index = None
+        for i, (_, itype, obj) in enumerate(container_items):
+            if itype == item_type and obj.pk == item_id:
+                current_index = i
+                break
+
+        if current_index is None:
+            raise ValidationError('Item not found in container.')
+
+        if direction == 'up' and current_index > 0:
+            swap_index = current_index - 1
+        elif direction == 'down' and current_index < len(container_items) - 1:
+            swap_index = current_index + 1
+        else:
+            raise ValidationError(f'Cannot move item {direction} from current position.')
+
+        _, _, current_obj = container_items[current_index]
+        _, _, swap_obj = container_items[swap_index]
+        current_obj.sort_order, swap_obj.sort_order = swap_obj.sort_order, current_obj.sort_order
+        current_obj.save()
+        swap_obj.save()
+
+    @staticmethod
+    def reorder_in_bundle(bundle_items_qs, item, direction):
+        """Reorder an item within its bundle by swapping sort_order."""
+        items = list(bundle_items_qs.order_by('sort_order', 'pk'))
+
+        current_index = None
+        for i, obj in enumerate(items):
+            if obj.pk == item.pk:
+                current_index = i
+                break
+
+        if current_index is None:
+            raise ValidationError('Item not found in bundle.')
+
+        if direction == 'up' and current_index > 0:
+            swap_index = current_index - 1
+        elif direction == 'down' and current_index < len(items) - 1:
+            swap_index = current_index + 1
+        else:
+            raise ValidationError(f'Cannot move item {direction} from current position.')
+
+        current = items[current_index]
+        swap = items[swap_index]
+        current.sort_order, swap.sort_order = swap.sort_order, current.sort_order
+        current.save()
+        swap.save()
+
+
 class LineItemService:
     """
     Service for managing line items across different container types.
 
     Works with any container object (Estimate, Invoice, PurchaseOrder, Bill)
-    that has a 'status' field and line items inheriting from BaseLineItem.
+    that has line items inheriting from BaseLineItem.
 
-    All operations validate that the container is in 'draft' status before
-    allowing modifications, ensuring consistency across all document types.
-
-    Example usage:
-        # Delete a line item
-        try:
-            parent, line_num = LineItemService.delete_line_item_with_renumber(line_item)
-            messages.success(request, f'Line item {line_num} deleted successfully.')
-        except ValidationError as e:
-            messages.error(request, str(e))
-
-        # Reorder a line item
-        try:
-            parent = LineItemService.reorder_line_item(line_item, 'up')
-            messages.success(request, 'Line item moved up.')
-        except ValidationError as e:
-            messages.error(request, str(e))
+    Status validation is the responsibility of calling domain services
+    (e.g. EstimateService, PurchaseOrderService), not LineItemService.
+    This matches how BundlingService delegates status checks to callers.
     """
-
-    EDITABLE_STATUS = 'draft'
-
-    @classmethod
-    def can_modify_line_items(cls, container):
-        """
-        Check if line items can be modified on this container.
-
-        Args:
-            container: An object with a 'status' attribute (Estimate, Invoice, PO, Bill)
-
-        Returns:
-            bool: True if line items can be modified
-        """
-        return container.status == cls.EDITABLE_STATUS
-
-    @classmethod
-    def validate_modification(cls, container):
-        """
-        Validate that the container allows line item modifications.
-
-        Args:
-            container: An object with a 'status' attribute
-
-        Raises:
-            ValidationError: If modifications are not allowed
-        """
-        if not cls.can_modify_line_items(container):
-            container_type = container.__class__.__name__
-            raise ValidationError(
-                f'Cannot modify line items on a {container.get_status_display().lower()} '
-                f'{container_type.lower()}. Only draft {container_type.lower()}s can be modified.'
-            )
 
     @classmethod
     def get_line_item_model(cls, line_item):
@@ -590,23 +721,16 @@ class LineItemService:
         """
         Delete a line item and renumber remaining items in the container.
 
-        This is the primary method for deleting line items. It:
-        1. Validates the parent container is in draft status
-        2. Deletes the line item
-        3. Renumbers remaining line items sequentially
+        Callers must validate container status before calling this method.
 
         Args:
             line_item: An instance of a BaseLineItem subclass
 
-        Raises:
-            ValidationError: If the parent container doesn't allow modifications
-
         Returns:
             tuple: (parent_container, deleted_line_number)
         """
-        # Get parent container and validate
+        # Get parent container
         parent_container = cls.get_parent_container(line_item)
-        cls.validate_modification(parent_container)
 
         # Store info before deletion
         deleted_line_number = line_item.line_number
@@ -635,19 +759,20 @@ class LineItemService:
         """
         Reorder a line item within its container by swapping line numbers.
 
+        Callers must validate container status before calling this method.
+
         Args:
             line_item: An instance of a BaseLineItem subclass
             direction: 'up' or 'down'
 
         Raises:
-            ValidationError: If modifications not allowed or invalid direction
+            ValidationError: If direction is invalid or item can't move
 
         Returns:
             The parent container object
         """
-        # Get parent container and validate
+        # Get parent container
         parent_container = cls.get_parent_container(line_item)
-        cls.validate_modification(parent_container)
 
         # Get all line items for this container
         line_item_model = cls.get_line_item_model(line_item)
@@ -843,3 +968,46 @@ class TaxCalculationService:
             total_tax += TaxCalculationService.calculate_line_item_tax(line_item, customer)
 
         return total_tax
+
+
+class ConfigurationService:
+    """Service for managing configuration: key-value settings and line item types."""
+
+    @staticmethod
+    def update_tax_config(*, default_tax_rate=None, org_tax_multiplier=None):
+        """Update tax configuration values. Skips None values."""
+        if default_tax_rate is not None:
+            Configuration.objects.update_or_create(
+                key='default_tax_rate',
+                defaults={'value': str(default_tax_rate)}
+            )
+        if org_tax_multiplier is not None:
+            Configuration.objects.update_or_create(
+                key='org_tax_multiplier',
+                defaults={'value': str(org_tax_multiplier)}
+            )
+
+    @staticmethod
+    def create_line_item_type(**kwargs):
+        """Create a new LineItemType from field values."""
+        lit = LineItemType(**kwargs)
+        lit.full_clean()
+        lit.save()
+        return lit
+
+    @staticmethod
+    def update_line_item_type(pk, **kwargs):
+        """Update an existing LineItemType by PK.
+
+        Raises:
+            NotFoundError: if LineItemType not found
+        """
+        try:
+            lit = LineItemType.objects.get(pk=pk)
+        except LineItemType.DoesNotExist:
+            raise NotFoundError(f'LineItemType {pk} not found')
+        for field, value in kwargs.items():
+            setattr(lit, field, value)
+        lit.full_clean()
+        lit.save()
+        return lit

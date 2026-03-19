@@ -1,7 +1,6 @@
 from django.test import TestCase
 from django.db import models
 from apps.purchasing.models import PurchaseOrder, Bill
-from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
 
 
@@ -10,39 +9,17 @@ class PurchaseOrderModelTest(TestCase):
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
         self.business = Business.objects.create(business_name="Test Business", default_contact=self.default_contact)
         self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
-        self.job = Job.objects.create(
-            job_number="JOB001",
-            contact=self.contact,
-            description="Test job"
-        )
-        
+
     def test_purchase_order_creation(self):
         po = PurchaseOrder.objects.create(
             business=self.business,
-            job=self.job,
             po_number="PO001"
         )
-        self.assertEqual(po.job, self.job)
         self.assertEqual(po.po_number, "PO001")
-        
+
     def test_purchase_order_str_method(self):
         po = PurchaseOrder.objects.create(business=self.business, po_number="PO002")
         self.assertEqual(str(po), "PO PO002")
-        
-    def test_purchase_order_optional_job(self):
-        po = PurchaseOrder.objects.create(
-            business=self.business,
-            po_number="PO003"
-        )
-        self.assertIsNone(po.job)
-
-    def test_purchase_order_without_job(self):
-        po = PurchaseOrder.objects.create(
-            business=self.business,
-            po_number="PO004"
-        )
-        self.assertIsNone(po.job)
-        self.assertEqual(po.po_number, "PO004")
         
     def test_purchase_order_unique_po_number(self):
         PurchaseOrder.objects.create(business=self.business, po_number="UNIQUE001")
@@ -116,14 +93,8 @@ class BillModelTest(TestCase):
             business=self.business
         )
         self.customer_contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
-        self.job = Job.objects.create(
-            job_number="JOB001",
-            contact=self.customer_contact,
-            description="Test job"
-        )
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
-            job=self.job,
             po_number="PO001",
             status='draft'
         )

@@ -26,7 +26,7 @@
             <td>{{ worksheet.version }}</td>
             <td>
                 {% if worksheet.estimate %}
-                    <a href="{% url 'jobs:estimate_detail' worksheet.estimate.estimate_id %}">
+                    <a href="{% url 'estimates:estimate_detail' worksheet.estimate.estimate_id %}">
                         {{ worksheet.estimate.estimate_number }}
                     </a>
                 {% else %}
@@ -35,9 +35,9 @@
             </td>
             <td>{{ worksheet.created_date }}</td>
             <td>
-                <a href="{% url 'jobs:estworksheet_detail' worksheet.est_worksheet_id %}">View</a>
+                <a href="{% url 'estimates:estworksheet_detail' worksheet.est_worksheet_id %}">View</a>
                 {% if worksheet.status == 'draft' %}
-                    | <a href="{% url 'jobs:estworksheet_generate_estimate' worksheet.est_worksheet_id %}">Generate Estimate</a>
+                    | <a href="{% url 'estimates:estworksheet_generate_estimate' worksheet.est_worksheet_id %}">Generate Estimate</a>
                 {% endif %}
             </td>
         </tr>

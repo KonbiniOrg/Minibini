@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.purchasing.models import PurchaseOrder, Bill, BillLineItem, PurchaseOrderLineItem
-from apps.invoicing.models import PriceListItem
+from apps.inventory.models import PriceListItem
 from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration
@@ -213,12 +213,14 @@ class BillFromPurchaseOrderTest(TestCase):
 
         # Create price list items for line items
         self.price_list_item1 = PriceListItem.objects.create(
+            code="PLI-001",
             description="Test Item 1",
             units="ea",
             purchase_price=10.00,
             selling_price=15.00
         )
         self.price_list_item2 = PriceListItem.objects.create(
+            code="PLI-002",
             description="Test Item 2",
             units="kg",
             purchase_price=20.00,

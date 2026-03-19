@@ -35,7 +35,8 @@ ALLOWED_HOSTS = [
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://minibini.me'
+    'https://minibini.me',
+    'http://localhost:9000',
 ]
 
 # Application definition
@@ -49,11 +50,14 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'apps.core',
     'apps.jobs',
+    'apps.estimates',
     'apps.contacts',
     'apps.invoicing',
     'apps.purchasing',
     'apps.search',
     'apps.inventory',
+    'rest_framework',
+    'apps.api',
 ]
 
 MIDDLEWARE = [
@@ -63,6 +67,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'apps.core.middleware.AutoLoginMiddleware',  # Auto-login for development
+    'apps.core.history_middleware.HistoryMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -170,6 +175,17 @@ FIXTURE_DIRS = [
 
 # Session settings
 SESSION_COOKIE_AGE = 86400  # 1 day (24 * 60 * 60 seconds) instead of default 14 days
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'apps.api.pagination.StandardPagination',
+    'PAGE_SIZE': 25,
+}
 
 LOGGING = {
     'version': 1,

@@ -2,6 +2,7 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from apps.core.models import BaseLineItem
+from apps.core.history import history
 
 
 # Status choices for PurchaseOrder
@@ -24,12 +25,12 @@ BILL_STATUS_CHOICES = [
 ]
 
 
+@history(exclude=['po_id'])
 class PurchaseOrder(models.Model):
     po_id = models.AutoField(primary_key=True)
     # Business is required; Contact is optional but if provided, must have a Business
     business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
-    job = models.ForeignKey('jobs.Job', on_delete=models.SET_NULL, null=True, blank=True)
     po_number = models.CharField(max_length=50, unique=True)
     status = models.CharField(max_length=20, choices=PO_STATUS_CHOICES, default='draft')
 
@@ -160,10 +161,14 @@ class PurchaseOrder(models.Model):
             )
         return super().delete(*args, **kwargs)
 
+    class Meta:
+        db_table = 'pos'
+
     def __str__(self):
         return f"PO {self.po_number}"
 
 
+@history(exclude=['bill_id'])
 class Bill(models.Model):
     bill_id = models.AutoField(primary_key=True)
     bill_number = models.CharField(max_length=50, unique=True)
@@ -318,6 +323,9 @@ class Bill(models.Model):
             )
         return super().delete(*args, **kwargs)
 
+    class Meta:
+        db_table = 'bills'
+
     def __str__(self):
         return f"Bill {self.bill_number}"
 
@@ -326,8 +334,13 @@ class PurchaseOrderLineItem(BaseLineItem):
     """Line item for purchase orders - inherits shared functionality from BaseLineItem."""
 
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE)
+    job = models.ForeignKey(
+        'jobs.Job', on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
 
     class Meta:
+        db_table = 'po_li'
         verbose_name = "Purchase Order Line Item"
         verbose_name_plural = "Purchase Order Line Items"
 
@@ -345,6 +358,7 @@ class BillLineItem(BaseLineItem):
     bill = models.ForeignKey(Bill, on_delete=models.CASCADE)
 
     class Meta:
+        db_table = 'bill_li'
         verbose_name = "Bill Line Item"
         verbose_name_plural = "Bill Line Items"
 

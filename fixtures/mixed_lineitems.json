@@ -48,7 +48,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 200,
         "fields": {
             "code": "WOOD001",
@@ -62,7 +62,7 @@
         }
     },
     {
-        "model": "invoicing.pricelistitem",
+        "model": "inventory.pricelistitem",
         "pk": 201,
         "fields": {
             "code": "FINISH001",
@@ -76,7 +76,7 @@
         }
     },
     {
-        "model": "jobs.workordertemplate",
+        "model": "estimates.workordertemplate",
         "pk": 200,
         "fields": {
             "template_name": "Mixed Test Template",
@@ -87,7 +87,7 @@
         }
     },
     {
-        "model": "jobs.tasktemplate",
+        "model": "estimates.tasktemplate",
         "pk": 200,
         "fields": {
             "template_name": "Mixed Assembly Task",
@@ -100,7 +100,7 @@
         }
     },
     {
-        "model": "jobs.estworksheet",
+        "model": "estimates.estworksheet",
         "pk": 200,
         "fields": {
             "job": 200,
@@ -113,7 +113,7 @@
         }
     },
     {
-        "model": "jobs.estimate",
+        "model": "estimates.estimate",
         "pk": 200,
         "fields": {
             "job": 200,
@@ -145,7 +145,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 200,
         "fields": {
             "estimate": 200,
@@ -159,7 +159,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 201,
         "fields": {
             "estimate": 200,
@@ -173,7 +173,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 202,
         "fields": {
             "estimate": 200,
@@ -187,7 +187,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 203,
         "fields": {
             "estimate": 200,
@@ -201,7 +201,7 @@
         }
     },
     {
-        "model": "jobs.estimatelineitem",
+        "model": "estimates.estimatelineitem",
         "pk": 204,
         "fields": {
             "estimate": 200,

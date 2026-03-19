@@ -1,6 +1,9 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from .models import Contact, Business, Tag
+from .services import ContactService
+from apps.core.services import NotFoundError
 
 def contact_list(request):
     contacts = Contact.objects.all().order_by('last_name', 'first_name')
@@ -83,28 +86,27 @@ def add_contact(request):
                 messages.error(request, 'At least one phone number (work, mobile, or home) is required.')
                 return render(request, 'contacts/add_contact.html')
 
-            business = None
-            # Get selected business from dropdown (if not "NONE")
+            business_pk = None
             if business_id and business_id != 'NONE':
                 try:
-                    business = Business.objects.get(business_id=int(business_id))
-                except (Business.DoesNotExist, ValueError):
+                    business_pk = int(business_id)
+                except (ValueError, TypeError):
                     pass
 
-            with transaction.atomic():
-                contact = Contact.objects.create(
-                    first_name=first_name,
-                    middle_initial=middle_initial or '',
-                    last_name=last_name,
-                    email=email.strip(),
-                    work_number=work_number or '',
-                    mobile_number=mobile_number or '',
-                    home_number=home_number or '',
-                    addr1=address or '',
-                    city=city or '',
-                    postal_code=postal_code or '',
-                    business=business
-                )
+            contact = ContactService.create_contact(
+                first_name=first_name,
+                middle_initial=middle_initial or '',
+                last_name=last_name,
+                email=email.strip(),
+                work_number=work_number or '',
+                mobile_number=mobile_number or '',
+                home_number=home_number or '',
+                addr1=address or '',
+                city=city or '',
+                postal_code=postal_code or '',
+                business_pk=business_pk,
+            )
+            business = contact.business
 
             success_msg = f'Contact "{contact}" has been added successfully.'
             if business:
@@ -176,16 +178,9 @@ def confirm_create_business(request):
         create_business = request.POST.get('create_business')
 
         if create_business == 'yes':
-            # Create the business with this contact as the default
-            business = Business.objects.create(
-                business_name=initial_business_name.strip(),
-                default_contact=contact,
+            business = ContactService.create_business_for_contact(
+                contact.pk, business_name=initial_business_name.strip(),
             )
-
-            # Associate contact with the new business
-            contact.business = business
-            contact.save()
-
             messages.success(request, f'Business "{business.business_name}" created and associated with contact.')
         else:
             # User chose to skip business creation
@@ -238,7 +233,7 @@ def add_business_contact(request, business_id):
                 messages.error(request, 'At least one phone number (work, mobile, or home) is required.')
                 return render(request, 'contacts/add_business_contact.html', {'business': business})
 
-            contact = Contact.objects.create(
+            contact = ContactService.create_contact(
                 first_name=first_name,
                 middle_initial=middle_initial or '',
                 last_name=last_name,
@@ -249,13 +244,11 @@ def add_business_contact(request, business_id):
                 addr1=address or '',
                 city=city or '',
                 postal_code=postal_code or '',
-                business=business
+                business_pk=business.pk,
             )
 
-            # Set as default contact if checkbox was checked
             if set_as_default:
-                business.default_contact = contact
-                business.save(update_fields=['default_contact'])
+                ContactService.set_default_contact(business.pk, contact.pk)
                 messages.success(request, f'Contact "{contact}" has been added to {business.business_name} and set as the default contact.')
             else:
                 messages.success(request, f'Contact "{contact}" has been added to {business.business_name}.')
@@ -315,59 +308,32 @@ def add_business(request):
                     messages.error(request, f'At least one phone number is required for contact {i + 1}.')
                     return render(request, 'contacts/add_business.html')
 
-            from django.db import transaction
+            # Normalize contact data for the service (address → addr1)
+            service_contacts = []
+            for cd in contacts_data:
+                service_contacts.append({
+                    'first_name': cd['first_name'].strip(),
+                    'middle_initial': cd['middle_initial'].strip() if cd['middle_initial'] else '',
+                    'last_name': cd['last_name'].strip(),
+                    'email': cd['email'].strip(),
+                    'work_number': cd['work_number'].strip() if cd['work_number'] else '',
+                    'mobile_number': cd['mobile_number'].strip() if cd['mobile_number'] else '',
+                    'home_number': cd['home_number'].strip() if cd['home_number'] else '',
+                    'addr1': cd['address'].strip() if cd['address'] else '',
+                    'city': cd['city'].strip() if cd['city'] else '',
+                    'postal_code': cd['postal_code'].strip() if cd['postal_code'] else '',
+                })
 
-            with transaction.atomic():
-                # Create the first contact (without business association yet)
-                first_contact_data = contacts_data[0]
-                first_contact = Contact.objects.create(
-                    first_name=first_contact_data['first_name'].strip(),
-                    middle_initial=first_contact_data['middle_initial'].strip() if first_contact_data['middle_initial'] else '',
-                    last_name=first_contact_data['last_name'].strip(),
-                    email=first_contact_data['email'].strip(),
-                    work_number=first_contact_data['work_number'].strip() if first_contact_data['work_number'] else '',
-                    mobile_number=first_contact_data['mobile_number'].strip() if first_contact_data['mobile_number'] else '',
-                    home_number=first_contact_data['home_number'].strip() if first_contact_data['home_number'] else '',
-                    addr1=first_contact_data['address'].strip() if first_contact_data['address'] else '',
-                    city=first_contact_data['city'].strip() if first_contact_data['city'] else '',
-                    postal_code=first_contact_data['postal_code'].strip() if first_contact_data['postal_code'] else '',
-                    business=None
-                )
+            business = ContactService.create_business(
+                service_contacts,
+                business_name=business_name.strip(),
+                business_phone=business_phone.strip() if business_phone else '',
+                business_address=business_address.strip() if business_address else '',
+                tax_exemption_number=tax_exemption_number.strip() if tax_exemption_number else '',
+                website=website.strip() if website else '',
+            )
 
-                # Create business with first contact as default
-                business = Business.objects.create(
-                    business_name=business_name.strip(),
-                    business_phone=business_phone.strip() if business_phone else '',
-                    business_address=business_address.strip() if business_address else '',
-                    tax_exemption_number=tax_exemption_number.strip() if tax_exemption_number else '',
-                    website=website.strip() if website else '',
-                    default_contact=first_contact
-                )
-
-                # Update first contact to associate with business
-                first_contact.business = business
-                first_contact.save()
-
-                created_contacts = [first_contact]
-
-                # Create remaining contacts
-                for i in range(1, len(contacts_data)):
-                    contact_data = contacts_data[i]
-                    contact = Contact.objects.create(
-                        first_name=contact_data['first_name'].strip(),
-                        middle_initial=contact_data['middle_initial'].strip() if contact_data['middle_initial'] else '',
-                        last_name=contact_data['last_name'].strip(),
-                        email=contact_data['email'].strip(),
-                        work_number=contact_data['work_number'].strip() if contact_data['work_number'] else '',
-                        mobile_number=contact_data['mobile_number'].strip() if contact_data['mobile_number'] else '',
-                        home_number=contact_data['home_number'].strip() if contact_data['home_number'] else '',
-                        addr1=contact_data['address'].strip() if contact_data['address'] else '',
-                        city=contact_data['city'].strip() if contact_data['city'] else '',
-                        postal_code=contact_data['postal_code'].strip() if contact_data['postal_code'] else '',
-                        business=business
-                    )
-                    created_contacts.append(contact)
-
+            created_contacts = list(business.contacts.all())
             success_msg = f'Business "{business_name}" has been created with {len(created_contacts)} contact(s): {", ".join(str(c) for c in created_contacts)}.'
             messages.success(request, success_msg)
             return redirect('contacts:business_list')
@@ -501,12 +467,13 @@ def edit_contact(request, contact_id):
                         messages.info(request, f'Contact associated with existing business "{existing_business.business_name}".')
                 else:
                     # Create new business (contact will be dissociated from old business)
-                    business = Business.objects.create(
+                    business = ContactService.create_business_for_contact(
+                        contact.pk,
                         business_name=business_name.strip(),
                         business_phone=business_phone.strip() if business_phone else '',
                         business_address=business_address.strip() if business_address else '',
                         tax_exemption_number=tax_exemption_number.strip() if tax_exemption_number else '',
-                        website=website.strip() if website else ''
+                        website=website.strip() if website else '',
                     )
                     if old_business_name:
                         messages.success(request, f'Contact removed from "{old_business_name}" and associated with new business "{business_name.strip()}".')
@@ -530,24 +497,25 @@ def edit_contact(request, contact_id):
 
             # business remains None if no selection mode or empty fields
 
-            # Update contact
-            contact.first_name = first_name
-            contact.middle_initial = middle_initial or ''
-            contact.last_name = last_name
-            contact.email = email.strip()
-            contact.work_number = work_number or ''
-            contact.mobile_number = mobile_number or ''
-            contact.home_number = home_number or ''
-            contact.addr1 = address or ''
-            contact.city = city or ''
-            contact.postal_code = postal_code or ''
+            # Build update kwargs
+            update_kwargs = {
+                'first_name': first_name,
+                'middle_initial': middle_initial or '',
+                'last_name': last_name,
+                'email': email.strip(),
+                'work_number': work_number or '',
+                'mobile_number': mobile_number or '',
+                'home_number': home_number or '',
+                'addr1': address or '',
+                'city': city or '',
+                'postal_code': postal_code or '',
+            }
 
             # Only update business association if a radio button was selected
-            # If no selection mode, preserve existing business association
             if business_selection_mode:
-                contact.business = business
+                update_kwargs['business_pk'] = business.pk if business else None
 
-            contact.save()
+            ContactService.update_contact(contact.pk, **update_kwargs)
 
             messages.success(request, f'Contact "{contact}" has been updated successfully.')
             return redirect('contacts:contact_detail', contact_id=contact.contact_id)
@@ -568,10 +536,8 @@ def set_default_contact(request, contact_id):
         if not contact.business:
             messages.error(request, 'This contact is not associated with any business.')
         else:
-            business = contact.business
-            business.default_contact = contact
-            business.save(update_fields=['default_contact'])
-            messages.success(request, f'"{contact}" has been set as the default contact for {business.business_name}.')
+            ContactService.set_default_contact(contact.business.pk, contact.pk)
+            messages.success(request, f'"{contact}" has been set as the default contact for {contact.business.business_name}.')
 
         return redirect('contacts:contact_detail', contact_id=contact.contact_id)
 
@@ -650,17 +616,9 @@ def delete_contact(request, contact_id):
                     'other_contacts': other_contacts
                 })
 
-            # Set new default FIRST (before deleting), then delete the contact
-            contact_name = contact
+            contact_name = str(contact)
             business_name = business.business_name
-
-            # Change default contact before deletion to avoid PROTECT constraint
-            business.default_contact = new_default_contact
-            business.save(update_fields=['default_contact'])
-
-            # Now safe to delete the old contact
-            contact.delete()
-
+            ContactService.delete_contact(contact.pk, new_default_contact_pk=new_default_contact.pk)
             messages.success(
                 request,
                 f'Contact "{contact_name}" has been deleted. "{new_default_contact}" is now the default contact for {business_name}.'
@@ -669,17 +627,10 @@ def delete_contact(request, contact_id):
 
         # If only one other contact, auto-assign as default
         elif was_default and business and other_contacts.count() == 1:
-            contact_name = contact
+            contact_name = str(contact)
             business_name = business.business_name
             new_default = other_contacts.first()
-
-            # Set new default FIRST (before deleting) to avoid PROTECT constraint
-            business.default_contact = new_default
-            business.save(update_fields=['default_contact'])
-
-            # Now safe to delete the old contact
-            contact.delete()
-
+            ContactService.delete_contact(contact.pk)
             messages.success(
                 request,
                 f'Contact "{contact_name}" has been deleted. "{new_default.name}" is now the default contact for {business_name}.'
@@ -688,15 +639,15 @@ def delete_contact(request, contact_id):
 
         # Non-default contact with business
         elif business:
-            contact_name = contact
-            contact.delete()
+            contact_name = str(contact)
+            ContactService.delete_contact(contact.pk)
             messages.success(request, f'Contact "{contact_name}" has been deleted successfully.')
             return redirect('contacts:business_detail', business_id=business.business_id)
 
         # Non-business contact (no business association)
         else:
-            contact_name = contact
-            contact.delete()
+            contact_name = str(contact)
+            ContactService.delete_contact(contact.pk)
             messages.success(request, f'Contact "{contact_name}" has been deleted successfully.')
             return redirect('contacts:contact_list')
 
@@ -749,7 +700,7 @@ def _show_deletion_management_page(request, business):
     # If nothing is associated, delete directly
     if not has_associations:
         business_name = business.business_name
-        business.delete()
+        ContactService.delete_business(business.pk)
         messages.success(request, f'Business "{business_name}" has been deleted successfully.')
         return redirect('contacts:business_list')
 
@@ -910,65 +861,16 @@ def _process_business_deletion(request, business):
             messages.error(request, error)
         return _show_deletion_management_page(request, business)
 
-    # ---- EXECUTION (atomic) ----
+    # ---- EXECUTION ----
     business_name = business.business_name
     try:
-        with transaction.atomic():
-            # Step 1: Process POs
-            for po in direct_pos:
-                action, target = po_actions[po.po_id]
-                if action == 'delete':
-                    po.delete()
-                else:
-                    # Use QuerySet.update() to bypass PO.save() full_clean()
-                    PurchaseOrder.objects.filter(pk=po.po_id).update(
-                        business=target, contact=None
-                    )
-
-            # Step 2: Process Bills
-            for bill in direct_bills:
-                action, target = bill_actions[bill.bill_id]
-                if action == 'delete':
-                    bill.delete()
-                else:
-                    Bill.objects.filter(pk=bill.bill_id).update(
-                        business=target, contact=None
-                    )
-
-            # Step 3: Process Jobs (for contacts being deleted)
-            for job_id, (action, target) in job_actions.items():
-                if action == 'delete':
-                    Job.objects.get(pk=job_id).delete()
-                else:
-                    Job.objects.filter(pk=job_id).update(contact_id=target)
-
-            # Step 4: Clear contact references on POs/Bills from OTHER businesses
-            # that reference contacts being deleted
-            if contacts_being_deleted:
-                PurchaseOrder.objects.filter(
-                    contact_id__in=contacts_being_deleted
-                ).update(contact=None)
-                Bill.objects.filter(
-                    contact_id__in=contacts_being_deleted
-                ).update(contact=None)
-
-            # Step 5: Unlink and reassign contacts
-            for contact in contacts:
-                cid = contact.contact_id
-                action, target = contact_actions[cid]
-                if action == 'unlink':
-                    Contact.objects.filter(pk=cid).update(business=None)
-                elif action == 'reassign':
-                    Contact.objects.filter(pk=cid).update(business=target)
-
-            # Step 6: Delete the business
-            business.delete()
-
-            # Step 7: Delete contacts marked for deletion
-            # Use QuerySet.delete() to bypass Contact.delete() custom logic
-            if contacts_being_deleted:
-                Contact.objects.filter(contact_id__in=contacts_being_deleted).delete()
-
+        ContactService.delete_business(
+            business.pk,
+            po_actions=po_actions,
+            bill_actions=bill_actions,
+            contact_actions=contact_actions,
+            job_actions=job_actions,
+        )
         messages.success(request, f'Business "{business_name}" has been deleted successfully.')
         return redirect('contacts:business_list')
 
@@ -1000,14 +902,14 @@ def edit_business(request, business_id):
                     'Business names must be unique.'
                 )
             else:
-                # Update business (reference code is auto-generated and not updated)
-                business.business_name = business_name.strip()
-                business.business_phone = business_phone.strip() if business_phone else ''
-                business.business_address = business_address.strip() if business_address else ''
-                business.tax_exemption_number = tax_exemption_number.strip() if tax_exemption_number else ''
-                business.website = website.strip() if website else ''
-                business.save()
-
+                ContactService.update_business(
+                    business.pk,
+                    business_name=business_name.strip(),
+                    business_phone=business_phone.strip() if business_phone else '',
+                    business_address=business_address.strip() if business_address else '',
+                    tax_exemption_number=tax_exemption_number.strip() if tax_exemption_number else '',
+                    website=website.strip() if website else '',
+                )
                 messages.success(request, f'Business "{business_name.strip()}" has been updated successfully.')
                 return redirect('contacts:business_detail', business_id=business.business_id)
         else:

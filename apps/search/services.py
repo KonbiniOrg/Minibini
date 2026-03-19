@@ -2,9 +2,11 @@ from datetime import datetime
 from decimal import Decimal
 from django.db.models import Q, F, CharField, DecimalField
 from django.db.models.functions import Cast, Concat
-from apps.jobs.models import Job, Estimate, Task, WorkOrder, EstWorksheet, EstimateLineItem
+from apps.jobs.models import Job, Task, WorkOrder
+from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
 from apps.contacts.models import Contact, Business
-from apps.invoicing.models import Invoice, InvoiceLineItem, PriceListItem
+from apps.invoicing.models import Invoice, InvoiceLineItem
+from apps.inventory.models import PriceListItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
 
 
@@ -356,8 +358,8 @@ class SearchService:
         """Search for purchase orders and their line items, returning grouped results"""
         purchase_orders = PurchaseOrder.objects.filter(
             Q(po_number__icontains=query) |
-            Q(job__job_number__icontains=query)
-        ).select_related('job').prefetch_related('purchaseorderlineitem_set')
+            Q(purchaseorderlineitem__job__job_number__icontains=query)
+        ).distinct().prefetch_related('purchaseorderlineitem_set')
 
         po_line_items = PurchaseOrderLineItem.objects.annotate(
             price_text=Cast('price', CharField()),
@@ -371,7 +373,7 @@ class SearchService:
             Q(qty_text__icontains=query) |
             Q(units__icontains=query) |
             Q(total_amount_text__icontains=query)
-        ).select_related('purchase_order', 'purchase_order__job')
+        ).select_related('purchase_order')
 
         # Build a dict of purchase orders with their matching line items
         po_dict = {}

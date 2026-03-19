@@ -48,6 +48,22 @@
             {% endif %}
         </td>
     </tr>
+    {% for mat in task.materials.all %}
+    <tr style="background-color: #f9f5e8;">
+        <td style="padding-left: 20px; font-size: 0.9em;">&#9642; {{ mat.description }}</td>
+        <td>${{ mat.sell_price|floatformat:2 }} x {{ mat.quantity|floatformat:2 }}</td>
+        <td>{{ mat.line_item_type|default:"-" }}</td>
+        <td>
+            {% if task.mapping_strategy == 'exclude' %}
+                No (internal task)
+            {% elif task.mapping_strategy == 'bundle' %}
+                Yes (in bundle price)
+            {% else %}
+                Yes (separate line item)
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
     {% endfor %}
 </table>
 
@@ -77,7 +93,7 @@
     </table>
     <p>
         <button type="submit">Assign Types &amp; Generate Estimate</button>
-        <a href="{% url 'jobs:estworksheet_detail' worksheet.est_worksheet_id %}">Cancel</a>
+        <a href="{% url 'estimates:estworksheet_detail' worksheet.est_worksheet_id %}">Cancel</a>
     </p>
 </form>
 {% else %}
@@ -86,7 +102,7 @@
 <form method="post">
     {% csrf_token %}
     <button type="submit">Generate Estimate Now</button>
-    <a href="{% url 'jobs:estworksheet_detail' worksheet.est_worksheet_id %}">Cancel</a>
+    <a href="{% url 'estimates:estworksheet_detail' worksheet.est_worksheet_id %}">Cancel</a>
 </form>
 {% endif %}
 

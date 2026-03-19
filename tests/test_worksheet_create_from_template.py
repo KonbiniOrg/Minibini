@@ -2,10 +2,8 @@
 from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
-from apps.jobs.models import (
-    Task, TaskBundle, EstWorksheet, Job,
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
-)
+from apps.jobs.models import Task, TaskBundle, Job
+from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact, Business
 from apps.core.models import User, LineItemType
 
@@ -71,7 +69,7 @@ class WorksheetCreateFromTemplateTest(TestCase):
 
     def test_bundles_created_when_worksheet_created_from_template(self):
         """Creating a worksheet from a template via the view should create TaskBundles."""
-        url = reverse('jobs:estworksheet_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estworksheet_create_for_job', args=[self.job.job_id])
         response = self.client.post(url, {
             'job': self.job.job_id,
             'template': self.wot.template_id,
@@ -89,7 +87,7 @@ class WorksheetCreateFromTemplateTest(TestCase):
 
     def test_task_mapping_set_when_worksheet_created_from_template(self):
         """Tasks created from template via the view should have correct mapping_strategy and bundle."""
-        url = reverse('jobs:estworksheet_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estworksheet_create_for_job', args=[self.job.job_id])
         self.client.post(url, {
             'job': self.job.job_id,
             'template': self.wot.template_id,
@@ -107,7 +105,7 @@ class WorksheetCreateFromTemplateTest(TestCase):
 
     def test_three_tasks_created_from_template(self):
         """All three tasks from the template should be created."""
-        url = reverse('jobs:estworksheet_create_for_job', args=[self.job.job_id])
+        url = reverse('estimates:estworksheet_create_for_job', args=[self.job.job_id])
         self.client.post(url, {
             'job': self.job.job_id,
             'template': self.wot.template_id,

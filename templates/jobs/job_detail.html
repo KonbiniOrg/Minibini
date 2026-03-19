@@ -60,7 +60,7 @@
 <h3>Estimate Worksheets</h3>
 {% if job.status == 'draft' %}
 <p>
-    <a href="{% url 'jobs:estworksheet_create_for_job' job.job_id %}">Create New Worksheet</a>
+    <a href="{% url 'estimates:estworksheet_create_for_job' job.job_id %}">Create New Worksheet</a>
 </p>
 {% endif %}
 {% if worksheets %}
@@ -82,15 +82,15 @@
                 <td>{{ worksheet.created_date|date:"M d, Y" }}</td>
                 <td>
                     {% if worksheet.estimate %}
-                        <a href="{% url 'jobs:estimate_detail' worksheet.estimate.estimate_id %}">{{ worksheet.estimate.estimate_number }} -v{{ worksheet.estimate.version }}</a>
+                        <a href="{% url 'estimates:estimate_detail' worksheet.estimate.estimate_id %}">{{ worksheet.estimate.estimate_number }} -v{{ worksheet.estimate.version }}</a>
                     {% else %}
                         <em>Not generated</em>
                     {% endif %}
                 </td>
                 <td>
-                    <a href="{% url 'jobs:estworksheet_detail' worksheet.est_worksheet_id %}">View Details</a>
+                    <a href="{% url 'estimates:estworksheet_detail' worksheet.est_worksheet_id %}">View Details</a>
                     {% if worksheet.status == 'draft' %}
-                        | <a href="{% url 'jobs:estworksheet_generate_estimate' worksheet.est_worksheet_id %}">Generate Estimate</a>
+                        | <a href="{% url 'estimates:estworksheet_generate_estimate' worksheet.est_worksheet_id %}">Generate Estimate</a>
                     {% endif %}
                 </td>
             </tr>
@@ -104,11 +104,11 @@
 
 {% if not current_estimate %}
 <p>
-    <a href="{% url 'jobs:estimate_create_for_job' job.job_id %}">Create New Estimate</a>
+    <a href="{% url 'estimates:estimate_create_for_job' job.job_id %}">Create New Estimate</a>
 </p>
 <p>No current estimate found for this job.</p>
 {% else %}
-<h3>Current Estimate <a href="{% url 'jobs:estimate_detail' current_estimate.pk %}">{{ current_estimate.estimate_number }} v{{ current_estimate.version }}</a> -
+<h3>Current Estimate <a href="{% url 'estimates:estimate_detail' current_estimate.pk %}">{{ current_estimate.estimate_number }} v{{ current_estimate.version }}</a> -
     {{current_estimate.get_status_display }}</h3>
     <p>Created {{ current_estimate.created_date|date:"Y-m-d H:i" }},
        Sent: {{ current_estimate.sent_date|date:"Y-m-d H:i"|default:"Not sent yet" }},
@@ -163,14 +163,14 @@
 
     <p style="margin-top: 10px;">
         {% if current_estimate.status == 'draft' %}
-            <a href="{% url 'jobs:estimate_add_line_item' current_estimate.estimate_id %}">Add Line Item</a>
+            <a href="{% url 'estimates:estimate_add_line_item' current_estimate.estimate_id %}">Add Line Item</a>
         {% endif %}
         {% if current_estimate.status != 'draft' %}
-            <a href="{% url 'jobs:estimate_revise' current_estimate.estimate_id %}">Revise Estimate</a>
+            <a href="{% url 'estimates:estimate_revise' current_estimate.estimate_id %}">Revise Estimate</a>
         {% endif %}
         {% if current_estimate.status == 'accepted' %}
             {% if current_estimate.status != 'draft' %} | {% endif %}
-            <a href="{% url 'jobs:work_order_create_from_estimate' current_estimate.estimate_id %}">Create Work Order</a>
+            <a href="{% url 'estimates:work_order_create_from_estimate' current_estimate.estimate_id %}">Create Work Order</a>
         {% endif %}
     </p>
 {% endif %}
@@ -191,7 +191,7 @@
         <tbody>
             {% for estimate in superseded_estimates %}
             <tr>
-                <td><a href="{% url 'jobs:estimate_detail' estimate.pk %}">{{ estimate.estimate_number }} v{{ estimate.version }}</a></td>
+                <td><a href="{% url 'estimates:estimate_detail' estimate.pk %}">{{ estimate.estimate_number }} v{{ estimate.version }}</a></td>
                 <td>{{ estimate.get_status_display }}</td>
                 <td>{{ estimate.created_date|date:"M d, Y" }}</td>
                 <td>{{ estimate.sent_date|date:"M d, Y"|default:"—" }}</td>

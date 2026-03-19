@@ -4,7 +4,8 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import Configuration, LineItemType
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Estimate, EstimateLineItem
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstimateLineItem
 
 
 class EstimateTaxDisplayTest(TestCase):
@@ -54,7 +55,7 @@ class EstimateTaxDisplayTest(TestCase):
             price=Decimal('50.00')
         )
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         )
         self.assertContains(response, 'Subtotal')
         self.assertContains(response, '100.00')
@@ -69,7 +70,7 @@ class EstimateTaxDisplayTest(TestCase):
             price=Decimal('100.00')
         )
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         )
         self.assertContains(response, 'Tax')
         self.assertContains(response, '10.00')  # 10% of $100
@@ -84,7 +85,7 @@ class EstimateTaxDisplayTest(TestCase):
             price=Decimal('100.00')
         )
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         )
         self.assertContains(response, 'Total')
         self.assertContains(response, '110.00')  # $100 + $10 tax
@@ -99,7 +100,7 @@ class EstimateTaxDisplayTest(TestCase):
             price=Decimal('100.00')
         )
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         )
         # Tax should be $0
         self.assertContains(response, '$0.00')
@@ -114,7 +115,7 @@ class EstimateTaxDisplayTest(TestCase):
             price=Decimal('50.00')
         )
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[self.estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
         )
         self.assertContains(response, 'Material')  # The type name
 
@@ -169,7 +170,7 @@ class EstimateCustomerExemptionTest(TestCase):
         )
 
         response = self.client.get(
-            reverse('jobs:estimate_detail', args=[estimate.estimate_id])
+            reverse('estimates:estimate_detail', args=[estimate.estimate_id])
         )
         # Should show exemption info and $0 tax
         self.assertContains(response, 'exempt', status_code=200)

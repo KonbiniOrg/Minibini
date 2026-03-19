@@ -1,7 +1,8 @@
 from django.test import TestCase
 from django.utils import timezone
 from datetime import timedelta
-from apps.jobs.models import Job, Estimate, WorkOrder, Task, Blep, TaskTemplate
+from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.estimates.models import Estimate, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import User
 from .base import FixtureTestCase

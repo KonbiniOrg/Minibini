@@ -1,6 +1,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job, Estimate
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration
 

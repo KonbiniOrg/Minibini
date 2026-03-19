@@ -1,8 +1,10 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job, Estimate, Task, WorkOrder, EstWorksheet
+from apps.jobs.models import Job, Task, WorkOrder
+from apps.estimates.models import Estimate, EstWorksheet
 from apps.contacts.models import Contact, Business
-from apps.invoicing.models import Invoice, PriceListItem
+from apps.invoicing.models import Invoice
+from apps.inventory.models import PriceListItem
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.core.models import User
 from decimal import Decimal
@@ -139,7 +141,6 @@ class SearchViewTests(TestCase):
         # Create purchase orders
         self.po1 = PurchaseOrder.objects.create(
             business=self.business,
-            job=self.job1,
             po_number='PO-2024-001'
         )
         # Transition PO to issued status so bills can be created from it
@@ -306,13 +307,12 @@ class SearchViewTests(TestCase):
         response = self.client.get(reverse('search:search'), {'q': 'JOB-001'})
         self.assertEqual(response.status_code, 200)
 
-        # Should find job, estimate, work order, worksheet, invoice, and PO
+        # Should find job, estimate, work order, worksheet, invoice
         self.assertIn(self.job1, response.context['categories']['jobs']['items'])
         self.assertIn(self.estimate1, response.context['categories']['estimates']['grouped_items'])
         self.assertIn(self.work_order1, response.context['categories']['work_orders'])
         self.assertIn(self.worksheet1, response.context['categories']['est_worksheets'])
         self.assertIn(self.invoice1, response.context['categories']['invoices']['grouped_items'])
-        self.assertIn(self.po1, response.context['categories']['purchase_orders']['items'])
 
         # Total count should reflect all matches
         self.assertGreater(response.context['total_count'], 1)
