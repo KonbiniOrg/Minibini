@@ -55,6 +55,8 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('core', '0004_alter_user_options'),
+        ('auth', '0012_alter_user_first_name_max_length'),
+        ('contenttypes', '0002_remove_content_type_name'),
     ]
 
     operations = [
