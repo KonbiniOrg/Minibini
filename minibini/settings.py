@@ -27,9 +27,9 @@ SECRET_KEY = 'django-insecure-change-this-in-production'
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    'testserver', 
-    'localhost', 
-    '127.0.0.1', 
+    'testserver',
+    'localhost',
+    '127.0.0.1',
     'minibini.me',
     '45.33.56.130'
 ]
@@ -66,8 +66,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'apps.core.middleware.AutoLoginMiddleware',  # Auto-login for development
-    'apps.core.history_middleware.HistoryMiddleware',
+    'apps.core.middleware.HistoryMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

@@ -7,8 +7,24 @@ viewMode.subscribe((mode) => {
   document.body.dataset.viewMode = mode;
 });
 
-const app = mount(App, {
-  target: document.getElementById('app'),
-});
+async function init() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('autologin')) {
+    try {
+      await fetch('/api/auth/login/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ username: 'dev_user', password: 'dev_password' }),
+      });
+    } catch (e) {
+      // dev_user doesn't exist — ignore, app will show unauthenticated state
+    }
+  }
 
-export default app;
+  mount(App, {
+    target: document.getElementById('app'),
+  });
+}
+
+init();

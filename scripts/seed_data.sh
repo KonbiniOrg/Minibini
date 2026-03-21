@@ -2,12 +2,12 @@
 # Seed realistic data through the API so all business logic, number generation,
 # and history tracking runs naturally.
 #
-# AutoLoginMiddleware handles authentication automatically on every request.
-# We still need a cookie jar for CSRF tokens (required by DRF SessionAuthentication).
+# Logs in as dev_user via the API, then seeds data through API endpoints
+# so all business logic, number generation, and history tracking runs naturally.
 #
 # Prerequisites:
 #   - Dev server running on :8000 (python manage.py runserver)
-#   - dev_user exists (AutoLoginMiddleware needs it)
+#   - dev_user exists with password 'dev_password'
 #   - Database has been migrated
 #
 # Works on a fresh (empty) database — bootstraps Configuration entries
@@ -112,13 +112,20 @@ form_post() {
 }
 
 # ─────────────────────────────────────────────
-# Step 0: Establish session (AutoLoginMiddleware handles auth)
+# Step 0: Log in as dev_user
 # ─────────────────────────────────────────────
-log "Establishing session..."
+log "Logging in as dev_user..."
 rm -f "$COOKIE_JAR"
-# One GET to trigger AutoLoginMiddleware and get CSRF cookie
-curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$BASE/api/jobs/" > /dev/null
-info "Session established"
+login_response=$(curl -s -w "\n%{http_code}" -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+    -X POST "$BASE/api/auth/login/" \
+    -H "Content-Type: application/json" \
+    -d '{"username": "dev_user", "password": "dev_password"}')
+login_code=$(echo "$login_response" | tail -1)
+if [ "$login_code" -ne 200 ]; then
+    echo "Login failed ($login_code). Is dev_user created with password 'dev_password'?" >&2
+    exit 1
+fi
+info "Logged in"
 
 # ─────────────────────────────────────────────
 # Step 1: Ensure Configuration entries exist
@@ -1081,3 +1088,6 @@ echo "  Job:       $JOB12_NUM (id=$JOB12_ID) — COMPLETED (final invoice sent)"
 echo ""
 
 rm -f "$COOKIE_JAR"
+
+# update timestamps in the db
+mysql -u root minibini_db < scripts/spread_timestamps.sql

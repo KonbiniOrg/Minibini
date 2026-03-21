@@ -213,7 +213,7 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 
 ## Development Features
 
-- **AutoLoginMiddleware** (`apps.core.middleware`) - Auto-logs in dev_user, remove for production
+- **Dev autologin** - Frontend supports `?autologin` query param to log in as dev_user via the API (requires dev_user with password `dev_password`)
 - **Management commands** - `populate_data.py` (base), `populate_contact_data.py`, `populate_job_data.py`
 
 ## Common Coding Pitfalls
