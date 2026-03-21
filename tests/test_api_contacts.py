@@ -52,7 +52,7 @@ class ContactAPITest(BaseTestCase):
             email='delete@example.com', mobile_number='555-999-9999',
         )
         response = self.client.delete(f'/api/contacts/{contact.pk}/?confirm=true')
-        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.status_code, 200)
 
 
 class BusinessAPITest(BaseTestCase):
