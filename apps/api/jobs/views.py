@@ -18,7 +18,7 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve'):
+        if self.action in ('list', 'retrieve', 'history'):
             return [IsAuthenticated(), CanViewJobs()]
         return [IsAuthenticated(), CanManageJobs()]
 

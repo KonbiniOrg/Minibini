@@ -14,7 +14,7 @@ class WorkOrderViewSet(StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixi
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve'):
+        if self.action in ('list', 'retrieve', 'task_bleps'):
             return [IsAuthenticated(), CanViewJobs()]
         return [IsAuthenticated(), CanManageJobs()]
 

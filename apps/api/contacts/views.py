@@ -20,7 +20,7 @@ class ContactViewSet(viewsets.ModelViewSet):
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve'):
+        if self.action in ('list', 'retrieve', 'history'):
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
@@ -114,7 +114,7 @@ class BusinessViewSet(viewsets.ModelViewSet):
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve'):
+        if self.action in ('list', 'retrieve', 'history'):
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
