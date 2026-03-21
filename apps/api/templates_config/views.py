@@ -6,6 +6,7 @@ from apps.estimates.models import WorkOrderTemplate, TaskTemplate
 from apps.estimates.services import WorkOrderTemplateService
 from apps.core.models import Configuration, LineItemType
 from apps.core.services import ConfigurationService
+from apps.api.permissions import CanManageConfig
 from .serializers import (
     WorkOrderTemplateSerializer, TaskTemplateSerializer,
     ConfigurationSerializer, LineItemTypeSerializer,
@@ -16,6 +17,11 @@ class WorkOrderTemplateViewSet(viewsets.ModelViewSet):
     queryset = WorkOrderTemplate.objects.all().order_by('template_name')
     serializer_class = WorkOrderTemplateSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), CanManageConfig()]
 
     def perform_create(self, serializer):
         template = WorkOrderTemplateService.create_template(**serializer.validated_data)
@@ -32,6 +38,11 @@ class TaskTemplateViewSet(viewsets.ModelViewSet):
     queryset = TaskTemplate.objects.all().order_by('template_name')
     serializer_class = TaskTemplateSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), CanManageConfig()]
 
     def perform_create(self, serializer):
         template = WorkOrderTemplateService.create_task_template(**serializer.validated_data)
@@ -51,6 +62,11 @@ class LineItemTypeViewSet(viewsets.ModelViewSet):
     serializer_class = LineItemTypeSerializer
     lookup_field = 'pk'
 
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), CanManageConfig()]
+
     def perform_create(self, serializer):
         lit = ConfigurationService.create_line_item_type(**serializer.validated_data)
         serializer.instance = lit
@@ -62,7 +78,7 @@ class LineItemTypeViewSet(viewsets.ModelViewSet):
 
 
 @api_view(['GET', 'PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanManageConfig])
 def settings_view(request):
     if request.method == 'GET':
         configs = Configuration.objects.all()

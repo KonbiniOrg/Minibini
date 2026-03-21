@@ -3,11 +3,13 @@ from django.db.models import Q
 from django.db.models.deletion import ProtectedError
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.contacts.services import ContactService
 from apps.core.models import HistoryEntry
 from apps.core.services import ServiceError, NotFoundError
+from apps.api.permissions import CanManageJobs
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import ContactSerializer, ContactDetailSerializer, BusinessSerializer, BusinessDetailSerializer, PaymentTermsSerializer
 
@@ -16,6 +18,11 @@ class ContactViewSet(viewsets.ModelViewSet):
     queryset = Contact.objects.all().order_by('last_name', 'first_name')
     serializer_class = ContactSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), CanManageJobs()]
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -105,6 +112,11 @@ class BusinessViewSet(viewsets.ModelViewSet):
     queryset = Business.objects.all().order_by('business_name')
     serializer_class = BusinessSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), CanManageJobs()]
 
     def get_serializer_class(self):
         if self.action == 'retrieve':

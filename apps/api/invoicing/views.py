@@ -1,6 +1,8 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 from apps.invoicing.models import Invoice
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
+from apps.api.permissions import CanViewJobs, CanManageInvoicing
 from .serializers import InvoiceSerializer, InvoiceLineItemSerializer
 
 
@@ -8,6 +10,11 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
     queryset = Invoice.objects.all().order_by('-created_date')
     serializer_class = InvoiceSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), CanViewJobs()]
+        return [IsAuthenticated(), CanManageInvoicing()]
 
     # Line item mixin config
     line_item_serializer_class = InvoiceLineItemSerializer

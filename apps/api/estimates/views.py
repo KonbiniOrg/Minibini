@@ -1,7 +1,9 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateService
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
+from apps.api.permissions import CanViewJobs, CanManageJobs
 from .serializers import EstimateSerializer, EstimateLineItemSerializer
 
 
@@ -9,6 +11,11 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
     queryset = Estimate.objects.all().order_by('-created_date')
     serializer_class = EstimateSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), CanViewJobs()]
+        return [IsAuthenticated(), CanManageJobs()]
 
     # Line item mixin config
     line_item_serializer_class = EstimateLineItemSerializer

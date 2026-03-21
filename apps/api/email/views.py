@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.core.models import EmailRecord
 from apps.core.services import EmailService, ServiceError, NotFoundError
+from apps.api.permissions import CanManageJobs
 from .serializers import EmailRecordSerializer
 
 
@@ -38,7 +39,7 @@ def email_detail(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanManageJobs])
 def link_to_job(request, pk):
     job_id = request.data.get('job_id')
     if not job_id:
@@ -57,7 +58,7 @@ def link_to_job(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanManageJobs])
 def unlink_from_job(request, pk):
     try:
         EmailService.disassociate_from_job(pk)
@@ -70,7 +71,7 @@ def unlink_from_job(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanManageJobs])
 def create_job_from_email(request, pk):
     """Create a job from an email — delegates to JobService."""
     from apps.jobs.services import JobService

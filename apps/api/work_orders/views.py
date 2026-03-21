@@ -1,7 +1,9 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 from apps.jobs.models import WorkOrder
 from apps.jobs.services import WorkOrderService
 from apps.api.mixins import StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixin
+from apps.api.permissions import CanViewJobs, CanManageJobs
 from apps.api.worksheets.serializers import TaskSerializer, TaskBundleSerializer
 from .serializers import WorkOrderSerializer
 
@@ -10,6 +12,11 @@ class WorkOrderViewSet(StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixi
     queryset = WorkOrder.objects.all().order_by('-pk')
     serializer_class = WorkOrderSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), CanViewJobs()]
+        return [IsAuthenticated(), CanManageJobs()]
 
     # TaskBundleMixin config
     task_serializer_class = TaskSerializer
