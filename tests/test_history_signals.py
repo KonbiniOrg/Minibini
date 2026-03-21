@@ -36,7 +36,7 @@ class SignalHistoryTest(BaseTestCase):
         self.assertIn('status', entry.changes)
         self.assertEqual(entry.changes['status']['old'], 'submitted')
         self.assertEqual(entry.changes['status']['new'], 'approved')
-        self.assertIn(estimate.estimate_number, entry.text)
+        self.assertIn(estimate.estimate_number, entry.changes.get('_action', ''))
 
     def test_no_action_entry_when_job_already_completed(self):
         """No action entry when job is in terminal state."""

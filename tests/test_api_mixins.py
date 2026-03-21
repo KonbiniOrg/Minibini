@@ -73,6 +73,53 @@ class StatusTransitionMixinTest(BaseTestCase):
         response = view(request, pk=job.pk)
         self.assertEqual(response.status_code, 200)
 
+    def test_reason_persisted_to_history(self):
+        """When requires_reason=True, the reason should be saved as a HistoryEntry."""
+        from apps.jobs.models import Job
+        from apps.core.models import HistoryEntry
+
+        class JobSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = Job
+                fields = ['job_id', 'status']
+
+        class TestViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
+            queryset = Job.objects.all()
+            serializer_class = JobSerializer
+            lookup_field = 'pk'
+            status_actions = {
+                'cancel': {
+                    'service': lambda pk, reason=None: Job.objects.filter(pk=pk).update(status='cancelled'),
+                    'requires_reason': True,
+                },
+            }
+
+        view = TestViewSet.as_view({'post': 'cancel'}, detail=True)
+        job = Job.objects.first()
+
+        request = self.factory.post(
+            f'/api/jobs/{job.pk}/cancel/',
+            {'reason': 'Client withdrew request'},
+            format='json',
+        )
+        force_authenticate(request, user=self.user)
+        response = view(request, pk=job.pk)
+        self.assertEqual(response.status_code, 200)
+
+        entry = HistoryEntry.objects.filter(
+            entry_type='audit',
+            object_type='job',
+            object_id=job.pk,
+            text='Client withdrew request',
+        ).first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.user, self.user)
+        # Verify no separate action entry was created
+        action_count = HistoryEntry.objects.filter(
+            entry_type='action', object_type='job', object_id=job.pk,
+        ).count()
+        self.assertEqual(action_count, 0)
+
     def test_service_error_returns_400(self):
         """ServiceError from the service method should return 400."""
         from apps.jobs.models import Job

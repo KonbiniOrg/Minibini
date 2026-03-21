@@ -59,7 +59,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             username='system',
             defaults={'first_name': 'System', 'is_active': False},
         )
-        reason = f"Estimate {estimate.estimate_number} accepted"
+        action_desc = f"Estimate {estimate.estimate_number} accepted"
 
         # If trying to go to 'approved' from 'draft', first go through 'submitted'
         if new_job_status == 'approved' and job.status == 'draft':
@@ -71,8 +71,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
                 object_type='job',
                 object_id=job.pk,
                 user=system_user,
-                changes={'status': {'old': old_status, 'new': 'submitted'}},
-                text=reason,
+                changes={'status': {'old': old_status, 'new': 'submitted'}, '_action': action_desc},
             )
             # Now transition to approved
             job.status = 'approved'
@@ -82,8 +81,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
                 object_type='job',
                 object_id=job.pk,
                 user=system_user,
-                changes={'status': {'old': 'submitted', 'new': 'approved'}},
-                text=reason,
+                changes={'status': {'old': 'submitted', 'new': 'approved'}, '_action': action_desc},
             )
             return 2  # Two transitions made
         else:
@@ -95,8 +93,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
                 object_type='job',
                 object_id=job.pk,
                 user=system_user,
-                changes={'status': {'old': old_status, 'new': new_job_status}},
-                text=reason,
+                changes={'status': {'old': old_status, 'new': new_job_status}, '_action': action_desc},
             )
             return 1
 

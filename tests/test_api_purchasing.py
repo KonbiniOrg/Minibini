@@ -1,6 +1,6 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, HistoryEntry
 from apps.purchasing.models import PurchaseOrder, Bill
 
 
@@ -42,6 +42,19 @@ class PurchaseOrderAPITest(BaseTestCase):
             }, format='json')
             self.assertIn(response.status_code, [200, 201])
 
+    def test_cancel_po_creates_history(self):
+        po = PurchaseOrder.objects.filter(status='issued').first()
+        if po:
+            self.client.post(f'/api/purchase-orders/{po.pk}/cancel/', {
+                'reason': 'No longer needed',
+            }, format='json')
+            entry = HistoryEntry.objects.filter(
+                entry_type='audit', object_type='purchaseorder', object_id=po.pk,
+            ).first()
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry.text, 'No longer needed')
+            self.assertEqual(entry.user, self.user)
+
 
 class BillAPITest(BaseTestCase):
 
@@ -60,3 +73,16 @@ class BillAPITest(BaseTestCase):
         if bill:
             response = self.client.get(f'/api/bills/{bill.pk}/')
             self.assertEqual(response.status_code, 200)
+
+    def test_cancel_bill_creates_history(self):
+        bill = Bill.objects.filter(status='received').first()
+        if bill:
+            self.client.post(f'/api/bills/{bill.pk}/cancel/', {
+                'reason': 'Duplicate entry',
+            }, format='json')
+            entry = HistoryEntry.objects.filter(
+                entry_type='audit', object_type='bill', object_id=bill.pk,
+            ).first()
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry.text, 'Duplicate entry')
+            self.assertEqual(entry.user, self.user)

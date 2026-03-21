@@ -58,6 +58,30 @@ class StatusTransitionMixin:
                     )
 
                 instance = self.get_object()
+
+                if needs_reason:
+                    from apps.core.history import get_history_context
+                    reason = request.data['reason']
+                    obj_type = instance.__class__.__name__.lower()
+                    attached = False
+                    ctx = get_history_context()
+                    if ctx:
+                        for entry in reversed(ctx.pending):
+                            if (entry.get('object_type') == obj_type
+                                    and entry.get('entry_type') == 'audit'):
+                                entry['text'] = reason
+                                attached = True
+                                break
+                    if not attached:
+                        from apps.core.models import HistoryEntry
+                        HistoryEntry.objects.create(
+                            entry_type='audit',
+                            object_type=obj_type,
+                            object_id=instance.pk,
+                            user=request.user if hasattr(request, 'user') and request.user.is_authenticated else None,
+                            text=reason,
+                        )
+
                 serializer = self.get_serializer(instance)
                 return Response(serializer.data)
             return action_fn

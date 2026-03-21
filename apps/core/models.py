@@ -267,6 +267,23 @@ class BaseLineItem(models.Model):
 
 
 class HistoryEntry(models.Model):
+    """Tracks changes, actions, and notes on objects.
+
+    Entry types:
+        audit  — automatic field change tracking (via @history decorator)
+        action — system-generated status transitions (e.g., from signals)
+        note   — user-written notes
+
+    Fields:
+        changes — JSON diff of field values. May also contain underscore-prefixed
+                  metadata keys: _created (bool, object was created),
+                  _action (str, system-generated description of what happened).
+                  These are not field diffs and should be filtered out when
+                  displaying field changes.
+        text    — Reserved for human-entered text only (notes, reasons for status
+                  changes). NEVER use for system-generated descriptions; put those
+                  in changes['_action'] instead.
+    """
     ENTRY_TYPES = [
         ('audit', 'Audit'),
         ('action', 'Action'),

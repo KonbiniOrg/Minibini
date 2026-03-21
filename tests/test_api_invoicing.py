@@ -1,6 +1,6 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, HistoryEntry
 from apps.invoicing.models import Invoice, InvoiceLineItem
 
 
@@ -39,3 +39,16 @@ class InvoiceAPITest(BaseTestCase):
         if invoice:
             response = self.client.post(f'/api/invoices/{invoice.pk}/cancel/', {}, format='json')
             self.assertEqual(response.status_code, 400)
+
+    def test_cancel_invoice_creates_history(self):
+        invoice = Invoice.objects.filter(status='active').first()
+        if invoice:
+            self.client.post(f'/api/invoices/{invoice.pk}/cancel/', {
+                'reason': 'Billed in error',
+            }, format='json')
+            entry = HistoryEntry.objects.filter(
+                entry_type='audit', object_type='invoice', object_id=invoice.pk,
+            ).first()
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry.text, 'Billed in error')
+            self.assertEqual(entry.user, self.user)

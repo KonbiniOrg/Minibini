@@ -1,7 +1,7 @@
 from rest_framework.test import APIClient
 from rest_framework import status
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, HistoryEntry
 from apps.jobs.models import Job
 
 
@@ -83,3 +83,16 @@ class JobAPITest(BaseTestCase):
             'reason': 'Customer withdrew',
         }, format='json')
         self.assertEqual(response.status_code, 200)
+
+    def test_cancel_job_creates_history(self):
+        job = self._get_approved_job()
+        self.client.post(f'/api/jobs/{job.pk}/cancel/', {
+            'reason': 'Customer withdrew',
+        }, format='json')
+        entry = HistoryEntry.objects.filter(
+            entry_type='audit', object_type='job', object_id=job.pk,
+        ).first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.text, 'Customer withdrew')
+        self.assertEqual(entry.user, self.user)
+

@@ -18,7 +18,8 @@ class WorkOrderViewSet(StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixi
 
     status_actions = {
         'complete': {
-            'service': lambda pk: WorkOrderService.update_status(pk, 'complete'),
+            'service': lambda pk, reason=None: WorkOrderService.update_status(pk, 'complete'),
+            'requires_reason': True,
         },
         'block': {
             'service': lambda pk, reason=None: WorkOrderService.update_status(pk, 'blocked'),

@@ -23,17 +23,20 @@ class HistoryEntryModelTest(TestCase):
         self.assertEqual(entry.changes['status']['old'], 'draft')
         self.assertEqual(entry.text, '')
 
-    def test_create_action_entry_with_reason(self):
+    def test_create_action_entry(self):
         entry = HistoryEntry.objects.create(
             entry_type='action',
             object_type='job',
             object_id=1,
             user=None,
-            changes={'status': {'old': 'submitted', 'new': 'approved'}},
-            text='Estimate EST-2025-0001 accepted',
+            changes={
+                'status': {'old': 'submitted', 'new': 'approved'},
+                '_action': 'Estimate EST-2025-0001 accepted',
+            },
         )
         self.assertEqual(entry.entry_type, 'action')
-        self.assertEqual(entry.text, 'Estimate EST-2025-0001 accepted')
+        self.assertEqual(entry.changes['_action'], 'Estimate EST-2025-0001 accepted')
+        self.assertEqual(entry.text, '')
         self.assertIsNone(entry.user)
 
     def test_create_note_entry(self):

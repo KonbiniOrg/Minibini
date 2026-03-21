@@ -99,8 +99,8 @@ def _on_pre_save(sender, instance, **kwargs):
         'entry_type': 'audit',
         'object_type': _get_object_type(sender),
         'object_id': instance.pk,  # may be None for new objects
-        'changes': changes,
-        'text': 'created' if is_new else '',
+        'changes': {'_created': True} if is_new else changes,
+        'text': '',
         '_instance': instance,  # reference to get pk after save
         '_is_new': is_new,
     }

@@ -446,7 +446,6 @@ info "Estimate $EST2_NUM accepted (job approved)"
 
 log "Cancelling job — no deposit received..."
 post "/api/jobs/$JOB2_ID/cancel/" '{"reason":"Client did not pay deposit within 30 days. Attempted follow-up calls on 3/1 and 3/7 with no response."}' > /dev/null
-post "/api/jobs/$JOB2_ID/notes/" '{"text":"Tried calling Derek twice, no answer. Sent final email giving 7 more days. No response. Cancelling."}' > /dev/null
 info "Job $JOB2_NUM cancelled"
 
 # ═══════════════════════════════════════════════
