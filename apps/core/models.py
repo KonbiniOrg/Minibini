@@ -20,6 +20,15 @@ class User(AbstractUser):
         db_table = 'auth_user'
         verbose_name = 'User'
         verbose_name_plural = 'Users'
+        permissions = [
+            ('can_manage_jobs', 'Can manage jobs, estimates, worksheets, work orders, tasks'),
+            ('can_view_jobs', 'Read-only access to all jobs and related documents'),
+            ('can_manage_invoicing', 'Can manage invoices, price list, send/payment'),
+            ('can_manage_purchasing', 'Can manage POs, bills, send/receive'),
+            ('can_manage_time', "Can edit/delete anyone's time entries"),
+            ('can_approve_expenses', 'Can approve/reject expenses over threshold'),
+            ('can_manage_config', 'Can manage settings, templates, user admin'),
+        ]
 
 
 
