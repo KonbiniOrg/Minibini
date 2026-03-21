@@ -99,3 +99,51 @@ class AtomPermissionFactoryTest(BaseTestCase):
         self.assertEqual(len(classes), 7)
         for cls in classes:
             self.assertTrue(hasattr(cls, 'has_permission'))
+
+
+from django.contrib.auth.models import Group
+
+
+class DefaultGroupsTest(BaseTestCase):
+    """Verify default groups have correct permissions after data migration."""
+
+    def test_worker_group_permissions(self):
+        group = Group.objects.get(name='Worker')
+        codenames = set(group.permissions.values_list('codename', flat=True))
+        self.assertEqual(codenames, {'can_view_jobs'})
+
+    def test_manager_group_permissions(self):
+        group = Group.objects.get(name='Manager')
+        codenames = set(group.permissions.values_list('codename', flat=True))
+        self.assertEqual(codenames, {
+            'can_view_jobs', 'can_manage_jobs',
+            'can_manage_time', 'can_approve_expenses',
+        })
+
+    def test_bookkeeper_group_permissions(self):
+        group = Group.objects.get(name='Bookkeeper')
+        codenames = set(group.permissions.values_list('codename', flat=True))
+        self.assertEqual(codenames, {
+            'can_view_jobs', 'can_manage_invoicing',
+            'can_manage_purchasing', 'can_approve_expenses',
+        })
+
+    def test_admin_group_permissions(self):
+        group = Group.objects.get(name='Admin')
+        codenames = set(group.permissions.values_list('codename', flat=True))
+        expected = {
+            'can_manage_jobs', 'can_view_jobs', 'can_manage_invoicing',
+            'can_manage_purchasing', 'can_manage_time',
+            'can_approve_expenses', 'can_manage_config',
+        }
+        self.assertEqual(codenames, expected)
+
+    def test_group_permissions_propagate_to_user(self):
+        """User in Manager group should have can_manage_jobs via group."""
+        user = User.objects.get(username='johnq')
+        user.groups.clear()
+        manager_group = Group.objects.get(name='Manager')
+        user.groups.add(manager_group)
+        user = User.objects.get(pk=user.pk)  # clear cache
+        self.assertTrue(user.has_perm('core.can_manage_jobs'))
+        self.assertFalse(user.has_perm('core.can_manage_invoicing'))
