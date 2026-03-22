@@ -91,7 +91,8 @@ class TaskDescriptionFromTemplateTests(TestCase):
         """Adding a task from template via the view should copy the description."""
         client = Client()
         user = User.objects.create_user(
-            username='testuser', password='testpass', email='test@example.com'
+            username='testuser', password='testpass', email='test@example.com',
+            is_superuser=True
         )
         client.login(username='testuser', password='testpass')
 
@@ -111,7 +112,8 @@ class TaskDescriptionInViewsTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user(
-            username='testuser', password='testpass', email='test@example.com'
+            username='testuser', password='testpass', email='test@example.com',
+            is_superuser=True
         )
         self.client.login(username='testuser', password='testpass')
 
@@ -169,7 +171,8 @@ class WorksheetDescriptionFromTaskTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user(
-            username='testuser', password='testpass', email='test@example.com'
+            username='testuser', password='testpass', email='test@example.com',
+            is_superuser=True
         )
         self.client.login(username='testuser', password='testpass')
 
@@ -204,7 +207,8 @@ class TaskAddManualDescriptionTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user(
-            username='testuser', password='testpass', email='test@example.com'
+            username='testuser', password='testpass', email='test@example.com',
+            is_superuser=True
         )
         self.client.login(username='testuser', password='testpass')
 

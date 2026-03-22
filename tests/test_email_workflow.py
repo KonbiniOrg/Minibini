@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from unittest.mock import patch, MagicMock
@@ -13,6 +14,7 @@ class CreateJobFromEmailWorkflowTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration for number generation
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
@@ -354,6 +356,7 @@ class AddContactFromEmailWorkflowTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         self.url = reverse('contacts:add_contact')
 
         # Create Configuration for number generation
@@ -506,6 +509,7 @@ class ConfirmCreateBusinessFromEmailTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         self.url = reverse('contacts:confirm_create_business')
 
         # Create Configuration for number generation
@@ -624,6 +628,7 @@ class JobCreateWithEmailLinkingTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         self.url = reverse('jobs:create')
         self.contact = Contact.objects.get(pk=1)
 
@@ -708,6 +713,7 @@ class EmailJobAssociationTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration for number generation
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')

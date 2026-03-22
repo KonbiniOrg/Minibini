@@ -1,5 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required, permission_required
 from django.urls import reverse
 from .models import User, LineItemType, Configuration, EmailRecord, TempEmail
 from .services import EmailService, ConfigurationService, NotFoundError
@@ -9,15 +10,21 @@ from apps.jobs.models import Job
 from .forms import LineItemTypeForm, TaxConfigurationForm
 
 
+@login_required
+@permission_required('core.can_manage_config', raise_exception=True)
 def user_list(request):
     users = User.objects.all().order_by('username')
     return render(request, 'core/user_list.html', {'users': users})
 
 
+@login_required
+@permission_required('core.can_manage_config', raise_exception=True)
 def user_detail(request, user_id):
     user = get_object_or_404(User, pk=user_id)
     return render(request, 'core/user_detail.html', {'user': user})
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def email_inbox(request):
     """
     Display list of emails with temporary metadata.
@@ -51,6 +58,8 @@ def email_inbox(request):
     }
     return render(request, 'core/email_inbox.html', context)
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def email_detail(request, email_record_id):
     """Display full email content fetched on-demand from IMAP server."""
     email_record = get_object_or_404(EmailRecord, pk=email_record_id)
@@ -72,6 +81,8 @@ def email_detail(request, email_record_id):
     return render(request, 'core/email_detail.html', context)
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def create_job_from_email(request, email_record_id):
     """
     Workflow to create a job from an email.
@@ -152,6 +163,8 @@ def create_job_from_email(request, email_record_id):
         return redirect(url)
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def associate_email_with_job(request, email_record_id):
     """
     Associate an email with an existing job.
@@ -198,6 +211,8 @@ def associate_email_with_job(request, email_record_id):
     return render(request, 'core/associate_email_with_job.html', context)
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def disassociate_email_from_job(request, email_record_id):
     """
     Remove the job association from an email.
@@ -220,6 +235,8 @@ def disassociate_email_from_job(request, email_record_id):
     messages.success(request, f'Email disassociated from job {job_number}.')
     return redirect('core:email_detail', email_record_id=email_record_id)
 
+@login_required
+@permission_required('core.can_manage_config', raise_exception=True)
 def line_item_type_list(request):
     """List all line item types."""
     show_all = request.GET.get('show_all', '0') == '1'
@@ -235,6 +252,8 @@ def line_item_type_list(request):
     })
 
 
+@login_required
+@permission_required('core.can_manage_config', raise_exception=True)
 def line_item_type_detail(request, pk):
     """Display line item type details."""
     line_item_type = get_object_or_404(LineItemType, pk=pk)
@@ -243,6 +262,8 @@ def line_item_type_detail(request, pk):
     })
 
 
+@login_required
+@permission_required('core.can_manage_config', raise_exception=True)
 def line_item_type_create(request):
     """Create a new line item type."""
     if request.method == 'POST':
@@ -261,6 +282,8 @@ def line_item_type_create(request):
     })
 
 
+@login_required
+@permission_required('core.can_manage_config', raise_exception=True)
 def line_item_type_edit(request, pk):
     """Edit an existing line item type."""
     line_item_type = get_object_or_404(LineItemType, pk=pk)
@@ -282,6 +305,8 @@ def line_item_type_edit(request, pk):
     })
 
 
+@login_required
+@permission_required('core.can_manage_config', raise_exception=True)
 def settings_view(request):
     """Display the settings page with tax configuration."""
     # Get tax configuration values
@@ -301,6 +326,8 @@ def settings_view(request):
     })
 
 
+@login_required
+@permission_required('core.can_manage_config', raise_exception=True)
 def tax_config_edit(request):
     """Edit tax configuration settings."""
     # Get current values

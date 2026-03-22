@@ -15,8 +15,10 @@ class TaskReorderingTestCase(TestCase):
         self.user = User.objects.create_user(
             username='testuser',
             email='test@example.com',
-            password='testpass123'
+            password='testpass123',
+            is_superuser=True
         )
+        self.client.force_login(self.user)
 
         # Create a default contact (must be created before business)
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')

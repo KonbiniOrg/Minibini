@@ -8,6 +8,7 @@ This test suite covers:
 - Default contact clearing when deleting the last contact
 """
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
@@ -20,6 +21,7 @@ class ContactDeletionValidationTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Create contact first for default_contact
         self.contact = Contact.objects.create(
             first_name='John',
@@ -151,6 +153,7 @@ class ContactDeletionSuccessTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_delete_contact_with_no_associations(self):
         """Contact with no associations can be deleted successfully"""
@@ -280,6 +283,7 @@ class DefaultContactReassignmentOnDeletionTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Create initial contact for default_contact (not linked to business)
         # This allows tests to add their own contacts to the business without interference
         initial_contact = Contact.objects.create(
@@ -595,6 +599,7 @@ class ContactDetailPageDeleteButtonTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_contact_detail_page_has_delete_button(self):
         """Contact detail page should have a Delete Contact button"""
@@ -638,6 +643,7 @@ class EditContactWithJobStatusTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Create contact first for default_contact
         self.contact = Contact.objects.create(
             first_name='John',

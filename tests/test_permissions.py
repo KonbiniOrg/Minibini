@@ -147,3 +147,90 @@ class DefaultGroupsTest(BaseTestCase):
         user = User.objects.get(pk=user.pk)  # clear cache
         self.assertTrue(user.has_perm('core.can_manage_jobs'))
         self.assertFalse(user.has_perm('core.can_manage_invoicing'))
+
+
+from django.test import Client
+
+
+class HTMLViewPermissionTest(BaseTestCase):
+    """Test that HTML views require login and correct permissions."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = Client()
+        self.worker = User.objects.get(username='johnq')
+        self.worker.set_password('testpass')
+        self.worker.save()
+        self.manager = User.objects.get(username='manager1')
+        self.manager.set_password('testpass')
+        self.manager.save()
+
+    def test_unauthenticated_redirects_to_login(self):
+        response = self.client.get('/jobs/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('login', response.url)
+
+    def test_unauthenticated_redirects_from_contacts(self):
+        response = self.client.get('/contacts/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('login', response.url)
+
+    def test_unauthenticated_redirects_from_invoicing(self):
+        response = self.client.get('/invoicing/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('login', response.url)
+
+    def test_unauthenticated_redirects_from_purchasing(self):
+        response = self.client.get('/purchasing/purchase-orders/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('login', response.url)
+
+    def test_unauthenticated_redirects_from_settings(self):
+        response = self.client.get('/settings/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('login', response.url)
+
+    def test_worker_can_view_job_list(self):
+        self.client.login(username='johnq', password='testpass')
+        response = self.client.get('/jobs/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_worker_cannot_access_settings(self):
+        self.client.login(username='johnq', password='testpass')
+        response = self.client.get('/settings/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_worker_can_view_invoice_list(self):
+        self.client.login(username='johnq', password='testpass')
+        response = self.client.get('/invoicing/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_worker_cannot_reorder_invoice_line_items(self):
+        """Worker with only can_view_jobs cannot reorder invoice line items."""
+        self.client.login(username='johnq', password='testpass')
+        # Use a non-existent ID; permission check happens before object lookup
+        response = self.client.post('/invoicing/999/reorder-line-item/999/up/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_worker_can_view_purchase_order_list(self):
+        self.client.login(username='johnq', password='testpass')
+        response = self.client.get('/purchasing/purchase-orders/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_worker_cannot_create_purchase_order(self):
+        """Worker with only can_view_jobs cannot create POs."""
+        self.client.login(username='johnq', password='testpass')
+        response = self.client.get('/purchasing/purchase-orders/create/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_worker_cannot_create_job(self):
+        """Worker with only can_view_jobs cannot create jobs."""
+        self.client.login(username='johnq', password='testpass')
+        response = self.client.get('/jobs/create/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_can_create_job(self):
+        """Manager with can_manage_jobs can create jobs."""
+        self.client.login(username='manager1', password='testpass')
+        response = self.client.get('/jobs/create/')
+        self.assertEqual(response.status_code, 200)

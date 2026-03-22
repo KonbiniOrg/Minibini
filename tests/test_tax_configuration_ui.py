@@ -1,5 +1,6 @@
 """Tests for Tax Configuration UI."""
 from decimal import Decimal
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import Configuration
@@ -10,6 +11,7 @@ class TaxConfigurationUITest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_settings_shows_tax_rate(self):
         """Test that settings page shows the default tax rate."""
@@ -50,6 +52,7 @@ class TaxConfigurationEditTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_tax_config_edit_view_exists(self):
         """Test that tax configuration edit view exists."""

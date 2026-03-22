@@ -1,5 +1,6 @@
 """Tests for LineItemType in PurchaseOrder line items."""
 from decimal import Decimal
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import LineItemType
@@ -34,6 +35,7 @@ class POLineItemTypeManualFormTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_manual_form_includes_line_item_type_field(self):
         """Test that manual line item form shows LineItemType field."""
@@ -110,6 +112,7 @@ class POLineItemFromPriceListTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_pricelist_form_copies_line_item_type(self):
         """Test that adding from price list copies the LineItemType."""

@@ -1,5 +1,6 @@
 """Tests for LineItemType in Bill line items."""
 from decimal import Decimal
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import LineItemType, Configuration
@@ -35,6 +36,7 @@ class BillLineItemTypeFormTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_form_includes_line_item_type_field(self):
         """Test that line item form shows LineItemType field."""
@@ -110,6 +112,7 @@ class BillLineItemFromPriceListTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_pricelist_form_copies_line_item_type(self):
         """Test that adding from price list copies the LineItemType."""
@@ -177,6 +180,7 @@ class BillCreateFromPOLineItemTypeTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_bill_from_po_copies_line_item_type(self):
         """Test that creating a Bill from PO copies LineItemType to line items."""

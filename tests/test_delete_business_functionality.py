@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
@@ -8,6 +9,7 @@ class BusinessDeletionConfirmationFormTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Create initial contact for default_contact
         initial_contact = Contact.objects.create(
             first_name='Initial',
@@ -129,6 +131,7 @@ class BusinessDeletionDeleteActionTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Create contact first for default_contact
         self.contact1 = Contact.objects.create(
             first_name='John',
@@ -197,6 +200,7 @@ class BusinessDeletionMissingActionTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Create contact first for default_contact
         contact = Contact.objects.create(
             first_name='John',
@@ -230,6 +234,7 @@ class BusinessDetailPageDeleteButtonTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Create initial contact for default_contact
         initial_contact = Contact.objects.create(
             first_name='Initial',
@@ -269,6 +274,7 @@ class BusinessDeletionGETRequestTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Create initial contact for default_contact
         initial_contact = Contact.objects.create(
             first_name='Initial',

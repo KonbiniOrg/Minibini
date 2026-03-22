@@ -1,27 +1,38 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import ValidationError
 from .models import Contact, Business
 from .services import ContactService
 from apps.core.services import NotFoundError
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def contact_list(request):
     contacts = Contact.objects.all().order_by('last_name', 'first_name')
     return render(request, 'contacts/contact_list.html', {'contacts': contacts})
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def contact_detail(request, contact_id):
     contact = get_object_or_404(Contact, contact_id=contact_id)
     return render(request, 'contacts/contact_detail.html', {'contact': contact})
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def business_list(request):
     businesses = Business.objects.all().order_by('business_name')
     return render(request, 'contacts/business_list.html', {'businesses': businesses})
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def business_detail(request, business_id):
     business = get_object_or_404(Business, business_id=business_id)
     contacts = Contact.objects.filter(business=business).order_by('last_name', 'first_name')
     return render(request, 'contacts/business_detail.html', {'business': business, 'contacts': contacts})
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def add_contact(request):
     # Get pre-filled data from session (from email workflow)
     initial_name = request.session.get('contact_name', '')
@@ -130,6 +141,8 @@ def add_contact(request):
         'all_businesses': all_businesses,
     })
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def confirm_create_business(request):
     """
     Intermediate page shown when user selects NONE for business but a company
@@ -183,6 +196,8 @@ def confirm_create_business(request):
         'business_name': initial_business_name,
     })
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def add_business_contact(request, business_id):
     business = get_object_or_404(Business, business_id=business_id)
 
@@ -236,6 +251,8 @@ def add_business_contact(request, business_id):
 
     return render(request, 'contacts/add_business_contact.html', {'business': business})
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def add_business(request):
     if request.method == 'POST':
         # Business fields
@@ -317,6 +334,8 @@ def add_business(request):
 
     return render(request, 'contacts/add_business.html')
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def edit_contact(request, contact_id):
     contact = get_object_or_404(Contact, contact_id=contact_id)
 
@@ -505,6 +524,8 @@ def edit_contact(request, contact_id):
         'existing_businesses': existing_businesses
     })
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def set_default_contact(request, contact_id):
     """Set a contact as the default contact for their business"""
     contact = get_object_or_404(Contact, contact_id=contact_id)
@@ -521,6 +542,8 @@ def set_default_contact(request, contact_id):
     # If not POST, redirect back
     return redirect('contacts:contact_detail', contact_id=contact.contact_id)
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def delete_contact(request, contact_id):
     """Delete a contact if it's not associated with any non-business objects"""
     contact = get_object_or_404(Contact, contact_id=contact_id)
@@ -631,6 +654,8 @@ def delete_contact(request, contact_id):
     # If not POST, redirect back
     return redirect('contacts:contact_detail', contact_id=contact.contact_id)
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def delete_business(request, business_id):
     """Delete a business, letting the user decide what to do with each associated object."""
     business = get_object_or_404(Business, business_id=business_id)
@@ -855,6 +880,8 @@ def _process_business_deletion(request, business):
         messages.error(request, f'An error occurred while deleting the business: {str(e)}')
         return redirect('contacts:business_detail', business_id=business.business_id)
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def edit_business(request, business_id):
     business = get_object_or_404(Business, business_id=business_id)
 

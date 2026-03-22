@@ -7,6 +7,7 @@ This test suite covers the new implementation where:
 - The contact is then linked back to the business
 """
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
@@ -17,6 +18,7 @@ class AddBusinessWithDefaultContactTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         self.url = reverse('contacts:add_business')
 
     def test_create_business_with_single_contact_sets_default(self):
@@ -233,6 +235,7 @@ class BusinessDefaultContactIntegrityTest(TestCase):
         """Business default_contact should always point to one of its own contacts"""
         # Create business with contact
         client = Client()
+        client.force_login(get_user_model().objects.create_superuser(username='admin_integrity1', password='testpass'))
         url = reverse('contacts:add_business')
 
         response = client.post(url, {
@@ -261,6 +264,7 @@ class BusinessDefaultContactIntegrityTest(TestCase):
     def test_contact_business_reference_matches_default_contact_business(self):
         """Contact's business field should match the business it's default for"""
         client = Client()
+        client.force_login(get_user_model().objects.create_superuser(username='admin_integrity2', password='testpass'))
         url = reverse('contacts:add_business')
 
         response = client.post(url, {

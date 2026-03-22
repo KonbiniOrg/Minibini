@@ -19,7 +19,8 @@ class TaskDetailViewTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user(
-            username='testuser', password='testpass', email='test@example.com'
+            username='testuser', password='testpass', email='test@example.com',
+            is_superuser=True
         )
         self.client.login(username='testuser', password='testpass')
 
@@ -82,7 +83,8 @@ class TaskEditViewTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user(
-            username='testuser', password='testpass', email='test@example.com'
+            username='testuser', password='testpass', email='test@example.com',
+            is_superuser=True
         )
         self.client.login(username='testuser', password='testpass')
 
@@ -168,7 +170,8 @@ class TaskEditRestrictionTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user(
-            username='testuser', password='testpass', email='test@example.com'
+            username='testuser', password='testpass', email='test@example.com',
+            is_superuser=True
         )
         self.client.login(username='testuser', password='testpass')
 
