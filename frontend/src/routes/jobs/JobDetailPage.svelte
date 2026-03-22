@@ -88,6 +88,7 @@
     {purchaseOrders}
     {emails}
     onAddNote={handleAddNote}
+    onStatusChange={loadJob}
   />
 
   <p><a href="#/jobs">Back to list</a></p>

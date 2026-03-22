@@ -1,6 +1,9 @@
 <script>
   import Accordion from '../Accordion.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
+  import { user } from '../../stores/auth.js';
+  import { api } from '../../lib/api.js';
+
   const {
     job,
     contact = null,
@@ -12,7 +15,38 @@
     emails = null,
     history = null,
     onAddNote = null,
+    onStatusChange = null,
   } = $props();
+
+  // Permission check
+  let canManageJobs = $derived(
+    $user?.permissions?.includes('can_manage_jobs') ?? false
+  );
+
+  // Valid status transitions (mirrors Job model)
+  const VALID_TRANSITIONS = {
+    draft: ['submitted', 'rejected'],
+    submitted: ['approved', 'rejected'],
+    approved: ['completed', 'cancelled'],
+    rejected: [],
+    completed: [],
+    cancelled: [],
+  };
+
+  let validNextStatuses = $derived(VALID_TRANSITIONS[job.status] || []);
+
+  async function handleStatusChange(e) {
+    const newStatus = e.target.value;
+    if (newStatus === job.status) return;
+    try {
+      await api.patch(`/api/jobs/${job.job_id}/`, { status: newStatus });
+      if (onStatusChange) onStatusChange();
+    } catch (err) {
+      // Revert select on failure
+      e.target.value = job.status;
+      alert(err.message || 'Status change failed');
+    }
+  }
 
   // Determine which accordion opens by default
   let defaultOpen = $derived.by(() => {
@@ -47,14 +81,25 @@
 </script>
 
 <div class="job-header">
-  <h1>JOB #{job.job_number.replace(/^JOB-/, '')}: {job.name || '(untitled)'}</h1>
+  <h1>JOB #{job.job_number.replace(/^JOB-/, '')}: {job.name || '(untitled)'} {#if canManageJobs}<a href="#/jobs/{job.job_id}/edit" class="edit-link">edit</a>{/if}</h1>
   <p class="customer-line">
     {#if contact}
       for <a href="#/contacts/{contact.contact_id}">{contact.name}</a>{#if contact.business}, at <a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>{/if}
     {/if}
   </p>
   <div class="status-line">
-    <span class="status-badge status-{job.status}">{job.status}</span>
+    {#if canManageJobs && validNextStatuses.length > 0}
+      <span class="status-select-wrapper">
+        <select class="status-select status-{job.status}" onchange={handleStatusChange}>
+          <option value={job.status} selected>{job.status}</option>
+          {#each validNextStatuses as nextStatus}
+            <option value={nextStatus}>{nextStatus}</option>
+          {/each}
+        </select>
+      </span>
+    {:else}
+      <span class="status-badge status-{job.status}">{job.status}</span>
+    {/if}
     <span class="dates">
       {#if job.start_date}Started {new Date(job.start_date).toLocaleDateString()}{/if}
       {#if job.due_date}{job.start_date ? ' · ' : ''}Due {new Date(job.due_date).toLocaleDateString()}{/if}
@@ -97,6 +142,17 @@
   {:else}
     <p class="empty-msg">No worksheet data.</p>
   {/if}
+  <div class="accordion-actions">
+    {#if currentWorksheet}
+      <a href="#/worksheets/{currentWorksheet.est_worksheet_id}">View Full Worksheet</a>
+    {/if}
+    {#if canManageJobs && !currentWorksheet && job.status === 'draft'}
+      <a href="#/jobs/{job.job_id}/create-worksheet">Create Worksheet</a>
+    {/if}
+    {#if canManageJobs && currentWorksheet && !currentEstimate && (currentWorksheet.status === 'draft' || currentWorksheet.status === 'final')}
+      <a href="#/worksheets/{currentWorksheet.est_worksheet_id}/generate-estimate">Generate Estimate</a>
+    {/if}
+  </div>
 </Accordion>
 
 <Accordion
@@ -145,6 +201,20 @@
   {:else}
     <p class="empty-msg">No estimates yet.</p>
   {/if}
+  <div class="accordion-actions">
+    {#if currentEstimate}
+      <a href="#/estimates/{currentEstimate.estimate_id}">View Full Estimate</a>
+    {/if}
+    {#if canManageJobs && currentEstimate && (currentEstimate.status === 'open' || currentEstimate.status === 'accepted')}
+      <a href="#/estimates/{currentEstimate.estimate_id}/revise">Revise Estimate</a>
+    {/if}
+    {#if canManageJobs && currentEstimate?.status === 'accepted' && !wo}
+      <a href="#/estimates/{currentEstimate.estimate_id}/create-work-order">Create Work Order</a>
+    {/if}
+    {#if canManageJobs && !currentEstimate}
+      <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
+    {/if}
+  </div>
 </Accordion>
 
 <Accordion
@@ -169,6 +239,11 @@
     </table>
   {:else}
     <p class="empty-msg">No work orders yet.</p>
+  {/if}
+  {#if wo}
+    <div class="accordion-actions">
+      <a href="#/work-orders/{wo.work_order_id}">View Full Work Order</a>
+    </div>
   {/if}
 </Accordion>
 
@@ -197,6 +272,11 @@
   {:else}
     <p class="empty-msg">No invoices created for this job yet.</p>
   {/if}
+  <div class="accordion-actions">
+    {#if canManageJobs && wo}
+      <a href="#/jobs/{job.job_id}/create-invoice">Create Invoice</a>
+    {/if}
+  </div>
 </Accordion>
 
 <Accordion
@@ -239,17 +319,40 @@
   {:else}
     <p class="empty-msg">No purchase orders for this job.</p>
   {/if}
+  <div class="accordion-actions">
+    {#if canManageJobs}
+      <a href="#/jobs/{job.job_id}/create-po">Create Purchase Order</a>
+    {/if}
+  </div>
 </Accordion>
 
 <style>
   .job-header h1 { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+  .edit-link { font-size: 14px; font-weight: 400; color: #2563eb; margin-left: 12px; }
   .customer-line { font-size: 16px; color: #555; margin-bottom: 16px; }
-  .status-line { margin-bottom: 20px; }
+  .status-line { margin-bottom: 20px; display: flex; align-items: center; gap: 12px; }
   .status-badge {
     padding: 4px 12px; border-radius: 12px; font-size: 13px;
     font-weight: 600; text-transform: capitalize;
   }
+
+  /* Status dropdown styled as pill */
+  .status-select-wrapper { position: relative; display: inline-block; }
+  .status-select {
+    appearance: none; -webkit-appearance: none;
+    padding: 4px 28px 4px 12px; border-radius: 12px;
+    font-size: 13px; font-weight: 600; text-transform: capitalize;
+    border: 2px solid transparent; cursor: pointer; outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .status-select:hover { border-color: rgba(0,0,0,0.15); }
+  .status-select:focus { border-color: rgba(0,0,0,0.3); }
+  .status-select-wrapper::after {
+    content: '\25BE'; position: absolute; right: 10px; top: 50%;
+    transform: translateY(-50%); font-size: 11px; pointer-events: none; opacity: 0.6;
+  }
   .status-draft { background: #f3f4f6; color: #374151; }
+  .status-submitted { background: #dbeafe; color: #1e40af; }
   .status-approved { background: #dcfce7; color: #166534; }
   .status-complete, .status-completed { background: #dbeafe; color: #1e40af; }
   .status-rejected { background: #fee2e2; color: #991b1b; }
@@ -330,6 +433,18 @@
   .po-table tbody tr { background: #f8fafc; }
   .po-table tbody tr:nth-child(even) { background: #f1f5f9; }
   .po-table tbody tr + tr { border-top: 1px solid #e2e8f0; }
+
+  /* Accordion action rows */
+  .accordion-actions {
+    padding: 8px 16px; display: flex; gap: 8px;
+    border-top: 1px solid #e5e7eb; background: #fafafa;
+  }
+  .accordion-actions a {
+    font-size: 13px; padding: 4px 10px;
+    border: 1px solid #d1d5db; border-radius: 4px;
+    background: #fff; color: #374151;
+  }
+  .accordion-actions a:hover { background: #f3f4f6; text-decoration: none; }
 
   /* PO other-job differentiation */
   .other-job { opacity: 0.5; }
