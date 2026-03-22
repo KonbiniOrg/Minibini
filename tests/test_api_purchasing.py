@@ -78,6 +78,19 @@ class PurchaseOrderAPITest(BaseTestCase):
         self.assertIn(po.po_id, po_ids)
         self.assertNotIn(po2.po_id, po_ids)
 
+    def test_purchase_order_serializer_includes_business_name(self):
+        """PO API response includes business_name field."""
+        from apps.contacts.models import Business
+        business = Business.objects.first()
+        po = PurchaseOrder.objects.create(
+            business=business,
+            po_number='PO-TEST-BIZNAME',
+        )
+        response = self.client.get(f'/api/purchase-orders/{po.po_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('business_name', response.data)
+        self.assertEqual(response.data['business_name'], business.business_name)
+
     def test_cancel_po_creates_history(self):
         po = PurchaseOrder.objects.filter(status='issued').first()
         if po:
