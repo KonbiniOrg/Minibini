@@ -57,7 +57,7 @@ Minibini/
 ## Key Models
 
 ### Core (`apps.core`)
-- **User** - Custom AbstractUser, links to Contact
+- **User** - Custom AbstractUser, links to Contact. Has 7 custom permission atoms (see Permissions section)
 - **Configuration** - Key-value store for system settings (document numbering sequences/counters, email settings). **Never add fields** - all settings are key-value pairs
 - **EmailRecord** - Permanent record linking emails to jobs (message_id only, email server is source of truth)
 - **TempEmail** - Temporary cache of email metadata from IMAP (OneToOne with EmailRecord, cleaned up after retention period)
@@ -182,6 +182,13 @@ with transaction.atomic():
 **Types:** Pass correct types to model fields (don't wrap numbers in `str()`).
 
 **Field renames:** After migration renames, grep entire codebase for old field name. Python silently allows setting arbitrary attributes on model instances.
+
+**Permissions:** Always check permissions in views:
+- API viewsets: override `get_permissions()` returning `[IsAuthenticated(), CanXxx()]`
+- API function views: `@permission_classes([IsAuthenticated, CanXxx])`
+- HTML views: `@login_required` + `@permission_required('core.can_xxx', raise_exception=True)`
+
+Permission atoms: `can_manage_jobs`, `can_view_jobs`, `can_manage_invoicing`, `can_manage_purchasing`, `can_manage_time`, `can_approve_expenses`, `can_manage_config`. Default groups: Worker, Manager, Bookkeeper, Admin. See `docs/plans/2026-03-07-permissions-design.md` for full mapping.
 
 ## Business Workflows
 
