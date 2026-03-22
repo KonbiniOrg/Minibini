@@ -217,6 +217,20 @@
             </td>
             <td class="text-center"><span class="pill pill-{po.status}">{po.status}</span></td>
           </tr>
+          {#if po.line_items?.some(li => li.job && li.job !== job.job_id)}
+            {#each po.line_items as li}
+              <tr class:other-job={li.job && li.job !== job.job_id}>
+                <td colspan="2" style="padding-left: 32px; font-size: 13px;">
+                  {li.description}
+                  {#if li.job && li.job !== job.job_id}
+                    <span class="other-job-label">(other job)</span>
+                  {/if}
+                </td>
+                <td class="text-right" style="font-size: 13px;">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
+                <td></td>
+              </tr>
+            {/each}
+          {/if}
         {/each}
       </tbody>
     </table>
@@ -314,4 +328,8 @@
   .po-table tbody tr { background: #f8fafc; }
   .po-table tbody tr:nth-child(even) { background: #f1f5f9; }
   .po-table tbody tr + tr { border-top: 1px solid #e2e8f0; }
+
+  /* PO other-job differentiation */
+  .other-job { opacity: 0.5; }
+  .other-job-label { font-size: 11px; color: #999; font-style: italic; margin-left: 4px; }
 </style>

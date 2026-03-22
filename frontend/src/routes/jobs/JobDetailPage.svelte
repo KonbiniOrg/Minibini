@@ -77,7 +77,6 @@
 {:else if loadError}
   <p>Error: {loadError}</p>
 {:else if job}
-  <h2>{job.job_number} - {job.name}</h2>
   <JobDetail
     {job}
     {contact}
