@@ -42,6 +42,42 @@ class PurchaseOrderAPITest(BaseTestCase):
             }, format='json')
             self.assertIn(response.status_code, [200, 201])
 
+    def test_filter_purchase_orders_by_job(self):
+        """POs can be filtered by job via line item linkage."""
+        from apps.contacts.models import Business
+        from apps.jobs.models import Job
+        from apps.purchasing.models import PurchaseOrderLineItem
+        business = Business.objects.first()
+        job = Job.objects.first()
+
+        po = PurchaseOrder.objects.create(
+            business=business,
+            po_number='PO-TEST-FILTER',
+        )
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po,
+            job=job,
+            description='Test item',
+            qty=1,
+            price=100,
+        )
+        po2 = PurchaseOrder.objects.create(
+            business=business,
+            po_number='PO-TEST-NOJOB',
+        )
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po2,
+            description='Unlinked item',
+            qty=1,
+            price=50,
+        )
+
+        response = self.client.get(f'/api/purchase-orders/?job={job.job_id}')
+        self.assertEqual(response.status_code, 200)
+        po_ids = [r['po_id'] for r in response.data['results']]
+        self.assertIn(po.po_id, po_ids)
+        self.assertNotIn(po2.po_id, po_ids)
+
     def test_cancel_po_creates_history(self):
         po = PurchaseOrder.objects.filter(status='issued').first()
         if po:
