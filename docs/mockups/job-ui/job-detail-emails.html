@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #fff; color: #222; padding: 24px; max-width: 1100px; margin: 0 auto; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .job-header h1 { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+  .job-header .customer-line { font-size: 16px; color: #555; margin-bottom: 16px; }
+  .status-line { margin-bottom: 20px; }
+  .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; background: #dcfce7; color: #166534; }
+  .dates { color: #888; font-size: 13px; margin-left: 12px; }
+
+  .desc-history { display: flex; gap: 20px; margin-bottom: 28px; align-items: stretch; }
+  .description { background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px; min-height: 160px; flex: 1; }
+  .description .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 8px; }
+  .description p { line-height: 1.6; color: #333; }
+
+  .history-panel { width: 320px; min-width: 320px; background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 6px; display: flex; flex-direction: column; max-height: 320px; }
+  .history-header { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; padding: 12px 14px 8px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+  .history-scroll { overflow-y: auto; flex: 1; padding: 8px 14px 12px; }
+
+  .history-entry { padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; line-height: 1.4; }
+  .history-entry:last-child { border-bottom: none; }
+  .history-date { color: #999; font-size: 11px; }
+  .history-user { font-weight: 600; color: #555; }
+  .history-action { color: #333; }
+  .history-note { color: #333; font-style: italic; }
+
+  /* Email entries in history */
+  .history-email { padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; line-height: 1.4; }
+  .history-email:last-child { border-bottom: none; }
+  .email-icon { display: inline-block; width: 16px; height: 16px; background: #dbeafe; border-radius: 3px; text-align: center; line-height: 16px; font-size: 10px; color: #2563eb; margin-right: 4px; vertical-align: middle; }
+  .email-subject { color: #2563eb; cursor: pointer; font-weight: 500; }
+  .email-subject:hover { text-decoration: underline; }
+  .email-from { color: #666; font-size: 12px; }
+  .email-preview-container { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.2s ease; }
+  .email-preview-container.open { grid-template-rows: 1fr; }
+  .email-preview-inner { overflow: hidden; }
+  .email-preview { margin-top: 6px; padding: 8px 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 12px; line-height: 1.5; color: #444; }
+  .email-preview .ep-header { color: #888; font-size: 11px; margin-bottom: 4px; }
+  .email-preview .ep-body { color: #333; }
+  .email-full-link { font-size: 11px; margin-top: 4px; }
+
+  /* Accordion */
+  .accordion-bar { margin-bottom: 4px; border-radius: 6px; overflow: hidden; }
+  .accordion-header { color: #fff; padding: 10px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; }
+  .accordion-header .title { font-size: 15px; font-weight: 600; }
+  .accordion-header .meta { opacity: 0.8; margin-left: 10px; font-size: 13px; }
+  .accordion-header .meta-dim { opacity: 0.6; margin-left: 8px; font-size: 12px; }
+  .accordion-icon { font-size: 18px; transition: transform 0.15s ease; }
+  .accordion-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.2s ease; }
+  .accordion-content.open { grid-template-rows: 1fr; }
+  .accordion-inner { overflow: hidden; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 8px 16px; font-weight: 600; }
+  td { padding: 8px 16px; }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+
+  .pill { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+  .pill-complete { background: #e0f2fe; color: #0369a1; }
+  .pill-progress { background: #fef3c7; color: #92400e; }
+  .pill-pending { background: #f3e8ff; color: #7c3aed; }
+  .pill-received { background: #e0f2fe; color: #0369a1; }
+  .pill-final { background: #e0e7ff; color: #4338ca; }
+
+  .bar-worksheet { border: 1px solid #99f6e4; }
+  .bar-worksheet .accordion-header { background-color: #0d9488; }
+  .bar-worksheet .accordion-inner { border-top: 1px solid #99f6e4; }
+  .bar-worksheet thead { background: #ccfbf1; }
+  .bar-worksheet thead th { color: #115e59; }
+  .bar-worksheet tbody tr { background: #f0fdfa; }
+  .bar-worksheet tbody tr:nth-child(even) { background: #e6faf5; }
+  .bar-worksheet tbody tr + tr { border-top: 1px solid #ccfbf1; }
+
+  .bar-estimate { border: 1px solid #c7d2fe; }
+  .bar-estimate .accordion-header { background-color: #4f46e5; }
+  .bar-estimate .accordion-inner { border-top: 1px solid #c7d2fe; }
+  .bar-estimate thead { background: #ddd6fe; }
+  .bar-estimate thead th { color: #3730a3; }
+  .bar-estimate tbody tr { background: #eef2ff; }
+  .bar-estimate tbody tr:nth-child(even) { background: #e8e5ff; }
+  .bar-estimate tbody tr + tr { border-top: 1px solid #ddd6fe; }
+  .bar-estimate tfoot { background: #e0e7ff; border-top: 2px solid #c7d2fe; }
+  .bar-estimate tfoot td { color: #3730a3; }
+  .bar-estimate .prev-link { padding: 8px 16px 12px; font-size: 13px; background: #eef2ff; }
+
+  .bar-workorder { border: 1px solid #fbbf24; }
+  .bar-workorder .accordion-header { background-color: #b45309; }
+  .bar-workorder .accordion-inner { border-top: 1px solid #fbbf24; }
+  .bar-workorder thead { background: #fde68a; }
+  .bar-workorder thead th { color: #78350f; }
+  .bar-workorder tbody tr { background: #fffbeb; }
+  .bar-workorder tbody tr:nth-child(even) { background: #fef3c7; }
+  .bar-workorder tbody tr + tr { border-top: 1px solid #fde68a; }
+  .bar-workorder .row-active { background: #fde68a; }
+
+  .bar-invoice { border: 1px solid #bbf7d0; }
+  .bar-invoice .accordion-header { background-color: #15803d; }
+  .bar-invoice .accordion-inner { border-top: 1px solid #bbf7d0; }
+
+  .bar-po { border: 1px solid #cbd5e1; }
+  .bar-po .accordion-header { background-color: #475569; }
+  .bar-po .accordion-inner { border-top: 1px solid #cbd5e1; }
+  .bar-po thead { background: #e2e8f0; }
+  .bar-po thead th { color: #334155; }
+  .bar-po tbody tr { background: #f8fafc; }
+  .bar-po tbody tr:nth-child(even) { background: #f1f5f9; }
+  .bar-po tbody tr + tr { border-top: 1px solid #e2e8f0; }
+
+  .empty-msg { padding: 16px; color: #888; text-align: center; }
+</style>
+</head>
+<body>
+
+  <div class="job-header">
+    <h1>JOB #2026-0042: Kitchen Cabinet Refinishing</h1>
+    <p class="customer-line">
+      for <a href="#">Sarah Chen</a>,
+      at <a href="#">Riverside Properties LLC</a>
+    </p>
+  </div>
+
+  <div class="status-line">
+    <span class="status-badge">Approved</span>
+    <span class="dates">Started Mar 10, 2026 &middot; Due Apr 15, 2026</span>
+  </div>
+
+  <div class="desc-history">
+    <div class="description">
+      <div class="label">Description</div>
+      <p>
+        Complete refinishing of 24 kitchen cabinets (upper and lower) in a residential property.
+        Client wants to go from dark cherry stain to a lighter natural oak finish. Includes removal of
+        all hardware, sanding, staining, sealing (3 coats polyurethane), and reinstallation. Hardware
+        to be replaced with brushed nickel pulls provided by client. Access is through the back entrance;
+        homeowner will be present during work hours (8am-5pm). Dog must be kept out of kitchen area.
+      </p>
+    </div>
+    <div class="history-panel">
+      <div class="history-header">History</div>
+      <div class="history-scroll">
+        <div class="history-entry">
+          <div class="history-date">Mar 18, 2026 2:45 PM</div>
+          <div><span class="history-user">Mike R.</span> <span class="history-action">started task "Apply stain (natural oak)"</span></div>
+        </div>
+        <div class="history-entry">
+          <div class="history-date">Mar 17, 2026 4:30 PM</div>
+          <div><span class="history-user">Mike R.</span> <span class="history-action">completed task "Sand all surfaces"</span></div>
+        </div>
+
+        <!-- Email in the timeline -->
+        <div class="history-email">
+          <div class="history-date">Mar 16, 2026 10:22 AM</div>
+          <div>
+            <span class="email-icon">@</span>
+            <span class="email-subject" onclick="toggleEmail('email1')">Re: Cabinet stain color samples</span>
+          </div>
+          <div class="email-from">Sarah Chen &lt;sarah@riversideprops.com&gt;</div>
+          <div class="email-preview-container" id="email1">
+            <div class="email-preview-inner">
+              <div class="email-preview">
+                <div class="ep-header">To: admin@minibini.com &middot; Mar 16 10:22 AM</div>
+                <div class="ep-body">Hi, I looked at the samples you left and I definitely prefer the "Golden Oak" shade over the "Natural." Can we go with that one? Also, my husband asked if we could get a matte finish instead of semi-gloss on the polyurethane. Let me know if that changes the price at all. Thanks!</div>
+                <div class="email-full-link"><a href="#">View full email</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="history-entry">
+          <div class="history-date">Mar 15, 2026 11:00 AM</div>
+          <div><span class="history-user">Admin</span> <span class="history-note">"Client confirmed they'll supply the brushed nickel pulls by Mar 20"</span></div>
+        </div>
+        <div class="history-entry">
+          <div class="history-date">Mar 14, 2026 9:15 AM</div>
+          <div><span class="history-user">Mike R.</span> <span class="history-action">completed task "Remove cabinet doors & hardware"</span></div>
+        </div>
+
+        <!-- Another email -->
+        <div class="history-email">
+          <div class="history-date">Mar 12, 2026 3:45 PM</div>
+          <div>
+            <span class="email-icon">@</span>
+            <span class="email-subject" onclick="toggleEmail('email2')">Cabinet stain color samples</span>
+          </div>
+          <div class="email-from">admin@minibini.com</div>
+          <div class="email-preview-container" id="email2">
+            <div class="email-preview-inner">
+              <div class="email-preview">
+                <div class="ep-header">To: sarah@riversideprops.com &middot; Mar 12 3:45 PM</div>
+                <div class="ep-body">Hi Sarah, Mike left three stain samples on the counter — Golden Oak, Natural, and Honey Maple. Take a look when you get a chance and let us know which direction you'd like to go. We can also do a custom blend if none of these are quite right.</div>
+                <div class="email-full-link"><a href="#">View full email</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="history-entry">
+          <div class="history-date">Mar 12, 2026 3:00 PM</div>
+          <div><span class="history-user">Mike R.</span> <span class="history-action">started task "Sand all surfaces"</span></div>
+        </div>
+        <div class="history-entry">
+          <div class="history-date">Mar 10, 2026 8:00 AM</div>
+          <div><span class="history-user">Admin</span> <span class="history-action">created work order from template</span></div>
+        </div>
+        <div class="history-entry">
+          <div class="history-date">Mar 10, 2026 7:55 AM</div>
+          <div><span class="history-user">Admin</span> <span class="history-action">approved job</span></div>
+        </div>
+        <div class="history-entry">
+          <div class="history-date">Mar 8, 2026 2:00 PM</div>
+          <div><span class="history-user">Admin</span> <span class="history-action">accepted estimate EST-2026-0038</span></div>
+        </div>
+
+        <!-- Original inbound email -->
+        <div class="history-email">
+          <div class="history-date">Feb 28, 2026 4:10 PM</div>
+          <div>
+            <span class="email-icon">@</span>
+            <span class="email-subject" onclick="toggleEmail('email3')">Kitchen cabinet refinishing quote request</span>
+          </div>
+          <div class="email-from">Sarah Chen &lt;sarah@riversideprops.com&gt;</div>
+          <div class="email-preview-container" id="email3">
+            <div class="email-preview-inner">
+              <div class="email-preview">
+                <div class="ep-header">To: admin@minibini.com &middot; Feb 28 4:10 PM</div>
+                <div class="ep-body">Hello, I have a rental property at 445 Oak St with dark cherry kitchen cabinets that I'd like refinished to a lighter natural look. There are 24 cabinets total (uppers and lowers). Could you come take a look and give me a quote? I'm flexible on scheduling. Thanks, Sarah</div>
+                <div class="email-full-link"><a href="#">View full email</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="history-entry">
+          <div class="history-date">Mar 1, 2026 9:00 AM</div>
+          <div><span class="history-user">Admin</span> <span class="history-action">created job</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Worksheet -->
+  <div class="accordion-bar bar-worksheet">
+    <div class="accordion-header" onclick="toggle('ws')">
+      <div><span class="title">Worksheet</span><span class="meta">v1 &middot; Final</span></div>
+      <span class="accordion-icon" id="ws-icon">&#9654;</span>
+    </div>
+    <div class="accordion-content" id="ws-content">
+      <div class="accordion-inner">
+        <table>
+          <thead><tr><th>Task</th><th class="text-center">Status</th></tr></thead>
+          <tbody>
+            <tr><td>Remove cabinet doors & hardware</td><td class="text-center"><span class="pill pill-final">Final</span></td></tr>
+            <tr><td>Sand all surfaces</td><td class="text-center"><span class="pill pill-final">Final</span></td></tr>
+            <tr><td>Apply stain</td><td class="text-center"><span class="pill pill-final">Final</span></td></tr>
+            <tr><td>Seal (3 coats)</td><td class="text-center"><span class="pill pill-final">Final</span></td></tr>
+            <tr><td>Reinstall doors & new hardware</td><td class="text-center"><span class="pill pill-final">Final</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Estimate -->
+  <div class="accordion-bar bar-estimate">
+    <div class="accordion-header" onclick="toggle('est')">
+      <div>
+        <span class="title">Estimate</span>
+        <span class="meta">EST-2026-0038 &middot; v2 &middot; Accepted</span>
+        <span class="meta-dim">(1 previous)</span>
+      </div>
+      <span class="accordion-icon" id="est-icon">&#9654;</span>
+    </div>
+    <div class="accordion-content" id="est-content">
+      <div class="accordion-inner">
+        <table>
+          <thead><tr><th>#</th><th>Description</th><th class="text-right">Qty</th><th class="text-right">Price</th><th class="text-right">Total</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Cabinet removal & prep labor</td><td class="text-right">8 hrs</td><td class="text-right">$85.00</td><td class="text-right">$680.00</td></tr>
+            <tr><td>2</td><td>Sanding & surface prep labor</td><td class="text-right">12 hrs</td><td class="text-right">$85.00</td><td class="text-right">$1,020.00</td></tr>
+            <tr><td>3</td><td>Natural oak stain (2 gal)</td><td class="text-right">2</td><td class="text-right">$45.00</td><td class="text-right">$90.00</td></tr>
+            <tr><td>4</td><td>Polyurethane sealant (3 gal)</td><td class="text-right">3</td><td class="text-right">$62.00</td><td class="text-right">$186.00</td></tr>
+            <tr><td>5</td><td>Staining & sealing labor</td><td class="text-right">16 hrs</td><td class="text-right">$85.00</td><td class="text-right">$1,360.00</td></tr>
+            <tr><td>6</td><td>Reinstallation labor</td><td class="text-right">6 hrs</td><td class="text-right">$85.00</td><td class="text-right">$510.00</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><td colspan="4" class="text-right" style="font-weight:600; padding:10px 16px;">Total</td><td class="text-right" style="font-weight:700; padding:10px 16px;">$3,846.00</td></tr>
+          </tfoot>
+        </table>
+        <div class="prev-link"><a href="#" style="color:#4f46e5;">View previous estimate (EST-2026-0031, v1, superseded)</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Work Order (open by default) -->
+  <div class="accordion-bar bar-workorder">
+    <div class="accordion-header" onclick="toggle('wo')">
+      <div><span class="title">Work Order</span><span class="meta">Cabinet Refinishing Standard &middot; Incomplete</span></div>
+      <span class="accordion-icon" id="wo-icon" style="transform:rotate(90deg);">&#9654;</span>
+    </div>
+    <div class="accordion-content open" id="wo-content">
+      <div class="accordion-inner">
+        <table>
+          <thead><tr><th>Task</th><th>Assigned</th><th class="text-center">Status</th></tr></thead>
+          <tbody>
+            <tr><td><a href="#">Remove cabinet doors & hardware</a></td><td style="color:#555;">Mike R.</td><td class="text-center"><span class="pill pill-complete">Complete</span></td></tr>
+            <tr><td><a href="#">Sand all surfaces (150 → 220 grit)</a></td><td style="color:#555;">Mike R.</td><td class="text-center"><span class="pill pill-complete">Complete</span></td></tr>
+            <tr class="row-active"><td><a href="#">Apply stain (natural oak)</a></td><td style="color:#555;">Mike R.</td><td class="text-center"><span class="pill pill-progress">In Progress</span></td></tr>
+            <tr><td><a href="#">Seal — polyurethane coat 1</a></td><td style="color:#555;">—</td><td class="text-center"><span class="pill pill-pending">Pending</span></td></tr>
+            <tr><td><a href="#">Seal — polyurethane coat 2</a></td><td style="color:#555;">—</td><td class="text-center"><span class="pill pill-pending">Pending</span></td></tr>
+            <tr><td><a href="#">Seal — polyurethane coat 3</a></td><td style="color:#555;">—</td><td class="text-center"><span class="pill pill-pending">Pending</span></td></tr>
+            <tr><td><a href="#">Reinstall doors & new hardware</a></td><td style="color:#555;">—</td><td class="text-center"><span class="pill pill-pending">Pending</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invoices -->
+  <div class="accordion-bar bar-invoice">
+    <div class="accordion-header" onclick="toggle('inv')">
+      <div><span class="title">Invoices</span><span class="meta">None yet</span></div>
+      <span class="accordion-icon" id="inv-icon">&#9654;</span>
+    </div>
+    <div class="accordion-content" id="inv-content">
+      <div class="accordion-inner">
+        <p class="empty-msg">No invoices created for this job yet.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Purchase Orders -->
+  <div class="accordion-bar bar-po">
+    <div class="accordion-header" onclick="toggle('po')">
+      <div><span class="title">Purchase Orders</span><span class="meta">PO-2026-0019 &middot; 1 order</span></div>
+      <span class="accordion-icon" id="po-icon">&#9654;</span>
+    </div>
+    <div class="accordion-content" id="po-content">
+      <div class="accordion-inner">
+        <table>
+          <thead><tr><th>PO #</th><th>Vendor</th><th class="text-right">Total</th><th class="text-center">Status</th></tr></thead>
+          <tbody>
+            <tr><td><a href="#">PO-2026-0019</a></td><td>Woodcraft Supply</td><td class="text-right">$276.00</td><td class="text-center"><span class="pill pill-received">Received</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+function toggle(id) {
+  var content = document.getElementById(id + '-content');
+  var icon = document.getElementById(id + '-icon');
+  content.classList.toggle('open');
+  icon.style.transform = content.classList.contains('open') ? 'rotate(90deg)' : 'rotate(0deg)';
+}
+function toggleEmail(id) {
+  document.getElementById(id).classList.toggle('open');
+}
+</script>
+
+</body>
+</html>
