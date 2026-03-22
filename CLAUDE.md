@@ -6,13 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minibini is a Django-based job shop management system for handling jobs, estimates, work orders, invoicing, and purchasing. Pre-production state, rapidly evolving.
 
-**Tech Stack:** Django 5.2+, MySQL, Python 3.12, plain semantic HTML (no CSS frameworks/JS)
+**Tech Stack:** Django 5.2+, Django REST Framework, MySQL, Python 3.12, Svelte 5 SPA (Vite)
 
 ## Essential Commands
 
 ```bash
-# Development
-python manage.py runserver              # Start dev server (auto-logs in dev_user)
+# Backend development
+python manage.py runserver              # Start Django dev server on :8000
+
+# Frontend development
+cd frontend && npm run dev              # Start Vite dev server on :9000 (proxies /api to :8000)
+cd frontend && npm run build            # Build for production (outputs to dist/)
 
 # Database
 python manage.py makemigrations         # Create migrations (OK to run)
@@ -24,6 +28,9 @@ python manage.py test tests.test_foo    # Run specific test module
 
 # Docker
 docker compose up                       # Full stack (app, mysql, nginx)
+
+# Data seeding
+./scripts/seed_data.sh                  # Seed realistic data via API (requires dev server running)
 ```
 
 **CRITICAL:** NEVER run `python manage.py migrate` - only the human user applies migrations to the development database. Creating migrations with `makemigrations` is fine; tests create their own test database automatically.
@@ -33,24 +40,32 @@ docker compose up                       # Full stack (app, mysql, nginx)
 ```
 Minibini/
 ├── apps/
-│   ├── core/       # User model, Configuration, BaseLineItem, LineItemType, Email
-│   ├── jobs/       # Job, Estimate, EstWorksheet, WorkOrder, Task, Templates (largest app)
+│   ├── api/        # REST API (DRF viewsets, serializers, permissions, mixins)
+│   ├── core/       # User, Configuration, BaseLineItem, LineItemType, HistoryEntry, Email
+│   ├── jobs/       # Job, WorkOrder, Task, TaskBundle, Blep
+│   ├── estimates/  # Estimate, EstWorksheet, EstimateLineItem, Templates
 │   ├── contacts/   # Contact, Business, PaymentTerms
-│   ├── invoicing/  # Invoice, InvoiceLineItem, PriceListItem
-│   └── purchasing/ # PurchaseOrder, Bill, line items
-├── templates/      # HTML templates
+│   ├── invoicing/  # Invoice, InvoiceLineItem
+│   ├── inventory/  # PriceListItem, Material, Earmark, InventoryAdjustment
+│   ├── purchasing/ # PurchaseOrder, Bill, line items
+│   └── search/     # Cross-entity search service
+├── frontend/       # Svelte 5 SPA (Vite, svelte-spa-router)
+├── templates/      # Django HTML templates (server-rendered views)
 ├── fixtures/       # Test data fixtures (JSON)
 ├── tests/          # Test suite
+├── scripts/        # Utility scripts (seed_data.sh)
+├── docs/plans/     # Design docs and implementation plans
 ├── minibini/       # Project configuration (settings, urls)
 └── manage.py
 ```
 
 **Key Patterns:**
-- Function-based views only (no CBVs)
-- Service classes in `apps/*/services.py` contain business logic
+- HTML views: function-based views only (no CBVs)
+- API views: DRF ModelViewSets with reusable mixins (StatusTransitionMixin, LineItemMixin, TaskBundleMixin, TaskLifecycleMixin)
+- Service classes in `apps/*/services.py` contain business logic — viewsets are thin wrappers
 - Signals in `apps/jobs/signals.py` handle status change side effects
 - Abstract `BaseLineItem` shared by all line item types
-- Template system: `WorkOrderTemplate` → `TaskTemplate` → `TaskMapping` → `ProductBundlingRule`
+- Template system: `WorkOrderTemplate` → `TaskTemplate` → `TemplateTaskAssociation` → `TemplateBundle`
 
 **Workflow:** Job → EstWorksheet (from template) → Estimate → WorkOrder → Invoice
 
@@ -59,29 +74,40 @@ Minibini/
 ### Core (`apps.core`)
 - **User** - Custom AbstractUser, links to Contact. Has 7 custom permission atoms (see Permissions section)
 - **Configuration** - Key-value store for system settings (document numbering sequences/counters, email settings). **Never add fields** - all settings are key-value pairs
+- **HistoryEntry** - Audit log and notes linked to any entity (jobs, contacts, businesses)
+- **LineItemType** - Categorizes line items (e.g., labor, materials)
+- **AbstractWorkContainer** (Abstract) - Base for EstWorksheet and WorkOrder
+- **BaseLineItem** (Abstract) - Shared fields for all line items: task, price_list_item, line_number, qty, units, description, price_currency. Validates items can't have both task AND price_list_item
 - **EmailRecord** - Permanent record linking emails to jobs (message_id only, email server is source of truth)
 - **TempEmail** - Temporary cache of email metadata from IMAP (OneToOne with EmailRecord, cleaned up after retention period)
-- **BaseLineItem** (Abstract) - Shared fields for all line items: task, price_list_item, line_number, qty, units, description, price_currency. Validates items can't have both task AND price_list_item
 
 ### Jobs (`apps.jobs`)
 - **Job** - Central entity. Status: draft → approved/rejected → needs_attention/blocked → complete
-- **Estimate** - Quotes with versioning. Status: draft → open → accepted/rejected/superseded
-- **EstWorksheet** - Working document for estimates. Status: draft → final → superseded
-- **WorkOrder** - Actual work. Status: draft → incomplete/blocked → complete
+- **WorkOrder** - Actual work (extends AbstractWorkContainer). Status: draft → incomplete/blocked → complete
 - **Task** - Work items belonging to either EstWorksheet OR WorkOrder (not both). Hierarchical with parent_task
+- **TaskBundle** - Groups related tasks together
 - **Blep** - Time tracking (start/end times for task work)
+
+### Estimates (`apps.estimates`)
+- **Estimate** - Quotes with versioning. Status: draft → open → accepted/rejected/superseded
+- **EstWorksheet** - Working document for estimates (extends AbstractWorkContainer). Status: draft → final → superseded
 - **EstimateLineItem** - Line items for estimates (inherits BaseLineItem)
-- **Template System** - WorkOrderTemplate, TaskTemplate, TaskMapping, TemplateTaskAssociation, ProductBundlingRule
+- **Template System** - WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 
 ### Contacts (`apps.contacts`)
 - **Contact** - Individual person with multiple phone numbers, address, linked to Business
 - **Business** - Company with tax info, payment terms, internal reference code
 - **PaymentTerms** - Payment conditions
 
+### Inventory (`apps.inventory`)
+- **PriceListItem** - Catalog items with purchase/selling prices, inventory tracking
+- **Material** - Materials used in jobs
+- **Earmark** - Inventory earmarking for specific jobs/tasks
+- **InventoryAdjustment** - Stock adjustments
+
 ### Invoicing (`apps.invoicing`)
 - **Invoice** - Bills for completed work, linked to Job. Status: active/cancelled
 - **InvoiceLineItem** - Inherits BaseLineItem
-- **PriceListItem** - Catalog items with purchase/selling prices, inventory tracking
 
 ### Purchasing (`apps.purchasing`)
 - **PurchaseOrder** - Orders to vendors, optionally linked to Job
@@ -117,11 +143,50 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 
 ## URL Structure
 
+### Django HTML Views
 - `/` - Home | `/admin/` - Django admin | `/settings/` - Settings
-- `/jobs/` - Jobs (list, create, detail, estimates, worksheets, templates, task-templates, work_orders)
+- `/jobs/` - Jobs (list, create, detail, work orders)
+- `/estimates/` - Estimates, worksheets, templates, task-templates
 - `/contacts/` - Contacts (add, confirm-create-business)
 - `/core/` - Core (inbox, email detail, create-job-from-email)
 - `/purchasing/` - Purchasing | `/invoicing/` - Invoicing
+- `/search/` - Search | `/inventory/` - Inventory
+
+### REST API (`/api/`)
+- `/api/auth/` - Login, logout, me (session-based auth)
+- `/api/jobs/`, `/api/contacts/`, `/api/businesses/`, `/api/payment-terms/`
+- `/api/estimates/`, `/api/est-worksheets/`, `/api/work-orders/`
+- `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
+- `/api/price-list-items/`, `/api/work-order-templates/`, `/api/task-templates/`, `/api/line-item-types/`
+- `/api/emails/`, `/api/search/`, `/api/settings/`
+
+### Svelte SPA (`frontend/`, served on `:9000` in dev)
+Hash-based routing (`#/path`). Currently implements: home, contacts, businesses, jobs. Other entities still use Django HTML views.
+
+## Frontend (Svelte SPA)
+
+The primary UI is a Svelte 5 SPA at `frontend/`, built with Vite and using hash-based routing (`svelte-spa-router`).
+
+- **Reactivity:** Svelte 5 runes (`$state`, `$derived`, `$effect`)
+- **API client:** `src/lib/api.js` — handles CSRF tokens, session-based auth (no JWT)
+- **Stores:** `src/stores/auth.js` (user state, login/logout), `src/stores/viewMode.js` (full/lite toggle)
+- **Auth flow:** On mount, checks `/api/auth/me/`. Shows `LoginPage` if unauthenticated, otherwise renders nav + router
+- **No CSS frameworks** — semantic HTML, same conventions as Django templates
+- **Dev:** Vite on `:9000` proxies `/api/*` to Django on `:8000`
+- **Prod:** `npm run build` → `dist/` served by nginx
+
+## REST API (`apps/api/`)
+
+DRF-based API serving the Svelte frontend. Session-based authentication (no tokens).
+
+**Key patterns:**
+- ViewSets use service classes for all business logic (`perform_create`/`perform_update` delegate to services)
+- Reusable mixins: `StatusTransitionMixin` (status change actions), `LineItemMixin` (CRUD for line items), `TaskBundleMixin` (task/bundle CRUD), `TaskLifecycleMixin` (task state machine)
+- Permission classes in `apps/api/permissions.py` — factory-generated from permission atoms
+- `StandardPagination`: 25 items/page, max 100, via `?page_size=N`
+- Delete confirmation pattern: first DELETE returns impact counts, second with `?confirm=true` executes
+
+**Stubs (not yet implemented):** `/api/auth/refresh/`, `/api/emails/send/`, `/api/shifts/`, `/api/expenses/`, `/api/time-tracking/`
 
 ## Template/HTML Conventions
 
@@ -188,7 +253,7 @@ with transaction.atomic():
 - API function views: `@permission_classes([IsAuthenticated, CanXxx])`
 - HTML views: `@login_required` + `@permission_required('core.can_xxx', raise_exception=True)`
 
-Permission atoms: `can_manage_jobs`, `can_view_jobs`, `can_manage_invoicing`, `can_manage_purchasing`, `can_manage_time`, `can_approve_expenses`, `can_manage_config`. Default groups: Worker, Manager, Bookkeeper, Admin. See `docs/plans/2026-03-07-permissions-design.md` for full mapping.
+See `docs/plans/2026-03-07-permissions-design.md` for atoms, group mappings, and view-to-permission mapping.
 
 ## Business Workflows
 
@@ -220,8 +285,9 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 
 ## Development Features
 
-- **Dev autologin** - Frontend supports `?autologin` query param to log in as dev_user via the API (requires dev_user with password `dev_password`)
-- **Management commands** - `populate_data.py` (base), `populate_contact_data.py`, `populate_job_data.py`
+- **Dev autologin** — Frontend supports `?autologin` query param to log in as dev_user via the API (requires dev_user with password `dev_password`)
+- **Seed script** — `scripts/seed_data.sh` seeds realistic data through API endpoints (requires dev server on :8000)
+- **Management commands** — `populate_data.py` (base), `populate_contact_data.py`, `populate_job_data.py`
 
 ## Common Coding Pitfalls
 
@@ -247,4 +313,6 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - Models: `apps/*/models.py` | Views: `apps/*/views.py` | URLs: `apps/*/urls.py`
 - Forms: `apps/*/forms.py` | Templates: `templates/` and `apps/*/templates/`
 - Services: `apps/*/services.py` | Settings: `minibini/settings.py`
-- `apps/jobs/models.py` - Core models (largest) | `apps/jobs/views.py` - Main views (largest)
+- API: `apps/api/*/views.py` (viewsets), `apps/api/*/serializers.py`, `apps/api/mixins.py`, `apps/api/permissions.py`
+- Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
+- Design docs: `docs/plans/`

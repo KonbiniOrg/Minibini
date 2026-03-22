@@ -1089,5 +1089,27 @@ echo ""
 
 rm -f "$COOKIE_JAR"
 
+# ─────────────────────────────────────────────
+# Create test users with different permission groups
+# ─────────────────────────────────────────────
+log "Creating test users..."
+python manage.py shell -c "
+from apps.core.models import User
+from django.contrib.auth.models import Group
+
+users = [
+    ('worker1', 'W', 'Worker'),
+    ('bookkeeper1', 'B', 'Bookkeeper'),
+    ('manager1', 'M', 'Manager'),
+]
+for username, password, group_name in users:
+    u, created = User.objects.get_or_create(username=username)
+    u.set_password(password)
+    u.save()
+    u.groups.set([Group.objects.get(name=group_name)])
+    print(f\"  {'Created' if created else 'Updated'} {username} ({group_name})\")
+"
+info "Test users ready (passwords: W, B, M)"
+
 # update timestamps in the db
 mysql -u root minibini_db < scripts/spread_timestamps.sql
