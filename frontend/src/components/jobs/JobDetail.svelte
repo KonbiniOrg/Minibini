@@ -1,8 +1,6 @@
 <script>
-  import FullOnly from '../FullOnly.svelte';
+  import Accordion from '../Accordion.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
-  import { viewMode } from '../../stores/viewMode.js';
-
   const {
     job,
     contact = null,
@@ -10,202 +8,310 @@
     worksheets = null,
     workOrders = null,
     invoices = null,
+    purchaseOrders = null,
+    emails = null,
     history = null,
     onAddNote = null,
   } = $props();
 
-  const terminalInvoiceStatuses = ['paid', 'cancelled', 'defaulted', 'superseded'];
+  // Determine which accordion opens by default
+  let defaultOpen = $derived.by(() => {
+    if (job.status === 'completed') {
+      if (invoices?.results?.length > 0) return 'invoices';
+    }
+    if (workOrders?.results?.length > 0) return 'workorder';
+    if (estimates?.results?.length > 0) return 'estimates';
+    if (worksheets?.results?.length > 0) return 'worksheets';
+    return 'worksheets';
+  });
 
-  let visibleEstimates = $derived(
-    estimates?.results
-      ? $viewMode === 'full'
-        ? estimates.results
-        : (() => {
-            const accepted = estimates.results.filter(e => e.status === 'accepted');
-            if (accepted.length > 0) return accepted;
-            return estimates.results.length > 0 ? [estimates.results[0]] : [];
-          })()
-      : []
+  // Current (non-superseded) estimate
+  let currentEstimate = $derived(
+    estimates?.results?.find(e => e.status !== 'superseded') || estimates?.results?.[0] || null
+  );
+  let supersededCount = $derived(
+    (estimates?.results?.filter(e => e.status === 'superseded') || []).length
   );
 
-  let visibleWorksheets = $derived(
-    worksheets?.results
-      ? $viewMode === 'full'
-        ? worksheets.results
-        : estimates?.results?.length > 0
-          ? []
-          : worksheets.results.filter(w => w.status !== 'superseded')
-      : []
-  );
-
-  let visibleWorkOrders = $derived(
-    workOrders?.results
-      ? $viewMode === 'full'
-        ? workOrders.results
-        : workOrders.results
-      : []
-  );
-
-  let visibleInvoices = $derived(
-    invoices?.results
-      ? $viewMode === 'full'
-        ? invoices.results
-        : invoices.results.filter(i => !terminalInvoiceStatuses.includes(i.status))
-      : []
-  );
-
-  let showWorksheetSection = $derived(
-    $viewMode === 'full' || (visibleWorksheets.length > 0)
-  );
-
-  let showWorkOrderSection = $derived(
-    $viewMode === 'full' || (visibleWorkOrders.length > 0)
-  );
-
-  let showEstimateSection = $derived(
-    $viewMode === 'full' || (visibleEstimates.length > 0)
-  );
-
-  let showInvoiceSection = $derived(
-    $viewMode === 'full' || (visibleInvoices.length > 0)
-  );
-
+  // Latest worksheet (highest version)
+  let currentWorksheet = $derived.by(() => {
+    const ws = worksheets?.results || [];
+    if (ws.length === 0) return null;
+    return ws.reduce((best, w) => (w.version > best.version ? w : best), ws[0]);
+  });
 </script>
 
-<dl>
-  <dt>Job Number</dt>
-  <dd>{job.job_number}</dd>
-
-  <dt>Name</dt>
-  <dd>{job.name}</dd>
-
-  <dt>Status</dt>
-  <dd>{job.status}</dd>
-
-  {#if job.customer_po_number}
-    <dt>Customer PO</dt>
-    <dd>{job.customer_po_number}</dd>
-  {/if}
-
-  {#if job.description}
-    <dt>Description</dt>
-    <dd>{job.description}</dd>
-  {/if}
-
-  <dt>Created Date</dt>
-  <dd>{job.created_date}</dd>
-
-  {#if job.start_date}
-    <dt>Start Date</dt>
-    <dd>{job.start_date}</dd>
-  {/if}
-
-  {#if job.due_date}
-    <dt>Due Date</dt>
-    <dd>{job.due_date}</dd>
-  {/if}
-</dl>
-
-<h3>Contact</h3>
-{#if contact}
-  <p>
-    <a href="#/contacts/{contact.contact_id}">{contact.name}</a>
-    {#if contact.business}
-      (<a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>)
+<div class="job-header">
+  <h1>JOB #{job.job_number.replace(/^JOB-/, '')}: {job.name || '(untitled)'}</h1>
+  <p class="customer-line">
+    {#if contact}
+      for <a href="#/contacts/{contact.contact_id}">{contact.name}</a>{#if contact.business}, at <a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>{/if}
     {/if}
   </p>
-{:else}
-  <p>No contact.</p>
-{/if}
+  <div class="status-line">
+    <span class="status-badge status-{job.status}">{job.status}</span>
+    <span class="dates">
+      {#if job.start_date}Started {new Date(job.start_date).toLocaleDateString()}{/if}
+      {#if job.due_date}{job.start_date ? ' · ' : ''}Due {new Date(job.due_date).toLocaleDateString()}{/if}
+      {#if job.completed_date}{(job.start_date || job.due_date) ? ' · ' : ''}Completed {new Date(job.completed_date).toLocaleDateString()}{/if}
+      {#if job.customer_po_number}{(job.start_date || job.due_date || job.completed_date) ? ' · ' : ''}PO: {job.customer_po_number}{/if}
+    </span>
+  </div>
+</div>
 
-{#if showEstimateSection}
-  <h3>Estimates</h3>
-  {#if visibleEstimates.length > 0}
-    <table border="1">
-      <thead>
-        <tr><th>Estimate #</th><th>Version</th><th>Status</th><th>Created</th></tr>
-      </thead>
+<div class="desc-history">
+  <div class="description">
+    <div class="label">Description</div>
+    <p>{job.description || 'No description.'}</p>
+  </div>
+  <div class="history-panel-container">
+    <HistoryPanel {history} {emails} {onAddNote} />
+  </div>
+</div>
+
+<Accordion
+  title="Worksheet"
+  meta={currentWorksheet ? `v${currentWorksheet.version} · ${currentWorksheet.status}` : 'None'}
+  metaDim={(worksheets?.results?.length || 0) > 1 ? `(${worksheets.results.length} worksheets)` : ''}
+  open={defaultOpen === 'worksheets'}
+  headerBg="#0d9488"
+  borderColor="#99f6e4"
+>
+  {#if currentWorksheet?.tasks?.length > 0}
+    <table class="ws-table">
+      <thead><tr><th>Task</th><th class="text-center">Status</th></tr></thead>
       <tbody>
-        {#each visibleEstimates as estimate}
+        {#each currentWorksheet.tasks as task}
           <tr>
-            <td><a href="#/estimates/{estimate.estimate_id}">{estimate.estimate_number}</a></td>
-            <td>{estimate.version}</td>
-            <td>{estimate.status}</td>
-            <td>{estimate.created_date}</td>
+            <td>{task.name}</td>
+            <td class="text-center"><span class="pill pill-{task.status}">{task.status}</span></td>
           </tr>
         {/each}
       </tbody>
     </table>
   {:else}
-    <p>No estimates.</p>
+    <p class="empty-msg">No worksheet data.</p>
   {/if}
-{/if}
+</Accordion>
 
-{#if showWorksheetSection}
-  <h3>Est Worksheets</h3>
-  {#if visibleWorksheets.length > 0}
-    <table border="1">
-      <thead>
-        <tr><th>Worksheet ID</th><th>Status</th><th>Version</th><th>Created</th></tr>
-      </thead>
+<Accordion
+  title="Estimate"
+  meta={currentEstimate ? `${currentEstimate.estimate_number} · v${currentEstimate.version} · ${currentEstimate.status}` : 'None'}
+  metaDim={supersededCount > 0 ? `(${supersededCount} previous)` : ''}
+  open={defaultOpen === 'estimates'}
+  headerBg="#4f46e5"
+  borderColor="#c7d2fe"
+>
+  {#if currentEstimate?.line_items?.length > 0}
+    <table class="est-table">
+      <thead><tr>
+        <th>#</th><th>Description</th>
+        <th class="text-right">Qty</th><th class="text-right">Price</th><th class="text-right">Total</th>
+      </tr></thead>
       <tbody>
-        {#each visibleWorksheets as ws}
+        {#each currentEstimate.line_items as li}
           <tr>
-            <td><a href="#/worksheets/{ws.est_worksheet_id}">{ws.est_worksheet_id}</a></td>
-            <td>{ws.status}</td>
-            <td>{ws.version}</td>
-            <td>{ws.created_date}</td>
+            <td>{li.line_number}</td>
+            <td>{li.description}</td>
+            <td class="text-right">{li.qty} {li.units || ''}</td>
+            <td class="text-right">${Number(li.price).toFixed(2)}</td>
+            <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
+          </tr>
+        {/each}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4" class="text-right" style="font-weight:600;">Total</td>
+          <td class="text-right" style="font-weight:700;">
+            ${currentEstimate.line_items.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2)}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+    {#if supersededCount > 0}
+      <div class="prev-link">
+        {#each estimates.results.filter(e => e.status === 'superseded') as prev}
+          <a href="#/estimates/{prev.estimate_id}">{prev.estimate_number} (v{prev.version}, superseded)</a>
+        {/each}
+      </div>
+    {/if}
+  {:else if currentEstimate}
+    <p class="empty-msg">Estimate has no line items.</p>
+  {:else}
+    <p class="empty-msg">No estimates yet.</p>
+  {/if}
+</Accordion>
+
+{@const wo = workOrders?.results?.[0] || null}
+<Accordion
+  title="Work Order"
+  meta={wo ? `${wo.template_name ? wo.template_name + ' · ' : ''}${wo.status}` : 'None'}
+  open={defaultOpen === 'workorder'}
+  headerBg="#b45309"
+  borderColor="#fbbf24"
+>
+  {#if wo?.tasks?.length > 0}
+    <table class="wo-table">
+      <thead><tr><th>Task</th><th>Assigned</th><th class="text-center">Status</th></tr></thead>
+      <tbody>
+        {#each wo.tasks as task}
+          <tr class:row-active={task.status === 'in_progress'}>
+            <td><a href="#/tasks/{task.task_id}">{task.name}</a></td>
+            <td class="assigned">{task.assignee_name || '—'}</td>
+            <td class="text-center"><span class="pill pill-{task.status}">{task.status}</span></td>
           </tr>
         {/each}
       </tbody>
     </table>
   {:else}
-    <p>No est worksheets.</p>
+    <p class="empty-msg">No work orders yet.</p>
   {/if}
-{/if}
+</Accordion>
 
-{#if showWorkOrderSection}
-  <h3>Work Orders</h3>
-  {#if visibleWorkOrders.length > 0}
-    <table border="1">
-      <thead>
-        <tr><th>Work Order ID</th><th>Status</th></tr>
-      </thead>
+{@const invList = invoices?.results || []}
+<Accordion
+  title="Invoices"
+  meta={invList.length > 0 ? `${invList[0].invoice_number} · ${invList.length} invoice${invList.length > 1 ? 's' : ''}` : 'None yet'}
+  open={defaultOpen === 'invoices'}
+  headerBg="#15803d"
+  borderColor="#bbf7d0"
+>
+  {#if invList.length > 0}
+    <table class="inv-table">
+      <thead><tr><th>Invoice #</th><th>Status</th><th class="text-right">Total</th></tr></thead>
       <tbody>
-        {#each visibleWorkOrders as wo}
+        {#each invList as inv}
           <tr>
-            <td><a href="#/work-orders/{wo.work_order_id}">{wo.work_order_id}</a></td>
-            <td>{wo.status}</td>
+            <td><a href="#/invoices/{inv.invoice_id}">{inv.invoice_number}</a></td>
+            <td><span class="pill pill-{inv.status}">{inv.status}</span></td>
+            <td class="text-right">
+              ${inv.line_items?.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2) || '0.00'}
+            </td>
           </tr>
         {/each}
       </tbody>
     </table>
   {:else}
-    <p>No work orders.</p>
+    <p class="empty-msg">No invoices created for this job yet.</p>
   {/if}
-{/if}
+</Accordion>
 
-{#if showInvoiceSection}
-  <h3>Invoices</h3>
-  {#if visibleInvoices.length > 0}
-    <table border="1">
-      <thead>
-        <tr><th>Invoice #</th><th>Status</th><th>Created</th></tr>
-      </thead>
+{@const poList = purchaseOrders?.results || []}
+<Accordion
+  title="Purchase Orders"
+  meta={poList.length > 0 ? `${poList[0].po_number} · ${poList.length} order${poList.length > 1 ? 's' : ''}` : 'None'}
+  open={false}
+  headerBg="#475569"
+  borderColor="#cbd5e1"
+>
+  {#if poList.length > 0}
+    <table class="po-table">
+      <thead><tr><th>PO #</th><th>Vendor</th><th class="text-right">Total</th><th class="text-center">Status</th></tr></thead>
       <tbody>
-        {#each visibleInvoices as invoice}
+        {#each poList as po}
           <tr>
-            <td><a href="#/invoices/{invoice.invoice_id}">{invoice.invoice_number}</a></td>
-            <td>{invoice.status}</td>
-            <td>{invoice.created_date}</td>
+            <td><a href="#/purchase-orders/{po.po_id}">{po.po_number}</a></td>
+            <td>{po.business_name}</td>
+            <td class="text-right">
+              ${po.line_items?.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2) || '0.00'}
+            </td>
+            <td class="text-center"><span class="pill pill-{po.status}">{po.status}</span></td>
           </tr>
         {/each}
       </tbody>
     </table>
   {:else}
-    <p>No {$viewMode === 'lite' ? 'active ' : ''}invoices.</p>
+    <p class="empty-msg">No purchase orders for this job.</p>
   {/if}
-{/if}
+</Accordion>
 
-<h3>History</h3>
-<HistoryPanel {history} {onAddNote} />
+<style>
+  .job-header h1 { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+  .customer-line { font-size: 16px; color: #555; margin-bottom: 16px; }
+  .status-line { margin-bottom: 20px; }
+  .status-badge {
+    padding: 4px 12px; border-radius: 12px; font-size: 13px;
+    font-weight: 600; text-transform: capitalize;
+  }
+  .status-draft { background: #f3f4f6; color: #374151; }
+  .status-approved { background: #dcfce7; color: #166534; }
+  .status-complete, .status-completed { background: #dbeafe; color: #1e40af; }
+  .status-rejected { background: #fee2e2; color: #991b1b; }
+  .status-cancelled { background: #fef3c7; color: #92400e; }
+  .dates { color: #888; font-size: 13px; margin-left: 12px; }
+
+  .desc-history { display: flex; gap: 20px; margin-bottom: 28px; align-items: stretch; }
+  .description {
+    background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 16px; min-height: 160px; flex: 1;
+  }
+  .description .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #888; margin-bottom: 8px;
+  }
+  .description p { line-height: 1.6; color: #333; }
+  .history-panel-container { width: 320px; min-width: 320px; }
+
+  /* Shared table styles */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; border: none; }
+  th { text-align: left; padding: 8px 16px; font-weight: 600; }
+  td { padding: 8px 16px; }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+  .assigned { color: #555; }
+  .empty-msg { padding: 16px; color: #888; text-align: center; }
+  .prev-link { padding: 8px 16px 12px; font-size: 13px; }
+
+  /* Status pills */
+  .pill { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 500; text-transform: capitalize; }
+  .pill-complete { background: #e0f2fe; color: #0369a1; }
+  .pill-in_progress { background: #fef3c7; color: #92400e; }
+  .pill-pending { background: #f3e8ff; color: #7c3aed; }
+  .pill-draft { background: #f3f4f6; color: #6b7280; }
+  .pill-final { background: #e0e7ff; color: #4338ca; }
+  .pill-blocked { background: #fee2e2; color: #991b1b; }
+  .pill-cancelled { background: #fecaca; color: #991b1b; }
+  .pill-accepted { background: #dcfce7; color: #166534; }
+  .pill-open { background: #dbeafe; color: #1e40af; }
+  .pill-active { background: #dcfce7; color: #166534; }
+  .pill-received { background: #e0f2fe; color: #0369a1; }
+  .pill-issued { background: #dbeafe; color: #1e40af; }
+
+  /* Worksheet table colors */
+  .ws-table thead { background: #ccfbf1; }
+  .ws-table thead th { color: #115e59; }
+  .ws-table tbody tr { background: #f0fdfa; }
+  .ws-table tbody tr:nth-child(even) { background: #e6faf5; }
+  .ws-table tbody tr + tr { border-top: 1px solid #ccfbf1; }
+
+  /* Estimate table colors */
+  .est-table thead { background: #ddd6fe; }
+  .est-table thead th { color: #3730a3; }
+  .est-table tbody tr { background: #eef2ff; }
+  .est-table tbody tr:nth-child(even) { background: #e8e5ff; }
+  .est-table tbody tr + tr { border-top: 1px solid #ddd6fe; }
+  .est-table tfoot { background: #e0e7ff; border-top: 2px solid #c7d2fe; }
+  .est-table tfoot td { color: #3730a3; }
+
+  /* Work Order table colors */
+  .wo-table thead { background: #fde68a; }
+  .wo-table thead th { color: #78350f; }
+  .wo-table tbody tr { background: #fffbeb; }
+  .wo-table tbody tr:nth-child(even) { background: #fef3c7; }
+  .wo-table tbody tr + tr { border-top: 1px solid #fde68a; }
+  .wo-table .row-active { background: #fde68a; }
+
+  /* Invoice table colors */
+  .inv-table thead { background: #bbf7d0; }
+  .inv-table thead th { color: #14532d; }
+  .inv-table tbody tr { background: #f0fdf4; }
+  .inv-table tbody tr:nth-child(even) { background: #dcfce7; }
+  .inv-table tbody tr + tr { border-top: 1px solid #bbf7d0; }
+
+  /* PO table colors */
+  .po-table thead { background: #e2e8f0; }
+  .po-table thead th { color: #334155; }
+  .po-table tbody tr { background: #f8fafc; }
+  .po-table tbody tr:nth-child(even) { background: #f1f5f9; }
+  .po-table tbody tr + tr { border-top: 1px solid #e2e8f0; }
+</style>
