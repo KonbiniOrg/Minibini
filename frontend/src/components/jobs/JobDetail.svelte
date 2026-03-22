@@ -39,6 +39,11 @@
     if (ws.length === 0) return null;
     return ws.reduce((best, w) => (w.version > best.version ? w : best), ws[0]);
   });
+
+  // Work order, invoice list, PO list
+  let wo = $derived(workOrders?.results?.[0] || null);
+  let invList = $derived(invoices?.results || []);
+  let poList = $derived(purchaseOrders?.results || []);
 </script>
 
 <div class="job-header">
@@ -142,7 +147,6 @@
   {/if}
 </Accordion>
 
-{@const wo = workOrders?.results?.[0] || null}
 <Accordion
   title="Work Order"
   meta={wo ? `${wo.template_name ? wo.template_name + ' · ' : ''}${wo.status}` : 'None'}
@@ -168,7 +172,6 @@
   {/if}
 </Accordion>
 
-{@const invList = invoices?.results || []}
 <Accordion
   title="Invoices"
   meta={invList.length > 0 ? `${invList[0].invoice_number} · ${invList.length} invoice${invList.length > 1 ? 's' : ''}` : 'None yet'}
@@ -196,7 +199,6 @@
   {/if}
 </Accordion>
 
-{@const poList = purchaseOrders?.results || []}
 <Accordion
   title="Purchase Orders"
   meta={poList.length > 0 ? `${poList[0].po_number} · ${poList.length} order${poList.length > 1 ? 's' : ''}` : 'None'}
