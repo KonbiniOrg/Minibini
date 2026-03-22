@@ -14,10 +14,16 @@ A site-wide header with navigation and user info will be added to the app, but h
 
 ## Job Header
 
-- Title: `JOB #NUMBER: Job Name` (single line, large)
+- Title: `JOB #NUMBER: Job Name` (single line, large) with an "edit" link beside it (links to job edit form)
 - Subtitle: `for [Contact Name], at [Business Name]` with links to contact and business detail pages
-- Status badge (colored pill) + key dates on one line: start date, due date (and completed date when applicable)
+- Status display + key dates on one line: start date, due date (and completed date when applicable)
 - Display `customer_po_number` if present (e.g., after the dates)
+
+### Status Pill / Dropdown
+
+The job status is displayed as a colored pill badge. If the logged-in user has permission to change job status (`can_manage_jobs`), the pill renders as a `<select>` dropdown styled to look like the pill — same border-radius, font, and color scheme. Selecting a new status triggers the appropriate API status transition action. If the user lacks permission, it renders as a static `<span>` pill (read-only).
+
+The dropdown only shows valid transitions from the current status (using the Job model's `VALID_TRANSITIONS` map). Colors update dynamically when a new status is selected.
 
 ## Description + History Layout
 
@@ -125,6 +131,34 @@ A job can have multiple worksheets, estimates, work orders, or invoices. Each ac
 - Meta text: PO number, count (or "None")
 - Table: PO # (linked), Vendor, Total, Status (pill)
 - If a PO has line items associated with other jobs (not just this one), those line items are visually distinguished (e.g., muted/grayed row styling) to indicate they belong to a different job. This helps the user understand they're seeing a shared PO.
+
+### Action Rows
+
+Each accordion section has an action row at the bottom of its expanded content — a light gray bar with contextual links/buttons. Actions shown depend on document status, job status, and user permissions.
+
+**Worksheet actions**:
+- "View Full Worksheet" — always shown
+- "Create Worksheet" — shown when no worksheet exists (job is draft)
+- "Generate Estimate" — shown when worksheet is draft or final and no estimate exists yet
+
+**Estimate actions**:
+- "View Full Estimate" — always shown when estimate exists
+- "Create Estimate" — shown when no estimate exists
+- "Revise Estimate" — shown when estimate is open or accepted
+- "Create Work Order" — shown when estimate is accepted and no work order exists
+
+**Work Order actions**:
+- "View Full Work Order" — always shown when work order exists
+
+**Invoice actions**:
+- "Create Invoice" — shown when job has a work order
+- Individual invoice rows link to their detail pages
+
+**Purchase Order actions**:
+- "Create Purchase Order" — always shown
+- Individual PO rows link to their detail pages
+
+Action rows use a consistent style: light background, top border, small link-styled buttons. Actions that create new entities are permission-gated (`can_manage_jobs`, `can_manage_estimates`, etc.).
 
 ## View Modes
 
