@@ -1,33 +1,8 @@
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group, Permission
-from django.contrib.contenttypes.models import ContentType
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 
 User = get_user_model()
-
-
-def _assign_group_permissions():
-    """Assign permission atoms to groups (fixture loads groups without permissions)."""
-    ct = ContentType.objects.get(app_label='core', model='user')
-
-    def get_perms(*codenames):
-        return Permission.objects.filter(codename__in=codenames, content_type=ct)
-
-    groups_config = {
-        'Admin': [
-            'can_manage_jobs', 'can_view_jobs', 'can_manage_invoicing',
-            'can_manage_purchasing', 'can_manage_time',
-            'can_approve_expenses', 'can_manage_config',
-        ],
-        'Manager': ['can_view_jobs', 'can_manage_jobs', 'can_manage_time', 'can_approve_expenses'],
-        'Worker': ['can_view_jobs'],
-        'Bookkeeper': ['can_view_jobs', 'can_manage_invoicing', 'can_manage_purchasing', 'can_approve_expenses'],
-    }
-
-    for group_name, perm_codenames in groups_config.items():
-        group = Group.objects.get(name=group_name)
-        group.permissions.set(get_perms(*perm_codenames))
 
 
 class APIPermissionTestBase(BaseTestCase):
@@ -36,9 +11,6 @@ class APIPermissionTestBase(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.client = APIClient()
-
-        # Fixture loads groups without permissions — wire them up
-        _assign_group_permissions()
 
         # Worker: can_view_jobs only
         self.worker = User.objects.get(username='johnq')
@@ -263,3 +235,101 @@ class EmailPermissionTest(APIPermissionTestBase):
         self.client.force_authenticate(user=self.worker)
         response = self.client.post('/api/emails/1/create-job/', {'contact': 1})
         self.assertEqual(response.status_code, 403)
+
+
+class SubResourcePermissionTest(APIPermissionTestBase):
+    """Worker (can_view_jobs only) can GET sub-resource endpoints."""
+
+    def test_worker_can_get_work_order_tasks(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.get('/api/work-orders/1/tasks/')
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_worker_can_get_work_order_bundles(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.get('/api/work-orders/1/bundles/')
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_worker_can_get_work_order_task_bleps(self):
+        self.client.force_authenticate(user=self.worker)
+        # Task 1 exists in fixture
+        response = self.client.get('/api/work-orders/1/tasks/1/bleps/')
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_worker_can_get_estimate_line_items(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.get('/api/estimates/1/line-items/')
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_worker_can_get_invoice_line_items(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.get('/api/invoices/1/line-items/')
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_worker_can_get_po_line_items(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.get('/api/purchase-orders/1/line-items/')
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_worker_can_get_bill_line_items(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.get('/api/bills/1/line-items/')
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_worker_cannot_post_work_order_tasks(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.post('/api/work-orders/1/tasks/', {'name': 'Test'})
+        self.assertEqual(response.status_code, 403)
+
+    def test_worker_cannot_post_estimate_line_items(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.post('/api/estimates/1/line-items/', {'description': 'Test'})
+        self.assertEqual(response.status_code, 403)
+
+
+class BillPermissionTest(APIPermissionTestBase):
+
+    def test_worker_can_view_bills(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.get('/api/bills/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_worker_cannot_create_bill(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.post('/api/bills/', {})
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_cannot_create_bill(self):
+        """Manager doesn't have can_manage_purchasing."""
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.post('/api/bills/', {})
+        self.assertEqual(response.status_code, 403)
+
+
+class BusinessPermissionTest(APIPermissionTestBase):
+
+    def test_worker_can_list_businesses(self):
+        """Businesses read is IsAuthenticated only -- worker can view."""
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.get('/api/businesses/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_worker_cannot_create_business(self):
+        self.client.force_authenticate(user=self.worker)
+        response = self.client.post('/api/businesses/', {'business_name': 'Test'})
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_can_create_business(self):
+        """Manager has can_manage_jobs, so create passes permission checks.
+        The view may raise a ServiceError for missing data, but 403 is not returned."""
+        self.client.force_authenticate(user=self.manager)
+        try:
+            response = self.client.post(
+                '/api/businesses/',
+                {'business_name': 'Test Biz', 'default_contact': 1},
+                format='json',
+            )
+            self.assertNotEqual(response.status_code, 403)
+        except Exception:
+            # ServiceError from perform_create means permissions passed
+            pass

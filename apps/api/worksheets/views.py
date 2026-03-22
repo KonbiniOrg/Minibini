@@ -16,7 +16,11 @@ class EstWorksheetViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.Model
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve'):
+        read_actions = ('list', 'retrieve')
+        mixed_actions = ('tasks', 'bundles')
+        if self.action in read_actions:
+            return [IsAuthenticated(), CanViewJobs()]
+        if self.action in mixed_actions and self.request.method == 'GET':
             return [IsAuthenticated(), CanViewJobs()]
         return [IsAuthenticated(), CanManageJobs()]
 
