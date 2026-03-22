@@ -9,6 +9,7 @@ Tests cover:
 """
 
 from decimal import Decimal
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.purchasing.models import PurchaseOrder, Bill, PurchaseOrderLineItem, BillLineItem
@@ -22,6 +23,7 @@ class PurchaseOrderDeletionTest(TestCase):
     def setUp(self):
         """Set up test data."""
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration for number generation
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
@@ -108,6 +110,7 @@ class BillDeletionTest(TestCase):
     def setUp(self):
         """Set up test data."""
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration for number generation
         Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
@@ -216,6 +219,7 @@ class PurchaseOrderLineItemDeletionTest(TestCase):
     def setUp(self):
         """Set up test data."""
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create a test contact (must be created before business for default_contact)
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
@@ -325,6 +329,7 @@ class BillLineItemDeletionTest(TestCase):
     def setUp(self):
         """Set up test data."""
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create a test contact (must be created before business for default_contact)
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')

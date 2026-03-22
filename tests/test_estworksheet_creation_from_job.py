@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import Job
@@ -8,6 +9,7 @@ from apps.contacts.models import Contact
 class EstWorksheetCreateFromJobTest(TestCase):
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB-2024-TEST",

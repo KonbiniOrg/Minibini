@@ -1,4 +1,5 @@
 """Tests for LineItemType CRUD views."""
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import LineItemType
@@ -9,6 +10,7 @@ class LineItemTypeListViewTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_list_view_returns_200(self):
         """Test that list view returns 200."""
@@ -42,6 +44,7 @@ class LineItemTypeDetailViewTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         self.line_item_type = LineItemType.objects.create(
             code='TST',
             name='Test Type',
@@ -78,6 +81,7 @@ class LineItemTypeCreateViewTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_create_view_returns_200(self):
         """Test that create view returns 200."""
@@ -113,6 +117,7 @@ class LineItemTypeEditViewTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         self.line_item_type = LineItemType.objects.create(
             code='EDT',
             name='Editable Type',

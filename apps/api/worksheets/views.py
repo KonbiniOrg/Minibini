@@ -1,10 +1,12 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.estimates.models import EstWorksheet
 from apps.estimates.services import WorksheetService, EstimateGenerationService
 from apps.core.services import ServiceError
 from apps.api.mixins import StatusTransitionMixin, TaskBundleMixin
+from apps.api.permissions import CanViewJobs, CanManageJobs
 from .serializers import EstWorksheetSerializer, TaskSerializer, TaskBundleSerializer
 
 
@@ -12,6 +14,15 @@ class EstWorksheetViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.Model
     queryset = EstWorksheet.objects.all().order_by('-created_date')
     serializer_class = EstWorksheetSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        read_actions = ('list', 'retrieve')
+        mixed_actions = ('tasks', 'bundles')
+        if self.action in read_actions:
+            return [IsAuthenticated(), CanViewJobs()]
+        if self.action in mixed_actions and self.request.method == 'GET':
+            return [IsAuthenticated(), CanViewJobs()]
+        return [IsAuthenticated(), CanManageJobs()]
 
     # TaskBundleMixin config
     task_serializer_class = TaskSerializer

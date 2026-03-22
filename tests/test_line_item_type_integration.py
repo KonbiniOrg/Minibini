@@ -1,5 +1,6 @@
 """Integration tests for LineItemType feature."""
 from decimal import Decimal
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.core.models import Configuration, LineItemType
@@ -14,6 +15,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Set up default tax rate
         Configuration.objects.create(key='default_tax_rate', value='0.10')  # 10%
 
@@ -246,6 +248,7 @@ class LineItemTypeIntegrationTest(TestCase):
         # Verify inactive type is hidden from list by default
         # Use a fresh client to avoid flash messages interfering
         fresh_client = Client()
+        fresh_client.force_login(get_user_model().objects.create_superuser(username='admin_fresh', password='testpass'))
         response = fresh_client.get(reverse('core:line_item_type_list'))
         self.assertNotContains(response, 'Updated Test Type')
 
@@ -441,6 +444,7 @@ class LineItemTypeFormIntegrationTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         Configuration.objects.create(key='default_tax_rate', value='0.10')
 
     def test_line_item_type_appears_in_estimate_manual_form(self):
@@ -540,6 +544,7 @@ class TaxCalculationIntegrationTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         Configuration.objects.create(key='default_tax_rate', value='0.0825')  # 8.25%
 
     def test_tax_rate_applied_correctly(self):

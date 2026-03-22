@@ -203,7 +203,7 @@ class EstimateGenerationReviewPageTests(TestCase):
         Configuration.objects.get_or_create(
             key='estimate_counter', defaults={'value': '0'}
         )
-        self.user = User.objects.create_user(username='testuser', password='testpass')
+        self.user = User.objects.create_user(username='testuser', password='testpass', is_superuser=True)
         self.client = Client()
         self.client.login(username='testuser', password='testpass')
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
@@ -337,7 +337,7 @@ class TaskDetailLineItemTypeTests(TestCase):
     """Tests that task_detail shows line_item_type."""
 
     def setUp(self):
-        self.user = User.objects.create_user(username='testuser', password='testpass')
+        self.user = User.objects.create_user(username='testuser', password='testpass', is_superuser=True)
         self.client = Client()
         self.client.login(username='testuser', password='testpass')
         self.contact = Contact.objects.create(first_name="Test", last_name="User")

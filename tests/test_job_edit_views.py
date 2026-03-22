@@ -1,6 +1,7 @@
 """
 Tests for Job editing functionality with state-based field restrictions.
 """
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils import timezone
@@ -15,6 +16,7 @@ class JobEditDraftStatusTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration for number generation
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
@@ -156,6 +158,7 @@ class JobEditApprovedStatusTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration for number generation
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
@@ -298,6 +301,7 @@ class JobEditRejectedStatusTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration for number generation
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
@@ -403,6 +407,7 @@ class JobEditCompleteStatusTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration for number generation
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')

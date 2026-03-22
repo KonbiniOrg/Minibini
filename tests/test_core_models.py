@@ -72,19 +72,19 @@ class UserModelTest(TestCase):
 
 class GroupModelTest(TestCase):
     def test_group_creation(self):
-        group = Group.objects.create(name="Manager")
-        
-        self.assertEqual(group.name, "Manager")
-        self.assertEqual(str(group), "Manager")
-        
+        group = Group.objects.create(name="Test Manager Group")
+
+        self.assertEqual(group.name, "Test Manager Group")
+        self.assertEqual(str(group), "Test Manager Group")
+
     def test_group_str_method(self):
-        group = Group.objects.create(name="Admin")
-        self.assertEqual(str(group), "Admin")
-        
+        group = Group.objects.create(name="Test Admin Group")
+        self.assertEqual(str(group), "Test Admin Group")
+
     def test_user_group_assignment(self):
-        group = Group.objects.create(name="Employee")
+        group = Group.objects.create(name="Test Employee Group")
         user = User.objects.create_user(username="testuser")
-        
+
         user.groups.add(group)
         self.assertIn(group, user.groups.all())
         self.assertIn(user, group.user_set.all())

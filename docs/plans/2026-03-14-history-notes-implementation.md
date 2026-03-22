@@ -302,7 +302,7 @@ git commit -m "add @history decorator with post_init field snapshot"
 
 **Files:**
 - Modify: `apps/core/history.py` (add diff logic, contextvars, pre_save handler)
-- Create: `apps/core/history_middleware.py`
+- Create: `apps/core/middleware.py`
 - Modify: `minibini/settings.py` (add middleware)
 - Test: `tests/test_history_middleware.py`
 
@@ -512,7 +512,7 @@ def _on_pre_save(sender, instance, **kwargs):
 
 Note: For new objects, the `object_id` isn't known at `pre_save` time. The middleware needs to use a `post_save` handler to get the pk for new objects. Add a `_on_post_save` handler that fills in the pk for pending entries where `object_id` is None.
 
-Create `apps/core/history_middleware.py`:
+Create `apps/core/middleware.py`:
 
 ```python
 from apps.core.history import HistoryContext, set_history_context, get_history_context
@@ -551,7 +551,7 @@ class HistoryMiddleware:
 Add to `minibini/settings.py` MIDDLEWARE list, after `AutoLoginMiddleware`:
 
 ```python
-'apps.core.history_middleware.HistoryMiddleware',
+'apps.core.middleware.HistoryMiddleware',
 ```
 
 **Step 4: Run tests to verify they pass**
@@ -565,7 +565,7 @@ Run: `python manage.py test`
 **Step 5: Commit**
 
 ```bash
-git add apps/core/history.py apps/core/history_middleware.py minibini/settings.py tests/test_history_middleware.py
+git add apps/core/history.py apps/core/middleware.py minibini/settings.py tests/test_history_middleware.py
 git commit -m "add history middleware with change detection via contextvars"
 ```
 

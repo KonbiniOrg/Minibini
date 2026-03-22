@@ -1,11 +1,13 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Q
 from apps.jobs.models import Job
 from apps.jobs.services import JobService
 from apps.core.models import HistoryEntry
 from apps.api.mixins import StatusTransitionMixin
+from apps.api.permissions import CanViewJobs, CanManageJobs
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import JobSerializer
 
@@ -14,6 +16,11 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     queryset = Job.objects.all().order_by('-created_date')
     serializer_class = JobSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve', 'history'):
+            return [IsAuthenticated(), CanViewJobs()]
+        return [IsAuthenticated(), CanManageJobs()]
 
     def get_queryset(self):
         qs = super().get_queryset()

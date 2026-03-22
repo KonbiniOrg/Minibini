@@ -16,7 +16,8 @@ class EditContactBusinessPreservationTest(TestCase):
         self.client = Client()
         self.user = User.objects.create_user(
             username='testuser',
-            password='testpass'
+            password='testpass',
+            is_superuser=True
         )
         self.client.login(username='testuser', password='testpass')
 

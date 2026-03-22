@@ -121,24 +121,28 @@
         "model": "auth.group",
         "pk": 1,
         "fields": {
-            "name": "Administrator",
-            "permissions": []
+            "name": "Admin"
         }
     },
     {
         "model": "auth.group",
         "pk": 2,
         "fields": {
-            "name": "Manager",
-            "permissions": []
+            "name": "Manager"
         }
     },
     {
         "model": "auth.group",
         "pk": 3,
         "fields": {
-            "name": "Employee",
-            "permissions": []
+            "name": "Worker"
+        }
+    },
+    {
+        "model": "auth.group",
+        "pk": 4,
+        "fields": {
+            "name": "Bookkeeper"
         }
     },
     {

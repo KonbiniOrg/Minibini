@@ -19,7 +19,8 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.user = User.objects.create_user(
             username='testuser',
             email='test@example.com',
-            password='testpass123'
+            password='testpass123',
+            is_superuser=True
         )
         self.client.login(username='testuser', password='testpass123')
 
@@ -243,7 +244,8 @@ class WorkOrderFromEstimateIntegrationTest(TestCase):
         self.user = User.objects.create_user(
             username='testuser',
             email='test@example.com',
-            password='testpass123'
+            password='testpass123',
+            is_superuser=True
         )
         self.client.login(username='testuser', password='testpass123')
 

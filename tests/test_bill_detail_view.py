@@ -3,6 +3,7 @@ Tests for Bill detail view with status update functionality.
 """
 
 from decimal import Decimal
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.purchasing.models import Bill, PurchaseOrder, BillLineItem
@@ -15,6 +16,7 @@ class BillDetailViewTest(TestCase):
     def setUp(self):
         """Set up test data."""
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create default contact for business
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')

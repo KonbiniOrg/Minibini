@@ -22,7 +22,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
         Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
         Configuration.objects.create(key='bill_counter', value='0')
 
-        self.group = Group.objects.create(name="Manager")
+        self.group, _ = Group.objects.get_or_create(name="Manager")
         self.user = User.objects.create_user(username="testuser", email="test@example.com")
         self.user.groups.add(self.group)
         self.payment_terms = PaymentTerms.objects.create()

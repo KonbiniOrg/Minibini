@@ -1,8 +1,10 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.purchasing.services import PurchaseOrderService, BillService
 from apps.core.services import ServiceError
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
+from apps.api.permissions import CanViewJobs, CanManagePurchasing
 from .serializers import (
     PurchaseOrderSerializer, POLineItemSerializer,
     BillSerializer, BillLineItemSerializer,
@@ -13,6 +15,15 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     queryset = PurchaseOrder.objects.all().order_by('-created_date')
     serializer_class = PurchaseOrderSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        read_actions = ('list', 'retrieve')
+        mixed_actions = ('line_items',)
+        if self.action in read_actions:
+            return [IsAuthenticated(), CanViewJobs()]
+        if self.action in mixed_actions and self.request.method == 'GET':
+            return [IsAuthenticated(), CanViewJobs()]
+        return [IsAuthenticated(), CanManagePurchasing()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -51,6 +62,15 @@ class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
     queryset = Bill.objects.all().order_by('-created_date')
     serializer_class = BillSerializer
     lookup_field = 'pk'
+
+    def get_permissions(self):
+        read_actions = ('list', 'retrieve')
+        mixed_actions = ('line_items',)
+        if self.action in read_actions:
+            return [IsAuthenticated(), CanViewJobs()]
+        if self.action in mixed_actions and self.request.method == 'GET':
+            return [IsAuthenticated(), CanViewJobs()]
+        return [IsAuthenticated(), CanManagePurchasing()]
 
     def get_queryset(self):
         qs = super().get_queryset()

@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required, permission_required
 from django.urls import reverse
 from django import forms
 from django.utils import timezone
@@ -67,6 +68,8 @@ def _build_task_hierarchy(tasks):
     return flatten_tree(tree)
 
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def job_list(request):
     from apps.contacts.models import Contact, Business
     from django.db.models import Case, When, Value, IntegerField
@@ -158,6 +161,8 @@ def job_list(request):
     }
     return render(request, 'jobs/job_list.html', context)
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def job_detail(request, job_id):
     job = get_object_or_404(Job, job_id=job_id)
 
@@ -201,6 +206,8 @@ def job_detail(request, job_id):
     })
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def job_create(request):
     """Create a new Job"""
     initial_contact_id = request.GET.get('contact_id')
@@ -248,6 +255,8 @@ def job_create(request):
     })
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def job_edit(request, job_id):
     """Edit an existing Job with state-based field restrictions"""
     job = get_object_or_404(Job, job_id=job_id)
@@ -267,6 +276,8 @@ def job_edit(request, job_id):
     })
 
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def task_list(request):
     # Only show incomplete tasks with WorkOrders (not EstWorksheets)
     tasks = Task.objects.filter(
@@ -277,12 +288,16 @@ def task_list(request):
     ).select_related('work_order', 'work_order__job', 'assignee').order_by('-task_id')
     return render(request, 'jobs/task_list.html', {'tasks': tasks})
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def task_detail(request, task_id):
     task = get_object_or_404(Task, task_id=task_id)
     bleps = Blep.objects.filter(task=task).select_related('user').order_by('-start_time')
     return render(request, 'jobs/task_detail.html', {'task': task, 'bleps': bleps})
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def task_edit(request, task_id):
     """Edit a task's details. Only allowed for tasks on draft worksheets."""
     task = get_object_or_404(Task, task_id=task_id)
@@ -308,10 +323,14 @@ def task_edit(request, task_id):
     })
 
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def work_order_list(request):
     work_orders = WorkOrder.objects.all().order_by('-work_order_id')
     return render(request, 'jobs/work_order_list.html', {'work_orders': work_orders})
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def work_order_detail(request, work_order_id):
     work_order = get_object_or_404(WorkOrder, work_order_id=work_order_id)
 
@@ -372,6 +391,8 @@ def work_order_detail(request, work_order_id):
     })
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 @require_POST
 def task_reorder_work_order(request, work_order_id, task_id, direction):
     """Reorder tasks within a WorkOrder by swapping sort_order."""
@@ -382,6 +403,8 @@ def task_reorder_work_order(request, work_order_id, task_id, direction):
     return redirect('jobs:work_order_detail', work_order_id=work_order_id)
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def material_add(request, task_id):
     """Add a material to a task. Only allowed on draft worksheets."""
     task = get_object_or_404(Task, task_id=task_id)
@@ -407,6 +430,8 @@ def material_add(request, task_id):
     })
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def material_edit(request, material_id):
     """Edit a material. Only allowed on draft worksheets."""
     material = get_object_or_404(Material, material_id=material_id)
@@ -433,6 +458,8 @@ def material_edit(request, material_id):
     })
 
 
+@login_required
+@permission_required('core.can_manage_jobs', raise_exception=True)
 def material_delete(request, material_id):
     """Delete a material. Only allowed on draft worksheets."""
     material = get_object_or_404(Material, material_id=material_id)

@@ -1,5 +1,6 @@
 """Tests for estimate creation and revision controls."""
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils import timezone
@@ -26,6 +27,7 @@ class EstimateCreationControlTests(TestCase):
         Configuration.objects.create(key='po_counter', value='0')
 
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create a test contact
         self.contact = Contact.objects.create(
@@ -157,6 +159,7 @@ class EstimateRevisionTests(TestCase):
         Configuration.objects.create(key='po_counter', value='0')
 
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create a test contact
         self.contact = Contact.objects.create(
@@ -423,6 +426,7 @@ class EstimateWorkflowIntegrationTests(TestCase):
         Configuration.objects.create(key='po_counter', value='0')
 
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create a test contact
         self.contact = Contact.objects.create(

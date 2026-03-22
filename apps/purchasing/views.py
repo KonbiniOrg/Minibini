@@ -1,5 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import ValidationError
 from django.views.decorators.http import require_POST
 from .models import PurchaseOrder, Bill, BillLineItem, PurchaseOrderLineItem
@@ -11,10 +12,14 @@ from .forms import (
     POManualLineItemForm, POPriceListLineItemForm
 )
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def purchase_order_list(request):
     purchase_orders = PurchaseOrder.objects.all().order_by('-po_id')
     return render(request, 'purchasing/purchase_order_list.html', {'purchase_orders': purchase_orders})
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def purchase_order_detail(request, po_id):
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
 
@@ -57,6 +62,8 @@ def purchase_order_detail(request, po_id):
         'parent_id': purchase_order.po_id
     })
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def purchase_order_create(request):
     """Create a new PurchaseOrder"""
     if request.method == 'POST':
@@ -70,6 +77,8 @@ def purchase_order_create(request):
 
     return render(request, 'purchasing/purchase_order_create.html', {'form': form})
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def purchase_order_create_for_job(request, job_id):
     """Create a new PurchaseOrder for a specific job"""
     from apps.jobs.models import Job
@@ -86,6 +95,8 @@ def purchase_order_create_for_job(request, job_id):
 
     return render(request, 'purchasing/purchase_order_create.html', {'form': form, 'job': job})
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def purchase_order_add_line_item(request, po_id):
     """Add line item to PurchaseOrder - manual entry or from Price List"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
@@ -134,10 +145,14 @@ def purchase_order_add_line_item(request, po_id):
         'purchase_order': purchase_order
     })
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def bill_list(request):
     bills = Bill.objects.all().order_by('-bill_id')
     return render(request, 'purchasing/bill_list.html', {'bills': bills})
 
+@login_required
+@permission_required('core.can_view_jobs', raise_exception=True)
 def bill_detail(request, bill_id):
     bill = get_object_or_404(Bill, bill_id=bill_id)
 
@@ -180,6 +195,8 @@ def bill_detail(request, bill_id):
         'parent_id': bill.bill_id
     })
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def purchase_order_edit(request, po_id):
     """Edit an existing PurchaseOrder"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
@@ -198,6 +215,8 @@ def purchase_order_edit(request, po_id):
         'purchase_order': purchase_order
     })
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def purchase_order_delete(request, po_id):
     """Delete a PurchaseOrder (only allowed in Draft status)"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
@@ -221,6 +240,8 @@ def purchase_order_delete(request, po_id):
         'purchase_order': purchase_order
     })
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def purchase_order_cancel(request, po_id):
     """Cancel a PurchaseOrder (only allowed in Issued status)"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
@@ -242,6 +263,8 @@ def purchase_order_cancel(request, po_id):
         'purchase_order': purchase_order
     })
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def bill_create(request):
     """Create a new Bill"""
     if request.method == 'POST':
@@ -255,6 +278,8 @@ def bill_create(request):
 
     return render(request, 'purchasing/bill_create.html', {'form': form})
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def bill_create_for_po(request, po_id):
     """Create a new Bill for a specific Purchase Order and copy its line items"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
@@ -280,6 +305,8 @@ def bill_create_for_po(request, po_id):
 
     return render(request, 'purchasing/bill_create.html', {'form': form, 'purchase_order': purchase_order})
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def bill_add_line_item(request, bill_id):
     """Add line item to Bill - either from Price List or manual entry"""
     bill = get_object_or_404(Bill, bill_id=bill_id)
@@ -316,6 +343,8 @@ def bill_add_line_item(request, bill_id):
     })
 
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 @require_POST
 def purchase_order_reorder_line_item(request, po_id, line_item_id, direction):
     """Reorder line items within a PurchaseOrder by swapping line numbers."""
@@ -326,6 +355,8 @@ def purchase_order_reorder_line_item(request, po_id, line_item_id, direction):
     return redirect('purchasing:purchase_order_detail', po_id=po_id)
 
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 @require_POST
 def bill_reorder_line_item(request, bill_id, line_item_id, direction):
     """Reorder line items within a Bill by swapping line numbers."""
@@ -336,6 +367,8 @@ def bill_reorder_line_item(request, bill_id, line_item_id, direction):
     return redirect('purchasing:bill_detail', bill_id=bill_id)
 
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def bill_delete(request, bill_id):
     """Delete a Bill (only allowed in Draft status)"""
     bill = get_object_or_404(Bill, bill_id=bill_id)
@@ -360,6 +393,8 @@ def bill_delete(request, bill_id):
     })
 
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def purchase_order_delete_line_item(request, po_id, line_item_id):
     """Delete a line item from a purchase order and renumber remaining items"""
     purchase_order = get_object_or_404(PurchaseOrder, po_id=po_id)
@@ -377,6 +412,8 @@ def purchase_order_delete_line_item(request, po_id, line_item_id):
     return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
 
 
+@login_required
+@permission_required('core.can_manage_purchasing', raise_exception=True)
 def bill_delete_line_item(request, bill_id, line_item_id):
     """Delete a line item from a bill and renumber remaining items"""
     bill = get_object_or_404(Bill, bill_id=bill_id)

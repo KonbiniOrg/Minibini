@@ -7,6 +7,7 @@ This test suite covers the delete contact functionality to ensure:
 - Prompts user to select new default when deleting default with multiple contacts
 """
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
@@ -17,6 +18,7 @@ class DeleteDefaultContactTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_cannot_delete_last_contact_of_business(self):
         """Cannot delete the only contact of a business"""

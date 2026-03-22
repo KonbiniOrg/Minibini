@@ -1,6 +1,7 @@
 """Tests for creating PurchaseOrders and adding LineItems from Price List"""
 
 from decimal import Decimal
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
@@ -15,6 +16,7 @@ class PurchaseOrderCreationTests(TestCase):
     def setUp(self):
         """Set up test data."""
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration for number generation
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
@@ -135,6 +137,7 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
     def setUp(self):
         """Set up test data."""
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create Configuration
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')

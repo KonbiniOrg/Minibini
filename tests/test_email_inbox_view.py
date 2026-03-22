@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils import timezone
@@ -11,6 +12,7 @@ class EmailInboxViewTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         self.url = reverse('core:email_inbox')
 
     def test_email_inbox_respects_display_limit(self):

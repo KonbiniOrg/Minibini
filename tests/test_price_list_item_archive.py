@@ -1,5 +1,6 @@
 """Tests for PriceListItem archive functionality."""
 from decimal import Decimal
+from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 
@@ -17,6 +18,7 @@ class PriceListItemArchiveListViewTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         # Create active items
         self.active_item1 = PriceListItem.objects.create(
             code='ACTIVE001',
@@ -204,6 +206,7 @@ class PriceListItemFormArchiveViewTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_edit_view_shows_archived_warning(self):
         """Test that edit view shows warning for archived items."""
@@ -283,6 +286,7 @@ class ArchivedPriceListItemDisplayTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
         # Create contact and job
         self.contact = Contact.objects.create(
@@ -377,6 +381,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
     def test_create_archive_restore_workflow(self):
         """Test full workflow: create item, archive it, restore it."""

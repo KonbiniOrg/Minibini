@@ -1,5 +1,10 @@
 <script>
   import { link } from 'svelte-spa-router';
+  import { user, logout } from '../stores/auth.js';
+
+  async function handleLogout() {
+    await logout();
+  }
 </script>
 
 <nav>
@@ -7,6 +12,9 @@
   ◆ <a href="/contacts" use:link>CONTACTS</a>
   ◆ <a href="/businesses" use:link>BUSINESSES</a>
   ◆ <a href="/jobs" use:link>JOBS</a>
+  {#if $user}
+    ◆ <button onclick={handleLogout}>Logout ({$user.username})</button>
+  {/if}
 </nav>
 
 <style>
