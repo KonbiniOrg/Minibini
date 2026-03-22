@@ -13,11 +13,12 @@ class BlepSerializer(serializers.ModelSerializer):
 class WorkOrderSerializer(serializers.ModelSerializer):
     tasks = TaskSerializer(source='task_set', many=True, read_only=True)
     bundles = TaskBundleSerializer(source='taskbundle_set', many=True, read_only=True)
+    template_name = serializers.CharField(source='template.name', read_only=True, default=None)
 
     class Meta:
         model = WorkOrder
         fields = [
-            'work_order_id', 'job', 'template', 'status',
+            'work_order_id', 'job', 'template', 'template_name', 'status',
             'tasks', 'bundles',
         ]
         read_only_fields = ['work_order_id']
