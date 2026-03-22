@@ -12,6 +12,9 @@ from .serializers import EmailRecordSerializer
 @permission_classes([IsAuthenticated])
 def email_list(request):
     emails = EmailRecord.objects.select_related('temp_data').order_by('-created_at')
+    job = request.query_params.get('job')
+    if job:
+        emails = emails.filter(job=job)
     from apps.api.pagination import StandardPagination
     paginator = StandardPagination()
     page = paginator.paginate_queryset(emails, request)
