@@ -49,7 +49,7 @@ class Meta:
 | Atom | Gates |
 |------|-------|
 | `can_view_financials` | **Read:** invoices, invoice line items, POs, PO line items, bills, bill line items, others' expenses (future) |
-| `can_manage_jobs` | **Write:** jobs, work orders, tasks, worksheets, bundles, estimates, estimate line items, contacts, businesses, email-to-job linking, status transitions on all of the above |
+| `can_manage_jobs` | **Read+write:** emails. **Write:** jobs, work orders, worksheets, bundles, estimates, estimate line items, contacts, businesses, email-to-job linking, status transitions on all of the above. (Notes on jobs/contacts/businesses and adding tasks to work orders are `IsAuthenticated` — see above.) |
 | `can_manage_financials` | **Write:** invoices, POs, bills, price list items, and their line items, status transitions (issue, cancel) |
 | `can_manage_time` | **Edit/delete** anyone's time entries (shifts, bleps) |
 | `can_approve_expenses` | **Approve/reject** expenses over threshold |
@@ -73,8 +73,12 @@ Read access to:
 - Payment terms
 - Templates (work order, task)
 - Line item types
-- Emails
 - Search
+- Price list items
+
+Write access to:
+- Notes on jobs, contacts, and businesses
+- Tasks on work orders (add tasks to existing work orders)
 
 ---
 
@@ -113,11 +117,13 @@ Read access to:
 | `/api/task-templates/{id}/` | GET |
 | `/api/line-item-types/` | GET |
 | `/api/line-item-types/{id}/` | GET |
-| `/api/emails/` | GET |
-| `/api/emails/{id}/` | GET |
 | `/api/search/?q=...` | GET |
 | `/api/price-list-items/` | GET |
 | `/api/price-list-items/{id}/` | GET |
+| `/api/jobs/{id}/notes/` | POST |
+| `/api/contacts/{id}/notes/` | POST |
+| `/api/businesses/{id}/notes/` | POST |
+| `/api/work-orders/{id}/tasks/` | POST |
 
 ### `can_view_financials`
 
@@ -137,19 +143,18 @@ Read access to:
 
 | Endpoint | Method |
 |----------|--------|
+| `/api/emails/` | GET |
+| `/api/emails/{id}/` | GET |
 | `/api/jobs/` | POST |
 | `/api/jobs/{id}/` | PUT, PATCH, DELETE |
-| `/api/jobs/{id}/notes/` | POST |
 | `/api/jobs/{id}/complete/` | POST |
 | `/api/jobs/{id}/cancel/` | POST |
 | `/api/jobs/{id}/reopen/` | POST |
 | `/api/contacts/` | POST |
 | `/api/contacts/{id}/` | PUT, PATCH, DELETE |
-| `/api/contacts/{id}/notes/` | POST |
 | `/api/businesses/` | POST |
 | `/api/businesses/{id}/` | PUT, PATCH, DELETE |
 | `/api/businesses/{id}/set-default-contact/` | POST |
-| `/api/businesses/{id}/notes/` | POST |
 | `/api/estimates/` | POST |
 | `/api/estimates/{id}/` | PUT, PATCH, DELETE |
 | `/api/estimates/{id}/line-items/` | POST |
@@ -169,7 +174,6 @@ Read access to:
 | `/api/est-worksheets/{id}/revise/` | POST |
 | `/api/work-orders/` | POST |
 | `/api/work-orders/{id}/` | PUT, PATCH, DELETE |
-| `/api/work-orders/{id}/tasks/` | POST |
 | `/api/work-orders/{id}/tasks/{tid}/` | PATCH, DELETE |
 | `/api/work-orders/{id}/bundles/` | POST |
 | `/api/work-orders/{id}/bundles/{bid}/` | PATCH, DELETE |
@@ -274,13 +278,13 @@ Explicit mapping of what changes per viewset:
 
 | Viewset | Current Read | Target Read | Current Write | Target Write |
 |---------|-------------|-------------|---------------|--------------|
-| JobViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageJobs` | `CanManageJobs` |
-| ContactViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageJobs` | `CanManageJobs` |
-| BusinessViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageJobs` | `CanManageJobs` |
+| JobViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageJobs` | mixed (see notes) |
+| ContactViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageJobs` | mixed (see notes) |
+| BusinessViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageJobs` | mixed (see notes) |
 | PaymentTermsViewSet | `IsAuthenticated` | `IsAuthenticated` | *(read-only)* | *(read-only)* |
 | EstimateViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageJobs` | `CanManageJobs` |
 | EstWorksheetViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageJobs` | `CanManageJobs` |
-| WorkOrderViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageJobs` | `CanManageJobs` |
+| WorkOrderViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageJobs` | mixed (see notes) |
 | InvoiceViewSet | `CanViewJobs` | `CanViewFinancials` | `CanManageInvoicing` | `CanManageFinancials` |
 | PurchaseOrderViewSet | `CanViewJobs` | `CanViewFinancials` | `CanManagePurchasing` | `CanManageFinancials` |
 | BillViewSet | `CanViewJobs` | `CanViewFinancials` | `CanManagePurchasing` | `CanManageFinancials` |
@@ -289,15 +293,24 @@ Explicit mapping of what changes per viewset:
 | TaskTemplateViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageConfig` | `CanManageConfig` |
 | LineItemTypeViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageConfig` | `CanManageConfig` |
 | settings_view | `CanManageConfig` | `CanManageConfig` | `CanManageConfig` | `CanManageConfig` |
-| email_list/detail | `IsAuthenticated` | `IsAuthenticated` | — | — |
+| email_list/detail | `IsAuthenticated` | `CanManageJobs` | — | — |
 | email link/unlink/create-job | — | — | `CanManageJobs` | `CanManageJobs` |
 | search_view | `IsAuthenticated` | `IsAuthenticated` | — | — |
 
+**Mixed-permission viewset notes:**
+- **JobViewSet** `notes` action: `IsAuthenticated` for POST (was `CanManageJobs`). All other writes stay `CanManageJobs`.
+- **ContactViewSet** `notes` action: `IsAuthenticated` for POST (was `CanManageJobs`). All other writes stay `CanManageJobs`.
+- **BusinessViewSet** `notes` action: `IsAuthenticated` for POST (was `CanManageJobs`). All other writes stay `CanManageJobs`.
+- **WorkOrderViewSet** `tasks` action: `IsAuthenticated` for POST (add tasks). PATCH/DELETE on tasks and all other writes stay `CanManageJobs`.
+
 **Viewsets that need code changes** (read or write permission differs):
 - JobViewSet, EstimateViewSet, EstWorksheetViewSet, WorkOrderViewSet — read: `CanViewJobs` → `IsAuthenticated`
+- JobViewSet, ContactViewSet, BusinessViewSet — `notes` action write: `CanManageJobs` → `IsAuthenticated`
+- WorkOrderViewSet — `tasks` POST: `CanManageJobs` → `IsAuthenticated` (PATCH/DELETE unchanged)
 - InvoiceViewSet — read: `CanViewJobs` → `CanViewFinancials`, write: `CanManageInvoicing` → `CanManageFinancials`
 - PurchaseOrderViewSet, BillViewSet — read: `CanViewJobs` → `CanViewFinancials`, write: `CanManagePurchasing` → `CanManageFinancials`
 - PriceListItemViewSet — write: `CanManageInvoicing` → `CanManageFinancials`
+- email_list/detail — read: `IsAuthenticated` → `CanManageJobs`
 
 ---
 

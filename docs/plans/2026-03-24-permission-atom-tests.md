@@ -148,11 +148,13 @@ This is the authoritative reference the tests are written against. If a test fai
 | `/api/task-templates/{id}/` | GET |
 | `/api/line-item-types/` | GET |
 | `/api/line-item-types/{id}/` | GET |
-| `/api/emails/` | GET |
-| `/api/emails/{id}/` | GET |
 | `/api/search/?q=...` | GET |
 | `/api/price-list-items/` | GET |
 | `/api/price-list-items/{id}/` | GET |
+| `/api/jobs/{id}/notes/` | POST |
+| `/api/contacts/{id}/notes/` | POST |
+| `/api/businesses/{id}/notes/` | POST |
+| `/api/work-orders/{id}/tasks/` | POST |
 
 ### Endpoints gated by `can_view_financials` (read)
 
@@ -168,23 +170,22 @@ This is the authoritative reference the tests are written against. If a test fai
 | `/api/bills/{id}/` | GET |
 | `/api/bills/{id}/line-items/` | GET |
 
-### Endpoints gated by `can_manage_jobs` (write)
+### Endpoints gated by `can_manage_jobs` (read+write)
 
 | Endpoint | Method |
 |----------|--------|
+| `/api/emails/` | GET |
+| `/api/emails/{id}/` | GET |
 | `/api/jobs/` | POST |
 | `/api/jobs/{id}/` | PUT, PATCH, DELETE |
-| `/api/jobs/{id}/notes/` | POST |
 | `/api/jobs/{id}/complete/` | POST |
 | `/api/jobs/{id}/cancel/` | POST |
 | `/api/jobs/{id}/reopen/` | POST |
 | `/api/contacts/` | POST |
 | `/api/contacts/{id}/` | PUT, PATCH, DELETE |
-| `/api/contacts/{id}/notes/` | POST |
 | `/api/businesses/` | POST |
 | `/api/businesses/{id}/` | PUT, PATCH, DELETE |
 | `/api/businesses/{id}/set-default-contact/` | POST |
-| `/api/businesses/{id}/notes/` | POST |
 | `/api/estimates/` | POST |
 | `/api/estimates/{id}/` | PUT, PATCH, DELETE |
 | `/api/estimates/{id}/line-items/` | POST |
@@ -204,7 +205,6 @@ This is the authoritative reference the tests are written against. If a test fai
 | `/api/est-worksheets/{id}/revise/` | POST |
 | `/api/work-orders/` | POST |
 | `/api/work-orders/{id}/` | PUT, PATCH, DELETE |
-| `/api/work-orders/{id}/tasks/` | POST |
 | `/api/work-orders/{id}/tasks/{tid}/` | PATCH, DELETE |
 | `/api/work-orders/{id}/bundles/` | POST |
 | `/api/work-orders/{id}/bundles/{bid}/` | PATCH, DELETE |
