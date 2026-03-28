@@ -54,7 +54,8 @@ Minibini/
 ├── fixtures/       # Test data fixtures (JSON)
 ├── tests/          # Test suite
 ├── scripts/        # Utility scripts (seed_data.sh)
-├── docs/plans/     # Design docs and implementation plans
+├── docs/designs/   # Lasting design specs, architectural decisions, feature designs
+├── docs/plans/     # Working directory for implementation plans (deleted after completion)
 ├── minibini/       # Project configuration (settings, urls)
 └── manage.py
 ```
@@ -255,7 +256,7 @@ with transaction.atomic():
 - Notes (HistoryEntry) and WO task creation are `IsAuthenticated` only
 - Email viewing requires `CanManageJobs`
 
-See `docs/plans/2026-03-24-permission-atom-redesign.md` for atoms, group mappings, and view-to-permission mapping.
+See `docs/designs/2026-03-24-permission-atom-redesign.md` for atoms, group mappings, and view-to-permission mapping.
 
 ## Permissions
 
@@ -346,4 +347,4 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - Services: `apps/*/services.py` | Settings: `minibini/settings.py`
 - API: `apps/api/*/views.py` (viewsets), `apps/api/*/serializers.py`, `apps/api/mixins.py`, `apps/api/permissions.py`
 - Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
-- Design docs: `docs/plans/`
+- Design specs: `docs/designs/` | Implementation plans (temporary): `docs/plans/`
