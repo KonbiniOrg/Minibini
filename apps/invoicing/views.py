@@ -7,13 +7,11 @@ from .models import Invoice, InvoiceLineItem
 from .services import InvoiceService
 
 @login_required
-@permission_required('core.can_view_jobs', raise_exception=True)
 def invoice_list(request):
     invoices = Invoice.objects.all().order_by('-invoice_id')
     return render(request, 'invoicing/invoice_list.html', {'invoices': invoices})
 
 @login_required
-@permission_required('core.can_view_jobs', raise_exception=True)
 def invoice_detail(request, invoice_id):
     invoice = get_object_or_404(Invoice, invoice_id=invoice_id)
     line_items = InvoiceLineItem.objects.filter(invoice=invoice).order_by('line_item_id')
@@ -30,7 +28,7 @@ def invoice_detail(request, invoice_id):
 
 
 @login_required
-@permission_required('core.can_manage_invoicing', raise_exception=True)
+@permission_required('core.can_manage_financials', raise_exception=True)
 @require_POST
 def invoice_reorder_line_item(request, invoice_id, line_item_id, direction):
     """Reorder line items within an Invoice by swapping line numbers."""

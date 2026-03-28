@@ -69,7 +69,6 @@ def _build_task_hierarchy(tasks):
 
 
 @login_required
-@permission_required('core.can_view_jobs', raise_exception=True)
 def job_list(request):
     from apps.contacts.models import Contact, Business
     from django.db.models import Case, When, Value, IntegerField
@@ -162,7 +161,6 @@ def job_list(request):
     return render(request, 'jobs/job_list.html', context)
 
 @login_required
-@permission_required('core.can_view_jobs', raise_exception=True)
 def job_detail(request, job_id):
     job = get_object_or_404(Job, job_id=job_id)
 
@@ -277,7 +275,6 @@ def job_edit(request, job_id):
 
 
 @login_required
-@permission_required('core.can_view_jobs', raise_exception=True)
 def task_list(request):
     # Only show incomplete tasks with WorkOrders (not EstWorksheets)
     tasks = Task.objects.filter(
@@ -289,7 +286,6 @@ def task_list(request):
     return render(request, 'jobs/task_list.html', {'tasks': tasks})
 
 @login_required
-@permission_required('core.can_view_jobs', raise_exception=True)
 def task_detail(request, task_id):
     task = get_object_or_404(Task, task_id=task_id)
     bleps = Blep.objects.filter(task=task).select_related('user').order_by('-start_time')
@@ -324,13 +320,11 @@ def task_edit(request, task_id):
 
 
 @login_required
-@permission_required('core.can_view_jobs', raise_exception=True)
 def work_order_list(request):
     work_orders = WorkOrder.objects.all().order_by('-work_order_id')
     return render(request, 'jobs/work_order_list.html', {'work_orders': work_orders})
 
 @login_required
-@permission_required('core.can_view_jobs', raise_exception=True)
 def work_order_detail(request, work_order_id):
     work_order = get_object_or_404(WorkOrder, work_order_id=work_order_id)
 
