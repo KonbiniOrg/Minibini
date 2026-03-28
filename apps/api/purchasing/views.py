@@ -33,6 +33,9 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         contact = self.request.query_params.get('contact')
         if contact:
             qs = qs.filter(contact_id=contact)
+        job = self.request.query_params.get('job')
+        if job:
+            qs = qs.filter(purchaseorderlineitem__job=job).distinct()
         return qs
 
     line_item_serializer_class = POLineItemSerializer

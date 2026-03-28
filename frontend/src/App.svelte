@@ -36,7 +36,10 @@
 {:else if !$user}
   <LoginPage />
 {:else}
-  <Nav />
+  <!-- Site header placeholder — will contain navigation and user info -->
+  <div class="site-header-placeholder">
+    <Nav />
+  </div>
   <Router {routes} />
   <hr>
   <footer>

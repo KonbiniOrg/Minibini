@@ -12,3 +12,12 @@ class UserSerializer(serializers.Serializer):
     email = serializers.EmailField(read_only=True)
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
+    permissions = serializers.SerializerMethodField()
+
+    def get_permissions(self, obj):
+        """Return list of custom permission codenames the user has."""
+        return sorted(
+            perm.split('.')[1]
+            for perm in obj.get_all_permissions()
+            if perm.startswith('core.can_')
+        )

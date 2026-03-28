@@ -29,11 +29,12 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     line_items = POLineItemSerializer(
         source='purchaseorderlineitem_set', many=True, read_only=True
     )
+    business_name = serializers.CharField(source='business.business_name', read_only=True)
 
     class Meta:
         model = PurchaseOrder
         fields = [
-            'po_id', 'business', 'contact', 'po_number', 'status',
+            'po_id', 'business', 'business_name', 'contact', 'po_number', 'status',
             'created_date', 'requested_date', 'issued_date',
             'received_date', 'cancel_date', 'line_items',
         ]

@@ -76,3 +76,17 @@ class EmailAPITest(BaseTestCase):
     def test_send_stub_returns_501(self):
         response = self.client.post('/api/emails/send/', {}, format='json')
         self.assertEqual(response.status_code, 501)
+
+    def test_filter_emails_by_job(self):
+        """Emails can be filtered by job."""
+        from apps.core.models import EmailRecord
+        from apps.jobs.models import Job
+        job = Job.objects.first()
+        email1 = EmailRecord.objects.create(message_id='test-filter-1@example.com', job=job)
+        email2 = EmailRecord.objects.create(message_id='test-filter-2@example.com')
+
+        response = self.client.get(f'/api/emails/?job={job.job_id}')
+        self.assertEqual(response.status_code, 200)
+        email_ids = [r['email_record_id'] for r in response.data['results']]
+        self.assertIn(email1.email_record_id, email_ids)
+        self.assertNotIn(email2.email_record_id, email_ids)

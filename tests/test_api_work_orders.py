@@ -99,3 +99,19 @@ class WorkOrderAPITest(BaseTestCase):
         if wo:
             response = self.client.get(f'/api/work-orders/{wo.pk}/tasks/')
             self.assertEqual(response.status_code, 200)
+
+    def test_task_serializer_includes_assignee_name(self):
+        """Task API response includes assignee_name when assignee is set."""
+        from apps.jobs.models import WorkOrder, Task, Job
+        job = Job.objects.first()
+        wo = WorkOrder.objects.create(job=job, status='draft')
+        task = Task.objects.create(
+            work_order=wo,
+            name='Test task',
+            assignee=self.user,
+        )
+        response = self.client.get(f'/api/work-orders/{wo.work_order_id}/')
+        self.assertEqual(response.status_code, 200)
+        task_data = response.data['tasks'][0]
+        self.assertIn('assignee_name', task_data)
+        self.assertTrue(len(task_data['assignee_name']) > 0)
