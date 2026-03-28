@@ -6,7 +6,7 @@ from apps.estimates.models import EstWorksheet
 from apps.estimates.services import WorksheetService, EstimateGenerationService
 from apps.core.services import ServiceError
 from apps.api.mixins import StatusTransitionMixin, TaskBundleMixin
-from apps.api.permissions import CanViewJobs, CanManageJobs
+from apps.api.permissions import CanManageJobs
 from .serializers import EstWorksheetSerializer, TaskSerializer, TaskBundleSerializer
 
 
@@ -19,9 +19,9 @@ class EstWorksheetViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.Model
         read_actions = ('list', 'retrieve')
         mixed_actions = ('tasks', 'bundles')
         if self.action in read_actions:
-            return [IsAuthenticated(), CanViewJobs()]
+            return [IsAuthenticated()]
         if self.action in mixed_actions and self.request.method == 'GET':
-            return [IsAuthenticated(), CanViewJobs()]
+            return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
     # TaskBundleMixin config
