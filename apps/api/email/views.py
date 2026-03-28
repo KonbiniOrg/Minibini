@@ -9,7 +9,7 @@ from .serializers import EmailRecordSerializer
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanManageJobs])
 def email_list(request):
     emails = EmailRecord.objects.select_related('temp_data').order_by('-created_at')
     from apps.api.pagination import StandardPagination
@@ -20,7 +20,7 @@ def email_list(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, CanManageJobs])
 def email_detail(request, pk):
     try:
         email = EmailRecord.objects.select_related('temp_data').get(pk=pk)
