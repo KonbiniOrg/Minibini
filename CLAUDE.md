@@ -255,7 +255,7 @@ with transaction.atomic():
 - Notes (HistoryEntry) and WO task creation are `IsAuthenticated` only
 - Email viewing requires `CanManageJobs`
 
-See `docs/plans/2026-03-07-permissions-design.md` and `docs/plans/2026-03-24-permission-atom-redesign.md` for atoms, group mappings, and view-to-permission mapping.
+See `docs/plans/2026-03-24-permission-atom-redesign.md` for atoms, group mappings, and view-to-permission mapping.
 
 ## Permissions
 
