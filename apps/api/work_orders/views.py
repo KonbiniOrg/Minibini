@@ -3,7 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from apps.jobs.models import WorkOrder
 from apps.jobs.services import WorkOrderService
 from apps.api.mixins import StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixin
-from apps.api.permissions import CanViewJobs, CanManageJobs
+from apps.api.permissions import CanManageJobs
 from apps.api.worksheets.serializers import TaskSerializer, TaskBundleSerializer
 from .serializers import WorkOrderSerializer
 
@@ -15,11 +15,17 @@ class WorkOrderViewSet(StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixi
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve', 'task_bleps')
-        mixed_actions = ('tasks', 'bundles')
+        mixed_read_actions = ('bundles',)
         if self.action in read_actions:
-            return [IsAuthenticated(), CanViewJobs()]
-        if self.action in mixed_actions and self.request.method == 'GET':
-            return [IsAuthenticated(), CanViewJobs()]
+            return [IsAuthenticated()]
+        if self.action == 'tasks':
+            # GET and POST are open to any authenticated user;
+            # PATCH and DELETE on individual tasks require can_manage_jobs
+            if self.request.method in ('GET', 'POST'):
+                return [IsAuthenticated()]
+            return [IsAuthenticated(), CanManageJobs()]
+        if self.action in mixed_read_actions and self.request.method == 'GET':
+            return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
     # TaskBundleMixin config

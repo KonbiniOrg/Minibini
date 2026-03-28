@@ -1,6 +1,5 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 from apps.core.models import User, Configuration
 from .base import FixtureTestCase
 
@@ -35,21 +34,6 @@ class UserModelFixtureTest(FixtureTestCase):
         self.assertFalse(public_user.is_staff)
         self.assertTrue(public_user.is_active)
         
-    def test_user_group_relationships(self):
-        """Test that user-group relationships work correctly with fixture data"""
-        admin_user = User.objects.get(username="admin")
-        admin_group = Group.objects.get(name="Admin")
-        self.assertIn(admin_group, admin_user.groups.all())
-
-        manager_user = User.objects.get(username="manager1")
-        manager_group = Group.objects.get(name="Manager")
-        self.assertIn(manager_group, manager_user.groups.all())
-
-        # Test new regular user has Worker group
-        public_user = User.objects.get(username="johnq")
-        worker_group = Group.objects.get(name="Worker")
-        self.assertIn(worker_group, public_user.groups.all())
-        
     def test_user_contact_relationships(self):
         """Test that user-contact relationships work correctly"""
         admin_user = User.objects.get(username="admin")
@@ -62,59 +46,6 @@ class UserModelFixtureTest(FixtureTestCase):
         self.assertEqual(public_user.contact.name, "John Q Public")
         self.assertEqual(public_user.contact.email, "john.public@example.com")
         
-    def test_create_new_user_with_existing_group(self):
-        """Test creating a new user and assigning an existing group from fixtures"""
-        worker_group = Group.objects.get(name="Worker")
-        new_user = User.objects.create_user(
-            username="newemployee",
-            email="employee@minibini.com",
-            password="testpass123"
-        )
-        new_user.groups.add(worker_group)
-        self.assertIn(worker_group, new_user.groups.all())
-        self.assertEqual(new_user.username, "newemployee")
-
-
-class GroupModelFixtureTest(FixtureTestCase):
-    """
-    Test Group model using fixture data
-    """
-    
-    def test_groups_exist_from_fixture(self):
-        """Test that all groups from fixture exist"""
-        admin_group = Group.objects.get(name="Admin")
-        self.assertEqual(admin_group.name, "Admin")
-
-        manager_group = Group.objects.get(name="Manager")
-        self.assertEqual(manager_group.name, "Manager")
-
-        worker_group = Group.objects.get(name="Worker")
-        self.assertEqual(worker_group.name, "Worker")
-
-        bookkeeper_group = Group.objects.get(name="Bookkeeper")
-        self.assertEqual(bookkeeper_group.name, "Bookkeeper")
-
-    def test_group_str_method_with_fixture_data(self):
-        """Test group string representation with fixture data"""
-        admin_group = Group.objects.get(name="Admin")
-        self.assertEqual(str(admin_group), "Admin")
-
-    def test_group_user_relationships(self):
-        """Test that groups have correct user relationships"""
-        admin_group = Group.objects.get(name="Admin")
-        admin_users = User.objects.filter(groups=admin_group)
-        self.assertEqual(admin_users.count(), 1)
-        self.assertEqual(admin_users.first().username, "admin")
-
-    def test_create_new_group(self):
-        """Test creating a new group alongside existing fixture data"""
-        new_group = Group.objects.create(
-            name="Contractor"
-        )
-        self.assertEqual(new_group.name, "Contractor")
-        self.assertEqual(Group.objects.count(), 5)  # 4 from fixture + 1 new
-
-
 class ConfigurationModelFixtureTest(FixtureTestCase):
     """
     Test Configuration model using fixture data

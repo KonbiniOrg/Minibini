@@ -3,7 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateService
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
-from apps.api.permissions import CanViewJobs, CanManageJobs
+from apps.api.permissions import CanManageJobs
 from .serializers import EstimateSerializer, EstimateLineItemSerializer
 
 
@@ -16,9 +16,9 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
         read_actions = ('list', 'retrieve')
         mixed_actions = ('line_items',)
         if self.action in read_actions:
-            return [IsAuthenticated(), CanViewJobs()]
+            return [IsAuthenticated()]
         if self.action in mixed_actions and self.request.method == 'GET':
-            return [IsAuthenticated(), CanViewJobs()]
+            return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
     # Line item mixin config

@@ -4,7 +4,7 @@ from apps.purchasing.models import PurchaseOrder, Bill
 from apps.purchasing.services import PurchaseOrderService, BillService
 from apps.core.services import ServiceError
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
-from apps.api.permissions import CanViewJobs, CanManagePurchasing
+from apps.api.permissions import CanViewFinancials, CanManageFinancials
 from .serializers import (
     PurchaseOrderSerializer, POLineItemSerializer,
     BillSerializer, BillLineItemSerializer,
@@ -20,10 +20,10 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         read_actions = ('list', 'retrieve')
         mixed_actions = ('line_items',)
         if self.action in read_actions:
-            return [IsAuthenticated(), CanViewJobs()]
+            return [IsAuthenticated(), CanViewFinancials()]
         if self.action in mixed_actions and self.request.method == 'GET':
-            return [IsAuthenticated(), CanViewJobs()]
-        return [IsAuthenticated(), CanManagePurchasing()]
+            return [IsAuthenticated(), CanViewFinancials()]
+        return [IsAuthenticated(), CanManageFinancials()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -70,10 +70,10 @@ class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
         read_actions = ('list', 'retrieve')
         mixed_actions = ('line_items',)
         if self.action in read_actions:
-            return [IsAuthenticated(), CanViewJobs()]
+            return [IsAuthenticated(), CanViewFinancials()]
         if self.action in mixed_actions and self.request.method == 'GET':
-            return [IsAuthenticated(), CanViewJobs()]
-        return [IsAuthenticated(), CanManagePurchasing()]
+            return [IsAuthenticated(), CanViewFinancials()]
+        return [IsAuthenticated(), CanManageFinancials()]
 
     def get_queryset(self):
         qs = super().get_queryset()

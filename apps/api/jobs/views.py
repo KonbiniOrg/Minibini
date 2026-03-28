@@ -7,7 +7,7 @@ from apps.jobs.models import Job
 from apps.jobs.services import JobService
 from apps.core.models import HistoryEntry
 from apps.api.mixins import StatusTransitionMixin
-from apps.api.permissions import CanViewJobs, CanManageJobs
+from apps.api.permissions import CanManageJobs
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import JobSerializer
 
@@ -18,8 +18,8 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'history'):
-            return [IsAuthenticated(), CanViewJobs()]
+        if self.action in ('list', 'retrieve', 'history', 'notes'):
+            return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
     def get_queryset(self):

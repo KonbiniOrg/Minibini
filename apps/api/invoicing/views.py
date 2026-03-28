@@ -2,7 +2,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from apps.invoicing.models import Invoice
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
-from apps.api.permissions import CanViewJobs, CanManageInvoicing
+from apps.api.permissions import CanViewFinancials, CanManageFinancials
 from .serializers import InvoiceSerializer, InvoiceLineItemSerializer
 
 
@@ -15,10 +15,10 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         read_actions = ('list', 'retrieve')
         mixed_actions = ('line_items',)
         if self.action in read_actions:
-            return [IsAuthenticated(), CanViewJobs()]
+            return [IsAuthenticated(), CanViewFinancials()]
         if self.action in mixed_actions and self.request.method == 'GET':
-            return [IsAuthenticated(), CanViewJobs()]
-        return [IsAuthenticated(), CanManageInvoicing()]
+            return [IsAuthenticated(), CanViewFinancials()]
+        return [IsAuthenticated(), CanManageFinancials()]
 
     # Line item mixin config
     line_item_serializer_class = InvoiceLineItemSerializer

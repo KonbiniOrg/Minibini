@@ -10,10 +10,10 @@ def atom_permission(perm_codename):
     return AtomPermission
 
 
+# Current atoms
+CanViewFinancials = atom_permission('can_view_financials')
 CanManageJobs = atom_permission('can_manage_jobs')
-CanViewJobs = atom_permission('can_view_jobs')
-CanManageInvoicing = atom_permission('can_manage_invoicing')
-CanManagePurchasing = atom_permission('can_manage_purchasing')
+CanManageFinancials = atom_permission('can_manage_financials')
 CanManageTime = atom_permission('can_manage_time')
 CanApproveExpenses = atom_permission('can_approve_expenses')
 CanManageConfig = atom_permission('can_manage_config')
