@@ -17,9 +17,3 @@ CanManageFinancials = atom_permission('can_manage_financials')
 CanManageTime = atom_permission('can_manage_time')
 CanApproveExpenses = atom_permission('can_approve_expenses')
 CanManageConfig = atom_permission('can_manage_config')
-
-# Temporary aliases — viewsets still import these until updated.
-# Remove after all viewsets are migrated.
-CanViewJobs = atom_permission('can_view_financials')  # approximate — read-gating is removed
-CanManageInvoicing = CanManageFinancials
-CanManagePurchasing = CanManageFinancials
