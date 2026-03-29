@@ -70,7 +70,8 @@ Minibini does not push every individual line item to QBO. Instead:
 
 | Data | Purpose | When |
 |---|---|---|
-| Chart of accounts (income + expense) | Populate accounting category mappings | On QBO connect and on-demand refresh |
+| QBO Items (Service, NonInventory) | Populate income-side category mappings | On QBO connect and on-demand refresh |
+| Chart of accounts (expense types) | Populate expense-side category mappings | On QBO connect and on-demand refresh |
 
 ### Not Synced
 
@@ -130,26 +131,33 @@ class AccountingCategory(models.Model):
     is_active = models.BooleanField(default=True)
 
     # QBO mappings (populated after connecting to QBO)
-    qbo_income_account_id = models.CharField(max_length=50, blank=True)   # For invoice lines
-    qbo_expense_account_id = models.CharField(max_length=50, blank=True)  # For bill/PO/expense lines
+    qbo_item_id = models.CharField(max_length=50, blank=True)             # QBO Item (Service/NonInventory) for invoice lines
+    qbo_expense_account_id = models.CharField(max_length=50, blank=True)  # QBO expense account for bill/PO/expense lines
 ```
 
+**Important:** QBO invoices require Item references, not direct account references. Each AccountingCategory maps to a QBO **Item** (Service or NonInventory type), which itself is linked to an income account in QBO. The `qbo_item_id` stores this Item reference. The income account mapping is configured on the Item in QBO, not in Minibini.
+
+For the expense side (bills, POs, expenses), QBO uses account-based lines (`AccountBasedExpenseLineDetail`), so `qbo_expense_account_id` maps directly to a Chart of Accounts entry.
+
 A category can map to one or both sides:
-- "CNC Machining" → income account (revenue from machining work)
-- "Design Services" → income account (non-taxable revenue)
-- "Shop Supplies" → expense account (COGS or operating expense)
-- "Materials" → both (income when sold to customer, COGS when purchased)
-- "Storage" → income account (customer material storage fees)
+- "CNC Machining" → QBO Item (revenue from machining work)
+- "Design Services" → QBO Item (non-taxable revenue)
+- "Shop Supplies" → QBO expense account (COGS or operating expense)
+- "Materials" → both (QBO Item when sold, expense account when purchased)
+- "Storage" → QBO Item (customer material storage fees)
 
 ### How It's Used
 
-**Invoice push:** Group Minibini invoice line items by accounting category + taxability. Each group becomes one QBO invoice line, mapped to the category's `qbo_income_account_id`.
+**Invoice push:** Group Minibini invoice line items by accounting category + taxability. Each group becomes one QBO invoice line, using the category's `qbo_item_id` as `ItemRef`.
 
-**Bill push:** Each bill line item maps to its category's `qbo_expense_account_id`.
+**Bill push:** Each bill line item maps to its category's `qbo_expense_account_id` via `AccountBasedExpenseLineDetail`.
 
 **Expense push:** Expense uses its accounting category to map to the correct QBO expense account.
 
-**Setup flow:** After connecting to QBO, pull the chart of accounts (income and expense types). In Settings, the shop owner maps each accounting category to the appropriate QBO accounts. This is a one-time configuration.
+**Setup flow:** After connecting to QBO, the shop owner maps each accounting category:
+- **Income side:** Select a QBO Item (Service or NonInventory) from a dropdown populated by pulling Items from QBO. The QBO Item determines which income account the revenue posts to.
+- **Expense side:** Select a QBO expense account from a dropdown populated by pulling the chart of accounts from QBO.
+This is a one-time configuration per category.
 
 **Deferred: Chart of accounts drift.** If the business renames, deactivates, or restructures accounts in QBO after mapping, Minibini's stored `qbo_income_account_id` / `qbo_expense_account_id` references will break. Needs a validation or re-sync mechanism eventually — out of scope for initial build.
 

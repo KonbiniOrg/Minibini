@@ -102,9 +102,9 @@ from apps.core.models import LineItemType
 class LineItemTypeQBOFieldsTest(TestCase):
     """Test QBO account mapping fields on LineItemType."""
 
-    def test_qbo_income_account_id_default_blank(self):
+    def test_qbo_item_id_default_blank(self):
         lit = LineItemType.objects.create(code='TST', name='Test')
-        self.assertEqual(lit.qbo_income_account_id, '')
+        self.assertEqual(lit.qbo_item_id, '')
 
     def test_qbo_expense_account_id_default_blank(self):
         lit = LineItemType.objects.create(code='TST', name='Test')
@@ -114,20 +114,20 @@ class LineItemTypeQBOFieldsTest(TestCase):
         """A category can map to both income and expense accounts."""
         lit = LineItemType.objects.create(
             code='MAT', name='Materials',
-            qbo_income_account_id='42',
+            qbo_item_id='42',
             qbo_expense_account_id='99',
         )
         lit.refresh_from_db()
-        self.assertEqual(lit.qbo_income_account_id, '42')
+        self.assertEqual(lit.qbo_item_id, '42')
         self.assertEqual(lit.qbo_expense_account_id, '99')
 
     def test_can_set_income_only(self):
         """A service category maps to income only."""
         lit = LineItemType.objects.create(
             code='SVC', name='Service',
-            qbo_income_account_id='42',
+            qbo_item_id='42',
         )
-        self.assertEqual(lit.qbo_income_account_id, '42')
+        self.assertEqual(lit.qbo_item_id, '42')
         self.assertEqual(lit.qbo_expense_account_id, '')
 ```
 
@@ -145,7 +145,7 @@ In `apps/core/models.py`, add to `LineItemType` after `is_active`:
 
 ```python
     # QBO account mappings (populated after connecting to QBO)
-    qbo_income_account_id = models.CharField(max_length=50, blank=True, default='')
+    qbo_item_id = models.CharField(max_length=50, blank=True, default='')
     qbo_expense_account_id = models.CharField(max_length=50, blank=True, default='')
 ```
 
@@ -197,7 +197,7 @@ class AccountingCategory(models.Model):
     is_active = models.BooleanField(default=True)
 
     # QBO account mappings (populated after connecting to QBO)
-    qbo_income_account_id = models.CharField(max_length=50, blank=True, default='')
+    qbo_item_id = models.CharField(max_length=50, blank=True, default='')
     qbo_expense_account_id = models.CharField(max_length=50, blank=True, default='')
 
     class Meta:
@@ -274,7 +274,7 @@ Rename the admin class:
 ```python
 @admin.register(AccountingCategory)
 class AccountingCategoryAdmin(admin.ModelAdmin):
-    list_display = ['code', 'name', 'taxable', 'is_active', 'qbo_income_account_id', 'qbo_expense_account_id']
+    list_display = ['code', 'name', 'taxable', 'is_active', 'qbo_item_id', 'qbo_expense_account_id']
     list_filter = ['taxable', 'is_active']
     search_fields = ['code', 'name']
     ordering = ['name']
@@ -493,7 +493,7 @@ class AccountingCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountingCategory
         fields = ['id', 'code', 'name', 'taxable', 'default_description', 'is_active',
-                  'qbo_income_account_id', 'qbo_expense_account_id']
+                  'qbo_item_id', 'qbo_expense_account_id']
         read_only_fields = ['id']
 ```
 
@@ -622,9 +622,9 @@ from apps.core.models import AccountingCategory
 And update test class to use new name:
 ```python
 class AccountingCategoryQBOFieldsTest(TestCase):
-    def test_qbo_income_account_id_default_blank(self):
+    def test_qbo_item_id_default_blank(self):
         cat = AccountingCategory.objects.create(code='TST', name='Test')
-        self.assertEqual(cat.qbo_income_account_id, '')
+        self.assertEqual(cat.qbo_item_id, '')
     # ... etc
 ```
 
@@ -672,43 +672,42 @@ class QBOAccountsServiceTest(TestCase):
     """Test pulling chart of accounts from QBO."""
 
     @patch('apps.qbo.services.QBOService.get_client')
-    def test_get_income_accounts(self, mock_get_client):
-        """Returns income accounts from QBO."""
+    def test_get_income_items(self, mock_get_client):
+        """Returns Service and NonInventory Items from QBO."""
         mock_client = MagicMock()
-        mock_account_1 = MagicMock()
-        mock_account_1.Id = '1'
-        mock_account_1.Name = 'CNC Revenue'
-        mock_account_1.AccountType = 'Income'
-        mock_account_1.AccountSubType = 'ServiceFeeIncome'
-        mock_account_1.Active = True
+        mock_get_client.return_value = mock_client
 
-        mock_account_2 = MagicMock()
-        mock_account_2.Id = '2'
-        mock_account_2.Name = 'Materials Revenue'
-        mock_account_2.AccountType = 'Income'
-        mock_account_2.AccountSubType = 'SalesOfProductIncome'
-        mock_account_2.Active = True
+        mock_item_1 = MagicMock()
+        mock_item_1.Id = '1'
+        mock_item_1.Name = 'CNC Machining'
+        mock_item_1.Type = 'Service'
 
-        with patch('apps.qbo.services.QBOAccountsService._query_accounts',
-                   return_value=[mock_account_1, mock_account_2]):
-            accounts = QBOAccountsService.get_income_accounts()
+        mock_item_2 = MagicMock()
+        mock_item_2.Id = '2'
+        mock_item_2.Name = 'Materials Sales'
+        mock_item_2.Type = 'NonInventory'
 
-        self.assertEqual(len(accounts), 2)
-        self.assertEqual(accounts[0]['id'], '1')
-        self.assertEqual(accounts[0]['name'], 'CNC Revenue')
+        with patch('quickbooks.objects.item.Item.filter',
+                   return_value=[mock_item_1, mock_item_2]):
+            items = QBOAccountsService.get_income_items()
+
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]['id'], '1')
+        self.assertEqual(items[0]['name'], 'CNC Machining')
 
     @patch('apps.qbo.services.QBOService.get_client')
     def test_get_expense_accounts(self, mock_get_client):
         """Returns expense and COGS accounts from QBO."""
         mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
         mock_account = MagicMock()
         mock_account.Id = '10'
         mock_account.Name = 'Shop Supplies'
         mock_account.AccountType = 'Expense'
         mock_account.AccountSubType = 'SuppliesMaterials'
-        mock_account.Active = True
 
-        with patch('apps.qbo.services.QBOAccountsService._query_accounts',
+        with patch('quickbooks.objects.account.Account.filter',
                    return_value=[mock_account]):
             accounts = QBOAccountsService.get_expense_accounts()
 
@@ -718,7 +717,7 @@ class QBOAccountsServiceTest(TestCase):
     def test_raises_without_connection(self):
         """Raises ValueError if no active QBO connection."""
         with self.assertRaises(ValueError):
-            QBOAccountsService.get_income_accounts()
+            QBOAccountsService.get_income_items()
 
 
 class QBOAccountsEndpointTest(TestCase):
@@ -734,8 +733,8 @@ class QBOAccountsEndpointTest(TestCase):
     @patch('apps.qbo.views.QBOAccountsService')
     def test_accounts_endpoint_returns_both_types(self, mock_service):
         """Endpoint returns income and expense accounts."""
-        mock_service.get_income_accounts.return_value = [
-            {'id': '1', 'name': 'Revenue', 'type': 'Income', 'sub_type': 'ServiceFeeIncome'}
+        mock_service.get_income_items.return_value = [
+            {'id': '1', 'name': 'CNC Machining', 'type': 'Service'}
         ]
         mock_service.get_expense_accounts.return_value = [
             {'id': '10', 'name': 'Supplies', 'type': 'Expense', 'sub_type': 'SuppliesMaterials'}
@@ -745,7 +744,7 @@ class QBOAccountsEndpointTest(TestCase):
         response = self.client.get('/api/qbo/accounts/')
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIn('income_accounts', data)
+        self.assertIn('income_items', data)
         self.assertIn('expense_accounts', data)
 
     def test_accounts_endpoint_requires_permission(self):
@@ -770,34 +769,40 @@ Add to `apps/qbo/services.py`:
 
 ```python
 class QBOAccountsService:
-    """Pulls chart of accounts from QBO for category mapping."""
+    """Pulls Items and chart of accounts from QBO for category mapping."""
 
     @staticmethod
-    def get_income_accounts():
-        """Return income accounts from QBO as list of dicts."""
-        accounts = QBOAccountsService._query_accounts('Income')
-        return QBOAccountsService._format_accounts(accounts)
+    def get_income_items():
+        """Return Service and NonInventory Items from QBO as list of dicts.
+        QBO invoices use Items (not accounts directly) for line items.
+        Each Item is linked to an income account in QBO."""
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        from quickbooks.objects.item import Item
+        items = Item.filter(Active=True, qb=client)
+        # Filter to Service and NonInventory types (suitable for invoice lines)
+        return [
+            {
+                'id': str(i.Id),
+                'name': i.Name,
+                'type': getattr(i, 'Type', ''),
+            }
+            for i in items
+            if getattr(i, 'Type', '') in ('Service', 'NonInventory')
+        ]
 
     @staticmethod
     def get_expense_accounts():
         """Return expense + COGS accounts from QBO as list of dicts."""
-        expense = QBOAccountsService._query_accounts('Expense')
-        cogs = QBOAccountsService._query_accounts('Cost of Goods Sold')
-        return QBOAccountsService._format_accounts(expense + cogs)
-
-    @staticmethod
-    def _query_accounts(account_type):
-        """Query QBO for accounts of a given type."""
         client = QBOService.get_client()
         if not client:
             raise ValueError('No active QBO connection')
 
         from quickbooks.objects.account import Account
-        return Account.filter(AccountType=account_type, Active=True, qb=client)
-
-    @staticmethod
-    def _format_accounts(accounts):
-        """Convert QBO Account objects to simple dicts."""
+        expense = Account.filter(AccountType='Expense', Active=True, qb=client)
+        cogs = Account.filter(AccountType='Cost of Goods Sold', Active=True, qb=client)
         return [
             {
                 'id': str(a.Id),
@@ -805,7 +810,7 @@ class QBOAccountsService:
                 'type': a.AccountType,
                 'sub_type': getattr(a, 'AccountSubType', ''),
             }
-            for a in accounts
+            for a in list(expense) + list(cogs)
         ]
 ```
 
@@ -819,12 +824,12 @@ from apps.qbo.services import QBOAccountsService
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, CanManageConfig])
 def qbo_accounts(request):
-    """Return QBO chart of accounts (income + expense) for category mapping."""
+    """Return QBO Items (for invoice lines) and expense accounts (for bills) for category mapping."""
     try:
-        income = QBOAccountsService.get_income_accounts()
+        items = QBOAccountsService.get_income_items()
         expense = QBOAccountsService.get_expense_accounts()
         return Response({
-            'income_accounts': income,
+            'income_items': items,
             'expense_accounts': expense,
         })
     except ValueError as e:
@@ -895,12 +900,12 @@ class AccountingCategoryMappingAPITest(TestCase):
         self.client.login(username='admin', password='testpass')
         response = self.client.patch(
             f'/api/accounting-categories/{self.category.pk}/',
-            data='{"qbo_income_account_id": "42"}',
+            data='{"qbo_item_id": "42"}',
             content_type='application/json',
         )
         self.assertEqual(response.status_code, 200)
         self.category.refresh_from_db()
-        self.assertEqual(self.category.qbo_income_account_id, '42')
+        self.assertEqual(self.category.qbo_item_id, '42')
 
     def test_patch_qbo_expense_account(self):
         """Can set QBO expense account via PATCH."""
@@ -920,7 +925,7 @@ class AccountingCategoryMappingAPITest(TestCase):
         response = self.client.get(f'/api/accounting-categories/{self.category.pk}/')
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIn('qbo_income_account_id', data)
+        self.assertIn('qbo_item_id', data)
         self.assertIn('qbo_expense_account_id', data)
 ```
 
@@ -941,7 +946,7 @@ class AccountingCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountingCategory
         fields = ['id', 'code', 'name', 'taxable', 'default_description', 'is_active',
-                  'qbo_income_account_id', 'qbo_expense_account_id']
+                  'qbo_item_id', 'qbo_expense_account_id']
         read_only_fields = ['id']
 ```
 
@@ -1049,7 +1054,7 @@ git commit -m "feat: expose QBO account mapping fields on AccountingCategory API
           <tr>
             <th>Category</th>
             <th>Taxable</th>
-            <th>QBO Income Account</th>
+            <th>QBO Item (Income)</th>
             <th>QBO Expense Account</th>
           </tr>
         </thead>
@@ -1060,13 +1065,13 @@ git commit -m "feat: expose QBO account mapping fields on AccountingCategory API
               <td>{cat.taxable ? 'Yes' : 'No'}</td>
               <td>
                 <select
-                  value={cat.qbo_income_account_id}
-                  onchange={(e) => saveMapping(cat, 'qbo_income_account_id', e.target.value)}
+                  value={cat.qbo_item_id}
+                  onchange={(e) => saveMapping(cat, 'qbo_item_id', e.target.value)}
                   disabled={saving === cat.id}
                 >
                   <option value="">-- None --</option>
-                  {#each qboAccounts.income_accounts as acct}
-                    <option value={acct.id}>{acct.name}</option>
+                  {#each qboAccounts.income_items as item}
+                    <option value={item.id}>{item.name}</option>
                   {/each}
                 </select>
               </td>
@@ -1169,7 +1174,7 @@ Expected: New endpoint returns categories, old endpoint returns 404.
 | Component | Location | Purpose |
 |---|---|---|
 | AccountingCategory model | `apps/core/models.py` | Renamed from LineItemType, with QBO fields |
-| QBO fields | `qbo_income_account_id`, `qbo_expense_account_id` | Map to QBO chart of accounts |
+| QBO fields | `qbo_item_id`, `qbo_expense_account_id` | Map to QBO Items (income) and accounts (expense) |
 | FK rename | All models | `line_item_type` → `accounting_category` |
 | API endpoint | `/api/accounting-categories/` | CRUD with QBO fields writable |
 | QBO accounts pull | `/api/qbo/accounts/` | Chart of accounts for mapping UI |
