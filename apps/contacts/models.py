@@ -137,6 +137,10 @@ class Business(models.Model):
         blank=True
     )
 
+    # QuickBooks Online sync IDs
+    qbo_customer_id = models.CharField(max_length=50, blank=True, default='')
+    qbo_vendor_id = models.CharField(max_length=50, blank=True, default='')
+
     class Meta:
         db_table = 'businesses'
 

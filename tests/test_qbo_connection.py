@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.utils import timezone
 from apps.qbo.models import QBOConnection, QBOSyncLog
+from apps.contacts.models import Business
 
 
 class QBOConnectionModelTest(TestCase):
@@ -103,3 +104,38 @@ class QBOSyncLogModelTest(TestCase):
         )
         self.assertEqual(log.status, 'failed')
         self.assertEqual(log.error_message, 'Authentication expired')
+
+
+class BusinessQBOFieldsTest(TestCase):
+    """Test QBO ID fields on Business model."""
+
+    def _create_business(self, name='Test Corp', **kwargs):
+        """Helper: create a Business with required Contact."""
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(
+            first_name='Test', last_name='Contact',
+            email='test@example.com', mobile_number='555-0000',
+        )
+        return Business.objects.create(
+            business_name=name, default_contact=contact, **kwargs
+        )
+
+    def test_business_has_qbo_customer_id(self):
+        """Business model has qbo_customer_id field, blank by default."""
+        biz = self._create_business()
+        self.assertEqual(biz.qbo_customer_id, '')
+
+    def test_business_has_qbo_vendor_id(self):
+        """Business model has qbo_vendor_id field, blank by default."""
+        biz = self._create_business()
+        self.assertEqual(biz.qbo_vendor_id, '')
+
+    def test_business_can_be_both_customer_and_vendor(self):
+        """A business can have both QBO customer and vendor IDs."""
+        biz = self._create_business()
+        biz.qbo_customer_id = '100'
+        biz.qbo_vendor_id = '200'
+        biz.save()
+        biz.refresh_from_db()
+        self.assertEqual(biz.qbo_customer_id, '100')
+        self.assertEqual(biz.qbo_vendor_id, '200')
