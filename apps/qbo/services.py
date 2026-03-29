@@ -169,3 +169,74 @@ class QBOCustomerSyncService:
             customer.PrimaryEmailAddr.Address = default_contact.email
 
         return customer
+
+
+class QBOVendorSyncService:
+    """Syncs Minibini Business records to QBO as Vendors."""
+
+    @staticmethod
+    def push_vendor(business):
+        """
+        Push a Business to QBO as a Vendor.
+        Returns the QBO Vendor ID.
+        Skips if already synced (qbo_vendor_id is set).
+        """
+        if business.qbo_vendor_id:
+            return business.qbo_vendor_id
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        vendor = QBOVendorSyncService._build_vendor(business)
+
+        try:
+            vendor.save(qb=client)
+            business.qbo_vendor_id = str(vendor.Id)
+            business.save(update_fields=['qbo_vendor_id'])
+
+            QBOService.log_sync(
+                entity_type='vendor',
+                entity_id=business.pk,
+                qbo_entity_type='Vendor',
+                qbo_entity_id=str(vendor.Id),
+                action='create',
+                status='success',
+            )
+            return str(vendor.Id)
+
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='vendor',
+                entity_id=business.pk,
+                qbo_entity_type='Vendor',
+                qbo_entity_id='',
+                action='create',
+                status='failed',
+                error_message=str(e),
+            )
+            raise
+
+    @staticmethod
+    def _build_vendor(business):
+        """Build a QBO Vendor object from a Business."""
+        from quickbooks.objects.vendor import Vendor
+
+        vendor = Vendor()
+        vendor.CompanyName = business.business_name
+        vendor.DisplayName = QBODisplayNameService.generate_display_name(
+            business, role='vendor'
+        )
+
+        if business.business_phone:
+            from quickbooks.objects.base import PhoneNumber
+            vendor.PrimaryPhone = PhoneNumber()
+            vendor.PrimaryPhone.FreeFormNumber = business.business_phone
+
+        default_contact = business.default_contact
+        if default_contact and default_contact.email:
+            from quickbooks.objects.base import EmailAddress
+            vendor.PrimaryEmailAddr = EmailAddress()
+            vendor.PrimaryEmailAddr.Address = default_contact.email
+
+        return vendor
