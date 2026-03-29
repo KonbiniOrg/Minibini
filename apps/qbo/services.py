@@ -269,7 +269,7 @@ class QBOInvoiceSyncService:
         from apps.invoicing.services import InvoiceGroupingService
         grouped_lines = InvoiceGroupingService.group_for_qbo(invoice)
         qbo_invoice = QBOInvoiceSyncService._build_qbo_invoice(
-            invoice, business, grouped_lines, cc, bcc
+            invoice, business, grouped_lines
         )
 
         try:
@@ -282,11 +282,20 @@ class QBOInvoiceSyncService:
 
             # Attach job statement PDF
             from apps.invoicing.pdf import generate_job_statement_pdf
-            pdf_bytes = generate_job_statement_pdf(invoice)
-            QBOInvoiceSyncService._attach_pdf(client, qbo_id, pdf_bytes, invoice)
+            statement_pdf = generate_job_statement_pdf(invoice)
+            QBOInvoiceSyncService._attach_pdf(client, qbo_id, statement_pdf, invoice)
 
-            # Send invoice email
-            QBOInvoiceSyncService._send_invoice(qbo_invoice, client, send_to)
+            # Mark as sent in QBO (so it doesn't show "needs to be sent")
+            QBOInvoiceSyncService._mark_as_sent(client, qbo_invoice)
+
+            # Download QBO invoice PDF (includes tax calc and Pay Now link)
+            qbo_invoice_pdf = QBOInvoiceSyncService._download_qbo_pdf(client, qbo_id)
+
+            # Send both PDFs via Minibini's email
+            QBOInvoiceSyncService._send_email(
+                invoice, send_to, cc, bcc,
+                qbo_invoice_pdf, statement_pdf,
+            )
 
             QBOService.log_sync(
                 entity_type='invoice',
@@ -311,21 +320,14 @@ class QBOInvoiceSyncService:
             raise
 
     @staticmethod
-    def _build_qbo_invoice(invoice, business, grouped_lines, cc=None, bcc=None):
+    def _build_qbo_invoice(invoice, business, grouped_lines):
         from quickbooks.objects.invoice import Invoice as QBOInvoice
         from quickbooks.objects.detailline import SalesItemLine, SalesItemLineDetail
-        from quickbooks.objects.base import Ref, EmailAddress
+        from quickbooks.objects.base import Ref
 
         qbo_inv = QBOInvoice()
         qbo_inv.CustomerRef = Ref()
         qbo_inv.CustomerRef.value = business.qbo_customer_id
-
-        if cc:
-            qbo_inv.BillEmailCc = EmailAddress()
-            qbo_inv.BillEmailCc.Address = cc
-        if bcc:
-            qbo_inv.BillEmailBcc = EmailAddress()
-            qbo_inv.BillEmailBcc.Address = bcc
 
         qbo_inv.Line = []
         for group in grouped_lines:
@@ -370,9 +372,51 @@ class QBOInvoiceSyncService:
             os.unlink(temp_path)
 
     @staticmethod
-    def _send_invoice(qbo_invoice, client, send_to):
-        """Send a QBO invoice via email. qbo_invoice must be a saved instance with .Id set."""
-        qbo_invoice.send(qb=client, send_to=send_to)
+    def _mark_as_sent(client, qbo_invoice):
+        """Mark a QBO invoice as sent without triggering QBO's email."""
+        from quickbooks.objects.invoice import Invoice as QBOInvoice
+        sparse_inv = QBOInvoice()
+        sparse_inv.Id = qbo_invoice.Id
+        sparse_inv.SyncToken = qbo_invoice.SyncToken
+        sparse_inv.sparse = True
+        sparse_inv.EmailStatus = 'EmailSent'
+        sparse_inv.save(qb=client)
+
+    @staticmethod
+    def _download_qbo_pdf(client, qbo_id):
+        """Download the QBO invoice as PDF bytes."""
+        from quickbooks.objects.invoice import Invoice as QBOInvoice
+        qbo_invoice = QBOInvoice.get(qbo_id, qb=client)
+        return qbo_invoice.download_pdf(qb=client)
+
+    @staticmethod
+    def _send_email(invoice, send_to, cc, bcc, qbo_invoice_pdf, statement_pdf):
+        """Send invoice email via Minibini with both PDFs attached."""
+        from apps.core.services import OutboundEmailService
+
+        job = invoice.job
+        subject = f'Invoice {invoice.invoice_number} — {job.job_number}'
+        body = (
+            f'Please find attached your invoice and job statement '
+            f'for {job.job_number}.\n\n'
+            f'The invoice includes a link to view and pay online.'
+        )
+
+        attachments = [
+            (f'Invoice_{invoice.invoice_number}.pdf',
+             qbo_invoice_pdf, 'application/pdf'),
+            (f'Job_Statement_{invoice.invoice_number}.pdf',
+             statement_pdf, 'application/pdf'),
+        ]
+
+        to_list = [send_to] if isinstance(send_to, str) else send_to
+        cc_list = [e.strip() for e in cc.split(',') if e.strip()] if cc else []
+        bcc_list = [e.strip() for e in bcc.split(',') if e.strip()] if bcc else []
+
+        OutboundEmailService.send_email(
+            to=to_list, subject=subject, body=body,
+            cc=cc_list, bcc=bcc_list, attachments=attachments,
+        )
 
 
 class QBOAccountsService:
