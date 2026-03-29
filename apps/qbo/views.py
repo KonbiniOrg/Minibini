@@ -1,5 +1,6 @@
 import datetime
 from django.conf import settings
+from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -53,6 +54,8 @@ def qbo_callback(request):
     if state != request.session.get('qbo_csrf_token'):
         return JsonResponse({'error': 'Invalid state token'}, status=400)
 
+    del request.session['qbo_csrf_token']
+
     auth_client = AuthClient(
         client_id=settings.QBO_CLIENT_ID,
         client_secret=settings.QBO_CLIENT_SECRET,
@@ -63,18 +66,19 @@ def qbo_callback(request):
 
     now = timezone.now()
 
-    # Deactivate any existing connections
-    QBOConnection.objects.filter(is_active=True).update(is_active=False)
+    with transaction.atomic():
+        # Deactivate any existing connections
+        QBOConnection.objects.filter(is_active=True).update(is_active=False)
 
-    QBOConnection.objects.create(
-        realm_id=realm_id,
-        access_token=auth_client.access_token,
-        refresh_token=auth_client.refresh_token,
-        access_token_expires_at=now + datetime.timedelta(hours=1),
-        refresh_token_expires_at=now + datetime.timedelta(days=100),
-        is_active=True,
-        connected_at=now,
-    )
+        QBOConnection.objects.create(
+            realm_id=realm_id,
+            access_token=auth_client.access_token,
+            refresh_token=auth_client.refresh_token,
+            access_token_expires_at=now + datetime.timedelta(hours=1),
+            refresh_token_expires_at=now + datetime.timedelta(days=100),
+            is_active=True,
+            connected_at=now,
+        )
 
     # Redirect to SPA settings page
     return redirect('/#/settings')

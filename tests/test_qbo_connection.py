@@ -277,8 +277,7 @@ class QBOOAuthFlowTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(QBOConnection.objects.count(), 0)
 
-    @patch('apps.qbo.views.AuthClient')
-    def test_disconnect_deactivates_connection(self, mock_auth_class):
+    def test_disconnect_deactivates_connection(self):
         """Disconnect endpoint deactivates the active connection."""
         now = timezone.now()
         conn = QBOConnection.objects.create(

@@ -1,5 +1,6 @@
 import datetime
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from apps.qbo.models import QBOConnection, QBOSyncLog
 
@@ -120,17 +121,18 @@ class QBOCustomerSyncService:
 
         try:
             customer.save(qb=client)
-            business.qbo_customer_id = str(customer.Id)
-            business.save(update_fields=['qbo_customer_id'])
+            with transaction.atomic():
+                business.qbo_customer_id = str(customer.Id)
+                business.save(update_fields=['qbo_customer_id'])
 
-            QBOService.log_sync(
-                entity_type='customer',
-                entity_id=business.pk,
-                qbo_entity_type='Customer',
-                qbo_entity_id=str(customer.Id),
-                action='create',
-                status='success',
-            )
+                QBOService.log_sync(
+                    entity_type='customer',
+                    entity_id=business.pk,
+                    qbo_entity_type='Customer',
+                    qbo_entity_id=str(customer.Id),
+                    action='create',
+                    status='success',
+                )
             return str(customer.Id)
 
         except Exception as e:
@@ -192,17 +194,18 @@ class QBOVendorSyncService:
 
         try:
             vendor.save(qb=client)
-            business.qbo_vendor_id = str(vendor.Id)
-            business.save(update_fields=['qbo_vendor_id'])
+            with transaction.atomic():
+                business.qbo_vendor_id = str(vendor.Id)
+                business.save(update_fields=['qbo_vendor_id'])
 
-            QBOService.log_sync(
-                entity_type='vendor',
-                entity_id=business.pk,
-                qbo_entity_type='Vendor',
-                qbo_entity_id=str(vendor.Id),
-                action='create',
-                status='success',
-            )
+                QBOService.log_sync(
+                    entity_type='vendor',
+                    entity_id=business.pk,
+                    qbo_entity_type='Vendor',
+                    qbo_entity_id=str(vendor.Id),
+                    action='create',
+                    status='success',
+                )
             return str(vendor.Id)
 
         except Exception as e:
