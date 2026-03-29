@@ -364,7 +364,8 @@ class QBOInvoiceSyncService:
             attachable.AttachableRef = [attachable_ref]
             attachable.FileName = filename
             attachable.ContentType = 'application/pdf'
-            attachable.save(qb=client, file_path=temp_path)
+            attachable._FilePath = temp_path
+            attachable.save(qb=client)
         finally:
             os.unlink(temp_path)
 
