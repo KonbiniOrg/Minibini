@@ -415,7 +415,13 @@ weasyprint==62.3
 pip install -r requirements.txt
 ```
 
-Note: WeasyPrint requires system dependencies (cairo, pango, etc.). On macOS: `brew install cairo pango gdk-pixbuf libffi`. On Debian: `apt-get install libcairo2 libpango-1.0-0 libgdk-pixbuf2.0-0`. Update Dockerfile if needed.
+**System dependencies required:** WeasyPrint needs cairo, pango, and gdk-pixbuf.
+- **Dockerfile:** Add `apt-get install -y libcairo2 libpango-1.0-0 libgdk-pixbuf2.0-0 libffi-dev` to the Dockerfile's system package install step.
+- **Local dev (macOS):** `brew install cairo pango gdk-pixbuf libffi`
+- **Local dev (Debian/Ubuntu):** `apt-get install libcairo2 libpango-1.0-0 libgdk-pixbuf2.0-0 libffi-dev`
+- **CLAUDE.md:** Add a "Local Development Setup" section documenting these requirements.
+
+Python packages go in `requirements.txt`, system deps in Dockerfile, local dev instructions in CLAUDE.md.
 
 - [ ] **Step 2: Write the failing test**
 

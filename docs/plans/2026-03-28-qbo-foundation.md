@@ -70,6 +70,8 @@ Run:
 pip install -r requirements.txt
 ```
 
+**Dependency management note:** Python packages go in `requirements.txt`. System-level dependencies (if any are needed by python-quickbooks) go in the `Dockerfile`. Local dev setup instructions (brew/apt commands) should be added to CLAUDE.md under a "Local Development Setup" section. This pattern applies to all new dependencies across all plans.
+
 - [ ] **Step 3: Add QBO settings to settings.py**
 
 Add after the existing `EMAIL_*` settings block (around line 140):
