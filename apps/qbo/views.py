@@ -16,6 +16,7 @@ from intuitlib.enums import Scopes
 
 from apps.api.permissions import CanManageConfig
 from apps.qbo.models import QBOConnection
+from apps.qbo.services import QBOAccountsService
 
 
 # --- OAuth browser-redirect endpoints (not DRF) ---
@@ -109,3 +110,18 @@ def qbo_disconnect(request):
     """Disconnect from QBO — deactivate the active connection."""
     QBOConnection.objects.filter(is_active=True).update(is_active=False)
     return Response({'status': 'disconnected'})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, CanManageConfig])
+def qbo_accounts(request):
+    """Return QBO Items and expense accounts for category mapping."""
+    try:
+        items = QBOAccountsService.get_income_items()
+        expense = QBOAccountsService.get_expense_accounts()
+        return Response({
+            'income_items': items,
+            'expense_accounts': expense,
+        })
+    except ValueError as e:
+        return Response({'error': str(e)}, status=400)

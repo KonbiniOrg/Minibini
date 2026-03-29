@@ -243,3 +243,50 @@ class QBOVendorSyncService:
             vendor.PrimaryEmailAddr.Address = default_contact.email
 
         return vendor
+
+
+class QBOAccountsService:
+    """Pulls Items and chart of accounts from QBO for category mapping."""
+
+    @staticmethod
+    def get_income_items():
+        """Return Service and NonInventory Items from QBO."""
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        from quickbooks.objects.item import Item
+        items = Item.filter(Active=True, qb=client)
+        return [
+            {
+                'id': str(i.Id),
+                'name': i.Name,
+                'type': getattr(i, 'Type', ''),
+            }
+            for i in items
+            if getattr(i, 'Type', '') in ('Service', 'NonInventory')
+        ]
+
+    @staticmethod
+    def get_expense_accounts():
+        """Return expense + COGS accounts from QBO."""
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        from quickbooks.objects.account import Account
+        expense = Account.filter(AccountType='Expense', Active=True, qb=client)
+        cogs = Account.filter(AccountType='Cost of Goods Sold', Active=True, qb=client)
+        seen = set()
+        results = []
+        for a in list(expense) + list(cogs):
+            aid = str(a.Id)
+            if aid not in seen:
+                seen.add(aid)
+                results.append({
+                    'id': aid,
+                    'name': a.Name,
+                    'type': a.AccountType,
+                    'sub_type': getattr(a, 'AccountSubType', ''),
+                })
+        return results
