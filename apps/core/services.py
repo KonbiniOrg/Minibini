@@ -1011,3 +1011,38 @@ class ConfigurationService:
         lit.full_clean()
         lit.save()
         return lit
+
+
+class OutboundEmailService:
+    """Sends emails via SMTP with optional attachments."""
+
+    @staticmethod
+    def send_email(to, subject, body, cc=None, bcc=None, attachments=None,
+                   from_email=None):
+        """
+        Send an email with optional CC, BCC, and file attachments.
+
+        Args:
+            to: list of recipient email addresses
+            subject: email subject line
+            body: plain text email body
+            cc: list of CC addresses (optional)
+            bcc: list of BCC addresses (optional)
+            attachments: list of (filename, content_bytes, mime_type) tuples (optional)
+            from_email: sender address (optional, defaults to DEFAULT_FROM_EMAIL)
+        """
+        from django.core.mail import EmailMessage
+
+        msg = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=from_email or settings.DEFAULT_FROM_EMAIL,
+            to=to,
+            cc=cc or [],
+            bcc=bcc or [],
+        )
+
+        for filename, content, mime_type in (attachments or []):
+            msg.attach(filename, content, mime_type)
+
+        msg.send()
