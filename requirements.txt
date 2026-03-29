@@ -25,3 +25,6 @@ python-dotenv==1.1.0
 
 # QuickBooks Online integration
 python-quickbooks==0.9.8
+
+# PDF generation
+weasyprint==63.1
