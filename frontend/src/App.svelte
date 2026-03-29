@@ -13,6 +13,7 @@
   import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
+  import SettingsPage from './routes/SettingsPage.svelte';
 
   const routes = {
     '/': Home,
@@ -26,6 +27,7 @@
     '/businesses/:id': BusinessDetailPage,
     '/jobs': JobListPage,
     '/jobs/:id': JobDetailPage,
+    '/settings': SettingsPage,
   };
 
   checkAuth();
