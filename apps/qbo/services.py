@@ -255,14 +255,16 @@ class QBOInvoiceSyncService:
             return invoice.qbo_id
 
         business = invoice.job.contact.business
-        if not business or not business.qbo_customer_id:
-            raise ValueError(
-                'Customer business must be synced to QBO before pushing invoices.'
-            )
+        if not business:
+            raise ValueError('Invoice job must have a contact with a business.')
 
         client = QBOService.get_client()
         if not client:
             raise ValueError('No active QBO connection')
+
+        # Auto-sync customer to QBO if not already synced
+        if not business.qbo_customer_id:
+            QBOCustomerSyncService.push_customer(business)
 
         from apps.invoicing.services import InvoiceGroupingService
         grouped_lines = InvoiceGroupingService.group_for_qbo(invoice)

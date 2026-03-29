@@ -150,14 +150,32 @@ class QBOInvoicePushTest(TestCase):
         self.assertEqual(log.status, 'success')
         self.assertEqual(log.qbo_entity_id, '999')
 
-    def test_push_invoice_requires_customer_synced(self):
-        """push_invoice raises if customer business has no qbo_customer_id."""
+    @patch('apps.qbo.services.QBOService.get_client')
+    @patch('apps.invoicing.pdf.generate_job_statement_pdf')
+    @patch('apps.qbo.services.QBOCustomerSyncService.push_customer')
+    def test_push_invoice_auto_syncs_customer(self, mock_push_customer, mock_pdf, mock_get_client):
+        """push_invoice auto-syncs customer to QBO if not already synced."""
         self.business.qbo_customer_id = ''
         self.business.save()
 
-        with self.assertRaises(ValueError) as ctx:
-            QBOInvoiceSyncService.push_invoice(self.invoice, send_to='x@x.com')
-        self.assertIn('customer', str(ctx.exception).lower())
+        mock_push_customer.return_value = '42'
+        mock_pdf.return_value = b'%PDF-fake'
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_qbo_invoice = MagicMock()
+        mock_qbo_invoice.Id = '999'
+        mock_qbo_invoice.save = MagicMock(return_value=mock_qbo_invoice)
+
+        with patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice',
+                   return_value=mock_qbo_invoice):
+            with patch('apps.qbo.services.QBOInvoiceSyncService._attach_pdf'):
+                with patch('apps.qbo.services.QBOInvoiceSyncService._send_invoice'):
+                    QBOInvoiceSyncService.push_invoice(
+                        self.invoice, send_to='john@example.com',
+                    )
+
+        mock_push_customer.assert_called_once_with(self.business)
 
     def test_push_invoice_requires_connection(self):
         """push_invoice raises if no active QBO connection."""
