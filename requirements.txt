@@ -20,5 +20,8 @@ pycparser==2.23
 # REST API
 djangorestframework==3.16.1
 
+# Environment variable management
+python-dotenv==1.1.0
+
 # QuickBooks Online integration
 python-quickbooks==0.9.8
