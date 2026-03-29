@@ -245,6 +245,132 @@ class QBOVendorSyncService:
         return vendor
 
 
+class QBOInvoiceSyncService:
+    """Pushes Minibini invoices to QBO."""
+
+    @staticmethod
+    def push_invoice(invoice, send_to, cc=None, bcc=None):
+        if invoice.qbo_id:
+            return invoice.qbo_id
+
+        business = invoice.job.contact.business
+        if not business or not business.qbo_customer_id:
+            raise ValueError(
+                'Customer business must be synced to QBO before pushing invoices.'
+            )
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        from apps.invoicing.services import InvoiceGroupingService
+        grouped_lines = InvoiceGroupingService.group_for_qbo(invoice)
+        qbo_invoice = QBOInvoiceSyncService._build_qbo_invoice(
+            invoice, business, grouped_lines, cc, bcc
+        )
+
+        try:
+            qbo_invoice.save(qb=client)
+            qbo_id = str(qbo_invoice.Id)
+
+            # Save qbo_id immediately so retries don't create duplicates
+            invoice.qbo_id = qbo_id
+            invoice.save(update_fields=['qbo_id'])
+
+            # Attach job statement PDF
+            from apps.invoicing.pdf import generate_job_statement_pdf
+            pdf_bytes = generate_job_statement_pdf(invoice)
+            QBOInvoiceSyncService._attach_pdf(client, qbo_id, pdf_bytes, invoice)
+
+            # Send invoice email
+            QBOInvoiceSyncService._send_invoice(client, qbo_id, send_to)
+
+            QBOService.log_sync(
+                entity_type='invoice',
+                entity_id=invoice.pk,
+                qbo_entity_type='Invoice',
+                qbo_entity_id=qbo_id,
+                action='create',
+                status='success',
+            )
+            return qbo_id
+
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='invoice',
+                entity_id=invoice.pk,
+                qbo_entity_type='Invoice',
+                qbo_entity_id='',
+                action='create',
+                status='failed',
+                error_message=str(e),
+            )
+            raise
+
+    @staticmethod
+    def _build_qbo_invoice(invoice, business, grouped_lines, cc=None, bcc=None):
+        from quickbooks.objects.invoice import Invoice as QBOInvoice
+        from quickbooks.objects.detailline import SalesItemLine, SalesItemLineDetail
+        from quickbooks.objects.base import Ref, EmailAddress
+
+        qbo_inv = QBOInvoice()
+        qbo_inv.CustomerRef = Ref()
+        qbo_inv.CustomerRef.value = business.qbo_customer_id
+
+        if cc:
+            qbo_inv.BillEmailCc = EmailAddress()
+            qbo_inv.BillEmailCc.Address = cc
+        if bcc:
+            qbo_inv.BillEmailBcc = EmailAddress()
+            qbo_inv.BillEmailBcc.Address = bcc
+
+        qbo_inv.Line = []
+        for group in grouped_lines:
+            line = SalesItemLine()
+            line.Amount = float(group['amount'])
+            line.Description = group['description']
+
+            detail = SalesItemLineDetail()
+            if group['qbo_item_id']:
+                detail.ItemRef = Ref()
+                detail.ItemRef.value = group['qbo_item_id']
+
+            detail.TaxCodeRef = Ref()
+            detail.TaxCodeRef.value = 'TAX' if group['taxable'] else 'NON'
+
+            line.SalesItemLineDetail = detail
+            qbo_inv.Line.append(line)
+
+        return qbo_inv
+
+    @staticmethod
+    def _attach_pdf(client, qbo_invoice_id, pdf_bytes, invoice):
+        from quickbooks.objects.attachable import Attachable, AttachableRef
+        import tempfile
+        import os
+
+        filename = f"job_statement_{invoice.invoice_number}.pdf"
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+            f.write(pdf_bytes)
+            temp_path = f.name
+
+        try:
+            attachable = Attachable()
+            attachable_ref = AttachableRef()
+            attachable_ref.EntityRef = {'type': 'Invoice', 'value': qbo_invoice_id}
+            attachable.AttachableRef = [attachable_ref]
+            attachable.FileName = filename
+            attachable.ContentType = 'application/pdf'
+            attachable.save(qb=client, file_path=temp_path)
+        finally:
+            os.unlink(temp_path)
+
+    @staticmethod
+    def _send_invoice(client, qbo_invoice_id, send_to):
+        from quickbooks.objects.invoice import Invoice as QBOInvoice
+        QBOInvoice.send(qbo_invoice_id, send_to=send_to, qb=client)
+
+
 class QBOAccountsService:
     """Pulls Items and chart of accounts from QBO for category mapping."""
 
