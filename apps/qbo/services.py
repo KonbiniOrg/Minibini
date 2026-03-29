@@ -67,3 +67,33 @@ class QBOService:
             status=status,
             error_message=error_message,
         )
+
+
+class QBODisplayNameService:
+    """Generates QBO-compliant DisplayNames for customer/vendor records."""
+
+    QBO_DISPLAY_NAME_MAX = 500
+
+    @staticmethod
+    def generate_display_name(business, role):
+        """
+        Generate a QBO DisplayName for a Business.
+
+        Rules:
+        - First QBO record for this business uses the plain business_name.
+        - Second record gets a suffix: (Customer) or (Vendor).
+        - role: 'customer' or 'vendor'
+        """
+        name = business.business_name
+        other_role_field = (
+            'qbo_vendor_id' if role == 'customer' else 'qbo_customer_id'
+        )
+
+        other_exists = bool(getattr(business, other_role_field, ''))
+
+        if other_exists:
+            suffix = f' ({role.capitalize()})'
+            max_base = QBODisplayNameService.QBO_DISPLAY_NAME_MAX - len(suffix)
+            name = name[:max_base] + suffix
+
+        return name
