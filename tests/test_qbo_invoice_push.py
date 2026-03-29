@@ -1,12 +1,16 @@
 from unittest.mock import patch, MagicMock, ANY
 from decimal import Decimal
-from django.test import TestCase
+from django.test import TestCase, Client
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
 from apps.qbo.services import QBOInvoiceSyncService
 from apps.qbo.models import QBOSyncLog
+
+User = get_user_model()
 
 
 class InvoiceQBOFieldsTest(TestCase):
@@ -159,3 +163,83 @@ class QBOInvoicePushTest(TestCase):
         """push_invoice raises if no active QBO connection."""
         with self.assertRaises(ValueError):
             QBOInvoiceSyncService.push_invoice(self.invoice, send_to='x@x.com')
+
+
+class SendToQBOEndpointTest(TestCase):
+    """Test the /api/invoices/{id}/send-to-qbo/ endpoint."""
+
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        self.api_client = Client()
+        self.user = User.objects.create_user(username='manager', password='testpass')
+        perm_fin = Permission.objects.get(codename='can_manage_financials', content_type__app_label='core')
+        self.user.user_permissions.add(perm_fin)
+        self.user = User.objects.get(pk=self.user.pk)
+
+        self.contact = Contact.objects.create(
+            first_name='John', last_name='Doe',
+            email='john@example.com', mobile_number='555-0000',
+        )
+        self.business = Business.objects.create(
+            business_name='Acme Corp', default_contact=self.contact,
+            qbo_customer_id='42',
+        )
+        self.contact.business = self.business
+        self.contact.save()
+        self.job = Job.objects.create(contact=self.contact, job_number='JOB-2026-0001')
+        self.invoice = Invoice.objects.create(job=self.job)
+
+    @patch('apps.qbo.services.QBOInvoiceSyncService.push_invoice')
+    def test_send_to_qbo_success(self, mock_push):
+        """POST to send-to-qbo triggers push and returns success."""
+        mock_push.return_value = '999'
+
+        self.api_client.login(username='manager', password='testpass')
+        response = self.api_client.post(
+            f'/api/invoices/{self.invoice.pk}/send-to-qbo/',
+            data='{"send_to": "john@example.com"}',
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['qbo_id'], '999')
+        mock_push.assert_called_once()
+
+    def test_send_to_qbo_requires_send_to(self):
+        """POST without send_to returns 400."""
+        self.api_client.login(username='manager', password='testpass')
+        response = self.api_client.post(
+            f'/api/invoices/{self.invoice.pk}/send-to-qbo/',
+            data='{}',
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_send_to_qbo_requires_can_manage_financials(self):
+        """Endpoint requires can_manage_financials permission."""
+        User.objects.create_user(username='worker', password='testpass')
+        self.api_client.login(username='worker', password='testpass')
+        response = self.api_client.post(
+            f'/api/invoices/{self.invoice.pk}/send-to-qbo/',
+            data='{"send_to": "x@x.com"}',
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_send_to_qbo_already_synced(self):
+        """Returns existing QBO ID if already synced."""
+        self.invoice.qbo_id = '888'
+        self.invoice.save()
+
+        self.api_client.login(username='manager', password='testpass')
+        response = self.api_client.post(
+            f'/api/invoices/{self.invoice.pk}/send-to-qbo/',
+            data='{"send_to": "x@x.com"}',
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['qbo_id'], '888')
