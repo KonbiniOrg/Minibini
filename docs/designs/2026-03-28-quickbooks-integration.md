@@ -32,7 +32,7 @@ Minibini does not push every individual line item to QBO. Instead:
    ```
    Each line maps to the appropriate QBO income account via the accounting category. QBO auto-calculates tax on taxable lines using Automated Sales Tax (AST) based on customer location — Minibini only needs to know taxable vs. not, never the rate.
 
-3. **Delivery** — The job statement PDF is uploaded as an attachment to the QBO invoice. QBO sends one email to the customer containing the invoice (with "Pay Now" link) and the attached statement. QBO invoice boilerplate says "See attached document for cost breakdown."
+3. **Delivery** — The job statement PDF is attached to the QBO invoice. Minibini downloads the QBO invoice PDF, marks the QBO invoice as sent (`EmailStatus = "EmailSent"`), then sends both PDFs to the customer via Minibini's own email system with full control over recipients, CC/BCC, from address, and body text. QBO's email delivery is not used (its CC/BCC API support is unreliable).
 
 4. **Progress billing** — A job can have multiple invoices. Each pushes to QBO independently: `"Job JOB-2026-0042 Progress Billing #2: CNC Machining — $6,000.00"`. Each gets its own job statement PDF. No multi-job invoices — every invoice is for exactly one job.
 
@@ -186,12 +186,13 @@ Job complete (or progress billing milestone reached)
   → Minibini groups invoice line items by accounting category + taxability
   → Minibini creates QBO Invoice with grouped lines, each mapped to QBO income account
   → Minibini uploads job statement PDF as attachment to QBO Invoice
-  → Minibini sets BillEmailCc/BillEmailBcc on QBO invoice if additional recipients needed
-  → Minibini triggers QBO to send invoice email (sendTo= primary contact's email)
+  → Minibini marks QBO invoice as sent (EmailStatus = "EmailSent" via sparse update)
+  → Minibini downloads the QBO invoice PDF (GET /invoice/{id}/pdf)
+  → Minibini sends email to customer with both PDFs attached (QBO invoice + job statement)
+  → Email sent via Minibini's email system with full control over To/CC/BCC/from/body
   → Store qbo_invoice_id on Minibini invoice record
-  → Customer receives email: QBO invoice (with tax calculated by AST) + attached statement
-  → Customer pays via QBO (credit card, ACH, check)
-  → Minibini polls/receives webhook for payment status
+  → Customer pays via QBO (credit card, ACH, check — Pay Now link in QBO invoice PDF)
+  → Minibini polls for payment status (hourly management command)
   → Payment status displayed on job detail in Minibini
 ```
 
@@ -199,17 +200,23 @@ Job complete (or progress billing milestone reached)
 
 ### Invoice Email Delivery
 
-Email addresses come from Minibini, not QBO. The QBO Customer record's email is irrelevant — Minibini controls recipients at send time.
+Email is sent by Minibini, not QBO. QBO's invoice email API has unreliable CC/BCC support (`BillEmailCc`/`BillEmailBcc` often silently fail to persist, and the `/send` endpoint only accepts a single `sendTo` address). Instead, Minibini handles all email delivery directly.
 
-- **Primary recipient** (`sendTo=`): single email address, typically the Contact who ordered the work. Pre-filled from the Contact's email in Minibini; user can override before sending.
-- **CC** (`BillEmailCc`): comma-separated. For AP departments, project managers, or other stakeholders. Set on the QBO Invoice object before calling send.
-- **BCC** (`BillEmailBcc`): same format. For internal copies if needed.
+**Flow:**
+1. After creating and attaching the job statement to the QBO invoice, Minibini marks the invoice as sent in QBO (`EmailStatus = "EmailSent"` via sparse update). This prevents QBO from showing a "needs to be sent" indicator.
+2. Minibini downloads the QBO invoice PDF (`GET /invoice/{id}/pdf`). This PDF includes the QBO-calculated tax, total, and "Pay Now" link.
+3. Minibini sends an email to the customer with both PDFs attached: the QBO invoice (for payment) and the job statement (for cost breakdown).
 
-This supports the common case of different contacts from the same business ordering work — each gets their invoice directly, with AP copied as needed.
+**Recipients:**
+- **To**: single email address, typically the Contact who ordered the work. Pre-filled from the Contact's email; user can override before sending.
+- **CC**: comma-separated. For AP departments, project managers, or other stakeholders.
+- **BCC**: same format. For internal copies if needed.
 
-**Deferred: AP contact / AP email on Business.** Currently CC/BCC are entered manually by the user at send time. In future, the Business model may need an `ap_email` field (or an AP Contact reference) so that CC can be auto-populated for invoice sends. This would save the user from entering the AP department email every time they invoice a given customer.
+This supports the common case of different contacts from the same business ordering work — each gets their invoice directly, with AP copied as needed. All recipient fields are fully controlled by Minibini.
 
-Email subject and body template are configured in QBO's settings (not via API). The job statement PDF and QBO "Review and Pay" link are included automatically.
+**Deferred: AP contact / AP email on Business.** Currently CC/BCC are entered manually by the user at send time. In future, the Business model may need an `ap_email` field (or an AP Contact reference) so that CC can be auto-populated for invoice sends.
+
+Email subject, body template, and from address are configured in Minibini (not QBO). The QBO invoice PDF includes a "Review and Pay" link automatically.
 
 ---
 
@@ -430,7 +437,8 @@ class Expense(models.Model):
 - Settings UI for mapping accounting categories to QBO accounts
 - Job statement PDF generation
 - Invoice push: group line items by category + taxability, create QBO invoice
-- PDF attachment upload + invoice send via QBO API
+- PDF attachment upload, mark as sent in QBO, download QBO invoice PDF
+- Invoice email delivery via Minibini (not QBO) with To/CC/BCC support
 - Payment status polling (management command + cron, hourly)
 
 ### Phase 3: Bill Push
@@ -472,3 +480,4 @@ class Expense(models.Model):
 10. **Async queue** — not for this cycle. Synchronous API calls with SPA handling UX (spinner, success/error). Hourly payment poll via management command + cron. Queue infrastructure likely coming app-wide in a future cycle.
 11. **Webhook vs polling** — polling, hourly. Management command on a cron. Sufficient for payment status updates.
 12. **DisplayName collisions** — first QBO record for a business uses the plain name; second role gets a suffix ("(Customer)" or "(Vendor)"). No renaming of existing records. CompanyName identical on both.
+13. **Invoice email delivery** — Minibini sends invoice emails, not QBO. QBO's CC/BCC API is unreliable (`BillEmailCc`/`BillEmailBcc` silently fail; `/send` endpoint only accepts `sendTo`). Instead: mark QBO invoice as sent via `EmailStatus = "EmailSent"` sparse update, download QBO invoice PDF, send both PDFs via Minibini's email system with full recipient control.
