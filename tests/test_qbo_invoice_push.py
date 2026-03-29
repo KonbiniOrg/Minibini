@@ -189,6 +189,89 @@ class QBOInvoicePushTest(TestCase):
             QBOInvoiceSyncService.push_invoice(self.invoice, send_to='x@x.com')
 
 
+class IndividualContactInvoicePushTest(TestCase):
+    """Test pushing an invoice for a contact without a business."""
+
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        self.cat_cnc = AccountingCategory.objects.create(
+            code='CNC', name='CNC Machining', taxable=True,
+            qbo_item_id='100',
+        )
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Solo',
+            email='jane@solo.com', mobile_number='555-0001',
+        )
+        # No business — individual contact
+        self.job = Job.objects.create(contact=self.contact, job_number='JOB-2026-0001')
+        self.invoice = Invoice.objects.create(job=self.job)
+        InvoiceLineItem.objects.create(
+            invoice=self.invoice, qty=1, price=Decimal('500.00'),
+            description='CNC work', accounting_category=self.cat_cnc,
+        )
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    @patch('apps.invoicing.pdf.generate_job_statement_pdf')
+    @patch('apps.qbo.services.QBOCustomerSyncService.push_contact_as_customer')
+    def test_push_invoice_auto_syncs_individual_contact(self, mock_push_contact, mock_pdf, mock_get_client):
+        """push_invoice auto-syncs individual contact as QBO customer."""
+        mock_push_contact.return_value = '77'
+        mock_pdf.return_value = b'%PDF-fake'
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_qbo_invoice = MagicMock()
+        mock_qbo_invoice.Id = '999'
+        mock_qbo_invoice.save = MagicMock(return_value=mock_qbo_invoice)
+
+        with patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice',
+                   return_value=mock_qbo_invoice):
+            with patch('apps.qbo.services.QBOInvoiceSyncService._attach_pdf'):
+                with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
+                     patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
+                     patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
+                    QBOInvoiceSyncService.push_invoice(
+                        self.invoice, send_to='jane@solo.com',
+                    )
+
+        mock_push_contact.assert_called_once_with(self.contact)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.qbo_id, '999')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    @patch('apps.invoicing.pdf.generate_job_statement_pdf')
+    def test_push_invoice_uses_contact_qbo_id(self, mock_pdf, mock_get_client):
+        """push_invoice passes contact's qbo_customer_id to _build_qbo_invoice."""
+        self.contact.qbo_customer_id = '77'
+        self.contact.save()
+
+        mock_pdf.return_value = b'%PDF-fake'
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_qbo_invoice = MagicMock()
+        mock_qbo_invoice.Id = '999'
+        mock_qbo_invoice.save = MagicMock(return_value=mock_qbo_invoice)
+
+        with patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice',
+                   return_value=mock_qbo_invoice) as mock_build:
+            with patch('apps.qbo.services.QBOInvoiceSyncService._attach_pdf'):
+                with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
+                     patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
+                     patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
+                    QBOInvoiceSyncService.push_invoice(
+                        self.invoice, send_to='jane@solo.com',
+                    )
+
+        # Verify _build_qbo_invoice received the correct qbo_customer_id
+        call_args = mock_build.call_args
+        self.assertEqual(call_args[0][1], '77')  # second positional arg is qbo_customer_id
+
+
 class SendToQBOEndpointTest(TestCase):
     """Test the /api/invoices/{id}/send-to-qbo/ endpoint."""
 

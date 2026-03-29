@@ -174,6 +174,74 @@ class QBOCustomerSyncService:
         return customer
 
 
+    @staticmethod
+    def push_contact_as_customer(contact):
+        """
+        Push an individual Contact (no business) to QBO as a Customer.
+        Returns the QBO Customer ID.
+        Skips if already synced (qbo_customer_id is set).
+        """
+        if contact.qbo_customer_id:
+            return contact.qbo_customer_id
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        customer = QBOCustomerSyncService._build_contact_customer(contact)
+
+        try:
+            customer.save(qb=client)
+            with transaction.atomic():
+                contact.qbo_customer_id = str(customer.Id)
+                contact.save(update_fields=['qbo_customer_id'])
+
+                QBOService.log_sync(
+                    entity_type='contact_customer',
+                    entity_id=contact.pk,
+                    qbo_entity_type='Customer',
+                    qbo_entity_id=str(customer.Id),
+                    action='create',
+                    status='success',
+                )
+            return str(customer.Id)
+
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='contact_customer',
+                entity_id=contact.pk,
+                qbo_entity_type='Customer',
+                qbo_entity_id='',
+                action='create',
+                status='failed',
+                error_message=str(e),
+            )
+            raise
+
+    @staticmethod
+    def _build_contact_customer(contact):
+        """Build a QBO Customer object from an individual Contact."""
+        from quickbooks.objects.customer import Customer
+
+        customer = Customer()
+        customer.DisplayName = contact.name
+        customer.GivenName = contact.first_name
+        customer.FamilyName = contact.last_name
+
+        if contact.email:
+            from quickbooks.objects.base import EmailAddress
+            customer.PrimaryEmailAddr = EmailAddress()
+            customer.PrimaryEmailAddr.Address = contact.email
+
+        phone = contact.phone()
+        if phone:
+            from quickbooks.objects.base import PhoneNumber
+            customer.PrimaryPhone = PhoneNumber()
+            customer.PrimaryPhone.FreeFormNumber = phone
+
+        return customer
+
+
 class QBOVendorSyncService:
     """Syncs Minibini Business records to QBO as Vendors."""
 
@@ -254,22 +322,28 @@ class QBOInvoiceSyncService:
         if invoice.qbo_id:
             return invoice.qbo_id
 
-        business = invoice.job.contact.business
-        if not business:
-            raise ValueError('Invoice job must have a contact with a business.')
+        contact = invoice.job.contact
+        business = contact.business
 
         client = QBOService.get_client()
         if not client:
             raise ValueError('No active QBO connection')
 
-        # Auto-sync customer to QBO if not already synced
-        if not business.qbo_customer_id:
-            QBOCustomerSyncService.push_customer(business)
+        # Resolve QBO customer ID: business path or individual contact path
+        if business:
+            if not business.qbo_customer_id:
+                QBOCustomerSyncService.push_customer(business)
+            qbo_customer_id = business.qbo_customer_id
+        else:
+            if not contact.qbo_customer_id:
+                QBOCustomerSyncService.push_contact_as_customer(contact)
+                contact.refresh_from_db()
+            qbo_customer_id = contact.qbo_customer_id
 
         from apps.invoicing.services import InvoiceGroupingService
         grouped_lines = InvoiceGroupingService.group_for_qbo(invoice)
         qbo_invoice = QBOInvoiceSyncService._build_qbo_invoice(
-            invoice, business, grouped_lines
+            invoice, qbo_customer_id, grouped_lines
         )
 
         try:
@@ -286,7 +360,7 @@ class QBOInvoiceSyncService:
             QBOInvoiceSyncService._attach_pdf(client, qbo_id, statement_pdf, invoice)
 
             # Mark as sent in QBO (so it doesn't show "needs to be sent")
-            QBOInvoiceSyncService._mark_as_sent(client, qbo_invoice)
+            QBOInvoiceSyncService._mark_as_sent(client, qbo_id)
 
             # Download QBO invoice PDF (includes tax calc and Pay Now link)
             qbo_invoice_pdf = QBOInvoiceSyncService._download_qbo_pdf(client, qbo_id)
@@ -320,14 +394,14 @@ class QBOInvoiceSyncService:
             raise
 
     @staticmethod
-    def _build_qbo_invoice(invoice, business, grouped_lines):
+    def _build_qbo_invoice(invoice, qbo_customer_id, grouped_lines):
         from quickbooks.objects.invoice import Invoice as QBOInvoice
         from quickbooks.objects.detailline import SalesItemLine, SalesItemLineDetail
         from quickbooks.objects.base import Ref
 
         qbo_inv = QBOInvoice()
         qbo_inv.CustomerRef = Ref()
-        qbo_inv.CustomerRef.value = business.qbo_customer_id
+        qbo_inv.CustomerRef.value = qbo_customer_id
 
         qbo_inv.Line = []
         for group in grouped_lines:
@@ -372,15 +446,12 @@ class QBOInvoiceSyncService:
             os.unlink(temp_path)
 
     @staticmethod
-    def _mark_as_sent(client, qbo_invoice):
+    def _mark_as_sent(client, qbo_id):
         """Mark a QBO invoice as sent without triggering QBO's email."""
         from quickbooks.objects.invoice import Invoice as QBOInvoice
-        sparse_inv = QBOInvoice()
-        sparse_inv.Id = qbo_invoice.Id
-        sparse_inv.SyncToken = qbo_invoice.SyncToken
-        sparse_inv.sparse = True
-        sparse_inv.EmailStatus = 'EmailSent'
-        sparse_inv.save(qb=client)
+        fresh_inv = QBOInvoice.get(qbo_id, qb=client)
+        fresh_inv.EmailStatus = 'EmailSent'
+        fresh_inv.save(qb=client)
 
     @staticmethod
     def _download_qbo_pdf(client, qbo_id):

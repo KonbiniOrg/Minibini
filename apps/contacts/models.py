@@ -23,6 +23,11 @@ class Contact(models.Model):
     home_number = models.CharField(max_length=20, blank=True)
     business = models.ForeignKey('Business', on_delete=models.SET_NULL, null=True, blank=True, related_name='contacts')
 
+    # QBO customer ID — only set for individual contacts (no business).
+    # Contacts with a business use business.qbo_customer_id instead.
+    # blank=True required because ContactService calls full_clean().
+    qbo_customer_id = models.CharField(max_length=50, null=True, blank=True)
+
     class Meta:
         db_table = 'contacts'
 
@@ -48,6 +53,13 @@ class Contact(models.Model):
         # Validate at least one phone number is provided
         if not any([self.work_number, self.mobile_number, self.home_number]):
             raise ValidationError('At least one phone number (work, mobile, or home) is required.')
+
+        # Contact can't have both a business and a direct QBO customer ID
+        if self.business_id and self.qbo_customer_id:
+            raise ValidationError(
+                'A contact cannot have both a business and a direct QBO customer ID. '
+                'Use the business\'s QBO customer ID instead.'
+            )
 
     def save(self, *args, **kwargs):
         """Override save to update business default contact"""

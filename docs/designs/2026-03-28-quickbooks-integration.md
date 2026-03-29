@@ -94,6 +94,11 @@ Contacts and Businesses in Minibini map to Customers and Vendors in QBO. These a
   - Customer record created when the first invoice is pushed for that business
   - Vendor record created when the first bill is pushed from that business
 - Store `qbo_customer_id` and `qbo_vendor_id` on the Business model. A business can have one, both, or neither.
+- **Individual contacts** (no business) can also be QBO customers. `qbo_customer_id` is stored on the Contact model directly. A contact cannot have both a `business` FK and a `qbo_customer_id` — one or the other.
+
+### Future: Richer QBO Customer Data
+
+The current customer sync pushes minimal fields (name, email, phone). Future work should populate additional QBO Customer fields: billing address, shipping address, payment terms, tax exemption status, and notes. This applies to both business and individual customer creation.
 
 ### DisplayName Uniqueness
 
@@ -480,4 +485,13 @@ class Expense(models.Model):
 10. **Async queue** — not for this cycle. Synchronous API calls with SPA handling UX (spinner, success/error). Hourly payment poll via management command + cron. Queue infrastructure likely coming app-wide in a future cycle.
 11. **Webhook vs polling** — polling, hourly. Management command on a cron. Sufficient for payment status updates.
 12. **DisplayName collisions** — first QBO record for a business uses the plain name; second role gets a suffix ("(Customer)" or "(Vendor)"). No renaming of existing records. CompanyName identical on both.
-13. **Invoice email delivery** — Minibini sends invoice emails, not QBO. QBO's CC/BCC API is unreliable (`BillEmailCc`/`BillEmailBcc` silently fail; `/send` endpoint only accepts `sendTo`). Instead: mark QBO invoice as sent via `EmailStatus = "EmailSent"` sparse update, download QBO invoice PDF, send both PDFs via Minibini's email system with full recipient control.
+13. **Invoice email delivery** — Minibini sends invoice emails, not QBO. QBO's CC/BCC API is unreliable (`BillEmailCc`/`BillEmailBcc` silently fail; `/send` endpoint only accepts `sendTo`). Instead: mark QBO invoice as sent via `EmailStatus = "EmailSent"` (re-fetch full invoice, not sparse update — QBO rejects sparse updates with empty Lines), download QBO invoice PDF, send both PDFs via Minibini's email system with full recipient control.
+
+---
+
+## Future Work: Invoice Delivery Enhancements
+
+1. **Custom email message** — Allow a custom message body when sending an invoice, instead of the current fixed boilerplate.
+2. **Email templates** — Configurable boilerplate emails (e.g., "Standard invoice", "Overdue reminder") that can be selected and edited before sending.
+3. **View QBO invoice** — Ability to view the saved QBO invoice PDF from within Minibini, and possibly a direct link to the invoice in QBO's web UI.
+4. **Error handling and resend** — Better error handling for partial failures during the push flow (invoice created but email failed, etc.). A "resend to QBO" option that checks whether QBO already has the data (and we just need to update our local state) vs. nothing was received and a full resend is needed.
