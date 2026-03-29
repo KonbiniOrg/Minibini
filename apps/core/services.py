@@ -864,7 +864,7 @@ class TaxCalculationService:
     Calculates tax for line items and documents.
 
     Supports:
-    - LineItemType default taxability
+    - AccountingCategory default taxability
     - Line item taxable_override
     - Line item tax_rate_override
     - Customer tax multiplier (for sales exemptions)
@@ -877,7 +877,7 @@ class TaxCalculationService:
         Determine if a line item is taxable.
 
         Uses taxable_override if set, otherwise falls back to
-        the line_item_type's default taxability.
+        the accounting_category's default taxability.
 
         Args:
             line_item: A BaseLineItem subclass instance
@@ -887,8 +887,8 @@ class TaxCalculationService:
         """
         if line_item.taxable_override is not None:
             return line_item.taxable_override
-        if line_item.line_item_type:
-            return line_item.line_item_type.taxable
+        if line_item.accounting_category:
+            return line_item.accounting_category.taxable
         return False  # Default to non-taxable if no type
 
     @staticmethod
@@ -1011,7 +1011,3 @@ class ConfigurationService:
         cat.full_clean()
         cat.save()
         return cat
-
-    # Backward-compatible aliases
-    create_line_item_type = create_accounting_category
-    update_line_item_type = update_accounting_category

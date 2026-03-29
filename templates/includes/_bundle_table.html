@@ -3,12 +3,12 @@ Shared bundle table for template detail and worksheet detail pages.
 
 Expected context:
 - container_items: list of ('bundle', bundle_data, sort_order) or ('task', item, sort_order)
-    bundle_data: {id, name, line_item_type_name, items: [{id, name, description, units, rate, est_qty}]}
+    bundle_data: {id, name, accounting_category_name, items: [{id, name, description, units, rate, est_qty}]}
     item: {id, name, description, units, rate, est_qty, mapping_strategy, remove_id}
 - reorder_container_url: URL name for container-level reorder (takes container_id, item_type, item_id, direction)
 - reorder_in_bundle_url: URL name for within-bundle reorder (takes container_id, item_id, direction)
 - container_id: PK of the parent container
-- line_item_types: queryset of LineItemType for bundle form
+- accounting_categories: queryset of AccountingCategory for bundle form
 - can_edit: boolean - whether editing is allowed
 {% endcomment %}
 
@@ -55,7 +55,7 @@ Expected context:
         <tr class="bundle-group-row">
             {% if can_edit %}<td></td>{% endif %}
             <td class="bundle-header" colspan="5">
-                Bundle: "{{ item_data.name }}" ({{ item_data.line_item_type_name }})
+                Bundle: "{{ item_data.name }}" ({{ item_data.accounting_category_name }})
             </td>
             <td></td>
             {% if can_edit %}
@@ -180,10 +180,10 @@ Expected context:
             <input type="text" name="bundle_description" id="bundle_description" style="width: 300px;">
         </div>
         <div>
-            <label for="line_item_type">Line Item Type:</label>
-            <select name="line_item_type" id="line_item_type">
+            <label for="accounting_category">Accounting Category:</label>
+            <select name="accounting_category" id="accounting_category">
                 <option value="">-- Select Type --</option>
-                {% for lit in line_item_types %}
+                {% for lit in accounting_categories %}
                 <option value="{{ lit.pk }}">{{ lit.name }}</option>
                 {% endfor %}
             </select>

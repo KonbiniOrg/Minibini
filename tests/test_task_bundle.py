@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from apps.jobs.models import Task, TaskBundle, WorkOrder, Job
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
 class TaskBundleTestBase(TestCase):
@@ -32,7 +32,7 @@ class TaskBundleTestBase(TestCase):
         self.work_order = WorkOrder.objects.create(
             job=self.job, status='incomplete'
         )
-        self.line_item_type, _ = LineItemType.objects.get_or_create(
+        self.accounting_category, _ = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': True}
         )
 
@@ -44,7 +44,7 @@ class TaskBundleModelTest(TaskBundleTestBase):
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet,
             name='Prep Work',
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
             sort_order=1
         )
         self.assertEqual(bundle.get_container(), self.worksheet)
@@ -54,7 +54,7 @@ class TaskBundleModelTest(TaskBundleTestBase):
         bundle = TaskBundle.objects.create(
             work_order=self.work_order,
             name='Prep Work',
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
             sort_order=1
         )
         self.assertEqual(bundle.get_container(), self.work_order)
@@ -66,7 +66,7 @@ class TaskBundleModelTest(TaskBundleTestBase):
             est_worksheet=self.worksheet,
             work_order=self.work_order,
             name='Bad Bundle',
-            line_item_type=self.line_item_type
+            accounting_category=self.accounting_category
         )
         with self.assertRaises(ValidationError):
             bundle.full_clean()
@@ -75,7 +75,7 @@ class TaskBundleModelTest(TaskBundleTestBase):
         """Bundle with no container should fail validation."""
         bundle = TaskBundle(
             name='Orphan Bundle',
-            line_item_type=self.line_item_type
+            accounting_category=self.accounting_category
         )
         with self.assertRaises(ValidationError):
             bundle.full_clean()
@@ -84,11 +84,11 @@ class TaskBundleModelTest(TaskBundleTestBase):
         """Bundles should be ordered by sort_order then name."""
         b2 = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='B Bundle',
-            line_item_type=self.line_item_type, sort_order=2
+            accounting_category=self.accounting_category, sort_order=2
         )
         b1 = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='A Bundle',
-            line_item_type=self.line_item_type, sort_order=1
+            accounting_category=self.accounting_category, sort_order=1
         )
         bundles = list(self.worksheet.bundles.all())
         self.assertEqual(bundles, [b1, b2])
@@ -97,7 +97,7 @@ class TaskBundleModelTest(TaskBundleTestBase):
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet,
             name='Prep Work',
-            line_item_type=self.line_item_type
+            accounting_category=self.accounting_category
         )
         self.assertIn('Prep Work', str(bundle))
 
@@ -115,7 +115,7 @@ class TaskMappingFieldsTest(TaskBundleTestBase):
     def test_task_with_bundle(self):
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
-            line_item_type=self.line_item_type, sort_order=1
+            accounting_category=self.accounting_category, sort_order=1
         )
         task = Task.objects.create(
             est_worksheet=self.worksheet, name='Sand Floor',
@@ -145,7 +145,7 @@ class TaskMappingFieldsTest(TaskBundleTestBase):
         """Task with a bundle FK but non-bundle strategy should fail."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
-            line_item_type=self.line_item_type
+            accounting_category=self.accounting_category
         )
         task = Task(
             est_worksheet=self.worksheet, name='Bad Task',
@@ -158,7 +158,7 @@ class TaskMappingFieldsTest(TaskBundleTestBase):
         """Deleting a TaskBundle should null out the FK on tasks, not cascade."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
-            line_item_type=self.line_item_type
+            accounting_category=self.accounting_category
         )
         task = Task.objects.create(
             est_worksheet=self.worksheet, name='Sand Floor',
@@ -171,7 +171,7 @@ class TaskMappingFieldsTest(TaskBundleTestBase):
     def test_multiple_tasks_in_bundle(self):
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
-            line_item_type=self.line_item_type
+            accounting_category=self.accounting_category
         )
         t1 = Task.objects.create(
             est_worksheet=self.worksheet, name='Sand Floor',

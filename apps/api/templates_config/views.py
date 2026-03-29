@@ -77,10 +77,6 @@ class AccountingCategoryViewSet(viewsets.ModelViewSet):
         )
 
 
-# Backward-compatible alias
-LineItemTypeViewSet = AccountingCategoryViewSet
-
-
 @api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated, CanManageConfig])
 def settings_view(request):

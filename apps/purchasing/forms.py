@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from .models import PurchaseOrder, Bill, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 from apps.inventory.models import PriceListItem
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
 class PurchaseOrderForm(forms.ModelForm):
@@ -54,7 +54,7 @@ class POManualLineItemForm(forms.ModelForm):
     """Form for creating a manual PO line item (not linked to a Price List Item)"""
     class Meta:
         model = PurchaseOrderLineItem
-        fields = ['description', 'qty', 'units', 'price', 'line_item_type']
+        fields = ['description', 'qty', 'units', 'price', 'accounting_category']
         widgets = {
             'qty': forms.NumberInput(attrs={'step': '0.01'}),
             'price': forms.NumberInput(attrs={'step': '0.01'}),
@@ -62,13 +62,13 @@ class POManualLineItemForm(forms.ModelForm):
         }
         labels = {
             'price': 'Price',
-            'line_item_type': 'Type',
+            'accounting_category': 'Type',
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
-        self.fields['line_item_type'].required = True
+        self.fields['accounting_category'].queryset = AccountingCategory.objects.filter(is_active=True)
+        self.fields['accounting_category'].required = True
 
 
 class POPriceListLineItemForm(forms.Form):
@@ -132,8 +132,8 @@ class BillLineItemForm(forms.Form):
         label="Unit Price",
         help_text="Price per unit (required if not using price list item)"
     )
-    line_item_type = forms.ModelChoiceField(
-        queryset=LineItemType.objects.filter(is_active=True),
+    accounting_category = forms.ModelChoiceField(
+        queryset=AccountingCategory.objects.filter(is_active=True),
         required=False,
         label="Type",
         help_text="Required if not using price list item"
@@ -149,9 +149,9 @@ class BillLineItemForm(forms.Form):
         price_list_item = cleaned_data.get('price_list_item')
         description = cleaned_data.get('description')
         price = cleaned_data.get('price')
-        line_item_type = cleaned_data.get('line_item_type')
+        accounting_category = cleaned_data.get('accounting_category')
 
-        # If no price list item, description, price, and line_item_type are required
+        # If no price list item, description, price, and accounting_category are required
         if not price_list_item:
             if not description:
                 raise forms.ValidationError(
@@ -161,7 +161,7 @@ class BillLineItemForm(forms.Form):
                 raise forms.ValidationError(
                     'Price is required when entering a line item manually'
                 )
-            if not line_item_type:
+            if not accounting_category:
                 raise forms.ValidationError(
                     'Type is required when entering a line item manually'
                 )

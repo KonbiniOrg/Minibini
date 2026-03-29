@@ -45,7 +45,7 @@ docker compose up                       # Full stack (app, mysql, nginx)
 Minibini/
 ├── apps/
 │   ├── api/        # REST API (DRF viewsets, serializers, permissions, mixins)
-│   ├── core/       # User, Configuration, BaseLineItem, LineItemType, HistoryEntry, Email
+│   ├── core/       # User, Configuration, BaseLineItem, AccountingCategory, HistoryEntry, Email
 │   ├── jobs/       # Job, WorkOrder, Task, TaskBundle, Blep
 │   ├── estimates/  # Estimate, EstWorksheet, EstimateLineItem, Templates
 │   ├── contacts/   # Contact, Business, PaymentTerms
@@ -80,7 +80,7 @@ Minibini/
 - **User** - Custom AbstractUser, links to Contact. Has 6 custom permission atoms (see Permissions section)
 - **Configuration** - Key-value store for system settings (document numbering sequences/counters, email settings). **Never add fields** - all settings are key-value pairs
 - **HistoryEntry** - Audit log and notes linked to any entity (jobs, contacts, businesses)
-- **LineItemType** - Categorizes line items (e.g., labor, materials)
+- **AccountingCategory** - Categorizes line items (e.g., labor, materials)
 - **AbstractWorkContainer** (Abstract) - Base for EstWorksheet and WorkOrder
 - **BaseLineItem** (Abstract) - Shared fields for all line items: task, price_list_item, line_number, qty, units, description, price_currency. Validates items can't have both task AND price_list_item
 - **EmailRecord** - Permanent record linking emails to jobs (message_id only, email server is source of truth)
@@ -162,7 +162,7 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 - `/api/jobs/`, `/api/contacts/`, `/api/businesses/`, `/api/payment-terms/`
 - `/api/estimates/`, `/api/est-worksheets/`, `/api/work-orders/`
 - `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
-- `/api/price-list-items/`, `/api/work-order-templates/`, `/api/task-templates/`, `/api/line-item-types/`
+- `/api/price-list-items/`, `/api/work-order-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
 - `/api/emails/`, `/api/search/`, `/api/settings/`
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
@@ -273,9 +273,9 @@ See `docs/designs/2026-03-24-permission-atom-redesign.md` for atoms, group mappi
 | `can_manage_financials` | Full CRUD on invoices, POs, bills, price list items |
 | `can_manage_time` | Edit/delete anyone's time entries (shifts + bleps) |
 | `can_approve_expenses` | Approve/reject expenses over threshold |
-| `can_manage_config` | Settings, templates, line item types, user admin |
+| `can_manage_config` | Settings, templates, accounting categories, user admin |
 
-**`IsAuthenticated` (no atom):** Read access to jobs, work orders, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, line item types, search, price list items. Write access to notes on jobs/contacts/businesses and adding tasks to work orders.
+**`IsAuthenticated` (no atom):** Read access to jobs, work orders, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items. Write access to notes on jobs/contacts/businesses and adding tasks to work orders.
 
 **Implicit:** All authenticated users can track own time and submit own expenses.
 

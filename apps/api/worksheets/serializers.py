@@ -10,7 +10,7 @@ class TaskSerializer(serializers.ModelSerializer):
         model = Task
         fields = [
             'task_id', 'name', 'description', 'sort_order', 'status',
-            'units', 'rate', 'est_qty', 'line_item_type',
+            'units', 'rate', 'est_qty', 'accounting_category',
             'mapping_strategy', 'bundle', 'parent_task', 'assignee',
             'assignee_name',
         ]
@@ -29,7 +29,7 @@ class TaskBundleSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaskBundle
         fields = [
-            'id', 'name', 'description', 'line_item_type',
+            'id', 'name', 'description', 'accounting_category',
             'sort_order', 'tasks',
         ]
         read_only_fields = ['id', 'sort_order']

@@ -10,7 +10,7 @@ class TaskTemplateSerializer(serializers.ModelSerializer):
         model = TaskTemplate
         fields = [
             'template_id', 'template_name', 'description',
-            'units', 'rate', 'line_item_type', 'is_active',
+            'units', 'rate', 'accounting_category', 'is_active',
         ]
         read_only_fields = ['template_id']
 
@@ -20,7 +20,7 @@ class TemplateBundleSerializer(serializers.ModelSerializer):
         model = TemplateBundle
         fields = [
             'id', 'name', 'description',
-            'line_item_type', 'sort_order',
+            'accounting_category', 'sort_order',
         ]
         read_only_fields = ['id']
 
@@ -63,7 +63,3 @@ class AccountingCategorySerializer(serializers.ModelSerializer):
         model = AccountingCategory
         fields = ['id', 'code', 'name', 'taxable', 'default_description', 'is_active']
         read_only_fields = ['id']
-
-
-# Backward-compatible alias
-LineItemTypeSerializer = AccountingCategorySerializer

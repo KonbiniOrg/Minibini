@@ -325,7 +325,7 @@ def bill_add_line_item(request, bill_id):
                     qty=qty,
                     units=form.cleaned_data['units'],
                     price=form.cleaned_data['price'],
-                    line_item_type=form.cleaned_data['line_item_type'],
+                    accounting_category=form.cleaned_data['accounting_category'],
                 )
                 messages.success(request, f'Line item "{line_item.description}" added manually')
 

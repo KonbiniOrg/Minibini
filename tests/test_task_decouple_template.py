@@ -1,6 +1,6 @@
 """
 Tests for decoupling Task from TaskTemplate.
-Part 1: Task.line_item_type field, copying at creation points, use in estimate generation.
+Part 1: Task.accounting_category field, copying at creation points, use in estimate generation.
 Part 2: Line item type review at estimate generation.
 """
 from decimal import Decimal
@@ -12,89 +12,89 @@ from apps.jobs.models import TaskBundle, Job, Task, WorkOrder
 from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.estimates.services import EstimateGenerationService
 from apps.jobs.services import TaskService
-from apps.core.models import LineItemType, Configuration, User
+from apps.core.models import AccountingCategory, Configuration, User
 from apps.contacts.models import Contact
 
 
-class TaskLineItemTypeFieldTests(TestCase):
-    """Tests that Task has a line_item_type FK field."""
+class TaskAccountingCategoryFieldTests(TestCase):
+    """Tests that Task has a accounting_category FK field."""
 
     def setUp(self):
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.lit = LineItemType.objects.create(name="Labor", code="LBR")
+        self.lit = AccountingCategory.objects.create(name="Labor", code="LBR")
 
-    def test_task_can_have_line_item_type(self):
-        """Task should have a line_item_type FK field."""
+    def test_task_can_have_accounting_category(self):
+        """Task should have a accounting_category FK field."""
         task = Task.objects.create(
             est_worksheet=self.worksheet,
             name="Sand Surface",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         task.refresh_from_db()
-        self.assertEqual(task.line_item_type, self.lit)
+        self.assertEqual(task.accounting_category, self.lit)
 
-    def test_task_line_item_type_nullable(self):
-        """Task.line_item_type can be null (manual tasks, work order tasks)."""
+    def test_task_accounting_category_nullable(self):
+        """Task.accounting_category can be null (manual tasks, work order tasks)."""
         task = Task.objects.create(
             est_worksheet=self.worksheet,
             name="Manual Task",
         )
-        self.assertIsNone(task.line_item_type)
+        self.assertIsNone(task.accounting_category)
 
-    def test_task_line_item_type_protected(self):
-        """Cannot delete LineItemType if a Task references it."""
+    def test_task_accounting_category_protected(self):
+        """Cannot delete AccountingCategory if a Task references it."""
         Task.objects.create(
             est_worksheet=self.worksheet,
             name="Sand",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         with self.assertRaises(ProtectedError):
             self.lit.delete()
 
 
-class GenerateTaskCopiesLineItemTypeTests(TestCase):
-    """Tests that TaskTemplate.generate_task() copies line_item_type to the Task."""
+class GenerateTaskCopiesAccountingCategoryTests(TestCase):
+    """Tests that TaskTemplate.generate_task() copies accounting_category to the Task."""
 
     def setUp(self):
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.lit = LineItemType.objects.create(name="Labor", code="LBR")
+        self.lit = AccountingCategory.objects.create(name="Labor", code="LBR")
 
-    def test_generate_task_copies_line_item_type(self):
-        """generate_task() should copy line_item_type from template to task."""
+    def test_generate_task_copies_accounting_category(self):
+        """generate_task() should copy accounting_category from template to task."""
         tt = TaskTemplate.objects.create(
-            template_name="Sand", rate=Decimal("50.00"), line_item_type=self.lit
+            template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit
         )
         task = tt.generate_task(self.worksheet, est_qty=Decimal("2.00"))
-        self.assertEqual(task.line_item_type, self.lit)
+        self.assertEqual(task.accounting_category, self.lit)
 
-    def test_generate_task_null_line_item_type(self):
-        """generate_task() with template having no line_item_type produces task with null."""
+    def test_generate_task_null_accounting_category(self):
+        """generate_task() with template having no accounting_category produces task with null."""
         tt = TaskTemplate.objects.create(
-            template_name="Check", rate=Decimal("0.00"), line_item_type=None
+            template_name="Check", rate=Decimal("0.00"), accounting_category=None
         )
         task = tt.generate_task(self.worksheet, est_qty=Decimal("1.00"))
-        self.assertIsNone(task.line_item_type)
+        self.assertIsNone(task.accounting_category)
 
-    def test_generate_tasks_for_worksheet_copies_line_item_type(self):
-        """Full template generation copies line_item_type to each task."""
+    def test_generate_tasks_for_worksheet_copies_accounting_category(self):
+        """Full template generation copies accounting_category to each task."""
         wot = WorkOrderTemplate.objects.create(template_name="Cabinet")
         tt = TaskTemplate.objects.create(
-            template_name="Sand", rate=Decimal("50.00"), line_item_type=self.lit
+            template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit
         )
         TemplateTaskAssociation.objects.create(
             work_order_template=wot, task_template=tt,
             est_qty=Decimal("2.00"), mapping_strategy='direct'
         )
         tasks = wot.generate_tasks_for_worksheet(self.worksheet)
-        self.assertEqual(tasks[0].line_item_type, self.lit)
+        self.assertEqual(tasks[0].accounting_category, self.lit)
 
 
-class CopyPointsPreserveLineItemTypeTests(TestCase):
-    """Tests that all task-copying code preserves line_item_type."""
+class CopyPointsPreserveAccountingCategoryTests(TestCase):
+    """Tests that all task-copying code preserves accounting_category."""
 
     def setUp(self):
         Configuration.objects.get_or_create(
@@ -106,14 +106,14 @@ class CopyPointsPreserveLineItemTypeTests(TestCase):
         )
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
-        self.lit = LineItemType.objects.create(name="Labor", code="LBR")
+        self.lit = AccountingCategory.objects.create(name="Labor", code="LBR")
 
-    def test_create_new_version_copies_line_item_type(self):
-        """EstWorksheet.create_new_version() should copy line_item_type to new tasks."""
+    def test_create_new_version_copies_accounting_category(self):
+        """EstWorksheet.create_new_version() should copy accounting_category to new tasks."""
         ws = EstWorksheet.objects.create(job=self.job)
         Task.objects.create(
             est_worksheet=ws, name="Sand", rate=Decimal("50.00"),
-            est_qty=Decimal("2.00"), line_item_type=self.lit,
+            est_qty=Decimal("2.00"), accounting_category=self.lit,
         )
         # Generate estimate so worksheet can create new version
         service = EstimateGenerationService()
@@ -123,14 +123,14 @@ class CopyPointsPreserveLineItemTypeTests(TestCase):
 
         new_ws = ws.create_new_version()
         new_task = new_ws.task_set.first()
-        self.assertEqual(new_task.line_item_type, self.lit)
+        self.assertEqual(new_task.accounting_category, self.lit)
 
-    def test_copy_worksheet_tasks_copies_line_item_type(self):
-        """_copy_worksheet_tasks should copy line_item_type to work order tasks."""
+    def test_copy_worksheet_tasks_copies_accounting_category(self):
+        """_copy_worksheet_tasks should copy accounting_category to work order tasks."""
         ws = EstWorksheet.objects.create(job=self.job)
         source_task = Task.objects.create(
             est_worksheet=ws, name="Sand", rate=Decimal("50.00"),
-            est_qty=Decimal("2.00"), line_item_type=self.lit,
+            est_qty=Decimal("2.00"), accounting_category=self.lit,
         )
         # Create estimate + line item referencing the task
         service = EstimateGenerationService()
@@ -139,11 +139,11 @@ class CopyPointsPreserveLineItemTypeTests(TestCase):
 
         wo = WorkOrder.objects.create(job=self.job)
         tasks = TaskService._copy_worksheet_tasks(line_item, wo)
-        self.assertEqual(tasks[0].line_item_type, self.lit)
+        self.assertEqual(tasks[0].accounting_category, self.lit)
 
 
-class EstimateGenerationUsesTaskLineItemTypeTests(TestCase):
-    """Tests that estimate generation reads task.line_item_type directly."""
+class EstimateGenerationUsesTaskAccountingCategoryTests(TestCase):
+    """Tests that estimate generation reads task.accounting_category directly."""
 
     def setUp(self):
         Configuration.objects.get_or_create(
@@ -155,25 +155,25 @@ class EstimateGenerationUsesTaskLineItemTypeTests(TestCase):
         )
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
-        self.lit_labor, _ = LineItemType.objects.get_or_create(code="LBR", defaults={"name": "Labor"})
-        self.lit_material, _ = LineItemType.objects.get_or_create(code="MAT", defaults={"name": "Material"})
+        self.lit_labor, _ = AccountingCategory.objects.get_or_create(code="LBR", defaults={"name": "Labor"})
+        self.lit_material, _ = AccountingCategory.objects.get_or_create(code="MAT", defaults={"name": "Material"})
 
-    def test_direct_task_uses_own_line_item_type(self):
-        """Direct task's line_item_type (not template's) should be used in estimate generation."""
+    def test_direct_task_uses_own_accounting_category(self):
+        """Direct task's accounting_category (not template's) should be used in estimate generation."""
         ws = EstWorksheet.objects.create(job=self.job)
-        # Create task with line_item_type directly - no template needed
+        # Create task with accounting_category directly - no template needed
         Task.objects.create(
             est_worksheet=ws, name="Sand", rate=Decimal("50.00"),
-            est_qty=Decimal("2.00"), line_item_type=self.lit_labor,
+            est_qty=Decimal("2.00"), accounting_category=self.lit_labor,
         )
 
         service = EstimateGenerationService()
         estimate = service.generate_estimate_from_worksheet(ws)
         line_item = estimate.estimatelineitem_set.first()
-        self.assertEqual(line_item.line_item_type, self.lit_labor)
+        self.assertEqual(line_item.accounting_category, self.lit_labor)
 
-    def test_task_without_line_item_type_gets_default(self):
-        """Task without line_item_type should get default type during estimate generation."""
+    def test_task_without_accounting_category_gets_default(self):
+        """Task without accounting_category should get default type during estimate generation."""
         ws = EstWorksheet.objects.create(job=self.job)
         Task.objects.create(
             est_worksheet=ws, name="Manual Task", rate=Decimal("10.00"),
@@ -183,8 +183,8 @@ class EstimateGenerationUsesTaskLineItemTypeTests(TestCase):
         service = EstimateGenerationService()
         estimate = service.generate_estimate_from_worksheet(ws)
         line_item = estimate.estimatelineitem_set.first()
-        # Should have a line_item_type (the default fallback)
-        self.assertIsNotNone(line_item.line_item_type)
+        # Should have a accounting_category (the default fallback)
+        self.assertIsNotNone(line_item.accounting_category)
 
 
 # =============================================================================
@@ -193,7 +193,7 @@ class EstimateGenerationUsesTaskLineItemTypeTests(TestCase):
 
 
 class EstimateGenerationReviewPageTests(TestCase):
-    """Tests for the estimate generation confirmation page with line_item_type review."""
+    """Tests for the estimate generation confirmation page with accounting_category review."""
 
     def setUp(self):
         Configuration.objects.get_or_create(
@@ -208,19 +208,19 @@ class EstimateGenerationReviewPageTests(TestCase):
         self.client.login(username='testuser', password='testpass')
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
-        self.lit_labor, _ = LineItemType.objects.get_or_create(
+        self.lit_labor, _ = AccountingCategory.objects.get_or_create(
             code="LBR", defaults={"name": "Labor"}
         )
-        self.lit_material, _ = LineItemType.objects.get_or_create(
+        self.lit_material, _ = AccountingCategory.objects.get_or_create(
             code="MAT", defaults={"name": "Material"}
         )
 
     def test_get_shows_untyped_tasks(self):
-        """GET should identify direct tasks missing line_item_type."""
+        """GET should identify direct tasks missing accounting_category."""
         ws = EstWorksheet.objects.create(job=self.job)
         Task.objects.create(
             est_worksheet=ws, name="Typed Task", rate=Decimal("50.00"),
-            est_qty=Decimal("2.00"), line_item_type=self.lit_labor,
+            est_qty=Decimal("2.00"), accounting_category=self.lit_labor,
         )
         Task.objects.create(
             est_worksheet=ws, name="Untyped Task", rate=Decimal("30.00"),
@@ -235,8 +235,8 @@ class EstimateGenerationReviewPageTests(TestCase):
         self.assertEqual(len(untyped), 1)
         self.assertEqual(untyped[0].name, "Untyped Task")
 
-    def test_get_passes_line_item_types(self):
-        """GET should pass available line_item_types to template."""
+    def test_get_passes_accounting_categories(self):
+        """GET should pass available accounting_categories to template."""
         ws = EstWorksheet.objects.create(job=self.job)
         Task.objects.create(
             est_worksheet=ws, name="Task", rate=Decimal("10.00"),
@@ -245,10 +245,10 @@ class EstimateGenerationReviewPageTests(TestCase):
 
         url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
         response = self.client.get(url)
-        self.assertIn('line_item_types', response.context)
+        self.assertIn('accounting_categories', response.context)
 
     def test_excluded_tasks_not_in_untyped(self):
-        """Excluded tasks should not appear in untyped_tasks even if they lack line_item_type."""
+        """Excluded tasks should not appear in untyped_tasks even if they lack accounting_category."""
         ws = EstWorksheet.objects.create(job=self.job)
         Task.objects.create(
             est_worksheet=ws, name="Excluded Task", rate=Decimal("10.00"),
@@ -261,10 +261,10 @@ class EstimateGenerationReviewPageTests(TestCase):
         self.assertEqual(len(untyped), 0)
 
     def test_bundled_tasks_not_in_untyped(self):
-        """Bundled tasks should not appear in untyped_tasks (bundle has its own line_item_type)."""
+        """Bundled tasks should not appear in untyped_tasks (bundle has its own accounting_category)."""
         ws = EstWorksheet.objects.create(job=self.job)
         bundle = TaskBundle.objects.create(
-            est_worksheet=ws, name="Bundle", line_item_type=self.lit_labor,
+            est_worksheet=ws, name="Bundle", accounting_category=self.lit_labor,
         )
         Task.objects.create(
             est_worksheet=ws, name="Bundled Task", rate=Decimal("10.00"),
@@ -276,8 +276,8 @@ class EstimateGenerationReviewPageTests(TestCase):
         untyped = response.context['untyped_tasks']
         self.assertEqual(len(untyped), 0)
 
-    def test_post_saves_line_item_types_and_generates(self):
-        """POST with task_line_item_type assignments should save them then generate estimate."""
+    def test_post_saves_accounting_categories_and_generates(self):
+        """POST with task_accounting_category assignments should save them then generate estimate."""
         ws = EstWorksheet.objects.create(job=self.job)
         task = Task.objects.create(
             est_worksheet=ws, name="Untyped Task", rate=Decimal("50.00"),
@@ -286,15 +286,15 @@ class EstimateGenerationReviewPageTests(TestCase):
 
         url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
         response = self.client.post(url, {
-            f'task_line_item_type_{task.pk}': self.lit_labor.pk,
+            f'task_accounting_category_{task.pk}': self.lit_labor.pk,
         })
 
         # Should redirect to the new estimate
         self.assertEqual(response.status_code, 302)
 
-        # Task should now have line_item_type saved
+        # Task should now have accounting_category saved
         task.refresh_from_db()
-        self.assertEqual(task.line_item_type, self.lit_labor)
+        self.assertEqual(task.accounting_category, self.lit_labor)
 
         # Estimate should have been generated
         estimate = Estimate.objects.filter(job=self.job).first()
@@ -309,7 +309,7 @@ class EstimateGenerationReviewPageTests(TestCase):
         )
 
         url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
-        # POST without any task_line_item_type assignments
+        # POST without any task_accounting_category assignments
         response = self.client.post(url)
 
         # Should redirect back with error (no estimate created)
@@ -321,7 +321,7 @@ class EstimateGenerationReviewPageTests(TestCase):
         ws = EstWorksheet.objects.create(job=self.job)
         Task.objects.create(
             est_worksheet=ws, name="Typed Task", rate=Decimal("50.00"),
-            est_qty=Decimal("2.00"), line_item_type=self.lit_labor,
+            est_qty=Decimal("2.00"), accounting_category=self.lit_labor,
         )
 
         url = reverse('estimates:estworksheet_generate_estimate', args=[ws.pk])
@@ -333,8 +333,8 @@ class EstimateGenerationReviewPageTests(TestCase):
         self.assertIsNotNone(estimate)
 
 
-class TaskDetailLineItemTypeTests(TestCase):
-    """Tests that task_detail shows line_item_type."""
+class TaskDetailAccountingCategoryTests(TestCase):
+    """Tests that task_detail shows accounting_category."""
 
     def setUp(self):
         self.user = User.objects.create_user(username='testuser', password='testpass', is_superuser=True)
@@ -342,21 +342,21 @@ class TaskDetailLineItemTypeTests(TestCase):
         self.client.login(username='testuser', password='testpass')
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
-        self.lit = LineItemType.objects.create(name="Labor", code="LBR")
+        self.lit = AccountingCategory.objects.create(name="Labor", code="LBR")
 
-    def test_task_detail_shows_line_item_type(self):
-        """Task detail should display line_item_type when set."""
+    def test_task_detail_shows_accounting_category(self):
+        """Task detail should display accounting_category when set."""
         ws = EstWorksheet.objects.create(job=self.job)
         task = Task.objects.create(
-            est_worksheet=ws, name="Sand", line_item_type=self.lit,
+            est_worksheet=ws, name="Sand", accounting_category=self.lit,
         )
         url = reverse('jobs:task_detail', args=[task.pk])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Labor")
 
-    def test_task_detail_no_line_item_type(self):
-        """Task detail should handle missing line_item_type gracefully."""
+    def test_task_detail_no_accounting_category(self):
+        """Task detail should handle missing accounting_category gracefully."""
         ws = EstWorksheet.objects.create(job=self.job)
         task = Task.objects.create(
             est_worksheet=ws, name="Manual Task",

@@ -7,7 +7,7 @@ from apps.purchasing.models import (
 )
 from apps.purchasing.services import PurchaseOrderService, BillService
 from apps.core.services import NotFoundError
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact, Business
 
 
@@ -26,7 +26,7 @@ class PurchasingTestBase(TestCase):
         )
         self.contact.business = self.business
         self.contact.save()
-        self.lit = LineItemType.objects.create(
+        self.lit = AccountingCategory.objects.create(
             code='MAT', name='Material', taxable=True,
         )
 
@@ -139,7 +139,7 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
         """Add a manual line item to a PO."""
         li = PurchaseOrderService.add_line_item(
             self.po.pk, description='Steel plate', qty=Decimal('5.00'),
-            price=Decimal('10.00'), line_item_type=self.lit,
+            price=Decimal('10.00'), accounting_category=self.lit,
         )
         self.assertEqual(li.purchase_order, self.po)
         self.assertEqual(li.description, 'Steel plate')
@@ -151,7 +151,7 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
         pli = PriceListItem.objects.create(
             code='STL-001', description='Steel plate', units='sheets',
             purchase_price=Decimal('50.00'), selling_price=Decimal('75.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         li = PurchaseOrderService.add_line_item_from_pli(
             self.po.pk, pli.pk, qty=Decimal('10.00'),
@@ -164,11 +164,11 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
         """Reorder line items via service."""
         li1 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po, description='Item 1',
-            line_number=1, qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         li2 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po, description='Item 2',
-            line_number=2, qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+            line_number=2, qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
         PurchaseOrderService.reorder_line_item(li1.pk, 'down')
         li1.refresh_from_db()
@@ -180,11 +180,11 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
         """Cannot reorder line items on a non-draft PO."""
         li1 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po, description='Item 1',
-            line_number=1, qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         PurchaseOrderLineItem.objects.create(
             purchase_order=self.po, description='Item 2',
-            line_number=2, qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+            line_number=2, qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
         PurchaseOrderService.update_status(self.po.pk, 'issued')
         with self.assertRaises(ValidationError):
@@ -194,11 +194,11 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
         """Delete a line item and renumber."""
         li1 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po, description='Item 1',
-            line_number=1, qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         li2 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po, description='Item 2',
-            line_number=2, qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+            line_number=2, qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
         PurchaseOrderService.delete_line_item(li1.pk)
         self.assertFalse(PurchaseOrderLineItem.objects.filter(pk=li1.pk).exists())
@@ -209,7 +209,7 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
         """Cannot delete line items on a non-draft PO."""
         li1 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po, description='Item 1',
-            line_number=1, qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         PurchaseOrderService.update_status(self.po.pk, 'issued')
         with self.assertRaises(ValidationError):
@@ -234,12 +234,12 @@ class BillServiceCreateTest(PurchasingTestBase):
         PurchaseOrderLineItem.objects.create(
             purchase_order=po, description='Item 1',
             line_number=1, qty=Decimal('5.00'), price=Decimal('10.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         PurchaseOrderLineItem.objects.create(
             purchase_order=po, description='Item 2',
             line_number=2, qty=Decimal('3.00'), price=Decimal('20.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         # PO must be issued before creating a bill from it
         PurchaseOrderService.update_status(po.pk, 'issued')
@@ -264,7 +264,7 @@ class BillServiceStatusTest(PurchasingTestBase):
         # Bill needs at least one line item before status change
         BillLineItem.objects.create(
             bill=bill, description='Item 1', line_number=1,
-            qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         updated = BillService.update_status(bill.pk, 'received')
         self.assertEqual(updated.status, 'received')
@@ -295,7 +295,7 @@ class BillServiceDeleteTest(PurchasingTestBase):
         # Bill needs a line item before status change
         BillLineItem.objects.create(
             bill=bill, description='Item 1', line_number=1,
-            qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         BillService.update_status(bill.pk, 'received')
         with self.assertRaises(ValidationError):
@@ -315,7 +315,7 @@ class BillServiceLineItemTest(PurchasingTestBase):
         """Add a manual line item to a bill."""
         li = BillService.add_line_item(
             self.bill.pk, description='Bolts', qty=Decimal('100.00'),
-            price=Decimal('0.50'), line_item_type=self.lit,
+            price=Decimal('0.50'), accounting_category=self.lit,
         )
         self.assertEqual(li.bill, self.bill)
         self.assertEqual(li.description, 'Bolts')
@@ -326,7 +326,7 @@ class BillServiceLineItemTest(PurchasingTestBase):
         pli = PriceListItem.objects.create(
             code='BLT-001', description='Bolts', units='pcs',
             purchase_price=Decimal('0.50'), selling_price=Decimal('1.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         li = BillService.add_line_item_from_pli(
             self.bill.pk, pli.pk, qty=Decimal('100.00'),
@@ -338,11 +338,11 @@ class BillServiceLineItemTest(PurchasingTestBase):
         """Reorder bill line items via service."""
         li1 = BillLineItem.objects.create(
             bill=self.bill, description='Item 1',
-            line_number=1, qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         li2 = BillLineItem.objects.create(
             bill=self.bill, description='Item 2',
-            line_number=2, qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+            line_number=2, qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
         BillService.reorder_line_item(li1.pk, 'down')
         li1.refresh_from_db()
@@ -354,11 +354,11 @@ class BillServiceLineItemTest(PurchasingTestBase):
         """Cannot reorder line items on a non-draft bill."""
         li1 = BillLineItem.objects.create(
             bill=self.bill, description='Item 1',
-            line_number=1, qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         BillLineItem.objects.create(
             bill=self.bill, description='Item 2',
-            line_number=2, qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+            line_number=2, qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
         BillService.update_status(self.bill.pk, 'received')
         with self.assertRaises(ValidationError):
@@ -368,11 +368,11 @@ class BillServiceLineItemTest(PurchasingTestBase):
         """Delete a bill line item and renumber."""
         li1 = BillLineItem.objects.create(
             bill=self.bill, description='Item 1',
-            line_number=1, qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         li2 = BillLineItem.objects.create(
             bill=self.bill, description='Item 2',
-            line_number=2, qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+            line_number=2, qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
         BillService.delete_line_item(li1.pk)
         self.assertFalse(BillLineItem.objects.filter(pk=li1.pk).exists())
@@ -383,7 +383,7 @@ class BillServiceLineItemTest(PurchasingTestBase):
         """Cannot delete line items on a non-draft bill."""
         li1 = BillLineItem.objects.create(
             bill=self.bill, description='Item 1',
-            line_number=1, qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         BillService.update_status(self.bill.pk, 'received')
         with self.assertRaises(ValidationError):

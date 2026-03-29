@@ -246,8 +246,8 @@ def accounting_category_list(request):
     else:
         categories = AccountingCategory.objects.filter(is_active=True)
 
-    return render(request, 'core/line_item_type_list.html', {
-        'line_item_types': categories,
+    return render(request, 'core/accounting_category_list.html', {
+        'accounting_categories': categories,
         'show_all': show_all,
     })
 
@@ -257,8 +257,8 @@ def accounting_category_list(request):
 def accounting_category_detail(request, pk):
     """Display accounting category details."""
     category = get_object_or_404(AccountingCategory, pk=pk)
-    return render(request, 'core/line_item_type_detail.html', {
-        'line_item_type': category,
+    return render(request, 'core/accounting_category_detail.html', {
+        'accounting_category': category,
     })
 
 
@@ -275,7 +275,7 @@ def accounting_category_create(request):
     else:
         form = AccountingCategoryForm()
 
-    return render(request, 'core/line_item_type_form.html', {
+    return render(request, 'core/accounting_category_form.html', {
         'form': form,
         'title': 'Create Accounting Category',
         'submit_label': 'Create',
@@ -297,19 +297,14 @@ def accounting_category_edit(request, pk):
     else:
         form = AccountingCategoryForm(instance=category)
 
-    return render(request, 'core/line_item_type_form.html', {
+    return render(request, 'core/accounting_category_form.html', {
         'form': form,
-        'line_item_type': category,
+        'accounting_category': category,
         'title': f'Edit Accounting Category: {category.name}',
         'submit_label': 'Save Changes',
     })
 
 
-# Backward-compatible aliases for URL resolution during transition
-line_item_type_list = accounting_category_list
-line_item_type_detail = accounting_category_detail
-line_item_type_create = accounting_category_create
-line_item_type_edit = accounting_category_edit
 
 
 @login_required

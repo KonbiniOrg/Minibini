@@ -1,13 +1,13 @@
 {% extends 'base.html' %}
 
-{% block title %}Line Item Types - Minibini{% endblock %}
+{% block title %}Accounting Categories - Minibini{% endblock %}
 
 {% block navigation %}
 {% include 'includes/settings_navigation.html' %}
 {% endblock %}
 
 {% block content %}
-<h2>Line Item Types</h2>
+<h2>Accounting Categories</h2>
 
 <p>
     <a href="{% url 'core:accounting_category_create' %}" style="background-color: #007bff; color: white; padding: 5px 10px; text-decoration: none;">Add New Type</a>
@@ -18,7 +18,7 @@
     {% endif %}
 </p>
 
-{% if line_item_types %}
+{% if accounting_categories %}
 <table border="1">
     <thead>
         <tr>
@@ -30,7 +30,7 @@
         </tr>
     </thead>
     <tbody>
-        {% for type in line_item_types %}
+        {% for type in accounting_categories %}
         <tr{% if not type.is_active %} style="opacity: 0.5;"{% endif %}>
             <td>{{ type.code }}</td>
             <td>{{ type.name }}</td>
@@ -45,7 +45,7 @@
     </tbody>
 </table>
 {% else %}
-<p>No line item types found.</p>
+<p>No accounting categories found.</p>
 {% endif %}
 
 <p><a href="{% url 'settings' %}">Back to Settings</a></p>

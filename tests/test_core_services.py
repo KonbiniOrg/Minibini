@@ -1,6 +1,6 @@
 """Tests for core app service methods (service-mediated saves)."""
 from django.test import TestCase
-from apps.core.models import LineItemType, Configuration, EmailRecord
+from apps.core.models import AccountingCategory, Configuration, EmailRecord
 from apps.core.services import (
     ConfigurationService, EmailService,
     NotFoundError,
@@ -9,12 +9,12 @@ from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
 
 
-class LineItemTypeConfigTest(TestCase):
+class AccountingCategoryConfigTest(TestCase):
     """Tests for ConfigurationService line item type methods."""
 
     def test_create_type(self):
-        """Create a new LineItemType via service."""
-        lit = ConfigurationService.create_line_item_type(
+        """Create a new AccountingCategory via service."""
+        lit = ConfigurationService.create_accounting_category(
             code='SVC', name='Service', taxable=True
         )
         self.assertEqual(lit.code, 'SVC')
@@ -25,14 +25,14 @@ class LineItemTypeConfigTest(TestCase):
 
     def test_create_type_with_defaults(self):
         """Create with minimal args — defaults should apply."""
-        lit = ConfigurationService.create_line_item_type(code='FRT', name='Freight')
+        lit = ConfigurationService.create_accounting_category(code='FRT', name='Freight')
         self.assertTrue(lit.taxable)  # model default
         self.assertTrue(lit.is_active)  # model default
         self.assertEqual(lit.default_description, '')
 
     def test_create_type_with_optional_fields(self):
         """Create with all optional fields."""
-        lit = ConfigurationService.create_line_item_type(
+        lit = ConfigurationService.create_accounting_category(
             code='MSC', name='Misc', taxable=False,
             default_description='Miscellaneous charge', is_active=False
         )
@@ -42,29 +42,29 @@ class LineItemTypeConfigTest(TestCase):
 
     def test_create_type_duplicate_code_raises(self):
         """Duplicate code should raise ValidationError."""
-        ConfigurationService.create_line_item_type(code='SVC', name='Service')
+        ConfigurationService.create_accounting_category(code='SVC', name='Service')
         with self.assertRaises(Exception):
-            ConfigurationService.create_line_item_type(code='SVC', name='Service 2')
+            ConfigurationService.create_accounting_category(code='SVC', name='Service 2')
 
     def test_update_type(self):
-        """Update an existing LineItemType by PK."""
-        lit = LineItemType.objects.create(code='SVC', name='Service', taxable=True)
-        updated = ConfigurationService.update_line_item_type(lit.pk, name='Labor', taxable=False)
+        """Update an existing AccountingCategory by PK."""
+        lit = AccountingCategory.objects.create(code='SVC', name='Service', taxable=True)
+        updated = ConfigurationService.update_accounting_category(lit.pk, name='Labor', taxable=False)
         self.assertEqual(updated.name, 'Labor')
         self.assertFalse(updated.taxable)
         self.assertEqual(updated.code, 'SVC')
 
     def test_update_type_persists(self):
         """Update should be persisted to database."""
-        lit = LineItemType.objects.create(code='SVC', name='Service', taxable=True)
-        ConfigurationService.update_line_item_type(lit.pk, name='Labor')
-        refreshed = LineItemType.objects.get(pk=lit.pk)
+        lit = AccountingCategory.objects.create(code='SVC', name='Service', taxable=True)
+        ConfigurationService.update_accounting_category(lit.pk, name='Labor')
+        refreshed = AccountingCategory.objects.get(pk=lit.pk)
         self.assertEqual(refreshed.name, 'Labor')
 
     def test_update_type_not_found(self):
         """Updating a nonexistent PK raises NotFoundError."""
         with self.assertRaises(NotFoundError):
-            ConfigurationService.update_line_item_type(99999, name='Nope')
+            ConfigurationService.update_accounting_category(99999, name='Nope')
 
 
 class ConfigurationServiceTest(TestCase):

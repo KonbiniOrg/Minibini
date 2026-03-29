@@ -5,7 +5,7 @@ from django.urls import reverse
 from apps.jobs.models import Task, TaskBundle, Job
 from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact, Business
-from apps.core.models import User, LineItemType
+from apps.core.models import User, AccountingCategory
 
 
 class WorksheetCreateFromTemplateTest(TestCase):
@@ -30,7 +30,7 @@ class WorksheetCreateFromTemplateTest(TestCase):
             job_number='JOB-001', name='Test Job',
             contact=self.contact, status='draft'
         )
-        self.lit_labor, _ = LineItemType.objects.get_or_create(
+        self.lit_labor, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
 
@@ -38,19 +38,19 @@ class WorksheetCreateFromTemplateTest(TestCase):
         self.wot = WorkOrderTemplate.objects.create(template_name='Floor Refinish')
         self.template_bundle = TemplateBundle.objects.create(
             work_order_template=self.wot, name='Prep Work',
-            line_item_type=self.lit_labor, sort_order=1
+            accounting_category=self.lit_labor, sort_order=1
         )
         self.tt_sand = TaskTemplate.objects.create(
             template_name='Sand Floor', rate=Decimal('50'),
-            units='hours', line_item_type=self.lit_labor
+            units='hours', accounting_category=self.lit_labor
         )
         self.tt_clean = TaskTemplate.objects.create(
             template_name='Clean Floor', rate=Decimal('25'),
-            units='hours', line_item_type=self.lit_labor
+            units='hours', accounting_category=self.lit_labor
         )
         self.tt_finish = TaskTemplate.objects.create(
             template_name='Apply Finish', rate=Decimal('100'),
-            units='hours', line_item_type=self.lit_labor
+            units='hours', accounting_category=self.lit_labor
         )
         TemplateTaskAssociation.objects.create(
             work_order_template=self.wot, task_template=self.tt_sand,
@@ -82,7 +82,7 @@ class WorksheetCreateFromTemplateTest(TestCase):
         bundles = list(worksheet.bundles.all())
         self.assertEqual(len(bundles), 1)
         self.assertEqual(bundles[0].name, 'Prep Work')
-        self.assertEqual(bundles[0].line_item_type, self.lit_labor)
+        self.assertEqual(bundles[0].accounting_category, self.lit_labor)
         self.assertEqual(bundles[0].source_template_bundle, self.template_bundle)
 
     def test_task_mapping_set_when_worksheet_created_from_template(self):

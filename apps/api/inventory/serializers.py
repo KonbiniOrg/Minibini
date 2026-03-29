@@ -13,7 +13,7 @@ class PriceListItemSerializer(serializers.ModelSerializer):
             'purchase_price', 'selling_price',
             'qty_on_hand', 'qty_sold', 'qty_wasted',
             'qty_earmarked', 'qty_available',
-            'is_active', 'is_inventoried', 'line_item_type',
+            'is_active', 'is_inventoried', 'accounting_category',
         ]
         read_only_fields = [
             'price_list_item_id', 'qty_on_hand', 'qty_sold', 'qty_wasted',

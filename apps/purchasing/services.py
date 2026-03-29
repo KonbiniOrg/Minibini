@@ -104,7 +104,7 @@ class PurchaseOrderService:
             qty=qty,
             units=pli.units,
             price=pli.purchase_price,
-            line_item_type=pli.line_item_type,
+            accounting_category=pli.accounting_category,
         )
         li.full_clean()
         li.save()
@@ -185,7 +185,7 @@ class BillService:
                 units=po_li.units,
                 price=po_li.price,
                 line_number=po_li.line_number,
-                line_item_type=po_li.line_item_type,
+                accounting_category=po_li.accounting_category,
             )
 
         return bill
@@ -246,7 +246,7 @@ class BillService:
             qty=qty,
             units=pli.units,
             price=pli.purchase_price,
-            line_item_type=pli.line_item_type,
+            accounting_category=pli.accounting_category,
         )
         li.full_clean()
         li.save()

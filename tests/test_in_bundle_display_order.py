@@ -4,7 +4,7 @@ from django.test import TestCase
 from apps.jobs.models import Task, TaskBundle, Job
 from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
 class WithinBundleDisplayOrderTest(TestCase):
@@ -13,7 +13,7 @@ class WithinBundleDisplayOrderTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
         self.job = Job.objects.create(job_number='J001', contact=self.contact)
-        self.lit, _ = LineItemType.objects.get_or_create(
+        self.lit, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
 
@@ -24,7 +24,7 @@ class WithinBundleDisplayOrderTest(TestCase):
         worksheet = EstWorksheet.objects.create(job=self.job)
         bundle = TaskBundle.objects.create(
             est_worksheet=worksheet, name='Bundle',
-            line_item_type=self.lit, sort_order=1
+            accounting_category=self.lit, sort_order=1
         )
         # Create tasks with sort_order opposite to ID order
         t1 = Task.objects.create(
@@ -59,16 +59,16 @@ class WithinBundleDisplayOrderTest(TestCase):
         wot = WorkOrderTemplate.objects.create(template_name='Test')
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name='Bundle',
-            line_item_type=self.lit, sort_order=1
+            accounting_category=self.lit, sort_order=1
         )
         tt1 = TaskTemplate.objects.create(
-            template_name='Alpha', rate=10, line_item_type=self.lit
+            template_name='Alpha', rate=10, accounting_category=self.lit
         )
         tt2 = TaskTemplate.objects.create(
-            template_name='Beta', rate=20, line_item_type=self.lit
+            template_name='Beta', rate=20, accounting_category=self.lit
         )
         tt3 = TaskTemplate.objects.create(
-            template_name='Gamma', rate=30, line_item_type=self.lit
+            template_name='Gamma', rate=30, accounting_category=self.lit
         )
         # Create associations with sort_order opposite to PK order
         TemplateTaskAssociation.objects.create(

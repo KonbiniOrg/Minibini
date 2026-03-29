@@ -244,7 +244,7 @@ class EstWorksheet(AbstractWorkContainer):
                 est_worksheet=new_worksheet,
                 name=bundle.name,
                 description=bundle.description,
-                line_item_type=bundle.line_item_type,
+                accounting_category=bundle.accounting_category,
                 sort_order=bundle.sort_order,
                 source_template_bundle=bundle.source_template_bundle,
             )
@@ -261,7 +261,7 @@ class EstWorksheet(AbstractWorkContainer):
                 units=task.units,
                 rate=task.rate,
                 est_qty=task.est_qty,
-                line_item_type=task.line_item_type,
+                accounting_category=task.accounting_category,
                 mapping_strategy=task.mapping_strategy,
                 bundle=new_bundle,
             )
@@ -271,7 +271,7 @@ class EstWorksheet(AbstractWorkContainer):
                 Material.objects.create(
                     task=new_task,
                     price_list_item=material.price_list_item,
-                    line_item_type=material.line_item_type,
+                    accounting_category=material.accounting_category,
                     description=material.description,
                     quantity=material.quantity,
                     unit_cost=material.unit_cost,
@@ -323,7 +323,7 @@ class WorkOrderTemplate(models.Model):
                     est_worksheet=worksheet,
                     name=template_bundle.name,
                     description=template_bundle.description,
-                    line_item_type=template_bundle.line_item_type,
+                    accounting_category=template_bundle.accounting_category,
                     sort_order=template_bundle.sort_order,
                     source_template_bundle=template_bundle,
                 )
@@ -370,7 +370,7 @@ class TemplateBundle(models.Model):
     )
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    line_item_type = models.ForeignKey(
+    accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT
     )
@@ -432,8 +432,8 @@ class TaskTemplate(models.Model):
     units = models.CharField(max_length=50, blank=True)
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
-    # LineItemType determines what type of line item this task produces when mapped directly
-    line_item_type = models.ForeignKey(
+    # AccountingCategory determines what type of line item this task produces when mapped directly
+    accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT,
         null=True,  # Temporarily nullable for migration
@@ -468,7 +468,7 @@ class TaskTemplate(models.Model):
             units=self.units,
             rate=self.rate,
             est_qty=est_qty,
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
             assignee=assignee,
             mapping_strategy=mapping_strategy,
             bundle=bundle,

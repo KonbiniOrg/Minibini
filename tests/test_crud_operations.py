@@ -5,7 +5,7 @@ from django.urls import reverse
 from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate, EstimateLineItem, WorkOrderTemplate
 from apps.contacts.models import Contact
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
 class EstWorksheetCRUDTests(TestCase):
@@ -179,7 +179,7 @@ class EstimateCRUDTests(TestCase):
     def test_add_line_item_post(self):
         """Test POST request to add line item."""
         # Get or create a line item type for the test
-        service_type, _ = LineItemType.objects.get_or_create(
+        service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False, 'is_active': True}
         )
@@ -189,7 +189,7 @@ class EstimateCRUDTests(TestCase):
             'qty': 5.0,
             'price': 100.0,
             'units': 'each',
-            'line_item_type': service_type.pk,
+            'accounting_category': service_type.pk,
             'manual_submit': 'Add Manual Line Item'
         }
         response = self.client.post(url, data)

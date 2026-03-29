@@ -8,7 +8,7 @@ from apps.jobs.models import Task, TaskBundle, Job
 from apps.estimates.models import EstWorksheet, EstimateLineItem
 from apps.estimates.services import EstimateGenerationService
 from apps.contacts.models import Contact
-from apps.core.models import LineItemType, Configuration
+from apps.core.models import AccountingCategory, Configuration
 
 
 class InstanceLevelEstimateGenerationTest(TestCase):
@@ -27,10 +27,10 @@ class InstanceLevelEstimateGenerationTest(TestCase):
 
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
-        self.lit_labor, _ = LineItemType.objects.get_or_create(
+        self.lit_labor, _ = AccountingCategory.objects.get_or_create(
             code="LBR", defaults={"name": "Labor"}
         )
-        self.lit_material, _ = LineItemType.objects.get_or_create(
+        self.lit_material, _ = AccountingCategory.objects.get_or_create(
             code="MAT", defaults={"name": "Material"}
         )
 
@@ -79,7 +79,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
         worksheet = EstWorksheet.objects.create(job=self.job)
         bundle = TaskBundle.objects.create(
             est_worksheet=worksheet, name="Prep Work",
-            line_item_type=self.lit_labor, sort_order=1
+            accounting_category=self.lit_labor, sort_order=1
         )
         Task.objects.create(
             est_worksheet=worksheet, name="Sand",
@@ -98,7 +98,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
         self.assertEqual(estimate.estimatelineitem_set.count(), 1)
         li = estimate.estimatelineitem_set.first()
         self.assertEqual(li.description, "Prep Work")
-        self.assertEqual(li.line_item_type, self.lit_labor)
+        self.assertEqual(li.accounting_category, self.lit_labor)
         self.assertEqual(li.price, Decimal('75.00'))
 
     def test_mixed_strategies_without_template(self):
@@ -106,7 +106,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
         worksheet = EstWorksheet.objects.create(job=self.job)
         bundle = TaskBundle.objects.create(
             est_worksheet=worksheet, name="Prep",
-            line_item_type=self.lit_labor, sort_order=1
+            accounting_category=self.lit_labor, sort_order=1
         )
 
         Task.objects.create(
@@ -149,7 +149,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
 
         wot = WorkOrderTemplate.objects.create(template_name="Job Template")
         tt = TaskTemplate.objects.create(
-            template_name="Sand", rate=50, line_item_type=self.lit_labor
+            template_name="Sand", rate=50, accounting_category=self.lit_labor
         )
         # Template says 'direct'
         TemplateTaskAssociation.objects.create(
@@ -162,7 +162,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
         Task.objects.create(
             est_worksheet=worksheet, name="Sand",
             rate=Decimal('50'), est_qty=Decimal('1'),
-            line_item_type=self.lit_labor,
+            accounting_category=self.lit_labor,
             mapping_strategy='exclude'
         )
 

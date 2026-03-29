@@ -4,7 +4,7 @@ Testing tax calculation logic for line items and documents.
 """
 from decimal import Decimal
 from django.test import TestCase
-from apps.core.models import Configuration, LineItemType
+from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import TaxCalculationService
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
@@ -17,11 +17,11 @@ class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):
     @classmethod
     def setUpTestData(cls):
         """Set up test data."""
-        cls.taxable_type, _ = LineItemType.objects.get_or_create(
+        cls.taxable_type, _ = AccountingCategory.objects.get_or_create(
             code='MAT',
             defaults={'name': 'Material', 'taxable': True}
         )
-        cls.nontaxable_type, _ = LineItemType.objects.get_or_create(
+        cls.nontaxable_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False}
         )
@@ -46,7 +46,7 @@ class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):
         """Test that taxability uses type default when override is null."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             taxable_override=None  # Use type default
@@ -59,7 +59,7 @@ class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):
         """Test that non-taxable type default is respected."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.nontaxable_type,
+            accounting_category=self.nontaxable_type,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             taxable_override=None
@@ -72,7 +72,7 @@ class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):
         """Test that taxable_override=True overrides non-taxable type default."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.nontaxable_type,  # Type is non-taxable
+            accounting_category=self.nontaxable_type,  # Type is non-taxable
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             taxable_override=True  # Override to taxable
@@ -85,7 +85,7 @@ class TaxCalculationServiceEffectiveTaxabilityTest(TestCase):
         """Test that taxable_override=False overrides taxable type default."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,  # Type is taxable
+            accounting_category=self.taxable_type,  # Type is taxable
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             taxable_override=False  # Override to non-taxable
@@ -101,7 +101,7 @@ class TaxCalculationServiceEffectiveTaxRateTest(TestCase):
     @classmethod
     def setUpTestData(cls):
         """Set up test data."""
-        cls.line_item_type, _ = LineItemType.objects.get_or_create(
+        cls.accounting_category, _ = AccountingCategory.objects.get_or_create(
             code='MAT',
             defaults={'name': 'Material', 'taxable': True}
         )
@@ -128,7 +128,7 @@ class TaxCalculationServiceEffectiveTaxRateTest(TestCase):
 
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             tax_rate_override=None
@@ -143,7 +143,7 @@ class TaxCalculationServiceEffectiveTaxRateTest(TestCase):
 
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             tax_rate_override=Decimal('0.05')  # 5% special rate
@@ -156,7 +156,7 @@ class TaxCalculationServiceEffectiveTaxRateTest(TestCase):
         """Test that rate defaults to 0 when no Configuration exists."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             tax_rate_override=None
@@ -174,11 +174,11 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
         """Set up test data."""
         Configuration.objects.create(key='default_tax_rate', value='0.10')  # 10%
 
-        cls.taxable_type, _ = LineItemType.objects.get_or_create(
+        cls.taxable_type, _ = AccountingCategory.objects.get_or_create(
             code='MAT',
             defaults={'name': 'Material', 'taxable': True}
         )
-        cls.nontaxable_type, _ = LineItemType.objects.get_or_create(
+        cls.nontaxable_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False}
         )
@@ -202,7 +202,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
         """Test basic tax calculation for a taxable item."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('2.00'),
             price=Decimal('50.00'),  # total = 100.00
             taxable_override=None
@@ -216,7 +216,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
         """Test that non-taxable items return zero tax."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.nontaxable_type,
+            accounting_category=self.nontaxable_type,
             qty=Decimal('2.00'),
             price=Decimal('50.00'),
             taxable_override=None
@@ -235,7 +235,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
 
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('2.00'),
             price=Decimal('50.00'),
             taxable_override=None
@@ -254,7 +254,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
 
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('2.00'),
             price=Decimal('50.00'),  # total = 100.00
             taxable_override=None
@@ -274,7 +274,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
 
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('2.00'),
             price=Decimal('50.00'),
             taxable_override=None
@@ -289,7 +289,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
 
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('2.00'),
             price=Decimal('50.00'),
             taxable_override=None
@@ -309,7 +309,7 @@ class TaxCalculationServiceLineItemTaxTest(TestCase):
 
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('1.00'),
             price=Decimal('33.33'),  # 8.25% of 33.33 = 2.749725
             taxable_override=None
@@ -327,11 +327,11 @@ class TaxCalculationServiceDocumentTaxTest(TestCase):
         """Set up test data."""
         Configuration.objects.create(key='default_tax_rate', value='0.10')  # 10%
 
-        cls.taxable_type, _ = LineItemType.objects.get_or_create(
+        cls.taxable_type, _ = AccountingCategory.objects.get_or_create(
             code='MAT',
             defaults={'name': 'Material', 'taxable': True}
         )
-        cls.nontaxable_type, _ = LineItemType.objects.get_or_create(
+        cls.nontaxable_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False}
         )
@@ -356,19 +356,19 @@ class TaxCalculationServiceDocumentTaxTest(TestCase):
         # Create multiple line items
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),  # 10% = $10
         )
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('2.00'),
             price=Decimal('25.00'),  # total 50, 10% = $5
         )
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.nontaxable_type,
+            accounting_category=self.nontaxable_type,
             qty=Decimal('1.00'),
             price=Decimal('200.00'),  # Non-taxable = $0
         )
@@ -396,13 +396,13 @@ class TaxCalculationServiceDocumentTaxTest(TestCase):
 
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
         )
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             qty=Decimal('1.00'),
             price=Decimal('50.00'),
         )

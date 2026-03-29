@@ -1,15 +1,15 @@
-"""Tests for LineItemType in Estimate line items."""
+"""Tests for AccountingCategory in Estimate line items."""
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
 
 
-class EstimateLineItemTypeTest(TestCase):
-    """Tests for LineItemType in Estimate line item forms."""
+class EstimateAccountingCategoryTest(TestCase):
+    """Tests for AccountingCategory in Estimate line item forms."""
 
     @classmethod
     def setUpTestData(cls):
@@ -28,7 +28,7 @@ class EstimateLineItemTypeTest(TestCase):
             estimate_number='EST-001',
             status='draft'
         )
-        cls.service_type, _ = LineItemType.objects.get_or_create(
+        cls.service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False}
         )
@@ -36,15 +36,15 @@ class EstimateLineItemTypeTest(TestCase):
     def setUp(self):
         self.client = Client()
 
-    def test_manual_form_includes_line_item_type_field(self):
-        """Test that manual line item form shows LineItemType field."""
+    def test_manual_form_includes_accounting_category_field(self):
+        """Test that manual line item form shows AccountingCategory field."""
         response = self.client.get(
             reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
         )
-        self.assertContains(response, 'line_item_type')
+        self.assertContains(response, 'accounting_category')
 
     def test_manual_form_creates_line_item_with_type(self):
-        """Test that manual form creates line item with LineItemType."""
+        """Test that manual form creates line item with AccountingCategory."""
         response = self.client.post(
             reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id]),
             {
@@ -53,15 +53,15 @@ class EstimateLineItemTypeTest(TestCase):
                 'qty': '2.00',
                 'units': 'hours',
                 'price': '50.00',
-                'line_item_type': self.service_type.pk,
+                'accounting_category': self.service_type.pk,
             }
         )
         line_item = EstimateLineItem.objects.filter(estimate=self.estimate).first()
         self.assertIsNotNone(line_item)
-        self.assertEqual(line_item.line_item_type, self.service_type)
+        self.assertEqual(line_item.accounting_category, self.service_type)
 
-    def test_manual_form_requires_line_item_type(self):
-        """Test that manual form requires LineItemType."""
+    def test_manual_form_requires_accounting_category(self):
+        """Test that manual form requires AccountingCategory."""
         response = self.client.post(
             reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id]),
             {
@@ -70,7 +70,7 @@ class EstimateLineItemTypeTest(TestCase):
                 'qty': '2.00',
                 'units': 'hours',
                 'price': '50.00',
-                # No line_item_type
+                # No accounting_category
             }
         )
         # Should stay on page with error
@@ -79,7 +79,7 @@ class EstimateLineItemTypeTest(TestCase):
 
 
 class EstimateLineItemFromPriceListTest(TestCase):
-    """Tests for LineItemType when adding from PriceList."""
+    """Tests for AccountingCategory when adding from PriceList."""
 
     @classmethod
     def setUpTestData(cls):
@@ -98,7 +98,7 @@ class EstimateLineItemFromPriceListTest(TestCase):
             estimate_number='EST-001',
             status='draft'
         )
-        cls.product_type, _ = LineItemType.objects.get_or_create(
+        cls.product_type, _ = AccountingCategory.objects.get_or_create(
             code='PRD',
             defaults={'name': 'Product', 'taxable': True}
         )
@@ -108,14 +108,14 @@ class EstimateLineItemFromPriceListTest(TestCase):
             code='ITEM-001',
             description='Test Product',
             selling_price=Decimal('100.00'),
-            line_item_type=cls.product_type
+            accounting_category=cls.product_type
         )
 
     def setUp(self):
         self.client = Client()
 
-    def test_pricelist_form_copies_line_item_type(self):
-        """Test that adding from price list copies the LineItemType."""
+    def test_pricelist_form_copies_accounting_category(self):
+        """Test that adding from price list copies the AccountingCategory."""
         response = self.client.post(
             reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id]),
             {
@@ -126,4 +126,4 @@ class EstimateLineItemFromPriceListTest(TestCase):
         )
         line_item = EstimateLineItem.objects.filter(estimate=self.estimate).first()
         self.assertIsNotNone(line_item)
-        self.assertEqual(line_item.line_item_type, self.product_type)
+        self.assertEqual(line_item.accounting_category, self.product_type)

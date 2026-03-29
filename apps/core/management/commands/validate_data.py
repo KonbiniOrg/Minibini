@@ -43,7 +43,7 @@ Per-model field checks:
                    E  cannot link to draft PO
                    E  non-draft must have at least one line item
   Invoice          E  valid status value
-  PriceListItem    E  missing line_item_type (causes silent tax-exemption)
+  PriceListItem    E  missing accounting_category (causes silent tax-exemption)
                    E  negative purchase_price, selling_price, qty_on_hand, qty_sold, qty_wasted
                    E  duplicate code
                    W  not inventoried but has non-zero quantity values
@@ -282,14 +282,14 @@ class Command(BaseCommand):
         from apps.invoicing.models import InvoiceLineItem
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 
-        line_item_types = [
+        accounting_categories = [
             ('EstimateLineItem', EstimateLineItem),
             ('InvoiceLineItem', InvoiceLineItem),
             ('PurchaseOrderLineItem', PurchaseOrderLineItem),
             ('BillLineItem', BillLineItem),
         ]
 
-        for name, model in line_item_types:
+        for name, model in accounting_categories:
             for li in model.objects.select_related('task', 'price_list_item').all():
                 # Mutual exclusivity: cannot have both task and price_list_item
                 if li.task and li.price_list_item:
@@ -367,9 +367,9 @@ class Command(BaseCommand):
     def check_price_list_items(self):
         from apps.inventory.models import PriceListItem
         for pli in PriceListItem.objects.all():
-            if not pli.line_item_type_id:
+            if not pli.accounting_category_id:
                 self.errors.append(
-                    f'PLI {pli.code}: missing line_item_type '
+                    f'PLI {pli.code}: missing accounting_category '
                     f'(will produce tax-exempt line items on documents)'
                 )
             if pli.purchase_price < 0:

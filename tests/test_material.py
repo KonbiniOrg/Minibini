@@ -6,7 +6,7 @@ from apps.jobs.models import Job, Task
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import Material
 from apps.inventory.models import PriceListItem
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
 class MaterialTestBase(TestCase):
@@ -176,10 +176,10 @@ class MaterialModelTest(MaterialTestBase):
         )
         self.assertEqual(self.task.materials.count(), 3)
 
-    def test_pli_auto_fills_line_item_type(self):
-        """Material linked to a PLI auto-fills line_item_type from PLI."""
-        lit, _ = LineItemType.objects.get_or_create(code='MAT', defaults={'name': 'Material'})
-        self.inventoried_item.line_item_type = lit
+    def test_pli_auto_fills_accounting_category(self):
+        """Material linked to a PLI auto-fills accounting_category from PLI."""
+        lit, _ = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})
+        self.inventoried_item.accounting_category = lit
         self.inventoried_item.save()
 
         material = Material.objects.create(
@@ -187,22 +187,22 @@ class MaterialModelTest(MaterialTestBase):
             price_list_item=self.inventoried_item,
             quantity=Decimal('2.00'),
         )
-        self.assertEqual(material.line_item_type, lit)
+        self.assertEqual(material.accounting_category, lit)
 
-    def test_explicit_line_item_type_not_overwritten_by_pli(self):
-        """Explicit line_item_type on material is not overwritten by PLI."""
-        lit_mat, _ = LineItemType.objects.get_or_create(code='MAT', defaults={'name': 'Material'})
-        lit_labor, _ = LineItemType.objects.get_or_create(code='LBR', defaults={'name': 'Labor'})
-        self.inventoried_item.line_item_type = lit_mat
+    def test_explicit_accounting_category_not_overwritten_by_pli(self):
+        """Explicit accounting_category on material is not overwritten by PLI."""
+        lit_mat, _ = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})
+        lit_labor, _ = AccountingCategory.objects.get_or_create(code='LBR', defaults={'name': 'Labor'})
+        self.inventoried_item.accounting_category = lit_mat
         self.inventoried_item.save()
 
         material = Material.objects.create(
             task=self.task,
             price_list_item=self.inventoried_item,
             quantity=Decimal('2.00'),
-            line_item_type=lit_labor,
+            accounting_category=lit_labor,
         )
-        self.assertEqual(material.line_item_type, lit_labor)
+        self.assertEqual(material.accounting_category, lit_labor)
 
     def test_str_representation(self):
         material = Material.objects.create(

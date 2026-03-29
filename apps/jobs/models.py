@@ -178,7 +178,7 @@ class Task(models.Model):
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
-    line_item_type = models.ForeignKey(
+    accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT,
         null=True,
@@ -310,7 +310,7 @@ class TaskBundle(models.Model):
 
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    line_item_type = models.ForeignKey(
+    accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT
     )

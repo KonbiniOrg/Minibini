@@ -181,9 +181,6 @@ class AccountingCategory(models.Model):
         return self.name
 
 
-# Backward-compatible alias for imports during transition
-LineItemType = AccountingCategory
-
 
 class AbstractWorkContainer(models.Model):
     """Abstract base class for WorkOrder and EstWorksheet containing common fields."""
@@ -210,7 +207,7 @@ class BaseLineItem(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
     # Tax-related fields
-    line_item_type = models.ForeignKey(
+    accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT,
         related_name='%(class)s_items',

@@ -47,7 +47,7 @@ def _build_container_items_from_associations(associations):
                 bundles_by_id[bid] = {
                     'id': bid,
                     'name': assoc.bundle.name,
-                    'line_item_type_name': assoc.bundle.line_item_type.name,
+                    'accounting_category_name': assoc.bundle.accounting_category.name,
                     'sort_order': assoc.bundle.sort_order,
                     'items': [],
                 }
@@ -111,7 +111,7 @@ def _build_container_items_from_tasks(worksheet):
                 bundles_by_id[bid] = {
                     'id': bid,
                     'name': task.bundle.name,
-                    'line_item_type_name': task.bundle.line_item_type.name,
+                    'accounting_category_name': task.bundle.accounting_category.name,
                     'sort_order': task.bundle.sort_order,
                     'items': [],
                 }
@@ -294,25 +294,25 @@ def work_order_template_detail(request, template_id):
 
     # Handle bundle creation
     if request.method == 'POST' and 'bundle_tasks' in request.POST:
-        from apps.core.models import LineItemType
+        from apps.core.models import AccountingCategory
 
         selected_ids = request.POST.getlist('selected_tasks')
         bundle_name = request.POST.get('bundle_name', '').strip()
         bundle_description = request.POST.get('bundle_description', '').strip()
-        line_item_type_id = request.POST.get('line_item_type')
+        accounting_category_id = request.POST.get('accounting_category')
 
         if not bundle_name:
             messages.error(request, 'Bundle name is required.')
-        elif not line_item_type_id:
+        elif not accounting_category_id:
             messages.error(request, 'Line item type is required.')
         else:
-            line_item_type = get_object_or_404(LineItemType, pk=line_item_type_id)
+            accounting_category = get_object_or_404(AccountingCategory, pk=accounting_category_id)
             try:
                 WorkOrderTemplateService.bundle_associations(
                     template.pk,
                     [int(i) for i in selected_ids],
                     bundle_name,
-                    line_item_type,
+                    accounting_category,
                     description=bundle_description,
                 )
                 messages.success(request, f'Bundle "{bundle_name}" updated.')
@@ -322,7 +322,7 @@ def work_order_template_detail(request, template_id):
         return redirect('estimates:work_order_template_detail', template_id=template_id)
 
     # Get task template associations with bundle info
-    from apps.core.models import LineItemType
+    from apps.core.models import AccountingCategory
 
     associations = TemplateTaskAssociation.objects.filter(
         work_order_template=template,
@@ -337,13 +337,13 @@ def work_order_template_detail(request, template_id):
     available_templates = TaskTemplate.objects.filter(is_active=True).exclude(template_id__in=associated_task_ids)
 
     # Get line item types for bundle form
-    line_item_types = LineItemType.objects.all().order_by('name')
+    accounting_categories = AccountingCategory.objects.all().order_by('name')
 
     return render(request, 'jobs/work_order_template_detail.html', {
         'template': template,
         'container_items': container_items,
         'available_templates': available_templates,
-        'line_item_types': line_item_types,
+        'accounting_categories': accounting_categories,
         'can_edit': True,
         'reorder_container_url': 'estimates:template_reorder_item',
         'reorder_in_bundle_url': 'estimates:template_reorder_in_bundle',
@@ -364,25 +364,25 @@ def estworksheet_detail(request, worksheet_id):
 
     # Handle bundle creation
     if request.method == 'POST' and 'bundle_tasks' in request.POST and can_edit:
-        from apps.core.models import LineItemType
+        from apps.core.models import AccountingCategory
 
         selected_ids = request.POST.getlist('selected_tasks')
         bundle_name = request.POST.get('bundle_name', '').strip()
         bundle_description = request.POST.get('bundle_description', '').strip()
-        line_item_type_id = request.POST.get('line_item_type')
+        accounting_category_id = request.POST.get('accounting_category')
 
         if not bundle_name:
             messages.error(request, 'Bundle name is required.')
-        elif not line_item_type_id:
+        elif not accounting_category_id:
             messages.error(request, 'Line item type is required.')
         else:
-            line_item_type = get_object_or_404(LineItemType, pk=line_item_type_id)
+            accounting_category = get_object_or_404(AccountingCategory, pk=accounting_category_id)
             try:
                 WorksheetService.bundle_tasks(
                     worksheet.pk,
                     [int(i) for i in selected_ids],
                     bundle_name,
-                    line_item_type,
+                    accounting_category,
                     description=bundle_description,
                 )
                 messages.success(request, f'Bundle "{bundle_name}" updated.')
@@ -405,10 +405,10 @@ def estworksheet_detail(request, worksheet_id):
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     # Build context
-    from apps.core.models import LineItemType
+    from apps.core.models import AccountingCategory
 
     container_items = _build_container_items_from_tasks(worksheet)
-    line_item_types = LineItemType.objects.all().order_by('name')
+    accounting_categories = AccountingCategory.objects.all().order_by('name')
 
     # Calculate total cost from all tasks
     all_tasks = Task.objects.filter(est_worksheet=worksheet)
@@ -419,7 +419,7 @@ def estworksheet_detail(request, worksheet_id):
     return render(request, 'jobs/estworksheet_detail.html', {
         'worksheet': worksheet,
         'container_items': container_items,
-        'line_item_types': line_item_types,
+        'accounting_categories': accounting_categories,
         'total_cost': total_cost,
         'can_edit': can_edit,
         'reorder_container_url': 'estimates:worksheet_reorder_item',
@@ -438,23 +438,23 @@ def estworksheet_generate_estimate(request, worksheet_id):
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':
-        # Save any line_item_type assignments from the form via TaskService
-        from apps.core.models import LineItemType
+        # Save any accounting_category assignments from the form via TaskService
+        from apps.core.models import AccountingCategory
         from apps.jobs.services import TaskService
         for key, value in request.POST.items():
-            if key.startswith('task_line_item_type_') and value:
-                task_pk = key.replace('task_line_item_type_', '')
+            if key.startswith('task_accounting_category_') and value:
+                task_pk = key.replace('task_accounting_category_', '')
                 try:
-                    lit = LineItemType.objects.get(pk=value)
-                    TaskService.update_task(int(task_pk), line_item_type=lit)
-                except (NotFoundError, LineItemType.DoesNotExist):
+                    lit = AccountingCategory.objects.get(pk=value)
+                    TaskService.update_task(int(task_pk), accounting_category=lit)
+                except (NotFoundError, AccountingCategory.DoesNotExist):
                     pass
 
-        # Check if any direct tasks still lack line_item_type
+        # Check if any direct tasks still lack accounting_category
         untyped_direct = Task.objects.filter(
             est_worksheet=worksheet,
             mapping_strategy='direct',
-            line_item_type__isnull=True,
+            accounting_category__isnull=True,
             bundle__isnull=True,
         )
         if untyped_direct.exists():
@@ -480,22 +480,22 @@ def estworksheet_generate_estimate(request, worksheet_id):
     tasks = Task.objects.filter(est_worksheet=worksheet).prefetch_related('materials')
     total_cost = sum(task.rate * task.est_qty for task in tasks if task.rate and task.est_qty)
 
-    # Find direct tasks missing line_item_type
-    from apps.core.models import LineItemType
+    # Find direct tasks missing accounting_category
+    from apps.core.models import AccountingCategory
     untyped_tasks = list(Task.objects.filter(
         est_worksheet=worksheet,
         mapping_strategy='direct',
-        line_item_type__isnull=True,
+        accounting_category__isnull=True,
         bundle__isnull=True,
     ))
-    line_item_types = LineItemType.objects.filter(is_active=True)
+    accounting_categories = AccountingCategory.objects.filter(is_active=True)
 
     return render(request, 'jobs/estworksheet_generate_estimate.html', {
         'worksheet': worksheet,
         'tasks': tasks,
         'total_cost': total_cost,
         'untyped_tasks': untyped_tasks,
-        'line_item_types': line_item_types,
+        'accounting_categories': accounting_categories,
     })
 
 

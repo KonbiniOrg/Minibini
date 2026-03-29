@@ -1,6 +1,6 @@
 from django import forms
 from apps.inventory.models import PriceListItem
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 UNIT_CHOICES = [
     ('sq ft', 'sq ft (square feet)'),
@@ -115,14 +115,14 @@ class PriceListItemForm(forms.ModelForm):
             'qty_on_hand',
             'qty_sold',
             'qty_wasted',
-            'line_item_type',
+            'accounting_category',
             'is_active',
         ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Only show active LineItemTypes in the dropdown
-        self.fields['line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
+        # Only show active AccountingCategorys in the dropdown
+        self.fields['accounting_category'].queryset = AccountingCategory.objects.filter(is_active=True)
         # Only show is_active field when editing existing items (not on create)
         if self.instance.pk:
             self.fields['is_active'].label = "Active (uncheck to archive)"

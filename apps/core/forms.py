@@ -29,7 +29,3 @@ class AccountingCategoryForm(forms.ModelForm):
             'name': forms.TextInput(attrs={'maxlength': 100}),
             'default_description': forms.Textarea(attrs={'rows': 3}),
         }
-
-
-# Backward-compatible alias
-LineItemTypeForm = AccountingCategoryForm

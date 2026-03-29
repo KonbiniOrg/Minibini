@@ -1,21 +1,21 @@
 from django.test import TestCase
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
-class LineItemTypeQBOFieldsTest(TestCase):
-    """Test QBO account mapping fields on LineItemType."""
+class AccountingCategoryQBOFieldsTest(TestCase):
+    """Test QBO account mapping fields on AccountingCategory."""
 
     def test_qbo_item_id_default_blank(self):
-        lit = LineItemType.objects.create(code='TST', name='Test')
+        lit = AccountingCategory.objects.create(code='TST', name='Test')
         self.assertEqual(lit.qbo_item_id, '')
 
     def test_qbo_expense_account_id_default_blank(self):
-        lit = LineItemType.objects.create(code='TST', name='Test')
+        lit = AccountingCategory.objects.create(code='TST', name='Test')
         self.assertEqual(lit.qbo_expense_account_id, '')
 
     def test_can_set_both_account_ids(self):
         """A category can map to both income and expense accounts."""
-        lit = LineItemType.objects.create(
+        lit = AccountingCategory.objects.create(
             code='MAT', name='Materials',
             qbo_item_id='42',
             qbo_expense_account_id='99',
@@ -26,7 +26,7 @@ class LineItemTypeQBOFieldsTest(TestCase):
 
     def test_can_set_income_only(self):
         """A service category maps to income only."""
-        lit = LineItemType.objects.create(
+        lit = AccountingCategory.objects.create(
             code='SVC', name='Service',
             qbo_item_id='42',
         )
