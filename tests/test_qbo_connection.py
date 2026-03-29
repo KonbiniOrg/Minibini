@@ -126,14 +126,14 @@ class BusinessQBOFieldsTest(TestCase):
         )
 
     def test_business_has_qbo_customer_id(self):
-        """Business model has qbo_customer_id field, blank by default."""
+        """Business model has qbo_customer_id field, null by default."""
         biz = self._create_business()
-        self.assertEqual(biz.qbo_customer_id, '')
+        self.assertIsNone(biz.qbo_customer_id)
 
     def test_business_has_qbo_vendor_id(self):
-        """Business model has qbo_vendor_id field, blank by default."""
+        """Business model has qbo_vendor_id field, null by default."""
         biz = self._create_business()
-        self.assertEqual(biz.qbo_vendor_id, '')
+        self.assertIsNone(biz.qbo_vendor_id)
 
     def test_business_can_be_both_customer_and_vendor(self):
         """A business can have both QBO customer and vendor IDs."""

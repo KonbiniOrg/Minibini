@@ -34,7 +34,7 @@ class InvoiceQBOFieldsTest(TestCase):
 
     def test_invoice_has_qbo_id(self):
         inv = Invoice.objects.create(job=self.job)
-        self.assertEqual(inv.qbo_id, '')
+        self.assertIsNone(inv.qbo_id)
 
     def test_invoice_has_qbo_payment_status(self):
         inv = Invoice.objects.create(job=self.job)
@@ -155,7 +155,7 @@ class QBOInvoicePushTest(TestCase):
     @patch('apps.qbo.services.QBOCustomerSyncService.push_customer')
     def test_push_invoice_auto_syncs_customer(self, mock_push_customer, mock_pdf, mock_get_client):
         """push_invoice auto-syncs customer to QBO if not already synced."""
-        self.business.qbo_customer_id = ''
+        self.business.qbo_customer_id = None
         self.business.save()
 
         mock_push_customer.return_value = '42'

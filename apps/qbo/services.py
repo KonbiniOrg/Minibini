@@ -437,7 +437,7 @@ class QBOPaymentPollingService:
             return stats
 
         invoices = Invoice.objects.filter(
-            qbo_id__gt='',
+            qbo_id__isnull=False,
         ).exclude(
             qbo_payment_status='Paid',
         )
