@@ -207,6 +207,8 @@ Email addresses come from Minibini, not QBO. The QBO Customer record's email is 
 
 This supports the common case of different contacts from the same business ordering work — each gets their invoice directly, with AP copied as needed.
 
+**Deferred: AP contact / AP email on Business.** Currently CC/BCC are entered manually by the user at send time. In future, the Business model may need an `ap_email` field (or an AP Contact reference) so that CC can be auto-populated for invoice sends. This would save the user from entering the AP department email every time they invoice a given customer.
+
 Email subject and body template are configured in QBO's settings (not via API). The job statement PDF and QBO "Review and Pay" link are included automatically.
 
 ---
