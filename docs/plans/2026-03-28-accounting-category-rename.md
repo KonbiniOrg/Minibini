@@ -1110,8 +1110,10 @@ In `frontend/src/routes/SettingsPage.svelte`:
 
 - [ ] **Step 3: Verify manually**
 
+Start both Django and Vite dev servers (both are needed — the SPA proxies API calls to Django):
+
 ```bash
-cd frontend && npm run dev
+./dev.sh
 ```
 
 Navigate to `http://localhost:9000/#/settings`:

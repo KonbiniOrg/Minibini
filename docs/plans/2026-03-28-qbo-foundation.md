@@ -1731,10 +1731,10 @@ In `frontend/src/components/Nav.svelte`, add a Settings link alongside the exist
 
 - [ ] **Step 5: Verify manually**
 
-Start the dev servers:
+Start both Django and Vite dev servers (both are needed — the SPA proxies API calls to Django):
+
 ```bash
-python manage.py runserver &
-cd frontend && npm run dev
+./dev.sh
 ```
 
 Navigate to `http://localhost:9000/#/settings`:
