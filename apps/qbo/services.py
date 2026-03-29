@@ -286,7 +286,7 @@ class QBOInvoiceSyncService:
             QBOInvoiceSyncService._attach_pdf(client, qbo_id, pdf_bytes, invoice)
 
             # Send invoice email
-            QBOInvoiceSyncService._send_invoice(client, qbo_id, send_to)
+            QBOInvoiceSyncService._send_invoice(qbo_invoice, client, send_to)
 
             QBOService.log_sync(
                 entity_type='invoice',
@@ -370,9 +370,9 @@ class QBOInvoiceSyncService:
             os.unlink(temp_path)
 
     @staticmethod
-    def _send_invoice(client, qbo_invoice_id, send_to):
-        from quickbooks.objects.invoice import Invoice as QBOInvoice
-        QBOInvoice.send(qbo_invoice_id, send_to=send_to, qb=client)
+    def _send_invoice(qbo_invoice, client, send_to):
+        """Send a QBO invoice via email. qbo_invoice must be a saved instance with .Id set."""
+        qbo_invoice.send(qb=client, send_to=send_to)
 
 
 class QBOAccountsService:
