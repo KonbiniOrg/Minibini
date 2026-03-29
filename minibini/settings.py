@@ -115,9 +115,8 @@ DATABASES = {
 
 # Email settings
 # WARNING: Move to environment variables for production
-EMAIL_HOST_USER = 'minibini.test@gmail.com'
-# EMAIL_HOST_PASSWORD = 'thisisthedevpassword'  # the browser login pw
-EMAIL_HOST_PASSWORD = 'czah ufxr hjal rabb' # the app password
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'minibini.test@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 
 # IMAP (inbound email fetch)
 EMAIL_IMAP_SERVER = 'imap.gmail.com'
