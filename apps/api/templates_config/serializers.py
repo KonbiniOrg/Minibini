@@ -61,5 +61,8 @@ class ConfigurationSerializer(serializers.ModelSerializer):
 class AccountingCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountingCategory
-        fields = ['id', 'code', 'name', 'taxable', 'default_description', 'is_active']
+        fields = [
+            'id', 'code', 'name', 'taxable', 'default_description', 'is_active',
+            'qbo_item_id', 'qbo_expense_account_id',
+        ]
         read_only_fields = ['id']
