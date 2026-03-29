@@ -1,4 +1,5 @@
 import datetime
+from decimal import Decimal
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
@@ -416,3 +417,64 @@ class QBOAccountsService:
                     'sub_type': getattr(a, 'AccountSubType', ''),
                 })
         return results
+
+
+class QBOPaymentPollingService:
+    """Polls QBO for payment status updates on synced invoices."""
+
+    @staticmethod
+    def poll_all():
+        from apps.invoicing.models import Invoice
+
+        stats = {'checked': 0, 'updated': 0, 'errors': []}
+
+        client = QBOService.get_client()
+        if not client:
+            stats['error'] = 'No active QBO connection'
+            return stats
+
+        invoices = Invoice.objects.filter(
+            qbo_id__gt='',
+        ).exclude(
+            qbo_payment_status='Paid',
+        )
+
+        for invoice in invoices:
+            stats['checked'] += 1
+            try:
+                qbo_inv = QBOPaymentPollingService._fetch_qbo_invoice(
+                    client, invoice.qbo_id
+                )
+                if qbo_inv is None:
+                    stats['errors'].append(f'Invoice {invoice.pk}: not found in QBO')
+                    continue
+
+                total = Decimal(str(qbo_inv.TotalAmt))
+                balance = Decimal(str(qbo_inv.Balance))
+                amount_paid = total - balance
+
+                if balance == 0:
+                    payment_status = 'Paid'
+                elif amount_paid > 0:
+                    payment_status = 'Partial'
+                else:
+                    payment_status = 'Unpaid'
+
+                if (invoice.qbo_payment_status != payment_status or
+                        invoice.qbo_amount_paid != amount_paid):
+                    invoice.qbo_payment_status = payment_status
+                    invoice.qbo_amount_paid = amount_paid
+                    invoice.save(update_fields=[
+                        'qbo_payment_status', 'qbo_amount_paid'
+                    ])
+                    stats['updated'] += 1
+
+            except Exception as e:
+                stats['errors'].append(f'Invoice {invoice.pk}: {str(e)}')
+
+        return stats
+
+    @staticmethod
+    def _fetch_qbo_invoice(client, qbo_id):
+        from quickbooks.objects.invoice import Invoice as QBOInvoice
+        return QBOInvoice.get(qbo_id, qb=client)
