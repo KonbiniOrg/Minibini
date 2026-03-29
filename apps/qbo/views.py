@@ -81,7 +81,7 @@ def qbo_callback(request):
         )
 
     # Redirect to SPA settings page
-    return redirect('/#/settings')
+    return redirect(f'{settings.SPA_BASE_URL}/#/settings')
 
 
 # --- DRF API endpoints (called by SPA via XHR) ---

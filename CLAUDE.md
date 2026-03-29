@@ -325,6 +325,35 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - **Seed script** — `scripts/seed_data.sh` seeds realistic data through API endpoints (requires dev server on :8000)
 - **Management commands** — `populate_data.py` (base), `populate_contact_data.py`, `populate_job_data.py`
 
+### QuickBooks Online Integration Setup
+
+QBO integration requires OAuth credentials and a `.env` file. One-time setup per developer:
+
+1. **Get credentials** — Ask the project owner for the Intuit developer account credentials, or create your own at https://developer.intuit.com/. You need a sandbox app with a client ID and client secret.
+
+2. **Create `.env` file** in the project root (already gitignored):
+   ```
+   QBO_CLIENT_ID=your_client_id_here
+   QBO_CLIENT_SECRET=your_client_secret_here
+   QBO_REDIRECT_URI=http://localhost:8000/api/qbo/callback/
+   QBO_ENVIRONMENT=sandbox
+   SPA_BASE_URL=http://localhost:9000
+   ```
+
+3. **Register the redirect URI** — In the Intuit developer dashboard, go to your app's **Keys & credentials** and add `http://localhost:8000/api/qbo/callback/` as a Redirect URI. Must match exactly.
+
+4. **Install dependencies** — `pip install -r requirements.txt` (adds `python-quickbooks` and `python-dotenv`)
+
+5. **Run migrations** — `python manage.py migrate` (creates `qbo_connection` and `qbo_sync_log` tables, adds QBO fields to `businesses`)
+
+6. **Connect** — Start both servers with `./dev.sh`, navigate to `http://localhost:9000/#/settings`, click "Connect to QuickBooks". Log in with the Intuit sandbox credentials and authorize.
+
+**Notes:**
+- The OAuth connection uses a 100-day rolling refresh token. As long as any QBO API call is made within 100 days, the connection stays alive indefinitely.
+- `SPA_BASE_URL` controls where Django redirects after OAuth. In dev it's `http://localhost:9000` (Vite). In production leave it empty (same origin).
+- The user connecting must have the `can_manage_config` permission.
+- QBO service code lives in `apps/qbo/`. `QBOService` is the mock boundary — all tests mock at this layer.
+
 ## Common Coding Pitfalls
 
 1. **Old field names after renames** - Python silently sets arbitrary attributes; data never saved
