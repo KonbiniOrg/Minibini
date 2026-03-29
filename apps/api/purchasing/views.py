@@ -1,5 +1,7 @@
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.purchasing.services import PurchaseOrderService, BillService
 from apps.core.services import ServiceError
@@ -103,3 +105,16 @@ class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
         else:
             bill = BillService.create_bill(**data)
         serializer.instance = bill
+
+    @action(detail=True, methods=['post'], url_path='send-to-qbo')
+    def send_to_qbo(self, request, pk=None):
+        """Push this bill to QBO."""
+        bill = self.get_object()
+        try:
+            from apps.qbo.services import QBOBillSyncService
+            qbo_id = QBOBillSyncService.push_bill(bill)
+            return Response({'qbo_id': qbo_id, 'status': 'synced'})
+        except ValueError as e:
+            return Response({'error': str(e)}, status=400)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)

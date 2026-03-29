@@ -1,11 +1,15 @@
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
-from django.test import TestCase
+from django.test import TestCase, Client
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from apps.purchasing.models import Bill, BillLineItem
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
 from apps.qbo.services import QBOBillSyncService
 from apps.qbo.models import QBOSyncLog
+
+User = get_user_model()
 
 
 class BillQBOFieldsTest(TestCase):
@@ -135,3 +139,62 @@ class QBOBillPushTest(TestCase):
         self.assertEqual(qbo_bill.VendorRef.value, '77')
         self.assertEqual(qbo_bill.Line[0].Amount, 250.0)  # 10 * 25.00
         self.assertEqual(qbo_bill.Line[0].Description, 'Steel bolts')
+
+
+class BillSendToQBOEndpointTest(TestCase):
+    """Test the /api/bills/{id}/send-to-qbo/ endpoint."""
+
+    def setUp(self):
+        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
+        Configuration.objects.create(key='bill_counter', value='0')
+
+        self.api_client = Client()
+        self.user = User.objects.create_user(username='bookkeeper', password='testpass')
+        perm = Permission.objects.get(codename='can_manage_financials', content_type__app_label='core')
+        self.user.user_permissions.add(perm)
+        self.user = User.objects.get(pk=self.user.pk)
+
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Smith',
+            email='jane@vendor.com', mobile_number='555-0000',
+        )
+        self.business = Business.objects.create(
+            business_name='Supply Co', default_contact=self.contact,
+            qbo_vendor_id='77',
+        )
+        self.bill = Bill.objects.create(
+            business=self.business, vendor_invoice_number='V-001',
+        )
+
+    @patch('apps.qbo.services.QBOBillSyncService.push_bill')
+    def test_send_to_qbo_success(self, mock_push):
+        mock_push.return_value = '888'
+        self.api_client.login(username='bookkeeper', password='testpass')
+        response = self.api_client.post(
+            f'/api/bills/{self.bill.pk}/send-to-qbo/',
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['qbo_id'], '888')
+
+    def test_send_to_qbo_requires_permission(self):
+        User.objects.create_user(username='worker', password='testpass')
+        self.api_client.login(username='worker', password='testpass')
+        response = self.api_client.post(
+            f'/api/bills/{self.bill.pk}/send-to-qbo/',
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    @patch('apps.qbo.services.QBOBillSyncService.push_bill')
+    def test_send_to_qbo_already_synced(self, mock_push):
+        mock_push.return_value = '888'
+        self.bill.qbo_id = '888'
+        self.bill.save()
+        self.api_client.login(username='bookkeeper', password='testpass')
+        response = self.api_client.post(
+            f'/api/bills/{self.bill.pk}/send-to-qbo/',
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['qbo_id'], '888')
