@@ -490,6 +490,87 @@ class QBOInvoiceSyncService:
         )
 
 
+class QBOBillSyncService:
+    """Pushes Minibini bills to QBO."""
+
+    @staticmethod
+    def push_bill(bill):
+        if bill.qbo_id:
+            return bill.qbo_id
+
+        business = bill.business
+        if not business:
+            raise ValueError('Bill must have a vendor business')
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        # Auto-sync vendor to QBO if not already synced
+        if not business.qbo_vendor_id:
+            QBOVendorSyncService.push_vendor(business)
+
+        qbo_bill = QBOBillSyncService._build_qbo_bill(bill)
+
+        try:
+            qbo_bill.save(qb=client)
+            qbo_id = str(qbo_bill.Id)
+
+            bill.qbo_id = qbo_id
+            bill.save(update_fields=['qbo_id'])
+
+            QBOService.log_sync(
+                entity_type='bill',
+                entity_id=bill.pk,
+                qbo_entity_type='Bill',
+                qbo_entity_id=qbo_id,
+                action='create',
+                status='success',
+            )
+            return qbo_id
+
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='bill',
+                entity_id=bill.pk,
+                qbo_entity_type='Bill',
+                qbo_entity_id='',
+                action='create',
+                status='failed',
+                error_message=str(e),
+            )
+            raise
+
+    @staticmethod
+    def _build_qbo_bill(bill):
+        from quickbooks.objects.bill import Bill as QBOBill
+        from quickbooks.objects.detailline import AccountBasedExpenseLine, AccountBasedExpenseLineDetail
+        from quickbooks.objects.base import Ref
+
+        qbo_bill = QBOBill()
+        qbo_bill.VendorRef = Ref()
+        qbo_bill.VendorRef.value = bill.business.qbo_vendor_id
+
+        if bill.vendor_invoice_number:
+            qbo_bill.DocNumber = bill.vendor_invoice_number
+
+        qbo_bill.Line = []
+        for item in bill.billlineitem_set.select_related('accounting_category').all():
+            line = AccountBasedExpenseLine()
+            line.Amount = float(item.total_amount)
+            line.Description = item.description
+
+            detail = AccountBasedExpenseLineDetail()
+            if item.accounting_category and item.accounting_category.qbo_expense_account_id:
+                detail.AccountRef = Ref()
+                detail.AccountRef.value = item.accounting_category.qbo_expense_account_id
+
+            line.AccountBasedExpenseLineDetail = detail
+            qbo_bill.Line.append(line)
+
+        return qbo_bill
+
+
 class QBOAccountsService:
     """Pulls Items and chart of accounts from QBO for category mapping."""
 
