@@ -1615,6 +1615,7 @@ This task adds the minimal SPA UI for managing the QBO connection.
 ```svelte
 <!-- frontend/src/components/QBOConnectionCard.svelte -->
 <script>
+  import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
 
   let status = $state(null);
@@ -1652,7 +1653,7 @@ This task adds the minimal SPA UI for managing the QBO connection.
     }
   }
 
-  $effect(() => {
+  onMount(() => {
     loadStatus();
   });
 </script>
