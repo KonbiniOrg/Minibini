@@ -29,6 +29,10 @@ python manage.py test tests.test_foo    # Run specific test module
 # Docker
 docker compose up                       # Full stack (app, mysql, nginx)
 
+# Scheduled jobs
+# Crontab file in docker config area (TBD: docker/ directory) runs management commands
+# e.g., payment status polling, temp email cleanup
+
 # Data seeding
 ./scripts/seed_data.sh                  # Seed realistic data via API (requires dev server running)
 ```
