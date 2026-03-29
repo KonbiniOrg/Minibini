@@ -677,3 +677,41 @@ class QBOPaymentPollingService:
     def _fetch_qbo_invoice(client, qbo_id):
         from quickbooks.objects.invoice import Invoice as QBOInvoice
         return QBOInvoice.get(qbo_id, qb=client)
+
+
+class QBOBillPaymentPollingService:
+    """Polls QBO for payment status updates on synced bills."""
+
+    @staticmethod
+    def poll_all():
+        from apps.purchasing.models import Bill
+        stats = {'checked': 0, 'updated': 0, 'errors': []}
+        client = QBOService.get_client()
+        if not client:
+            stats['error'] = 'No active QBO connection'
+            return stats
+        bills = Bill.objects.filter(qbo_id__isnull=False).exclude(qbo_payment_status='Paid')
+        for bill in bills:
+            stats['checked'] += 1
+            try:
+                qbo_bill = QBOBillPaymentPollingService._fetch_qbo_bill(client, bill.qbo_id)
+                if qbo_bill is None:
+                    stats['errors'].append(f'Bill {bill.pk}: not found in QBO')
+                    continue
+                balance = Decimal(str(qbo_bill.Balance))
+                if balance == 0:
+                    payment_status = 'Paid'
+                else:
+                    payment_status = 'Unpaid'
+                if bill.qbo_payment_status != payment_status:
+                    bill.qbo_payment_status = payment_status
+                    bill.save(update_fields=['qbo_payment_status'])
+                    stats['updated'] += 1
+            except Exception as e:
+                stats['errors'].append(f'Bill {bill.pk}: {str(e)}')
+        return stats
+
+    @staticmethod
+    def _fetch_qbo_bill(client, qbo_id):
+        from quickbooks.objects.bill import Bill as QBOBill
+        return QBOBill.get(qbo_id, qb=client)
