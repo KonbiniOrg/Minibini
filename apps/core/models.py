@@ -168,6 +168,10 @@ class LineItemType(models.Model):
     default_description = models.TextField(blank=True)  # Template for descriptions
     is_active = models.BooleanField(default=True)  # Soft delete support
 
+    # QBO account mappings (populated after connecting to QBO)
+    qbo_item_id = models.CharField(max_length=50, blank=True, default='')
+    qbo_expense_account_id = models.CharField(max_length=50, blank=True, default='')
+
     class Meta:
         db_table = 'li_types'
         ordering = ['name']
