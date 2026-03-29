@@ -97,3 +97,75 @@ class QBODisplayNameService:
             name = name[:max_base] + suffix
 
         return name
+
+
+class QBOCustomerSyncService:
+    """Syncs Minibini Business records to QBO as Customers."""
+
+    @staticmethod
+    def push_customer(business):
+        """
+        Push a Business to QBO as a Customer.
+        Returns the QBO Customer ID.
+        Skips if already synced (qbo_customer_id is set).
+        """
+        if business.qbo_customer_id:
+            return business.qbo_customer_id
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        customer = QBOCustomerSyncService._build_customer(business)
+
+        try:
+            customer.save(qb=client)
+            business.qbo_customer_id = str(customer.Id)
+            business.save(update_fields=['qbo_customer_id'])
+
+            QBOService.log_sync(
+                entity_type='customer',
+                entity_id=business.pk,
+                qbo_entity_type='Customer',
+                qbo_entity_id=str(customer.Id),
+                action='create',
+                status='success',
+            )
+            return str(customer.Id)
+
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='customer',
+                entity_id=business.pk,
+                qbo_entity_type='Customer',
+                qbo_entity_id='',
+                action='create',
+                status='failed',
+                error_message=str(e),
+            )
+            raise
+
+    @staticmethod
+    def _build_customer(business):
+        """Build a QBO Customer object from a Business."""
+        from quickbooks.objects.customer import Customer
+
+        customer = Customer()
+        customer.CompanyName = business.business_name
+        customer.DisplayName = QBODisplayNameService.generate_display_name(
+            business, role='customer'
+        )
+
+        if business.business_phone:
+            from quickbooks.objects.base import PhoneNumber
+            customer.PrimaryPhone = PhoneNumber()
+            customer.PrimaryPhone.FreeFormNumber = business.business_phone
+
+        # Use default contact's email if available
+        default_contact = business.default_contact
+        if default_contact and default_contact.email:
+            from quickbooks.objects.base import EmailAddress
+            customer.PrimaryEmailAddr = EmailAddress()
+            customer.PrimaryEmailAddr.Address = default_contact.email
+
+        return customer
