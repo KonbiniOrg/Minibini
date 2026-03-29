@@ -2,12 +2,12 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.urls import reverse
-from .models import User, LineItemType, Configuration, EmailRecord, TempEmail
+from .models import User, AccountingCategory, Configuration, EmailRecord, TempEmail
 from .services import EmailService, ConfigurationService, NotFoundError
 from .email_utils import parse_email_address, extract_company_from_signature, extract_email_body
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
-from .forms import LineItemTypeForm, TaxConfigurationForm
+from .forms import AccountingCategoryForm, TaxConfigurationForm
 
 
 @login_required
@@ -237,72 +237,79 @@ def disassociate_email_from_job(request, email_record_id):
 
 @login_required
 @permission_required('core.can_manage_config', raise_exception=True)
-def line_item_type_list(request):
-    """List all line item types."""
+def accounting_category_list(request):
+    """List all accounting categories."""
     show_all = request.GET.get('show_all', '0') == '1'
 
     if show_all:
-        line_item_types = LineItemType.objects.all()
+        categories = AccountingCategory.objects.all()
     else:
-        line_item_types = LineItemType.objects.filter(is_active=True)
+        categories = AccountingCategory.objects.filter(is_active=True)
 
     return render(request, 'core/line_item_type_list.html', {
-        'line_item_types': line_item_types,
+        'line_item_types': categories,
         'show_all': show_all,
     })
 
 
 @login_required
 @permission_required('core.can_manage_config', raise_exception=True)
-def line_item_type_detail(request, pk):
-    """Display line item type details."""
-    line_item_type = get_object_or_404(LineItemType, pk=pk)
+def accounting_category_detail(request, pk):
+    """Display accounting category details."""
+    category = get_object_or_404(AccountingCategory, pk=pk)
     return render(request, 'core/line_item_type_detail.html', {
-        'line_item_type': line_item_type,
+        'line_item_type': category,
     })
 
 
 @login_required
 @permission_required('core.can_manage_config', raise_exception=True)
-def line_item_type_create(request):
-    """Create a new line item type."""
+def accounting_category_create(request):
+    """Create a new accounting category."""
     if request.method == 'POST':
-        form = LineItemTypeForm(request.POST)
+        form = AccountingCategoryForm(request.POST)
         if form.is_valid():
-            line_item_type = ConfigurationService.create_line_item_type(**form.cleaned_data)
-            messages.success(request, f'Line item type "{line_item_type.name}" created successfully.')
-            return redirect('core:line_item_type_list')
+            category = ConfigurationService.create_accounting_category(**form.cleaned_data)
+            messages.success(request, f'Accounting category "{category.name}" created successfully.')
+            return redirect('core:accounting_category_list')
     else:
-        form = LineItemTypeForm()
+        form = AccountingCategoryForm()
 
     return render(request, 'core/line_item_type_form.html', {
         'form': form,
-        'title': 'Create Line Item Type',
+        'title': 'Create Accounting Category',
         'submit_label': 'Create',
     })
 
 
 @login_required
 @permission_required('core.can_manage_config', raise_exception=True)
-def line_item_type_edit(request, pk):
-    """Edit an existing line item type."""
-    line_item_type = get_object_or_404(LineItemType, pk=pk)
+def accounting_category_edit(request, pk):
+    """Edit an existing accounting category."""
+    category = get_object_or_404(AccountingCategory, pk=pk)
 
     if request.method == 'POST':
-        form = LineItemTypeForm(request.POST, instance=line_item_type)
+        form = AccountingCategoryForm(request.POST, instance=category)
         if form.is_valid():
-            ConfigurationService.update_line_item_type(pk, **form.cleaned_data)
-            messages.success(request, f'Line item type "{line_item_type.name}" updated successfully.')
-            return redirect('core:line_item_type_detail', pk=line_item_type.pk)
+            ConfigurationService.update_accounting_category(pk, **form.cleaned_data)
+            messages.success(request, f'Accounting category "{category.name}" updated successfully.')
+            return redirect('core:accounting_category_detail', pk=category.pk)
     else:
-        form = LineItemTypeForm(instance=line_item_type)
+        form = AccountingCategoryForm(instance=category)
 
     return render(request, 'core/line_item_type_form.html', {
         'form': form,
-        'line_item_type': line_item_type,
-        'title': f'Edit Line Item Type: {line_item_type.name}',
+        'line_item_type': category,
+        'title': f'Edit Accounting Category: {category.name}',
         'submit_label': 'Save Changes',
     })
+
+
+# Backward-compatible aliases for URL resolution during transition
+line_item_type_list = accounting_category_list
+line_item_type_detail = accounting_category_detail
+line_item_type_create = accounting_category_create
+line_item_type_edit = accounting_category_edit
 
 
 @login_required

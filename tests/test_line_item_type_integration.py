@@ -22,14 +22,14 @@ class LineItemTypeIntegrationTest(TestCase):
     def test_full_workflow_taxable_item(self):
         """Test complete workflow: Create type -> PriceListItem -> Estimate with tax."""
         # 1. Create LineItemType
-        response = self.client.post(reverse('core:line_item_type_create'), {
+        response = self.client.post(reverse('core:accounting_category_create'), {
             'code': 'HWRE',
             'name': 'Hardware',
             'taxable': True,
             'default_description': 'Hardware items',
             'is_active': True,
         })
-        self.assertRedirects(response, reverse('core:line_item_type_list'))
+        self.assertRedirects(response, reverse('core:accounting_category_list'))
         hardware_type = LineItemType.objects.get(code='HWRE')
         self.assertTrue(hardware_type.taxable)
 
@@ -187,26 +187,26 @@ class LineItemTypeIntegrationTest(TestCase):
     def test_line_item_type_crud_workflow(self):
         """Test full CRUD workflow for LineItemType."""
         # CREATE
-        response = self.client.post(reverse('core:line_item_type_create'), {
+        response = self.client.post(reverse('core:accounting_category_create'), {
             'code': 'TEST',
             'name': 'Test Type',
             'taxable': True,
             'default_description': 'Test description',
             'is_active': True,
         })
-        self.assertRedirects(response, reverse('core:line_item_type_list'))
+        self.assertRedirects(response, reverse('core:accounting_category_list'))
         line_item_type = LineItemType.objects.get(code='TEST')
         self.assertEqual(line_item_type.name, 'Test Type')
         self.assertTrue(line_item_type.taxable)
 
         # READ - List view
-        response = self.client.get(reverse('core:line_item_type_list'))
+        response = self.client.get(reverse('core:accounting_category_list'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Test Type')
 
         # READ - Detail view
         response = self.client.get(
-            reverse('core:line_item_type_detail', args=[line_item_type.pk])
+            reverse('core:accounting_category_detail', args=[line_item_type.pk])
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Test Type')
@@ -214,7 +214,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # UPDATE
         response = self.client.post(
-            reverse('core:line_item_type_edit', args=[line_item_type.pk]),
+            reverse('core:accounting_category_edit', args=[line_item_type.pk]),
             {
                 'code': 'TEST',
                 'name': 'Updated Test Type',
@@ -225,7 +225,7 @@ class LineItemTypeIntegrationTest(TestCase):
         )
         self.assertRedirects(
             response,
-            reverse('core:line_item_type_detail', args=[line_item_type.pk])
+            reverse('core:accounting_category_detail', args=[line_item_type.pk])
         )
         line_item_type.refresh_from_db()
         self.assertEqual(line_item_type.name, 'Updated Test Type')
@@ -233,7 +233,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # SOFT DELETE (deactivate)
         response = self.client.post(
-            reverse('core:line_item_type_edit', args=[line_item_type.pk]),
+            reverse('core:accounting_category_edit', args=[line_item_type.pk]),
             {
                 'code': 'TEST',
                 'name': 'Updated Test Type',
@@ -249,12 +249,12 @@ class LineItemTypeIntegrationTest(TestCase):
         # Use a fresh client to avoid flash messages interfering
         fresh_client = Client()
         fresh_client.force_login(get_user_model().objects.create_superuser(username='admin_fresh', password='testpass'))
-        response = fresh_client.get(reverse('core:line_item_type_list'))
+        response = fresh_client.get(reverse('core:accounting_category_list'))
         self.assertNotContains(response, 'Updated Test Type')
 
         # Verify inactive type is shown with show_all parameter
         response = fresh_client.get(
-            reverse('core:line_item_type_list') + '?show_all=1'
+            reverse('core:accounting_category_list') + '?show_all=1'
         )
         self.assertContains(response, 'Updated Test Type')
 

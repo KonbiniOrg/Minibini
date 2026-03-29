@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
 from imap_tools import MailBox, AND
-from .models import Configuration, EmailRecord, TempEmail, LineItemType
+from .models import Configuration, EmailRecord, TempEmail, AccountingCategory
 
 
 class ServiceError(Exception):
@@ -988,26 +988,30 @@ class ConfigurationService:
             )
 
     @staticmethod
-    def create_line_item_type(**kwargs):
-        """Create a new LineItemType from field values."""
-        lit = LineItemType(**kwargs)
-        lit.full_clean()
-        lit.save()
-        return lit
+    def create_accounting_category(**kwargs):
+        """Create a new AccountingCategory from field values."""
+        cat = AccountingCategory(**kwargs)
+        cat.full_clean()
+        cat.save()
+        return cat
 
     @staticmethod
-    def update_line_item_type(pk, **kwargs):
-        """Update an existing LineItemType by PK.
+    def update_accounting_category(pk, **kwargs):
+        """Update an existing AccountingCategory by PK.
 
         Raises:
-            NotFoundError: if LineItemType not found
+            NotFoundError: if AccountingCategory not found
         """
         try:
-            lit = LineItemType.objects.get(pk=pk)
-        except LineItemType.DoesNotExist:
-            raise NotFoundError(f'LineItemType {pk} not found')
+            cat = AccountingCategory.objects.get(pk=pk)
+        except AccountingCategory.DoesNotExist:
+            raise NotFoundError(f'AccountingCategory {pk} not found')
         for field, value in kwargs.items():
-            setattr(lit, field, value)
-        lit.full_clean()
-        lit.save()
-        return lit
+            setattr(cat, field, value)
+        cat.full_clean()
+        cat.save()
+        return cat
+
+    # Backward-compatible aliases
+    create_line_item_type = create_accounting_category
+    update_line_item_type = update_accounting_category

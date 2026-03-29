@@ -57,5 +57,5 @@ class ConfigurationAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_list_line_item_types(self):
-        response = self.client.get('/api/line-item-types/')
+        response = self.client.get('/api/accounting-categories/')
         self.assertEqual(response.status_code, 200)

@@ -2,7 +2,7 @@ from rest_framework import serializers
 from apps.estimates.models import (
     WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
 )
-from apps.core.models import Configuration, LineItemType
+from apps.core.models import Configuration, AccountingCategory
 
 
 class TaskTemplateSerializer(serializers.ModelSerializer):
@@ -58,8 +58,12 @@ class ConfigurationSerializer(serializers.ModelSerializer):
         fields = ['key', 'value']
 
 
-class LineItemTypeSerializer(serializers.ModelSerializer):
+class AccountingCategorySerializer(serializers.ModelSerializer):
     class Meta:
-        model = LineItemType
+        model = AccountingCategory
         fields = ['id', 'code', 'name', 'taxable', 'default_description', 'is_active']
         read_only_fields = ['id']
+
+
+# Backward-compatible alias
+LineItemTypeSerializer = AccountingCategorySerializer

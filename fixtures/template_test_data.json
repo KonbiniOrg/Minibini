@@ -1,6 +1,6 @@
 [
     {
-        "model": "core.lineitemtype",
+        "model": "core.accountingcategory",
         "pk": 100,
         "fields": {
             "name": "Electrical Work",
@@ -8,7 +8,7 @@
         }
     },
     {
-        "model": "core.lineitemtype",
+        "model": "core.accountingcategory",
         "pk": 101,
         "fields": {
             "name": "Plumbing Work",

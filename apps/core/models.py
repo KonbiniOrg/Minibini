@@ -157,7 +157,7 @@ class TempEmail(models.Model):
 
     def __str__(self):
         return f"{self.from_email}: {self.subject[:50]}"
-class LineItemType(models.Model):
+class AccountingCategory(models.Model):
     """
     Defines categories of line items with default taxability.
     Examples: Service, Material, Product, Freight, Overhead
@@ -173,11 +173,16 @@ class LineItemType(models.Model):
     qbo_expense_account_id = models.CharField(max_length=50, blank=True, default='')
 
     class Meta:
-        db_table = 'li_types'
+        db_table = 'accounting_categories'
         ordering = ['name']
+        verbose_name_plural = 'accounting categories'
 
     def __str__(self):
         return self.name
+
+
+# Backward-compatible alias for imports during transition
+LineItemType = AccountingCategory
 
 
 class AbstractWorkContainer(models.Model):
@@ -206,7 +211,7 @@ class BaseLineItem(models.Model):
 
     # Tax-related fields
     line_item_type = models.ForeignKey(
-        'core.LineItemType',
+        'core.AccountingCategory',
         on_delete=models.PROTECT,
         related_name='%(class)s_items',
         null=True,  # Nullable initially for migration; will be made required after data migration

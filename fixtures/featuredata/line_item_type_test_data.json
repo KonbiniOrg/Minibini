@@ -1,6 +1,6 @@
 [
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 1,
     "fields": {
       "code": "SVC",
@@ -12,7 +12,7 @@
     "_section": "=== LINE ITEM TYPES (6) - Categories for line items with default taxability ==="
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 2,
     "fields": {
       "code": "MAT",
@@ -23,7 +23,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 3,
     "fields": {
       "code": "MFR",
@@ -34,7 +34,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 4,
     "fields": {
       "code": "PRD",
@@ -45,7 +45,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 5,
     "fields": {
       "code": "FRT",
@@ -56,7 +56,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 6,
     "fields": {
       "code": "OVH",
@@ -67,7 +67,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 7,
     "fields": {
       "code": "DLV",

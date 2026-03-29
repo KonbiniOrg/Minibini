@@ -371,7 +371,7 @@ class TemplateBundle(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     line_item_type = models.ForeignKey(
-        'core.LineItemType',
+        'core.AccountingCategory',
         on_delete=models.PROTECT
     )
     sort_order = models.IntegerField(default=0)
@@ -434,7 +434,7 @@ class TaskTemplate(models.Model):
 
     # LineItemType determines what type of line item this task produces when mapped directly
     line_item_type = models.ForeignKey(
-        'core.LineItemType',
+        'core.AccountingCategory',
         on_delete=models.PROTECT,
         null=True,  # Temporarily nullable for migration
         blank=True,

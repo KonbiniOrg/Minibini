@@ -10,11 +10,11 @@
 <h2>Line Item Types</h2>
 
 <p>
-    <a href="{% url 'core:line_item_type_create' %}" style="background-color: #007bff; color: white; padding: 5px 10px; text-decoration: none;">Add New Type</a>
+    <a href="{% url 'core:accounting_category_create' %}" style="background-color: #007bff; color: white; padding: 5px 10px; text-decoration: none;">Add New Type</a>
     {% if show_all %}
-        | <a href="{% url 'core:line_item_type_list' %}">Hide Inactive</a>
+        | <a href="{% url 'core:accounting_category_list' %}">Hide Inactive</a>
     {% else %}
-        | <a href="{% url 'core:line_item_type_list' %}?show_all=1">Show All (Including Inactive)</a>
+        | <a href="{% url 'core:accounting_category_list' %}?show_all=1">Show All (Including Inactive)</a>
     {% endif %}
 </p>
 
@@ -37,8 +37,8 @@
             <td>{% if type.taxable %}Yes{% else %}No{% endif %}</td>
             <td>{% if type.is_active %}Yes{% else %}No{% endif %}</td>
             <td>
-                <a href="{% url 'core:line_item_type_detail' type.pk %}">View</a> |
-                <a href="{% url 'core:line_item_type_edit' type.pk %}">Edit</a>
+                <a href="{% url 'core:accounting_category_detail' type.pk %}">View</a> |
+                <a href="{% url 'core:accounting_category_edit' type.pk %}">Edit</a>
             </td>
         </tr>
         {% endfor %}

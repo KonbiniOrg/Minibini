@@ -15,7 +15,7 @@ from apps.api.search.views import search_view
 from apps.api.stubs import stub_501
 from apps.api.templates_config.views import (
     WorkOrderTemplateViewSet, TaskTemplateViewSet,
-    LineItemTypeViewSet, settings_view,
+    AccountingCategoryViewSet, settings_view,
 )
 
 
@@ -42,7 +42,7 @@ def api_root(request):
         'work-order-templates': '/api/work-order-templates/',
         'task-templates': '/api/task-templates/',
         'settings': '/api/settings/',
-        'line-item-types': '/api/line-item-types/',
+        'accounting-categories': '/api/accounting-categories/',
     })
 
 
@@ -62,7 +62,7 @@ router.register(r'bills', BillViewSet, basename='bill')
 router.register(r'price-list-items', PriceListItemViewSet, basename='price-list-item')
 router.register(r'work-order-templates', WorkOrderTemplateViewSet, basename='work-order-template')
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
-router.register(r'line-item-types', LineItemTypeViewSet, basename='line-item-type')
+router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
 
 urlpatterns = [
     path('', api_root, name='api-root'),

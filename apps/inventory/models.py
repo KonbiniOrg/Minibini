@@ -47,7 +47,7 @@ class PriceListItem(models.Model):
 
     # LineItemType for categorization and taxability
     line_item_type = models.ForeignKey(
-        'core.LineItemType',
+        'core.AccountingCategory',
         on_delete=models.PROTECT,
         related_name='price_list_items',
         null=True,  # Nullable initially for migration; will be made required after data migration
@@ -101,7 +101,7 @@ class Material(models.Model):
         null=True, blank=True,
     )
     line_item_type = models.ForeignKey(
-        'core.LineItemType', on_delete=models.SET_NULL,
+        'core.AccountingCategory', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
     description = models.CharField(max_length=255, blank=True, default='')
