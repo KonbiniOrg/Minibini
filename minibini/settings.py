@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'apps.purchasing',
     'apps.search',
     'apps.inventory',
+    'apps.qbo',
     'rest_framework',
     'apps.api',
 ]
@@ -118,6 +119,13 @@ EMAIL_HOST_PASSWORD = 'czah ufxr hjal rabb' # the app password
 EMAIL_IMAP_FOLDER = 'INBOX'  # Default folder to monitor
 EMAIL_IMAP_SSL = True  # Use SSL/TLS (port 993)
 EMAIL_IMAP_PORT = None  # None = auto-detect (993 for SSL, 143 for non-SSL)
+
+
+# QuickBooks Online Integration
+QBO_CLIENT_ID = os.environ.get('QBO_CLIENT_ID', '')
+QBO_CLIENT_SECRET = os.environ.get('QBO_CLIENT_SECRET', '')
+QBO_REDIRECT_URI = os.environ.get('QBO_REDIRECT_URI', 'http://localhost:8000/api/qbo/callback/')
+QBO_ENVIRONMENT = os.environ.get('QBO_ENVIRONMENT', 'sandbox')  # 'sandbox' or 'production'
 
 
 # Password validation
