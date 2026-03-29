@@ -72,6 +72,7 @@ urlpatterns = [
     path('settings/', settings_view, name='api-settings'),
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),
+    path('qbo/', include('apps.qbo.urls')),
     path('time-tracking/status/', stub_501('GET /api/time-tracking/status/'), name='time-tracking-status'),
     path('time-tracking/active/', stub_501('GET /api/time-tracking/active/'), name='time-tracking-active'),
 ] + router.urls
