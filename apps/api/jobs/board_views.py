@@ -31,3 +31,26 @@ def task_reorder_view(request):
         Task.objects.filter(pk=task_id).update(worker_queue=position)
 
     return Response({'status': 'ok'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanManageJobs])
+def task_assign_view(request, task_pk):
+    """Assign a task to a worker and set queue position.
+
+    Expects: {"assignee": user_id, "worker_queue": position}
+    Pass assignee: null to unassign.
+    """
+    task = Task.objects.filter(pk=task_pk).first()
+    if not task:
+        return Response({'error': 'Task not found'}, status=404)
+
+    assignee_id = request.data.get('assignee')
+    worker_queue = request.data.get('worker_queue')
+
+    Task.objects.filter(pk=task_pk).update(
+        assignee_id=assignee_id,
+        worker_queue=worker_queue,
+    )
+
+    return Response({'status': 'ok'})

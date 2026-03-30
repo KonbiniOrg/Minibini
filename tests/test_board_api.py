@@ -151,3 +151,62 @@ class TaskReorderEndpointTest(FixtureTestCase):
         self.task1.refresh_from_db()
         self.assertIsNone(self.task1.assignee_id)
         self.assertIsNone(self.task1.worker_queue)
+
+
+class TaskAssignEndpointTest(FixtureTestCase):
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days',
+            defaults={'value': '14'}
+        )
+        self.contact = Contact.objects.first()
+        self.user = User.objects.create_user(username='manager', password='testpass')
+        from django.contrib.auth.models import Permission
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.user.user_permissions.add(perm)
+        self.client.login(username='manager', password='testpass')
+
+        self.job = Job.objects.create(
+            job_number='JOB-TEST-0001', name='Test Job',
+            status='approved', contact=self.contact,
+        )
+        self.wo = WorkOrder.objects.create(job=self.job)
+
+    def test_assign_task_to_worker(self):
+        task = Task.objects.create(name='Unassigned', work_order=self.wo)
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/assign/',
+            data={'assignee': self.user.pk, 'worker_queue': 1},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.assignee_id, self.user.pk)
+        self.assertEqual(task.worker_queue, 1)
+
+    def test_unassign_task(self):
+        task = Task.objects.create(
+            name='Assigned', work_order=self.wo,
+            assignee=self.user, worker_queue=1,
+        )
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/assign/',
+            data={'assignee': None, 'worker_queue': None},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        task.refresh_from_db()
+        self.assertIsNone(task.assignee_id)
+        self.assertIsNone(task.worker_queue)
+
+    def test_assign_requires_permission(self):
+        viewer = User.objects.create_user(username='viewer', password='testpass')
+        self.client.login(username='viewer', password='testpass')
+        task = Task.objects.create(name='Task', work_order=self.wo)
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/assign/',
+            data={'assignee': self.user.pk, 'worker_queue': 1},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 403)

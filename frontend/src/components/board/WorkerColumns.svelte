@@ -7,7 +7,10 @@
   let addedWorkers = $state([]);
   let showDropdown = $state(false);
 
-  let allWorkers = $derived([...workers, ...addedWorkers]);
+  let allWorkers = $derived([
+    ...workers,
+    ...addedWorkers.filter(aw => !workers.some(w => w.user.id === aw.user.id)),
+  ]);
 
   let filteredAvailable = $derived(
     availableWorkers.filter(aw => !addedWorkers.some(added => added.user.id === aw.id))
@@ -24,12 +27,16 @@
     if (!taskId || !canManage) return;
 
     try {
-      // Find the worker's current task list to determine queue position
+      // Find the worker's current tasks to determine next queue position
       const worker = allWorkers.find(w => w.user.id === workerId);
-      const existingIds = worker ? worker.tasks.map(t => t.task_id) : [];
-      const newOrder = [...existingIds, parseInt(taskId)];
+      const nextQueue = worker && worker.tasks.length > 0
+        ? Math.max(...worker.tasks.map(t => t.worker_queue || 0)) + 1
+        : 1;
 
-      await api.post('/api/tasks/reorder/', { task_ids: newOrder });
+      await api.post(`/api/tasks/${taskId}/assign/`, {
+        assignee: workerId,
+        worker_queue: nextQueue,
+      });
       onUpdate();
     } catch (err) {
       console.error('Failed to assign task:', err);

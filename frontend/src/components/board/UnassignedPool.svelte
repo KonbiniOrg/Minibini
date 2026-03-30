@@ -18,9 +18,10 @@
     if (!taskId) return;
 
     try {
-      // Unassign: set worker_queue to null via reorder with empty list
-      // The board reload will pick up the change
-      await api.post('/api/tasks/reorder/', { task_ids: [parseInt(taskId)] });
+      await api.post(`/api/tasks/${taskId}/assign/`, {
+        assignee: null,
+        worker_queue: null,
+      });
       onUpdate();
     } catch (err) {
       console.error('Failed to unassign task:', err);
