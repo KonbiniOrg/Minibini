@@ -264,6 +264,13 @@
         }
     },
     {
+        "model": "core.configuration",
+        "pk": "board_closed_retention_days",
+        "fields": {
+            "value": "14"
+        }
+    },
+    {
         "model": "jobs.job",
         "pk": 1,
         "fields": {
