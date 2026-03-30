@@ -4,10 +4,13 @@
   import PipelineColumn from '../../components/board/PipelineColumn.svelte';
   import ApprovedArea from '../../components/board/ApprovedArea.svelte';
   import ClosedColumn from '../../components/board/ClosedColumn.svelte';
+  import ResizeHandle from '../../components/board/ResizeHandle.svelte';
 
   let boardData = $state(null);
   let loading = $state(true);
   let error = $state(null);
+  let pipelineWidth = $state(270);
+  let closedWidth = $state(270);
 
   async function loadBoard() {
     loading = true;
@@ -44,17 +47,15 @@
   <p>Error: {error}</p>
 {:else if boardData}
   <div class="board">
-    <div class="board-col pipeline">
+    <div class="board-col pipeline" style="width: {pipelineWidth}px;">
       <PipelineColumn jobs={boardData.pipeline} />
     </div>
+    <ResizeHandle direction="vertical" onResize={(delta) => { pipelineWidth = Math.max(200, pipelineWidth + delta); }} />
     <div class="board-col approved">
-      <ApprovedArea
-        data={boardData.approved}
-        canManage={canManageJobs()}
-        onUpdate={loadBoard}
-      />
+      <ApprovedArea data={boardData.approved} canManage={canManageJobs()} onUpdate={loadBoard} />
     </div>
-    <div class="board-col closed">
+    <ResizeHandle direction="vertical" onResize={(delta) => { closedWidth = Math.max(200, closedWidth - delta); }} />
+    <div class="board-col closed" style="width: {closedWidth}px;">
       <ClosedColumn jobs={boardData.closed} />
     </div>
   </div>
@@ -82,7 +83,7 @@
     overflow: hidden;
   }
   .board-col { display: flex; flex-direction: column; overflow: hidden; }
-  .board-col.pipeline { width: 270px; flex-shrink: 0; border-right: 1px solid #e0e0e0; }
+  .board-col.pipeline { flex-shrink: 0; }
   .board-col.approved { flex: 1; }
-  .board-col.closed { width: 270px; flex-shrink: 0; border-left: 1px solid #e0e0e0; }
+  .board-col.closed { flex-shrink: 0; }
 </style>
