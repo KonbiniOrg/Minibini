@@ -38,8 +38,8 @@
     addedWorkers = [...addedWorkers, { user, tasks: [] }];
   }
 
-  async function assignTask(taskId, targetWorkerId) {
-    // Find the task object
+  async function assignTask(taskId, targetWorkerId, insertIndex = -1) {
+    // Find the task object and remove from its current location
     let task = null;
 
     // Check unassigned
@@ -56,6 +56,10 @@
         if (tIdx !== -1) {
           task = w.tasks[tIdx];
           w.tasks = w.tasks.filter((_, i) => i !== tIdx);
+          // If reordering within same column, adjust insertIndex for the removal
+          if (w.user.id === targetWorkerId && insertIndex > tIdx) {
+            insertIndex--;
+          }
           break;
         }
       }
@@ -68,6 +72,9 @@
         if (tIdx !== -1) {
           task = w.tasks[tIdx];
           w.tasks = w.tasks.filter((_, i) => i !== tIdx);
+          if (w.user.id === targetWorkerId && insertIndex > tIdx) {
+            insertIndex--;
+          }
           break;
         }
       }
@@ -86,11 +93,25 @@
         targetWorker = addedWorkers.find(w => w.user.id === targetWorkerId);
       }
       if (targetWorker) {
-        const nextQueue = targetWorker.tasks.length > 0
-          ? Math.max(...targetWorker.tasks.map(t => t.worker_queue || 0)) + 1
-          : 1;
-        task = {...task, assignee_id: targetWorkerId, worker_queue: nextQueue};
-        targetWorker.tasks = [...targetWorker.tasks, task];
+        task = {...task, assignee_id: targetWorkerId};
+
+        // Insert at specified position or append
+        if (insertIndex >= 0 && insertIndex <= targetWorker.tasks.length) {
+          targetWorker.tasks = [
+            ...targetWorker.tasks.slice(0, insertIndex),
+            task,
+            ...targetWorker.tasks.slice(insertIndex),
+          ];
+        } else {
+          targetWorker.tasks = [...targetWorker.tasks, task];
+        }
+
+        // Renumber worker_queue for all tasks in this column
+        targetWorker.tasks.forEach((t, i) => {
+          t.worker_queue = i + 1;
+        });
+        // Re-read task reference after renumbering
+        task = targetWorker.tasks.find(t => t.task_id === taskId);
       }
     }
 
@@ -98,12 +119,28 @@
     workers = [...workers];
     addedWorkers = [...addedWorkers];
 
-    // Fire API call in background
+    // Fire API calls in background
     try {
-      await api.post(`/api/tasks/${taskId}/assign/`, {
-        assignee: targetWorkerId,
-        worker_queue: task.worker_queue,
-      });
+      if (targetWorkerId !== null) {
+        // Assign (handles assignee change + initial queue position)
+        await api.post(`/api/tasks/${taskId}/assign/`, {
+          assignee: targetWorkerId,
+          worker_queue: task.worker_queue,
+        });
+
+        // Reorder the full column to persist the exact order
+        const targetWorker = workers.find(w => w.user.id === targetWorkerId)
+          || addedWorkers.find(w => w.user.id === targetWorkerId);
+        if (targetWorker) {
+          const orderedIds = targetWorker.tasks.map(t => t.task_id);
+          await api.post('/api/tasks/reorder/', { task_ids: orderedIds });
+        }
+      } else {
+        await api.post(`/api/tasks/${taskId}/assign/`, {
+          assignee: null,
+          worker_queue: null,
+        });
+      }
     } catch (err) {
       console.error('Failed to assign task:', err);
     }
