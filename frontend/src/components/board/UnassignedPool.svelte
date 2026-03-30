@@ -1,8 +1,7 @@
 <script>
   import TaskCard from './TaskCard.svelte';
-  import { api } from '../../lib/api.js';
 
-  let { tasks = [], canManage = false, focusedJobId = null, onUpdate = () => {} } = $props();
+  let { tasks = [], canManage = false, focusedJobId = null, onAssign = () => {} } = $props();
 
   function handleDragOver(e) {
     if (canManage) {
@@ -11,21 +10,12 @@
     }
   }
 
-  async function handleDrop(e) {
+  function handleDrop(e) {
     e.preventDefault();
     if (!canManage) return;
-    const taskId = e.dataTransfer.getData('text/plain');
+    const taskId = parseInt(e.dataTransfer.getData('text/plain'));
     if (!taskId) return;
-
-    try {
-      await api.post(`/api/tasks/${taskId}/assign/`, {
-        assignee: null,
-        worker_queue: null,
-      });
-      onUpdate();
-    } catch (err) {
-      console.error('Failed to unassign task:', err);
-    }
+    onAssign(taskId, null);
   }
 </script>
 

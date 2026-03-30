@@ -1,46 +1,15 @@
 <script>
   import TaskCard from './TaskCard.svelte';
-  import { api } from '../../lib/api.js';
 
-  let { workers = [], availableWorkers = [], canManage = false, focusedJobId = null, onUpdate = () => {} } = $props();
+  let { workers = [], availableWorkers = [], canManage = false, focusedJobId = null, onAssign = () => {}, onAddWorker = () => {} } = $props();
 
-  let addedWorkers = $state([]);
   let showDropdown = $state(false);
 
-  let allWorkers = $derived([
-    ...workers,
-    ...addedWorkers.filter(aw => !workers.some(w => w.user.id === aw.user.id)),
-  ]);
-
-  let filteredAvailable = $derived(
-    availableWorkers.filter(aw => !addedWorkers.some(added => added.user.id === aw.id))
-  );
-
-  function addWorker(user) {
-    addedWorkers = [...addedWorkers, { user, tasks: [] }];
-    showDropdown = false;
-  }
-
-  async function handleDrop(e, workerId) {
+  function handleDrop(e, workerId) {
     e.preventDefault();
-    const taskId = e.dataTransfer.getData('text/plain');
+    const taskId = parseInt(e.dataTransfer.getData('text/plain'));
     if (!taskId || !canManage) return;
-
-    try {
-      // Find the worker's current tasks to determine next queue position
-      const worker = allWorkers.find(w => w.user.id === workerId);
-      const nextQueue = worker && worker.tasks.length > 0
-        ? Math.max(...worker.tasks.map(t => t.worker_queue || 0)) + 1
-        : 1;
-
-      await api.post(`/api/tasks/${taskId}/assign/`, {
-        assignee: workerId,
-        worker_queue: nextQueue,
-      });
-      onUpdate();
-    } catch (err) {
-      console.error('Failed to assign task:', err);
-    }
+    onAssign(taskId, workerId);
   }
 
   function handleDragOver(e) {
@@ -49,10 +18,15 @@
       e.dataTransfer.dropEffect = 'move';
     }
   }
+
+  function addWorker(user) {
+    onAddWorker(user);
+    showDropdown = false;
+  }
 </script>
 
 <div class="worker-columns">
-  {#each allWorkers as worker (worker.user.id)}
+  {#each workers as worker (worker.user.id)}
     <div class="worker-col">
       <div class="worker-header">
         <div class="worker-avatar">{worker.user.initials}</div>
@@ -73,13 +47,13 @@
     </div>
   {/each}
 
-  {#if canManage && filteredAvailable.length > 0}
+  {#if canManage && availableWorkers.length > 0}
     <div class="add-worker-col">
       <div class="add-worker-btn-wrap">
         <button class="add-worker-btn" onclick={() => showDropdown = !showDropdown} title="Add worker column">+</button>
         {#if showDropdown}
           <div class="add-worker-dropdown">
-            {#each filteredAvailable as user (user.id)}
+            {#each availableWorkers as user (user.id)}
               <button class="add-worker-option" onclick={() => addWorker(user)}>
                 <span class="option-avatar">{user.initials}</span>
                 {user.name}
