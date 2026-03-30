@@ -20,7 +20,7 @@
 - **Create:** `apps/api/jobs/board_views.py` — board endpoint + task reorder endpoint
 - **Create:** `apps/api/jobs/board_serializers.py` — board-specific serializers
 - **Modify:** `apps/api/urls.py` — register board endpoint
-- **Modify:** `apps/api/work_orders/serializers.py` — add `worker_queue` to TaskSerializer
+- **Modify:** `apps/api/worksheets/serializers.py` — add `worker_queue` to TaskSerializer (TaskSerializer lives here, re-exported by work_orders)
 - **Create:** migration file (auto-generated)
 
 ### Frontend
@@ -47,7 +47,7 @@
 
 **Files:**
 - Modify: `apps/jobs/models.py`
-- Modify: `apps/api/work_orders/serializers.py`
+- Modify: `apps/api/worksheets/serializers.py`
 - Create: migration (auto-generated)
 - Test: `tests/test_board_api.py` (started here, continued later)
 
@@ -119,13 +119,16 @@ Run: `python manage.py makemigrations jobs -n add_task_worker_queue`
 
 - [ ] **Step 5: Add worker_queue to TaskSerializer**
 
-In `apps/api/work_orders/serializers.py`, find the `TaskSerializer` class and add `worker_queue` to its `fields` list. Also add `worker_queue` to the writable fields (remove it from `read_only_fields` if present, or just ensure it's not in `read_only_fields`).
+In `apps/api/worksheets/serializers.py`, find the `TaskSerializer` class and add `worker_queue` to its `fields` list. Also add `worker_queue` to the writable fields (remove it from `read_only_fields` if present, or just ensure it's not in `read_only_fields`).
 
 The fields line should become:
 ```python
-fields = ['task_id', 'name', 'description', 'sort_order', 'status', 'units',
-          'rate', 'est_qty', 'line_item_type', 'mapping_strategy', 'bundle',
-          'parent_task', 'assignee', 'assignee_name', 'worker_queue']
+fields = [
+    'task_id', 'name', 'description', 'sort_order', 'status',
+    'units', 'rate', 'est_qty', 'accounting_category',
+    'mapping_strategy', 'bundle', 'parent_task', 'assignee',
+    'assignee_name', 'worker_queue',
+]
 ```
 
 - [ ] **Step 6: Run tests to verify they pass**
@@ -136,7 +139,7 @@ Expected: 2 tests pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/jobs/models.py apps/jobs/migrations/ apps/api/work_orders/serializers.py tests/test_board_api.py
+git add apps/jobs/models.py apps/jobs/migrations/ apps/api/worksheets/serializers.py tests/test_board_api.py
 git commit -m "feat: add worker_queue field to Task model"
 ```
 
@@ -148,7 +151,7 @@ git commit -m "feat: add worker_queue field to Task model"
 - Create: `apps/jobs/services/board_service.py`
 - Test: `tests/test_board_service.py`
 
-Note: `apps/jobs/services.py` already exists. We create `apps/jobs/services/` as a package. First check if it's already a package or a single file. If it's a single file, move it to `apps/jobs/services/__init__.py` and re-export, then create `board_service.py` alongside it. If it's already a package, just add the file. The implementer should check and handle accordingly.
+Note: `apps/jobs/services.py` exists as a single file. Convert it to a package first: move it to `apps/jobs/services/__init__.py`, then create `board_service.py` alongside it. All existing imports of `apps.jobs.services` will continue to work because Python treats `__init__.py` as the module.
 
 - [ ] **Step 1: Write failing tests for Pipeline sub-status derivation**
 
@@ -224,9 +227,10 @@ Expected: ImportError — `board_service` module doesn't exist.
 
 - [ ] **Step 3: Convert services.py to package if needed, then create BoardService with pipeline sub-statuses**
 
-Check if `apps/jobs/services.py` is a file or directory. If it's a file:
+Convert `apps/jobs/services.py` to a package:
 
 ```bash
+mkdir apps/jobs/services
 mv apps/jobs/services.py apps/jobs/services/__init__.py
 ```
 
