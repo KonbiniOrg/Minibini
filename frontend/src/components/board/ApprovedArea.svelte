@@ -149,7 +149,7 @@
 
 <div class="approved-header">
   <span class="col-indicator"></span>
-  <strong>Approved</strong>
+  <strong>In Progress</strong>
   <span class="count">{data.jobs?.length || 0}</span>
 </div>
 <div class="approved-content">
