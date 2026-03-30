@@ -54,8 +54,11 @@ Combines Completed, Rejected, and Cancelled jobs. Cards show job number, name, c
 - Drag tasks from a worker column back to unassigned to unassign
 - Drag to reorder within a worker's column (updates `worker_queue`)
 
+### Job focus mode
+Clicking a job chip locks the highlight — that job's tasks stay highlighted across all worker columns and the unassigned pool while everything else dims. This lets the user track a specific job while dragging its tasks into worker columns. Clicking a different job chip switches focus. An "×" button appears on the focused chip to clear the highlight. Hover on job chips is disabled while a focus is active.
+
 ### Card click-through
-- Clicking a job chip or job card navigates to the job detail page
+- Double-clicking a job chip or clicking the job number navigates to the job detail page
 - Clicking a customer name navigates to the contact detail page
 - Clicking a task navigates to the job detail page (future: could scroll to task)
 
