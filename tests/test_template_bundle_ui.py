@@ -2,7 +2,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from apps.estimates.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 User = get_user_model()
 
@@ -20,7 +20,7 @@ class TemplateBundleUITest(TestCase):
         self.client.login(username='testuser', password='testpass123')
 
         # Create a line item type
-        self.line_item_type = LineItemType.objects.create(
+        self.accounting_category = AccountingCategory.objects.create(
             name="Labor", code="LBR"
         )
 
@@ -70,7 +70,7 @@ class TemplateBundleUITest(TestCase):
             'selected_tasks': [self.assoc1.pk, self.assoc2.pk],
             'bundle_name': 'Test Bundle',
             'bundle_description': 'A test bundle',
-            'line_item_type': self.line_item_type.pk
+            'accounting_category': self.accounting_category.pk
         }, follow=True)
 
         self.assertEqual(response.status_code, 200)
@@ -80,7 +80,7 @@ class TemplateBundleUITest(TestCase):
             work_order_template=self.wo_template,
             name='Test Bundle'
         )
-        self.assertEqual(bundle.line_item_type, self.line_item_type)
+        self.assertEqual(bundle.accounting_category, self.accounting_category)
         self.assertEqual(bundle.description, 'A test bundle')
 
         # Verify associations were updated
@@ -105,7 +105,7 @@ class TemplateBundleUITest(TestCase):
             'bundle_tasks': 'true',
             'selected_tasks': [self.assoc1.pk],  # Only 1 task
             'bundle_name': 'Test Bundle',
-            'line_item_type': self.line_item_type.pk
+            'accounting_category': self.accounting_category.pk
         }, follow=True)
 
         # Should show error message
@@ -124,14 +124,14 @@ class TemplateBundleUITest(TestCase):
             'bundle_tasks': 'true',
             'selected_tasks': [self.assoc1.pk, self.assoc2.pk],
             'bundle_name': '',  # Empty name
-            'line_item_type': self.line_item_type.pk
+            'accounting_category': self.accounting_category.pk
         }, follow=True)
 
         messages = list(response.context['messages'])
         self.assertTrue(any('name is required' in str(m) for m in messages))
         self.assertEqual(TemplateBundle.objects.count(), 0)
 
-    def test_bundle_creation_requires_line_item_type(self):
+    def test_bundle_creation_requires_accounting_category(self):
         """Test that line item type is required"""
         url = reverse('estimates:work_order_template_detail',
                       kwargs={'template_id': self.wo_template.template_id})
@@ -140,7 +140,7 @@ class TemplateBundleUITest(TestCase):
             'bundle_tasks': 'true',
             'selected_tasks': [self.assoc1.pk, self.assoc2.pk],
             'bundle_name': 'Test Bundle',
-            'line_item_type': ''  # No type
+            'accounting_category': ''  # No type
         }, follow=True)
 
         messages = list(response.context['messages'])
@@ -153,7 +153,7 @@ class TemplateBundleUITest(TestCase):
         bundle = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Existing Bundle",
-            line_item_type=self.line_item_type
+            accounting_category=self.accounting_category
         )
         self.assoc1.mapping_strategy = 'bundle'
         self.assoc1.bundle = bundle

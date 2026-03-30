@@ -1,26 +1,26 @@
-"""Tests for LineItemType in PriceListItem CRUD."""
+"""Tests for AccountingCategory in PriceListItem CRUD."""
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 from apps.inventory.models import PriceListItem
 
 
 class PriceListItemTypeUITest(TestCase):
-    """Tests for LineItemType in PriceListItem forms."""
+    """Tests for AccountingCategory in PriceListItem forms."""
 
     @classmethod
     def setUpTestData(cls):
-        cls.product_type, _ = LineItemType.objects.get_or_create(
+        cls.product_type, _ = AccountingCategory.objects.get_or_create(
             code='PRD',
             defaults={'name': 'Product', 'taxable': True}
         )
-        cls.service_type, _ = LineItemType.objects.get_or_create(
+        cls.service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': True}
         )
         # Create an inactive type to verify it's not shown
-        cls.inactive_type, _ = LineItemType.objects.get_or_create(
+        cls.inactive_type, _ = AccountingCategory.objects.get_or_create(
             code='INACTIVE',
             defaults={'name': 'Inactive Type', 'taxable': False, 'is_active': False}
         )
@@ -28,14 +28,14 @@ class PriceListItemTypeUITest(TestCase):
     def setUp(self):
         self.client = Client()
 
-    def test_create_form_includes_line_item_type(self):
-        """Test that create form shows LineItemType field."""
+    def test_create_form_includes_accounting_category(self):
+        """Test that create form shows AccountingCategory field."""
         response = self.client.get(reverse('inventory:price_list_item_add'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'line_item_type')
+        self.assertContains(response, 'accounting_category')
 
     def test_create_form_shows_only_active_types(self):
-        """Test that only active LineItemTypes are shown in the form."""
+        """Test that only active AccountingCategorys are shown in the form."""
         response = self.client.get(reverse('inventory:price_list_item_add'))
         self.assertEqual(response.status_code, 200)
         # Active types should be in the form
@@ -44,8 +44,8 @@ class PriceListItemTypeUITest(TestCase):
         # Inactive type should NOT be in the form
         self.assertNotContains(response, 'Inactive Type')
 
-    def test_create_with_line_item_type(self):
-        """Test creating PriceListItem with LineItemType."""
+    def test_create_with_accounting_category(self):
+        """Test creating PriceListItem with AccountingCategory."""
         response = self.client.post(reverse('inventory:price_list_item_add'), {
             'code': 'TEST-001',
             'units': 'each',
@@ -55,37 +55,37 @@ class PriceListItemTypeUITest(TestCase):
             'qty_on_hand': '10',
             'qty_sold': '0',
             'qty_wasted': '0',
-            'line_item_type': self.product_type.pk,
+            'accounting_category': self.product_type.pk,
         })
         # Should redirect to list on success
         self.assertEqual(response.status_code, 302)
         item = PriceListItem.objects.filter(code='TEST-001').first()
         self.assertIsNotNone(item)
-        self.assertEqual(item.line_item_type, self.product_type)
+        self.assertEqual(item.accounting_category, self.product_type)
 
-    def test_edit_form_includes_line_item_type(self):
-        """Test that edit form shows LineItemType field with current value."""
+    def test_edit_form_includes_accounting_category(self):
+        """Test that edit form shows AccountingCategory field with current value."""
         item = PriceListItem.objects.create(
             code='EDIT-001',
             description='Edit Test',
             selling_price=Decimal('75.00'),
-            line_item_type=self.service_type
+            accounting_category=self.service_type
         )
         response = self.client.get(
             reverse('inventory:price_list_item_edit', args=[item.price_list_item_id])
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'line_item_type')
+        self.assertContains(response, 'accounting_category')
         # The current type should be selected
         self.assertContains(response, f'selected>{self.service_type.name}<', html=False)
 
-    def test_edit_updates_line_item_type(self):
-        """Test updating LineItemType on existing PriceListItem."""
+    def test_edit_updates_accounting_category(self):
+        """Test updating AccountingCategory on existing PriceListItem."""
         item = PriceListItem.objects.create(
             code='UPDATE-001',
             description='Update Test',
             selling_price=Decimal('75.00'),
-            line_item_type=self.product_type
+            accounting_category=self.product_type
         )
         response = self.client.post(
             reverse('inventory:price_list_item_edit', args=[item.price_list_item_id]),
@@ -98,16 +98,16 @@ class PriceListItemTypeUITest(TestCase):
                 'qty_on_hand': '0',
                 'qty_sold': '0',
                 'qty_wasted': '0',
-                'line_item_type': self.service_type.pk,
+                'accounting_category': self.service_type.pk,
             }
         )
         # Should redirect to list on success
         self.assertEqual(response.status_code, 302)
         item.refresh_from_db()
-        self.assertEqual(item.line_item_type, self.service_type)
+        self.assertEqual(item.accounting_category, self.service_type)
 
-    def test_create_without_line_item_type_allowed(self):
-        """Test that line_item_type is optional (for now)."""
+    def test_create_without_accounting_category_allowed(self):
+        """Test that accounting_category is optional (for now)."""
         response = self.client.post(reverse('inventory:price_list_item_add'), {
             'code': 'NO-TYPE-001',
             'units': 'each',
@@ -117,10 +117,10 @@ class PriceListItemTypeUITest(TestCase):
             'qty_on_hand': '10',
             'qty_sold': '0',
             'qty_wasted': '0',
-            # No line_item_type field
+            # No accounting_category field
         })
         # Should redirect to list on success
         self.assertEqual(response.status_code, 302)
         item = PriceListItem.objects.filter(code='NO-TYPE-001').first()
         self.assertIsNotNone(item)
-        self.assertIsNone(item.line_item_type)
+        self.assertIsNone(item.accounting_category)

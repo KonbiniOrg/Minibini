@@ -10,7 +10,7 @@ from apps.estimates.services import WorkOrderTemplateService, WorksheetService
 from apps.jobs.models import Job, Task, TaskBundle
 from apps.jobs.services import JobService
 from apps.core.services import NotFoundError, BundlingService
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact, Business
 
 
@@ -29,7 +29,7 @@ class BundlingTestBase(TestCase):
         )
         self.contact.business = self.business
         self.contact.save()
-        self.lit = LineItemType.objects.create(
+        self.lit = AccountingCategory.objects.create(
             code='SVC', name='Service', taxable=True,
         )
         self.job = JobService.create_job(name='Test Job', contact=self.contact)
@@ -55,7 +55,7 @@ class BundlingServiceBundleItemsTest(BundlingTestBase):
         )
         self.bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Bundle A',
-            line_item_type=self.lit, sort_order=10,
+            accounting_category=self.lit, sort_order=10,
         )
 
     def test_bundle_items(self):
@@ -103,7 +103,7 @@ class BundlingServiceUnbundleItemTest(BundlingTestBase):
         self.ws = EstWorksheet.objects.create(job=self.job, status='draft')
         self.bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Bundle A',
-            line_item_type=self.lit, sort_order=5,
+            accounting_category=self.lit, sort_order=5,
         )
         self.t1 = Task.objects.create(
             est_worksheet=self.ws, name='Task 1', sort_order=1,
@@ -161,7 +161,7 @@ class BundlingServiceAutoDissolveTest(BundlingTestBase):
         """Bundle with 0 items gets deleted."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Empty',
-            line_item_type=self.lit, sort_order=1,
+            accounting_category=self.lit, sort_order=1,
         )
         bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
         BundlingService.auto_dissolve_bundles(bundles_qs, Task)
@@ -171,7 +171,7 @@ class BundlingServiceAutoDissolveTest(BundlingTestBase):
         """Bundle with 1 item: item is unbundled, bundle deleted."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Solo',
-            line_item_type=self.lit, sort_order=5,
+            accounting_category=self.lit, sort_order=5,
         )
         task = Task.objects.create(
             est_worksheet=self.ws, name='Lonely', sort_order=1,
@@ -189,7 +189,7 @@ class BundlingServiceAutoDissolveTest(BundlingTestBase):
         """Bundle with 2+ items is left alone."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Healthy',
-            line_item_type=self.lit, sort_order=5,
+            accounting_category=self.lit, sort_order=5,
         )
         Task.objects.create(
             est_worksheet=self.ws, name='T1', sort_order=1,
@@ -207,7 +207,7 @@ class BundlingServiceAutoDissolveTest(BundlingTestBase):
         """Excluded bundle is not dissolved even if empty."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Protected',
-            line_item_type=self.lit, sort_order=1,
+            accounting_category=self.lit, sort_order=1,
         )
         bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
         BundlingService.auto_dissolve_bundles(
@@ -228,7 +228,7 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
         )
         self.bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Bundle',
-            line_item_type=self.lit, sort_order=2,
+            accounting_category=self.lit, sort_order=2,
         )
         self.bt1 = Task.objects.create(
             est_worksheet=self.ws, name='BT1', sort_order=1,
@@ -276,7 +276,7 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
         ws2 = EstWorksheet.objects.create(job=self.job, status='draft')
         bundle_a = TaskBundle.objects.create(
             est_worksheet=ws2, name='Bundle A',
-            line_item_type=self.lit, sort_order=1,
+            accounting_category=self.lit, sort_order=1,
         )
         Task.objects.create(
             est_worksheet=ws2, name='A1', sort_order=1,
@@ -284,7 +284,7 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
         )
         bundle_b = TaskBundle.objects.create(
             est_worksheet=ws2, name='Bundle B',
-            line_item_type=self.lit, sort_order=2,
+            accounting_category=self.lit, sort_order=2,
         )
         Task.objects.create(
             est_worksheet=ws2, name='B1', sort_order=1,
@@ -352,7 +352,7 @@ class BundlingServiceReorderInBundleTest(BundlingTestBase):
         self.ws = EstWorksheet.objects.create(job=self.job, status='draft')
         self.bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Bundle',
-            line_item_type=self.lit, sort_order=1,
+            accounting_category=self.lit, sort_order=1,
         )
         self.t1 = Task.objects.create(
             est_worksheet=self.ws, name='T1', sort_order=1,
@@ -404,7 +404,7 @@ class WorksheetServiceBundleTest(BundlingTestBase):
         """Bundle tasks on a worksheet."""
         bundle = WorksheetService.bundle_tasks(
             self.ws.pk, [self.t1.pk, self.t2.pk],
-            bundle_name='My Bundle', line_item_type=self.lit,
+            bundle_name='My Bundle', accounting_category=self.lit,
         )
         self.assertIsNotNone(bundle.pk)
         self.t1.refresh_from_db()
@@ -417,7 +417,7 @@ class WorksheetServiceBundleTest(BundlingTestBase):
         with self.assertRaises(ValidationError):
             WorksheetService.bundle_tasks(
                 self.ws.pk, [self.t1.pk],
-                bundle_name='Solo', line_item_type=self.lit,
+                bundle_name='Solo', accounting_category=self.lit,
             )
 
     def test_bundle_non_draft_raises(self):
@@ -427,7 +427,7 @@ class WorksheetServiceBundleTest(BundlingTestBase):
         with self.assertRaises(ValidationError):
             WorksheetService.bundle_tasks(
                 self.ws.pk, [self.t1.pk, self.t2.pk],
-                bundle_name='X', line_item_type=self.lit,
+                bundle_name='X', accounting_category=self.lit,
             )
 
 
@@ -439,7 +439,7 @@ class WorksheetServiceUnbundleTest(BundlingTestBase):
         self.ws = WorksheetService.create_worksheet(self.job.pk)
         self.bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Bundle',
-            line_item_type=self.lit, sort_order=5,
+            accounting_category=self.lit, sort_order=5,
         )
         self.t1 = Task.objects.create(
             est_worksheet=self.ws, name='T1', sort_order=1,
@@ -516,10 +516,10 @@ class TemplateServiceBundleTest(BundlingTestBase):
             template_name='Test Template',
         )
         self.tt1 = WorkOrderTemplateService.create_task_template(
-            template_name='TT1', line_item_type=self.lit,
+            template_name='TT1', accounting_category=self.lit,
         )
         self.tt2 = WorkOrderTemplateService.create_task_template(
-            template_name='TT2', line_item_type=self.lit,
+            template_name='TT2', accounting_category=self.lit,
         )
         self.a1 = TemplateTaskAssociation.objects.create(
             work_order_template=self.tmpl, task_template=self.tt1, sort_order=1,
@@ -532,7 +532,7 @@ class TemplateServiceBundleTest(BundlingTestBase):
         """Bundle associations on a template."""
         bundle = WorkOrderTemplateService.bundle_associations(
             self.tmpl.pk, [self.a1.pk, self.a2.pk],
-            bundle_name='My Bundle', line_item_type=self.lit,
+            bundle_name='My Bundle', accounting_category=self.lit,
         )
         self.assertIsNotNone(bundle.pk)
         self.a1.refresh_from_db()
@@ -546,7 +546,7 @@ class TemplateServiceBundleTest(BundlingTestBase):
         with self.assertRaises(ValidationError):
             WorkOrderTemplateService.bundle_associations(
                 self.tmpl.pk, [self.a1.pk],
-                bundle_name='Solo', line_item_type=self.lit,
+                bundle_name='Solo', accounting_category=self.lit,
             )
 
 
@@ -559,17 +559,17 @@ class TemplateServiceUnbundleTest(BundlingTestBase):
             template_name='Test Template',
         )
         self.tt1 = WorkOrderTemplateService.create_task_template(
-            template_name='TT1', line_item_type=self.lit,
+            template_name='TT1', accounting_category=self.lit,
         )
         self.tt2 = WorkOrderTemplateService.create_task_template(
-            template_name='TT2', line_item_type=self.lit,
+            template_name='TT2', accounting_category=self.lit,
         )
         self.tt3 = WorkOrderTemplateService.create_task_template(
-            template_name='TT3', line_item_type=self.lit,
+            template_name='TT3', accounting_category=self.lit,
         )
         self.bundle = TemplateBundle.objects.create(
             work_order_template=self.tmpl, name='Bundle',
-            line_item_type=self.lit, sort_order=5,
+            accounting_category=self.lit, sort_order=5,
         )
         self.a1 = TemplateTaskAssociation.objects.create(
             work_order_template=self.tmpl, task_template=self.tt1,
@@ -609,10 +609,10 @@ class TemplateServiceReorderTest(BundlingTestBase):
             template_name='Test Template',
         )
         self.tt1 = WorkOrderTemplateService.create_task_template(
-            template_name='TT1', line_item_type=self.lit,
+            template_name='TT1', accounting_category=self.lit,
         )
         self.tt2 = WorkOrderTemplateService.create_task_template(
-            template_name='TT2', line_item_type=self.lit,
+            template_name='TT2', accounting_category=self.lit,
         )
         self.a1 = TemplateTaskAssociation.objects.create(
             work_order_template=self.tmpl, task_template=self.tt1, sort_order=1,
@@ -635,7 +635,7 @@ class TemplateServiceReorderTest(BundlingTestBase):
         """Reorder associations within a bundle."""
         bundle = TemplateBundle.objects.create(
             work_order_template=self.tmpl, name='B',
-            line_item_type=self.lit, sort_order=10,
+            accounting_category=self.lit, sort_order=10,
         )
         self.a1.mapping_strategy = 'bundle'
         self.a1.bundle = bundle

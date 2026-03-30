@@ -45,9 +45,9 @@ class PriceListItem(models.Model):
     is_active = models.BooleanField(default=True)  # For soft-delete - use instead of hard deletion
     is_inventoried = models.BooleanField(default=False)
 
-    # LineItemType for categorization and taxability
-    line_item_type = models.ForeignKey(
-        'core.LineItemType',
+    # AccountingCategory for categorization and taxability
+    accounting_category = models.ForeignKey(
+        'core.AccountingCategory',
         on_delete=models.PROTECT,
         related_name='price_list_items',
         null=True,  # Nullable initially for migration; will be made required after data migration
@@ -100,8 +100,8 @@ class Material(models.Model):
         PriceListItem, on_delete=models.SET_NULL,
         null=True, blank=True,
     )
-    line_item_type = models.ForeignKey(
-        'core.LineItemType', on_delete=models.SET_NULL,
+    accounting_category = models.ForeignKey(
+        'core.AccountingCategory', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
     description = models.CharField(max_length=255, blank=True, default='')
@@ -126,8 +126,8 @@ class Material(models.Model):
                 self.unit_cost = self.price_list_item.purchase_price
             if self.sell_price == Decimal('0.00'):
                 self.sell_price = self.price_list_item.selling_price
-            if not self.line_item_type:
-                self.line_item_type = self.price_list_item.line_item_type
+            if not self.accounting_category:
+                self.accounting_category = self.price_list_item.accounting_category
         self.full_clean()
         super().save(*args, **kwargs)
 

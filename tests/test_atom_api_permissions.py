@@ -94,7 +94,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/payment-terms/',
         '/api/work-order-templates/',
         '/api/task-templates/',
-        '/api/line-item-types/',
+        '/api/accounting-categories/',
         '/api/price-list-items/',
         '/api/search/?q=test',
     ]
@@ -531,9 +531,9 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
         ('post', '/api/task-templates/', {'template_name': 'Test'}),
         ('patch', '/api/task-templates/1/', {'template_name': 'Updated'}),
         ('delete', '/api/task-templates/1/', None),
-        ('post', '/api/line-item-types/', {'name': 'Test'}),
-        ('patch', '/api/line-item-types/1/', {'name': 'Updated'}),
-        ('delete', '/api/line-item-types/1/', None),
+        ('post', '/api/accounting-categories/', {'name': 'Test'}),
+        ('patch', '/api/accounting-categories/1/', {'name': 'Updated'}),
+        ('delete', '/api/accounting-categories/1/', None),
     ]
 
     def test_can_manage_config_allows_settings(self):
@@ -568,7 +568,7 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
         sample = [
             ('post', '/api/work-order-templates/', {'template_name': 'Test'}),
             ('post', '/api/task-templates/', {'template_name': 'Test'}),
-            ('post', '/api/line-item-types/', {'name': 'Test'}),
+            ('post', '/api/accounting-categories/', {'name': 'Test'}),
         ]
         for method, url, data in sample:
             with self.subTest(url=url):

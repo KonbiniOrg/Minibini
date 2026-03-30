@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ accounting_category.name }} - Accounting Category - Minibini{% endblock %}
+
+{% block navigation %}
+{% include 'includes/settings_navigation.html' %}
+{% endblock %}
+
+{% block content %}
+<h2>Accounting Category: {{ accounting_category.name }}</h2>
+
+<table border="1">
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Code</td><td>{{ accounting_category.code }}</td></tr>
+    <tr><td>Name</td><td>{{ accounting_category.name }}</td></tr>
+    <tr><td>Taxable by Default</td><td>{% if accounting_category.taxable %}Yes{% else %}No{% endif %}</td></tr>
+    <tr><td>Default Description</td><td>{{ accounting_category.default_description|default:"—" }}</td></tr>
+    <tr><td>Active</td><td>{% if accounting_category.is_active %}Yes{% else %}No{% endif %}</td></tr>
+</table>
+
+<p>
+    <a href="{% url 'core:accounting_category_edit' accounting_category.pk %}">Edit</a> |
+    <a href="{% url 'core:accounting_category_list' %}">Back to List</a>
+</p>
+{% endblock %}

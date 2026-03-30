@@ -1,6 +1,6 @@
 [
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 1,
     "fields": {
       "code": "SVC",
@@ -12,7 +12,7 @@
     "_section": "=== LINE ITEM TYPES (6) - Categories for line items with default taxability ==="
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 2,
     "fields": {
       "code": "MAT",
@@ -23,7 +23,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 3,
     "fields": {
       "code": "MFR",
@@ -34,7 +34,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 4,
     "fields": {
       "code": "PRD",
@@ -45,7 +45,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 5,
     "fields": {
       "code": "FRT",
@@ -56,7 +56,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 6,
     "fields": {
       "code": "OVH",
@@ -67,7 +67,7 @@
     }
   },
   {
-    "model": "core.lineitemtype",
+    "model": "core.accountingcategory",
     "pk": 7,
     "fields": {
       "code": "DLV",
@@ -393,11 +393,11 @@
       "qty_on_hand": "0.00",
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
-      "line_item_type": 1,
+      "accounting_category": 1,
       "is_active": true,
       "is_inventoried": false
     },
-    "_section": "=== PRICE LIST ITEMS (7) - one per LineItemType + extra ==="
+    "_section": "=== PRICE LIST ITEMS (7) - one per AccountingCategory + extra ==="
   },
   {
     "model": "inventory.pricelistitem",
@@ -411,7 +411,7 @@
       "qty_on_hand": "100.00",
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
-      "line_item_type": 2,
+      "accounting_category": 2,
       "is_active": true,
       "is_inventoried": false
     }
@@ -428,7 +428,7 @@
       "qty_on_hand": "0.00",
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
-      "line_item_type": 3,
+      "accounting_category": 3,
       "is_active": true,
       "is_inventoried": false
     }
@@ -445,7 +445,7 @@
       "qty_on_hand": "5.00",
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
-      "line_item_type": 4,
+      "accounting_category": 4,
       "is_active": true,
       "is_inventoried": false
     }
@@ -462,7 +462,7 @@
       "qty_on_hand": "0.00",
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
-      "line_item_type": 5,
+      "accounting_category": 5,
       "is_active": true,
       "is_inventoried": false
     }
@@ -479,7 +479,7 @@
       "qty_on_hand": "0.00",
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
-      "line_item_type": 6,
+      "accounting_category": 6,
       "is_active": true,
       "is_inventoried": false
     }
@@ -496,7 +496,7 @@
       "qty_on_hand": "50.00",
       "qty_sold": "0.00",
       "qty_wasted": "0.00",
-      "line_item_type": 2,
+      "accounting_category": 2,
       "is_active": true,
       "is_inventoried": false
     }
@@ -512,7 +512,7 @@
       "parent_template": null,
       "is_active": true,
       "created_date": "2025-01-01T00:00:00Z",
-      "line_item_type": 1
+      "accounting_category": 1
     },
     "_section": "=== TASK TEMPLATES (6) ==="
   },
@@ -527,7 +527,7 @@
       "parent_template": null,
       "is_active": true,
       "created_date": "2025-01-01T00:00:00Z",
-      "line_item_type": 2
+      "accounting_category": 2
     }
   },
   {
@@ -541,7 +541,7 @@
       "parent_template": null,
       "is_active": true,
       "created_date": "2025-01-01T00:00:00Z",
-      "line_item_type": 3
+      "accounting_category": 3
     }
   },
   {
@@ -555,7 +555,7 @@
       "parent_template": null,
       "is_active": true,
       "created_date": "2025-01-01T00:00:00Z",
-      "line_item_type": 3
+      "accounting_category": 3
     }
   },
   {
@@ -569,7 +569,7 @@
       "parent_template": null,
       "is_active": true,
       "created_date": "2025-01-01T00:00:00Z",
-      "line_item_type": 3
+      "accounting_category": 3
     }
   },
   {
@@ -583,7 +583,7 @@
       "parent_template": null,
       "is_active": true,
       "created_date": "2025-01-01T00:00:00Z",
-      "line_item_type": 6
+      "accounting_category": 6
     }
   },
   {
@@ -616,7 +616,7 @@
       "work_order_template": 2,
       "name": "Cabinet",
       "description": "Combined cabinet components become one product line item",
-      "line_item_type": 4,
+      "accounting_category": 4,
       "sort_order": 1
     },
     "_section": "=== TEMPLATE BUNDLES (1) ==="
@@ -823,7 +823,7 @@
       "work_order": null,
       "name": "Cabinet",
       "description": "Combined cabinet components become one product line item",
-      "line_item_type": 4,
+      "accounting_category": 4,
       "sort_order": 1,
       "source_template_bundle": 1
     },
@@ -837,7 +837,7 @@
       "work_order": null,
       "name": "Cabinet",
       "description": "Combined cabinet components become one product line item",
-      "line_item_type": 4,
+      "accounting_category": 4,
       "sort_order": 1,
       "source_template_bundle": 1
     }
@@ -858,7 +858,7 @@
       "mapping_strategy": "direct",
       "bundle": null,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     },
     "_section": "=== TASKS (8) - across worksheets ==="
   },
@@ -878,7 +878,7 @@
       "mapping_strategy": "direct",
       "bundle": null,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -897,7 +897,7 @@
       "mapping_strategy": "bundle",
       "bundle": 1,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -916,7 +916,7 @@
       "mapping_strategy": "bundle",
       "bundle": 1,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -935,7 +935,7 @@
       "mapping_strategy": "bundle",
       "bundle": 1,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -954,7 +954,7 @@
       "mapping_strategy": "exclude",
       "bundle": null,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -973,7 +973,7 @@
       "mapping_strategy": "direct",
       "bundle": null,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -992,7 +992,7 @@
       "mapping_strategy": "direct",
       "bundle": null,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -1053,7 +1053,7 @@
       "units": "hour",
       "description": "Consultation Hour - Professional consulting services",
       "price": "95.00",
-      "line_item_type": 1,
+      "accounting_category": 1,
       "taxable_override": null,
       "tax_rate_override": null,
       "material": null
@@ -1072,7 +1072,7 @@
       "units": "each",
       "description": "Extra Materials - Material via task (direct mapping)",
       "price": "25.00",
-      "line_item_type": 2,
+      "accounting_category": 2,
       "taxable_override": null,
       "tax_rate_override": null,
       "material": null
@@ -1090,7 +1090,7 @@
       "units": "each",
       "description": "Standard Shipping - Flat rate shipping charge",
       "price": "45.00",
-      "line_item_type": 5,
+      "accounting_category": 5,
       "taxable_override": null,
       "tax_rate_override": null,
       "material": null
@@ -1108,7 +1108,7 @@
       "units": "hours",
       "description": "Consultation - Service from direct labor task",
       "price": "75.00",
-      "line_item_type": 1,
+      "accounting_category": 1,
       "taxable_override": null,
       "tax_rate_override": null,
       "material": null
@@ -1126,7 +1126,7 @@
       "units": "each",
       "description": "Lumber 2x4x8 - Material, forced taxable override",
       "price": "12.50",
-      "line_item_type": 2,
+      "accounting_category": 2,
       "taxable_override": true,
       "tax_rate_override": null,
       "material": null
@@ -1144,7 +1144,7 @@
       "units": "each",
       "description": "Permit Fee - Overhead non-taxable",
       "price": "150.00",
-      "line_item_type": 6,
+      "accounting_category": 6,
       "taxable_override": null,
       "tax_rate_override": null,
       "material": null
@@ -1162,7 +1162,7 @@
       "units": "each",
       "description": "Custom Cabinet - cabinet_001 (BUNDLED from component tasks)",
       "price": "600.00",
-      "line_item_type": 4,
+      "accounting_category": 4,
       "taxable_override": null,
       "tax_rate_override": null,
       "material": null
@@ -1211,7 +1211,7 @@
       "units": "each",
       "description": "Lumber 2x4x8 - Material purchase for Job 4",
       "price": "6.50",
-      "line_item_type": 2,
+      "accounting_category": 2,
       "taxable_override": null,
       "tax_rate_override": null,
       "job": null
@@ -1230,7 +1230,7 @@
       "units": "each",
       "description": "Standard Shipping - Freight on PO",
       "price": "25.00",
-      "line_item_type": 5,
+      "accounting_category": 5,
       "taxable_override": null,
       "tax_rate_override": null,
       "job": null
@@ -1248,7 +1248,7 @@
       "units": "kit",
       "description": "Hardware Kit - Standalone material order",
       "price": "15.00",
-      "line_item_type": 2,
+      "accounting_category": 2,
       "taxable_override": null,
       "tax_rate_override": null,
       "job": null
@@ -1301,7 +1301,7 @@
       "units": "each",
       "description": "Lumber 2x4x8 - Received materials from PO",
       "price": "6.50",
-      "line_item_type": 2,
+      "accounting_category": 2,
       "taxable_override": null,
       "tax_rate_override": null
     },
@@ -1319,7 +1319,7 @@
       "units": "kit",
       "description": "Hardware Kit - Direct material bill",
       "price": "15.00",
-      "line_item_type": 2,
+      "accounting_category": 2,
       "taxable_override": null,
       "tax_rate_override": null
     }
@@ -1336,7 +1336,7 @@
       "units": "each",
       "description": "Permit Fee - Overhead charge on bill",
       "price": "100.00",
-      "line_item_type": 6,
+      "accounting_category": 6,
       "taxable_override": null,
       "tax_rate_override": null
     }
@@ -1423,7 +1423,7 @@
       "mapping_strategy": "bundle",
       "bundle": 2,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -1442,7 +1442,7 @@
       "mapping_strategy": "bundle",
       "bundle": 2,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -1461,7 +1461,7 @@
       "mapping_strategy": "bundle",
       "bundle": 2,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   },
   {
@@ -1480,7 +1480,7 @@
       "mapping_strategy": "exclude",
       "bundle": null,
       "description": "",
-      "line_item_type": null
+      "accounting_category": null
     }
   }
 ]

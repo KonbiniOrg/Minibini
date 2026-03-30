@@ -1,6 +1,6 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User, Configuration, LineItemType
+from apps.core.models import User, Configuration, AccountingCategory
 from apps.estimates.models import WorkOrderTemplate, TaskTemplate
 
 
@@ -56,6 +56,6 @@ class ConfigurationAPITest(BaseTestCase):
         response = self.client.get('/api/settings/')
         self.assertEqual(response.status_code, 200)
 
-    def test_list_line_item_types(self):
-        response = self.client.get('/api/line-item-types/')
+    def test_list_accounting_categories(self):
+        response = self.client.get('/api/accounting-categories/')
         self.assertEqual(response.status_code, 200)

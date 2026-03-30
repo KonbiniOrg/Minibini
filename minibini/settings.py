@@ -12,9 +12,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -56,6 +59,7 @@ INSTALLED_APPS = [
     'apps.purchasing',
     'apps.search',
     'apps.inventory',
+    'apps.qbo',
     'rest_framework',
     'apps.api',
 ]
@@ -111,9 +115,8 @@ DATABASES = {
 
 # Email settings
 # WARNING: Move to environment variables for production
-EMAIL_HOST_USER = 'minibini.test@gmail.com'
-# EMAIL_HOST_PASSWORD = 'thisisthedevpassword'  # the browser login pw
-EMAIL_HOST_PASSWORD = 'czah ufxr hjal rabb' # the app password
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'minibini.test@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 
 # IMAP (inbound email fetch)
 EMAIL_IMAP_SERVER = 'imap.gmail.com'
@@ -127,6 +130,14 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+
+# QuickBooks Online Integration
+QBO_CLIENT_ID = os.environ.get('QBO_CLIENT_ID', '')
+QBO_CLIENT_SECRET = os.environ.get('QBO_CLIENT_SECRET', '')
+QBO_REDIRECT_URI = os.environ.get('QBO_REDIRECT_URI', 'http://localhost:8000/api/qbo/callback/')
+QBO_ENVIRONMENT = os.environ.get('QBO_ENVIRONMENT', 'sandbox')  # 'sandbox' or 'production'
+SPA_BASE_URL = os.environ.get('SPA_BASE_URL', 'http://localhost:9000')  # dev: 'http://localhost:9000', prod: '' (same origin)
 
 
 # Password validation

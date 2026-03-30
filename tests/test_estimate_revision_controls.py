@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
-from apps.core.models import Configuration, LineItemType
+from apps.core.models import Configuration, AccountingCategory
 from apps.contacts.models import Contact
 from apps.inventory.models import PriceListItem
 
@@ -303,16 +303,16 @@ class EstimateRevisionTests(TestCase):
         self.assertEqual(new_li2.description, 'Line Item 2')
         self.assertEqual(new_li2.price, 50.00)
 
-    def test_line_item_type_copied_during_revision(self):
-        """Test that line_item_type is copied when revising an estimate."""
+    def test_accounting_category_copied_during_revision(self):
+        """Test that accounting_category is copied when revising an estimate."""
         # Get or create a line item type
-        service_type, _ = LineItemType.objects.get_or_create(
+        service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False}
         )
 
-        # Update line_item1 to have a line_item_type
-        self.line_item1.line_item_type = service_type
+        # Update line_item1 to have a accounting_category
+        self.line_item1.accounting_category = service_type
         self.line_item1.save()
 
         # Revise the estimate
@@ -325,14 +325,14 @@ class EstimateRevisionTests(TestCase):
             parent=self.estimate
         ).first()
 
-        # Check that line_item_type was copied
+        # Check that accounting_category was copied
         new_li1 = EstimateLineItem.objects.filter(
             estimate=new_estimate,
             description='Line Item 1'
         ).first()
 
         self.assertIsNotNone(new_li1)
-        self.assertEqual(new_li1.line_item_type, service_type)
+        self.assertEqual(new_li1.accounting_category, service_type)
 
     def test_revise_button_shows_for_non_draft(self):
         """Test that revise button shows for non-draft estimates."""

@@ -1,11 +1,11 @@
 """
 Tests for BaseLineItem tax-related fields - TDD approach.
-Testing line_item_type FK, taxable_override, and tax_rate_override.
+Testing accounting_category FK, taxable_override, and tax_rate_override.
 """
 from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact, Business
@@ -38,18 +38,18 @@ class BaseLineItemTaxFieldsTest(TestCase):
         )
 
         # Get or create line item types (migration creates defaults)
-        cls.service_type, _ = LineItemType.objects.get_or_create(
+        cls.service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False}
         )
-        cls.material_type, _ = LineItemType.objects.get_or_create(
+        cls.material_type, _ = AccountingCategory.objects.get_or_create(
             code='MAT',
             defaults={'name': 'Material', 'taxable': True}
         )
 
-    def test_line_item_type_fk_nullable_initially(self):
-        """Test that line_item_type FK is nullable (for migration strategy)."""
-        # Creating a line item without line_item_type should work initially
+    def test_accounting_category_fk_nullable_initially(self):
+        """Test that accounting_category FK is nullable (for migration strategy)."""
+        # Creating a line item without accounting_category should work initially
         # This will be changed to required after data migration
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
@@ -57,26 +57,26 @@ class BaseLineItemTaxFieldsTest(TestCase):
             price=Decimal('100.00'),
             description='Test item without type'
         )
-        self.assertIsNone(line_item.line_item_type)
+        self.assertIsNone(line_item.accounting_category)
 
-    def test_line_item_type_fk_assignment(self):
-        """Test that line_item_type can be assigned to a line item."""
+    def test_accounting_category_fk_assignment(self):
+        """Test that accounting_category can be assigned to a line item."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.service_type,
+            accounting_category=self.service_type,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             description='Service item'
         )
 
-        self.assertEqual(line_item.line_item_type, self.service_type)
-        self.assertEqual(line_item.line_item_type.code, 'SVC')
+        self.assertEqual(line_item.accounting_category, self.service_type)
+        self.assertEqual(line_item.accounting_category.code, 'SVC')
 
     def test_taxable_override_null_by_default(self):
         """Test that taxable_override is null by default (uses type default)."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.material_type,
+            accounting_category=self.material_type,
             qty=Decimal('1.00'),
             price=Decimal('50.00'),
             description='Material item'
@@ -88,7 +88,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
         """Test that taxable_override can be explicitly set to True."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.service_type,  # Service is taxable=False by default
+            accounting_category=self.service_type,  # Service is taxable=False by default
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             description='Taxable service',
@@ -101,7 +101,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
         """Test that taxable_override can be explicitly set to False."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.material_type,  # Material is taxable=True by default
+            accounting_category=self.material_type,  # Material is taxable=True by default
             qty=Decimal('1.00'),
             price=Decimal('50.00'),
             description='Non-taxable material',
@@ -114,7 +114,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
         """Test that tax_rate_override is null by default (uses app default)."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.material_type,
+            accounting_category=self.material_type,
             qty=Decimal('1.00'),
             price=Decimal('50.00'),
             description='Material item'
@@ -126,7 +126,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
         """Test that tax_rate_override can be set to a custom rate."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.material_type,
+            accounting_category=self.material_type,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             description='Special tax rate item',
@@ -139,7 +139,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
         """Test that tax_rate_override supports 4 decimal places (e.g., 8.25% = 0.0825)."""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.material_type,
+            accounting_category=self.material_type,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             description='Precise tax rate item',
@@ -148,12 +148,12 @@ class BaseLineItemTaxFieldsTest(TestCase):
 
         self.assertEqual(line_item.tax_rate_override, Decimal('0.0825'))
 
-    def test_line_item_type_protect_on_delete(self):
-        """Test that deleting a LineItemType is protected if line items reference it."""
+    def test_accounting_category_protect_on_delete(self):
+        """Test that deleting a AccountingCategory is protected if line items reference it."""
         from django.db.models import ProtectedError
 
         # Create a new type specifically for this test
-        test_type = LineItemType.objects.create(
+        test_type = AccountingCategory.objects.create(
             code='TST',
             name='Test Type'
         )
@@ -161,7 +161,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
         # Create a line item referencing it
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=test_type,
+            accounting_category=test_type,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             description='Protected item'
@@ -171,18 +171,18 @@ class BaseLineItemTaxFieldsTest(TestCase):
         with self.assertRaises(ProtectedError):
             test_type.delete()
 
-    def test_line_item_type_related_name(self):
-        """Test that LineItemType has access to related line items."""
+    def test_accounting_category_related_name(self):
+        """Test that AccountingCategory has access to related line items."""
         line_item1 = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.service_type,
+            accounting_category=self.service_type,
             qty=Decimal('1.00'),
             price=Decimal('100.00'),
             description='Service 1'
         )
         line_item2 = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.service_type,
+            accounting_category=self.service_type,
             qty=Decimal('2.00'),
             price=Decimal('50.00'),
             description='Service 2'

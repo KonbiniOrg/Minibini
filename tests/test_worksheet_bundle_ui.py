@@ -5,7 +5,7 @@ from django.urls import reverse
 from apps.jobs.models import Task, TaskBundle, Job
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
-from apps.core.models import User, LineItemType
+from apps.core.models import User, AccountingCategory
 
 
 class WorksheetBundleUITestBase(TestCase):
@@ -30,7 +30,7 @@ class WorksheetBundleUITestBase(TestCase):
             job_number='JOB-001', name='Test Job',
             contact=self.contact, status='draft'
         )
-        self.lit_labor, _ = LineItemType.objects.get_or_create(
+        self.lit_labor, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
         self.worksheet = EstWorksheet.objects.create(
@@ -60,7 +60,7 @@ class WorksheetBundleCreationTest(WorksheetBundleUITestBase):
             'selected_tasks': [self.task1.task_id, self.task2.task_id],
             'bundle_name': 'Prep Work',
             'bundle_description': 'Floor preparation',
-            'line_item_type': self.lit_labor.pk,
+            'accounting_category': self.lit_labor.pk,
         })
         self.assertEqual(response.status_code, 302)
 
@@ -68,7 +68,7 @@ class WorksheetBundleCreationTest(WorksheetBundleUITestBase):
         bundles = list(self.worksheet.bundles.all())
         self.assertEqual(len(bundles), 1)
         self.assertEqual(bundles[0].name, 'Prep Work')
-        self.assertEqual(bundles[0].line_item_type, self.lit_labor)
+        self.assertEqual(bundles[0].accounting_category, self.lit_labor)
 
         # Tasks should be bundled
         self.task1.refresh_from_db()
@@ -89,7 +89,7 @@ class WorksheetBundleCreationTest(WorksheetBundleUITestBase):
             'bundle_tasks': '',
             'selected_tasks': [self.task1.task_id],
             'bundle_name': 'Too Small',
-            'line_item_type': self.lit_labor.pk,
+            'accounting_category': self.lit_labor.pk,
         }, follow=True)
         self.assertEqual(self.worksheet.bundles.count(), 0)
 
@@ -100,7 +100,7 @@ class WorksheetBundleCreationTest(WorksheetBundleUITestBase):
             'bundle_tasks': '',
             'selected_tasks': [self.task1.task_id, self.task2.task_id],
             'bundle_name': '',
-            'line_item_type': self.lit_labor.pk,
+            'accounting_category': self.lit_labor.pk,
         })
         self.assertEqual(self.worksheet.bundles.count(), 0)
 
@@ -111,7 +111,7 @@ class WorksheetUnbundleTest(WorksheetBundleUITestBase):
         super().setUp()
         self.bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
-            line_item_type=self.lit_labor, sort_order=1
+            accounting_category=self.lit_labor, sort_order=1
         )
         self.task1.mapping_strategy = 'bundle'
         self.task1.bundle = self.bundle
@@ -150,7 +150,7 @@ class WorksheetBundleReorderTest(WorksheetBundleUITestBase):
         """Reordering at container level swaps sort_order between a bundle and an unbundled task."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
-            line_item_type=self.lit_labor, sort_order=1
+            accounting_category=self.lit_labor, sort_order=1
         )
         self.task1.mapping_strategy = 'bundle'
         self.task1.bundle = bundle
@@ -179,7 +179,7 @@ class WorksheetBundleReorderTest(WorksheetBundleUITestBase):
         """Reordering within a bundle swaps sort_order of two bundled tasks."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
-            line_item_type=self.lit_labor, sort_order=1
+            accounting_category=self.lit_labor, sort_order=1
         )
         self.task1.mapping_strategy = 'bundle'
         self.task1.bundle = bundle

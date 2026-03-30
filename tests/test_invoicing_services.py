@@ -6,7 +6,7 @@ from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.invoicing.services import InvoiceService
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
 class InvoiceServiceReorderTest(TestCase):
@@ -27,7 +27,7 @@ class InvoiceServiceReorderTest(TestCase):
             name='Test Job', job_number='J2026-0001',
             contact=self.contact, status='draft',
         )
-        self.lit = LineItemType.objects.create(
+        self.lit = AccountingCategory.objects.create(
             code='SVC', name='Service', taxable=True,
         )
         self.invoice = Invoice.objects.create(
@@ -36,17 +36,17 @@ class InvoiceServiceReorderTest(TestCase):
         self.li1 = InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=1,
             description='Item 1', qty=1, price=Decimal('10.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         self.li2 = InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=2,
             description='Item 2', qty=1, price=Decimal('20.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         self.li3 = InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=3,
             description='Item 3', qty=1, price=Decimal('30.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
 
     def test_reorder_down(self):
@@ -91,7 +91,7 @@ class InvoiceServiceDeleteLineItemTest(TestCase):
             name='Test Job', job_number='J2026-0001',
             contact=self.contact, status='draft',
         )
-        self.lit = LineItemType.objects.create(
+        self.lit = AccountingCategory.objects.create(
             code='SVC', name='Service', taxable=True,
         )
         self.invoice = Invoice.objects.create(
@@ -100,12 +100,12 @@ class InvoiceServiceDeleteLineItemTest(TestCase):
         self.li1 = InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=1,
             description='Item 1', qty=1, price=Decimal('10.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         self.li2 = InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=2,
             description='Item 2', qty=1, price=Decimal('20.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
 
     def test_delete_line_item(self):

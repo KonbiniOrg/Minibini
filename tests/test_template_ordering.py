@@ -14,7 +14,7 @@ from django.urls import reverse
 from django.contrib.auth import get_user_model
 
 from apps.estimates.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 User = get_user_model()
 
@@ -31,10 +31,10 @@ class TemplateOrderingTestBase(TestCase):
         )
         self.client.login(username='testuser', password='testpass123')
 
-        self.lit, _ = LineItemType.objects.get_or_create(
+        self.lit, _ = AccountingCategory.objects.get_or_create(
             code="LBR", defaults={"name": "Labor"}
         )
-        self.lit2, _ = LineItemType.objects.get_or_create(
+        self.lit2, _ = AccountingCategory.objects.get_or_create(
             code="MAT", defaults={"name": "Material"}
         )
 
@@ -44,19 +44,19 @@ class TemplateOrderingTestBase(TestCase):
 
         # Create task templates
         self.task1 = TaskTemplate.objects.create(
-            template_name="Task 1", rate=50, line_item_type=self.lit
+            template_name="Task 1", rate=50, accounting_category=self.lit
         )
         self.task2 = TaskTemplate.objects.create(
-            template_name="Task 2", rate=75, line_item_type=self.lit
+            template_name="Task 2", rate=75, accounting_category=self.lit
         )
         self.task3 = TaskTemplate.objects.create(
-            template_name="Task 3", rate=100, line_item_type=self.lit
+            template_name="Task 3", rate=100, accounting_category=self.lit
         )
         self.task4 = TaskTemplate.objects.create(
-            template_name="Task 4", rate=60, line_item_type=self.lit
+            template_name="Task 4", rate=60, accounting_category=self.lit
         )
         self.task5 = TaskTemplate.objects.create(
-            template_name="Task 5", rate=80, line_item_type=self.lit
+            template_name="Task 5", rate=80, accounting_category=self.lit
         )
 
     def _detail_url(self, template=None):
@@ -121,7 +121,7 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
         bundle = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Bundle A",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
             sort_order=1,
         )
         assoc1 = TemplateTaskAssociation.objects.create(
@@ -157,7 +157,7 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
         bundle = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Bundle A",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
             sort_order=1,
         )
         assoc1 = TemplateTaskAssociation.objects.create(
@@ -199,7 +199,7 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
         bundle = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Bundle A",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
             sort_order=1,
         )
         bundle_pk = bundle.pk
@@ -239,7 +239,7 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
         bundle = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Bundle A",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
             sort_order=1,
         )
         TemplateTaskAssociation.objects.create(
@@ -305,7 +305,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
             'selected_tasks': [assoc1.pk, assoc2.pk, assoc3.pk],
             'bundle_name': 'My Bundle',
             'bundle_description': '',
-            'line_item_type': self.lit.pk,
+            'accounting_category': self.lit.pk,
         })
 
         assoc1.refresh_from_db()
@@ -345,7 +345,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
             'selected_tasks': [assoc1.pk, assoc2.pk],
             'bundle_name': 'Late Bundle',
             'bundle_description': '',
-            'line_item_type': self.lit.pk,
+            'accounting_category': self.lit.pk,
         })
 
         bundle = TemplateBundle.objects.get(
@@ -383,7 +383,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
             'selected_tasks': [assoc1.pk, assoc2.pk],
             'bundle_name': 'Shared Bundle',
             'bundle_description': '',
-            'line_item_type': self.lit.pk,
+            'accounting_category': self.lit.pk,
         })
 
         self.assertEqual(
@@ -399,7 +399,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
             'selected_tasks': [assoc3.pk, assoc4.pk],
             'bundle_name': 'Shared Bundle',
             'bundle_description': '',
-            'line_item_type': self.lit.pk,
+            'accounting_category': self.lit.pk,
         })
 
         # Still only one bundle
@@ -423,7 +423,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
         bundle_a = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Bundle A",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
             sort_order=1,
         )
         bundle_a_pk = bundle_a.pk
@@ -447,7 +447,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
             'selected_tasks': [assoc1.pk, assoc2.pk],
             'bundle_name': 'Bundle B',
             'bundle_description': '',
-            'line_item_type': self.lit2.pk,
+            'accounting_category': self.lit2.pk,
         })
 
         # Bundle A should be gone (0 tasks remaining)
@@ -468,7 +468,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
         bundle_a = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Bundle A",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
             sort_order=1,
         )
         bundle_a_pk = bundle_a.pk
@@ -498,7 +498,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
             'selected_tasks': [assoc1.pk, assoc2.pk],
             'bundle_name': 'Bundle B',
             'bundle_description': '',
-            'line_item_type': self.lit2.pk,
+            'accounting_category': self.lit2.pk,
         })
 
         # Bundle A is deleted (auto-unbundle because only 1 task remained)
@@ -560,7 +560,7 @@ class ContainerReorderTests(TemplateOrderingTestBase):
         bundle = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Bundle A",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
             sort_order=2,
         )
         TemplateTaskAssociation.objects.create(
@@ -654,7 +654,7 @@ class WithinBundleReorderTests(TemplateOrderingTestBase):
         self.bundle = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Bundle A",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
             sort_order=1,
         )
         self.assoc1 = TemplateTaskAssociation.objects.create(
@@ -759,7 +759,7 @@ class SortOrderHelperTests(TemplateOrderingTestBase):
         bundle = TemplateBundle.objects.create(
             work_order_template=self.wo_template,
             name="Bundle A",
-            line_item_type=self.lit,
+            accounting_category=self.lit,
             sort_order=5,
         )
         TemplateTaskAssociation.objects.create(
@@ -797,10 +797,10 @@ class EdgeCaseTests(TemplateOrderingTestBase):
             template_name="Second WO Template"
         )
         task_a = TaskTemplate.objects.create(
-            template_name="Task A", rate=10, line_item_type=self.lit
+            template_name="Task A", rate=10, accounting_category=self.lit
         )
         task_b = TaskTemplate.objects.create(
-            template_name="Task B", rate=20, line_item_type=self.lit
+            template_name="Task B", rate=20, accounting_category=self.lit
         )
 
         # Create associations on template 1
@@ -833,7 +833,7 @@ class EdgeCaseTests(TemplateOrderingTestBase):
             'selected_tasks': [assoc1.pk, assoc2.pk],
             'bundle_name': 'Prep',
             'bundle_description': '',
-            'line_item_type': self.lit.pk,
+            'accounting_category': self.lit.pk,
         })
 
         # Bundle on template 2 with the same name "Prep"
@@ -842,7 +842,7 @@ class EdgeCaseTests(TemplateOrderingTestBase):
             'selected_tasks': [assoc_a.pk, assoc_b.pk],
             'bundle_name': 'Prep',
             'bundle_description': '',
-            'line_item_type': self.lit.pk,
+            'accounting_category': self.lit.pk,
         })
 
         # Two separate bundles should exist

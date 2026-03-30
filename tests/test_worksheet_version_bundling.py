@@ -4,7 +4,7 @@ from django.test import TestCase
 from apps.jobs.models import Task, TaskBundle, Job
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
 class WorksheetVersionBundlingTest(TestCase):
@@ -12,7 +12,7 @@ class WorksheetVersionBundlingTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
-        self.lit_labor, _ = LineItemType.objects.get_or_create(
+        self.lit_labor, _ = AccountingCategory.objects.get_or_create(
             code="LBR", defaults={"name": "Labor"}
         )
 
@@ -39,7 +39,7 @@ class WorksheetVersionBundlingTest(TestCase):
         ws1 = EstWorksheet.objects.create(job=self.job, status='draft')
         bundle = TaskBundle.objects.create(
             est_worksheet=ws1, name="Prep Work",
-            line_item_type=self.lit_labor, sort_order=1,
+            accounting_category=self.lit_labor, sort_order=1,
             description="Preparation tasks"
         )
         Task.objects.create(
@@ -61,7 +61,7 @@ class WorksheetVersionBundlingTest(TestCase):
         new_bundle = new_bundles[0]
         self.assertEqual(new_bundle.name, "Prep Work")
         self.assertEqual(new_bundle.description, "Preparation tasks")
-        self.assertEqual(new_bundle.line_item_type, self.lit_labor)
+        self.assertEqual(new_bundle.accounting_category, self.lit_labor)
         self.assertEqual(new_bundle.sort_order, 1)
 
         # New bundle is a different object than the original
@@ -76,16 +76,16 @@ class WorksheetVersionBundlingTest(TestCase):
     def test_multiple_bundles_copied_with_correct_task_mapping(self):
         """Multiple bundles are each copied, and tasks point to the right new bundle."""
         ws1 = EstWorksheet.objects.create(job=self.job, status='draft')
-        lit_mat, _ = LineItemType.objects.get_or_create(
+        lit_mat, _ = AccountingCategory.objects.get_or_create(
             code="MAT", defaults={"name": "Material"}
         )
         bundle_a = TaskBundle.objects.create(
             est_worksheet=ws1, name="Prep",
-            line_item_type=self.lit_labor, sort_order=1
+            accounting_category=self.lit_labor, sort_order=1
         )
         bundle_b = TaskBundle.objects.create(
             est_worksheet=ws1, name="Materials",
-            line_item_type=lit_mat, sort_order=2
+            accounting_category=lit_mat, sort_order=2
         )
 
         Task.objects.create(
@@ -122,7 +122,7 @@ class WorksheetVersionBundlingTest(TestCase):
         ws1 = EstWorksheet.objects.create(job=self.job, status='draft')
         bundle = TaskBundle.objects.create(
             est_worksheet=ws1, name="Prep",
-            line_item_type=self.lit_labor, sort_order=1
+            accounting_category=self.lit_labor, sort_order=1
         )
         task = Task.objects.create(
             est_worksheet=ws1, name="Sand",

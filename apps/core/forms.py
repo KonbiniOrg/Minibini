@@ -1,5 +1,5 @@
 from django import forms
-from .models import LineItemType, Configuration
+from .models import AccountingCategory, Configuration
 
 
 class TaxConfigurationForm(forms.Form):
@@ -18,11 +18,11 @@ class TaxConfigurationForm(forms.Form):
     )
 
 
-class LineItemTypeForm(forms.ModelForm):
-    """Form for creating and editing LineItemTypes."""
+class AccountingCategoryForm(forms.ModelForm):
+    """Form for creating and editing AccountingCategories."""
 
     class Meta:
-        model = LineItemType
+        model = AccountingCategory
         fields = ['code', 'name', 'taxable', 'default_description', 'is_active']
         widgets = {
             'code': forms.TextInput(attrs={'maxlength': 20}),

@@ -31,7 +31,7 @@ class FullURLTreeTest(BaseTestCase):
             '/api/emails/',
             '/api/work-order-templates/',
             '/api/task-templates/',
-            '/api/line-item-types/',
+            '/api/accounting-categories/',
             '/api/settings/',
         ]
         for url in endpoints:

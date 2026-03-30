@@ -11,7 +11,7 @@ from apps.jobs.models import Job, Task, WorkOrder
 from apps.jobs.services import WorkOrderService
 from apps.inventory.models import Material
 from apps.core.services import NotFoundError
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact, Business
 
 
@@ -30,7 +30,7 @@ class EstimatesTestBase(TestCase):
         )
         self.contact.business = self.business
         self.contact.save()
-        self.lit = LineItemType.objects.create(
+        self.lit = AccountingCategory.objects.create(
             code='SVC', name='Service', taxable=True,
         )
         from apps.jobs.services import JobService
@@ -98,7 +98,7 @@ class TaskTemplateServiceCreateTest(EstimatesTestBase):
         from apps.estimates.services import WorkOrderTemplateService
         tt = WorkOrderTemplateService.create_task_template(
             template_name='Welding', units='hours',
-            rate=Decimal('85.00'), line_item_type=self.lit,
+            rate=Decimal('85.00'), accounting_category=self.lit,
         )
         self.assertIsNotNone(tt.pk)
         self.assertEqual(tt.template_name, 'Welding')
@@ -111,7 +111,7 @@ class TaskTemplateServiceUpdateTest(EstimatesTestBase):
     def test_update_task_template(self):
         from apps.estimates.services import WorkOrderTemplateService
         tt = WorkOrderTemplateService.create_task_template(
-            template_name='Old', line_item_type=self.lit,
+            template_name='Old', accounting_category=self.lit,
         )
         updated = WorkOrderTemplateService.update_task_template(
             tt.pk, template_name='New',
@@ -130,7 +130,7 @@ class TaskTemplateServiceDeleteTest(EstimatesTestBase):
     def test_delete_unused_task_template(self):
         from apps.estimates.services import WorkOrderTemplateService
         tt = WorkOrderTemplateService.create_task_template(
-            template_name='Del', line_item_type=self.lit,
+            template_name='Del', accounting_category=self.lit,
         )
         pk = tt.pk
         WorkOrderTemplateService.delete_task_template(pk)
@@ -141,7 +141,7 @@ class TaskTemplateServiceDeleteTest(EstimatesTestBase):
         from apps.estimates.services import WorkOrderTemplateService
         wo_tmpl = WorkOrderTemplateService.create_template(template_name='WO')
         tt = WorkOrderTemplateService.create_task_template(
-            template_name='Used', line_item_type=self.lit,
+            template_name='Used', accounting_category=self.lit,
         )
         TemplateTaskAssociation.objects.create(
             work_order_template=wo_tmpl, task_template=tt,
@@ -228,7 +228,7 @@ class EstimateServiceReviseTest(EstimatesTestBase):
         EstimateLineItem.objects.create(
             estimate=est, description='Item 1', line_number=1,
             qty=Decimal('1.00'), price=Decimal('10.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         EstimateService.update_status(est.pk, 'open')
         new_est = EstimateService.revise_estimate(est.pk)
@@ -253,7 +253,7 @@ class EstimateServiceAddLineItemTest(EstimatesTestBase):
         li = EstimateService.add_line_item(
             self.est.pk, description='Custom work',
             qty=Decimal('2.00'), units='hours',
-            price=Decimal('50.00'), line_item_type=self.lit,
+            price=Decimal('50.00'), accounting_category=self.lit,
         )
         self.assertEqual(li.estimate, self.est)
         self.assertEqual(li.description, 'Custom work')
@@ -263,7 +263,7 @@ class EstimateServiceAddLineItemTest(EstimatesTestBase):
         pli = PriceListItem.objects.create(
             code='WLD-001', description='Welding rod', units='each',
             purchase_price=Decimal('5.00'), selling_price=Decimal('10.00'),
-            line_item_type=self.lit,
+            accounting_category=self.lit,
         )
         li = EstimateService.add_line_item_from_pli(
             self.est.pk, pli.pk, qty=Decimal('20.00'),
@@ -277,7 +277,7 @@ class EstimateServiceAddLineItemTest(EstimatesTestBase):
         with self.assertRaises(ValidationError):
             EstimateService.add_line_item(
                 self.est.pk, description='X', qty=1, units='ea',
-                price=Decimal('1.00'), line_item_type=self.lit,
+                price=Decimal('1.00'), accounting_category=self.lit,
             )
 
 
@@ -289,11 +289,11 @@ class EstimateServiceReorderLineItemTest(EstimatesTestBase):
         self.est = EstimateService.create_for_job(self.job.pk)
         self.li1 = EstimateLineItem.objects.create(
             estimate=self.est, line_number=1, description='Item 1',
-            qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         self.li2 = EstimateLineItem.objects.create(
             estimate=self.est, line_number=2, description='Item 2',
-            qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+            qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
 
     def test_reorder_down(self):
@@ -321,11 +321,11 @@ class EstimateServiceDeleteLineItemTest(EstimatesTestBase):
         self.est = EstimateService.create_for_job(self.job.pk)
         self.li1 = EstimateLineItem.objects.create(
             estimate=self.est, line_number=1, description='Item 1',
-            qty=1, price=Decimal('10.00'), line_item_type=self.lit,
+            qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
         self.li2 = EstimateLineItem.objects.create(
             estimate=self.est, line_number=2, description='Item 2',
-            qty=1, price=Decimal('20.00'), line_item_type=self.lit,
+            qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
 
     def test_delete_and_renumber(self):
@@ -404,7 +404,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         from apps.estimates.services import WorksheetService, WorkOrderTemplateService
         tt = WorkOrderTemplateService.create_task_template(
             template_name='Welding', units='hours',
-            rate=Decimal('85.00'), line_item_type=self.lit,
+            rate=Decimal('85.00'), accounting_category=self.lit,
         )
         task = WorksheetService.add_task_from_template(
             self.ws.pk, tt.pk, est_qty=Decimal('4.00'),
@@ -441,7 +441,7 @@ class WorkOrderTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         from apps.estimates.services import WorkOrderTemplateService
         tmpl = WorkOrderTemplateService.create_template(template_name='T')
         tt = WorkOrderTemplateService.create_task_template(
-            template_name='Task', line_item_type=self.lit,
+            template_name='Task', accounting_category=self.lit,
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_order_template=tmpl, task_template=tt,
@@ -462,7 +462,7 @@ class WorkOrderTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         tmpl1 = WorkOrderTemplateService.create_template(template_name='T1')
         tmpl2 = WorkOrderTemplateService.create_template(template_name='T2')
         tt = WorkOrderTemplateService.create_task_template(
-            template_name='Task', line_item_type=self.lit,
+            template_name='Task', accounting_category=self.lit,
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_order_template=tmpl1, task_template=tt,
@@ -518,7 +518,7 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
         ws = WorksheetService.create_worksheet(self.job.pk)
         bundle = TaskBundle.objects.create(
             est_worksheet=ws, name='Bundle 1',
-            line_item_type=self.lit, sort_order=1,
+            accounting_category=self.lit, sort_order=1,
         )
         Task.objects.create(
             est_worksheet=ws, name='Bundled', sort_order=1,

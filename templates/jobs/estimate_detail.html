@@ -110,8 +110,8 @@
             {% for item in line_items %}
             <tr>
                 <td>{{ item.line_number|default:item.line_number }}</td>
-                <td>{{ item.line_item_type.name|default:"—" }}</td>
-                <td>{% if item.line_item_type %}{% if item.line_item_type.taxable %}Yes{% else %}No{% endif %}{% else %}—{% endif %}</td>
+                <td>{{ item.accounting_category.name|default:"—" }}</td>
+                <td>{% if item.accounting_category %}{% if item.accounting_category.taxable %}Yes{% else %}No{% endif %}{% else %}—{% endif %}</td>
                 <td>{{ item.description|default:"No description" }}</td>
                 <td>
                     {% if item.task %}

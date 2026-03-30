@@ -36,7 +36,7 @@
         <tr>
             <td><strong>{{ item.code }}</strong></td>
             <td>{{ item.description|truncatewords:10 }}</td>
-            <td>{{ item.line_item_type.name|default:"—" }}</td>
+            <td>{{ item.accounting_category.name|default:"—" }}</td>
             <td>{{ item.units|default:"-" }}</td>
             <td>${{ item.purchase_price|floatformat:2 }}</td>
             <td>${{ item.selling_price|floatformat:2 }}</td>

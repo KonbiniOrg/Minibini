@@ -157,7 +157,7 @@ class TempEmail(models.Model):
 
     def __str__(self):
         return f"{self.from_email}: {self.subject[:50]}"
-class LineItemType(models.Model):
+class AccountingCategory(models.Model):
     """
     Defines categories of line items with default taxability.
     Examples: Service, Material, Product, Freight, Overhead
@@ -168,12 +168,18 @@ class LineItemType(models.Model):
     default_description = models.TextField(blank=True)  # Template for descriptions
     is_active = models.BooleanField(default=True)  # Soft delete support
 
+    # QBO account mappings (populated after connecting to QBO)
+    qbo_item_id = models.CharField(max_length=50, blank=True, default='')
+    qbo_expense_account_id = models.CharField(max_length=50, blank=True, default='')
+
     class Meta:
-        db_table = 'li_types'
+        db_table = 'accounting_categories'
         ordering = ['name']
+        verbose_name_plural = 'accounting categories'
 
     def __str__(self):
         return self.name
+
 
 
 class AbstractWorkContainer(models.Model):
@@ -201,8 +207,8 @@ class BaseLineItem(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
     # Tax-related fields
-    line_item_type = models.ForeignKey(
-        'core.LineItemType',
+    accounting_category = models.ForeignKey(
+        'core.AccountingCategory',
         on_delete=models.PROTECT,
         related_name='%(class)s_items',
         null=True,  # Nullable initially for migration; will be made required after data migration

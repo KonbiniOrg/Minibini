@@ -3,7 +3,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 
 from apps.estimates.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
 class WorkOrderTemplateEditViewTest(TestCase):
@@ -125,14 +125,14 @@ class WorkOrderTemplateDeleteViewTest(TestCase):
     def test_delete_view_cascades_to_bundles(self):
         """Test that deleting template also deletes bundles."""
         # Create a line item type for the bundle
-        line_item_type = LineItemType.objects.create(
+        accounting_category = AccountingCategory.objects.create(
             code='TEST',
             name='Test Type'
         )
         bundle = TemplateBundle.objects.create(
             work_order_template=self.template,
             name='Test Bundle',
-            line_item_type=line_item_type
+            accounting_category=accounting_category
         )
         bundle_id = bundle.pk
 

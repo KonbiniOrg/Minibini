@@ -148,7 +148,7 @@ class TaskEditForm(forms.ModelForm):
     """Form for editing an existing Task's details."""
     class Meta:
         model = Task
-        fields = ['name', 'description', 'units', 'rate', 'est_qty', 'line_item_type']
+        fields = ['name', 'description', 'units', 'rate', 'est_qty', 'accounting_category']
         widgets = {
             'est_qty': forms.NumberInput(attrs={'step': '0.01'}),
             'rate': forms.NumberInput(attrs={'step': '0.01'}),
@@ -205,7 +205,7 @@ class MaterialForm(forms.ModelForm):
 
     class Meta:
         model = Material
-        fields = ['price_list_item', 'description', 'quantity', 'unit_cost', 'sell_price', 'line_item_type']
+        fields = ['price_list_item', 'description', 'quantity', 'unit_cost', 'sell_price', 'accounting_category']
         widgets = {
             'quantity': forms.NumberInput(attrs={'step': '0.01'}),
             'unit_cost': forms.NumberInput(attrs={'step': '0.01'}),

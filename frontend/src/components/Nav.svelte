@@ -12,6 +12,7 @@
   ◆ <a href="/contacts" use:link>CONTACTS</a>
   ◆ <a href="/businesses" use:link>BUSINESSES</a>
   ◆ <a href="/jobs" use:link>JOBS</a>
+  ◆ <a href="/settings" use:link>SETTINGS</a>
   {#if $user}
     ◆ <button onclick={handleLogout}>Logout ({$user.username})</button>
   {/if}

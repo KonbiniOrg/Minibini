@@ -20,7 +20,7 @@ class POLineItemSerializer(serializers.ModelSerializer):
         fields = [
             'line_item_id', 'line_number', 'task', 'price_list_item',
             'qty', 'units', 'description', 'price', 'job',
-            'line_item_type', 'taxable_override', 'tax_rate_override',
+            'accounting_category', 'taxable_override', 'tax_rate_override',
         ]
         read_only_fields = ['line_item_id']
 
@@ -47,7 +47,7 @@ class BillLineItemSerializer(serializers.ModelSerializer):
         fields = [
             'line_item_id', 'line_number', 'task', 'price_list_item',
             'qty', 'units', 'description', 'price',
-            'line_item_type', 'taxable_override', 'tax_rate_override',
+            'accounting_category', 'taxable_override', 'tax_rate_override',
         ]
         read_only_fields = ['line_item_id']
 
@@ -63,5 +63,6 @@ class BillSerializer(serializers.ModelSerializer):
             'bill_id', 'purchase_order', 'vendor_invoice_number',
             'business', 'contact', 'bill_number', 'status',
             'created_date', 'received_date', 'cancelled_date', 'line_items',
+            'qbo_id', 'qbo_payment_status',
         ]
-        read_only_fields = ['bill_id', 'bill_number', 'created_date']
+        read_only_fields = ['bill_id', 'bill_number', 'created_date', 'qbo_id', 'qbo_payment_status']

@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 from apps.jobs.models import Job, Task
 from apps.estimates.models import EstWorksheet, TaskTemplate, WorkOrderTemplate
 from apps.contacts.models import Contact
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 from decimal import Decimal
 
 User = get_user_model()
@@ -62,7 +62,7 @@ class TaskDescriptionFromTemplateTests(TestCase):
     """Test that description is copied from template when creating tasks."""
 
     def setUp(self):
-        self.line_item_type = LineItemType.objects.create(name='Labor')
+        self.accounting_category = AccountingCategory.objects.create(name='Labor')
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact', email='c@test.com'
         )
@@ -77,7 +77,7 @@ class TaskDescriptionFromTemplateTests(TestCase):
             description='Apply two coats of primer and paint',
             units='sqft',
             rate=Decimal('3.50'),
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
         )
 
     def test_generate_task_copies_description_from_template(self):

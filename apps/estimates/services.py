@@ -112,7 +112,7 @@ class EstimateService:
                 units=li.units,
                 description=li.description,
                 price=li.price,
-                line_item_type=li.line_item_type,
+                accounting_category=li.accounting_category,
             )
 
         # Supersede parent
@@ -184,7 +184,7 @@ class EstimateService:
             qty=qty,
             units=pli.units,
             price=pli.selling_price,
-            line_item_type=pli.line_item_type,
+            accounting_category=pli.accounting_category,
         )
         return li
 
@@ -281,7 +281,7 @@ class WorkOrderTemplateService:
     # --- Bundling operations ---
 
     @staticmethod
-    def bundle_associations(template_pk, assoc_ids, bundle_name, line_item_type,
+    def bundle_associations(template_pk, assoc_ids, bundle_name, accounting_category,
                             description=''):
         """Bundle associations on a template. Requires >= 2 associations."""
         from apps.core.services import BundlingService
@@ -308,7 +308,7 @@ class WorkOrderTemplateService:
             work_order_template=tmpl, name=bundle_name,
             defaults={
                 'description': description,
-                'line_item_type': line_item_type,
+                'accounting_category': accounting_category,
                 'sort_order': next_sort,
             },
         )
@@ -439,7 +439,7 @@ class WorksheetService:
         task = Task.objects.create(
             name=tt.template_name,
             description=tt.description,
-            line_item_type=tt.line_item_type,
+            accounting_category=tt.accounting_category,
             est_worksheet=ws,
             est_qty=est_qty,
             units=tt.units,
@@ -465,7 +465,7 @@ class WorksheetService:
         return task
 
     @staticmethod
-    def bundle_tasks(worksheet_pk, task_ids, bundle_name, line_item_type,
+    def bundle_tasks(worksheet_pk, task_ids, bundle_name, accounting_category,
                      description=''):
         """Bundle tasks on a draft worksheet. Requires >= 2 tasks."""
         from apps.jobs.models import Task, TaskBundle
@@ -493,7 +493,7 @@ class WorksheetService:
             est_worksheet=ws, name=bundle_name,
             defaults={
                 'description': description,
-                'line_item_type': line_item_type,
+                'accounting_category': accounting_category,
                 'sort_order': next_sort,
             },
         )
@@ -597,14 +597,14 @@ class EstimateGenerationService:
 
     def __init__(self):
         self.line_number = 1
-        self._default_line_item_type = None
+        self._default_accounting_category = None
 
-    def _get_default_line_item_type(self):
-        """Get a fallback LineItemType when none is available from the source object."""
-        if self._default_line_item_type is None:
-            from apps.core.models import LineItemType
-            self._default_line_item_type = LineItemType.objects.filter(is_active=True).first()
-        return self._default_line_item_type
+    def _get_default_accounting_category(self):
+        """Get a fallback AccountingCategory when none is available from the source object."""
+        if self._default_accounting_category is None:
+            from apps.core.models import AccountingCategory
+            self._default_accounting_category = AccountingCategory.objects.filter(is_active=True).first()
+        return self._default_accounting_category
 
     @transaction.atomic
     def generate_estimate_from_worksheet(self, worksheet) -> 'Estimate':
@@ -699,11 +699,11 @@ class EstimateGenerationService:
         qty = task.est_qty or Decimal('1.00')
         rate = task.rate or Decimal('0.00')
 
-        # Get line_item_type from task directly
-        line_item_type = task.line_item_type
+        # Get accounting_category from task directly
+        accounting_category = task.accounting_category
 
-        if line_item_type is None:
-            line_item_type = self._get_default_line_item_type()
+        if accounting_category is None:
+            accounting_category = self._get_default_accounting_category()
 
         line_item = EstimateLineItem(
             estimate=estimate,
@@ -713,7 +713,7 @@ class EstimateGenerationService:
             qty=qty,
             units=task.units or 'each',
             price=rate,
-            line_item_type=line_item_type
+            accounting_category=accounting_category
         )
 
         self.line_number += 1
@@ -721,14 +721,14 @@ class EstimateGenerationService:
 
     def _create_material_line_item(self, material, estimate) -> 'EstimateLineItem':
         """Create a line item for a material on a direct-mapped task."""
-        # Derive line_item_type: PLI first, then material's own field, then fallback
-        line_item_type = None
+        # Derive accounting_category: PLI first, then material's own field, then fallback
+        accounting_category = None
         if material.price_list_item:
-            line_item_type = material.price_list_item.line_item_type
-        if line_item_type is None:
-            line_item_type = material.line_item_type
-        if line_item_type is None:
-            line_item_type = self._get_default_line_item_type()
+            accounting_category = material.price_list_item.accounting_category
+        if accounting_category is None:
+            accounting_category = material.accounting_category
+        if accounting_category is None:
+            accounting_category = self._get_default_accounting_category()
 
         line_item = EstimateLineItem(
             estimate=estimate,
@@ -738,7 +738,7 @@ class EstimateGenerationService:
             qty=material.quantity,
             units='each',
             price=material.sell_price,
-            line_item_type=line_item_type,
+            accounting_category=accounting_category,
         )
 
         self.line_number += 1
@@ -763,7 +763,7 @@ class EstimateGenerationService:
             qty=Decimal('1.00'),
             units='each',
             price=total_price,
-            line_item_type=bundle.line_item_type
+            accounting_category=bundle.accounting_category
         )
 
         self.line_number += 1

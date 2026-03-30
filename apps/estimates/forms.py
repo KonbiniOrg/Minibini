@@ -3,7 +3,7 @@ from apps.estimates.models import (
     WorkOrderTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem
 )
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 
 
 class WorkOrderTemplateForm(forms.ModelForm):
@@ -18,7 +18,7 @@ class WorkOrderTemplateForm(forms.ModelForm):
 class TaskTemplateForm(forms.ModelForm):
     class Meta:
         model = TaskTemplate
-        fields = ['template_name', 'description', 'units', 'rate', 'line_item_type']
+        fields = ['template_name', 'description', 'units', 'rate', 'accounting_category']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
             'units': forms.TextInput(attrs={'placeholder': 'e.g., hours, pieces'}),
@@ -46,7 +46,7 @@ class ManualLineItemForm(forms.ModelForm):
     """Form for creating a manual line item (not linked to a Price List Item)"""
     class Meta:
         model = EstimateLineItem
-        fields = ['description', 'qty', 'units', 'price', 'line_item_type']
+        fields = ['description', 'qty', 'units', 'price', 'accounting_category']
         widgets = {
             'qty': forms.NumberInput(attrs={'step': '0.01'}),
             'price': forms.NumberInput(attrs={'step': '0.01'}),
@@ -54,13 +54,13 @@ class ManualLineItemForm(forms.ModelForm):
         }
         labels = {
             'price': 'Price',
-            'line_item_type': 'Type',
+            'accounting_category': 'Type',
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['line_item_type'].queryset = LineItemType.objects.filter(is_active=True)
-        self.fields['line_item_type'].required = True
+        self.fields['accounting_category'].queryset = AccountingCategory.objects.filter(is_active=True)
+        self.fields['accounting_category'].required = True
 
 
 class PriceListLineItemForm(forms.Form):

@@ -2,7 +2,7 @@
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.core.models import Configuration, LineItemType
+from apps.core.models import Configuration, AccountingCategory
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
@@ -31,11 +31,11 @@ class EstimateTaxDisplayTest(TestCase):
             estimate_number='EST-001',
             status='draft'
         )
-        cls.taxable_type, _ = LineItemType.objects.get_or_create(
+        cls.taxable_type, _ = AccountingCategory.objects.get_or_create(
             code='MAT',
             defaults={'name': 'Material', 'taxable': True}
         )
-        cls.nontaxable_type, _ = LineItemType.objects.get_or_create(
+        cls.nontaxable_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False}
         )
@@ -49,7 +49,7 @@ class EstimateTaxDisplayTest(TestCase):
         """Test that estimate detail shows subtotal."""
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             description='Test Item',
             qty=Decimal('2.00'),
             price=Decimal('50.00')
@@ -64,7 +64,7 @@ class EstimateTaxDisplayTest(TestCase):
         """Test that estimate detail shows tax amount."""
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             description='Taxable Item',
             qty=Decimal('1.00'),
             price=Decimal('100.00')
@@ -79,7 +79,7 @@ class EstimateTaxDisplayTest(TestCase):
         """Test that estimate detail shows total including tax."""
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             description='Taxable Item',
             qty=Decimal('1.00'),
             price=Decimal('100.00')
@@ -94,7 +94,7 @@ class EstimateTaxDisplayTest(TestCase):
         """Test that non-taxable items don't contribute to tax."""
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.nontaxable_type,  # Non-taxable
+            accounting_category=self.nontaxable_type,  # Non-taxable
             description='Service Item',
             qty=Decimal('1.00'),
             price=Decimal('100.00')
@@ -105,11 +105,11 @@ class EstimateTaxDisplayTest(TestCase):
         # Tax should be $0
         self.assertContains(response, '$0.00')
 
-    def test_estimate_detail_shows_line_item_type(self):
-        """Test that estimate detail shows LineItemType for each item."""
+    def test_estimate_detail_shows_accounting_category(self):
+        """Test that estimate detail shows AccountingCategory for each item."""
         EstimateLineItem.objects.create(
             estimate=self.estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             description='Material Item',
             qty=Decimal('1.00'),
             price=Decimal('50.00')
@@ -127,7 +127,7 @@ class EstimateCustomerExemptionTest(TestCase):
     def setUpTestData(cls):
         Configuration.objects.create(key='default_tax_rate', value='0.10')  # 10%
 
-        cls.taxable_type, _ = LineItemType.objects.get_or_create(
+        cls.taxable_type, _ = AccountingCategory.objects.get_or_create(
             code='MAT',
             defaults={'name': 'Material', 'taxable': True}
         )
@@ -163,7 +163,7 @@ class EstimateCustomerExemptionTest(TestCase):
         )
         EstimateLineItem.objects.create(
             estimate=estimate,
-            line_item_type=self.taxable_type,
+            accounting_category=self.taxable_type,
             description='Taxable Item',
             qty=Decimal('1.00'),
             price=Decimal('100.00')

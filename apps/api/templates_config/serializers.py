@@ -2,7 +2,7 @@ from rest_framework import serializers
 from apps.estimates.models import (
     WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
 )
-from apps.core.models import Configuration, LineItemType
+from apps.core.models import Configuration, AccountingCategory
 
 
 class TaskTemplateSerializer(serializers.ModelSerializer):
@@ -10,7 +10,7 @@ class TaskTemplateSerializer(serializers.ModelSerializer):
         model = TaskTemplate
         fields = [
             'template_id', 'template_name', 'description',
-            'units', 'rate', 'line_item_type', 'is_active',
+            'units', 'rate', 'accounting_category', 'is_active',
         ]
         read_only_fields = ['template_id']
 
@@ -20,7 +20,7 @@ class TemplateBundleSerializer(serializers.ModelSerializer):
         model = TemplateBundle
         fields = [
             'id', 'name', 'description',
-            'line_item_type', 'sort_order',
+            'accounting_category', 'sort_order',
         ]
         read_only_fields = ['id']
 
@@ -58,8 +58,11 @@ class ConfigurationSerializer(serializers.ModelSerializer):
         fields = ['key', 'value']
 
 
-class LineItemTypeSerializer(serializers.ModelSerializer):
+class AccountingCategorySerializer(serializers.ModelSerializer):
     class Meta:
-        model = LineItemType
-        fields = ['id', 'code', 'name', 'taxable', 'default_description', 'is_active']
+        model = AccountingCategory
+        fields = [
+            'id', 'code', 'name', 'taxable', 'default_description', 'is_active',
+            'qbo_item_id', 'qbo_expense_account_id',
+        ]
         read_only_fields = ['id']
