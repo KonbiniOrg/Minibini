@@ -86,12 +86,20 @@ class BoardService:
         ).select_related('contact').order_by('-completed_date')
         closed = [BoardService._serialize_job(job) for job in closed_jobs]
 
+        # Available workers: active users not already shown in worker columns
+        existing_worker_ids = set(worker_map.keys())
+        available_users = User.objects.filter(
+            is_active=True
+        ).exclude(pk__in=existing_worker_ids).order_by('first_name', 'last_name')
+        available_workers = [BoardService._serialize_user(u) for u in available_users]
+
         return {
             'pipeline': pipeline,
             'approved': {
                 'jobs': approved_list,
                 'workers': list(worker_map.values()),
                 'unassigned': unassigned,
+                'available_workers': available_workers,
             },
             'closed': closed,
         }

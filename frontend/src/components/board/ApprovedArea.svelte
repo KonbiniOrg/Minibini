@@ -19,6 +19,7 @@
     <div class="worker-section">
       <WorkerColumns
         workers={data.workers || []}
+        availableWorkers={data.available_workers || []}
         {canManage}
         {focusedJobId}
         {onUpdate}

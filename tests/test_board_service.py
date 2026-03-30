@@ -219,6 +219,27 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertEqual(len(data['approved']['workers'][0]['tasks']), 1)
         self.assertEqual(len(data['approved']['unassigned']), 1)
 
+    def test_available_workers_excludes_assigned(self):
+        from apps.jobs.services.board_service import BoardService
+        other_worker = User.objects.create_user(
+            username='worker2', password='testpass', first_name='Sarah', last_name='Kim'
+        )
+        job = Job.objects.create(
+            job_number='JOB-APP-001', name='Job',
+            status='approved', contact=self.contact,
+        )
+        wo = WorkOrder.objects.create(job=job)
+        Task.objects.create(
+            name='Assigned task', work_order=wo,
+            assignee=self.worker, worker_queue=1,
+        )
+        data = BoardService.get_board_data()
+        available_ids = [w['id'] for w in data['approved']['available_workers']]
+        # worker1 has tasks, should NOT be in available
+        self.assertNotIn(self.worker.pk, available_ids)
+        # worker2 has no tasks, SHOULD be in available
+        self.assertIn(other_worker.pk, available_ids)
+
     def test_jobs_include_sub_status(self):
         from apps.jobs.services.board_service import BoardService
         Job.objects.create(
