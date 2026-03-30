@@ -1,7 +1,23 @@
 <script>
   import TaskCard from './TaskCard.svelte';
+  import { onMount } from 'svelte';
 
   let { tasks = [], canManage = false, focusedJobId = null, onAssign = () => {} } = $props();
+  let draggingTaskId = $state(null);
+
+  onMount(() => {
+    function onDragStart(e) {
+      const card = e.target.closest('[data-task-id]');
+      if (card) draggingTaskId = parseInt(card.dataset.taskId);
+    }
+    function onDragEnd() { draggingTaskId = null; }
+    document.addEventListener('dragstart', onDragStart);
+    document.addEventListener('dragend', onDragEnd);
+    return () => {
+      document.removeEventListener('dragstart', onDragStart);
+      document.removeEventListener('dragend', onDragEnd);
+    };
+  });
 
   function handleDragOver(e) {
     if (canManage) {
@@ -15,7 +31,7 @@
     if (!canManage) return;
     const taskId = parseInt(e.dataTransfer.getData('text/plain'));
     if (!taskId) return;
-    onAssign(taskId, null);
+    onAssign(taskId, null, -1);
   }
 </script>
 
@@ -28,7 +44,10 @@
   ondrop={handleDrop}
 >
   {#each tasks as task (task.task_id)}
-    <div class:dimmed={focusedJobId !== null && task.job_id !== focusedJobId}>
+    <div
+      class:dimmed={focusedJobId !== null && task.job_id !== focusedJobId}
+      class:dragging-source={draggingTaskId === task.task_id}
+    >
       <TaskCard {task} draggable={canManage} />
     </div>
   {/each}
@@ -45,5 +64,6 @@
     display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 5px; align-content: start;
   }
   .dimmed { opacity: 0.25; transition: opacity 0.2s; }
+  .dragging-source { opacity: 0; height: 0; overflow: hidden; margin: 0; padding: 0; }
   .empty { font-size: 13px; color: #999; text-align: center; padding: 20px 0; grid-column: 1 / -1; }
 </style>

@@ -1,23 +1,79 @@
 <script>
   import TaskCard from './TaskCard.svelte';
+  import { onMount } from 'svelte';
 
   let { workers = [], availableWorkers = [], canManage = false, focusedJobId = null, onAssign = () => {}, onAddWorker = () => {} } = $props();
 
   let showDropdown = $state(false);
+  let dragOverWorker = $state(null);
+  let dragOverIndex = $state(-1);
+  let draggingTaskId = $state(null);
+
+  function handleTaskDragOver(e, workerId, taskIndex) {
+    if (!canManage) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const index = e.clientY < midY ? taskIndex : taskIndex + 1;
+
+    dragOverWorker = workerId;
+    dragOverIndex = index;
+  }
+
+  function handleColumnDragOver(e, workerId) {
+    if (!canManage) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    // Only update if we're not already tracking a specific card position in this column
+    if (dragOverWorker !== workerId) {
+      const worker = workers.find(w => w.user.id === workerId);
+      dragOverWorker = workerId;
+      dragOverIndex = worker ? worker.tasks.length : 0;
+    }
+  }
+
+  function handleColumnDragLeave(e, workerId) {
+    const col = e.currentTarget;
+    if (!col.contains(e.relatedTarget)) {
+      if (dragOverWorker === workerId) {
+        dragOverWorker = null;
+        dragOverIndex = -1;
+      }
+    }
+  }
 
   function handleDrop(e, workerId) {
     e.preventDefault();
     const taskId = parseInt(e.dataTransfer.getData('text/plain'));
+    const insertAt = dragOverIndex;
+    dragOverWorker = null;
+    dragOverIndex = -1;
     if (!taskId || !canManage) return;
-    onAssign(taskId, workerId);
+    onAssign(taskId, workerId, insertAt);
   }
 
-  function handleDragOver(e) {
-    if (canManage) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-    }
+  function handleGlobalDragStart(e) {
+    const card = e.target.closest('[data-task-id]');
+    if (card) draggingTaskId = parseInt(card.dataset.taskId);
   }
+
+  function handleGlobalDragEnd() {
+    dragOverWorker = null;
+    dragOverIndex = -1;
+    draggingTaskId = null;
+  }
+
+  onMount(() => {
+    document.addEventListener('dragstart', handleGlobalDragStart);
+    document.addEventListener('dragend', handleGlobalDragEnd);
+    return () => {
+      document.removeEventListener('dragstart', handleGlobalDragStart);
+      document.removeEventListener('dragend', handleGlobalDragEnd);
+    };
+  });
 
   function addWorker(user) {
     onAddWorker(user);
@@ -35,14 +91,26 @@
       </div>
       <div
         class="worker-tasks"
-        ondragover={handleDragOver}
+        ondragover={(e) => handleColumnDragOver(e, worker.user.id)}
+        ondragleave={(e) => handleColumnDragLeave(e, worker.user.id)}
         ondrop={(e) => handleDrop(e, worker.user.id)}
       >
-        {#each worker.tasks as task (task.task_id)}
-          <div class:dimmed={focusedJobId !== null && task.job_id !== focusedJobId}>
+        {#each worker.tasks as task, i (task.task_id)}
+          {#if dragOverWorker === worker.user.id && dragOverIndex === i}
+            <div class="drop-placeholder"></div>
+          {/if}
+          <div
+            class="task-card-wrapper"
+            class:dimmed={focusedJobId !== null && task.job_id !== focusedJobId}
+            class:dragging-source={draggingTaskId === task.task_id}
+            ondragover={(e) => handleTaskDragOver(e, worker.user.id, i)}
+          >
             <TaskCard {task} draggable={canManage} />
           </div>
         {/each}
+        {#if dragOverWorker === worker.user.id && dragOverIndex >= worker.tasks.length}
+          <div class="drop-placeholder"></div>
+        {/if}
       </div>
     </div>
   {/each}
@@ -78,7 +146,18 @@
   .worker-name { font-size: 13px; font-weight: 600; }
   .worker-task-count { font-size: 11px; color: #999; margin-left: auto; }
   .worker-tasks { flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 5px; background: #f8faf9; overflow-y: auto; min-height: 40px; }
+  .task-card-wrapper { transition: transform 0.15s ease; }
+  .task-card-wrapper.dragging-source { opacity: 0; height: 0; overflow: hidden; margin: 0; padding: 0; }
   .dimmed { opacity: 0.25; transition: opacity 0.2s; }
+
+  .drop-placeholder {
+    height: 36px;
+    background: #e8f5ec;
+    border: 2px dashed #4ade80;
+    border-radius: 7px;
+    transition: height 0.15s ease;
+    flex-shrink: 0;
+  }
 
   .add-worker-col { display: flex; flex-direction: column; border-left: 1px solid #e8e8e8; flex-shrink: 0; }
   .add-worker-btn-wrap { position: relative; padding: 8px 6px; }
