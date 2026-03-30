@@ -20,7 +20,7 @@
 - **Create:** `apps/api/jobs/board_views.py` — board endpoint + task reorder endpoint
 - **Create:** `apps/api/jobs/board_serializers.py` — board-specific serializers
 - **Modify:** `apps/api/urls.py` — register board endpoint
-- **Modify:** `apps/api/worksheets/serializers.py` — add `worker_queue` to TaskSerializer (TaskSerializer lives here, re-exported by work_orders)
+- **Move:** `TaskSerializer` and `TaskBundleSerializer` from `apps/api/worksheets/serializers.py` → `apps/api/work_orders/serializers.py`, then add `worker_queue` to TaskSerializer. Update `apps/api/worksheets/serializers.py` to import from the new location.
 - **Create:** migration file (auto-generated)
 
 ### Frontend
@@ -47,7 +47,8 @@
 
 **Files:**
 - Modify: `apps/jobs/models.py`
-- Modify: `apps/api/worksheets/serializers.py`
+- Modify: `apps/api/work_orders/serializers.py` — move TaskSerializer + TaskBundleSerializer here, add `worker_queue`
+- Modify: `apps/api/worksheets/serializers.py` — import TaskSerializer from work_orders
 - Create: migration (auto-generated)
 - Test: `tests/test_board_api.py` (started here, continued later)
 
@@ -117,19 +118,94 @@ In `apps/jobs/models.py`, add after the `status` field (around line 180):
 
 Run: `python manage.py makemigrations jobs -n add_task_worker_queue`
 
-- [ ] **Step 5: Add worker_queue to TaskSerializer**
+- [ ] **Step 5: Move TaskSerializer and TaskBundleSerializer to work_orders**
 
-In `apps/api/worksheets/serializers.py`, find the `TaskSerializer` class and add `worker_queue` to its `fields` list. Also add `worker_queue` to the writable fields (remove it from `read_only_fields` if present, or just ensure it's not in `read_only_fields`).
+Move `TaskSerializer` and `TaskBundleSerializer` from `apps/api/worksheets/serializers.py` into `apps/api/work_orders/serializers.py`. The work_orders file already imports them — replace the import with the actual classes.
 
-The fields line should become:
+`apps/api/work_orders/serializers.py` should become:
+
 ```python
-fields = [
-    'task_id', 'name', 'description', 'sort_order', 'status',
-    'units', 'rate', 'est_qty', 'accounting_category',
-    'mapping_strategy', 'bundle', 'parent_task', 'assignee',
-    'assignee_name', 'worker_queue',
-]
+from rest_framework import serializers
+from apps.jobs.models import WorkOrder, Blep, Task, TaskBundle
+
+
+class TaskSerializer(serializers.ModelSerializer):
+    assignee_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Task
+        fields = [
+            'task_id', 'name', 'description', 'sort_order', 'status',
+            'units', 'rate', 'est_qty', 'accounting_category',
+            'mapping_strategy', 'bundle', 'parent_task', 'assignee',
+            'assignee_name', 'worker_queue',
+        ]
+        read_only_fields = ['task_id', 'sort_order', 'status']
+
+    def get_assignee_name(self, obj):
+        if obj.assignee:
+            name = obj.assignee.get_full_name()
+            return name if name else obj.assignee.username
+        return None
+
+
+class TaskBundleSerializer(serializers.ModelSerializer):
+    tasks = TaskSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = TaskBundle
+        fields = [
+            'id', 'name', 'description', 'accounting_category',
+            'sort_order', 'tasks',
+        ]
+        read_only_fields = ['id', 'sort_order']
+
+
+class BlepSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Blep
+        fields = ['blep_id', 'user', 'task', 'start_time', 'end_time']
+        read_only_fields = ['blep_id']
+
+
+class WorkOrderSerializer(serializers.ModelSerializer):
+    tasks = TaskSerializer(source='task_set', many=True, read_only=True)
+    bundles = TaskBundleSerializer(source='taskbundle_set', many=True, read_only=True)
+    template_name = serializers.CharField(source='template.name', read_only=True, default=None)
+
+    class Meta:
+        model = WorkOrder
+        fields = [
+            'work_order_id', 'job', 'template', 'template_name', 'status',
+            'tasks', 'bundles',
+        ]
+        read_only_fields = ['work_order_id']
 ```
+
+Then update `apps/api/worksheets/serializers.py` to import from the new location:
+
+```python
+from rest_framework import serializers
+from apps.estimates.models import EstWorksheet
+from apps.api.work_orders.serializers import TaskSerializer, TaskBundleSerializer
+
+
+class EstWorksheetSerializer(serializers.ModelSerializer):
+    tasks = TaskSerializer(source='task_set', many=True, read_only=True)
+    bundles = TaskBundleSerializer(source='taskbundle_set', many=True, read_only=True)
+
+    class Meta:
+        model = EstWorksheet
+        fields = [
+            'est_worksheet_id', 'job', 'template', 'estimate',
+            'status', 'version', 'parent', 'created_date', 'tasks', 'bundles',
+        ]
+        read_only_fields = ['est_worksheet_id', 'created_date', 'status']
+```
+
+Also grep for any other imports of `TaskSerializer` or `TaskBundleSerializer` from `apps.api.worksheets.serializers` and update them. Known consumers:
+- `apps/api/work_orders/views.py` — check `task_serializer_class` and `bundle_serializer_class` assignments
+- `apps/api/worksheets/views.py` — same check
 
 - [ ] **Step 6: Run tests to verify they pass**
 
@@ -139,7 +215,7 @@ Expected: 2 tests pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/jobs/models.py apps/jobs/migrations/ apps/api/worksheets/serializers.py tests/test_board_api.py
+git add apps/jobs/models.py apps/jobs/migrations/ apps/api/work_orders/serializers.py apps/api/worksheets/serializers.py apps/api/work_orders/views.py apps/api/worksheets/views.py tests/test_board_api.py
 git commit -m "feat: add worker_queue field to Task model"
 ```
 
