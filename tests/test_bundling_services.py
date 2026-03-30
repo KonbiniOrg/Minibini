@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.db import models
 from apps.estimates.models import (
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
+    EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
 )
 from apps.estimates.services import WorkOrderTemplateService, WorksheetService
 from apps.jobs.models import Job, Task, TaskBundle
@@ -43,7 +43,7 @@ class BundlingServiceBundleItemsTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         from apps.estimates.models import EstWorksheet
-        self.ws = EstWorksheet.objects.create(job=self.job, status='draft')
+        self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         self.t1 = Task.objects.create(
             est_worksheet=self.ws, name='Task 1', sort_order=1,
         )
@@ -100,7 +100,7 @@ class BundlingServiceUnbundleItemTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         from apps.estimates.models import EstWorksheet
-        self.ws = EstWorksheet.objects.create(job=self.job, status='draft')
+        self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         self.bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Bundle A',
             accounting_category=self.lit, sort_order=5,
@@ -155,7 +155,7 @@ class BundlingServiceAutoDissolveTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         from apps.estimates.models import EstWorksheet
-        self.ws = EstWorksheet.objects.create(job=self.job, status='draft')
+        self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
 
     def test_dissolve_empty_bundle(self):
         """Bundle with 0 items gets deleted."""
@@ -222,7 +222,7 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         from apps.estimates.models import EstWorksheet
-        self.ws = EstWorksheet.objects.create(job=self.job, status='draft')
+        self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         self.t1 = Task.objects.create(
             est_worksheet=self.ws, name='Task 1', sort_order=1,
         )
@@ -273,7 +273,7 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
     def test_swap_two_bundles(self):
         """Two adjacent bundles can swap positions."""
         from apps.estimates.models import EstWorksheet
-        ws2 = EstWorksheet.objects.create(job=self.job, status='draft')
+        ws2 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         bundle_a = TaskBundle.objects.create(
             est_worksheet=ws2, name='Bundle A',
             accounting_category=self.lit, sort_order=1,
@@ -303,7 +303,7 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
     def test_unbundled_only_swap(self):
         """Simple swap with no bundles present."""
         from apps.estimates.models import EstWorksheet
-        ws2 = EstWorksheet.objects.create(job=self.job, status='draft')
+        ws2 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         a = Task.objects.create(est_worksheet=ws2, name='A', sort_order=1)
         b = Task.objects.create(est_worksheet=ws2, name='B', sort_order=2)
         c = Task.objects.create(est_worksheet=ws2, name='C', sort_order=3)
@@ -349,7 +349,7 @@ class BundlingServiceReorderInBundleTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         from apps.estimates.models import EstWorksheet
-        self.ws = EstWorksheet.objects.create(job=self.job, status='draft')
+        self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         self.bundle = TaskBundle.objects.create(
             est_worksheet=self.ws, name='Bundle',
             accounting_category=self.lit, sort_order=1,
@@ -422,7 +422,7 @@ class WorksheetServiceBundleTest(BundlingTestBase):
 
     def test_bundle_non_draft_raises(self):
         """Cannot bundle on a non-draft worksheet."""
-        self.ws.status = 'final'
+        self.ws.status = EstWorksheet.STATUS_FINAL
         self.ws.save()
         with self.assertRaises(ValidationError):
             WorksheetService.bundle_tasks(
@@ -497,7 +497,7 @@ class WorksheetServiceReorderTest(BundlingTestBase):
 
     def test_reorder_non_draft_raises(self):
         """Cannot reorder on non-draft worksheet."""
-        self.ws.status = 'final'
+        self.ws.status = EstWorksheet.STATUS_FINAL
         self.ws.save()
         with self.assertRaises(ValidationError):
             WorksheetService.reorder_items(

@@ -41,7 +41,7 @@ class WorkOrderCreationWorkflowTest(TestCase):
         """Test direct WorkOrder creation starts in incomplete status."""
         work_order = WorkOrderService.create_direct(self.job)
 
-        self.assertEqual(work_order.status, 'incomplete')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
         self.assertEqual(work_order.job, self.job)
         self.assertIsNone(work_order.template)
     
@@ -50,12 +50,12 @@ class WorkOrderCreationWorkflowTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
         
         work_order = WorkOrderService.create_from_estimate(estimate)
         
-        self.assertEqual(work_order.status, 'incomplete')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
         self.assertEqual(work_order.job, self.job)
     
     def test_work_order_from_accepted_estimate(self):
@@ -63,12 +63,12 @@ class WorkOrderCreationWorkflowTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='accepted'
+            status=Estimate.STATUS_ACCEPTED
         )
         
         work_order = WorkOrderService.create_from_estimate(estimate)
         
-        self.assertEqual(work_order.status, 'incomplete')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
         self.assertEqual(work_order.job, self.job)
     
     def test_work_order_from_draft_estimate_rejected(self):
@@ -76,7 +76,7 @@ class WorkOrderCreationWorkflowTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         with self.assertRaises(ValidationError) as context:
@@ -89,7 +89,7 @@ class WorkOrderCreationWorkflowTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='rejected'
+            status=Job.STATUS_REJECTED
         )
         
         with self.assertRaises(ValidationError) as context:
@@ -107,7 +107,7 @@ class WorkOrderCreationWorkflowTest(TestCase):
         
         work_order = WorkOrderService.create_from_template(template, self.job)
         
-        self.assertEqual(work_order.status, 'incomplete')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
         self.assertEqual(work_order.job, self.job)
         self.assertEqual(work_order.template, template)
     
@@ -149,7 +149,7 @@ class EstimateCreationWorkflowTest(TestCase):
         """Test direct Estimate creation starts in draft status."""
         estimate = EstimateService.create_direct(self.job)
 
-        self.assertEqual(estimate.status, 'draft')
+        self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
         self.assertEqual(estimate.job, self.job)
         # Estimate number is auto-generated
         self.assertTrue(estimate.estimate_number.startswith('EST-'))
@@ -323,7 +323,7 @@ class TemplateIntegrationTest(TestCase):
         work_order = WorkOrderService.create_from_template(work_order_template, self.job)
         
         # Verify WorkOrder
-        self.assertEqual(work_order.status, 'incomplete')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
         self.assertEqual(work_order.job, self.job)
         self.assertEqual(work_order.template, work_order_template)
         
@@ -367,7 +367,7 @@ class StatusTransitionPreventionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         # Draft estimate cannot create WorkOrder
@@ -375,25 +375,25 @@ class StatusTransitionPreventionTest(TestCase):
             WorkOrderService.create_from_estimate(estimate)
         
         # Change estimate to open
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         
         # Open estimate can create WorkOrder (incomplete status)
         work_order = WorkOrderService.create_from_estimate(estimate)
-        self.assertEqual(work_order.status, 'incomplete')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
     
     def test_estimate_never_returns_to_draft(self):
         """Test business rule: Estimate never goes back to draft once moved to open."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         # Move to open
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         
         # This business rule would be enforced in model validation or admin interface
         # For now, we document that this should not happen
-        self.assertEqual(estimate.status, 'open')
+        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)

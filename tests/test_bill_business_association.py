@@ -103,9 +103,9 @@ class BillBusinessAutoAssociationTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business1,
             po_number="PO001",
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
 
         # Create bill with PO and contact with business

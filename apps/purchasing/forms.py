@@ -172,11 +172,11 @@ class BillLineItemForm(forms.Form):
 class PurchaseOrderStatusForm(forms.Form):
     """Form for changing PurchaseOrder status"""
     VALID_TRANSITIONS = {
-        'draft': ['issued'],
-        'issued': ['partly_received', 'received_in_full', 'cancelled'],
-        'partly_received': ['received_in_full'],
-        'received_in_full': [],  # Terminal state
-        'cancelled': [],  # Terminal state
+        PurchaseOrder.STATUS_DRAFT: [PurchaseOrder.STATUS_ISSUED],
+        PurchaseOrder.STATUS_ISSUED: [PurchaseOrder.STATUS_PARTLY_RECEIVED, PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED],
+        PurchaseOrder.STATUS_PARTLY_RECEIVED: [PurchaseOrder.STATUS_RECEIVED_IN_FULL],
+        PurchaseOrder.STATUS_RECEIVED_IN_FULL: [],  # Terminal state
+        PurchaseOrder.STATUS_CANCELLED: [],  # Terminal state
     }
 
     status = forms.ChoiceField(choices=[], required=True)
@@ -188,8 +188,7 @@ class PurchaseOrderStatusForm(forms.Form):
         # Set valid status choices based on current status
         valid_statuses = self.VALID_TRANSITIONS.get(current_status, [])
         # Convert status codes to display names
-        from .models import PO_STATUS_CHOICES
-        status_dict = dict(PO_STATUS_CHOICES)
+        status_dict = dict(PurchaseOrder.PO_STATUS_CHOICES)
 
         choices = [(current_status, f'{status_dict.get(current_status)} (current)')]
         choices.extend([(s, status_dict.get(s)) for s in valid_statuses])
@@ -210,12 +209,12 @@ class PurchaseOrderStatusForm(forms.Form):
 class BillStatusForm(forms.Form):
     """Form for changing Bill status"""
     VALID_TRANSITIONS = {
-        'draft': ['received'],
-        'received': ['partly_paid', 'paid_in_full', 'cancelled'],
-        'partly_paid': ['paid_in_full'],
-        'paid_in_full': ['refunded'],
-        'cancelled': [],  # Terminal state
-        'refunded': [],  # Terminal state
+        Bill.STATUS_DRAFT: [Bill.STATUS_RECEIVED],
+        Bill.STATUS_RECEIVED: [Bill.STATUS_PARTLY_PAID, Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED],
+        Bill.STATUS_PARTLY_PAID: [Bill.STATUS_PAID_IN_FULL],
+        Bill.STATUS_PAID_IN_FULL: [Bill.STATUS_REFUNDED],
+        Bill.STATUS_CANCELLED: [],  # Terminal state
+        Bill.STATUS_REFUNDED: [],  # Terminal state
     }
 
     status = forms.ChoiceField(choices=[], required=True)
@@ -227,8 +226,7 @@ class BillStatusForm(forms.Form):
         # Set valid status choices based on current status
         valid_statuses = self.VALID_TRANSITIONS.get(current_status, [])
         # Convert status codes to display names
-        from .models import BILL_STATUS_CHOICES
-        status_dict = dict(BILL_STATUS_CHOICES)
+        status_dict = dict(Bill.BILL_STATUS_CHOICES)
 
         choices = [(current_status, f'{status_dict.get(current_status)} (current)')]
         choices.extend([(s, status_dict.get(s)) for s in valid_statuses])

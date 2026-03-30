@@ -124,7 +124,7 @@ class EmailAssociationServiceTest(TestCase):
         self.contact.save()
         self.job = Job.objects.create(
             name='Test Job', job_number='J2026-0001',
-            contact=self.contact, status='draft'
+            contact=self.contact, status=Job.STATUS_DRAFT
         )
         self.email_record = EmailRecord.objects.create(
             message_id='<test@example.com>',

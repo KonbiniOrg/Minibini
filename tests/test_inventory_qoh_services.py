@@ -26,7 +26,7 @@ class ReceivePOLineItemTest(TestCase):
             is_inventoried=True, qty_on_hand=Decimal('10.00'))
 
         self.po = PurchaseOrder.objects.create(
-            business=self.business, po_number='PO-001', status='issued')
+            business=self.business, po_number='PO-001', status=PurchaseOrder.STATUS_ISSUED)
 
     def test_increases_qoh(self):
         """Receiving a PO line item increases QOH."""

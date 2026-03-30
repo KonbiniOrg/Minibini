@@ -46,7 +46,7 @@ class EstimateLineItemAdditionTests(TestCase):
             job=self.job,
             estimate_number='EST-TEST-001',
             version=1,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Create a price list item
@@ -184,7 +184,7 @@ class EstimateLineItemAdditionTests(TestCase):
     def test_cannot_add_line_item_to_superseded_estimate(self):
         """Test that line items cannot be added to superseded estimates."""
         # First transition estimate to open (valid transition from draft)
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
         # Create a revision, which marks the parent as superseded
@@ -193,7 +193,7 @@ class EstimateLineItemAdditionTests(TestCase):
 
         # Get the superseded estimate
         self.estimate.refresh_from_db()
-        self.assertEqual(self.estimate.status, 'superseded')
+        self.assertEqual(self.estimate.status, Estimate.STATUS_SUPERSEDED)
 
         url = reverse('estimates:estimate_add_line_item', args=[self.estimate.estimate_id])
 
@@ -307,7 +307,7 @@ class EstimateLineItemDeletionTests(TestCase):
             job=self.job,
             estimate_number='EST-TEST-001',
             version=1,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
     def test_delete_line_item(self):
@@ -473,7 +473,7 @@ class EstimateLineItemDeletionTests(TestCase):
         )
 
         # Mark estimate as open first (valid transition)
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
         # Create a revision (marks parent as superseded)
@@ -482,7 +482,7 @@ class EstimateLineItemDeletionTests(TestCase):
 
         # Refresh to get superseded status
         self.estimate.refresh_from_db()
-        self.assertEqual(self.estimate.status, 'superseded')
+        self.assertEqual(self.estimate.status, Estimate.STATUS_SUPERSEDED)
 
         # Try to delete the line item
         url = reverse('estimates:estimate_delete_line_item', args=[self.estimate.estimate_id, line_item.line_item_id])
@@ -541,7 +541,7 @@ class EstimateLineItemDeletionTests(TestCase):
         self.assertContains(response, 'Delete')
 
         # Change to open status
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
         # Check open estimate doesn't show delete button

@@ -50,16 +50,16 @@ class PurchaseOrderDeletionTest(TestCase):
         self.draft_po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-DRAFT-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
 
         # Create an issued PO
         self.issued_po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-ISSUED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.issued_po.status = 'issued'
+        self.issued_po.status = PurchaseOrder.STATUS_ISSUED
         self.issued_po.save()
 
     def test_delete_draft_po_via_post(self):
@@ -137,9 +137,9 @@ class BillDeletionTest(TestCase):
         self.po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.po.status = 'issued'
+        self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
 
         # Create a draft bill
@@ -149,7 +149,7 @@ class BillDeletionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-DRAFT-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
         # Create a received bill
@@ -159,7 +159,7 @@ class BillDeletionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-RECEIVED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         # Add line item so it can transition out of draft
         BillLineItem.objects.create(
@@ -168,7 +168,7 @@ class BillDeletionTest(TestCase):
             qty=Decimal('1.00'),
             price=Decimal('100.00')
         )
-        self.received_bill.status = 'received'
+        self.received_bill.status = Bill.STATUS_RECEIVED
         self.received_bill.save()
 
     def test_delete_draft_bill_via_post(self):
@@ -234,16 +234,16 @@ class PurchaseOrderLineItemDeletionTest(TestCase):
         self.draft_po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-DRAFT-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
 
         # Create issued PO
         self.issued_po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-ISSUED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.issued_po.status = 'issued'
+        self.issued_po.status = PurchaseOrder.STATUS_ISSUED
         self.issued_po.save()
 
         # Create line items for draft PO
@@ -344,9 +344,9 @@ class BillLineItemDeletionTest(TestCase):
         self.po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.po.status = 'issued'
+        self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
 
         # Create draft bill
@@ -355,7 +355,7 @@ class BillLineItemDeletionTest(TestCase):
             purchase_order=self.po,
             business=self.business,
             vendor_invoice_number='INV-DRAFT-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
 
         # Create received bill
@@ -364,7 +364,7 @@ class BillLineItemDeletionTest(TestCase):
             purchase_order=self.po,
             business=self.business,
             vendor_invoice_number='INV-RECEIVED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
 
         # Create line items for draft bill
@@ -398,7 +398,7 @@ class BillLineItemDeletionTest(TestCase):
             price=Decimal('100.00'),
             line_number=1
         )
-        self.received_bill.status = 'received'
+        self.received_bill.status = Bill.STATUS_RECEIVED
         self.received_bill.save()
 
     def test_delete_bill_line_item_via_post(self):

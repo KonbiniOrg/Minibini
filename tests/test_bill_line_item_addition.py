@@ -38,9 +38,9 @@ class BillLineItemAdditionTests(TestCase):
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.purchase_order.status = 'issued'
+        self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
 
         # Create a bill

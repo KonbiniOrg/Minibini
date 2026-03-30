@@ -83,11 +83,11 @@ class InvoiceModelFixtureTest(FixtureTestCase):
         invoice = Invoice.objects.get(invoice_number="INV-2024-0001")
         self.assertEqual(invoice.status, "active")
         
-        invoice.status = "cancelled"
+        invoice.status = Invoice.STATUS_CANCELLED
         invoice.save()
         
         updated_invoice = Invoice.objects.get(invoice_number="INV-2024-0001")
-        self.assertEqual(updated_invoice.status, "cancelled")
+        self.assertEqual(updated_invoice.status, Invoice.STATUS_CANCELLED)
         
     def test_create_new_invoice_for_existing_job(self):
         """Test creating a new invoice for existing job from fixtures"""

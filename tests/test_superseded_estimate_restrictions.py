@@ -42,7 +42,7 @@ class SupersededEstimateRestrictionTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-TEST-001',
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
 
         # Create superseded estimate
@@ -50,7 +50,7 @@ class SupersededEstimateRestrictionTests(TestCase):
             job=self.job,
             estimate_number='EST-001',
             version=1,
-            status='superseded'
+            status=Estimate.STATUS_SUPERSEDED
         )
 
         # Create active estimate for comparison
@@ -58,7 +58,7 @@ class SupersededEstimateRestrictionTests(TestCase):
             job=self.job,
             estimate_number='EST-002',
             version=2,
-            status='open',
+            status=Estimate.STATUS_OPEN,
             parent=self.superseded_estimate
         )
 
@@ -104,7 +104,7 @@ class SupersededEstimateRestrictionTests(TestCase):
 
         # Attempt to update status via POST
         response = self.client.post(url, {
-            'status': 'open'
+            'status': Estimate.STATUS_OPEN
         })
 
         # Should redirect to estimate detail
@@ -115,7 +115,7 @@ class SupersededEstimateRestrictionTests(TestCase):
 
         # Verify status hasn't changed
         self.superseded_estimate.refresh_from_db()
-        self.assertEqual(self.superseded_estimate.status, 'superseded')
+        self.assertEqual(self.superseded_estimate.status, Estimate.STATUS_SUPERSEDED)
 
         # Check for error message
         messages = list(response.wsgi_request._messages)
@@ -180,7 +180,7 @@ class SupersededEstimateRestrictionTests(TestCase):
             job=self.job,
             estimate_number='EST-DRAFT-001',
             version=1,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Test draft estimate shows Add Line Item
@@ -218,7 +218,7 @@ class SupersededEstimateModelTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-TEST-001',
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
 
         # Create estimate
@@ -226,19 +226,19 @@ class SupersededEstimateModelTests(TestCase):
             job=self.job,
             estimate_number='EST-001',
             version=1,
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
     def test_estimate_can_be_marked_superseded(self):
         """Test that an estimate can be properly marked as superseded."""
         # Mark estimate as superseded (closed_date is set automatically by model.save())
-        self.estimate.status = 'superseded'
+        self.estimate.status = Estimate.STATUS_SUPERSEDED
         self.estimate.save()
 
         # Reload from database
         self.estimate.refresh_from_db()
 
-        self.assertEqual(self.estimate.status, 'superseded')
+        self.assertEqual(self.estimate.status, Estimate.STATUS_SUPERSEDED)
         self.assertIsNotNone(self.estimate.closed_date)
 
     def test_superseded_estimate_preserves_data(self):
@@ -253,7 +253,7 @@ class SupersededEstimateModelTests(TestCase):
         )
 
         # Mark estimate as superseded
-        self.estimate.status = 'superseded'
+        self.estimate.status = Estimate.STATUS_SUPERSEDED
         self.estimate.save()
 
         # Verify line item still exists

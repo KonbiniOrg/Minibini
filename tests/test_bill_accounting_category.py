@@ -27,7 +27,7 @@ class BillAccountingCategoryFormTest(TestCase):
             business=cls.business,
             bill_number='BILL-001',
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         cls.service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
@@ -96,7 +96,7 @@ class BillLineItemFromPriceListTest(TestCase):
             business=cls.business,
             bill_number='BILL-002',
             vendor_invoice_number='INV-002',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         cls.product_type, _ = AccountingCategory.objects.get_or_create(
             code='PRD',
@@ -155,7 +155,7 @@ class BillCreateFromPOAccountingCategoryTest(TestCase):
         cls.po = PurchaseOrder.objects.create(
             business=cls.business,
             po_number='PO-003',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         cls.product_type, _ = AccountingCategory.objects.get_or_create(
             code='PRD',
@@ -175,7 +175,7 @@ class BillCreateFromPOAccountingCategoryTest(TestCase):
             accounting_category=cls.product_type
         )
         # Issue the PO so we can create a bill from it
-        cls.po.status = 'issued'
+        cls.po.status = PurchaseOrder.STATUS_ISSUED
         cls.po.save()
 
     def setUp(self):

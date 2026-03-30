@@ -26,7 +26,7 @@ class POAccountingCategoryManualFormTest(TestCase):
         cls.po = PurchaseOrder.objects.create(
             business=cls.business,
             po_number='PO-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         cls.service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
@@ -96,7 +96,7 @@ class POLineItemFromPriceListTest(TestCase):
         cls.po = PurchaseOrder.objects.create(
             business=cls.business,
             po_number='PO-002',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         cls.product_type, _ = AccountingCategory.objects.get_or_create(
             code='PRD',

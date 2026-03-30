@@ -69,7 +69,7 @@ class TaskCRUDTests(TestCase):
         # Create a worksheet
         self.worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
@@ -165,7 +165,7 @@ class EstimateCRUDTests(TestCase):
             job=self.job,
             estimate_number='EST001',
             version=1,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
     def test_add_line_item_get(self):
@@ -217,7 +217,7 @@ class EstimateCRUDTests(TestCase):
         """Test POST request to update status."""
         url = reverse('estimates:estimate_update_status', args=[self.estimate.estimate_id])
         data = {
-            'status': 'open'
+            'status': Estimate.STATUS_OPEN
         }
         response = self.client.post(url, data)
 
@@ -226,23 +226,23 @@ class EstimateCRUDTests(TestCase):
 
         # Check status was updated
         self.estimate.refresh_from_db()
-        self.assertEqual(self.estimate.status, 'open')
+        self.assertEqual(self.estimate.status, Estimate.STATUS_OPEN)
 
     def test_update_status_invalid_transition(self):
         """Test that invalid status transitions are handled."""
         # Set estimate to open (superseded isn't allowed directly after draft)
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
         url = reverse('estimates:estimate_update_status', args=[self.estimate.estimate_id])
         data = {
-            'status': 'draft'
+            'status': Estimate.STATUS_DRAFT
         }
         response = self.client.post(url, data)
 
         # Status should not change for invalid transitions
         self.estimate.refresh_from_db()
-        self.assertEqual(self.estimate.status, 'open')
+        self.assertEqual(self.estimate.status, Estimate.STATUS_OPEN)
 
 
 class NavigationLinksTests(TestCase):
@@ -271,7 +271,7 @@ class NavigationLinksTests(TestCase):
             job=self.job,
             estimate_number='EST001',
             version=1,
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         # Create child estimate
@@ -279,21 +279,21 @@ class NavigationLinksTests(TestCase):
             job=self.job,
             estimate_number='EST001',
             version=2,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             parent=self.parent_estimate
         )
 
         # Create parent worksheet
         self.parent_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='final',
+            status=EstWorksheet.STATUS_FINAL,
             version=1
         )
 
         # Create child worksheet
         self.child_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=2,
             parent=self.parent_worksheet
         )
@@ -365,13 +365,13 @@ class SupersededStylingTests(TestCase):
             job=self.job,
             estimate_number='EST001',
             version=1,
-            status='superseded'
+            status=EstWorksheet.STATUS_SUPERSEDED
         )
 
         # Create superseded worksheet
         self.superseded_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='superseded',
+            status=EstWorksheet.STATUS_SUPERSEDED,
             version=1
         )
 
@@ -398,7 +398,7 @@ class SupersededStylingTests(TestCase):
             job=self.job,
             estimate_number='EST002',
             version=1,
-            status='draft'
+            status=Estimate.STATUS_DRAFT
         )
 
         url = reverse('estimates:estimate_detail', args=[estimate.estimate_id])

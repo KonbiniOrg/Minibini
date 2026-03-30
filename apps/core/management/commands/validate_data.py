@@ -79,6 +79,11 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.db.models import Sum
 
+from apps.jobs.models import Job
+from apps.estimates.models import Estimate, EstWorksheet
+from apps.purchasing.models import PurchaseOrder, Bill
+from apps.invoicing.models import Invoice
+
 
 class Command(BaseCommand):
     help = 'Validate loaded data against business logic constraints'
@@ -180,10 +185,10 @@ class Command(BaseCommand):
             if j.status not in valid_statuses:
                 self.errors.append(f'Job {j.job_number}: invalid status "{j.status}"')
             # Approved and beyond should have start_date (set on approval)
-            if j.status in ('approved', 'completed', 'cancelled') and not j.start_date:
+            if j.status in (Job.STATUS_APPROVED, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED) and not j.start_date:
                 self.warnings.append(f'Job {j.job_number}: status is {j.status} but no start_date')
             # Terminal states should have completed_date
-            if j.status in ('completed', 'cancelled') and not j.completed_date:
+            if j.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED) and not j.completed_date:
                 self.warnings.append(f'Job {j.job_number}: status is {j.status} but no completed_date')
 
     # ── Estimates ─────────────────────────────────────────────
@@ -198,16 +203,16 @@ class Command(BaseCommand):
                 self.errors.append(f'Estimate {e.estimate_number}: invalid status "{e.status}"')
 
             # Open estimates should have sent_date
-            if e.status == 'open' and not e.sent_date:
+            if e.status == Estimate.STATUS_OPEN and not e.sent_date:
                 self.warnings.append(f'Estimate {e.estimate_number}: status is open but no sent_date')
 
             # Terminal states should have closed_date
-            if e.status in ('accepted', 'rejected', 'superseded', 'expired') and not e.closed_date:
+            if e.status in (Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED, Estimate.STATUS_SUPERSEDED, Estimate.STATUS_EXPIRED) and not e.closed_date:
                 self.warnings.append(f'Estimate {e.estimate_number}: status is {e.status} but no closed_date')
 
         # Only one accepted estimate per job
         for job in Job.objects.all():
-            accepted_count = Estimate.objects.filter(job=job, status='accepted').count()
+            accepted_count = Estimate.objects.filter(job=job, status=Estimate.STATUS_ACCEPTED).count()
             if accepted_count > 1:
                 self.errors.append(
                     f'Job {job.job_number}: has {accepted_count} accepted estimates (max 1)'
@@ -303,8 +308,8 @@ class Command(BaseCommand):
     # ── Purchase Orders ───────────────────────────────────────
 
     def check_purchase_orders(self):
-        from apps.purchasing.models import PurchaseOrder, PO_STATUS_CHOICES
-        valid_statuses = {s[0] for s in PO_STATUS_CHOICES}
+        from apps.purchasing.models import PurchaseOrder
+        valid_statuses = {s[0] for s in PurchaseOrder.PO_STATUS_CHOICES}
 
         for po in PurchaseOrder.objects.select_related('business', 'contact').all():
             if po.status not in valid_statuses:
@@ -315,22 +320,22 @@ class Command(BaseCommand):
                 self.errors.append(f'PO {po.po_number}: contact has no business')
 
             # Issued POs should have issued_date
-            if po.status != 'draft' and not po.issued_date:
+            if po.status != PurchaseOrder.STATUS_DRAFT and not po.issued_date:
                 self.warnings.append(f'PO {po.po_number}: status is {po.status} but no issued_date')
 
             # Received POs should have received_date
-            if po.status == 'received_in_full' and not po.received_date:
+            if po.status == PurchaseOrder.STATUS_RECEIVED_IN_FULL and not po.received_date:
                 self.warnings.append(f'PO {po.po_number}: received_in_full but no received_date')
 
             # Cancelled POs should have cancel_date
-            if po.status == 'cancelled' and not po.cancel_date:
+            if po.status == PurchaseOrder.STATUS_CANCELLED and not po.cancel_date:
                 self.warnings.append(f'PO {po.po_number}: cancelled but no cancel_date')
 
     # ── Bills ─────────────────────────────────────────────────
 
     def check_bills(self):
-        from apps.purchasing.models import Bill, BillLineItem, BILL_STATUS_CHOICES
-        valid_statuses = {s[0] for s in BILL_STATUS_CHOICES}
+        from apps.purchasing.models import Bill, BillLineItem
+        valid_statuses = {s[0] for s in Bill.BILL_STATUS_CHOICES}
 
         for bill in Bill.objects.select_related('business', 'contact', 'purchase_order').all():
             if bill.status not in valid_statuses:
@@ -341,13 +346,13 @@ class Command(BaseCommand):
                 self.errors.append(f'Bill {bill.bill_number}: contact has no business')
 
             # Bill linked to draft PO
-            if bill.purchase_order and bill.purchase_order.status == 'draft':
+            if bill.purchase_order and bill.purchase_order.status == PurchaseOrder.STATUS_DRAFT:
                 self.errors.append(
                     f'Bill {bill.bill_number}: linked to draft PO {bill.purchase_order.po_number}'
                 )
 
             # Non-draft bills need at least one line item
-            if bill.status != 'draft':
+            if bill.status != Bill.STATUS_DRAFT:
                 if not BillLineItem.objects.filter(bill=bill).exists():
                     self.errors.append(
                         f'Bill {bill.bill_number}: status is {bill.status} but has no line items'
@@ -453,7 +458,7 @@ class Command(BaseCommand):
             max_version = max(v.version for v in versions)
             for e in versions:
                 # All versions below the max should be superseded
-                if e.version < max_version and e.status != 'superseded':
+                if e.version < max_version and e.status != Estimate.STATUS_SUPERSEDED:
                     self.errors.append(
                         f'Estimate {e.estimate_number} v{e.version}: '
                         f'superseded by v{max_version} but status is "{e.status}" (should be "superseded")'
@@ -484,20 +489,20 @@ class Command(BaseCommand):
         from apps.estimates.models import Estimate
 
         for job in Job.objects.all():
-            accepted = Estimate.objects.filter(job=job, status='accepted')
+            accepted = Estimate.objects.filter(job=job, status=Estimate.STATUS_ACCEPTED)
             accepted_count = accepted.count()
 
-            if job.status == 'approved':
+            if job.status == Job.STATUS_APPROVED:
                 if accepted_count == 0:
                     self.errors.append(
                         f'Job {job.job_number}: status is "approved" but has no accepted estimate'
                     )
-            elif job.status == 'completed':
+            elif job.status == Job.STATUS_COMPLETED:
                 if accepted_count == 0:
                     self.warnings.append(
                         f'Job {job.job_number}: status is "completed" but has no accepted estimate'
                     )
-            elif job.status in ('draft', 'submitted'):
+            elif job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED):
                 if accepted_count > 0:
                     self.errors.append(
                         f'Job {job.job_number}: status is "{job.status}" but has '
@@ -506,16 +511,16 @@ class Command(BaseCommand):
 
             # Check from estimate side: accepted estimate's job should be approved+
             for e in accepted:
-                if job.status in ('draft', 'submitted', 'rejected'):
+                if job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_REJECTED):
                     self.errors.append(
                         f'Estimate {e.estimate_number} v{e.version}: accepted but '
                         f'job {job.job_number} status is "{job.status}"'
                     )
 
             # Completed/cancelled jobs should not have unresolved estimates
-            if job.status in ('completed', 'cancelled'):
+            if job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
                 unresolved = Estimate.objects.filter(
-                    job=job, status__in=('draft', 'open')
+                    job=job, status__in=(Estimate.STATUS_DRAFT, Estimate.STATUS_OPEN)
                 )
                 for e in unresolved:
                     self.errors.append(
@@ -541,15 +546,15 @@ class Command(BaseCommand):
         from apps.estimates.models import EstWorksheet
 
         for ws in EstWorksheet.objects.select_related('estimate').filter(estimate__isnull=False):
-            if ws.estimate.status == 'superseded':
-                if ws.status != 'superseded':
+            if ws.estimate.status == Estimate.STATUS_SUPERSEDED:
+                if ws.status != EstWorksheet.STATUS_SUPERSEDED:
                     self.errors.append(
                         f'EstWorksheet {ws.pk} v{ws.version}: status is "{ws.status}" but '
                         f'linked estimate {ws.estimate.estimate_number} is superseded '
                         f'(worksheet should be "superseded")'
                     )
             else:
-                if ws.status != 'final':
+                if ws.status != EstWorksheet.STATUS_FINAL:
                     self.errors.append(
                         f'EstWorksheet {ws.pk} v{ws.version}: status is "{ws.status}" but '
                         f'has linked estimate {ws.estimate.estimate_number} '
@@ -579,7 +584,7 @@ class Command(BaseCommand):
                     f'EstWorksheet {ws.pk} v{ws.version}: parent is v{ws.parent.version} '
                     f'(parent version should be lower)'
                 )
-            if ws.parent.status != 'superseded':
+            if ws.parent.status != EstWorksheet.STATUS_SUPERSEDED:
                 self.warnings.append(
                     f'EstWorksheet {ws.pk} v{ws.version}: parent (pk={ws.parent.pk}) '
                     f'status is "{ws.parent.status}" (expected "superseded")'
@@ -682,7 +687,7 @@ class Command(BaseCommand):
         from apps.inventory.models import Earmark
 
         for em in Earmark.objects.select_related('job', 'price_list_item').all():
-            if em.job.status in ('completed', 'cancelled', 'rejected'):
+            if em.job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_REJECTED):
                 self.warnings.append(
                     f'Earmark {em.pk}: {em.price_list_item.code} earmarked for '
                     f'job {em.job.job_number} which is "{em.job.status}"'
@@ -695,12 +700,12 @@ class Command(BaseCommand):
         from apps.invoicing.models import Invoice
 
         for inv in Invoice.objects.select_related('job').all():
-            if inv.job.status in ('draft', 'submitted', 'rejected'):
+            if inv.job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_REJECTED):
                 self.warnings.append(
                     f'Invoice {inv.invoice_number}: job {inv.job.job_number} '
                     f'status is "{inv.job.status}" (expected approved or later)'
                 )
-            elif inv.job.status == 'cancelled' and inv.status != 'cancelled':
+            elif inv.job.status == Job.STATUS_CANCELLED and inv.status != Invoice.STATUS_CANCELLED:
                 self.errors.append(
                     f'Invoice {inv.invoice_number}: job {inv.job.job_number} '
                     f'is cancelled but invoice status is "{inv.status}" (should be cancelled)'

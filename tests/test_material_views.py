@@ -96,7 +96,7 @@ class MaterialAddViewTest(MaterialViewTestBase):
 
     def test_add_material_blocked_on_non_draft_worksheet(self):
         """Cannot add materials to tasks on non-draft worksheets."""
-        self.worksheet.status = 'submitted'
+        self.worksheet.status = Job.STATUS_SUBMITTED
         self.worksheet.save()
         url = reverse('jobs:material_add', args=[self.task.task_id])
         response = self.client.get(url)
@@ -139,7 +139,7 @@ class MaterialEditViewTest(MaterialViewTestBase):
 
     def test_edit_material_blocked_on_non_draft_worksheet(self):
         """Cannot edit materials on tasks on non-draft worksheets."""
-        self.worksheet.status = 'submitted'
+        self.worksheet.status = Job.STATUS_SUBMITTED
         self.worksheet.save()
         url = reverse('jobs:material_edit', args=[self.material.material_id])
         response = self.client.get(url)
@@ -168,7 +168,7 @@ class MaterialDeleteViewTest(MaterialViewTestBase):
 
     def test_delete_material_blocked_on_non_draft_worksheet(self):
         """Cannot delete materials on tasks on non-draft worksheets."""
-        self.worksheet.status = 'submitted'
+        self.worksheet.status = Job.STATUS_SUBMITTED
         self.worksheet.save()
         url = reverse('jobs:material_delete', args=[self.material.material_id])
         response = self.client.post(url)

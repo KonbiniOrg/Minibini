@@ -57,7 +57,7 @@ class PurchaseOrderFormTest(TestCase):
         existing_po = PurchaseOrder.objects.create(
             business=self.business,
             po_number="PO-PRESERVE-001",
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         original_po_number = existing_po.po_number
 
@@ -66,7 +66,7 @@ class PurchaseOrderFormTest(TestCase):
             data={
                 'business': self.business.business_id,
                 'contact': self.default_contact.contact_id,
-                'status': 'issued'
+                'status': PurchaseOrder.STATUS_ISSUED
             },
             instance=existing_po
         )
@@ -96,9 +96,9 @@ class BillModelTest(TestCase):
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
             po_number="PO001",
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.purchase_order.status = 'issued'
+        self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
         
     def test_bill_creation(self):

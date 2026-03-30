@@ -201,7 +201,7 @@ def estimate_detail(request, estimate_id):
         'is_tax_exempt': is_tax_exempt,
         'worksheet': worksheet,
         'status_form': status_form,
-        'show_reorder': estimate.status == 'draft',
+        'show_reorder': estimate.status == Estimate.STATUS_DRAFT,
         'reorder_url_name': 'estimates:estimate_reorder_line_item',
         'parent_id': estimate.estimate_id
     })
@@ -360,7 +360,7 @@ def estworksheet_list(request):
 def estworksheet_detail(request, worksheet_id):
     """Show details of a specific EstWorksheet with its tasks and bundle editing."""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-    can_edit = worksheet.status == 'draft'
+    can_edit = worksheet.status == EstWorksheet.STATUS_DRAFT
 
     # Handle bundle creation
     if request.method == 'POST' and 'bundle_tasks' in request.POST and can_edit:
@@ -433,7 +433,7 @@ def estworksheet_generate_estimate(request, worksheet_id):
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
 
     # Prevent generating estimates from non-draft worksheets
-    if worksheet.status != 'draft':
+    if worksheet.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, f'Cannot generate estimate from a {worksheet.get_status_display().lower()} worksheet.')
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
@@ -518,7 +518,7 @@ def estworksheet_revise(request, worksheet_id):
     parent_worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
 
     if request.method == 'POST':
-        if parent_worksheet.status != 'draft':
+        if parent_worksheet.status != EstWorksheet.STATUS_DRAFT:
             new_worksheet = WorksheetService.revise_worksheet(parent_worksheet.pk)
             messages.success(request, f'New worksheet revision created (v{new_worksheet.version})')
             return redirect('estimates:estworksheet_detail', worksheet_id=new_worksheet.est_worksheet_id)
@@ -624,7 +624,7 @@ def task_add_from_template(request, worksheet_id):
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
 
     # Prevent adding tasks to non-draft worksheets
-    if worksheet.status != 'draft':
+    if worksheet.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, f'Cannot add tasks to a {worksheet.get_status_display().lower()} worksheet.')
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
@@ -654,7 +654,7 @@ def task_add_manual(request, worksheet_id):
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
 
     # Prevent adding tasks to non-draft worksheets
-    if worksheet.status != 'draft':
+    if worksheet.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, f'Cannot add tasks to a {worksheet.get_status_display().lower()} worksheet.')
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
@@ -702,7 +702,7 @@ def estimate_add_line_item(request, estimate_id):
     estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
 
     # Prevent modifications to non-draft estimates
-    if estimate.status != 'draft':
+    if estimate.status != Estimate.STATUS_DRAFT:
         messages.error(request, f'Cannot add line items to a {estimate.get_status_display().lower()} estimate. Only draft estimates can be modified.')
         return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
 
@@ -759,7 +759,7 @@ def estimate_update_status(request, estimate_id):
     estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
 
     # Prevent modifications to superseded estimates
-    if estimate.status == 'superseded':
+    if estimate.status == Estimate.STATUS_SUPERSEDED:
         messages.error(request, 'Cannot update the status of a superseded estimate.')
         return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
 
@@ -785,9 +785,9 @@ def estimate_create_for_job(request, job_id):
     job = get_object_or_404(Job, job_id=job_id)
 
     # Check if an estimate already exists for this job
-    existing_estimate = Estimate.objects.filter(job=job).exclude(status='superseded').first()
+    existing_estimate = Estimate.objects.filter(job=job).exclude(status=Estimate.STATUS_SUPERSEDED).first()
     if existing_estimate:
-        if existing_estimate.status == 'draft':
+        if existing_estimate.status == Estimate.STATUS_DRAFT:
             messages.info(request, f'A draft estimate already exists for this job. You can edit it here.')
             return redirect('estimates:estimate_detail', estimate_id=existing_estimate.estimate_id)
         else:
@@ -826,7 +826,7 @@ def task_reorder_worksheet(request, worksheet_id, task_id, direction):
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
 
     # Prevent reordering non-draft worksheets
-    if worksheet.status != 'draft':
+    if worksheet.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, f'Cannot reorder tasks in a {worksheet.get_status_display().lower()} worksheet.')
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
@@ -905,7 +905,7 @@ def work_order_create_from_estimate(request, estimate_id):
     estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
 
     # Only allow creation from accepted estimates
-    if estimate.status != 'accepted':
+    if estimate.status != Estimate.STATUS_ACCEPTED:
         messages.error(request, 'Work Orders can only be created from accepted estimates.')
         return redirect('estimates:estimate_detail', estimate_id=estimate_id)
 

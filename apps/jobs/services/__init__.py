@@ -14,7 +14,7 @@ from django.utils import timezone
 from apps.jobs.models import Job, WorkOrder, Task, TaskBundle, Blep
 from apps.estimates.models import (
     Estimate, WorkOrderTemplate, TaskTemplate,
-    EstWorksheet, EstimateLineItem
+    EstWorksheet, EstimateLineItem,
 )
 from apps.inventory.models import PriceListItem
 from apps.core.services import NumberGenerationService, NotFoundError
@@ -56,7 +56,7 @@ class WorkOrderService:
         Only Open and Accepted Estimates can create WorkOrders.
         Created WorkOrder starts in 'incomplete' status.
         """
-        if estimate.status not in ['open', 'accepted']:
+        if estimate.status not in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED]:
             raise ValidationError(
                 f"Only Open and Accepted estimates can create WorkOrders. "
                 f"Estimate {estimate.estimate_number} is {estimate.status}."
@@ -64,7 +64,7 @@ class WorkOrderService:
 
         work_order = WorkOrder.objects.create(
             job=estimate.job,
-            status='incomplete'
+            status=WorkOrder.STATUS_INCOMPLETE
         )
 
         # Convert LineItems to Tasks
@@ -395,7 +395,7 @@ class TaskLifecycleService:
             work_order=wo
         ).exclude(status__in=terminal).exists()
         if all_terminal:
-            WorkOrderService.update_status(wo.pk, 'complete')
+            WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_COMPLETE)
 
     @staticmethod
     def block_task(task_pk):

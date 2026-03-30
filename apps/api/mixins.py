@@ -297,28 +297,31 @@ class TaskLifecycleMixin:
     @action(detail=True, methods=['post'],
             url_path='tasks/(?P<task_id>[0-9]+)/start', url_name='task-start')
     def task_start(self, request, pk=None, task_id=None):
+        from apps.jobs.models import Task
         from apps.jobs.services import TaskLifecycleService
         task = self._get_lifecycle_task_or_404(pk, task_id)
         try:
             result = TaskLifecycleService.start_task(task.pk, request.user)
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({'status': 'in_progress', 'blep_id': result['blep'].blep_id})
+        return Response({'status': Task.STATUS_IN_PROGRESS, 'blep_id': result['blep'].blep_id})
 
     @action(detail=True, methods=['post'],
             url_path='tasks/(?P<task_id>[0-9]+)/complete', url_name='task-complete')
     def task_complete(self, request, pk=None, task_id=None):
+        from apps.jobs.models import Task
         from apps.jobs.services import TaskLifecycleService
         task = self._get_lifecycle_task_or_404(pk, task_id)
         try:
             TaskLifecycleService.complete_task(task.pk)
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({'status': 'complete'})
+        return Response({'status': Task.STATUS_COMPLETE})
 
     @action(detail=True, methods=['post'],
             url_path='tasks/(?P<task_id>[0-9]+)/block', url_name='task-block')
     def task_block(self, request, pk=None, task_id=None):
+        from apps.jobs.models import Task
         from apps.jobs.services import TaskLifecycleService
         task = self._get_lifecycle_task_or_404(pk, task_id)
         try:
@@ -327,29 +330,31 @@ class TaskLifecycleMixin:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         if isinstance(result, dict) and 'conflict' in result:
             return Response(result)
-        return Response({'status': 'blocked'})
+        return Response({'status': Task.STATUS_BLOCKED})
 
     @action(detail=True, methods=['post'],
             url_path='tasks/(?P<task_id>[0-9]+)/unblock', url_name='task-unblock')
     def task_unblock(self, request, pk=None, task_id=None):
+        from apps.jobs.models import Task
         from apps.jobs.services import TaskLifecycleService
         task = self._get_lifecycle_task_or_404(pk, task_id)
         try:
             TaskLifecycleService.unblock_task(task.pk)
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({'status': 'in_progress'})
+        return Response({'status': Task.STATUS_IN_PROGRESS})
 
     @action(detail=True, methods=['post'],
             url_path='tasks/(?P<task_id>[0-9]+)/cancel', url_name='task-cancel')
     def task_cancel(self, request, pk=None, task_id=None):
+        from apps.jobs.models import Task
         from apps.jobs.services import TaskLifecycleService
         task = self._get_lifecycle_task_or_404(pk, task_id)
         try:
             TaskLifecycleService.cancel_task(task.pk)
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({'status': 'cancelled'})
+        return Response({'status': Task.STATUS_CANCELLED})
 
     @action(detail=True, methods=['post'],
             url_path='tasks/(?P<task_id>[0-9]+)/start-work', url_name='task-start-work')

@@ -7,20 +7,28 @@ from apps.core.history import history
 
 @history(exclude=['invoice_id'])
 class Invoice(models.Model):
+    STATUS_DRAFT = 'draft'
+    STATUS_OPEN = 'open'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_SUPERSEDED = 'superseded'
+    STATUS_PARTLY_PAID = 'partly-paid'
+    STATUS_PAID = 'paid'
+    STATUS_DEFAULTED = 'defaulted'
+
     INVOICE_STATUS_CHOICES = [
-        ('draft', 'Draft'),
-        ('open', 'Open'),
-        ('cancelled', 'Cancelled'),
-        ('superseded', 'Superseded'),
-        ('partly-paid', 'Partly Paid'),
-        ('paid', 'Paid in Full'),
-        ('defaulted', 'Defaulted'),
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_OPEN, 'Open'),
+        (STATUS_CANCELLED, 'Cancelled'),
+        (STATUS_SUPERSEDED, 'Superseded'),
+        (STATUS_PARTLY_PAID, 'Partly Paid'),
+        (STATUS_PAID, 'Paid in Full'),
+        (STATUS_DEFAULTED, 'Defaulted'),
     ]
 
     invoice_id = models.AutoField(primary_key=True)
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
     invoice_number = models.CharField(max_length=50, unique=True)
-    status = models.CharField(max_length=20, choices=INVOICE_STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=20, choices=INVOICE_STATUS_CHOICES, default=STATUS_DRAFT)
     created_date = models.DateTimeField(default=timezone.now)
     # date the invoice was sent to the customer and stopped being editable
     sent_date = models.DateTimeField(null=True, blank=True)

@@ -30,7 +30,7 @@ class EstimateService:
         return Estimate.objects.create(
             job=job,
             estimate_number=estimate_number,
-            status='draft',
+            status=Estimate.STATUS_DRAFT,
             **kwargs
         )
 
@@ -48,7 +48,7 @@ class EstimateService:
             job=job,
             estimate_number=estimate_number,
             version=1,
-            status='draft',
+            status=Estimate.STATUS_DRAFT,
         )
         return estimate
 
@@ -70,15 +70,15 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
-        if estimate.status != 'draft':
+        if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Only draft estimates can be marked as open.')
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
         # Finalize associated worksheet if draft
         worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
-        if worksheet and worksheet.status == 'draft':
-            worksheet.status = 'final'
+        if worksheet and worksheet.status == EstWorksheet.STATUS_DRAFT:
+            worksheet.status = EstWorksheet.STATUS_FINAL
             worksheet.save()
 
         return estimate
@@ -91,14 +91,14 @@ class EstimateService:
             parent = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
-        if parent.status == 'draft':
+        if parent.status == Estimate.STATUS_DRAFT:
             raise ValidationError('Cannot revise a draft estimate. Edit it directly.')
 
         new_estimate = Estimate.objects.create(
             job=parent.job,
             estimate_number=parent.estimate_number,
             version=parent.version + 1,
-            status='draft',
+            status=Estimate.STATUS_DRAFT,
             parent=parent,
         )
 
@@ -116,7 +116,7 @@ class EstimateService:
             )
 
         # Supersede parent
-        parent.status = 'superseded'
+        parent.status = Estimate.STATUS_SUPERSEDED
         parent.save()
 
         return new_estimate
@@ -128,7 +128,7 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {estimate_pk} not found')
-        if estimate.status != 'draft':
+        if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft estimates.')
         li = EstimateLineItem(estimate=estimate, **kwargs)
         li.full_clean()
@@ -143,7 +143,7 @@ class EstimateService:
             li = EstimateLineItem.objects.get(pk=line_item_id)
         except EstimateLineItem.DoesNotExist:
             raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
-        if li.estimate.status != 'draft':
+        if li.estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft estimate.'
             )
@@ -157,7 +157,7 @@ class EstimateService:
             li = EstimateLineItem.objects.get(pk=line_item_id)
         except EstimateLineItem.DoesNotExist:
             raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
-        if li.estimate.status != 'draft':
+        if li.estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft estimate.'
             )
@@ -170,7 +170,7 @@ class EstimateService:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {estimate_pk} not found')
-        if estimate.status != 'draft':
+        if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft estimates.')
         try:
             pli = PriceListItem.objects.get(pk=pli_pk)
@@ -406,7 +406,7 @@ class WorksheetService:
             job = Job.objects.get(pk=job_pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_pk} not found')
-        ws = EstWorksheet(job=job, status='draft', **kwargs)
+        ws = EstWorksheet(job=job, status=EstWorksheet.STATUS_DRAFT, **kwargs)
         ws.save()
         return ws
 
@@ -427,7 +427,7 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != 'draft':
+        if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError(
                 f'Cannot add tasks to a {ws.get_status_display().lower()} worksheet.'
             )
@@ -455,7 +455,7 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != 'draft':
+        if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError(
                 f'Cannot add tasks to a {ws.get_status_display().lower()} worksheet.'
             )
@@ -474,7 +474,7 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != 'draft':
+        if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError('Cannot bundle tasks on a non-draft worksheet.')
         if len(task_ids) < 2:
             raise ValidationError('Please select at least 2 tasks to bundle.')
@@ -518,7 +518,7 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != 'draft':
+        if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError('Cannot unbundle tasks on a non-draft worksheet.')
         try:
             task = Task.objects.get(pk=task_pk, est_worksheet=ws)
@@ -547,7 +547,7 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != 'draft':
+        if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError('Cannot reorder on a non-draft worksheet.')
 
         items_qs = Task.objects.filter(est_worksheet=ws)
@@ -564,7 +564,7 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != 'draft':
+        if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError('Cannot reorder on a non-draft worksheet.')
         try:
             task = Task.objects.get(
@@ -583,11 +583,11 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != 'draft':
+        if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError(
                 f'Cannot finalize a {ws.get_status_display().lower()} worksheet.'
             )
-        ws.status = 'final'
+        ws.status = EstWorksheet.STATUS_FINAL
         ws.save()
         return ws
 
@@ -679,7 +679,7 @@ class EstimateGenerationService:
             parent_estimate = worksheet.parent.estimate
             estimate_number = parent_estimate.estimate_number
             version = parent_estimate.version + 1
-            parent_estimate.status = 'superseded'
+            parent_estimate.status = Estimate.STATUS_SUPERSEDED
             parent_estimate.save()
         else:
             estimate_number = NumberGenerationService.generate_next_number('estimate')
@@ -689,7 +689,7 @@ class EstimateGenerationService:
             estimate_number=estimate_number,
             version=version,
             parent=parent_estimate,
-            status='draft'
+            status=Estimate.STATUS_DRAFT
         )
 
         return estimate

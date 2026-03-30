@@ -28,13 +28,13 @@ class WorksheetBundleUITestBase(TestCase):
         )
         self.job = Job.objects.create(
             job_number='JOB-001', name='Test Job',
-            contact=self.contact, status='draft'
+            contact=self.contact, status=Job.STATUS_DRAFT
         )
         self.lit_labor, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
         self.task1 = Task.objects.create(
             est_worksheet=self.worksheet, name='Sand Floor',

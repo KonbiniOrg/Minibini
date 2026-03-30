@@ -28,7 +28,7 @@ class WorksheetCreateFromTemplateTest(TestCase):
         )
         self.job = Job.objects.create(
             job_number='JOB-001', name='Test Job',
-            contact=self.contact, status='draft'
+            contact=self.contact, status=Job.STATUS_DRAFT
         )
         self.lit_labor, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}

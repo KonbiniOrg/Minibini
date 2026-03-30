@@ -25,13 +25,13 @@ class InvoiceServiceReorderTest(TestCase):
         self.contact.save()
         self.job = Job.objects.create(
             name='Test Job', job_number='J2026-0001',
-            contact=self.contact, status='draft',
+            contact=self.contact, status=Job.STATUS_DRAFT,
         )
         self.lit = AccountingCategory.objects.create(
             code='SVC', name='Service', taxable=True,
         )
         self.invoice = Invoice.objects.create(
-            job=self.job, invoice_number='INV-0001', status='draft',
+            job=self.job, invoice_number='INV-0001', status=Job.STATUS_DRAFT,
         )
         self.li1 = InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=1,
@@ -67,7 +67,7 @@ class InvoiceServiceReorderTest(TestCase):
 
     def test_reorder_non_draft_raises(self):
         """Cannot reorder on a non-draft invoice."""
-        self.invoice.status = 'open'
+        self.invoice.status = Invoice.STATUS_OPEN
         self.invoice.save()
         with self.assertRaises(ValidationError):
             InvoiceService.reorder_line_item(self.li1.pk, 'down')
@@ -89,13 +89,13 @@ class InvoiceServiceDeleteLineItemTest(TestCase):
         self.contact.save()
         self.job = Job.objects.create(
             name='Test Job', job_number='J2026-0001',
-            contact=self.contact, status='draft',
+            contact=self.contact, status=Job.STATUS_DRAFT,
         )
         self.lit = AccountingCategory.objects.create(
             code='SVC', name='Service', taxable=True,
         )
         self.invoice = Invoice.objects.create(
-            job=self.job, invoice_number='INV-0001', status='draft',
+            job=self.job, invoice_number='INV-0001', status=Job.STATUS_DRAFT,
         )
         self.li1 = InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=1,
@@ -117,7 +117,7 @@ class InvoiceServiceDeleteLineItemTest(TestCase):
 
     def test_delete_line_item_non_draft_raises(self):
         """Cannot delete line items on a non-draft invoice."""
-        self.invoice.status = 'open'
+        self.invoice.status = Invoice.STATUS_OPEN
         self.invoice.save()
         with self.assertRaises(ValidationError):
             InvoiceService.delete_line_item(self.li1.pk)

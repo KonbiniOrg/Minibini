@@ -154,4 +154,4 @@ class TaskSerializerStatusTest(BaseTestCase):
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 200)
         self.assertIn('status', resp.data[0])
-        self.assertEqual(resp.data[0]['status'], 'pending')
+        self.assertEqual(resp.data[0]['status'], Task.STATUS_PENDING)

@@ -21,7 +21,7 @@ def invoice_detail(request, invoice_id):
         'invoice': invoice,
         'line_items': line_items,
         'total_amount': total_amount,
-        'show_reorder': invoice.status == 'draft',
+        'show_reorder': invoice.status == Invoice.STATUS_DRAFT,
         'reorder_url_name': 'invoicing:invoice_reorder_line_item',
         'parent_id': invoice.invoice_id
     })

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 
-from apps.invoicing.models import InvoiceLineItem
+from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.core.services import NotFoundError, TaxCalculationService
 
 
@@ -18,7 +18,7 @@ class InvoiceService:
             line_item = InvoiceLineItem.objects.get(pk=line_item_id)
         except InvoiceLineItem.DoesNotExist:
             raise NotFoundError(f'InvoiceLineItem {line_item_id} not found')
-        if line_item.invoice.status != 'draft':
+        if line_item.invoice.status != Invoice.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft invoice.'
             )
@@ -32,7 +32,7 @@ class InvoiceService:
             line_item = InvoiceLineItem.objects.get(pk=line_item_id)
         except InvoiceLineItem.DoesNotExist:
             raise NotFoundError(f'InvoiceLineItem {line_item_id} not found')
-        if line_item.invoice.status != 'draft':
+        if line_item.invoice.status != Invoice.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft invoice.'
             )

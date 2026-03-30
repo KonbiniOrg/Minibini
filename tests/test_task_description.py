@@ -26,10 +26,10 @@ class TaskDescriptionModelTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-DESC-001', contact=self.contact, status='approved'
+            job_number='JOB-DESC-001', contact=self.contact, status=Job.STATUS_APPROVED
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
 
     def test_task_can_have_description(self):
@@ -67,10 +67,10 @@ class TaskDescriptionFromTemplateTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-DESC-002', contact=self.contact, status='approved'
+            job_number='JOB-DESC-002', contact=self.contact, status=Job.STATUS_APPROVED
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
         self.task_template = TaskTemplate.objects.create(
             template_name='Painting',
@@ -121,10 +121,10 @@ class TaskDescriptionInViewsTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-DESC-003', contact=self.contact, status='approved'
+            job_number='JOB-DESC-003', contact=self.contact, status=Job.STATUS_APPROVED
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
         self.task = Task.objects.create(
             name='Detailed Task',
@@ -180,10 +180,10 @@ class WorksheetDescriptionFromTaskTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-DESC-004', contact=self.contact, status='approved'
+            job_number='JOB-DESC-004', contact=self.contact, status=Job.STATUS_APPROVED
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
         self.task = Task.objects.create(
             name='Task With Own Desc',
@@ -216,10 +216,10 @@ class TaskAddManualDescriptionTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-DESC-005', contact=self.contact, status='approved'
+            job_number='JOB-DESC-005', contact=self.contact, status=Job.STATUS_APPROVED
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
 
     def test_manual_add_form_includes_description_field(self):

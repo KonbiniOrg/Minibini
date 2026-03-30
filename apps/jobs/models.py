@@ -8,13 +8,20 @@ from apps.core.history import history
 
 @history(exclude=['job_id'])
 class Job(models.Model):
+    STATUS_DRAFT = 'draft'
+    STATUS_SUBMITTED = 'submitted'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CANCELLED = 'cancelled'
+
     JOB_STATUS_CHOICES = [
-        ('draft', 'Draft'),
-        ('submitted', 'Submitted'),
-        ('approved', 'Approved'),
-        ('rejected', 'Rejected'),
-        ('completed', 'Completed'),
-        ('cancelled', 'Cancelled'),
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_SUBMITTED, 'Submitted'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_REJECTED, 'Rejected'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_CANCELLED, 'Cancelled'),
     ]
 
     job_id = models.AutoField(primary_key=True)
@@ -24,7 +31,7 @@ class Job(models.Model):
     start_date = models.DateTimeField(null=True, blank=True)
     due_date = models.DateTimeField(null=True, blank=True)
     completed_date = models.DateTimeField(null=True, blank=True)
-    status = models.CharField(max_length=20, choices=JOB_STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=20, choices=JOB_STATUS_CHOICES, default=STATUS_DRAFT)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT)
     customer_po_number = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
@@ -35,12 +42,12 @@ class Job(models.Model):
 
         # Define valid transitions for each state
         VALID_TRANSITIONS = {
-            'draft': ['submitted', 'rejected'],
-            'submitted': ['approved', 'rejected'],
-            'approved': ['completed', 'cancelled'],
-            'rejected': [],  # Terminal state
-            'completed': [],  # Terminal state
-            'cancelled': [],  # Terminal state
+            Job.STATUS_DRAFT: [Job.STATUS_SUBMITTED, Job.STATUS_REJECTED],
+            Job.STATUS_SUBMITTED: [Job.STATUS_APPROVED, Job.STATUS_REJECTED],
+            Job.STATUS_APPROVED: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED],
+            Job.STATUS_REJECTED: [],  # Terminal state
+            Job.STATUS_COMPLETED: [],  # Terminal state
+            Job.STATUS_CANCELLED: [],  # Terminal state
         }
 
         # Check if this is an update
@@ -87,11 +94,11 @@ class Job(models.Model):
                 # Handle state transition date setting
                 if old_status != self.status:
                     # Transitioning to 'approved' - set start_date
-                    if self.status == 'approved' and not self.start_date:
+                    if self.status == Job.STATUS_APPROVED and not self.start_date:
                         self.start_date = timezone.now()
 
                     # Transitioning to terminal states - set completed_date
-                    if self.status in ['completed', 'cancelled'] and not self.completed_date:
+                    if self.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED] and not self.completed_date:
                         self.completed_date = timezone.now()
 
             except Job.DoesNotExist:
@@ -112,20 +119,24 @@ class Job(models.Model):
 
 @history(exclude=['work_order_id'])
 class WorkOrder(AbstractWorkContainer):
+    STATUS_INCOMPLETE = 'incomplete'
+    STATUS_BLOCKED = 'blocked'
+    STATUS_COMPLETE = 'complete'
+
     WORK_ORDER_STATUS_CHOICES = [
-        ('incomplete', 'Incomplete'),
-        ('blocked', 'Blocked'),
-        ('complete', 'Complete'),
+        (STATUS_INCOMPLETE, 'Incomplete'),
+        (STATUS_BLOCKED, 'Blocked'),
+        (STATUS_COMPLETE, 'Complete'),
     ]
 
     VALID_TRANSITIONS = {
-        'incomplete': ['blocked', 'complete'],
-        'blocked': ['incomplete'],
-        'complete': [],
+        STATUS_INCOMPLETE: [STATUS_BLOCKED, STATUS_COMPLETE],
+        STATUS_BLOCKED: [STATUS_INCOMPLETE],
+        STATUS_COMPLETE: [],
     }
 
     work_order_id = models.AutoField(primary_key=True)
-    status = models.CharField(max_length=20, choices=WORK_ORDER_STATUS_CHOICES, default='incomplete')
+    status = models.CharField(max_length=20, choices=WORK_ORDER_STATUS_CHOICES, default=STATUS_INCOMPLETE)
 
     def clean(self):
         super().clean()

@@ -29,10 +29,10 @@ class TaskDetailAccountingCategoryDisplayTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-LIT-001', contact=self.contact, status='approved'
+            job_number='JOB-LIT-001', contact=self.contact, status=Job.STATUS_APPROVED
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
         self.lit, _ = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service'})
 
@@ -73,10 +73,10 @@ class TaskEditAccountingCategoryTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-LIT-002', contact=self.contact, status='approved'
+            job_number='JOB-LIT-002', contact=self.contact, status=Job.STATUS_APPROVED
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
         self.lit_svc, _ = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service'})
         self.lit_prd, _ = AccountingCategory.objects.get_or_create(code='PRD', defaults={'name': 'Product'})
@@ -163,10 +163,10 @@ class TaskAddManualAccountingCategoryTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-LIT-003', contact=self.contact, status='approved'
+            job_number='JOB-LIT-003', contact=self.contact, status=Job.STATUS_APPROVED
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
         self.lit, _ = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service'})
 

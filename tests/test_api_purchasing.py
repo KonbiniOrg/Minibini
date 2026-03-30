@@ -92,7 +92,7 @@ class PurchaseOrderAPITest(BaseTestCase):
         self.assertEqual(response.data['business_name'], business.business_name)
 
     def test_cancel_po_creates_history(self):
-        po = PurchaseOrder.objects.filter(status='issued').first()
+        po = PurchaseOrder.objects.filter(status=PurchaseOrder.STATUS_ISSUED).first()
         if po:
             self.client.post(f'/api/purchase-orders/{po.pk}/cancel/', {
                 'reason': 'No longer needed',
@@ -124,7 +124,7 @@ class BillAPITest(BaseTestCase):
             self.assertEqual(response.status_code, 200)
 
     def test_cancel_bill_creates_history(self):
-        bill = Bill.objects.filter(status='received').first()
+        bill = Bill.objects.filter(status=Bill.STATUS_RECEIVED).first()
         if bill:
             self.client.post(f'/api/bills/{bill.pk}/cancel/', {
                 'reason': 'Duplicate entry',

@@ -39,9 +39,9 @@ class BillDetailViewTest(TestCase):
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.purchase_order.status = 'issued'
+        self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
 
         # Create a test bill
@@ -51,7 +51,7 @@ class BillDetailViewTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
         # Add a line item to the bill so it can transition out of draft
@@ -79,9 +79,9 @@ class BillDetailViewTest(TestCase):
     def test_bill_detail_view_no_status_form_for_terminal_status(self):
         """Test that bill detail view does not display status form for terminal states."""
         # Transition bill to terminal state (cancelled)
-        self.bill.status = 'received'
+        self.bill.status = Bill.STATUS_RECEIVED
         self.bill.save()
-        self.bill.status = 'cancelled'
+        self.bill.status = Bill.STATUS_CANCELLED
         self.bill.save()
 
         url = reverse('purchasing:bill_detail', args=[self.bill.bill_id])
@@ -100,7 +100,7 @@ class BillDetailViewTest(TestCase):
         # Post status update from draft to received
         response = self.client.post(url, {
             'update_status': '1',
-            'status': 'received'
+            'status': Bill.STATUS_RECEIVED
         }, follow=True)
 
         # Check redirect back to detail view
@@ -108,7 +108,7 @@ class BillDetailViewTest(TestCase):
 
         # Check that bill status was updated
         self.bill.refresh_from_db()
-        self.assertEqual(self.bill.status, 'received')
+        self.assertEqual(self.bill.status, Bill.STATUS_RECEIVED)
 
         # Check success message
         messages = list(response.context['messages'])
@@ -122,7 +122,7 @@ class BillDetailViewTest(TestCase):
         # Try to post invalid status transition (draft -> partly_paid)
         response = self.client.post(url, {
             'update_status': '1',
-            'status': 'partly_paid'
+            'status': Bill.STATUS_PARTLY_PAID
         }, follow=True)
 
         # Check redirect back to detail view
@@ -130,7 +130,7 @@ class BillDetailViewTest(TestCase):
 
         # Check that bill status was NOT updated
         self.bill.refresh_from_db()
-        self.assertEqual(self.bill.status, 'draft')
+        self.assertEqual(self.bill.status, Bill.STATUS_DRAFT)
 
         # Check error message
         messages = list(response.context['messages'])
@@ -142,9 +142,9 @@ class BillDetailViewTest(TestCase):
     def test_bill_status_update_from_terminal_state_shows_error(self):
         """Test that attempting to update from terminal state shows error."""
         # Transition bill to terminal state
-        self.bill.status = 'received'
+        self.bill.status = Bill.STATUS_RECEIVED
         self.bill.save()
-        self.bill.status = 'cancelled'
+        self.bill.status = Bill.STATUS_CANCELLED
         self.bill.save()
 
         url = reverse('purchasing:bill_detail', args=[self.bill.bill_id])
@@ -152,7 +152,7 @@ class BillDetailViewTest(TestCase):
         # Try to post status update from terminal state
         response = self.client.post(url, {
             'update_status': '1',
-            'status': 'paid_in_full'
+            'status': Bill.STATUS_PAID_IN_FULL
         }, follow=True)
 
         # Check redirect back to detail view
@@ -160,7 +160,7 @@ class BillDetailViewTest(TestCase):
 
         # Check that bill status was NOT updated
         self.bill.refresh_from_db()
-        self.assertEqual(self.bill.status, 'cancelled')
+        self.assertEqual(self.bill.status, Bill.STATUS_CANCELLED)
 
         # Check error message
         messages = list(response.context['messages'])
@@ -178,7 +178,7 @@ class BillDetailViewTest(TestCase):
         status_form = response.context['status_form']
         choices = [choice[0] for choice in status_form.fields['status'].choices]
 
-        self.assertIn('draft', choices)  # Current status
-        self.assertIn('received', choices)  # Valid transition
-        self.assertNotIn('partly_paid', choices)  # Invalid direct transition
-        self.assertNotIn('paid_in_full', choices)  # Invalid direct transition
+        self.assertIn(Bill.STATUS_DRAFT, choices)  # Current status
+        self.assertIn(Bill.STATUS_RECEIVED, choices)  # Valid transition
+        self.assertNotIn(Bill.STATUS_PARTLY_PAID, choices)  # Invalid direct transition
+        self.assertNotIn(Bill.STATUS_PAID_IN_FULL, choices)  # Invalid direct transition

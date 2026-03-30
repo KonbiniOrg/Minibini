@@ -322,7 +322,7 @@ Let me know your thoughts.'''
             job_number='JOB-2024-001',
             contact=contact,
             description='Test job',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         email_record = EmailRecord.objects.get(pk=1)
         email_record.job = job
@@ -758,13 +758,13 @@ class EmailJobAssociationTest(TestCase):
             job_number='JOB-2024-001',
             contact=contact,
             description='First job',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         job2 = Job.objects.create(
             job_number='JOB-2024-002',
             contact=contact,
             description='Second job',
-            status='submitted'
+            status=Job.STATUS_SUBMITTED
         )
 
         email_record = EmailRecord.objects.get(pk=1)
@@ -791,7 +791,7 @@ class EmailJobAssociationTest(TestCase):
             job_number='JOB-2024-001',
             contact=contact,
             description='Test job',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         email_record = EmailRecord.objects.get(pk=1)
@@ -852,7 +852,7 @@ class EmailJobAssociationTest(TestCase):
             job_number='JOB-2024-001',
             contact=contact,
             description='Test job',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         email_record = EmailRecord.objects.get(pk=1)
@@ -939,7 +939,7 @@ class EmailJobAssociationTest(TestCase):
             job_number='JOB-2024-001',
             contact=contact,
             description='Test job',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         email_record = EmailRecord.objects.get(pk=1)

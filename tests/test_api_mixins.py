@@ -28,7 +28,7 @@ class StatusTransitionMixinTest(BaseTestCase):
             serializer_class = JobSerializer
             lookup_field = 'pk'
             status_actions = {
-                'complete': {'service': lambda pk: Job.objects.filter(pk=pk).update(status='completed')},
+                'complete': {'service': lambda pk: Job.objects.filter(pk=pk).update(status=Job.STATUS_COMPLETED)},
             }
 
         view = TestViewSet.as_view({'post': 'complete'}, detail=True)
@@ -53,7 +53,7 @@ class StatusTransitionMixinTest(BaseTestCase):
             lookup_field = 'pk'
             status_actions = {
                 'cancel': {
-                    'service': lambda pk, reason=None: Job.objects.filter(pk=pk).update(status='cancelled'),
+                    'service': lambda pk, reason=None: Job.objects.filter(pk=pk).update(status=Job.STATUS_CANCELLED),
                     'requires_reason': True,
                 },
             }
@@ -89,7 +89,7 @@ class StatusTransitionMixinTest(BaseTestCase):
             lookup_field = 'pk'
             status_actions = {
                 'cancel': {
-                    'service': lambda pk, reason=None: Job.objects.filter(pk=pk).update(status='cancelled'),
+                    'service': lambda pk, reason=None: Job.objects.filter(pk=pk).update(status=Job.STATUS_CANCELLED),
                     'requires_reason': True,
                 },
             }

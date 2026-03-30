@@ -103,7 +103,7 @@ class JobCreateViewTest(TestCase):
         self.assertEqual(job.customer_po_number, 'PO-12345')
 
         # Check defaults
-        self.assertEqual(job.status, 'draft')  # Must start in draft
+        self.assertEqual(job.status, Job.STATUS_DRAFT)  # Must start in draft
         self.assertIsNotNone(job.created_date)  # Must have timestamp
         self.assertGreaterEqual(job.created_date, before_creation)  # Must be current
         self.assertIsNone(job.due_date)
@@ -239,7 +239,7 @@ class JobCreateViewTest(TestCase):
         post_data = {
             # job_number is auto-generated
             'contact': self.contact1.contact_id,
-            'status': 'approved',  # Try to set non-draft status
+            'status': Job.STATUS_APPROVED,  # Try to set non-draft status
             'description': 'Status test',
         }
 
@@ -248,4 +248,4 @@ class JobCreateViewTest(TestCase):
         job = Job.objects.filter(description='Status test').first()
         self.assertIsNotNone(job)
         # Must still be draft regardless of attempted status
-        self.assertEqual(job.status, 'draft')
+        self.assertEqual(job.status, Job.STATUS_DRAFT)

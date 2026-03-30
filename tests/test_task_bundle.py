@@ -24,13 +24,13 @@ class TaskBundleTestBase(TestCase):
         )
         self.job = Job.objects.create(
             job_number='JOB-001', name='Test Job',
-            contact=self.contact, status='draft'
+            contact=self.contact, status=Job.STATUS_DRAFT
         )
         self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
         self.work_order = WorkOrder.objects.create(
-            job=self.job, status='incomplete'
+            job=self.job, status=WorkOrder.STATUS_INCOMPLETE
         )
         self.accounting_category, _ = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': True}

@@ -14,14 +14,14 @@ class JobAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
 
     def _get_approved_job(self):
-        """Get or create a job in 'approved' status (draft→submitted→approved)."""
-        job = Job.objects.filter(status='approved').first()
+        """Get or create a job in Job.STATUS_APPROVED status (draft→submitted→approved)."""
+        job = Job.objects.filter(status=Job.STATUS_APPROVED).first()
         if not job:
             job = Job.objects.first()
             # Walk through valid transitions
-            job.status = 'submitted'
+            job.status = Job.STATUS_SUBMITTED
             job.save()
-            job.status = 'approved'
+            job.status = Job.STATUS_APPROVED
             job.save()
         return job
 

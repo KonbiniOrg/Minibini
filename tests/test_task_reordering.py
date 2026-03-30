@@ -41,13 +41,13 @@ class TaskReorderingTestCase(TestCase):
             job_number='JOB-001',
             name='Test Job',
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Create an EstWorksheet
         self.worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
@@ -77,7 +77,7 @@ class TaskReorderingTestCase(TestCase):
         # Create a work order
         self.work_order = WorkOrder.objects.create(
             job=self.job,
-            status='incomplete'
+            status=WorkOrder.STATUS_INCOMPLETE
         )
 
         # Create tasks for the work order
@@ -200,7 +200,7 @@ class TaskReorderingTestCase(TestCase):
     def test_cannot_reorder_non_draft_worksheet(self):
         """Test that tasks in non-draft worksheets cannot be reordered"""
         # Mark worksheet as final
-        self.worksheet.status = 'final'
+        self.worksheet.status = EstWorksheet.STATUS_FINAL
         self.worksheet.save()
 
         url = reverse('estimates:task_reorder_worksheet', kwargs={

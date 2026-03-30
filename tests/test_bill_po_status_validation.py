@@ -2,7 +2,7 @@
 Tests for Bill creation with Purchase Order status validation.
 
 Business Rules:
-1. Bills can only be created from POs that are in 'issued' or later status
+1. Bills can only be created from POs that are in PurchaseOrder.STATUS_ISSUED or later status
 2. Bills cannot be created from draft POs
 3. Bills can be created without a PO (purchase_order=None)
 """
@@ -51,7 +51,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
 
         bill = Bill(
@@ -71,9 +71,9 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
 
         bill = Bill.objects.create(
@@ -91,11 +91,11 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
-        po.status = 'partly_received'
+        po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
         po.save()
 
         bill = Bill.objects.create(
@@ -113,11 +113,11 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
-        po.status = 'received_in_full'
+        po.status = PurchaseOrder.STATUS_RECEIVED_IN_FULL
         po.save()
 
         bill = Bill.objects.create(
@@ -135,11 +135,11 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
-        po.status = 'cancelled'
+        po.status = PurchaseOrder.STATUS_CANCELLED
         po.save()
 
         bill = Bill.objects.create(
@@ -166,7 +166,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
 
         # Try to update bill to reference the draft PO
@@ -183,9 +183,9 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         issued_po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-ISSUED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        issued_po.status = 'issued'
+        issued_po.status = PurchaseOrder.STATUS_ISSUED
         issued_po.save()
 
         # Create bill with issued PO
@@ -200,7 +200,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         draft_po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-DRAFT-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
 
         # Try to update bill to reference the draft PO
@@ -217,9 +217,9 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
 
         # Create bill with PO

@@ -51,11 +51,11 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {pk} not found')
-        if po.status != 'issued':
+        if po.status != PurchaseOrder.STATUS_ISSUED:
             raise ValidationError(
                 f'Cannot cancel PO {po.po_number}. Only issued POs can be cancelled.'
             )
-        po.status = 'cancelled'
+        po.status = PurchaseOrder.STATUS_CANCELLED
         po.full_clean()
         po.save()
         return po
@@ -67,7 +67,7 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {pk} not found')
-        if po.status != 'draft':
+        if po.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError(
                 f'Cannot delete PO {po.po_number}. Only draft POs can be deleted.'
             )
@@ -118,7 +118,7 @@ class PurchaseOrderService:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
-        if li.purchase_order.status != 'draft':
+        if li.purchase_order.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft purchase order.'
             )
@@ -132,7 +132,7 @@ class PurchaseOrderService:
             li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
         except PurchaseOrderLineItem.DoesNotExist:
             raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
-        if li.purchase_order.status != 'draft':
+        if li.purchase_order.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft purchase order.'
             )
@@ -209,7 +209,7 @@ class BillService:
             bill = Bill.objects.get(pk=pk)
         except Bill.DoesNotExist:
             raise NotFoundError(f'Bill {pk} not found')
-        if bill.status != 'draft':
+        if bill.status != Bill.STATUS_DRAFT:
             raise ValidationError(
                 f'Cannot delete Bill {bill.bill_number}. Only draft bills can be deleted.'
             )
@@ -260,7 +260,7 @@ class BillService:
             li = BillLineItem.objects.get(pk=line_item_id)
         except BillLineItem.DoesNotExist:
             raise NotFoundError(f'BillLineItem {line_item_id} not found')
-        if li.bill.status != 'draft':
+        if li.bill.status != Bill.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft bill.'
             )
@@ -274,7 +274,7 @@ class BillService:
             li = BillLineItem.objects.get(pk=line_item_id)
         except BillLineItem.DoesNotExist:
             raise NotFoundError(f'BillLineItem {line_item_id} not found')
-        if li.bill.status != 'draft':
+        if li.bill.status != Bill.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft bill.'
             )

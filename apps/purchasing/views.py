@@ -55,7 +55,7 @@ def purchase_order_detail(request, po_id):
         'line_items': line_items,
         'total_amount': total_amount,
         'status_form': status_form,
-        'show_reorder': purchase_order.status == 'draft',
+        'show_reorder': purchase_order.status == PurchaseOrder.STATUS_DRAFT,
         'reorder_url_name': 'purchasing:purchase_order_reorder_line_item',
         'parent_id': purchase_order.po_id
     })
@@ -186,7 +186,7 @@ def bill_detail(request, bill_id):
         'line_items': line_items,
         'total_amount': total_amount,
         'status_form': status_form,
-        'show_reorder': bill.status == 'draft',
+        'show_reorder': bill.status == Bill.STATUS_DRAFT,
         'reorder_url_name': 'purchasing:bill_reorder_line_item',
         'parent_id': bill.bill_id
     })
@@ -228,7 +228,7 @@ def purchase_order_delete(request, po_id):
             return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
 
     # Only show confirmation page if PO is draft
-    if purchase_order.status != 'draft':
+    if purchase_order.status != PurchaseOrder.STATUS_DRAFT:
         messages.error(request, f'Cannot delete Purchase Order {purchase_order.po_number}. Only Draft POs can be deleted.')
         return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
 
@@ -251,7 +251,7 @@ def purchase_order_cancel(request, po_id):
         return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
 
     # Only show confirmation page if PO is issued
-    if purchase_order.status != 'issued':
+    if purchase_order.status != PurchaseOrder.STATUS_ISSUED:
         messages.error(request, f'Cannot cancel Purchase Order {purchase_order.po_number}. Only Issued POs can be cancelled.')
         return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
 
@@ -380,7 +380,7 @@ def bill_delete(request, bill_id):
             return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
 
     # Only show confirmation page if bill is draft
-    if bill.status != 'draft':
+    if bill.status != Bill.STATUS_DRAFT:
         messages.error(request, f'Cannot delete Bill {bill.bill_number}. Only Draft Bills can be deleted.')
         return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
 

@@ -158,7 +158,7 @@ class EstimateServiceCreateTest(EstimatesTestBase):
     def test_create_for_job(self):
         est = EstimateService.create_for_job(self.job.pk)
         self.assertIsNotNone(est.pk)
-        self.assertEqual(est.status, 'draft')
+        self.assertEqual(est.status, Estimate.STATUS_DRAFT)
         self.assertEqual(est.job, self.job)
         self.assertTrue(est.estimate_number.startswith('EST'))
 
@@ -172,17 +172,17 @@ class EstimateServiceStatusTest(EstimatesTestBase):
 
     def test_update_status_draft_to_open(self):
         est = EstimateService.create_for_job(self.job.pk)
-        updated = EstimateService.update_status(est.pk, 'open')
-        self.assertEqual(updated.status, 'open')
+        updated = EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
+        self.assertEqual(updated.status, Estimate.STATUS_OPEN)
 
     def test_update_status_not_found(self):
         with self.assertRaises(NotFoundError):
-            EstimateService.update_status(99999, 'open')
+            EstimateService.update_status(99999, Estimate.STATUS_OPEN)
 
     def test_update_status_invalid_transition(self):
         est = EstimateService.create_for_job(self.job.pk)
         with self.assertRaises(ValidationError):
-            EstimateService.update_status(est.pk, 'accepted')
+            EstimateService.update_status(est.pk, Estimate.STATUS_ACCEPTED)
 
 
 class EstimateServiceMarkOpenTest(EstimatesTestBase):
@@ -191,20 +191,20 @@ class EstimateServiceMarkOpenTest(EstimatesTestBase):
     def test_mark_open(self):
         est = EstimateService.create_for_job(self.job.pk)
         updated = EstimateService.mark_open(est.pk)
-        self.assertEqual(updated.status, 'open')
+        self.assertEqual(updated.status, Estimate.STATUS_OPEN)
 
     def test_mark_open_updates_worksheet(self):
         est = EstimateService.create_for_job(self.job.pk)
         ws = EstWorksheet.objects.create(
-            job=self.job, estimate=est, status='draft',
+            job=self.job, estimate=est, status=Job.STATUS_DRAFT,
         )
         EstimateService.mark_open(est.pk)
         ws.refresh_from_db()
-        self.assertEqual(ws.status, 'final')
+        self.assertEqual(ws.status, EstWorksheet.STATUS_FINAL)
 
     def test_mark_open_non_draft_raises(self):
         est = EstimateService.create_for_job(self.job.pk)
-        EstimateService.update_status(est.pk, 'open')
+        EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             EstimateService.mark_open(est.pk)
 
@@ -215,13 +215,13 @@ class EstimateServiceReviseTest(EstimatesTestBase):
     def test_revise_estimate(self):
         est = EstimateService.create_for_job(self.job.pk)
         # Must be non-draft to revise
-        EstimateService.update_status(est.pk, 'open')
+        EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
         new_est = EstimateService.revise_estimate(est.pk)
         self.assertEqual(new_est.version, 2)
-        self.assertEqual(new_est.status, 'draft')
+        self.assertEqual(new_est.status, Estimate.STATUS_DRAFT)
         self.assertEqual(new_est.parent_id, est.pk)
         est.refresh_from_db()
-        self.assertEqual(est.status, 'superseded')
+        self.assertEqual(est.status, Estimate.STATUS_SUPERSEDED)
 
     def test_revise_copies_line_items(self):
         est = EstimateService.create_for_job(self.job.pk)
@@ -230,7 +230,7 @@ class EstimateServiceReviseTest(EstimatesTestBase):
             qty=Decimal('1.00'), price=Decimal('10.00'),
             accounting_category=self.lit,
         )
-        EstimateService.update_status(est.pk, 'open')
+        EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
         new_est = EstimateService.revise_estimate(est.pk)
         new_items = EstimateLineItem.objects.filter(estimate=new_est)
         self.assertEqual(new_items.count(), 1)
@@ -273,7 +273,7 @@ class EstimateServiceAddLineItemTest(EstimatesTestBase):
         self.assertEqual(li.description, 'Welding rod')
 
     def test_add_line_item_to_non_draft_raises(self):
-        EstimateService.update_status(self.est.pk, 'open')
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             EstimateService.add_line_item(
                 self.est.pk, description='X', qty=1, units='ea',
@@ -304,7 +304,7 @@ class EstimateServiceReorderLineItemTest(EstimatesTestBase):
         self.assertEqual(self.li2.line_number, 1)
 
     def test_reorder_non_draft_raises(self):
-        EstimateService.update_status(self.est.pk, 'open')
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             EstimateService.reorder_line_item(self.li1.pk, 'down')
 
@@ -335,7 +335,7 @@ class EstimateServiceDeleteLineItemTest(EstimatesTestBase):
         self.assertEqual(self.li2.line_number, 1)
 
     def test_delete_non_draft_raises(self):
-        EstimateService.update_status(self.est.pk, 'open')
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             EstimateService.delete_line_item(self.li1.pk)
 
@@ -354,7 +354,7 @@ class WorksheetServiceCreateTest(EstimatesTestBase):
         ws = WorksheetService.create_worksheet(self.job.pk)
         self.assertIsNotNone(ws.pk)
         self.assertEqual(ws.job, self.job)
-        self.assertEqual(ws.status, 'draft')
+        self.assertEqual(ws.status, EstWorksheet.STATUS_DRAFT)
 
     def test_create_worksheet_from_template(self):
         from apps.estimates.services import WorksheetService, WorkOrderTemplateService
@@ -378,9 +378,9 @@ class WorksheetServiceReviseTest(EstimatesTestBase):
         Task.objects.create(est_worksheet=ws, name='Task 1', sort_order=1)
         new_ws = WorksheetService.revise_worksheet(ws.pk)
         self.assertEqual(new_ws.version, 2)
-        self.assertEqual(new_ws.status, 'draft')
+        self.assertEqual(new_ws.status, EstWorksheet.STATUS_DRAFT)
         ws.refresh_from_db()
-        self.assertEqual(ws.status, 'superseded')
+        self.assertEqual(ws.status, EstWorksheet.STATUS_SUPERSEDED)
 
     def test_revise_copies_tasks(self):
         from apps.estimates.services import WorksheetService
@@ -424,7 +424,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
 
     def test_add_task_to_non_draft_raises(self):
         from apps.estimates.services import WorksheetService
-        self.ws.status = 'final'
+        self.ws.status = EstWorksheet.STATUS_FINAL
         self.ws.save()
         with self.assertRaises(ValidationError):
             WorksheetService.add_task_manual(
@@ -481,12 +481,12 @@ class WorksheetServiceFinalizeTest(EstimatesTestBase):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
         updated = WorksheetService.finalize(ws.pk)
-        self.assertEqual(updated.status, 'final')
+        self.assertEqual(updated.status, EstWorksheet.STATUS_FINAL)
 
     def test_finalize_non_draft_raises(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        ws.status = 'final'
+        ws.status = EstWorksheet.STATUS_FINAL
         ws.save()
         with self.assertRaises(ValidationError):
             WorksheetService.finalize(ws.pk)

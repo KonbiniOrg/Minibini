@@ -20,7 +20,7 @@ class JobStateTransitionTest(TestCase):
             job_number="JOB001",
             contact=self.contact
         )
-        self.assertEqual(job.status, 'draft')
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
 
     # Valid transition paths
     def test_draft_to_submitted(self):
@@ -28,72 +28,72 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        job.status = 'submitted'
+        job.status = Job.STATUS_SUBMITTED
         job.save()
         job.refresh_from_db()
-        self.assertEqual(job.status, 'submitted')
+        self.assertEqual(job.status, Job.STATUS_SUBMITTED)
 
     def test_draft_to_rejected(self):
         """Test Draft > Rejected transition."""
         job = Job.objects.create(
             job_number="JOB002",
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        job.status = 'rejected'
+        job.status = Job.STATUS_REJECTED
         job.save()
         job.refresh_from_db()
-        self.assertEqual(job.status, 'rejected')
+        self.assertEqual(job.status, Job.STATUS_REJECTED)
 
     def test_submitted_to_approved(self):
         """Test Submitted > Approved transition."""
         job = Job.objects.create(
             job_number="JOB003",
             contact=self.contact,
-            status='submitted'
+            status=Job.STATUS_SUBMITTED
         )
-        job.status = 'approved'
+        job.status = Job.STATUS_APPROVED
         job.save()
         job.refresh_from_db()
-        self.assertEqual(job.status, 'approved')
+        self.assertEqual(job.status, Job.STATUS_APPROVED)
 
     def test_submitted_to_rejected(self):
         """Test Submitted > Rejected transition."""
         job = Job.objects.create(
             job_number="JOB004",
             contact=self.contact,
-            status='submitted'
+            status=Job.STATUS_SUBMITTED
         )
-        job.status = 'rejected'
+        job.status = Job.STATUS_REJECTED
         job.save()
         job.refresh_from_db()
-        self.assertEqual(job.status, 'rejected')
+        self.assertEqual(job.status, Job.STATUS_REJECTED)
 
     def test_approved_to_completed(self):
         """Test Approved > Completed transition."""
         job = Job.objects.create(
             job_number="JOB005",
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
-        job.status = 'completed'
+        job.status = Job.STATUS_COMPLETED
         job.save()
         job.refresh_from_db()
-        self.assertEqual(job.status, 'completed')
+        self.assertEqual(job.status, Job.STATUS_COMPLETED)
 
     def test_approved_to_cancelled(self):
         """Test Approved > Cancelled transition."""
         job = Job.objects.create(
             job_number="JOB006",
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
-        job.status = 'cancelled'
+        job.status = Job.STATUS_CANCELLED
         job.save()
         job.refresh_from_db()
-        self.assertEqual(job.status, 'cancelled')
+        self.assertEqual(job.status, Job.STATUS_CANCELLED)
 
     # Invalid transition paths - these should raise ValidationError
     def test_draft_to_completed_invalid(self):
@@ -101,9 +101,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB010",
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        job.status = 'completed'
+        job.status = Job.STATUS_COMPLETED
         with self.assertRaises(ValidationError):
             job.save()
 
@@ -112,9 +112,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB011",
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        job.status = 'cancelled'
+        job.status = Job.STATUS_CANCELLED
         with self.assertRaises(ValidationError):
             job.save()
 
@@ -123,9 +123,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB012",
             contact=self.contact,
-            status='submitted'
+            status=Job.STATUS_SUBMITTED
         )
-        job.status = 'completed'
+        job.status = Job.STATUS_COMPLETED
         with self.assertRaises(ValidationError):
             job.save()
 
@@ -134,9 +134,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB013",
             contact=self.contact,
-            status='submitted'
+            status=Job.STATUS_SUBMITTED
         )
-        job.status = 'cancelled'
+        job.status = Job.STATUS_CANCELLED
         with self.assertRaises(ValidationError):
             job.save()
 
@@ -145,9 +145,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB014",
             contact=self.contact,
-            status='rejected'
+            status=Job.STATUS_REJECTED
         )
-        for status in ['draft', 'submitted', 'approved', 'completed', 'cancelled']:
+        for status in [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
             job.status = status
             with self.assertRaises(ValidationError):
                 job.save()
@@ -158,9 +158,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB015",
             contact=self.contact,
-            status='completed'
+            status=Job.STATUS_COMPLETED
         )
-        for status in ['draft', 'submitted', 'approved', 'rejected', 'cancelled']:
+        for status in [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED]:
             job.status = status
             with self.assertRaises(ValidationError):
                 job.save()
@@ -171,9 +171,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB016",
             contact=self.contact,
-            status='cancelled'
+            status=Job.STATUS_CANCELLED
         )
-        for status in ['draft', 'submitted', 'approved', 'rejected', 'completed']:
+        for status in [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_REJECTED, Job.STATUS_COMPLETED]:
             job.status = status
             with self.assertRaises(ValidationError):
                 job.save()
@@ -184,9 +184,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB017",
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
-        job.status = 'draft'
+        job.status = Job.STATUS_DRAFT
         with self.assertRaises(ValidationError):
             job.save()
 
@@ -195,9 +195,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB018",
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
-        job.status = 'submitted'
+        job.status = Job.STATUS_SUBMITTED
         with self.assertRaises(ValidationError):
             job.save()
 
@@ -206,9 +206,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB019",
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
-        job.status = 'rejected'
+        job.status = Job.STATUS_REJECTED
         with self.assertRaises(ValidationError):
             job.save()
 
@@ -217,9 +217,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB020",
             contact=self.contact,
-            status='submitted'
+            status=Job.STATUS_SUBMITTED
         )
-        job.status = 'draft'
+        job.status = Job.STATUS_DRAFT
         with self.assertRaises(ValidationError):
             job.save()
 
@@ -228,68 +228,68 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB100",
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
-        job.status = 'submitted'
+        job.status = Job.STATUS_SUBMITTED
         job.save()
-        self.assertEqual(job.status, 'submitted')
+        self.assertEqual(job.status, Job.STATUS_SUBMITTED)
 
-        job.status = 'approved'
+        job.status = Job.STATUS_APPROVED
         job.save()
-        self.assertEqual(job.status, 'approved')
+        self.assertEqual(job.status, Job.STATUS_APPROVED)
 
-        job.status = 'completed'
+        job.status = Job.STATUS_COMPLETED
         job.save()
-        self.assertEqual(job.status, 'completed')
+        self.assertEqual(job.status, Job.STATUS_COMPLETED)
 
     def test_full_valid_path_to_cancelled(self):
         """Test full path: Draft > Submitted > Approved > Cancelled."""
         job = Job.objects.create(
             job_number="JOB101",
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
-        job.status = 'submitted'
+        job.status = Job.STATUS_SUBMITTED
         job.save()
-        self.assertEqual(job.status, 'submitted')
+        self.assertEqual(job.status, Job.STATUS_SUBMITTED)
 
-        job.status = 'approved'
+        job.status = Job.STATUS_APPROVED
         job.save()
-        self.assertEqual(job.status, 'approved')
+        self.assertEqual(job.status, Job.STATUS_APPROVED)
 
-        job.status = 'cancelled'
+        job.status = Job.STATUS_CANCELLED
         job.save()
-        self.assertEqual(job.status, 'cancelled')
+        self.assertEqual(job.status, Job.STATUS_CANCELLED)
 
     def test_path_draft_to_rejected(self):
         """Test path: Draft > Rejected."""
         job = Job.objects.create(
             job_number="JOB102",
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
-        job.status = 'rejected'
+        job.status = Job.STATUS_REJECTED
         job.save()
-        self.assertEqual(job.status, 'rejected')
+        self.assertEqual(job.status, Job.STATUS_REJECTED)
 
     def test_path_submitted_to_rejected(self):
         """Test path: Draft > Submitted > Rejected."""
         job = Job.objects.create(
             job_number="JOB103",
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
-        job.status = 'submitted'
+        job.status = Job.STATUS_SUBMITTED
         job.save()
-        self.assertEqual(job.status, 'submitted')
+        self.assertEqual(job.status, Job.STATUS_SUBMITTED)
 
-        job.status = 'rejected'
+        job.status = Job.STATUS_REJECTED
         job.save()
-        self.assertEqual(job.status, 'rejected')
+        self.assertEqual(job.status, Job.STATUS_REJECTED)
 
     # Job Date Field Tests
     def test_created_date_set_on_creation(self):
@@ -326,12 +326,12 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB202",
             contact=self.contact,
-            status='submitted'
+            status=Job.STATUS_SUBMITTED
         )
         self.assertIsNone(job.start_date)
 
         before_transition = timezone.now()
-        job.status = 'approved'
+        job.status = Job.STATUS_APPROVED
         job.save()
         after_transition = timezone.now()
 
@@ -345,9 +345,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB203",
             contact=self.contact,
-            status='submitted'
+            status=Job.STATUS_SUBMITTED
         )
-        job.status = 'approved'
+        job.status = Job.STATUS_APPROVED
         job.save()
         job.refresh_from_db()
 
@@ -365,12 +365,12 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB204",
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
         self.assertIsNone(job.completed_date)
 
         before_transition = timezone.now()
-        job.status = 'completed'
+        job.status = Job.STATUS_COMPLETED
         job.save()
         after_transition = timezone.now()
 
@@ -384,12 +384,12 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB205",
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
         self.assertIsNone(job.completed_date)
 
         before_transition = timezone.now()
-        job.status = 'cancelled'
+        job.status = Job.STATUS_CANCELLED
         job.save()
         after_transition = timezone.now()
 
@@ -403,9 +403,9 @@ class JobStateTransitionTest(TestCase):
         job = Job.objects.create(
             job_number="JOB206",
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
-        job.status = 'completed'
+        job.status = Job.STATUS_COMPLETED
         job.save()
         job.refresh_from_db()
 
@@ -463,7 +463,7 @@ class EstimateStateTransitionTest(TestCase):
             job=self.job,
             estimate_number="EST001"
         )
-        self.assertEqual(estimate.status, 'draft')
+        self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
 
     def test_created_date_set_on_creation(self):
         """Test that created_date is set when Estimate is created."""
@@ -500,21 +500,21 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST002",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         estimate.refresh_from_db()
-        self.assertEqual(estimate.status, 'open')
+        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)
 
     def test_draft_to_superseded_invalid(self):
         """Test that Draft cannot transition directly to Superseded."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST003",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        estimate.status = 'superseded'
+        estimate.status = Estimate.STATUS_SUPERSEDED
         with self.assertRaises(ValidationError):
             estimate.save()
 
@@ -523,9 +523,9 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST004",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        estimate.status = 'expired'
+        estimate.status = Estimate.STATUS_EXPIRED
         with self.assertRaises(ValidationError):
             estimate.save()
 
@@ -534,60 +534,60 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST005",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        estimate.status = 'rejected'
+        estimate.status = Estimate.STATUS_REJECTED
         estimate.save()
         estimate.refresh_from_db()
-        self.assertEqual(estimate.status, 'rejected')
+        self.assertEqual(estimate.status, Estimate.STATUS_REJECTED)
 
     def test_open_to_accepted(self):
         """Test Open > Accepted transition."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST006",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
-        estimate.status = 'accepted'
+        estimate.status = Estimate.STATUS_ACCEPTED
         estimate.save()
         estimate.refresh_from_db()
-        self.assertEqual(estimate.status, 'accepted')
+        self.assertEqual(estimate.status, Estimate.STATUS_ACCEPTED)
 
     def test_open_to_rejected(self):
         """Test Open > Rejected transition."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST007",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
-        estimate.status = 'rejected'
+        estimate.status = Estimate.STATUS_REJECTED
         estimate.save()
         estimate.refresh_from_db()
-        self.assertEqual(estimate.status, 'rejected')
+        self.assertEqual(estimate.status, Estimate.STATUS_REJECTED)
 
     def test_open_to_superseded(self):
         """Test Open > Superseded transition."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST008",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
-        estimate.status = 'superseded'
+        estimate.status = Estimate.STATUS_SUPERSEDED
         estimate.save()
         estimate.refresh_from_db()
-        self.assertEqual(estimate.status, 'superseded')
+        self.assertEqual(estimate.status, Estimate.STATUS_SUPERSEDED)
 
     def test_open_to_expired(self):
         """Test Open > Expired transition."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST009",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
-        estimate.status = 'expired'
+        estimate.status = Estimate.STATUS_EXPIRED
         estimate.save()
         estimate.refresh_from_db()
-        self.assertEqual(estimate.status, 'expired')
+        self.assertEqual(estimate.status, Estimate.STATUS_EXPIRED)
 
     # Date field tests
     def test_sent_date_set_when_moving_to_open(self):
@@ -595,12 +595,12 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST010",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         self.assertIsNone(estimate.sent_date)
 
         before_transition = timezone.now()
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         after_transition = timezone.now()
 
@@ -614,9 +614,9 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST011",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         estimate.refresh_from_db()
 
@@ -634,11 +634,11 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST012",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         self.assertIsNone(estimate.expiration_date)
 
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
         estimate.refresh_from_db()
@@ -653,7 +653,7 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST013",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         new_expiration = timezone.now() + timedelta(days=60)
@@ -669,12 +669,12 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST014",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
         self.assertIsNone(estimate.closed_date)
 
         before_transition = timezone.now()
-        estimate.status = 'accepted'
+        estimate.status = Estimate.STATUS_ACCEPTED
         estimate.save()
         after_transition = timezone.now()
 
@@ -688,10 +688,10 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST015",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
-        estimate.status = 'rejected'
+        estimate.status = Estimate.STATUS_REJECTED
         estimate.save()
 
         estimate.refresh_from_db()
@@ -702,10 +702,10 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST016",
-            status='open'  # Must start from open, not draft
+            status=Estimate.STATUS_OPEN  # Must start from open, not draft
         )
 
-        estimate.status = 'superseded'
+        estimate.status = Estimate.STATUS_SUPERSEDED
         estimate.save()
 
         estimate.refresh_from_db()
@@ -716,10 +716,10 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST017",
-            status='open'  # Must start from open, not draft
+            status=Estimate.STATUS_OPEN  # Must start from open, not draft
         )
 
-        estimate.status = 'expired'
+        estimate.status = Estimate.STATUS_EXPIRED
         estimate.save()
 
         estimate.refresh_from_db()
@@ -730,12 +730,12 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST018",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         # Must go through 'open' first
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-        estimate.status = 'accepted'
+        estimate.status = Estimate.STATUS_ACCEPTED
         estimate.save()
         estimate.refresh_from_db()
 
@@ -754,9 +754,9 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST020",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
-        estimate.status = 'accepted'
+        estimate.status = Estimate.STATUS_ACCEPTED
         with self.assertRaises(ValidationError):
             estimate.save()
 
@@ -765,9 +765,9 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST021",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
-        estimate.status = 'draft'
+        estimate.status = Estimate.STATUS_DRAFT
         with self.assertRaises(ValidationError):
             estimate.save()
 
@@ -777,9 +777,9 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST024",
-            status='accepted'
+            status=Estimate.STATUS_ACCEPTED
         )
-        for status in ['draft', 'open', 'rejected', 'expired', 'superseded']:
+        for status in [Estimate.STATUS_DRAFT, Estimate.STATUS_OPEN, Estimate.STATUS_REJECTED, Estimate.STATUS_EXPIRED, Estimate.STATUS_SUPERSEDED]:
             estimate.status = status
             with self.assertRaises(ValidationError):
                 estimate.save()
@@ -790,9 +790,9 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST025",
-            status='rejected'
+            status=Job.STATUS_REJECTED
         )
-        for status in ['draft', 'open', 'accepted', 'expired', 'superseded']:
+        for status in [Estimate.STATUS_DRAFT, Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED, Estimate.STATUS_EXPIRED, Estimate.STATUS_SUPERSEDED]:
             estimate.status = status
             with self.assertRaises(ValidationError):
                 estimate.save()
@@ -803,9 +803,9 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST026",
-            status='expired'
+            status=Estimate.STATUS_EXPIRED
         )
-        for status in ['draft', 'open', 'accepted', 'rejected', 'superseded']:
+        for status in [Estimate.STATUS_DRAFT, Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED, Estimate.STATUS_SUPERSEDED]:
             estimate.status = status
             with self.assertRaises(ValidationError):
                 estimate.save()
@@ -816,9 +816,9 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST027",
-            status='superseded'
+            status=Estimate.STATUS_SUPERSEDED
         )
-        for status in ['draft', 'open', 'accepted', 'rejected', 'expired']:
+        for status in [Estimate.STATUS_DRAFT, Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED, Estimate.STATUS_EXPIRED]:
             estimate.status = status
             with self.assertRaises(ValidationError):
                 estimate.save()
@@ -830,18 +830,18 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST100",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-        self.assertEqual(estimate.status, 'open')
+        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)
         self.assertIsNotNone(estimate.sent_date)
         self.assertIsNotNone(estimate.expiration_date)
 
-        estimate.status = 'accepted'
+        estimate.status = Estimate.STATUS_ACCEPTED
         estimate.save()
-        self.assertEqual(estimate.status, 'accepted')
+        self.assertEqual(estimate.status, Estimate.STATUS_ACCEPTED)
         self.assertIsNotNone(estimate.closed_date)
 
     def test_full_path_draft_to_open_to_rejected(self):
@@ -849,16 +849,16 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST101",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-        self.assertEqual(estimate.status, 'open')
+        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)
 
-        estimate.status = 'rejected'
+        estimate.status = Estimate.STATUS_REJECTED
         estimate.save()
-        self.assertEqual(estimate.status, 'rejected')
+        self.assertEqual(estimate.status, Estimate.STATUS_REJECTED)
         self.assertIsNotNone(estimate.closed_date)
 
     def test_full_path_draft_to_open_to_superseded(self):
@@ -866,18 +866,18 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST102",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-        self.assertEqual(estimate.status, 'open')
+        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)
         self.assertIsNotNone(estimate.sent_date)
         self.assertIsNotNone(estimate.expiration_date)
 
-        estimate.status = 'superseded'
+        estimate.status = Estimate.STATUS_SUPERSEDED
         estimate.save()
-        self.assertEqual(estimate.status, 'superseded')
+        self.assertEqual(estimate.status, Estimate.STATUS_SUPERSEDED)
         self.assertIsNotNone(estimate.closed_date)
 
     def test_full_path_draft_to_open_to_expired(self):
@@ -885,18 +885,18 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST103",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-        self.assertEqual(estimate.status, 'open')
+        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)
         self.assertIsNotNone(estimate.sent_date)
         self.assertIsNotNone(estimate.expiration_date)
 
-        estimate.status = 'expired'
+        estimate.status = Estimate.STATUS_EXPIRED
         estimate.save()
-        self.assertEqual(estimate.status, 'expired')
+        self.assertEqual(estimate.status, Estimate.STATUS_EXPIRED)
         self.assertIsNotNone(estimate.closed_date)
 
     def test_path_draft_to_rejected(self):
@@ -904,10 +904,10 @@ class EstimateStateTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST104",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
-        estimate.status = 'rejected'
+        estimate.status = Estimate.STATUS_REJECTED
         estimate.save()
-        self.assertEqual(estimate.status, 'rejected')
+        self.assertEqual(estimate.status, Estimate.STATUS_REJECTED)
         self.assertIsNotNone(estimate.closed_date)
