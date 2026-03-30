@@ -7,7 +7,8 @@ from apps.estimates.services import WorksheetService, EstimateGenerationService
 from apps.core.services import ServiceError
 from apps.api.mixins import StatusTransitionMixin, TaskBundleMixin
 from apps.api.permissions import CanManageJobs
-from .serializers import EstWorksheetSerializer, TaskSerializer, TaskBundleSerializer
+from apps.api.work_orders.serializers import TaskSerializer, TaskBundleSerializer
+from .serializers import EstWorksheetSerializer
 
 
 class EstWorksheetViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.ModelViewSet):
