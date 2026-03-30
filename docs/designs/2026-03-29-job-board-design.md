@@ -60,7 +60,7 @@ Clicking a job chip locks the highlight — that job's tasks stay highlighted ac
 ### Card click-through
 - Double-clicking a job chip or clicking the job number navigates to the job detail page
 - Clicking a customer name navigates to the contact detail page
-- Clicking a task navigates to the job detail page (future: could scroll to task)
+- Clicking a task navigates to the task detail view (not yet built — link target TBD)
 
 ### Resizable borders
 All column borders are draggable to resize:
