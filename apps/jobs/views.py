@@ -88,7 +88,7 @@ def job_list(request):
     # (allows explicitly clearing all statuses via empty submission)
     using_default_statuses = False
     if not status_filters and not request.GET:
-        status_filters = ['draft', 'approved']
+        status_filters = [Job.STATUS_DRAFT, Job.STATUS_APPROVED]
         using_default_statuses = True
 
     # Track if any filters are applied (beyond defaults)
@@ -123,12 +123,12 @@ def job_list(request):
 
     # Custom status ordering: Draft (0) → Approved (1) → Completed (2) → Rejected (3) → Cancelled (4)
     status_order = Case(
-        When(status='draft', then=Value(0)),
-        When(status='approved', then=Value(1)),
-        When(status='submitted', then=Value(2)),
-        When(status='completed', then=Value(3)),
-        When(status='rejected', then=Value(4)),
-        When(status='cancelled', then=Value(5)),
+        When(status=Job.STATUS_DRAFT, then=Value(0)),
+        When(status=Job.STATUS_APPROVED, then=Value(1)),
+        When(status=Job.STATUS_SUBMITTED, then=Value(2)),
+        When(status=Job.STATUS_COMPLETED, then=Value(3)),
+        When(status=Job.STATUS_REJECTED, then=Value(4)),
+        When(status=Job.STATUS_CANCELLED, then=Value(5)),
         default=Value(6),
         output_field=IntegerField(),
     )
@@ -165,10 +165,10 @@ def job_detail(request, job_id):
     job = get_object_or_404(Job, job_id=job_id)
 
     # Get current estimate (highest version, non-superseded)
-    current_estimate = Estimate.objects.filter(job=job).exclude(status='superseded').order_by('-version').first()
+    current_estimate = Estimate.objects.filter(job=job).exclude(status=Estimate.STATUS_SUPERSEDED).order_by('-version').first()
 
     # Get superseded estimates
-    superseded_estimates = Estimate.objects.filter(job=job, status='superseded').order_by('-version')
+    superseded_estimates = Estimate.objects.filter(job=job, status=Estimate.STATUS_SUPERSEDED).order_by('-version')
 
     # If there's a current estimate, get its line items and total
     current_estimate_line_items = []
@@ -185,7 +185,7 @@ def job_detail(request, job_id):
     invoices = Invoice.objects.filter(job=job).order_by('-invoice_id')
 
     # Get current work order (most recent non-complete)
-    current_work_order = work_orders.exclude(status='complete').first()
+    current_work_order = work_orders.exclude(status=WorkOrder.STATUS_COMPLETE).first()
     current_work_order_tasks = []
     if current_work_order:
         all_tasks = Task.objects.filter(work_order=current_work_order).order_by('sort_order', 'task_id')
@@ -281,7 +281,7 @@ def task_list(request):
         work_order__isnull=False,
         est_worksheet__isnull=True
     ).exclude(
-        work_order__status='complete'
+        work_order__status=WorkOrder.STATUS_COMPLETE
     ).select_related('work_order', 'work_order__job', 'assignee').order_by('-task_id')
     return render(request, 'jobs/task_list.html', {'tasks': tasks})
 
@@ -300,7 +300,7 @@ def task_edit(request, task_id):
 
     # Check if editing is allowed
     container = task.get_container()
-    if hasattr(container, 'status') and container.status != 'draft':
+    if hasattr(container, 'status') and container.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, f'Cannot edit tasks on a {container.get_status_display().lower()} worksheet.')
         return redirect('jobs:task_detail', task_id=task_id)
 
@@ -330,7 +330,7 @@ def work_order_detail(request, work_order_id):
 
     # Handle status update POST request
     if request.method == 'POST' and 'update_status' in request.POST:
-        if work_order.status != 'complete':
+        if work_order.status != WorkOrder.STATUS_COMPLETE:
             form = WorkOrderStatusForm(request.POST, current_status=work_order.status)
             if form.is_valid():
                 new_status = form.cleaned_data['status']
@@ -373,7 +373,7 @@ def work_order_detail(request, work_order_id):
             item['blep_summary'] = " ".join(parts)
 
     # Create status form for display (unless completed)
-    status_form = WorkOrderStatusForm(current_status=work_order.status) if work_order.status != 'complete' else None
+    status_form = WorkOrderStatusForm(current_status=work_order.status) if work_order.status != WorkOrder.STATUS_COMPLETE else None
 
     return render(request, 'jobs/work_order_detail.html', {
         'work_order': work_order,
@@ -404,7 +404,7 @@ def material_add(request, task_id):
     task = get_object_or_404(Task, task_id=task_id)
 
     container = task.get_container()
-    if hasattr(container, 'status') and container.status != 'draft':
+    if hasattr(container, 'status') and container.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, 'Cannot add materials to tasks on a non-draft worksheet.')
         return redirect('jobs:task_detail', task_id=task_id)
 
@@ -432,7 +432,7 @@ def material_edit(request, material_id):
     task = material.task
 
     container = task.get_container()
-    if hasattr(container, 'status') and container.status != 'draft':
+    if hasattr(container, 'status') and container.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, 'Cannot edit materials on a non-draft worksheet.')
         return redirect('jobs:task_detail', task_id=task.task_id)
 
@@ -460,7 +460,7 @@ def material_delete(request, material_id):
     task = material.task
 
     container = task.get_container()
-    if hasattr(container, 'status') and container.status != 'draft':
+    if hasattr(container, 'status') and container.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, 'Cannot delete materials on a non-draft worksheet.')
         return redirect('jobs:task_detail', task_id=task.task_id)
 

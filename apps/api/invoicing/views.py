@@ -28,7 +28,7 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
 
     status_actions = {
         'cancel': {
-            'service': lambda pk, reason=None: Invoice.objects.filter(pk=pk).update(status='cancelled'),
+            'service': lambda pk, reason=None: Invoice.objects.filter(pk=pk).update(status=Invoice.STATUS_CANCELLED),
             'requires_reason': True,
         },
     }

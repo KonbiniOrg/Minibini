@@ -2,6 +2,7 @@ from tests.base import BaseTestCase
 from apps.core.models import HistoryEntry, User
 from apps.estimates.models import Estimate
 from apps.estimates.signals import estimate_status_changed_for_job
+from apps.jobs.models import Job
 
 
 class SignalHistoryTest(BaseTestCase):
@@ -12,7 +13,7 @@ class SignalHistoryTest(BaseTestCase):
         estimate = Estimate.objects.first()
         job = estimate.job
         # Set job to a state that allows transition to approved
-        job.status = 'submitted'
+        job.status = Job.STATUS_SUBMITTED
         job.save()
 
         # Clear any history from setup saves
@@ -22,7 +23,7 @@ class SignalHistoryTest(BaseTestCase):
         estimate_status_changed_for_job.send(
             sender=Estimate,
             estimate=estimate,
-            new_job_status='approved',
+            new_job_status=Job.STATUS_APPROVED,
         )
 
         entries = HistoryEntry.objects.filter(
@@ -43,11 +44,11 @@ class SignalHistoryTest(BaseTestCase):
         estimate = Estimate.objects.first()
         job = estimate.job
         # Walk through valid transitions to reach 'completed'
-        job.status = 'submitted'
+        job.status = Job.STATUS_SUBMITTED
         job.save()
-        job.status = 'approved'
+        job.status = Job.STATUS_APPROVED
         job.save()
-        job.status = 'completed'
+        job.status = Job.STATUS_COMPLETED
         job.save()
 
         HistoryEntry.objects.all().delete()
@@ -55,7 +56,7 @@ class SignalHistoryTest(BaseTestCase):
         estimate_status_changed_for_job.send(
             sender=Estimate,
             estimate=estimate,
-            new_job_status='approved',
+            new_job_status=Job.STATUS_APPROVED,
         )
 
         entries = HistoryEntry.objects.filter(

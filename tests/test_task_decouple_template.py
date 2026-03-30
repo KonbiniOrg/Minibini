@@ -118,7 +118,7 @@ class CopyPointsPreserveAccountingCategoryTests(TestCase):
         # Generate estimate so worksheet can create new version
         service = EstimateGenerationService()
         estimate = service.generate_estimate_from_worksheet(ws)
-        ws.status = 'final'
+        ws.status = EstWorksheet.STATUS_FINAL
         ws.save()
 
         new_ws = ws.create_new_version()

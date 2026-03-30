@@ -30,24 +30,24 @@ class WorkOrderAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 201)
 
     def test_complete_work_order_requires_reason(self):
-        wo = WorkOrder.objects.filter(status='incomplete').first()
+        wo = WorkOrder.objects.filter(status=WorkOrder.STATUS_INCOMPLETE).first()
         if wo:
             response = self.client.post(f'/api/work-orders/{wo.pk}/complete/', {}, format='json')
             self.assertEqual(response.status_code, 400)
             self.assertIn('reason', response.data)
 
     def test_complete_work_order_with_reason(self):
-        wo = WorkOrder.objects.filter(status='incomplete').first()
+        wo = WorkOrder.objects.filter(status=WorkOrder.STATUS_INCOMPLETE).first()
         if wo:
             response = self.client.post(f'/api/work-orders/{wo.pk}/complete/', {
                 'reason': 'All tasks finished',
             }, format='json')
             self.assertEqual(response.status_code, 200)
             wo.refresh_from_db()
-            self.assertEqual(wo.status, 'complete')
+            self.assertEqual(wo.status, WorkOrder.STATUS_COMPLETE)
 
     def test_complete_creates_history(self):
-        wo = WorkOrder.objects.filter(status='incomplete').first()
+        wo = WorkOrder.objects.filter(status=WorkOrder.STATUS_INCOMPLETE).first()
         if wo:
             self.client.post(f'/api/work-orders/{wo.pk}/complete/', {
                 'reason': 'All work done',
@@ -66,7 +66,7 @@ class WorkOrderAPITest(BaseTestCase):
             self.assertEqual(response.status_code, 400)
 
     def test_block_creates_history(self):
-        wo = WorkOrder.objects.filter(status='incomplete').first()
+        wo = WorkOrder.objects.filter(status=WorkOrder.STATUS_INCOMPLETE).first()
         if wo:
             self.client.post(f'/api/work-orders/{wo.pk}/block/', {
                 'reason': 'Waiting on parts',
@@ -78,7 +78,7 @@ class WorkOrderAPITest(BaseTestCase):
             self.assertEqual(entry.text, 'Waiting on parts')
 
     def test_reopen_creates_history(self):
-        wo = WorkOrder.objects.filter(status='incomplete').first()
+        wo = WorkOrder.objects.filter(status=WorkOrder.STATUS_INCOMPLETE).first()
         if wo:
             # Block it first
             self.client.post(f'/api/work-orders/{wo.pk}/block/', {
@@ -104,7 +104,7 @@ class WorkOrderAPITest(BaseTestCase):
         """Task API response includes assignee_name when assignee is set."""
         from apps.jobs.models import WorkOrder, Task, Job
         job = Job.objects.first()
-        wo = WorkOrder.objects.create(job=job, status='draft')
+        wo = WorkOrder.objects.create(job=job, status=Job.STATUS_DRAFT)
         task = Task.objects.create(
             work_order=wo,
             name='Test task',

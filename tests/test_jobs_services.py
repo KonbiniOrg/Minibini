@@ -45,7 +45,7 @@ class JobServiceCreateTest(JobsTestBase):
         )
         self.assertIsNotNone(job.pk)
         self.assertTrue(job.job_number.startswith('JOB'))
-        self.assertEqual(job.status, 'draft')
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
         self.assertEqual(job.contact, self.contact)
 
     def test_create_job_with_description(self):
@@ -92,13 +92,13 @@ class WorkOrderServiceStatusTest(JobsTestBase):
 
     def test_update_status(self):
         """Update work order status."""
-        updated = WorkOrderService.update_status(self.wo.pk, 'blocked')
-        self.assertEqual(updated.status, 'blocked')
+        updated = WorkOrderService.update_status(self.wo.pk, WorkOrder.STATUS_BLOCKED)
+        self.assertEqual(updated.status, WorkOrder.STATUS_BLOCKED)
 
     def test_update_status_not_found(self):
         """Nonexistent WO raises NotFoundError."""
         with self.assertRaises(NotFoundError):
-            WorkOrderService.update_status(99999, 'incomplete')
+            WorkOrderService.update_status(99999, WorkOrder.STATUS_INCOMPLETE)
 
 
 class TaskServiceUpdateTest(JobsTestBase):
@@ -215,14 +215,14 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-001', status='accepted')
+            job=self.job, estimate_number='EST-001', status=Estimate.STATUS_ACCEPTED)
 
     def test_creates_work_order(self):
         """Creates a work order linked to the estimate's job."""
         wo = WorkOrderService.create_from_estimate(self.estimate)
         self.assertIsNotNone(wo.pk)
         self.assertEqual(wo.job, self.job)
-        self.assertEqual(wo.status, 'incomplete')
+        self.assertEqual(wo.status, WorkOrder.STATUS_INCOMPLETE)
 
     def test_converts_line_items_to_tasks(self):
         """Each estimate line item becomes a task on the work order."""
@@ -282,7 +282,7 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
     def test_rejects_draft_estimate(self):
         """Draft estimate cannot create a work order."""
         draft_estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-DRAFT', status='draft')
+            job=self.job, estimate_number='EST-DRAFT', status=Job.STATUS_DRAFT)
 
         with self.assertRaises(ValidationError):
             WorkOrderService.create_from_estimate(draft_estimate)
@@ -290,7 +290,7 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
     def test_rejects_rejected_estimate(self):
         """Rejected estimate cannot create a work order."""
         rejected_estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-REJ', status='rejected')
+            job=self.job, estimate_number='EST-REJ', status=Job.STATUS_REJECTED)
 
         with self.assertRaises(ValidationError):
             WorkOrderService.create_from_estimate(rejected_estimate)
@@ -298,7 +298,7 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
     def test_accepts_open_estimate(self):
         """Open estimate can create a work order."""
         open_estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-OPEN', status='open')
+            job=self.job, estimate_number='EST-OPEN', status=Estimate.STATUS_OPEN)
 
         wo = WorkOrderService.create_from_estimate(open_estimate)
         self.assertIsNotNone(wo.pk)
@@ -331,7 +331,7 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
         self.assertIsNotNone(wo.pk)
         self.assertEqual(wo.job, self.job)
         self.assertEqual(wo.template, self.template)
-        self.assertEqual(wo.status, 'incomplete')
+        self.assertEqual(wo.status, WorkOrder.STATUS_INCOMPLETE)
 
     def test_generates_tasks_from_template(self):
         """Each active template association generates a task."""
@@ -394,7 +394,7 @@ class WorkOrderServiceCreateDirectTest(JobsTestBase):
         wo = WorkOrderService.create_direct(self.job)
         self.assertIsNotNone(wo.pk)
         self.assertEqual(wo.job, self.job)
-        self.assertEqual(wo.status, 'incomplete')
+        self.assertEqual(wo.status, WorkOrder.STATUS_INCOMPLETE)
 
     def test_accepts_kwargs(self):
         """Passes extra kwargs through to WorkOrder.create."""
@@ -411,10 +411,10 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-001', status='accepted')
+            job=self.job, estimate_number='EST-001', status=Estimate.STATUS_ACCEPTED)
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, estimate=self.estimate)
-        self.wo = WorkOrder.objects.create(job=self.job, status='draft')
+        self.wo = WorkOrder.objects.create(job=self.job, status=Job.STATUS_DRAFT)
 
     def test_copies_tasks(self):
         """Tasks are copied from worksheet to work order."""

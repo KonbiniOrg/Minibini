@@ -30,13 +30,13 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
         return qs
 
     status_actions = {
-        'complete': {'service': lambda pk: JobService.update_job(pk, status='completed')},
+        'complete': {'service': lambda pk: JobService.update_job(pk, status=Job.STATUS_COMPLETED)},
         'cancel': {
-            'service': lambda pk, reason=None: JobService.update_job(pk, status='cancelled'),
+            'service': lambda pk, reason=None: JobService.update_job(pk, status=Job.STATUS_CANCELLED),
             'requires_reason': True,
         },
         'reopen': {
-            'service': lambda pk, reason=None: JobService.update_job(pk, status='draft'),
+            'service': lambda pk, reason=None: JobService.update_job(pk, status=Job.STATUS_DRAFT),
             'requires_reason': True,
         },
     }

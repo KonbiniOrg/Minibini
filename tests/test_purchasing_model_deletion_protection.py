@@ -6,8 +6,8 @@ not just at the view level. This prevents bypassing the protection through
 direct ORM operations, Django admin, management commands, or shell access.
 
 Business Rules:
-- PurchaseOrders can only be deleted when status is 'draft'
-- Bills can only be deleted when status is 'draft'
+- PurchaseOrders can only be deleted when status is PurchaseOrder.STATUS_DRAFT
+- Bills can only be deleted when status is PurchaseOrder.STATUS_DRAFT
 - Attempting to delete non-draft objects should raise ProtectedError
 """
 
@@ -34,7 +34,7 @@ class PurchaseOrderModelDeletionTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-DRAFT-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
 
         po_id = po.po_id
@@ -50,9 +50,9 @@ class PurchaseOrderModelDeletionTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-ISSUED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
 
         # Should raise PermissionDenied
@@ -69,11 +69,11 @@ class PurchaseOrderModelDeletionTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-PARTLY-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
-        po.status = 'partly_received'
+        po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
         po.save()
 
         # Should raise PermissionDenied
@@ -90,11 +90,11 @@ class PurchaseOrderModelDeletionTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-RECEIVED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
-        po.status = 'received_in_full'
+        po.status = PurchaseOrder.STATUS_RECEIVED_IN_FULL
         po.save()
 
         # Should raise PermissionDenied
@@ -111,11 +111,11 @@ class PurchaseOrderModelDeletionTest(TestCase):
         po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-CANCELLED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
-        po.status = 'cancelled'
+        po.status = PurchaseOrder.STATUS_CANCELLED
         po.save()
 
         # Should raise PermissionDenied
@@ -149,9 +149,9 @@ class BillModelDeletionTest(TestCase):
         self.po = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.po.status = 'issued'
+        self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
 
     def test_can_delete_draft_bill_via_orm(self):
@@ -162,7 +162,7 @@ class BillModelDeletionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-DRAFT-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
         bill_id = bill.bill_id
@@ -181,7 +181,7 @@ class BillModelDeletionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-RECEIVED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         # Add line item so it can transition out of draft
         BillLineItem.objects.create(
@@ -190,7 +190,7 @@ class BillModelDeletionTest(TestCase):
             qty=Decimal('1.00'),
             price=Decimal('100.00')
         )
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
 
         # Should raise PermissionDenied
@@ -210,7 +210,7 @@ class BillModelDeletionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-PARTLY-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         # Add line item so it can transition out of draft
         BillLineItem.objects.create(
@@ -219,9 +219,9 @@ class BillModelDeletionTest(TestCase):
             qty=Decimal('1.00'),
             price=Decimal('100.00')
         )
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'partly_paid'
+        bill.status = Bill.STATUS_PARTLY_PAID
         bill.save()
 
         # Should raise PermissionDenied
@@ -241,7 +241,7 @@ class BillModelDeletionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-PAID-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         # Add line item so it can transition out of draft
         BillLineItem.objects.create(
@@ -250,9 +250,9 @@ class BillModelDeletionTest(TestCase):
             qty=Decimal('1.00'),
             price=Decimal('100.00')
         )
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
 
         # Should raise PermissionDenied
@@ -272,7 +272,7 @@ class BillModelDeletionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-CANCELLED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         # Add line item so it can transition out of draft
         BillLineItem.objects.create(
@@ -281,9 +281,9 @@ class BillModelDeletionTest(TestCase):
             qty=Decimal('1.00'),
             price=Decimal('100.00')
         )
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'cancelled'
+        bill.status = Bill.STATUS_CANCELLED
         bill.save()
 
         # Should raise PermissionDenied
@@ -303,7 +303,7 @@ class BillModelDeletionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-REFUNDED-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         # Add line item so it can transition out of draft
         BillLineItem.objects.create(
@@ -312,11 +312,11 @@ class BillModelDeletionTest(TestCase):
             qty=Decimal('1.00'),
             price=Decimal('100.00')
         )
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
-        bill.status = 'refunded'
+        bill.status = Bill.STATUS_REFUNDED
         bill.save()
 
         # Should raise PermissionDenied

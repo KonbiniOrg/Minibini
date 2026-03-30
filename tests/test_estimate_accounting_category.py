@@ -26,7 +26,7 @@ class EstimateAccountingCategoryTest(TestCase):
         cls.estimate = Estimate.objects.create(
             job=cls.job,
             estimate_number='EST-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         cls.service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
@@ -96,7 +96,7 @@ class EstimateLineItemFromPriceListTest(TestCase):
         cls.estimate = Estimate.objects.create(
             job=cls.job,
             estimate_number='EST-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         cls.product_type, _ = AccountingCategory.objects.get_or_create(
             code='PRD',

@@ -40,14 +40,14 @@ class EstimateLineItemReorderingTestCase(TestCase):
             job_number='JOB-001',
             name='Test Job',
             contact=self.contact,
-            status='draft'
+            status=Estimate.STATUS_DRAFT
         )
 
         # Create an estimate
         self.estimate = Estimate.objects.create(
             estimate_number='EST-001',
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
@@ -162,7 +162,7 @@ class EstimateLineItemReorderingTestCase(TestCase):
     def test_cannot_reorder_non_draft_estimate(self):
         """Test that line items in non-draft estimates cannot be reordered"""
         # Mark estimate as open
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
         url = reverse('estimates:estimate_reorder_line_item', kwargs={

@@ -41,7 +41,7 @@ class PurchaseOrderServiceCreateTest(PurchasingTestBase):
         )
         self.assertIsNotNone(po.pk)
         self.assertTrue(po.po_number.startswith('PO'))
-        self.assertEqual(po.status, 'draft')
+        self.assertEqual(po.status, PurchaseOrder.STATUS_DRAFT)
         self.assertEqual(po.business, self.business)
 
     def test_create_po_minimal(self):
@@ -82,13 +82,13 @@ class PurchaseOrderServiceStatusTest(PurchasingTestBase):
 
     def test_update_status_draft_to_issued(self):
         """Valid transition: draft → issued."""
-        updated = PurchaseOrderService.update_status(self.po.pk, 'issued')
-        self.assertEqual(updated.status, 'issued')
+        updated = PurchaseOrderService.update_status(self.po.pk, PurchaseOrder.STATUS_ISSUED)
+        self.assertEqual(updated.status, PurchaseOrder.STATUS_ISSUED)
 
     def test_update_status_not_found(self):
         """Nonexistent PO raises NotFoundError."""
         with self.assertRaises(NotFoundError):
-            PurchaseOrderService.update_status(99999, 'issued')
+            PurchaseOrderService.update_status(99999, PurchaseOrder.STATUS_ISSUED)
 
 
 class PurchaseOrderServiceCancelTest(PurchasingTestBase):
@@ -97,10 +97,10 @@ class PurchaseOrderServiceCancelTest(PurchasingTestBase):
     def test_cancel_issued_po(self):
         """Cancel an issued PO."""
         po = PurchaseOrderService.create_po(business=self.business)
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         cancelled = PurchaseOrderService.cancel_po(po.pk)
-        self.assertEqual(cancelled.status, 'cancelled')
+        self.assertEqual(cancelled.status, PurchaseOrder.STATUS_CANCELLED)
 
     def test_cancel_draft_po_raises(self):
         """Cannot cancel a draft PO."""
@@ -122,7 +122,7 @@ class PurchaseOrderServiceDeleteTest(PurchasingTestBase):
     def test_delete_issued_po_raises(self):
         """Cannot delete an issued PO."""
         po = PurchaseOrderService.create_po(business=self.business)
-        po.status = 'issued'
+        po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         with self.assertRaises(ValidationError):
             PurchaseOrderService.delete_po(po.pk)
@@ -186,7 +186,7 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
             purchase_order=self.po, description='Item 2',
             line_number=2, qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
-        PurchaseOrderService.update_status(self.po.pk, 'issued')
+        PurchaseOrderService.update_status(self.po.pk, PurchaseOrder.STATUS_ISSUED)
         with self.assertRaises(ValidationError):
             PurchaseOrderService.reorder_line_item(li1.pk, 'down')
 
@@ -211,7 +211,7 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
             purchase_order=self.po, description='Item 1',
             line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
-        PurchaseOrderService.update_status(self.po.pk, 'issued')
+        PurchaseOrderService.update_status(self.po.pk, PurchaseOrder.STATUS_ISSUED)
         with self.assertRaises(ValidationError):
             PurchaseOrderService.delete_line_item(li1.pk)
 
@@ -226,7 +226,7 @@ class BillServiceCreateTest(PurchasingTestBase):
         )
         self.assertIsNotNone(bill.pk)
         self.assertTrue(bill.bill_number.startswith('BILL'))
-        self.assertEqual(bill.status, 'draft')
+        self.assertEqual(bill.status, Bill.STATUS_DRAFT)
 
     def test_create_bill_from_po(self):
         """Create a bill from an issued PO, copying line items."""
@@ -242,7 +242,7 @@ class BillServiceCreateTest(PurchasingTestBase):
             accounting_category=self.lit,
         )
         # PO must be issued before creating a bill from it
-        PurchaseOrderService.update_status(po.pk, 'issued')
+        PurchaseOrderService.update_status(po.pk, PurchaseOrder.STATUS_ISSUED)
         bill = BillService.create_bill_from_po(
             po.pk, vendor_invoice_number='VINV-002',
         )
@@ -266,13 +266,13 @@ class BillServiceStatusTest(PurchasingTestBase):
             bill=bill, description='Item 1', line_number=1,
             qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
-        updated = BillService.update_status(bill.pk, 'received')
-        self.assertEqual(updated.status, 'received')
+        updated = BillService.update_status(bill.pk, Bill.STATUS_RECEIVED)
+        self.assertEqual(updated.status, Bill.STATUS_RECEIVED)
 
     def test_update_status_not_found(self):
         """Nonexistent bill raises NotFoundError."""
         with self.assertRaises(NotFoundError):
-            BillService.update_status(99999, 'received')
+            BillService.update_status(99999, Bill.STATUS_RECEIVED)
 
 
 class BillServiceDeleteTest(PurchasingTestBase):
@@ -297,7 +297,7 @@ class BillServiceDeleteTest(PurchasingTestBase):
             bill=bill, description='Item 1', line_number=1,
             qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
-        BillService.update_status(bill.pk, 'received')
+        BillService.update_status(bill.pk, Bill.STATUS_RECEIVED)
         with self.assertRaises(ValidationError):
             BillService.delete_bill(bill.pk)
 
@@ -360,7 +360,7 @@ class BillServiceLineItemTest(PurchasingTestBase):
             bill=self.bill, description='Item 2',
             line_number=2, qty=1, price=Decimal('20.00'), accounting_category=self.lit,
         )
-        BillService.update_status(self.bill.pk, 'received')
+        BillService.update_status(self.bill.pk, Bill.STATUS_RECEIVED)
         with self.assertRaises(ValidationError):
             BillService.reorder_line_item(li1.pk, 'down')
 
@@ -385,6 +385,6 @@ class BillServiceLineItemTest(PurchasingTestBase):
             bill=self.bill, description='Item 1',
             line_number=1, qty=1, price=Decimal('10.00'), accounting_category=self.lit,
         )
-        BillService.update_status(self.bill.pk, 'received')
+        BillService.update_status(self.bill.pk, Bill.STATUS_RECEIVED)
         with self.assertRaises(ValidationError):
             BillService.delete_line_item(li1.pk)

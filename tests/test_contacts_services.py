@@ -178,7 +178,7 @@ class ContactServiceDeleteTest(TestCase):
         )
         Job.objects.create(
             job_number='JOB-TEST-001', name='Test Job',
-            contact=c, status='draft',
+            contact=c, status=Job.STATUS_DRAFT,
         )
 
         with self.assertRaises(ValidationError):
@@ -405,7 +405,7 @@ class DeleteBusinessTest(TestCase):
         c2.save()
 
         po = PurchaseOrder.objects.create(
-            business=biz1, status='draft', po_number='PO-TEST-001',
+            business=biz1, status=PurchaseOrder.STATUS_DRAFT, po_number='PO-TEST-001',
         )
 
         ContactService.delete_business(
@@ -435,7 +435,7 @@ class DeleteBusinessTest(TestCase):
 
         job = Job.objects.create(
             job_number='JOB-TEST-002', name='Test',
-            contact=c1, status='draft',
+            contact=c1, status=Job.STATUS_DRAFT,
         )
 
         ContactService.delete_business(

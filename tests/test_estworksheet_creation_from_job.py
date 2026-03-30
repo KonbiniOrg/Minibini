@@ -51,7 +51,7 @@ class EstWorksheetCreateFromJobTest(TestCase):
         # Verify worksheet was created with draft status
         worksheet = EstWorksheet.objects.get(job=self.job)
         self.assertEqual(worksheet.job, self.job)
-        self.assertEqual(worksheet.status, 'draft')  # Must always be draft
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)  # Must always be draft
         self.assertIsNone(worksheet.template)
         self.assertEqual(worksheet.version, 1)
 
@@ -71,7 +71,7 @@ class EstWorksheetCreateFromJobTest(TestCase):
         # Verify worksheet was created with template and draft status
         worksheet = EstWorksheet.objects.get(job=self.job)
         self.assertEqual(worksheet.template, self.template)
-        self.assertEqual(worksheet.status, 'draft')  # Always draft on creation
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)  # Always draft on creation
 
     def test_job_detail_has_create_worksheet_link(self):
         """Test that job detail page has the Create Worksheet link"""
@@ -92,7 +92,7 @@ class EstWorksheetCreateFromJobTest(TestCase):
 
         # Verify worksheet was created with draft status
         worksheet = EstWorksheet.objects.get(job=self.job)
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
 
     def test_status_field_not_in_form(self):
         """Test that status field is not present in the creation form"""
@@ -117,7 +117,7 @@ class EstWorksheetCreateFromJobTest(TestCase):
         worksheets = EstWorksheet.objects.filter(job=self.job)
         self.assertEqual(worksheets.count(), 2)
         for worksheet in worksheets:
-            self.assertEqual(worksheet.status, 'draft')
+            self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
 
     def test_template_selection_creates_tasks(self):
         """Test that selecting a template creates tasks from it"""

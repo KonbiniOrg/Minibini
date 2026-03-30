@@ -28,11 +28,11 @@ class EstWorksheetModelTest(TestCase):
         """Test creating an EstWorksheet."""
         worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         self.assertEqual(worksheet.job, self.job)
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
         self.assertEqual(worksheet.version, 1)
         self.assertIsNone(worksheet.estimate)
         self.assertIsNone(worksheet.template)
@@ -46,7 +46,7 @@ class EstWorksheetModelTest(TestCase):
         )
 
         # Should default to draft
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
 
     def test_estworksheet_cannot_be_created_with_non_draft_status(self):
         """Test that new EstWorksheets always start as draft, even if another status is attempted."""
@@ -57,7 +57,7 @@ class EstWorksheetModelTest(TestCase):
             # Not specifying status to use default
         )
 
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
         
     def test_estworksheet_with_template(self):
         """Test creating EstWorksheet from template."""
@@ -72,7 +72,7 @@ class EstWorksheetModelTest(TestCase):
         )
         
         self.assertEqual(worksheet.template, template)
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
         
     def test_estworksheet_str_method(self):
         """Test EstWorksheet string representation."""
@@ -100,7 +100,7 @@ class EstWorksheetStatusTransitionTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         worksheet = EstWorksheet.objects.create(
@@ -108,14 +108,14 @@ class EstWorksheetStatusTransitionTest(TestCase):
             estimate=estimate
         )
         
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
         
     def test_worksheet_status_with_open_estimate(self):
         """Test worksheet moves to final when estimate is open."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
         
         worksheet = EstWorksheet.objects.create(
@@ -123,14 +123,14 @@ class EstWorksheetStatusTransitionTest(TestCase):
             estimate=estimate
         )
         
-        self.assertEqual(worksheet.status, 'final')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
         
     def test_worksheet_status_with_accepted_estimate(self):
         """Test worksheet moves to final when estimate is accepted."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='accepted'
+            status=Estimate.STATUS_ACCEPTED
         )
         
         worksheet = EstWorksheet.objects.create(
@@ -138,14 +138,14 @@ class EstWorksheetStatusTransitionTest(TestCase):
             estimate=estimate
         )
         
-        self.assertEqual(worksheet.status, 'final')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
         
     def test_worksheet_status_with_rejected_estimate(self):
         """Test worksheet moves to final when estimate is rejected."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='rejected'
+            status=Job.STATUS_REJECTED
         )
         
         worksheet = EstWorksheet.objects.create(
@@ -153,14 +153,14 @@ class EstWorksheetStatusTransitionTest(TestCase):
             estimate=estimate
         )
         
-        self.assertEqual(worksheet.status, 'final')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
         
     def test_worksheet_status_with_superseded_estimate(self):
         """Test worksheet moves to superseded when estimate is superseded."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='superseded'
+            status=Estimate.STATUS_SUPERSEDED
         )
         
         worksheet = EstWorksheet.objects.create(
@@ -168,14 +168,14 @@ class EstWorksheetStatusTransitionTest(TestCase):
             estimate=estimate
         )
         
-        self.assertEqual(worksheet.status, 'superseded')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_SUPERSEDED)
         
     def test_worksheet_status_change_on_estimate_update(self):
         """Test worksheet status updates when estimate status changes."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         worksheet = EstWorksheet.objects.create(
@@ -183,22 +183,22 @@ class EstWorksheetStatusTransitionTest(TestCase):
             estimate=estimate
         )
         
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
         
         # Change estimate to open
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         
         # Refresh worksheet from database
         worksheet.refresh_from_db()
-        self.assertEqual(worksheet.status, 'final')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
         
         # Change estimate to superseded
-        estimate.status = 'superseded'
+        estimate.status = Estimate.STATUS_SUPERSEDED
         estimate.save()
         
         worksheet.refresh_from_db()
-        self.assertEqual(worksheet.status, 'superseded')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_SUPERSEDED)
 
 
 class EstWorksheetVersioningTest(TestCase):
@@ -218,7 +218,7 @@ class EstWorksheetVersioningTest(TestCase):
         # Create original worksheet with tasks
         worksheet_v1 = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
         
@@ -241,11 +241,11 @@ class EstWorksheetVersioningTest(TestCase):
         
         # Check original worksheet is superseded
         worksheet_v1.refresh_from_db()
-        self.assertEqual(worksheet_v1.status, 'superseded')
+        self.assertEqual(worksheet_v1.status, EstWorksheet.STATUS_SUPERSEDED)
         
         # Check new worksheet
         self.assertEqual(worksheet_v2.job, self.job)
-        self.assertEqual(worksheet_v2.status, 'draft')
+        self.assertEqual(worksheet_v2.status, Job.STATUS_DRAFT)
         self.assertEqual(worksheet_v2.version, 2)
         self.assertEqual(worksheet_v2.parent, worksheet_v1)  # New worksheet points to old as parent
         self.assertIsNone(worksheet_v2.estimate)
@@ -266,7 +266,7 @@ class EstWorksheetVersioningTest(TestCase):
         """Test creating multiple versions maintains proper chain."""
         worksheet_v1 = EstWorksheet.objects.create(
             job=self.job,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         worksheet_v2 = worksheet_v1.create_new_version()
@@ -281,13 +281,13 @@ class EstWorksheetVersioningTest(TestCase):
         worksheet_v1.refresh_from_db()
         worksheet_v2.refresh_from_db()
         
-        self.assertEqual(worksheet_v1.status, 'superseded')
+        self.assertEqual(worksheet_v1.status, EstWorksheet.STATUS_SUPERSEDED)
         self.assertIsNone(worksheet_v1.parent)  # Original has no parent
         
-        self.assertEqual(worksheet_v2.status, 'superseded')
+        self.assertEqual(worksheet_v2.status, EstWorksheet.STATUS_SUPERSEDED)
         self.assertEqual(worksheet_v2.parent, worksheet_v1)  # v2 points to v1 as parent
         
-        self.assertEqual(worksheet_v3.status, 'draft')
+        self.assertEqual(worksheet_v3.status, Job.STATUS_DRAFT)
         self.assertEqual(worksheet_v3.parent, worksheet_v2)  # v3 points to v2 as parent
 
 
@@ -307,7 +307,7 @@ class TaskWorkContainerTest(TestCase):
         """Test creating task attached to WorkOrder."""
         work_order = WorkOrder.objects.create(
             job=self.job,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         task = Task.objects.create(
@@ -323,7 +323,7 @@ class TaskWorkContainerTest(TestCase):
         """Test creating task attached to EstWorksheet."""
         worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         task = Task.objects.create(
@@ -339,12 +339,12 @@ class TaskWorkContainerTest(TestCase):
         """Test task cannot be attached to both WorkOrder and EstWorksheet."""
         work_order = WorkOrder.objects.create(
             job=self.job,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         task = Task(
@@ -373,7 +373,7 @@ class TaskWorkContainerTest(TestCase):
         """Test accessing tasks through EstWorksheet."""
         worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         
         task1 = Task.objects.create(

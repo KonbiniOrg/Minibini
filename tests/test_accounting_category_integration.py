@@ -59,7 +59,7 @@ class AccountingCategoryIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-INT-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # 4. Add line item from PriceListItem
@@ -108,7 +108,7 @@ class AccountingCategoryIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-SVC-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Add manual service line item
@@ -161,7 +161,7 @@ class AccountingCategoryIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-EXM-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Add taxable item
@@ -290,7 +290,7 @@ class AccountingCategoryIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-INH-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Add line item from price list
@@ -339,7 +339,7 @@ class AccountingCategoryIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-MIX-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Add taxable product
@@ -412,7 +412,7 @@ class AccountingCategoryIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-PART-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Add taxable item worth $100
@@ -468,7 +468,7 @@ class AccountingCategoryFormIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-FRM-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Get add line item form
@@ -509,7 +509,7 @@ class AccountingCategoryFormIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-HID-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Get add line item form
@@ -568,7 +568,7 @@ class TaxCalculationIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-TAX-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Add item worth exactly $100
@@ -612,7 +612,7 @@ class TaxCalculationIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-NOTAX-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Add non-taxable item

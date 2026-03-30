@@ -23,10 +23,10 @@ class EstimateAPITest(BaseTestCase):
         self.assertIn('line_items', response.data)
 
     def test_update_estimate(self):
-        estimate = Estimate.objects.filter(status='draft').first()
+        estimate = Estimate.objects.filter(status=Estimate.STATUS_DRAFT).first()
         if estimate:
             response = self.client.patch(f'/api/estimates/{estimate.pk}/', {
-                'status': 'draft',
+                'status': Estimate.STATUS_DRAFT,
             }, format='json')
             self.assertEqual(response.status_code, 200)
 

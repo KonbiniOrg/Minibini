@@ -163,7 +163,7 @@ class LineItemTaskGenerationTestCase(TestCase):
             job=job,
             estimate_number='EST-EMPTY-001',
             version=1,
-            status='accepted'
+            status=Estimate.STATUS_ACCEPTED
         )
 
         url = reverse('estimates:work_order_create_from_estimate', kwargs={'estimate_id': empty_estimate.estimate_id})
@@ -221,14 +221,14 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-EDGE-001',
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
 
         self.estimate = Estimate.objects.create(
             job=self.job,
             estimate_number='EST-EDGE-001',
             version=1,
-            status='accepted'
+            status=Estimate.STATUS_ACCEPTED
         )
 
     def test_line_item_with_null_values(self):

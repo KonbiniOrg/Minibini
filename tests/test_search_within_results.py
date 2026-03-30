@@ -63,13 +63,13 @@ class SearchWithinResultsTest(TestCase):
             estimate_number="EST-2025-0001",
             job=self.job1,
             version=1,
-            status="draft"
+            status=Job.STATUS_DRAFT
         )
         self.estimate2 = Estimate.objects.create(
             estimate_number="EST-2025-0002",
             job=self.job2,
             version=1,
-            status="open"
+            status=Estimate.STATUS_OPEN
         )
 
         self.search_url = reverse('search:search')

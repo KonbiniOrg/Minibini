@@ -45,7 +45,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
 
     status_actions = {
         'issue': {
-            'service': lambda pk: PurchaseOrderService.update_status(pk, 'issued'),
+            'service': lambda pk: PurchaseOrderService.update_status(pk, PurchaseOrder.STATUS_ISSUED),
         },
         'cancel': {
             'service': lambda pk, reason=None: PurchaseOrderService.cancel_po(pk),
@@ -92,7 +92,7 @@ class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
 
     status_actions = {
         'cancel': {
-            'service': lambda pk, reason=None: BillService.update_status(pk, 'cancelled'),
+            'service': lambda pk, reason=None: BillService.update_status(pk, Bill.STATUS_CANCELLED),
             'requires_reason': True,
         },
     }

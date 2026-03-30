@@ -68,7 +68,7 @@ class ContactDeletionValidationTest(TestCase):
         po = PurchaseOrder.objects.create(
             po_number='PO-001',
             business=self.business,
-            status='issued'
+            status=PurchaseOrder.STATUS_ISSUED
         )
 
         # Create a bill associated with the contact
@@ -100,7 +100,7 @@ class ContactDeletionValidationTest(TestCase):
             job_number='TEST-COMPLETED',
             name='Completed Test Job',
             contact=self.contact,
-            status='completed'
+            status=Job.STATUS_COMPLETED
         )
 
         url = reverse('contacts:delete_contact', args=[self.contact.contact_id])
@@ -126,7 +126,7 @@ class ContactDeletionValidationTest(TestCase):
         po = PurchaseOrder.objects.create(
             po_number='PO-001',
             business=self.business,
-            status='issued'
+            status=PurchaseOrder.STATUS_ISSUED
         )
         bill = Bill.objects.create(
             purchase_order=po,
@@ -677,14 +677,14 @@ class EditContactWithJobStatusTest(TestCase):
     def test_can_change_business_with_completed_job(self):
         """Contact with completed job can have business changed.
 
-        Uses 'completed' status (not 'complete') to allow business changes.
+        Uses Job.STATUS_COMPLETED status (not 'complete') to allow business changes.
         """
         # Create a completed job
         job = Job.objects.create(
             job_number='COMPLETED-001',
             name='Completed Job',
             contact=self.contact,
-            status='completed'
+            status=Job.STATUS_COMPLETED
         )
 
         # Add second contact to business so first can be moved
@@ -721,7 +721,7 @@ class EditContactWithJobStatusTest(TestCase):
             job_number='OPEN-001',
             name='Open Job',
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
 
         # Add second contact to business so first could potentially be moved

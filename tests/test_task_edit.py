@@ -28,14 +28,14 @@ class TaskDetailViewTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-EDIT-001', contact=self.contact, status='approved'
+            job_number='JOB-EDIT-001', contact=self.contact, status=Job.STATUS_APPROVED
         )
 
         self.draft_worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
         self.final_worksheet = EstWorksheet.objects.create(
-            job=self.job, status='final', version=2
+            job=self.job, status=EstWorksheet.STATUS_FINAL, version=2
         )
 
         self.draft_task = Task.objects.create(
@@ -92,11 +92,11 @@ class TaskEditViewTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-EDIT-002', contact=self.contact, status='approved'
+            job_number='JOB-EDIT-002', contact=self.contact, status=Job.STATUS_APPROVED
         )
 
         self.draft_worksheet = EstWorksheet.objects.create(
-            job=self.job, status='draft', version=1
+            job=self.job, status=Job.STATUS_DRAFT, version=1
         )
 
         self.task = Task.objects.create(
@@ -179,14 +179,14 @@ class TaskEditRestrictionTests(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(
-            job_number='JOB-EDIT-003', contact=self.contact, status='approved'
+            job_number='JOB-EDIT-003', contact=self.contact, status=Job.STATUS_APPROVED
         )
 
         self.final_worksheet = EstWorksheet.objects.create(
-            job=self.job, status='final', version=1
+            job=self.job, status=EstWorksheet.STATUS_FINAL, version=1
         )
         self.superseded_worksheet = EstWorksheet.objects.create(
-            job=self.job, status='superseded', version=2
+            job=self.job, status=EstWorksheet.STATUS_SUPERSEDED, version=2
         )
 
         self.final_task = Task.objects.create(

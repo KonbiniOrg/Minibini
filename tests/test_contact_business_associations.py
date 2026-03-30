@@ -204,11 +204,11 @@ class BillFromPurchaseOrderTest(TestCase):
             business=self.business,
             contact=self.contact,
             po_number="PO001",
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
 
         # Transition PO to issued status
-        self.po.status = 'issued'
+        self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
 
         # Create price list items for line items
@@ -265,7 +265,7 @@ class BillFromPurchaseOrderTest(TestCase):
         po_no_contact = PurchaseOrder.objects.create(
             business=self.business,
             po_number="PO002",
-            status='issued'
+            status=PurchaseOrder.STATUS_ISSUED
         )
 
         bill = Bill.objects.create(

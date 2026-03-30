@@ -2,7 +2,7 @@
 Tests for the Bill status state machine.
 
 Business Rules:
-1. Bill starts in 'draft' status
+1. Bill starts in Bill.STATUS_DRAFT status
 2. Valid transitions:
    - draft -> received
    - received -> partly_paid
@@ -50,9 +50,9 @@ class BillStatusTransitionTest(TestCase):
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
             po_number='PO-TEST-001',
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.purchase_order.status = 'issued'
+        self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
 
     def _add_line_item_to_bill(self, bill):
@@ -73,7 +73,7 @@ class BillStatusTransitionTest(TestCase):
             contact=self.contact,
             vendor_invoice_number='INV-001'
         )
-        self.assertEqual(bill.status, 'draft')
+        self.assertEqual(bill.status, Bill.STATUS_DRAFT)
 
     def test_bill_created_date_is_set_automatically(self):
         """Test that created_date is automatically set on creation."""
@@ -99,15 +99,15 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
 
         bill.refresh_from_db()
-        self.assertEqual(bill.status, 'received')
+        self.assertEqual(bill.status, Bill.STATUS_RECEIVED)
         self.assertIsNotNone(bill.received_date)
 
     def test_received_date_set_automatically(self):
@@ -118,14 +118,14 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
         self.assertIsNone(bill.received_date)
 
         before_transition = timezone.now()
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
         after_transition = timezone.now()
 
@@ -142,18 +142,18 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
 
-        bill.status = 'partly_paid'
+        bill.status = Bill.STATUS_PARTLY_PAID
         bill.save()
 
         bill.refresh_from_db()
-        self.assertEqual(bill.status, 'partly_paid')
+        self.assertEqual(bill.status, Bill.STATUS_PARTLY_PAID)
 
     def test_transition_received_to_paid_in_full(self):
         """Test valid transition from received to paid_in_full."""
@@ -163,18 +163,18 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
 
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
 
         bill.refresh_from_db()
-        self.assertEqual(bill.status, 'paid_in_full')
+        self.assertEqual(bill.status, Bill.STATUS_PAID_IN_FULL)
         self.assertIsNotNone(bill.paid_date)
 
     def test_transition_received_to_cancelled(self):
@@ -185,18 +185,18 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
 
-        bill.status = 'cancelled'
+        bill.status = Bill.STATUS_CANCELLED
         bill.save()
 
         bill.refresh_from_db()
-        self.assertEqual(bill.status, 'cancelled')
+        self.assertEqual(bill.status, Bill.STATUS_CANCELLED)
         self.assertIsNotNone(bill.cancelled_date)
 
     def test_transition_partly_paid_to_paid_in_full(self):
@@ -207,20 +207,20 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'partly_paid'
+        bill.status = Bill.STATUS_PARTLY_PAID
         bill.save()
 
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
 
         bill.refresh_from_db()
-        self.assertEqual(bill.status, 'paid_in_full')
+        self.assertEqual(bill.status, Bill.STATUS_PAID_IN_FULL)
         self.assertIsNotNone(bill.paid_date)
 
     def test_transition_paid_in_full_to_refunded(self):
@@ -231,20 +231,20 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
 
-        bill.status = 'refunded'
+        bill.status = Bill.STATUS_REFUNDED
         bill.save()
 
         bill.refresh_from_db()
-        self.assertEqual(bill.status, 'refunded')
+        self.assertEqual(bill.status, Bill.STATUS_REFUNDED)
 
     def test_paid_date_set_automatically(self):
         """Test that paid_date is automatically set when transitioning to paid_in_full."""
@@ -254,17 +254,17 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
 
         self.assertIsNone(bill.paid_date)
 
         before_transition = timezone.now()
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
         after_transition = timezone.now()
 
@@ -281,17 +281,17 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
 
         self.assertIsNone(bill.cancelled_date)
 
         before_transition = timezone.now()
-        bill.status = 'cancelled'
+        bill.status = Bill.STATUS_CANCELLED
         bill.save()
         after_transition = timezone.now()
 
@@ -308,10 +308,10 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
-        bill.status = 'partly_paid'
+        bill.status = Bill.STATUS_PARTLY_PAID
         with self.assertRaises(ValidationError) as context:
             bill.save()
 
@@ -325,10 +325,10 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         with self.assertRaises(ValidationError) as context:
             bill.save()
 
@@ -342,10 +342,10 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
-        bill.status = 'cancelled'
+        bill.status = Bill.STATUS_CANCELLED
         with self.assertRaises(ValidationError) as context:
             bill.save()
 
@@ -359,10 +359,10 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
-        bill.status = 'refunded'
+        bill.status = Bill.STATUS_REFUNDED
         with self.assertRaises(ValidationError) as context:
             bill.save()
 
@@ -376,16 +376,16 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'partly_paid'
+        bill.status = Bill.STATUS_PARTLY_PAID
         bill.save()
 
-        bill.status = 'cancelled'
+        bill.status = Bill.STATUS_CANCELLED
         with self.assertRaises(ValidationError) as context:
             bill.save()
 
@@ -399,16 +399,16 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'partly_paid'
+        bill.status = Bill.STATUS_PARTLY_PAID
         bill.save()
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         with self.assertRaises(ValidationError) as context:
             bill.save()
 
@@ -422,16 +422,16 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
 
-        bill.status = 'partly_paid'
+        bill.status = Bill.STATUS_PARTLY_PAID
         with self.assertRaises(ValidationError) as context:
             bill.save()
 
@@ -445,17 +445,17 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'cancelled'
+        bill.status = Bill.STATUS_CANCELLED
         bill.save()
 
         # Try to transition to any other state
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         with self.assertRaises(ValidationError) as context:
             bill.save()
 
@@ -469,19 +469,19 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
-        bill.status = 'refunded'
+        bill.status = Bill.STATUS_REFUNDED
         bill.save()
 
         # Try to transition to any other state
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         with self.assertRaises(ValidationError) as context:
             bill.save()
 
@@ -515,11 +515,11 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
 
         original_received_date = bill.received_date
@@ -541,13 +541,13 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
 
         original_paid_date = bill.paid_date
@@ -569,13 +569,13 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self._add_line_item_to_bill(bill)
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        bill.status = 'cancelled'
+        bill.status = Bill.STATUS_CANCELLED
         bill.save()
 
         original_cancelled_date = bill.cancelled_date
@@ -626,24 +626,24 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
         self._add_line_item_to_bill(bill)
 
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        self.assertEqual(bill.status, 'received')
+        self.assertEqual(bill.status, Bill.STATUS_RECEIVED)
         self.assertIsNotNone(bill.received_date)
 
-        bill.status = 'partly_paid'
+        bill.status = Bill.STATUS_PARTLY_PAID
         bill.save()
-        self.assertEqual(bill.status, 'partly_paid')
+        self.assertEqual(bill.status, Bill.STATUS_PARTLY_PAID)
 
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
-        self.assertEqual(bill.status, 'paid_in_full')
+        self.assertEqual(bill.status, Bill.STATUS_PAID_IN_FULL)
         self.assertIsNotNone(bill.paid_date)
 
     def test_valid_path_draft_received_partly_paid_full_refunded(self):
@@ -654,27 +654,27 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
         self._add_line_item_to_bill(bill)
 
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        self.assertEqual(bill.status, 'received')
+        self.assertEqual(bill.status, Bill.STATUS_RECEIVED)
 
-        bill.status = 'partly_paid'
+        bill.status = Bill.STATUS_PARTLY_PAID
         bill.save()
-        self.assertEqual(bill.status, 'partly_paid')
+        self.assertEqual(bill.status, Bill.STATUS_PARTLY_PAID)
 
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
-        self.assertEqual(bill.status, 'paid_in_full')
+        self.assertEqual(bill.status, Bill.STATUS_PAID_IN_FULL)
 
-        bill.status = 'refunded'
+        bill.status = Bill.STATUS_REFUNDED
         bill.save()
-        self.assertEqual(bill.status, 'refunded')
+        self.assertEqual(bill.status, Bill.STATUS_REFUNDED)
 
     def test_valid_path_draft_received_full(self):
         """Test the path: draft -> received -> paid_in_full."""
@@ -684,19 +684,19 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
         self._add_line_item_to_bill(bill)
 
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        self.assertEqual(bill.status, 'received')
+        self.assertEqual(bill.status, Bill.STATUS_RECEIVED)
 
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
-        self.assertEqual(bill.status, 'paid_in_full')
+        self.assertEqual(bill.status, Bill.STATUS_PAID_IN_FULL)
 
     def test_valid_path_draft_received_full_refunded(self):
         """Test the path: draft -> received -> paid_in_full -> refunded."""
@@ -706,23 +706,23 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
         self._add_line_item_to_bill(bill)
 
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        self.assertEqual(bill.status, 'received')
+        self.assertEqual(bill.status, Bill.STATUS_RECEIVED)
 
-        bill.status = 'paid_in_full'
+        bill.status = Bill.STATUS_PAID_IN_FULL
         bill.save()
-        self.assertEqual(bill.status, 'paid_in_full')
+        self.assertEqual(bill.status, Bill.STATUS_PAID_IN_FULL)
 
-        bill.status = 'refunded'
+        bill.status = Bill.STATUS_REFUNDED
         bill.save()
-        self.assertEqual(bill.status, 'refunded')
+        self.assertEqual(bill.status, Bill.STATUS_REFUNDED)
 
     def test_valid_path_draft_received_cancelled(self):
         """Test the path: draft -> received -> cancelled."""
@@ -732,16 +732,16 @@ class BillStatusTransitionTest(TestCase):
             business=self.business,
             contact=self.contact,
             vendor_invoice_number='INV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
 
         self._add_line_item_to_bill(bill)
 
 
-        bill.status = 'received'
+        bill.status = Bill.STATUS_RECEIVED
         bill.save()
-        self.assertEqual(bill.status, 'received')
+        self.assertEqual(bill.status, Bill.STATUS_RECEIVED)
 
-        bill.status = 'cancelled'
+        bill.status = Bill.STATUS_CANCELLED
         bill.save()
-        self.assertEqual(bill.status, 'cancelled')
+        self.assertEqual(bill.status, Bill.STATUS_CANCELLED)

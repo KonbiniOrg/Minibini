@@ -16,13 +16,13 @@ class JobModelFixtureTest(FixtureTestCase):
     def test_jobs_exist_from_fixture(self):
         """Test that jobs from fixture data exist and have correct properties"""
         job1 = Job.objects.get(job_number="JOB-2024-0001")
-        self.assertEqual(job1.status, "draft")
+        self.assertEqual(job1.status, Job.STATUS_DRAFT)
         self.assertEqual(job1.description, "Kitchen renovation project for residential client")
         self.assertIsNone(job1.completed_date)
         self.assertEqual(job1.contact.name, "John Doe")
 
         job2 = Job.objects.get(job_number="JOB-2024-0002")
-        self.assertEqual(job2.status, "completed")
+        self.assertEqual(job2.status, Job.STATUS_COMPLETED)
         self.assertEqual(job2.description, "Office electrical upgrade")
         self.assertIsNotNone(job2.completed_date)
         self.assertEqual(job2.contact.name, "Jane Smith")
@@ -41,13 +41,13 @@ class JobModelFixtureTest(FixtureTestCase):
     def test_job_status_progression(self):
         """Test updating job status using fixture data"""
         job = Job.objects.get(job_number="JOB-2024-0001")
-        self.assertEqual(job.status, "draft")
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
 
-        job.status = "submitted"
+        job.status = Job.STATUS_SUBMITTED
         job.save()
 
         updated_job = Job.objects.get(job_number="JOB-2024-0001")
-        self.assertEqual(updated_job.status, "submitted")
+        self.assertEqual(updated_job.status, Job.STATUS_SUBMITTED)
 
     def test_create_new_job_with_existing_contact(self):
         """Test creating a new job with existing contact from fixtures"""
@@ -56,7 +56,7 @@ class JobModelFixtureTest(FixtureTestCase):
             job_number="JOB-2024-0003",
             contact=contact,
             description="New project for existing customer",
-            status="draft"
+            status=Job.STATUS_DRAFT
         )
         self.assertEqual(new_job.contact, contact)
         self.assertEqual(Job.objects.count(), 3)  # 2 from fixture + 1 new
@@ -71,12 +71,12 @@ class EstimateModelFixtureTest(FixtureTestCase):
         """Test that estimates from fixture data exist and have correct properties"""
         est1 = Estimate.objects.get(estimate_number="EST-2024-0001")
         self.assertEqual(est1.version, 1)
-        self.assertEqual(est1.status, "draft")
+        self.assertEqual(est1.status, Job.STATUS_DRAFT)
         self.assertEqual(est1.job.job_number, "JOB-2024-0001")
 
         est2 = Estimate.objects.get(estimate_number="EST-2024-0002", version=2)
         self.assertEqual(est2.version, 2)
-        self.assertEqual(est2.status, "accepted")
+        self.assertEqual(est2.status, Estimate.STATUS_ACCEPTED)
         self.assertEqual(est2.job.job_number, "JOB-2024-0002")
 
     def test_estimate_str_method_with_fixture_data(self):
@@ -99,11 +99,11 @@ class WorkOrderModelFixtureTest(FixtureTestCase):
     def test_work_orders_exist_from_fixture(self):
         """Test that work orders from fixture data exist and have correct properties"""
         wo1 = WorkOrder.objects.get(pk=1)
-        self.assertEqual(wo1.status, "incomplete")
+        self.assertEqual(wo1.status, WorkOrder.STATUS_INCOMPLETE)
         self.assertEqual(wo1.job.job_number, "JOB-2024-0001")
 
         wo2 = WorkOrder.objects.get(pk=2)
-        self.assertEqual(wo2.status, "complete")
+        self.assertEqual(wo2.status, WorkOrder.STATUS_COMPLETE)
         self.assertEqual(wo2.job.job_number, "JOB-2024-0002")
 
     def test_work_order_str_method_with_fixture_data(self):

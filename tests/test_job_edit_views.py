@@ -36,7 +36,7 @@ class JobEditDraftStatusTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-2025-0001',
             contact=self.contact1,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             description='Original description',
             customer_po_number='PO-001',
             due_date=timezone.now().date() + timedelta(days=30)
@@ -47,7 +47,7 @@ class JobEditDraftStatusTest(TestCase):
         """Draft jobs can change contact"""
         response = self.client.post(self.url, {
             'contact': self.contact2.contact_id,
-            'status': 'draft',
+            'status': Job.STATUS_DRAFT,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-001',
@@ -62,7 +62,7 @@ class JobEditDraftStatusTest(TestCase):
         """Draft jobs can change status to submitted"""
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'submitted',
+            'status': Job.STATUS_SUBMITTED,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-001',
@@ -71,7 +71,7 @@ class JobEditDraftStatusTest(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, 'submitted')
+        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
 
     def test_draft_job_cannot_change_created_date(self):
         """Draft jobs cannot change created_date (it's immutable)"""
@@ -79,7 +79,7 @@ class JobEditDraftStatusTest(TestCase):
         new_created_date = timezone.now() - timedelta(days=5)
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'draft',
+            'status': Job.STATUS_DRAFT,
             'created_date': new_created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-001',
@@ -98,7 +98,7 @@ class JobEditDraftStatusTest(TestCase):
         """Draft jobs can change description"""
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'draft',
+            'status': Job.STATUS_DRAFT,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Updated description',
             'customer_po_number': 'PO-001',
@@ -114,7 +114,7 @@ class JobEditDraftStatusTest(TestCase):
         new_due_date = timezone.now().date() + timedelta(days=60)
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'draft',
+            'status': Job.STATUS_DRAFT,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-001',
@@ -130,7 +130,7 @@ class JobEditDraftStatusTest(TestCase):
         """Draft jobs can change customer_po_number"""
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'draft',
+            'status': Job.STATUS_DRAFT,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-999',
@@ -178,7 +178,7 @@ class JobEditApprovedStatusTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-2025-0002',
             contact=self.contact1,
-            status='approved',
+            status=Job.STATUS_APPROVED,
             description='Original description',
             customer_po_number='PO-002',
             due_date=timezone.now().date() + timedelta(days=30)
@@ -191,7 +191,7 @@ class JobEditApprovedStatusTest(TestCase):
 
         response = self.client.post(self.url, {
             'contact': self.contact2.contact_id,
-            'status': 'approved',
+            'status': Job.STATUS_APPROVED,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-002',
@@ -209,7 +209,7 @@ class JobEditApprovedStatusTest(TestCase):
 
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'approved',
+            'status': Job.STATUS_APPROVED,
             'created_date': new_created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-002',
@@ -227,7 +227,7 @@ class JobEditApprovedStatusTest(TestCase):
         """Approved jobs can change status to completed"""
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'completed',
+            'status': Job.STATUS_COMPLETED,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-002',
@@ -236,13 +236,13 @@ class JobEditApprovedStatusTest(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, 'completed')
+        self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
 
     def test_approved_job_can_change_description(self):
         """Approved jobs can change description"""
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'approved',
+            'status': Job.STATUS_APPROVED,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Updated description for approved job',
             'customer_po_number': 'PO-002',
@@ -258,7 +258,7 @@ class JobEditApprovedStatusTest(TestCase):
         new_due_date = timezone.now().date() + timedelta(days=90)
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'approved',
+            'status': Job.STATUS_APPROVED,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-002',
@@ -274,7 +274,7 @@ class JobEditApprovedStatusTest(TestCase):
         """Approved jobs can change customer_po_number"""
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'approved',
+            'status': Job.STATUS_APPROVED,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-NEW-001',
@@ -321,7 +321,7 @@ class JobEditRejectedStatusTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-2025-0005',
             contact=self.contact1,
-            status='rejected',
+            status=Job.STATUS_REJECTED,
             description='Original description',
             customer_po_number='PO-005'
         )
@@ -333,7 +333,7 @@ class JobEditRejectedStatusTest(TestCase):
 
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'draft',  # Try to change status back to draft
+            'status': Job.STATUS_DRAFT,  # Try to change status back to draft
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-005',
@@ -350,7 +350,7 @@ class JobEditRejectedStatusTest(TestCase):
 
         response = self.client.post(self.url, {
             'contact': self.contact2.contact_id,
-            'status': 'rejected',
+            'status': Job.STATUS_REJECTED,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-005',
@@ -365,7 +365,7 @@ class JobEditRejectedStatusTest(TestCase):
 
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'rejected',
+            'status': Job.STATUS_REJECTED,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Attempted to change description',
             'customer_po_number': 'PO-005',
@@ -380,7 +380,7 @@ class JobEditRejectedStatusTest(TestCase):
 
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': 'rejected',
+            'status': Job.STATUS_REJECTED,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-CHANGED',
@@ -426,7 +426,7 @@ class JobEditCompleteStatusTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-2025-0006',
             contact=self.contact1,
-            status='completed',
+            status=Job.STATUS_COMPLETED,
             description='Completed job',
             completed_date=timezone.now()
         )

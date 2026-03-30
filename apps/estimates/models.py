@@ -8,20 +8,27 @@ from apps.core.history import history
 
 @history(exclude=['estimate_id'])
 class Estimate(models.Model):
+    STATUS_DRAFT = 'draft'
+    STATUS_OPEN = 'open'
+    STATUS_ACCEPTED = 'accepted'
+    STATUS_REJECTED = 'rejected'
+    STATUS_EXPIRED = 'expired'
+    STATUS_SUPERSEDED = 'superseded'
+
     ESTIMATE_STATUS_CHOICES = [
-        ('draft', 'Draft'),
-        ('open', 'Open'),
-        ('accepted', 'Accepted'),
-        ('rejected', 'Rejected'),
-        ('expired', 'Expired'),
-        ('superseded', 'Superseded'),
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_OPEN, 'Open'),
+        (STATUS_ACCEPTED, 'Accepted'),
+        (STATUS_REJECTED, 'Rejected'),
+        (STATUS_EXPIRED, 'Expired'),
+        (STATUS_SUPERSEDED, 'Superseded'),
     ]
 
     estimate_id = models.AutoField(primary_key=True)
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
     estimate_number = models.CharField(max_length=50)
     version = models.IntegerField(default=1)
-    status = models.CharField(max_length=20, choices=ESTIMATE_STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=20, choices=ESTIMATE_STATUS_CHOICES, default=STATUS_DRAFT)
     parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
     created_date = models.DateTimeField(default=timezone.now)
     # date the estimate was sent to the customer and stopped being editable
@@ -37,12 +44,12 @@ class Estimate(models.Model):
 
         # Define valid transitions for each state
         VALID_TRANSITIONS = {
-            'draft': ['open', 'rejected'],
-            'open': ['accepted', 'superseded', 'rejected', 'expired'],
-            'accepted': [],  # Terminal state
-            'rejected': [],  # Terminal state
-            'expired': [],  # Terminal state
-            'superseded': [],  # Terminal state
+            Estimate.STATUS_DRAFT: [Estimate.STATUS_OPEN, Estimate.STATUS_REJECTED],
+            Estimate.STATUS_OPEN: [Estimate.STATUS_ACCEPTED, Estimate.STATUS_SUPERSEDED, Estimate.STATUS_REJECTED, Estimate.STATUS_EXPIRED],
+            Estimate.STATUS_ACCEPTED: [],  # Terminal state
+            Estimate.STATUS_REJECTED: [],  # Terminal state
+            Estimate.STATUS_EXPIRED: [],  # Terminal state
+            Estimate.STATUS_SUPERSEDED: [],  # Terminal state
         }
 
         # Check if this is an update
@@ -77,10 +84,10 @@ class Estimate(models.Model):
                 pass
 
         # Only one accepted estimate per job
-        if self.status == 'accepted':
+        if self.status == Estimate.STATUS_ACCEPTED:
             existing_accepted = Estimate.objects.filter(
                 job=self.job,
-                status='accepted'
+                status=Estimate.STATUS_ACCEPTED
             ).exclude(pk=self.pk if self.pk else None)
 
             if existing_accepted.exists():
@@ -103,7 +110,7 @@ class Estimate(models.Model):
                 # Handle state transition date setting
                 if old_status != self.status:
                     # Transitioning to 'open' - set sent_date and expiration_date
-                    if self.status == 'open' and not self.sent_date:
+                    if self.status == Estimate.STATUS_OPEN and not self.sent_date:
                         self.sent_date = timezone.now()
 
                         # Set expiration_date if not already set
@@ -117,7 +124,7 @@ class Estimate(models.Model):
                             self.expiration_date = timezone.now() + timedelta(days=expire_days)
 
                     # Transitioning to terminal states - set closed_date
-                    if self.status in ['accepted', 'rejected', 'superseded', 'expired'] and not self.closed_date:
+                    if self.status in [Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED, Estimate.STATUS_SUPERSEDED, Estimate.STATUS_EXPIRED] and not self.closed_date:
                         self.closed_date = timezone.now()
 
             except Estimate.DoesNotExist:
@@ -151,12 +158,12 @@ class Estimate(models.Model):
 
     def _get_worksheet_status(self, estimate_status):
         """Map estimate status to worksheet status."""
-        if estimate_status == 'draft':
-            return 'draft'
-        elif estimate_status in ['open', 'accepted', 'rejected']:
-            return 'final'
-        elif estimate_status == 'superseded':
-            return 'superseded'
+        if estimate_status == Estimate.STATUS_DRAFT:
+            return EstWorksheet.STATUS_DRAFT
+        elif estimate_status in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED]:
+            return EstWorksheet.STATUS_FINAL
+        elif estimate_status == Estimate.STATUS_SUPERSEDED:
+            return EstWorksheet.STATUS_SUPERSEDED
         return None
 
     def _maybe_update_job_status(self, old_status):
@@ -164,11 +171,12 @@ class Estimate(models.Model):
         from apps.estimates.signals import estimate_status_changed_for_job, estimate_accepted
 
         # Signal when estimate is accepted
-        if self.status == 'accepted' and old_status != 'accepted':
+        if self.status == Estimate.STATUS_ACCEPTED and old_status != Estimate.STATUS_ACCEPTED:
+            from apps.jobs.models import Job
             estimate_status_changed_for_job.send(
                 sender=self.__class__,
                 estimate=self,
-                new_job_status='approved'
+                new_job_status=Job.STATUS_APPROVED
             )
             estimate_accepted.send(
                 sender=self.__class__,
@@ -176,11 +184,11 @@ class Estimate(models.Model):
             )
 
         # Signal when approved estimate is superseded
-        elif self.status == 'superseded' and old_status == 'accepted':
+        elif self.status == Estimate.STATUS_SUPERSEDED and old_status == Estimate.STATUS_ACCEPTED:
             estimate_status_changed_for_job.send(
                 sender=self.__class__,
                 estimate=self,
-                new_job_status='blocked'
+                new_job_status='blocked'  # NOTE: 'blocked' is not in Job's status choices
             )
 
     def __str__(self):
@@ -193,15 +201,19 @@ class Estimate(models.Model):
 
 @history(exclude=['est_worksheet_id'])
 class EstWorksheet(AbstractWorkContainer):
+    STATUS_DRAFT = 'draft'
+    STATUS_FINAL = 'final'
+    STATUS_SUPERSEDED = 'superseded'
+
     EST_WORKSHEET_STATUS_CHOICES = [
-        ('draft', 'Draft'),
-        ('final', 'Final'),
-        ('superseded', 'Superseded'),
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_FINAL, 'Final'),
+        (STATUS_SUPERSEDED, 'Superseded'),
     ]
 
     est_worksheet_id = models.AutoField(primary_key=True)
     estimate = models.ForeignKey(Estimate, on_delete=models.SET_NULL, null=True, blank=True, related_name='worksheets')
-    status = models.CharField(max_length=20, choices=EST_WORKSHEET_STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=20, choices=EST_WORKSHEET_STATUS_CHOICES, default=STATUS_DRAFT)
     version = models.IntegerField(default=1)
     parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
     created_date = models.DateTimeField(default=timezone.now)
@@ -210,12 +222,12 @@ class EstWorksheet(AbstractWorkContainer):
         """Override save to set initial status based on Estimate if creating new worksheet."""
         # Only set status from estimate on creation, not updates
         if not self.pk and self.estimate:
-            if self.estimate.status == 'draft':
-                self.status = 'draft'
-            elif self.estimate.status in ['open', 'accepted', 'rejected']:
-                self.status = 'final'
-            elif self.estimate.status == 'superseded':
-                self.status = 'superseded'
+            if self.estimate.status == Estimate.STATUS_DRAFT:
+                self.status = EstWorksheet.STATUS_DRAFT
+            elif self.estimate.status in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED]:
+                self.status = EstWorksheet.STATUS_FINAL
+            elif self.estimate.status == Estimate.STATUS_SUPERSEDED:
+                self.status = EstWorksheet.STATUS_SUPERSEDED
         super().save(*args, **kwargs)
 
     def create_new_version(self):
@@ -224,14 +236,14 @@ class EstWorksheet(AbstractWorkContainer):
         from apps.inventory.models import Material
 
         # Mark current worksheet as superseded
-        self.status = 'superseded'
+        self.status = EstWorksheet.STATUS_SUPERSEDED
         self.save()
 
         # Create new worksheet with this one as parent
         new_worksheet = EstWorksheet.objects.create(
             job=self.job,
             template=self.template,
-            status='draft',
+            status=EstWorksheet.STATUS_DRAFT,
             version=self.version + 1,
             parent=self,  # New worksheet points to this one as parent
             estimate=None  # New version starts without an estimate

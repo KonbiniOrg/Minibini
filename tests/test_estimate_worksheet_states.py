@@ -46,14 +46,14 @@ class EstimateStateTests(TestCase):
             job=self.job,
             estimate_number='EST001',
             version=1,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Create a worksheet linked to the estimate
         self.worksheet = EstWorksheet.objects.create(
             job=self.job,
             estimate=self.estimate,
-            status='draft',
+            status=Estimate.STATUS_DRAFT,
             version=1
         )
 
@@ -67,15 +67,15 @@ class EstimateStateTests(TestCase):
         self.worksheet.refresh_from_db()
 
         # Check estimate is now open
-        self.assertEqual(self.estimate.status, 'open')
+        self.assertEqual(self.estimate.status, Estimate.STATUS_OPEN)
 
         # Check worksheet is now final
-        self.assertEqual(self.worksheet.status, 'final')
+        self.assertEqual(self.worksheet.status, EstWorksheet.STATUS_FINAL)
 
     def test_cannot_mark_non_draft_estimate_as_open(self):
         """Test that only draft estimates can be marked as open."""
         # Set estimate to already be open
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
         url = reverse('estimates:estimate_mark_open', args=[self.estimate.estimate_id])
@@ -85,7 +85,7 @@ class EstimateStateTests(TestCase):
         self.estimate.refresh_from_db()
 
         # Status should remain open, not changed
-        self.assertEqual(self.estimate.status, 'open')
+        self.assertEqual(self.estimate.status, Estimate.STATUS_OPEN)
 
     def test_estimate_version_increment(self):
         """Test that estimate versions increment correctly."""
@@ -94,7 +94,7 @@ class EstimateStateTests(TestCase):
             job=self.job,
             estimate_number='EST002',
             version=1,
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         # Create a child estimate
@@ -102,7 +102,7 @@ class EstimateStateTests(TestCase):
             job=self.job,
             estimate_number='EST002',
             version=2,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Set the parent relationship
@@ -147,7 +147,7 @@ class EstWorksheetStateTests(TestCase):
         # Create a final worksheet (not draft)
         self.worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='final',
+            status=EstWorksheet.STATUS_FINAL,
             version=1
         )
 
@@ -162,7 +162,7 @@ class EstWorksheetStateTests(TestCase):
 
     def test_cannot_generate_estimate_from_non_draft_worksheet(self):
         """Test that estimates can only be generated from draft worksheets."""
-        self.assertEqual(self.worksheet.status, 'final')
+        self.assertEqual(self.worksheet.status, EstWorksheet.STATUS_FINAL)
 
         # The template should not show the generate estimate option
         response = self.client.get(
@@ -182,13 +182,13 @@ class EstWorksheetStateTests(TestCase):
         ).first()
 
         self.assertIsNotNone(new_worksheet)
-        self.assertEqual(new_worksheet.status, 'draft')
+        self.assertEqual(new_worksheet.status, EstWorksheet.STATUS_DRAFT)
         self.assertEqual(new_worksheet.version, 2)
         self.assertEqual(new_worksheet.parent, self.worksheet)
 
         # Check that parent was marked as superseded
         self.worksheet.refresh_from_db()
-        self.assertEqual(self.worksheet.status, 'superseded')
+        self.assertEqual(self.worksheet.status, EstWorksheet.STATUS_SUPERSEDED)
 
     def test_revise_worksheet_copies_tasks(self):
         """Test that revising a worksheet copies all tasks to the new version."""
@@ -215,7 +215,7 @@ class EstWorksheetStateTests(TestCase):
         # Create a draft worksheet
         draft_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
@@ -231,7 +231,7 @@ class EstWorksheetStateTests(TestCase):
 
         # Original should remain draft
         draft_worksheet.refresh_from_db()
-        self.assertEqual(draft_worksheet.status, 'draft')
+        self.assertEqual(draft_worksheet.status, Estimate.STATUS_DRAFT)
 
     def test_new_worksheet_not_linked_to_estimate(self):
         """Test that revised worksheet is not linked to parent's estimate."""
@@ -240,7 +240,7 @@ class EstWorksheetStateTests(TestCase):
             job=self.job,
             estimate_number='EST003',
             version=1,
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
         self.worksheet.estimate = estimate
         self.worksheet.save()
@@ -301,7 +301,7 @@ class EstimateGenerationServiceTests(TestCase):
         # Create parent worksheet with estimate
         parent_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='final',
+            status=EstWorksheet.STATUS_FINAL,
             version=1
         )
         task = Task.objects.create(
@@ -314,7 +314,7 @@ class EstimateGenerationServiceTests(TestCase):
 
         # Generate parent estimate
         parent_estimate = self.service.generate_estimate_from_worksheet(parent_worksheet)
-        parent_estimate.status = 'open'
+        parent_estimate.status = Estimate.STATUS_OPEN
         parent_estimate.save();
         parent_estimate_number = parent_estimate.estimate_number
 
@@ -322,7 +322,7 @@ class EstimateGenerationServiceTests(TestCase):
         child_worksheet = EstWorksheet.objects.create(
             job=self.job,
             parent=parent_worksheet,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=2
         )
         task2 = Task.objects.create(
@@ -343,13 +343,13 @@ class EstimateGenerationServiceTests(TestCase):
         self.assertEqual(child_estimate.version, 2)
 
         # Check parent estimate is superseded
-        self.assertEqual(parent_estimate.status, 'superseded')
+        self.assertEqual(parent_estimate.status, Estimate.STATUS_SUPERSEDED)
 
     def test_generate_estimate_without_parent(self):
         """Test generating estimate from worksheet without parent."""
         worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
@@ -366,7 +366,7 @@ class EstimateGenerationServiceTests(TestCase):
         # Check that no parent relationship exists
         self.assertIsNone(estimate.parent)
         self.assertEqual(estimate.version, 1)
-        self.assertEqual(estimate.status, 'draft')
+        self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
 
 
 class IntegrationTests(TestCase):
@@ -415,7 +415,7 @@ class IntegrationTests(TestCase):
         # 1. Create initial draft worksheet
         worksheet_v1 = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
@@ -429,7 +429,7 @@ class IntegrationTests(TestCase):
 
         # 2. Generate estimate from worksheet
         estimate_v1 = self.service.generate_estimate_from_worksheet(worksheet_v1)
-        self.assertEqual(estimate_v1.status, 'draft')
+        self.assertEqual(estimate_v1.status, Estimate.STATUS_DRAFT)
         self.assertEqual(estimate_v1.version, 1)
 
         # 3. Mark estimate as open
@@ -439,8 +439,8 @@ class IntegrationTests(TestCase):
         estimate_v1.refresh_from_db()
         worksheet_v1.refresh_from_db()
 
-        self.assertEqual(estimate_v1.status, 'open')
-        self.assertEqual(worksheet_v1.status, 'final')
+        self.assertEqual(estimate_v1.status, Estimate.STATUS_OPEN)
+        self.assertEqual(worksheet_v1.status, EstWorksheet.STATUS_FINAL)
 
         # 4. Revise the worksheet
         url = reverse('estimates:estworksheet_revise', args=[worksheet_v1.est_worksheet_id])
@@ -448,7 +448,7 @@ class IntegrationTests(TestCase):
 
         worksheet_v2 = EstWorksheet.objects.filter(parent=worksheet_v1).first()
         self.assertIsNotNone(worksheet_v2)
-        self.assertEqual(worksheet_v2.status, 'draft')
+        self.assertEqual(worksheet_v2.status, EstWorksheet.STATUS_DRAFT)
         self.assertEqual(worksheet_v2.version, 2)
 
         # 5. Generate new estimate from revised worksheet
@@ -463,7 +463,7 @@ class IntegrationTests(TestCase):
 
         # Check parent estimate is superseded
         estimate_v1.refresh_from_db()
-        self.assertEqual(estimate_v1.status, 'superseded')
+        self.assertEqual(estimate_v1.status, Estimate.STATUS_SUPERSEDED)
 
         # 6. Mark new estimate as open
         url = reverse('estimates:estimate_mark_open', args=[estimate_v2.estimate_id])
@@ -472,5 +472,5 @@ class IntegrationTests(TestCase):
         estimate_v2.refresh_from_db()
         worksheet_v2.refresh_from_db()
 
-        self.assertEqual(estimate_v2.status, 'open')
-        self.assertEqual(worksheet_v2.status, 'final')
+        self.assertEqual(estimate_v2.status, Estimate.STATUS_OPEN)
+        self.assertEqual(worksheet_v2.status, EstWorksheet.STATUS_FINAL)

@@ -75,9 +75,9 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
         )
 
         # Transition estimate: draft → open → accepted
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
-        self.estimate.status = 'accepted'
+        self.estimate.status = Estimate.STATUS_ACCEPTED
         self.estimate.save()
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 2)
@@ -103,9 +103,9 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
 
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
-        self.estimate.status = 'accepted'
+        self.estimate.status = Estimate.STATUS_ACCEPTED
         self.estimate.save()
 
         earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
@@ -119,9 +119,9 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
         )
 
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
-        self.estimate.status = 'accepted'
+        self.estimate.status = Estimate.STATUS_ACCEPTED
         self.estimate.save()
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
@@ -134,16 +134,16 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
         )
 
         # draft → open should not create earmarks
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
     def test_no_earmarks_when_no_materials(self):
         """No earmarks created when job has no materials at all."""
-        self.estimate.status = 'open'
+        self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
-        self.estimate.status = 'accepted'
+        self.estimate.status = Estimate.STATUS_ACCEPTED
         self.estimate.save()
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)

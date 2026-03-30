@@ -18,7 +18,7 @@ class WorksheetVersionBundlingTest(TestCase):
 
     def test_direct_task_mapping_copied(self):
         """Task mapping_strategy is preserved across versions."""
-        ws1 = EstWorksheet.objects.create(job=self.job, status='draft')
+        ws1 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         Task.objects.create(
             est_worksheet=ws1, name="Sand", rate=Decimal('50'),
             est_qty=Decimal('1'), mapping_strategy='direct'
@@ -36,7 +36,7 @@ class WorksheetVersionBundlingTest(TestCase):
 
     def test_task_bundles_copied(self):
         """TaskBundles are duplicated on the new worksheet version."""
-        ws1 = EstWorksheet.objects.create(job=self.job, status='draft')
+        ws1 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         bundle = TaskBundle.objects.create(
             est_worksheet=ws1, name="Prep Work",
             accounting_category=self.lit_labor, sort_order=1,
@@ -75,7 +75,7 @@ class WorksheetVersionBundlingTest(TestCase):
 
     def test_multiple_bundles_copied_with_correct_task_mapping(self):
         """Multiple bundles are each copied, and tasks point to the right new bundle."""
-        ws1 = EstWorksheet.objects.create(job=self.job, status='draft')
+        ws1 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         lit_mat, _ = AccountingCategory.objects.get_or_create(
             code="MAT", defaults={"name": "Material"}
         )
@@ -119,7 +119,7 @@ class WorksheetVersionBundlingTest(TestCase):
 
     def test_original_bundles_unchanged(self):
         """Versioning doesn't modify the original worksheet's bundles or tasks."""
-        ws1 = EstWorksheet.objects.create(job=self.job, status='draft')
+        ws1 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
         bundle = TaskBundle.objects.create(
             est_worksheet=ws1, name="Prep",
             accounting_category=self.lit_labor, sort_order=1

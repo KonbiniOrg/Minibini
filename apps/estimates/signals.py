@@ -50,7 +50,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
     job = estimate.job
 
     # Don't update completed or cancelled jobs
-    if job.status in ['completed', 'cancelled']:
+    if job.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
         return 0
 
     # Update job status if needed, respecting state transition rules
@@ -62,26 +62,26 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
         action_desc = f"Estimate {estimate.estimate_number} accepted"
 
         # If trying to go to 'approved' from 'draft', first go through 'submitted'
-        if new_job_status == 'approved' and job.status == 'draft':
+        if new_job_status == Job.STATUS_APPROVED and job.status == Job.STATUS_DRAFT:
             old_status = job.status
-            job.status = 'submitted'
+            job.status = Job.STATUS_SUBMITTED
             job.save()
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='job',
                 object_id=job.pk,
                 user=system_user,
-                changes={'status': {'old': old_status, 'new': 'submitted'}, '_action': action_desc},
+                changes={'status': {'old': old_status, 'new': Job.STATUS_SUBMITTED}, '_action': action_desc},
             )
             # Now transition to approved
-            job.status = 'approved'
+            job.status = Job.STATUS_APPROVED
             job.save()
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='job',
                 object_id=job.pk,
                 user=system_user,
-                changes={'status': {'old': 'submitted', 'new': 'approved'}, '_action': action_desc},
+                changes={'status': {'old': Job.STATUS_SUBMITTED, 'new': Job.STATUS_APPROVED}, '_action': action_desc},
             )
             return 2  # Two transitions made
         else:

@@ -65,7 +65,7 @@ class JobListFilterTestCase(TestCase):
             job_number="JOB-TEST-001",
             name="Draft Job",
             contact=self.contact1,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             description="A draft job"
         )
 
@@ -73,65 +73,65 @@ class JobListFilterTestCase(TestCase):
             job_number="JOB-TEST-002",
             name="Submitted Job",
             contact=self.contact2,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             description="A submitted job"
         )
         # Transition to submitted
-        self.job_submitted.status = 'submitted'
+        self.job_submitted.status = Job.STATUS_SUBMITTED
         self.job_submitted.save()
 
         self.job_approved = Job.objects.create(
             job_number="JOB-TEST-003",
             name="Approved Job",
             contact=self.contact1,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             description="An approved job"
         )
         # Transition through states to approved
-        self.job_approved.status = 'submitted'
+        self.job_approved.status = Job.STATUS_SUBMITTED
         self.job_approved.save()
-        self.job_approved.status = 'approved'
+        self.job_approved.status = Job.STATUS_APPROVED
         self.job_approved.save()
 
         self.job_completed = Job.objects.create(
             job_number="JOB-TEST-004",
             name="Completed Job",
             contact=self.contact3,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             description="A completed job"
         )
         # Transition through states to completed
-        self.job_completed.status = 'submitted'
+        self.job_completed.status = Job.STATUS_SUBMITTED
         self.job_completed.save()
-        self.job_completed.status = 'approved'
+        self.job_completed.status = Job.STATUS_APPROVED
         self.job_completed.save()
-        self.job_completed.status = 'completed'
+        self.job_completed.status = Job.STATUS_COMPLETED
         self.job_completed.save()
 
         self.job_rejected = Job.objects.create(
             job_number="JOB-TEST-005",
             name="Rejected Job",
             contact=self.contact2,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             description="A rejected job"
         )
         # Transition to rejected
-        self.job_rejected.status = 'rejected'
+        self.job_rejected.status = Job.STATUS_REJECTED
         self.job_rejected.save()
 
         self.job_cancelled = Job.objects.create(
             job_number="JOB-TEST-006",
             name="Cancelled Job",
             contact=self.contact1,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             description="A cancelled job"
         )
         # Transition through states to cancelled
-        self.job_cancelled.status = 'submitted'
+        self.job_cancelled.status = Job.STATUS_SUBMITTED
         self.job_cancelled.save()
-        self.job_cancelled.status = 'approved'
+        self.job_cancelled.status = Job.STATUS_APPROVED
         self.job_cancelled.save()
-        self.job_cancelled.status = 'cancelled'
+        self.job_cancelled.status = Job.STATUS_CANCELLED
         self.job_cancelled.save()
 
 
@@ -147,12 +147,12 @@ class JobListDefaultFilterTest(JobListFilterTestCase):
         job_statuses = [job.status for job in jobs]
 
         # Should only contain draft and approved
-        self.assertIn('draft', job_statuses)
-        self.assertIn('approved', job_statuses)
-        self.assertNotIn('submitted', job_statuses)
-        self.assertNotIn('completed', job_statuses)
-        self.assertNotIn('rejected', job_statuses)
-        self.assertNotIn('cancelled', job_statuses)
+        self.assertIn(Job.STATUS_DRAFT, job_statuses)
+        self.assertIn(Job.STATUS_APPROVED, job_statuses)
+        self.assertNotIn(Job.STATUS_SUBMITTED, job_statuses)
+        self.assertNotIn(Job.STATUS_COMPLETED, job_statuses)
+        self.assertNotIn(Job.STATUS_REJECTED, job_statuses)
+        self.assertNotIn(Job.STATUS_CANCELLED, job_statuses)
 
     def test_default_filters_in_context(self):
         """Test that default status filters are passed to template context."""
@@ -160,8 +160,8 @@ class JobListDefaultFilterTest(JobListFilterTestCase):
         self.assertEqual(response.status_code, 200)
 
         current_filters = response.context['current_filters']
-        self.assertIn('draft', current_filters['statuses'])
-        self.assertIn('approved', current_filters['statuses'])
+        self.assertIn(Job.STATUS_DRAFT, current_filters['statuses'])
+        self.assertIn(Job.STATUS_APPROVED, current_filters['statuses'])
 
     def test_all_status_choices_available_in_ui(self):
         """Test that all status choices are available in the filter UI."""
@@ -172,12 +172,12 @@ class JobListDefaultFilterTest(JobListFilterTestCase):
         status_values = [choice[0] for choice in status_choices]
 
         # All statuses should be available for selection
-        self.assertIn('draft', status_values)
-        self.assertIn('submitted', status_values)
-        self.assertIn('approved', status_values)
-        self.assertIn('rejected', status_values)
-        self.assertIn('completed', status_values)
-        self.assertIn('cancelled', status_values)
+        self.assertIn(Job.STATUS_DRAFT, status_values)
+        self.assertIn(Job.STATUS_SUBMITTED, status_values)
+        self.assertIn(Job.STATUS_APPROVED, status_values)
+        self.assertIn(Job.STATUS_REJECTED, status_values)
+        self.assertIn(Job.STATUS_COMPLETED, status_values)
+        self.assertIn(Job.STATUS_CANCELLED, status_values)
 
 
 class JobListStatusFilterTest(JobListFilterTestCase):
@@ -185,27 +185,27 @@ class JobListStatusFilterTest(JobListFilterTestCase):
 
     def test_filter_single_status(self):
         """Test filtering by a single status."""
-        response = self.client.get(self.url, {'status': 'completed'})
+        response = self.client.get(self.url, {'status': Job.STATUS_COMPLETED})
         self.assertEqual(response.status_code, 200)
 
         jobs = list(response.context['jobs'])
         self.assertEqual(len(jobs), 1)
-        self.assertEqual(jobs[0].status, 'completed')
+        self.assertEqual(jobs[0].status, Job.STATUS_COMPLETED)
 
     def test_filter_multiple_statuses(self):
         """Test filtering by multiple statuses."""
-        response = self.client.get(self.url, {'status': ['draft', 'completed']})
+        response = self.client.get(self.url, {'status': [Job.STATUS_DRAFT, Job.STATUS_COMPLETED]})
         self.assertEqual(response.status_code, 200)
 
         jobs = list(response.context['jobs'])
         job_statuses = {job.status for job in jobs}
 
-        self.assertEqual(job_statuses, {'draft', 'completed'})
+        self.assertEqual(job_statuses, {Job.STATUS_DRAFT, Job.STATUS_COMPLETED})
 
     def test_filter_all_statuses(self):
         """Test selecting all statuses shows all jobs."""
         response = self.client.get(self.url, {
-            'status': ['draft', 'submitted', 'approved', 'rejected', 'completed', 'cancelled']
+            'status': [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_REJECTED, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]
         })
         self.assertEqual(response.status_code, 200)
 
@@ -229,7 +229,7 @@ class JobListContactBusinessFilterTest(JobListFilterTestCase):
     def test_filter_by_contact(self):
         """Test filtering by specific contact."""
         response = self.client.get(self.url, {
-            'status': ['draft', 'submitted', 'approved', 'completed', 'rejected', 'cancelled'],
+            'status': [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED],
             'contact': self.contact1.contact_id
         })
         self.assertEqual(response.status_code, 200)
@@ -241,7 +241,7 @@ class JobListContactBusinessFilterTest(JobListFilterTestCase):
     def test_filter_by_business(self):
         """Test filtering by business."""
         response = self.client.get(self.url, {
-            'status': ['draft', 'submitted', 'approved', 'completed', 'rejected', 'cancelled'],
+            'status': [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED],
             'business': self.business1.business_id
         })
         self.assertEqual(response.status_code, 200)
@@ -253,7 +253,7 @@ class JobListContactBusinessFilterTest(JobListFilterTestCase):
     def test_filter_contact_and_business_combined(self):
         """Test filtering by both contact and business."""
         response = self.client.get(self.url, {
-            'status': ['draft', 'submitted', 'approved', 'completed', 'rejected', 'cancelled'],
+            'status': [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED],
             'contact': self.contact1.contact_id,
             'business': self.business1.business_id
         })
@@ -275,7 +275,7 @@ class JobListDateFilterTest(JobListFilterTestCase):
         tomorrow = today + timedelta(days=1)
 
         response = self.client.get(self.url, {
-            'status': ['draft', 'approved'],
+            'status': [Job.STATUS_DRAFT, Job.STATUS_APPROVED],
             'date_type': 'created',
             'date_from': yesterday.isoformat(),
             'date_to': tomorrow.isoformat()
@@ -294,7 +294,7 @@ class JobListDateFilterTest(JobListFilterTestCase):
         self.job_draft.save()
 
         response = self.client.get(self.url, {
-            'status': ['draft'],
+            'status': [Job.STATUS_DRAFT],
             'date_type': 'due',
             'date_from': timezone.now().date().isoformat(),
             'date_to': (timezone.now().date() + timedelta(days=14)).isoformat()
@@ -313,7 +313,7 @@ class JobListSortingTest(JobListFilterTestCase):
     def test_sort_by_status_order(self):
         """Test that jobs are sorted by status in correct order: Draft, Approved, Submitted, Completed, Rejected, Cancelled."""
         response = self.client.get(self.url, {
-            'status': ['draft', 'submitted', 'approved', 'completed', 'rejected', 'cancelled']
+            'status': [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED]
         })
         self.assertEqual(response.status_code, 200)
 
@@ -321,7 +321,7 @@ class JobListSortingTest(JobListFilterTestCase):
         statuses = [job.status for job in jobs]
 
         # Define expected order
-        status_priority = {'draft': 0, 'approved': 1, 'submitted': 2, 'completed': 3, 'rejected': 4, 'cancelled': 5}
+        status_priority = {Job.STATUS_DRAFT: 0, Job.STATUS_APPROVED: 1, Job.STATUS_SUBMITTED: 2, Job.STATUS_COMPLETED: 3, Job.STATUS_REJECTED: 4, Job.STATUS_CANCELLED: 5}
 
         # Verify sorting is correct
         for i in range(len(statuses) - 1):
@@ -336,7 +336,7 @@ class JobListSortingTest(JobListFilterTestCase):
         # job_approved should have a start_date set automatically
         self.assertIsNotNone(self.job_approved.start_date)
 
-        response = self.client.get(self.url, {'status': ['approved']})
+        response = self.client.get(self.url, {'status': [Job.STATUS_APPROVED]})
         self.assertEqual(response.status_code, 200)
 
         jobs = list(response.context['jobs'])
@@ -348,7 +348,7 @@ class JobListSortingTest(JobListFilterTestCase):
         # Draft jobs don't have start_date
         self.assertIsNone(self.job_draft.start_date)
 
-        response = self.client.get(self.url, {'status': ['draft']})
+        response = self.client.get(self.url, {'status': [Job.STATUS_DRAFT]})
         self.assertEqual(response.status_code, 200)
 
         jobs = list(response.context['jobs'])
@@ -362,7 +362,7 @@ class JobListSortingTest(JobListFilterTestCase):
             job_number="JOB-TEST-007",
             name="Old Draft Job",
             contact=self.contact1,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             description="An older draft job"
         )
         # Manually set an older created_date
@@ -374,15 +374,15 @@ class JobListSortingTest(JobListFilterTestCase):
             job_number="JOB-TEST-008",
             name="New Draft Job",
             contact=self.contact1,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             description="A newer draft job"
         )
 
-        response = self.client.get(self.url, {'status': ['draft']})
+        response = self.client.get(self.url, {'status': [Job.STATUS_DRAFT]})
         self.assertEqual(response.status_code, 200)
 
         jobs = list(response.context['jobs'])
-        draft_jobs = [j for j in jobs if j.status == 'draft']
+        draft_jobs = [j for j in jobs if j.status == Job.STATUS_DRAFT]
 
         # Should be sorted newest first (descending)
         self.assertGreaterEqual(len(draft_jobs), 2)
@@ -399,14 +399,14 @@ class JobListCombinedFiltersTest(JobListFilterTestCase):
     def test_status_and_business_filter(self):
         """Test combining status and business filters."""
         response = self.client.get(self.url, {
-            'status': ['draft', 'approved'],
+            'status': [Job.STATUS_DRAFT, Job.STATUS_APPROVED],
             'business': self.business1.business_id
         })
         self.assertEqual(response.status_code, 200)
 
         jobs = list(response.context['jobs'])
         for job in jobs:
-            self.assertIn(job.status, ['draft', 'approved'])
+            self.assertIn(job.status, [Job.STATUS_DRAFT, Job.STATUS_APPROVED])
             self.assertEqual(job.contact.business_id, self.business1.business_id)
 
     def test_status_contact_and_date_filter(self):
@@ -414,7 +414,7 @@ class JobListCombinedFiltersTest(JobListFilterTestCase):
         today = timezone.now().date()
 
         response = self.client.get(self.url, {
-            'status': ['draft', 'approved', 'completed'],
+            'status': [Job.STATUS_DRAFT, Job.STATUS_APPROVED, Job.STATUS_COMPLETED],
             'contact': self.contact1.contact_id,
             'date_type': 'created',
             'date_from': (today - timedelta(days=1)).isoformat(),
@@ -424,7 +424,7 @@ class JobListCombinedFiltersTest(JobListFilterTestCase):
 
         jobs = list(response.context['jobs'])
         for job in jobs:
-            self.assertIn(job.status, ['draft', 'approved', 'completed'])
+            self.assertIn(job.status, [Job.STATUS_DRAFT, Job.STATUS_APPROVED, Job.STATUS_COMPLETED])
             self.assertEqual(job.contact_id, self.contact1.contact_id)
 
     def test_filters_applied_flag(self):
@@ -434,12 +434,12 @@ class JobListCombinedFiltersTest(JobListFilterTestCase):
         self.assertFalse(response.context['filters_applied'])
 
         # With explicit filters - filters_applied should be True
-        response = self.client.get(self.url, {'status': ['completed']})
+        response = self.client.get(self.url, {'status': [Job.STATUS_COMPLETED]})
         self.assertTrue(response.context['filters_applied'])
 
         # With business filter
         response = self.client.get(self.url, {
-            'status': ['draft', 'approved'],
+            'status': [Job.STATUS_DRAFT, Job.STATUS_APPROVED],
             'business': self.business1.business_id
         })
         self.assertTrue(response.context['filters_applied'])
@@ -467,7 +467,7 @@ class JobListTemplateContextTest(JobListFilterTestCase):
     def test_current_filters_in_context(self):
         """Test that current filter values are passed to template."""
         response = self.client.get(self.url, {
-            'status': ['draft', 'completed'],
+            'status': [Job.STATUS_DRAFT, Job.STATUS_COMPLETED],
             'business': str(self.business1.business_id),
             'date_type': 'created',
             'date_from': '2024-01-01',
@@ -476,7 +476,7 @@ class JobListTemplateContextTest(JobListFilterTestCase):
         self.assertEqual(response.status_code, 200)
 
         current_filters = response.context['current_filters']
-        self.assertEqual(set(current_filters['statuses']), {'draft', 'completed'})
+        self.assertEqual(set(current_filters['statuses']), {Job.STATUS_DRAFT, Job.STATUS_COMPLETED})
         self.assertEqual(current_filters['business'], str(self.business1.business_id))
         self.assertEqual(current_filters['date_type'], 'created')
         self.assertEqual(current_filters['date_from'], '2024-01-01')

@@ -144,7 +144,7 @@ class SearchViewTests(TestCase):
             po_number='PO-2024-001'
         )
         # Transition PO to issued status so bills can be created from it
-        self.po1.status = 'issued'
+        self.po1.status = PurchaseOrder.STATUS_ISSUED
         self.po1.save()
 
         # Create bills

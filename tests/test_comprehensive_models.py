@@ -46,7 +46,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
     def test_complete_job_workflow(self):
         job = Job.objects.create(
             job_number="JOB001",
-            status='draft',
+            status=Job.STATUS_DRAFT,
             contact=self.contact,
             description="Test job description"
         )
@@ -55,12 +55,12 @@ class ComprehensiveModelIntegrationTest(TestCase):
             job=job,
             estimate_number="EST001",
             version=1,
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         work_order = WorkOrder.objects.create(
             job=job,
-            status='incomplete'
+            status=WorkOrder.STATUS_INCOMPLETE
         )
 
         task = Task.objects.create(
@@ -75,7 +75,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             start_time=timezone.now()
         )
 
-        self.assertEqual(job.status, 'draft')
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
         self.assertEqual(estimate.job, job)
         self.assertEqual(work_order.job, job)
         self.assertEqual(task.work_order, work_order)
@@ -138,9 +138,9 @@ class ComprehensiveModelIntegrationTest(TestCase):
         purchase_order = PurchaseOrder.objects.create(
             business=self.business,
             po_number="PO001",
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        purchase_order.status = 'issued'
+        purchase_order.status = PurchaseOrder.STATUS_ISSUED
         purchase_order.save()
 
         bill = Bill.objects.create(
@@ -188,22 +188,22 @@ class ComprehensiveModelIntegrationTest(TestCase):
             job=job,
             estimate_number="EST003",
             version=1,
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         superseding_estimate = Estimate.objects.create(
             job=job,
             estimate_number="EST003",
             version=2,
-            status='open',
+            status=Estimate.STATUS_OPEN,
             parent=original_estimate
         )
 
-        original_estimate.status = 'superseded'
+        original_estimate.status = Estimate.STATUS_SUPERSEDED
         original_estimate.save()  # closed_date is set automatically by model.save()
 
         original_estimate.refresh_from_db()
-        self.assertEqual(original_estimate.status, 'superseded')
+        self.assertEqual(original_estimate.status, Estimate.STATUS_SUPERSEDED)
         self.assertEqual(superseding_estimate.parent, original_estimate)
         self.assertIsNotNone(original_estimate.closed_date)
 
@@ -363,9 +363,9 @@ class LineItemValidationTest(TestCase):
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
             po_number="PO_VALID001",
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
-        self.purchase_order.status = 'issued'
+        self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
 
         self.bill = Bill.objects.create(

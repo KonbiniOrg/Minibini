@@ -317,7 +317,7 @@ class ArchivedPriceListItemDisplayTest(TestCase):
         self.estimate = Estimate.objects.create(
             job=self.job,
             estimate_number='EST-TEST-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
     def test_estimate_detail_shows_archived_indicator(self):
@@ -475,7 +475,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-TEST-002',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Try to add line item with archived price list item

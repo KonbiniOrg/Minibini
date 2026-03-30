@@ -35,15 +35,15 @@ class WorkOrderViewSet(StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixi
 
     status_actions = {
         'complete': {
-            'service': lambda pk, reason=None: WorkOrderService.update_status(pk, 'complete'),
+            'service': lambda pk, reason=None: WorkOrderService.update_status(pk, WorkOrder.STATUS_COMPLETE),
             'requires_reason': True,
         },
         'block': {
-            'service': lambda pk, reason=None: WorkOrderService.update_status(pk, 'blocked'),
+            'service': lambda pk, reason=None: WorkOrderService.update_status(pk, WorkOrder.STATUS_BLOCKED),
             'requires_reason': True,
         },
         'reopen': {
-            'service': lambda pk, reason=None: WorkOrderService.update_status(pk, 'incomplete'),
+            'service': lambda pk, reason=None: WorkOrderService.update_status(pk, WorkOrder.STATUS_INCOMPLETE),
             'requires_reason': True,
         },
     }

@@ -29,7 +29,7 @@ class EstimateTaxDisplayTest(TestCase):
         cls.estimate = Estimate.objects.create(
             job=cls.job,
             estimate_number='EST-001',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         cls.taxable_type, _ = AccountingCategory.objects.get_or_create(
             code='MAT',
@@ -159,7 +159,7 @@ class EstimateCustomerExemptionTest(TestCase):
         estimate = Estimate.objects.create(
             job=job,
             estimate_number='EST-EXEMPT',
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         EstimateLineItem.objects.create(
             estimate=estimate,

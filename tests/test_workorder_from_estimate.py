@@ -31,7 +31,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         worksheet = EstWorksheet.objects.get(pk=100)
 
         # Verify initial state
-        self.assertEqual(estimate.status, 'accepted')
+        self.assertEqual(estimate.status, Estimate.STATUS_ACCEPTED)
         self.assertEqual(worksheet.estimate_id, estimate.estimate_id)
         initial_task_count = Task.objects.filter(est_worksheet=worksheet).count()
         self.assertEqual(initial_task_count, 5)  # 1 parent + 2 children + 2 standalone
@@ -53,7 +53,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         work_order = work_orders.first()
 
         # Verify WorkOrder properties
-        self.assertEqual(work_order.status, 'incomplete')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
         self.assertEqual(work_order.job_id, estimate.job_id)
         self.assertEqual(work_order.template_id, worksheet.template_id)
 
@@ -90,7 +90,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         work_order = work_orders.last()  # Get the most recently created
 
         # Verify WorkOrder properties
-        self.assertEqual(work_order.status, 'incomplete')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
         self.assertEqual(work_order.job_id, estimate.job_id)
         self.assertIsNone(work_order.template)
 
@@ -105,8 +105,8 @@ class WorkOrderFromEstimateTestCase(TestCase):
     def test_cannot_create_workorder_from_non_accepted_estimate(self):
         """Test that WorkOrders cannot be created from estimates with status != accepted"""
         test_cases = [
-            (101, 'open'),
-            (102, 'draft'),
+            (101, Estimate.STATUS_OPEN),
+            (102, Estimate.STATUS_DRAFT),
         ]
 
         for estimate_id, expected_status in test_cases:

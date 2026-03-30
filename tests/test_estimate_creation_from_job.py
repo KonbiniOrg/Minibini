@@ -51,7 +51,7 @@ class EstimateCreationFromJobTests(TestCase):
         estimate = Estimate.objects.filter(job=self.job).first()
         self.assertIsNotNone(estimate)
         self.assertTrue(estimate.estimate_number.startswith('EST-'))
-        self.assertEqual(estimate.status, 'draft')
+        self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
         self.assertEqual(estimate.version, 1)
 
     def test_estimate_create_for_job_post(self):
@@ -67,7 +67,7 @@ class EstimateCreationFromJobTests(TestCase):
         self.assertIsNotNone(estimate)
         # Verify auto-generated estimate number follows pattern
         self.assertTrue(estimate.estimate_number.startswith('EST-'))
-        self.assertEqual(estimate.status, 'draft')
+        self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
         self.assertEqual(estimate.version, 1)
         self.assertEqual(estimate.job, self.job)
 
@@ -80,7 +80,7 @@ class EstimateCreationFromJobTests(TestCase):
         # Get the created estimate and mark it as open
         estimate = Estimate.objects.filter(job=self.job).first()
         estimate_number = estimate.estimate_number  # Store the auto-generated number
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
         # Now revise it to create version 2

@@ -18,12 +18,12 @@ class JobModelTest(TestCase):
             job_number="JOB001",
             contact=self.contact,
             description="Test job description",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         self.assertEqual(job.job_number, "JOB001")
         self.assertEqual(job.contact, self.contact)
         self.assertEqual(job.description, "Test job description")
-        self.assertEqual(job.status, 'draft')
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
         self.assertIsNotNone(job.created_date)
 
     def test_job_str_method(self):
@@ -38,12 +38,12 @@ class JobModelTest(TestCase):
             job_number="JOB003",
             contact=self.contact
         )
-        self.assertEqual(job.status, 'draft')
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
         self.assertIsNone(job.completed_date)
         self.assertIsNone(job.due_date)
 
     def test_job_status_choices(self):
-        statuses = ['draft', 'submitted', 'approved', 'rejected', 'completed', 'cancelled']
+        statuses = [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_REJECTED, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]
         for status in statuses:
             job = Job.objects.create(
                 job_number=f"JOB_{status}",
@@ -58,7 +58,7 @@ class JobModelTest(TestCase):
             job_number="JOB004",
             contact=self.contact,
             completed_date=completion_time,
-            status='completed'
+            status=Job.STATUS_COMPLETED
         )
         self.assertEqual(job.completed_date, completion_time)
 
@@ -81,7 +81,7 @@ class JobModelTest(TestCase):
             job_number="JOB_DEFAULT_STATUS",
             contact=self.contact
         )
-        self.assertEqual(job.status, 'draft')
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
 
     def test_job_requires_contact(self):
         """Test that a Job must have a Contact associated with it"""
@@ -109,7 +109,7 @@ class JobModelTest(TestCase):
         )
 
         # Verify defaults are applied
-        self.assertEqual(job.status, 'draft')
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
         self.assertIsNotNone(job.created_date)
         self.assertIsNone(job.due_date)
         self.assertIsNone(job.completed_date)
@@ -140,12 +140,12 @@ class EstimateModelTest(TestCase):
             job=self.job,
             estimate_number="EST001",
             version=2,
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
         self.assertEqual(estimate.job, self.job)
         self.assertEqual(estimate.estimate_number, "EST001")
         self.assertEqual(estimate.version, 2)
-        self.assertEqual(estimate.status, 'open')
+        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)
 
     def test_estimate_str_method(self):
         estimate = Estimate.objects.create(
@@ -160,10 +160,10 @@ class EstimateModelTest(TestCase):
             estimate_number="EST003"
         )
         self.assertEqual(estimate.version, 1)
-        self.assertEqual(estimate.status, 'draft')
+        self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
 
     def test_estimate_status_choices(self):
-        statuses = ['draft', 'open', 'accepted', 'rejected']
+        statuses = [Estimate.STATUS_DRAFT, Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED]
         for status in statuses:
             estimate = Estimate.objects.create(
                 job=self.job,
@@ -181,7 +181,7 @@ class EstimateModelTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST_SUPERSEDE_TEST",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         # Verify the model doesn't have superseded_date as a DB field
@@ -192,12 +192,12 @@ class EstimateModelTest(TestCase):
             "Estimate model should have 'closed_date' field")
 
         # Transition to superseded
-        estimate.status = 'superseded'
+        estimate.status = Estimate.STATUS_SUPERSEDED
         estimate.save()
 
         # Reload and verify closed_date is set
         estimate.refresh_from_db()
-        self.assertEqual(estimate.status, 'superseded')
+        self.assertEqual(estimate.status, Estimate.STATUS_SUPERSEDED)
         self.assertIsNotNone(estimate.closed_date,
             "closed_date should be set when estimate is superseded")
 
@@ -218,10 +218,10 @@ class WorkOrderModelTest(TestCase):
     def test_work_order_creation(self):
         work_order = WorkOrder.objects.create(
             job=self.job,
-            status='blocked',
+            status=WorkOrder.STATUS_BLOCKED,
         )
         self.assertEqual(work_order.job, self.job)
-        self.assertEqual(work_order.status, 'blocked')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_BLOCKED)
 
     def test_work_order_str_method(self):
         work_order = WorkOrder.objects.create(job=self.job)
@@ -229,10 +229,10 @@ class WorkOrderModelTest(TestCase):
 
     def test_work_order_defaults(self):
         work_order = WorkOrder.objects.create(job=self.job)
-        self.assertEqual(work_order.status, 'incomplete')
+        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
 
     def test_work_order_status_choices(self):
-        statuses = ['incomplete', 'blocked', 'complete']
+        statuses = [WorkOrder.STATUS_INCOMPLETE, WorkOrder.STATUS_BLOCKED, WorkOrder.STATUS_COMPLETE]
         for status in statuses:
             work_order = WorkOrder.objects.create(
                 job=self.job,

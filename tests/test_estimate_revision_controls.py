@@ -56,7 +56,7 @@ class EstimateCreationControlTests(TestCase):
         self.assertIsNotNone(estimate)
         current_year = timezone.now().year
         self.assertEqual(estimate.estimate_number, f'EST-{current_year}-0001')
-        self.assertEqual(estimate.status, 'draft')
+        self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
         self.assertEqual(estimate.version, 1)
 
     def test_cannot_create_second_estimate_draft(self):
@@ -66,7 +66,7 @@ class EstimateCreationControlTests(TestCase):
             job=self.job,
             estimate_number='EST-001',
             version=1,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Try to create second estimate
@@ -84,7 +84,7 @@ class EstimateCreationControlTests(TestCase):
             job=self.job,
             estimate_number='EST-001',
             version=1,
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         # Try to create second estimate
@@ -102,7 +102,7 @@ class EstimateCreationControlTests(TestCase):
             job=self.job,
             estimate_number='EST-001',
             version=1,
-            status='superseded',
+            status=Estimate.STATUS_SUPERSEDED,
             closed_date=timezone.now()
         )
 
@@ -114,9 +114,9 @@ class EstimateCreationControlTests(TestCase):
         self.assertEqual(response.status_code, 302)
 
         # New estimate should be created
-        new_estimate = Estimate.objects.filter(job=self.job).exclude(status='superseded').first()
+        new_estimate = Estimate.objects.filter(job=self.job).exclude(status=Estimate.STATUS_SUPERSEDED).first()
         self.assertIsNotNone(new_estimate)
-        self.assertEqual(new_estimate.status, 'draft')
+        self.assertEqual(new_estimate.status, Job.STATUS_DRAFT)
 
     def test_job_detail_shows_create_button_when_no_estimates(self):
         """Test job detail shows create button when no estimates exist."""
@@ -133,7 +133,7 @@ class EstimateCreationControlTests(TestCase):
             job=self.job,
             estimate_number='EST-001',
             version=1,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         url = reverse('jobs:detail', args=[self.job.job_id])
@@ -180,7 +180,7 @@ class EstimateRevisionTests(TestCase):
             job=self.job,
             estimate_number='EST-001',
             version=1,
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         # Create some line items
@@ -238,11 +238,11 @@ class EstimateRevisionTests(TestCase):
         self.assertIsNotNone(new_estimate)
         self.assertEqual(new_estimate.estimate_number, 'EST-001')
         self.assertEqual(new_estimate.version, 2)
-        self.assertEqual(new_estimate.status, 'draft')
+        self.assertEqual(new_estimate.status, Estimate.STATUS_DRAFT)
 
         # Check parent marked as superseded
         self.estimate.refresh_from_db()
-        self.assertEqual(self.estimate.status, 'superseded')
+        self.assertEqual(self.estimate.status, Estimate.STATUS_SUPERSEDED)
         self.assertIsNotNone(self.estimate.closed_date)
 
     def test_cannot_revise_draft_estimate(self):
@@ -252,7 +252,7 @@ class EstimateRevisionTests(TestCase):
             job=self.job,
             estimate_number='EST-002',
             version=1,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         url = reverse('estimates:estimate_revise', args=[draft_estimate.estimate_id])
@@ -271,7 +271,7 @@ class EstimateRevisionTests(TestCase):
 
         # Original should remain draft
         draft_estimate.refresh_from_db()
-        self.assertEqual(draft_estimate.status, 'draft')
+        self.assertEqual(draft_estimate.status, Estimate.STATUS_DRAFT)
 
     def test_line_items_copied_during_revision(self):
         """Test that line items are copied to new revision."""
@@ -349,7 +349,7 @@ class EstimateRevisionTests(TestCase):
             job=self.job,
             estimate_number='EST-003',
             version=1,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         url = reverse('estimates:estimate_detail', args=[draft_estimate.estimate_id])
@@ -360,7 +360,7 @@ class EstimateRevisionTests(TestCase):
 
     def test_revise_button_hidden_for_superseded(self):
         """Test that revise button is hidden for superseded estimates."""
-        self.estimate.status = 'superseded'
+        self.estimate.status = Estimate.STATUS_SUPERSEDED
         self.estimate.save()
 
         url = reverse('estimates:estimate_detail', args=[self.estimate.estimate_id])
@@ -381,7 +381,7 @@ class EstimateRevisionTests(TestCase):
         ).first()
 
         # Mark rev1 as open and create another revision
-        rev1.status = 'open'
+        rev1.status = Estimate.STATUS_OPEN
         rev1.save()
 
         url = reverse('estimates:estimate_revise', args=[rev1.estimate_id])
@@ -405,9 +405,9 @@ class EstimateRevisionTests(TestCase):
         self.estimate.refresh_from_db()
         rev1.refresh_from_db()
 
-        self.assertEqual(self.estimate.status, 'superseded')
-        self.assertEqual(rev1.status, 'superseded')
-        self.assertEqual(rev2.status, 'draft')
+        self.assertEqual(self.estimate.status, Estimate.STATUS_SUPERSEDED)
+        self.assertEqual(rev1.status, Estimate.STATUS_SUPERSEDED)
+        self.assertEqual(rev2.status, Estimate.STATUS_DRAFT)
 
 
 class EstimateWorkflowIntegrationTests(TestCase):
@@ -454,14 +454,14 @@ class EstimateWorkflowIntegrationTests(TestCase):
         estimate_v1 = Estimate.objects.filter(job=self.job).first()
         self.assertIsNotNone(estimate_v1)
         self.assertEqual(estimate_v1.version, 1)
-        self.assertEqual(estimate_v1.status, 'draft')
+        self.assertEqual(estimate_v1.status, Job.STATUS_DRAFT)
 
         # Step 2: Try to create another - should redirect
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
 
         # Step 3: Mark as open
-        estimate_v1.status = 'open'
+        estimate_v1.status = Estimate.STATUS_OPEN
         estimate_v1.save()
 
         # Step 4: Revise the estimate
@@ -470,12 +470,12 @@ class EstimateWorkflowIntegrationTests(TestCase):
 
         estimate_v2 = Estimate.objects.filter(job=self.job, version=2).first()
         self.assertIsNotNone(estimate_v2)
-        self.assertEqual(estimate_v2.status, 'draft')
+        self.assertEqual(estimate_v2.status, Job.STATUS_DRAFT)
         self.assertEqual(estimate_v2.parent, estimate_v1)
 
         # Step 5: Check original is superseded
         estimate_v1.refresh_from_db()
-        self.assertEqual(estimate_v1.status, 'superseded')
+        self.assertEqual(estimate_v1.status, Estimate.STATUS_SUPERSEDED)
 
         # Step 6: Cannot create new estimate while v2 exists
         url = reverse('estimates:estimate_create_for_job', args=[self.job.job_id])

@@ -231,10 +231,10 @@ class BillDraftStateValidationTest(TestCase):
     def test_cannot_transition_from_draft_without_line_items(self):
         """Test that Bill cannot transition from draft to received without line items."""
         # Verify bill is in draft status
-        self.assertEqual(self.bill.status, 'draft')
+        self.assertEqual(self.bill.status, Bill.STATUS_DRAFT)
 
         # Try to transition to received without line items
-        self.bill.status = 'received'
+        self.bill.status = Bill.STATUS_RECEIVED
 
         with self.assertRaises(ValidationError) as context:
             self.bill.save()
@@ -255,17 +255,17 @@ class BillDraftStateValidationTest(TestCase):
         self.assertEqual(BillLineItem.objects.filter(bill=self.bill).count(), 1)
 
         # Now transition to received should work
-        self.bill.status = 'received'
+        self.bill.status = Bill.STATUS_RECEIVED
         self.bill.save()
 
         # Verify status changed
         self.bill.refresh_from_db()
-        self.assertEqual(self.bill.status, 'received')
+        self.assertEqual(self.bill.status, Bill.STATUS_RECEIVED)
 
     def test_can_stay_in_draft_without_line_items(self):
         """Test that Bill can remain in draft status without line items."""
         # Verify bill is in draft status
-        self.assertEqual(self.bill.status, 'draft')
+        self.assertEqual(self.bill.status, Bill.STATUS_DRAFT)
 
         # Update other fields while staying in draft
         self.bill.vendor_invoice_number = 'VIN001-UPDATED'
@@ -274,7 +274,7 @@ class BillDraftStateValidationTest(TestCase):
         # Should succeed
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.vendor_invoice_number, 'VIN001-UPDATED')
-        self.assertEqual(self.bill.status, 'draft')
+        self.assertEqual(self.bill.status, Bill.STATUS_DRAFT)
 
     def test_transitions_after_draft_not_affected_by_line_item_count(self):
         """Test that transitions after draft don't check line item count."""
@@ -287,22 +287,22 @@ class BillDraftStateValidationTest(TestCase):
         )
 
         # Transition to received
-        self.bill.status = 'received'
+        self.bill.status = Bill.STATUS_RECEIVED
         self.bill.save()
 
         # Now delete the line item
         BillLineItem.objects.filter(bill=self.bill).delete()
 
         # Transition to partly_paid should still work (no line item check after draft)
-        self.bill.status = 'partly_paid'
+        self.bill.status = Bill.STATUS_PARTLY_PAID
         self.bill.save()
 
         self.bill.refresh_from_db()
-        self.assertEqual(self.bill.status, 'partly_paid')
+        self.assertEqual(self.bill.status, Bill.STATUS_PARTLY_PAID)
 
     def test_validation_message_is_clear(self):
         """Test that validation error message is clear and helpful."""
-        self.bill.status = 'received'
+        self.bill.status = Bill.STATUS_RECEIVED
 
         with self.assertRaises(ValidationError) as context:
             self.bill.save()

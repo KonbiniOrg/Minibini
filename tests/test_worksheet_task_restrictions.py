@@ -39,7 +39,7 @@ class WorksheetTaskRestrictionTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-TEST-001',
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
 
         # Create task mapping for test
@@ -53,19 +53,19 @@ class WorksheetTaskRestrictionTests(TestCase):
         # Create worksheets in different states
         self.draft_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
         self.final_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='final',
+            status=EstWorksheet.STATUS_FINAL,
             version=2
         )
 
         self.superseded_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='superseded',
+            status=EstWorksheet.STATUS_SUPERSEDED,
             version=3
         )
 
@@ -325,7 +325,7 @@ class WorksheetTaskWorkflowTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-TEST-001',
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
 
         # Create task mapping
@@ -341,7 +341,7 @@ class WorksheetTaskWorkflowTests(TestCase):
         # Create draft worksheet
         worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
@@ -361,7 +361,7 @@ class WorksheetTaskWorkflowTests(TestCase):
         self.assertEqual(Task.objects.filter(est_worksheet=worksheet).count(), 1)
 
         # Mark worksheet as final
-        worksheet.status = 'final'
+        worksheet.status = EstWorksheet.STATUS_FINAL
         worksheet.save()
 
         # Attempt to add another task

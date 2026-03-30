@@ -46,7 +46,7 @@ class ReorderRequiresPostTestBase(TestCase):
             job_number='JOB-001',
             name='Test Job',
             contact=self.contact,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
 
@@ -59,7 +59,7 @@ class EstimateReorderLineItemTest(ReorderRequiresPostTestBase):
         self.estimate = Estimate.objects.create(
             estimate_number='EST-001',
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
         self.line_item1 = EstimateLineItem.objects.create(
@@ -113,7 +113,7 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
         self.estimate = Estimate.objects.create(
             estimate_number='EST-001',
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
         self.worksheet = EstWorksheet.objects.create(
@@ -168,7 +168,7 @@ class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
         self.estimate = Estimate.objects.create(
             estimate_number='EST-001',
             job=self.job,
-            status='accepted',
+            status=Estimate.STATUS_ACCEPTED,
             version=1
         )
         self.worksheet = EstWorksheet.objects.create(
@@ -178,7 +178,7 @@ class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
         )
         self.work_order = WorkOrder.objects.create(
             job=self.job,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         self.task1 = Task.objects.create(
             work_order=self.work_order,
@@ -227,7 +227,7 @@ class InvoiceReorderLineItemTest(ReorderRequiresPostTestBase):
         self.invoice = Invoice.objects.create(
             invoice_number='INV-001',
             job=self.job,
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
         self.line_item1 = InvoiceLineItem.objects.create(
             invoice=self.invoice,
@@ -280,7 +280,7 @@ class PurchaseOrderReorderLineItemTest(ReorderRequiresPostTestBase):
         self.po = PurchaseOrder.objects.create(
             po_number='PO-001',
             business=self.business,
-            status='draft'
+            status=PurchaseOrder.STATUS_DRAFT
         )
         self.line_item1 = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po,
@@ -334,7 +334,7 @@ class BillReorderLineItemTest(ReorderRequiresPostTestBase):
             bill_number='BILL-001',
             business=self.business,
             vendor_invoice_number='VINV-001',
-            status='draft'
+            status=Bill.STATUS_DRAFT
         )
         self.line_item1 = BillLineItem.objects.create(
             bill=self.bill,

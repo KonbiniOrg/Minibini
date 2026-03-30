@@ -51,7 +51,7 @@ class WorksheetFinalizationTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-TEST-001',
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
 
         # Create task mapping for test
@@ -65,7 +65,7 @@ class WorksheetFinalizationTests(TestCase):
         # Create draft worksheet
         self.worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
@@ -86,7 +86,7 @@ class WorksheetFinalizationTests(TestCase):
     def test_worksheet_marked_final_after_generating_estimate(self):
         """Test that worksheet is marked as final after generating an estimate."""
         # Verify worksheet starts as draft
-        self.assertEqual(self.worksheet.status, 'draft')
+        self.assertEqual(self.worksheet.status, EstWorksheet.STATUS_DRAFT)
 
         # Generate estimate via POST request
         url = reverse('estimates:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
@@ -99,7 +99,7 @@ class WorksheetFinalizationTests(TestCase):
         self.worksheet.refresh_from_db()
 
         # Verify worksheet is now final
-        self.assertEqual(self.worksheet.status, 'final')
+        self.assertEqual(self.worksheet.status, EstWorksheet.STATUS_FINAL)
 
         # Verify an estimate was created
         estimates = Estimate.objects.filter(job=self.job)
@@ -108,7 +108,7 @@ class WorksheetFinalizationTests(TestCase):
     def test_cannot_generate_estimate_from_final_worksheet(self):
         """Test that generating an estimate from a final worksheet is rejected."""
         # Mark worksheet as final
-        self.worksheet.status = 'final'
+        self.worksheet.status = EstWorksheet.STATUS_FINAL
         self.worksheet.save()
 
         # Attempt to generate estimate
@@ -132,7 +132,7 @@ class WorksheetFinalizationTests(TestCase):
     def test_cannot_generate_estimate_from_superseded_worksheet(self):
         """Test that generating an estimate from a superseded worksheet is rejected."""
         # Mark worksheet as superseded
-        self.worksheet.status = 'superseded'
+        self.worksheet.status = EstWorksheet.STATUS_SUPERSEDED
         self.worksheet.save()
 
         # Attempt to generate estimate
@@ -156,7 +156,7 @@ class WorksheetFinalizationTests(TestCase):
     def test_generate_estimate_link_hidden_for_final_worksheet(self):
         """Test that the Generate Estimate link is hidden for final worksheets."""
         # Mark worksheet as final
-        self.worksheet.status = 'final'
+        self.worksheet.status = EstWorksheet.STATUS_FINAL
         self.worksheet.save()
 
         # Get worksheet detail page
@@ -174,7 +174,7 @@ class WorksheetFinalizationTests(TestCase):
     def test_generate_estimate_link_visible_for_draft_worksheet(self):
         """Test that the Generate Estimate link is visible for draft worksheets."""
         # Worksheet is already draft from setUp
-        self.assertEqual(self.worksheet.status, 'draft')
+        self.assertEqual(self.worksheet.status, EstWorksheet.STATUS_DRAFT)
 
         # Get worksheet detail page
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
@@ -201,7 +201,7 @@ class WorksheetFinalizationTests(TestCase):
 
         # Reload worksheet
         self.worksheet.refresh_from_db()
-        self.assertEqual(self.worksheet.status, 'final')
+        self.assertEqual(self.worksheet.status, EstWorksheet.STATUS_FINAL)
 
         # Attempt to generate second estimate
         response2 = self.client.post(url)
@@ -230,12 +230,12 @@ class WorksheetFinalizationTests(TestCase):
 
         # Worksheet should still be draft
         self.worksheet.refresh_from_db()
-        self.assertEqual(self.worksheet.status, 'draft')
+        self.assertEqual(self.worksheet.status, EstWorksheet.STATUS_DRAFT)
 
     def test_get_request_rejected_for_final_worksheet(self):
         """Test that GET request is rejected for final worksheet."""
         # Mark worksheet as final
-        self.worksheet.status = 'final'
+        self.worksheet.status = EstWorksheet.STATUS_FINAL
         self.worksheet.save()
 
         url = reverse('estimates:estworksheet_generate_estimate', args=[self.worksheet.est_worksheet_id])
@@ -278,7 +278,7 @@ class WorksheetEstimateIntegrationTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-TEST-001',
             contact=self.contact,
-            status='approved'
+            status=Job.STATUS_APPROVED
         )
 
         # Create task mapping
@@ -301,7 +301,7 @@ class WorksheetEstimateIntegrationTests(TestCase):
         # Create draft worksheet
         worksheet = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=1
         )
 
@@ -316,18 +316,18 @@ class WorksheetEstimateIntegrationTests(TestCase):
         )
 
         # Verify worksheet is draft
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
 
         # Generate estimate using service
         estimate = self.service.generate_estimate_from_worksheet(worksheet)
 
         # Manually mark worksheet as final (simulating what the view does)
-        worksheet.status = 'final'
+        worksheet.status = EstWorksheet.STATUS_FINAL
         worksheet.save()
 
         # Verify worksheet is final
         worksheet.refresh_from_db()
-        self.assertEqual(worksheet.status, 'final')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
 
         # Verify estimate was created
         self.assertIsNotNone(estimate)
@@ -341,14 +341,14 @@ class WorksheetEstimateIntegrationTests(TestCase):
         # Create and finalize first worksheet
         worksheet_v1 = EstWorksheet.objects.create(
             job=self.job,
-            status='final',
+            status=EstWorksheet.STATUS_FINAL,
             version=1
         )
 
         # Create revised worksheet
         worksheet_v2 = EstWorksheet.objects.create(
             job=self.job,
-            status='draft',
+            status=Job.STATUS_DRAFT,
             version=2,
             parent=worksheet_v1
         )
@@ -371,9 +371,9 @@ class WorksheetEstimateIntegrationTests(TestCase):
         self.assertEqual(estimate.job, self.job)
 
         # Mark v2 as final
-        worksheet_v2.status = 'final'
+        worksheet_v2.status = EstWorksheet.STATUS_FINAL
         worksheet_v2.save()
 
         # Verify v2 is final
         worksheet_v2.refresh_from_db()
-        self.assertEqual(worksheet_v2.status, 'final')
+        self.assertEqual(worksheet_v2.status, EstWorksheet.STATUS_FINAL)

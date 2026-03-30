@@ -5,34 +5,28 @@ from apps.core.models import BaseLineItem
 from apps.core.history import history
 
 
-# Status choices for PurchaseOrder
-PO_STATUS_CHOICES = [
-    ('draft', 'Draft'),
-    ('issued', 'Issued'),
-    ('partly_received', 'Partly Received'),
-    ('received_in_full', 'Received in Full'),
-    ('cancelled', 'Cancelled'),
-]
-
-# Status choices for Bill
-BILL_STATUS_CHOICES = [
-    ('draft', 'Draft'),
-    ('received', 'Received'),
-    ('partly_paid', 'Partly Paid'),
-    ('paid_in_full', 'Paid in Full'),
-    ('cancelled', 'Cancelled'),
-    ('refunded', 'Refunded'),
-]
-
-
 @history(exclude=['po_id'])
 class PurchaseOrder(models.Model):
+    STATUS_DRAFT = 'draft'
+    STATUS_ISSUED = 'issued'
+    STATUS_PARTLY_RECEIVED = 'partly_received'
+    STATUS_RECEIVED_IN_FULL = 'received_in_full'
+    STATUS_CANCELLED = 'cancelled'
+
+    PO_STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_ISSUED, 'Issued'),
+        (STATUS_PARTLY_RECEIVED, 'Partly Received'),
+        (STATUS_RECEIVED_IN_FULL, 'Received in Full'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
+
     po_id = models.AutoField(primary_key=True)
     # Business is required; Contact is optional but if provided, must have a Business
     business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
     po_number = models.CharField(max_length=50, unique=True)
-    status = models.CharField(max_length=20, choices=PO_STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=20, choices=PO_STATUS_CHOICES, default=STATUS_DRAFT)
 
     # Date fields
     created_date = models.DateTimeField(default=timezone.now)
@@ -65,11 +59,11 @@ class PurchaseOrder(models.Model):
 
         # Define valid transitions for each state
         VALID_TRANSITIONS = {
-            'draft': ['issued'],
-            'issued': ['partly_received', 'received_in_full', 'cancelled'],
-            'partly_received': ['received_in_full'],
-            'received_in_full': [],  # Terminal state
-            'cancelled': [],  # Terminal state
+            PurchaseOrder.STATUS_DRAFT: [PurchaseOrder.STATUS_ISSUED],
+            PurchaseOrder.STATUS_ISSUED: [PurchaseOrder.STATUS_PARTLY_RECEIVED, PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED],
+            PurchaseOrder.STATUS_PARTLY_RECEIVED: [PurchaseOrder.STATUS_RECEIVED_IN_FULL],
+            PurchaseOrder.STATUS_RECEIVED_IN_FULL: [],  # Terminal state
+            PurchaseOrder.STATUS_CANCELLED: [],  # Terminal state
         }
 
         # Check if this is an update
@@ -131,15 +125,15 @@ class PurchaseOrder(models.Model):
                 # Handle state transition date setting
                 if old_status != self.status:
                     # Transitioning to 'issued' - set issued_date
-                    if self.status == 'issued' and not self.issued_date:
+                    if self.status == PurchaseOrder.STATUS_ISSUED and not self.issued_date:
                         self.issued_date = timezone.now()
 
                     # Transitioning to 'received_in_full' - set received_date
-                    if self.status == 'received_in_full' and not self.received_date:
+                    if self.status == PurchaseOrder.STATUS_RECEIVED_IN_FULL and not self.received_date:
                         self.received_date = timezone.now()
 
                     # Transitioning to 'cancelled' - set cancel_date
-                    if self.status == 'cancelled' and not self.cancel_date:
+                    if self.status == PurchaseOrder.STATUS_CANCELLED and not self.cancel_date:
                         self.cancel_date = timezone.now()
 
             except PurchaseOrder.DoesNotExist:
@@ -153,7 +147,7 @@ class PurchaseOrder(models.Model):
 
     def delete(self, *args, **kwargs):
         """Override delete to enforce that only draft POs can be deleted."""
-        if self.status != 'draft':
+        if self.status != PurchaseOrder.STATUS_DRAFT:
             from django.core.exceptions import PermissionDenied
             raise PermissionDenied(
                 f'Cannot delete Purchase Order {self.po_number}. '
@@ -170,6 +164,22 @@ class PurchaseOrder(models.Model):
 
 @history(exclude=['bill_id'])
 class Bill(models.Model):
+    STATUS_DRAFT = 'draft'
+    STATUS_RECEIVED = 'received'
+    STATUS_PARTLY_PAID = 'partly_paid'
+    STATUS_PAID_IN_FULL = 'paid_in_full'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_REFUNDED = 'refunded'
+
+    BILL_STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_RECEIVED, 'Received'),
+        (STATUS_PARTLY_PAID, 'Partly Paid'),
+        (STATUS_PAID_IN_FULL, 'Paid in Full'),
+        (STATUS_CANCELLED, 'Cancelled'),
+        (STATUS_REFUNDED, 'Refunded'),
+    ]
+
     bill_id = models.AutoField(primary_key=True)
     bill_number = models.CharField(max_length=50, unique=True)
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, null=True, blank=True)
@@ -177,7 +187,7 @@ class Bill(models.Model):
     business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
     vendor_invoice_number = models.CharField(max_length=50)
-    status = models.CharField(max_length=20, choices=BILL_STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=20, choices=BILL_STATUS_CHOICES, default=STATUS_DRAFT)
 
     # Date fields
     created_date = models.DateTimeField(default=timezone.now)
@@ -213,7 +223,7 @@ class Bill(models.Model):
                 )
 
         # Validate that PO is in issued or later status (not draft)
-        if self.purchase_order and self.purchase_order.status == 'draft':
+        if self.purchase_order and self.purchase_order.status == PurchaseOrder.STATUS_DRAFT:
             raise ValidationError(
                 'Bills can only be created from Purchase Orders that are in Issued or later status. '
                 f'Purchase Order {self.purchase_order.po_number} is currently in Draft status.'
@@ -221,12 +231,12 @@ class Bill(models.Model):
 
         # Define valid transitions for each state
         VALID_TRANSITIONS = {
-            'draft': ['received'],
-            'received': ['partly_paid', 'paid_in_full', 'cancelled'],
-            'partly_paid': ['paid_in_full'],
-            'paid_in_full': ['refunded'],
-            'cancelled': [],  # Terminal state
-            'refunded': [],  # Terminal state
+            Bill.STATUS_DRAFT: [Bill.STATUS_RECEIVED],
+            Bill.STATUS_RECEIVED: [Bill.STATUS_PARTLY_PAID, Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED],
+            Bill.STATUS_PARTLY_PAID: [Bill.STATUS_PAID_IN_FULL],
+            Bill.STATUS_PAID_IN_FULL: [Bill.STATUS_REFUNDED],
+            Bill.STATUS_CANCELLED: [],  # Terminal state
+            Bill.STATUS_REFUNDED: [],  # Terminal state
         }
 
         # Check if this is an update
@@ -261,7 +271,7 @@ class Bill(models.Model):
                     )
 
                 # If transitioning out of draft, ensure at least one line item exists
-                if old_status == 'draft' and self.status != 'draft':
+                if old_status == Bill.STATUS_DRAFT and self.status != Bill.STATUS_DRAFT:
                     line_item_count = BillLineItem.objects.filter(bill=self).count()
                     if line_item_count == 0:
                         raise ValidationError(
@@ -297,15 +307,15 @@ class Bill(models.Model):
                 # Handle state transition date setting
                 if old_status != self.status:
                     # Transitioning to 'received' - set received_date
-                    if self.status == 'received' and not self.received_date:
+                    if self.status == Bill.STATUS_RECEIVED and not self.received_date:
                         self.received_date = timezone.now()
 
                     # Transitioning to 'paid_in_full' - set paid_date
-                    if self.status == 'paid_in_full' and not self.paid_date:
+                    if self.status == Bill.STATUS_PAID_IN_FULL and not self.paid_date:
                         self.paid_date = timezone.now()
 
                     # Transitioning to 'cancelled' - set cancelled_date
-                    if self.status == 'cancelled' and not self.cancelled_date:
+                    if self.status == Bill.STATUS_CANCELLED and not self.cancelled_date:
                         self.cancelled_date = timezone.now()
 
             except Bill.DoesNotExist:
@@ -319,7 +329,7 @@ class Bill(models.Model):
 
     def delete(self, *args, **kwargs):
         """Override delete to enforce that only draft Bills can be deleted."""
-        if self.status != 'draft':
+        if self.status != Bill.STATUS_DRAFT:
             from django.core.exceptions import PermissionDenied
             raise PermissionDenied(
                 f'Cannot delete Bill {self.bill_number}. '

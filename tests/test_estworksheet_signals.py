@@ -31,13 +31,13 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         worksheet = EstWorksheet.objects.create(
             job=self.job,
             estimate=estimate,
-            status='draft'
+            status=Estimate.STATUS_DRAFT
         )
 
         # Mock the signal to check if it's called
@@ -65,19 +65,19 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         worksheet = EstWorksheet.objects.create(
             job=self.job,
             estimate=estimate,
-            status='final'
+            status=EstWorksheet.STATUS_FINAL
         )
 
         with patch('apps.estimates.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
             reset_queries()
             # Change from 'open' to 'accepted' - both map to 'final' for worksheets
-            estimate.status = 'accepted'
+            estimate.status = Estimate.STATUS_ACCEPTED
             estimate.save()
 
             # Signal should NOT have been called
@@ -91,38 +91,38 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         worksheet = EstWorksheet.objects.create(
             job=self.job,
             estimate=estimate,
-            status='draft'
+            status=Estimate.STATUS_DRAFT
         )
 
         with patch('apps.estimates.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
             # Change from 'draft' to 'open' - should trigger signal
-            estimate.status = 'open'
+            estimate.status = Estimate.STATUS_OPEN
             estimate.save()
 
             # Signal SHOULD have been called
             mock_signal.assert_called_once()
             call_kwargs = mock_signal.call_args[1]
             self.assertEqual(call_kwargs['estimate'], estimate)
-            self.assertEqual(call_kwargs['new_worksheet_status'], 'final')
+            self.assertEqual(call_kwargs['new_worksheet_status'], EstWorksheet.STATUS_FINAL)
 
     def test_no_database_hit_when_no_worksheets(self):
         """Test that UPDATE query affects 0 rows when no worksheets exist."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # No worksheets created
 
         # Change status to trigger signal
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
         # Check that no worksheets were affected
@@ -134,15 +134,15 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         # Test mapping function
-        self.assertEqual(estimate._get_worksheet_status('draft'), 'draft')
-        self.assertEqual(estimate._get_worksheet_status('open'), 'final')
-        self.assertEqual(estimate._get_worksheet_status('accepted'), 'final')
-        self.assertEqual(estimate._get_worksheet_status('rejected'), 'final')
-        self.assertEqual(estimate._get_worksheet_status('superseded'), 'superseded')
+        self.assertEqual(estimate._get_worksheet_status(Estimate.STATUS_DRAFT), Estimate.STATUS_DRAFT)
+        self.assertEqual(estimate._get_worksheet_status(Estimate.STATUS_OPEN), EstWorksheet.STATUS_FINAL)
+        self.assertEqual(estimate._get_worksheet_status(Estimate.STATUS_ACCEPTED), EstWorksheet.STATUS_FINAL)
+        self.assertEqual(estimate._get_worksheet_status(Estimate.STATUS_REJECTED), EstWorksheet.STATUS_FINAL)
+        self.assertEqual(estimate._get_worksheet_status(Estimate.STATUS_SUPERSEDED), Estimate.STATUS_SUPERSEDED)
         self.assertIsNone(estimate._get_worksheet_status('invalid'))
 
 
@@ -162,7 +162,7 @@ class EstWorksheetSignalIntegrationTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         worksheet = EstWorksheet.objects.create(
@@ -171,29 +171,29 @@ class EstWorksheetSignalIntegrationTest(TestCase):
         )
 
         # Initial status should be draft
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
 
         # Change estimate to open
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
         # Refresh and check worksheet
         worksheet.refresh_from_db()
-        self.assertEqual(worksheet.status, 'final')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
 
         # Change estimate to superseded
-        estimate.status = 'superseded'
+        estimate.status = Estimate.STATUS_SUPERSEDED
         estimate.save()
 
         worksheet.refresh_from_db()
-        self.assertEqual(worksheet.status, 'superseded')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_SUPERSEDED)
 
     def test_multiple_worksheets_updated(self):
         """Test that multiple worksheets for the same estimate are updated."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         worksheet1 = EstWorksheet.objects.create(
@@ -207,27 +207,27 @@ class EstWorksheetSignalIntegrationTest(TestCase):
         )
 
         # Change estimate status
-        estimate.status = 'open'
+        estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
         # Both worksheets should be updated
         worksheet1.refresh_from_db()
         worksheet2.refresh_from_db()
-        self.assertEqual(worksheet1.status, 'final')
-        self.assertEqual(worksheet2.status, 'final')
+        self.assertEqual(worksheet1.status, EstWorksheet.STATUS_FINAL)
+        self.assertEqual(worksheet2.status, EstWorksheet.STATUS_FINAL)
 
     def test_only_matching_worksheets_updated(self):
         """Test that only worksheets for the changed estimate are updated."""
         estimate1 = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         estimate2 = Estimate.objects.create(
             job=self.job,
             estimate_number="EST002",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         worksheet1 = EstWorksheet.objects.create(
@@ -241,35 +241,35 @@ class EstWorksheetSignalIntegrationTest(TestCase):
         )
 
         # Change only estimate1
-        estimate1.status = 'open'
+        estimate1.status = Estimate.STATUS_OPEN
         estimate1.save()
 
         # Only worksheet1 should be updated
         worksheet1.refresh_from_db()
         worksheet2.refresh_from_db()
-        self.assertEqual(worksheet1.status, 'final')
-        self.assertEqual(worksheet2.status, 'draft')  # Unchanged
+        self.assertEqual(worksheet1.status, EstWorksheet.STATUS_FINAL)
+        self.assertEqual(worksheet2.status, Estimate.STATUS_DRAFT)  # Unchanged
 
     def test_already_correct_status_not_updated(self):
         """Test that worksheets with correct status are not updated unnecessarily."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         # Create worksheet that already has 'final' status
         worksheet = EstWorksheet.objects.create(
             job=self.job,
             estimate=estimate,
-            status='final'
+            status=EstWorksheet.STATUS_FINAL
         )
 
         # Track the worksheet's updated timestamp before
         original_status = worksheet.status
 
         # Change estimate from open to accepted (both map to 'final')
-        estimate.status = 'accepted'
+        estimate.status = Estimate.STATUS_ACCEPTED
         estimate.save()
 
         # Worksheet should still be 'final' and not have been touched
@@ -292,7 +292,7 @@ class EstWorksheetInitialStatusTest(TestCase):
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         worksheet = EstWorksheet.objects.create(
@@ -300,14 +300,14 @@ class EstWorksheetInitialStatusTest(TestCase):
             estimate=estimate
         )
 
-        self.assertEqual(worksheet.status, 'draft')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
 
     def test_worksheet_created_with_open_estimate(self):
         """Test worksheet created with open estimate starts as final."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='open'
+            status=Estimate.STATUS_OPEN
         )
 
         worksheet = EstWorksheet.objects.create(
@@ -315,7 +315,7 @@ class EstWorksheetInitialStatusTest(TestCase):
             estimate=estimate
         )
 
-        self.assertEqual(worksheet.status, 'final')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
 
     def test_worksheet_created_without_estimate(self):
         """Test worksheet created without estimate uses default status."""
@@ -323,14 +323,14 @@ class EstWorksheetInitialStatusTest(TestCase):
             job=self.job
         )
 
-        self.assertEqual(worksheet.status, 'draft')  # Default
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)  # Default
 
     def test_worksheet_status_not_changed_on_update(self):
         """Test that worksheet status isn't automatically changed on save after creation."""
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number="EST001",
-            status='draft'
+            status=Job.STATUS_DRAFT
         )
 
         worksheet = EstWorksheet.objects.create(
@@ -339,12 +339,12 @@ class EstWorksheetInitialStatusTest(TestCase):
         )
 
         # Manually change worksheet status
-        worksheet.status = 'final'
+        worksheet.status = EstWorksheet.STATUS_FINAL
         worksheet.save()
 
         # Status should remain as manually set
         worksheet.refresh_from_db()
-        self.assertEqual(worksheet.status, 'final')
+        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
 
         # Even if estimate is still draft
-        self.assertEqual(estimate.status, 'draft')
+        self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)

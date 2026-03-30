@@ -37,13 +37,13 @@ class WorksheetAPITest(BaseTestCase):
             self.assertEqual(response.status_code, 200)
 
     def test_generate_estimate(self):
-        ws = EstWorksheet.objects.filter(status='draft').first()
+        ws = EstWorksheet.objects.filter(status=EstWorksheet.STATUS_DRAFT).first()
         if ws:
             response = self.client.post(f'/api/est-worksheets/{ws.pk}/generate-estimate/')
             self.assertIn(response.status_code, [200, 400])
 
     def test_revise_worksheet(self):
-        ws = EstWorksheet.objects.filter(status='final').first()
+        ws = EstWorksheet.objects.filter(status=EstWorksheet.STATUS_FINAL).first()
         if ws:
             response = self.client.post(f'/api/est-worksheets/{ws.pk}/revise/')
             self.assertEqual(response.status_code, 200)

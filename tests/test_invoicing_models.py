@@ -66,11 +66,11 @@ class InvoiceModelTest(TestCase):
         invoice = Invoice.objects.create(
             job=self.job,
             invoice_number="INV001",
-            status='open'  # Use valid status from INVOICE_STATUS_CHOICES
+            status=Invoice.STATUS_OPEN  # Use valid status from INVOICE_STATUS_CHOICES
         )
         self.assertEqual(invoice.job, self.job)
         self.assertEqual(invoice.invoice_number, "INV001")
-        self.assertEqual(invoice.status, 'open')
+        self.assertEqual(invoice.status, Invoice.STATUS_OPEN)
         
     def test_invoice_str_method(self):
         invoice = Invoice.objects.create(
@@ -80,13 +80,13 @@ class InvoiceModelTest(TestCase):
         self.assertEqual(str(invoice), "Invoice INV002")
         
     def test_invoice_default_status(self):
-        """Test that Invoice default status is 'draft' (a valid choice)."""
+        """Test that Invoice default status is Invoice.STATUS_DRAFT (a valid choice)."""
         invoice = Invoice.objects.create(
             job=self.job,
             invoice_number="INV003"
         )
         # Default status must be 'draft' - a valid choice in INVOICE_STATUS_CHOICES
-        self.assertEqual(invoice.status, 'draft')
+        self.assertEqual(invoice.status, Invoice.STATUS_DRAFT)
 
     def test_invoice_default_status_is_valid_choice(self):
         """Test that the default status is in the valid choices list."""
@@ -102,9 +102,9 @@ class InvoiceModelTest(TestCase):
         invoice = Invoice.objects.create(
             job=self.job,
             invoice_number="INV004",
-            status='cancelled'
+            status=Job.STATUS_CANCELLED
         )
-        self.assertEqual(invoice.status, 'cancelled')
+        self.assertEqual(invoice.status, Invoice.STATUS_CANCELLED)
 
 
 class InvoiceLineItemModelTest(TestCase):
@@ -142,7 +142,7 @@ class InvoiceLineItemModelTest(TestCase):
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,
             po_number="PO001",
-            status='issued'
+            status=PurchaseOrder.STATUS_ISSUED
         )
         self.bill = Bill.objects.create(
             purchase_order=self.purchase_order,
