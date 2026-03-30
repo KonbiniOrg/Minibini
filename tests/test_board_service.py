@@ -1,8 +1,14 @@
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
+
 from tests.base import FixtureTestCase
 from apps.jobs.models import Job, WorkOrder, Task
 from apps.contacts.models import Contact
 from apps.estimates.models import Estimate, EstWorksheet
 from apps.core.models import Configuration
+
+User = get_user_model()
 
 
 class PipelineSubStatusTest(FixtureTestCase):
@@ -121,3 +127,104 @@ class ApprovedSubStatusTest(FixtureTestCase):
         Invoice.objects.create(job=self.job, invoice_number='INV-TEST-001', status='open')
         result = BoardService.compute_sub_status(self.job)
         self.assertEqual(result, 'invoice-sent')
+
+
+class BoardDataAssemblyTest(FixtureTestCase):
+    """Test the full board data assembly."""
+
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days',
+            defaults={'value': '14'}
+        )
+        self.contact = Contact.objects.first()
+        self.worker = User.objects.create_user(
+            username='worker1', password='testpass', first_name='Mike', last_name='Roberts'
+        )
+
+    def test_get_board_data_returns_all_sections(self):
+        from apps.jobs.services.board_service import BoardService
+        data = BoardService.get_board_data()
+        self.assertIn('pipeline', data)
+        self.assertIn('approved', data)
+        self.assertIn('closed', data)
+        self.assertIn('jobs', data['approved'])
+        self.assertIn('workers', data['approved'])
+        self.assertIn('unassigned', data['approved'])
+
+    def test_pipeline_contains_draft_and_submitted_jobs(self):
+        from apps.jobs.services.board_service import BoardService
+        Job.objects.create(
+            job_number='JOB-DRAFT-001', name='Draft Job',
+            status='draft', contact=self.contact,
+        )
+        Job.objects.create(
+            job_number='JOB-SUB-001', name='Submitted Job',
+            status='submitted', contact=self.contact,
+        )
+        data = BoardService.get_board_data()
+        statuses = [j['status'] for j in data['pipeline']]
+        self.assertIn('draft', statuses)
+        self.assertIn('submitted', statuses)
+
+    def test_approved_jobs_in_approved_section(self):
+        from apps.jobs.services.board_service import BoardService
+        Job.objects.create(
+            job_number='JOB-APP-001', name='Approved Job',
+            status='approved', contact=self.contact,
+        )
+        data = BoardService.get_board_data()
+        self.assertEqual(len(data['approved']['jobs']), 1)
+        self.assertEqual(data['approved']['jobs'][0]['name'], 'Approved Job')
+
+    def test_closed_excludes_old_jobs(self):
+        from apps.jobs.services.board_service import BoardService
+        old_job = Job.objects.create(
+            job_number='JOB-OLD-001', name='Old Completed',
+            status='completed', contact=self.contact,
+        )
+        # Manually set completed_date to 30 days ago
+        Job.objects.filter(pk=old_job.pk).update(
+            completed_date=timezone.now() - timedelta(days=30)
+        )
+
+        recent_job = Job.objects.create(
+            job_number='JOB-NEW-001', name='Recent Completed',
+            status='completed', contact=self.contact,
+            completed_date=timezone.now(),
+        )
+        data = BoardService.get_board_data()
+        names = [j['name'] for j in data['closed']]
+        self.assertIn('Recent Completed', names)
+        self.assertNotIn('Old Completed', names)
+
+    def test_worker_tasks_grouped_by_assignee(self):
+        from apps.jobs.services.board_service import BoardService
+        job = Job.objects.create(
+            job_number='JOB-APP-001', name='Job',
+            status='approved', contact=self.contact,
+        )
+        wo = WorkOrder.objects.create(job=job)
+        Task.objects.create(
+            name='Assigned task', work_order=wo,
+            assignee=self.worker, worker_queue=1,
+        )
+        Task.objects.create(
+            name='Unassigned task', work_order=wo,
+        )
+        data = BoardService.get_board_data()
+        self.assertEqual(len(data['approved']['workers']), 1)
+        self.assertEqual(data['approved']['workers'][0]['user']['id'], self.worker.pk)
+        self.assertEqual(len(data['approved']['workers'][0]['tasks']), 1)
+        self.assertEqual(len(data['approved']['unassigned']), 1)
+
+    def test_jobs_include_sub_status(self):
+        from apps.jobs.services.board_service import BoardService
+        Job.objects.create(
+            job_number='JOB-DRAFT-001', name='Draft Job',
+            status='draft', contact=self.contact,
+        )
+        data = BoardService.get_board_data()
+        self.assertIn('sub_status', data['pipeline'][0])
+        self.assertEqual(data['pipeline'][0]['sub_status'], 'needs-scoping')
