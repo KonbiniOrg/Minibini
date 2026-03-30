@@ -27,6 +27,11 @@ class Invoice(models.Model):
     # date the estimate was Paid in Full, or marked Defaulted
     closed_date = models.DateTimeField(null=True, blank=True)
 
+    # QuickBooks Online sync
+    qbo_id = models.CharField(max_length=50, null=True)
+    qbo_payment_status = models.CharField(max_length=50, blank=True, default='')
+    qbo_amount_paid = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
     @property
     def customer_po_number(self):
         """Get customer PO number from the associated Job."""

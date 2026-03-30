@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
 from imap_tools import MailBox, AND
-from .models import Configuration, EmailRecord, TempEmail, LineItemType
+from .models import Configuration, EmailRecord, TempEmail, AccountingCategory
 
 
 class ServiceError(Exception):
@@ -864,7 +864,7 @@ class TaxCalculationService:
     Calculates tax for line items and documents.
 
     Supports:
-    - LineItemType default taxability
+    - AccountingCategory default taxability
     - Line item taxable_override
     - Line item tax_rate_override
     - Customer tax multiplier (for sales exemptions)
@@ -877,7 +877,7 @@ class TaxCalculationService:
         Determine if a line item is taxable.
 
         Uses taxable_override if set, otherwise falls back to
-        the line_item_type's default taxability.
+        the accounting_category's default taxability.
 
         Args:
             line_item: A BaseLineItem subclass instance
@@ -887,8 +887,8 @@ class TaxCalculationService:
         """
         if line_item.taxable_override is not None:
             return line_item.taxable_override
-        if line_item.line_item_type:
-            return line_item.line_item_type.taxable
+        if line_item.accounting_category:
+            return line_item.accounting_category.taxable
         return False  # Default to non-taxable if no type
 
     @staticmethod
@@ -988,29 +988,29 @@ class ConfigurationService:
             )
 
     @staticmethod
-    def create_line_item_type(**kwargs):
-        """Create a new LineItemType from field values."""
-        lit = LineItemType(**kwargs)
-        lit.full_clean()
-        lit.save()
-        return lit
+    def create_accounting_category(**kwargs):
+        """Create a new AccountingCategory from field values."""
+        cat = AccountingCategory(**kwargs)
+        cat.full_clean()
+        cat.save()
+        return cat
 
     @staticmethod
-    def update_line_item_type(pk, **kwargs):
-        """Update an existing LineItemType by PK.
+    def update_accounting_category(pk, **kwargs):
+        """Update an existing AccountingCategory by PK.
 
         Raises:
-            NotFoundError: if LineItemType not found
+            NotFoundError: if AccountingCategory not found
         """
         try:
-            lit = LineItemType.objects.get(pk=pk)
-        except LineItemType.DoesNotExist:
-            raise NotFoundError(f'LineItemType {pk} not found')
+            cat = AccountingCategory.objects.get(pk=pk)
+        except AccountingCategory.DoesNotExist:
+            raise NotFoundError(f'AccountingCategory {pk} not found')
         for field, value in kwargs.items():
-            setattr(lit, field, value)
-        lit.full_clean()
-        lit.save()
-        return lit
+            setattr(cat, field, value)
+        cat.full_clean()
+        cat.save()
+        return cat
 
 
 class OutboundEmailService:

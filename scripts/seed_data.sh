@@ -165,14 +165,14 @@ fi
 # Step 2: Line Item Types (skip if they already exist) (skip if they already exist)
 # ─────────────────────────────────────────────
 log "Ensuring Line Item Types exist..."
-post "/api/line-item-types/" '{"code":"SVC","name":"Service","taxable":false,"default_description":"Professional services and labor"}' > /dev/null 2>&1 || true
-post "/api/line-item-types/" '{"code":"MTL","name":"Material","taxable":true,"default_description":"Raw materials"}' > /dev/null 2>&1 || true
-post "/api/line-item-types/" '{"code":"PRD","name":"Product","taxable":true,"default_description":"Finished products"}' > /dev/null 2>&1 || true
-post "/api/line-item-types/" '{"code":"DLV","name":"Delivery","taxable":false,"default_description":"Shipping and delivery"}' > /dev/null 2>&1 || true
+post "/api/accounting-categories/" '{"code":"SVC","name":"Service","taxable":false,"default_description":"Professional services and labor"}' > /dev/null 2>&1 || true
+post "/api/accounting-categories/" '{"code":"MTL","name":"Material","taxable":true,"default_description":"Raw materials"}' > /dev/null 2>&1 || true
+post "/api/accounting-categories/" '{"code":"PRD","name":"Product","taxable":true,"default_description":"Finished products"}' > /dev/null 2>&1 || true
+post "/api/accounting-categories/" '{"code":"DLV","name":"Delivery","taxable":false,"default_description":"Shipping and delivery"}' > /dev/null 2>&1 || true
 info "Line item types OK"
 
 # Look up LIT IDs by code for use in templates and price list items
-LIT_JSON=$(curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" "$BASE/api/line-item-types/")
+LIT_JSON=$(curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" "$BASE/api/accounting-categories/")
 lit_id() { echo "$LIT_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); items=d.get('results',d) if isinstance(d,dict) else d; print(next(x['id'] for x in items if x['code']=='$1'))"; }
 LIT_SVC=$(lit_id "SVC")
 LIT_MTL=$(lit_id "MTL")
@@ -184,26 +184,26 @@ info "LIT IDs: SVC=$LIT_SVC MTL=$LIT_MTL PRD=$LIT_PRD DLV=$LIT_DLV"
 # Step 2b: Price List Items
 # ─────────────────────────────────────────────
 log "Creating Price List Items..."
-post "/api/price-list-items/" '{"code":"LAB001","units":"hour","description":"General Labor - per hour","purchase_price":"25.00","selling_price":"45.00","is_inventoried":false,"line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/price-list-items/" '{"code":"LAB002","units":"hour","description":"Skilled Labor - per hour","purchase_price":"45.00","selling_price":"85.00","is_inventoried":false,"line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/price-list-items/" '{"code":"BBPLY.75","units":"sheets","description":"4x8 x 3/4 in Baltic Birch plywood","purchase_price":"98.00","selling_price":"98.00","is_inventoried":true,"line_item_type":'"$LIT_MTL"'}' > /dev/null
-post "/api/price-list-items/" '{"code":"WOAK.75","units":"sheets","description":"4x8 x 3/4 in rift sawn white oak veneer plywood","purchase_price":"185.00","selling_price":"185.00","is_inventoried":true,"line_item_type":'"$LIT_MTL"'}' > /dev/null
-post "/api/price-list-items/" '{"code":"MDF.75","units":"sheets","description":"4x8 x 3/4 in MDF","purchase_price":"42.00","selling_price":"42.00","is_inventoried":true,"line_item_type":'"$LIT_MTL"'}' > /dev/null
+post "/api/price-list-items/" '{"code":"LAB001","units":"hour","description":"General Labor - per hour","purchase_price":"25.00","selling_price":"45.00","is_inventoried":false,"accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/price-list-items/" '{"code":"LAB002","units":"hour","description":"Skilled Labor - per hour","purchase_price":"45.00","selling_price":"85.00","is_inventoried":false,"accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/price-list-items/" '{"code":"BBPLY.75","units":"sheets","description":"4x8 x 3/4 in Baltic Birch plywood","purchase_price":"98.00","selling_price":"98.00","is_inventoried":true,"accounting_category":'"$LIT_MTL"'}' > /dev/null
+post "/api/price-list-items/" '{"code":"WOAK.75","units":"sheets","description":"4x8 x 3/4 in rift sawn white oak veneer plywood","purchase_price":"185.00","selling_price":"185.00","is_inventoried":true,"accounting_category":'"$LIT_MTL"'}' > /dev/null
+post "/api/price-list-items/" '{"code":"MDF.75","units":"sheets","description":"4x8 x 3/4 in MDF","purchase_price":"42.00","selling_price":"42.00","is_inventoried":true,"accounting_category":'"$LIT_MTL"'}' > /dev/null
 info "5 price list items created (3 inventoried)"
 
 # ─────────────────────────────────────────────
 # Step 2c: Task Templates
 # ─────────────────────────────────────────────
 log "Creating Task Templates..."
-TT_RESEARCH=$(post "/api/task-templates/" '{"template_name":"RESEARCH","description":"Research before project can be started","units":"hours","rate":"100.00","line_item_type":'"$LIT_SVC"'}' | jval "template_id")
-TT_CAD=$(post "/api/task-templates/" '{"template_name":"CAD","description":"Design, drawing, detailing, modelling","units":"hours","rate":"150.00","line_item_type":'"$LIT_SVC"'}' | jval "template_id")
-TT_CUT=$(post "/api/task-templates/" '{"template_name":"CUT","description":"Cutting parts","units":"minutes","rate":"22.00","line_item_type":'"$LIT_PRD"'}' | jval "template_id")
-TT_ASSEMBLE=$(post "/api/task-templates/" '{"template_name":"ASSEMBLE","description":"Glue and staple the parts together","units":"hours","rate":"100.00","line_item_type":'"$LIT_PRD"'}' | jval "template_id")
-TT_FINISH=$(post "/api/task-templates/" '{"template_name":"FINISH","description":"Sand, fill, apply finish or veneer or laminate","units":"hours","rate":"100.00","line_item_type":'"$LIT_PRD"'}' | jval "template_id")
-TT_PALLET=$(post "/api/task-templates/" '{"template_name":"PALLET","description":"Palletize piece, build or customize a pallet if needed","units":"hours","rate":"100.00","line_item_type":'"$LIT_SVC"'}' | jval "template_id")
-TT_SITEVISIT=$(post "/api/task-templates/" '{"template_name":"SITE VISIT","description":"Go to customer location to evaluate and measure","units":"hours","rate":"200.00","line_item_type":'"$LIT_SVC"'}' | jval "template_id")
-TT_JIG=$(post "/api/task-templates/" '{"template_name":"JIG","description":"Design and build jig(s) for assembly. ADD JIG MATERIAL SEPARATELY","units":"hours","rate":"150.00","line_item_type":'"$LIT_PRD"'}' | jval "template_id")
-TT_DELIVERY=$(post "/api/task-templates/" '{"template_name":"DELIVERY","description":"Deliver in our truck or arrange external delivery","units":"-","rate":"150.00","line_item_type":'"$LIT_DLV"'}' | jval "template_id")
+TT_RESEARCH=$(post "/api/task-templates/" '{"template_name":"RESEARCH","description":"Research before project can be started","units":"hours","rate":"100.00","accounting_category":'"$LIT_SVC"'}' | jval "template_id")
+TT_CAD=$(post "/api/task-templates/" '{"template_name":"CAD","description":"Design, drawing, detailing, modelling","units":"hours","rate":"150.00","accounting_category":'"$LIT_SVC"'}' | jval "template_id")
+TT_CUT=$(post "/api/task-templates/" '{"template_name":"CUT","description":"Cutting parts","units":"minutes","rate":"22.00","accounting_category":'"$LIT_PRD"'}' | jval "template_id")
+TT_ASSEMBLE=$(post "/api/task-templates/" '{"template_name":"ASSEMBLE","description":"Glue and staple the parts together","units":"hours","rate":"100.00","accounting_category":'"$LIT_PRD"'}' | jval "template_id")
+TT_FINISH=$(post "/api/task-templates/" '{"template_name":"FINISH","description":"Sand, fill, apply finish or veneer or laminate","units":"hours","rate":"100.00","accounting_category":'"$LIT_PRD"'}' | jval "template_id")
+TT_PALLET=$(post "/api/task-templates/" '{"template_name":"PALLET","description":"Palletize piece, build or customize a pallet if needed","units":"hours","rate":"100.00","accounting_category":'"$LIT_SVC"'}' | jval "template_id")
+TT_SITEVISIT=$(post "/api/task-templates/" '{"template_name":"SITE VISIT","description":"Go to customer location to evaluate and measure","units":"hours","rate":"200.00","accounting_category":'"$LIT_SVC"'}' | jval "template_id")
+TT_JIG=$(post "/api/task-templates/" '{"template_name":"JIG","description":"Design and build jig(s) for assembly. ADD JIG MATERIAL SEPARATELY","units":"hours","rate":"150.00","accounting_category":'"$LIT_PRD"'}' | jval "template_id")
+TT_DELIVERY=$(post "/api/task-templates/" '{"template_name":"DELIVERY","description":"Deliver in our truck or arrange external delivery","units":"-","rate":"150.00","accounting_category":'"$LIT_DLV"'}' | jval "template_id")
 info "9 task templates created"
 
 # ─────────────────────────────────────────────
@@ -310,13 +310,13 @@ WS_ID=$(echo "$WS_RESP" | jval "est_worksheet_id")
 info "Worksheet created (id=$WS_ID)"
 
 log "Adding tasks to worksheet..."
-post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Design & drafting","description":"CAD drawings and material selection","units":"hours","rate":"100.00","est_qty":"12","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Material procurement","description":"Source white oak lumber, LED strips, power components","units":"lot","rate":"1.00","est_qty":"1","line_item_type":'"$LIT_MTL"'}' > /dev/null
-post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Milling & shaping","description":"Mill lumber to dimension, shape curved front panel","units":"hours","rate":"85.00","est_qty":"16","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Joinery & assembly","description":"Mortise and tenon joints, assemble desk frame and panels","units":"hours","rate":"85.00","est_qty":"20","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"LED integration","description":"Route channels, install LED strips and drivers, wire to power","units":"hours","rate":"75.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Finishing","description":"Sand, seal, and apply finish coats","units":"hours","rate":"70.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Delivery & installation","description":"Transport to site and install","units":"hours","rate":"85.00","est_qty":"4","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Design & drafting","description":"CAD drawings and material selection","units":"hours","rate":"100.00","est_qty":"12","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Material procurement","description":"Source white oak lumber, LED strips, power components","units":"lot","rate":"1.00","est_qty":"1","accounting_category":'"$LIT_MTL"'}' > /dev/null
+post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Milling & shaping","description":"Mill lumber to dimension, shape curved front panel","units":"hours","rate":"85.00","est_qty":"16","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Joinery & assembly","description":"Mortise and tenon joints, assemble desk frame and panels","units":"hours","rate":"85.00","est_qty":"20","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"LED integration","description":"Route channels, install LED strips and drivers, wire to power","units":"hours","rate":"75.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Finishing","description":"Sand, seal, and apply finish coats","units":"hours","rate":"70.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS_ID/tasks/" '{"name":"Delivery & installation","description":"Transport to site and install","units":"hours","rate":"85.00","est_qty":"4","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "7 tasks added"
 
 # ─────────────────────────────────────────────
@@ -359,15 +359,15 @@ WO_ID=$(echo "$WO_RESP" | jval "work_order_id")
 info "Work Order created (id=$WO_ID)"
 
 log "Adding tasks to work order..."
-post "/api/work-orders/$WO_ID/tasks/" '{"name":"Design & drafting","description":"Final CAD drawings","units":"hours","rate":"100.00","est_qty":"12","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/work-orders/$WO_ID/tasks/" '{"name":"Mill white oak lumber","description":"Mill all pieces to dimension","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO_ID/tasks/" '{"name":"Shape curved front panel","description":"Steam bend and shape the curved panel","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO_ID/tasks/" '{"name":"Cut joinery","description":"Mortise and tenon joints for frame","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO_ID/tasks/" '{"name":"Assemble desk","description":"Dry fit, glue, and clamp","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO_ID/tasks/" '{"name":"Route LED channels","description":"Route channels in front panel for LED strips","units":"hours","rate":"75.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO_ID/tasks/" '{"name":"Install electrical","description":"LED strips, drivers, wiring, outlets","units":"hours","rate":"75.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO_ID/tasks/" '{"name":"Sand & finish","description":"Progressive sanding and 3 coats satin finish","units":"hours","rate":"70.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO_ID/tasks/" '{"name":"Deliver & install","description":"Transport to site and final installation","units":"hours","rate":"85.00","est_qty":"4","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/work-orders/$WO_ID/tasks/" '{"name":"Design & drafting","description":"Final CAD drawings","units":"hours","rate":"100.00","est_qty":"12","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO_ID/tasks/" '{"name":"Mill white oak lumber","description":"Mill all pieces to dimension","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO_ID/tasks/" '{"name":"Shape curved front panel","description":"Steam bend and shape the curved panel","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO_ID/tasks/" '{"name":"Cut joinery","description":"Mortise and tenon joints for frame","units":"hours","rate":"85.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO_ID/tasks/" '{"name":"Assemble desk","description":"Dry fit, glue, and clamp","units":"hours","rate":"85.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO_ID/tasks/" '{"name":"Route LED channels","description":"Route channels in front panel for LED strips","units":"hours","rate":"75.00","est_qty":"4","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO_ID/tasks/" '{"name":"Install electrical","description":"LED strips, drivers, wiring, outlets","units":"hours","rate":"75.00","est_qty":"4","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO_ID/tasks/" '{"name":"Sand & finish","description":"Progressive sanding and 3 coats satin finish","units":"hours","rate":"70.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO_ID/tasks/" '{"name":"Deliver & install","description":"Transport to site and final installation","units":"hours","rate":"85.00","est_qty":"4","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "9 tasks added to work order"
 
 # ─────────────────────────────────────────────
@@ -437,10 +437,10 @@ log "Creating worksheet with sign tasks..."
 WS2_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB2_ID"'}')
 WS2_ID=$(echo "$WS2_RESP" | jval "est_worksheet_id")
 # Tasks matching the SIGN template associations
-post "/api/est-worksheets/$WS2_ID/tasks/" '{"name":"SITE VISIT","description":"Go to customer location to evaluate and measure","units":"hours","rate":"200.00","est_qty":"1","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS2_ID/tasks/" '{"name":"CAD","description":"Design, drawing, detailing, modelling","units":"hours","rate":"150.00","est_qty":"3","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS2_ID/tasks/" '{"name":"CUT","description":"Cutting parts","units":"minutes","rate":"22.00","est_qty":"85","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS2_ID/tasks/" '{"name":"FINISH","description":"Sand, fill, apply finish or veneer or laminate","units":"hours","rate":"100.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS2_ID/tasks/" '{"name":"SITE VISIT","description":"Go to customer location to evaluate and measure","units":"hours","rate":"200.00","est_qty":"1","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS2_ID/tasks/" '{"name":"CAD","description":"Design, drawing, detailing, modelling","units":"hours","rate":"150.00","est_qty":"3","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS2_ID/tasks/" '{"name":"CUT","description":"Cutting parts","units":"minutes","rate":"22.00","est_qty":"85","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS2_ID/tasks/" '{"name":"FINISH","description":"Sand, fill, apply finish or veneer or laminate","units":"hours","rate":"100.00","est_qty":"5","accounting_category":'"$LIT_PRD"'}' > /dev/null
 info "Worksheet created with 4 tasks (id=$WS2_ID)"
 
 log "Generating estimate, marking open, accepting..."
@@ -516,9 +516,9 @@ info "Job: $JOB3_NUM (id=$JOB3_ID)"
 # Worksheet with manual tasks (simple cutting job, no template)
 WS3_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB3_ID"'}')
 WS3_ID=$(echo "$WS3_RESP" | jval "est_worksheet_id")
-post "/api/est-worksheets/$WS3_ID/tasks/" '{"name":"CNC setup","description":"Program and set up CNC for 3 shapes","units":"hours","rate":"150.00","est_qty":"1","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS3_ID/tasks/" '{"name":"Cut aluminum","description":"Cut 3 shapes from 1/8 in aluminum sheet","units":"minutes","rate":"22.00","est_qty":"45","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS3_ID/tasks/" '{"name":"Deburr and finish edges","description":"File and sand cut edges smooth","units":"hours","rate":"85.00","est_qty":"1","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS3_ID/tasks/" '{"name":"CNC setup","description":"Program and set up CNC for 3 shapes","units":"hours","rate":"150.00","est_qty":"1","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS3_ID/tasks/" '{"name":"Cut aluminum","description":"Cut 3 shapes from 1/8 in aluminum sheet","units":"minutes","rate":"22.00","est_qty":"45","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS3_ID/tasks/" '{"name":"Deburr and finish edges","description":"File and sand cut edges smooth","units":"hours","rate":"85.00","est_qty":"1","accounting_category":'"$LIT_PRD"'}' > /dev/null
 info "Worksheet with 3 tasks"
 
 # Estimate → open → accepted
@@ -532,9 +532,9 @@ info "Estimate $EST3_NUM accepted"
 # Work order with same tasks, then complete
 WO3_RESP=$(post "/api/work-orders/" '{"job": '"$JOB3_ID"'}')
 WO3_ID=$(echo "$WO3_RESP" | jval "work_order_id")
-post "/api/work-orders/$WO3_ID/tasks/" '{"name":"CNC setup","description":"Program and set up CNC for 3 shapes","units":"hours","rate":"150.00","est_qty":"1","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/work-orders/$WO3_ID/tasks/" '{"name":"Cut aluminum","description":"Cut 3 shapes from 1/8 in aluminum sheet","units":"minutes","rate":"22.00","est_qty":"45","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO3_ID/tasks/" '{"name":"Deburr and finish edges","description":"File and sand cut edges smooth","units":"hours","rate":"85.00","est_qty":"1","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO3_ID/tasks/" '{"name":"CNC setup","description":"Program and set up CNC for 3 shapes","units":"hours","rate":"150.00","est_qty":"1","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO3_ID/tasks/" '{"name":"Cut aluminum","description":"Cut 3 shapes from 1/8 in aluminum sheet","units":"minutes","rate":"22.00","est_qty":"45","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO3_ID/tasks/" '{"name":"Deburr and finish edges","description":"File and sand cut edges smooth","units":"hours","rate":"85.00","est_qty":"1","accounting_category":'"$LIT_PRD"'}' > /dev/null
 complete_all_tasks "$WO3_ID"
 info "All tasks started+completed (WO auto-completed)"
 
@@ -629,10 +629,10 @@ post "/api/jobs/$JOB5_ID/notes/" '{"text":"Ben wants these ASAP but budget is ti
 
 WS5_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB5_ID"'}')
 WS5_ID=$(echo "$WS5_RESP" | jval "est_worksheet_id")
-post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Design","description":"Layout and cut list for 4 rack units","units":"hours","rate":"100.00","est_qty":"4","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Cut lumber","description":"Cut all framing and shelf pieces","units":"hours","rate":"85.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Assemble racks","description":"Assemble 4 rack units with lag bolts","units":"hours","rate":"85.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Delivery","description":"Deliver to warehouse and position","units":"hours","rate":"85.00","est_qty":"2","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Design","description":"Layout and cut list for 4 rack units","units":"hours","rate":"100.00","est_qty":"4","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Cut lumber","description":"Cut all framing and shelf pieces","units":"hours","rate":"85.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Assemble racks","description":"Assemble 4 rack units with lag bolts","units":"hours","rate":"85.00","est_qty":"12","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS5_ID/tasks/" '{"name":"Delivery","description":"Deliver to warehouse and position","units":"hours","rate":"85.00","est_qty":"2","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "Worksheet with 4 tasks"
 
 EST5_GEN_RESP=$(post "/api/est-worksheets/$WS5_ID/generate-estimate/")
@@ -656,11 +656,11 @@ post "/api/jobs/$JOB6_ID/notes/" '{"text":"Priya needs these before wedding seas
 
 WS6_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB6_ID"'}')
 WS6_ID=$(echo "$WS6_RESP" | jval "est_worksheet_id")
-post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Design & prototyping","description":"Design fold-flat mechanism, build one prototype","units":"hours","rate":"150.00","est_qty":"8","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"CNC cutting","description":"Cut plywood panels for 4 units","units":"hours","rate":"85.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Edge banding & laminate","description":"Apply edge banding and laminate tops","units":"hours","rate":"75.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges, latches, foot rails, assemble","units":"hours","rate":"85.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Finishing","description":"Seal and clear coat all surfaces","units":"hours","rate":"70.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Design & prototyping","description":"Design fold-flat mechanism, build one prototype","units":"hours","rate":"150.00","est_qty":"8","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"CNC cutting","description":"Cut plywood panels for 4 units","units":"hours","rate":"85.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Edge banding & laminate","description":"Apply edge banding and laminate tops","units":"hours","rate":"75.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges, latches, foot rails, assemble","units":"hours","rate":"85.00","est_qty":"12","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS6_ID/tasks/" '{"name":"Finishing","description":"Seal and clear coat all surfaces","units":"hours","rate":"70.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
 info "Worksheet with 5 tasks"
 
 EST6_GEN_RESP=$(post "/api/est-worksheets/$WS6_ID/generate-estimate/")
@@ -689,11 +689,11 @@ post "/api/jobs/$JOB7_ID/notes/" '{"text":"Priya ordered 10 to start. If clients
 
 WS7_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB7_ID"'}')
 WS7_ID=$(echo "$WS7_RESP" | jval "est_worksheet_id")
-post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Design","description":"Design folding mechanism and template for batch production","units":"hours","rate":"100.00","est_qty":"3","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Cut parts","description":"Cut all pieces for 10 easels","units":"hours","rate":"85.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Shape and sand","description":"Round edges, sand all pieces to 220 grit","units":"hours","rate":"75.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges and chain stops, assemble 10 units","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Finish","description":"Apply satin finish, 2 coats","units":"hours","rate":"70.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Design","description":"Design folding mechanism and template for batch production","units":"hours","rate":"100.00","est_qty":"3","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Cut parts","description":"Cut all pieces for 10 easels","units":"hours","rate":"85.00","est_qty":"4","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Shape and sand","description":"Round edges, sand all pieces to 220 grit","units":"hours","rate":"75.00","est_qty":"5","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges and chain stops, assemble 10 units","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS7_ID/tasks/" '{"name":"Finish","description":"Apply satin finish, 2 coats","units":"hours","rate":"70.00","est_qty":"5","accounting_category":'"$LIT_PRD"'}' > /dev/null
 info "Worksheet with 5 tasks"
 
 EST7_GEN_RESP=$(post "/api/est-worksheets/$WS7_ID/generate-estimate/")
@@ -705,11 +705,11 @@ info "Estimate $EST7_NUM accepted — job auto-approved"
 
 WO7_RESP=$(post "/api/work-orders/" '{"job": '"$JOB7_ID"'}')
 WO7_ID=$(echo "$WO7_RESP" | jval "work_order_id")
-post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Design","description":"Design folding mechanism and template for batch production","units":"hours","rate":"100.00","est_qty":"3","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Cut parts","description":"Cut all pieces for 10 easels","units":"hours","rate":"85.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Shape and sand","description":"Round edges, sand all pieces to 220 grit","units":"hours","rate":"75.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges and chain stops, assemble 10 units","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Finish","description":"Apply satin finish, 2 coats","units":"hours","rate":"70.00","est_qty":"5","line_item_type":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Design","description":"Design folding mechanism and template for batch production","units":"hours","rate":"100.00","est_qty":"3","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Cut parts","description":"Cut all pieces for 10 easels","units":"hours","rate":"85.00","est_qty":"4","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Shape and sand","description":"Round edges, sand all pieces to 220 grit","units":"hours","rate":"75.00","est_qty":"5","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Hardware & assembly","description":"Install hinges and chain stops, assemble 10 units","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO7_ID/tasks/" '{"name":"Finish","description":"Apply satin finish, 2 coats","units":"hours","rate":"70.00","est_qty":"5","accounting_category":'"$LIT_PRD"'}' > /dev/null
 info "Work order with 5 tasks"
 
 # Start and complete first 2 tasks, start 3rd (in progress)
@@ -773,14 +773,14 @@ post "/api/jobs/$JOB8_ID/notes/" '{"text":"Elena sent architectural drawings fro
 
 WS8_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB8_ID"'}')
 WS8_ID=$(echo "$WS8_RESP" | jval "est_worksheet_id")
-post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Site visit & measure","description":"Measure walls at The Pinnacle Hotel lobby","units":"hours","rate":"200.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"CAD & shop drawings","description":"Detailed drawings for 6 panels with LED routing","units":"hours","rate":"150.00","est_qty":"10","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Mill white oak slats","description":"Mill slats to 3/4 x 1-1/2 in strips, 8ft long","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Build MDF backing panels","description":"Cut and paint 6 MDF backing panels","units":"hours","rate":"75.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Assemble panels","description":"Attach slats to backing with spacing jig","units":"hours","rate":"85.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"LED integration","description":"Route channels, install LED strips and drivers","units":"hours","rate":"75.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Finish","description":"Sand and apply 3 coats satin clear","units":"hours","rate":"70.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Install on-site","description":"Transport and install at hotel, 2 person crew","units":"hours","rate":"100.00","est_qty":"8","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Site visit & measure","description":"Measure walls at The Pinnacle Hotel lobby","units":"hours","rate":"200.00","est_qty":"2","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"CAD & shop drawings","description":"Detailed drawings for 6 panels with LED routing","units":"hours","rate":"150.00","est_qty":"10","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Mill white oak slats","description":"Mill slats to 3/4 x 1-1/2 in strips, 8ft long","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Build MDF backing panels","description":"Cut and paint 6 MDF backing panels","units":"hours","rate":"75.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Assemble panels","description":"Attach slats to backing with spacing jig","units":"hours","rate":"85.00","est_qty":"12","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"LED integration","description":"Route channels, install LED strips and drivers","units":"hours","rate":"75.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Finish","description":"Sand and apply 3 coats satin clear","units":"hours","rate":"70.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS8_ID/tasks/" '{"name":"Install on-site","description":"Transport and install at hotel, 2 person crew","units":"hours","rate":"100.00","est_qty":"8","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "Worksheet with 8 tasks"
 
 EST8_GEN_RESP=$(post "/api/est-worksheets/$WS8_ID/generate-estimate/")
@@ -792,14 +792,14 @@ info "Estimate $EST8_NUM accepted — job auto-approved"
 
 WO8_RESP=$(post "/api/work-orders/" '{"job": '"$JOB8_ID"'}')
 WO8_ID=$(echo "$WO8_RESP" | jval "work_order_id")
-post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Site visit & measure","description":"Measure walls at The Pinnacle Hotel lobby","units":"hours","rate":"200.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/work-orders/$WO8_ID/tasks/" '{"name":"CAD & shop drawings","description":"Detailed drawings for 6 panels with LED routing","units":"hours","rate":"150.00","est_qty":"10","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Mill white oak slats","description":"Mill slats to 3/4 x 1-1/2 in strips, 8ft long","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Build MDF backing panels","description":"Cut and paint 6 MDF backing panels","units":"hours","rate":"75.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Assemble panels","description":"Attach slats to backing with spacing jig","units":"hours","rate":"85.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO8_ID/tasks/" '{"name":"LED integration","description":"Route channels, install LED strips and drivers","units":"hours","rate":"75.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Finish","description":"Sand and apply 3 coats satin clear","units":"hours","rate":"70.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Install on-site","description":"Transport and install at hotel, 2 person crew","units":"hours","rate":"100.00","est_qty":"8","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Site visit & measure","description":"Measure walls at The Pinnacle Hotel lobby","units":"hours","rate":"200.00","est_qty":"2","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"CAD & shop drawings","description":"Detailed drawings for 6 panels with LED routing","units":"hours","rate":"150.00","est_qty":"10","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Mill white oak slats","description":"Mill slats to 3/4 x 1-1/2 in strips, 8ft long","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Build MDF backing panels","description":"Cut and paint 6 MDF backing panels","units":"hours","rate":"75.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Assemble panels","description":"Attach slats to backing with spacing jig","units":"hours","rate":"85.00","est_qty":"12","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"LED integration","description":"Route channels, install LED strips and drivers","units":"hours","rate":"75.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Finish","description":"Sand and apply 3 coats satin clear","units":"hours","rate":"70.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO8_ID/tasks/" '{"name":"Install on-site","description":"Transport and install at hotel, 2 person crew","units":"hours","rate":"100.00","est_qty":"8","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "Work order with 8 tasks — approved, no invoice, not started yet"
 
 # --- Job 9: APPROVED — est accepted, WO created, deposit invoice sent ---
@@ -818,13 +818,13 @@ post "/api/jobs/$JOB9_ID/notes/" '{"text":"Elena wants these to match the lobby 
 
 WS9_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB9_ID"'}')
 WS9_ID=$(echo "$WS9_RESP" | jval "est_worksheet_id")
-post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"CAD & detailing","description":"Shop drawings for headboard frame with electrical routing","units":"hours","rate":"150.00","est_qty":"6","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Jig fabrication","description":"Build assembly jig for batch of 12","units":"hours","rate":"150.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Mill & cut","description":"Mill white oak frame pieces for 12 headboards","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Route electrical","description":"Route channels for reading lights and USB, 12 units","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Assemble frames","description":"Assemble 12 headboard frames with jig","units":"hours","rate":"85.00","est_qty":"16","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Finish","description":"Sand and finish 12 frames, satin clear","units":"hours","rate":"70.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Deliver to upholsterer","description":"Deliver finished frames to upholstery vendor","units":"-","rate":"150.00","est_qty":"1","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"CAD & detailing","description":"Shop drawings for headboard frame with electrical routing","units":"hours","rate":"150.00","est_qty":"6","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Jig fabrication","description":"Build assembly jig for batch of 12","units":"hours","rate":"150.00","est_qty":"4","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Mill & cut","description":"Mill white oak frame pieces for 12 headboards","units":"hours","rate":"85.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Route electrical","description":"Route channels for reading lights and USB, 12 units","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Assemble frames","description":"Assemble 12 headboard frames with jig","units":"hours","rate":"85.00","est_qty":"16","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Finish","description":"Sand and finish 12 frames, satin clear","units":"hours","rate":"70.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS9_ID/tasks/" '{"name":"Deliver to upholsterer","description":"Deliver finished frames to upholstery vendor","units":"-","rate":"150.00","est_qty":"1","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "Worksheet with 7 tasks"
 
 EST9_GEN_RESP=$(post "/api/est-worksheets/$WS9_ID/generate-estimate/")
@@ -836,13 +836,13 @@ info "Estimate $EST9_NUM accepted — job auto-approved"
 
 WO9_RESP=$(post "/api/work-orders/" '{"job": '"$JOB9_ID"'}')
 WO9_ID=$(echo "$WO9_RESP" | jval "work_order_id")
-post "/api/work-orders/$WO9_ID/tasks/" '{"name":"CAD & detailing","description":"Shop drawings for headboard frame with electrical routing","units":"hours","rate":"150.00","est_qty":"6","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Jig fabrication","description":"Build assembly jig for batch of 12","units":"hours","rate":"150.00","est_qty":"4","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Mill & cut","description":"Mill white oak frame pieces for 12 headboards","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Route electrical","description":"Route channels for reading lights and USB, 12 units","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Assemble frames","description":"Assemble 12 headboard frames with jig","units":"hours","rate":"85.00","est_qty":"16","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Finish","description":"Sand and finish 12 frames, satin clear","units":"hours","rate":"70.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Deliver to upholsterer","description":"Deliver finished frames to upholstery vendor","units":"-","rate":"150.00","est_qty":"1","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"CAD & detailing","description":"Shop drawings for headboard frame with electrical routing","units":"hours","rate":"150.00","est_qty":"6","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Jig fabrication","description":"Build assembly jig for batch of 12","units":"hours","rate":"150.00","est_qty":"4","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Mill & cut","description":"Mill white oak frame pieces for 12 headboards","units":"hours","rate":"85.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Route electrical","description":"Route channels for reading lights and USB, 12 units","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Assemble frames","description":"Assemble 12 headboard frames with jig","units":"hours","rate":"85.00","est_qty":"16","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Finish","description":"Sand and finish 12 frames, satin clear","units":"hours","rate":"70.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO9_ID/tasks/" '{"name":"Deliver to upholsterer","description":"Deliver finished frames to upholstery vendor","units":"-","rate":"150.00","est_qty":"1","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "Work order with 7 tasks"
 
 # Deposit invoice — 50% upfront
@@ -889,11 +889,11 @@ post "/api/jobs/$JOB10_ID/notes/" '{"text":"James found us through Yelp. Wants a
 
 WS10_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB10_ID"'}')
 WS10_ID=$(echo "$WS10_RESP" | jval "est_worksheet_id")
-post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Site visit","description":"Measure backyard, check for utilities, assess ground conditions","units":"hours","rate":"200.00","est_qty":"1.5","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Design","description":"Pergola and planter design with structural calcs","units":"hours","rate":"150.00","est_qty":"4","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Cut cedar","description":"Mill and cut all cedar members","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Build planters","description":"Fabricate 4 planter boxes with drainage","units":"hours","rate":"85.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Install","description":"On-site assembly, set posts in concrete, 2 crew","units":"hours","rate":"100.00","est_qty":"12","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Site visit","description":"Measure backyard, check for utilities, assess ground conditions","units":"hours","rate":"200.00","est_qty":"1.5","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Design","description":"Pergola and planter design with structural calcs","units":"hours","rate":"150.00","est_qty":"4","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Cut cedar","description":"Mill and cut all cedar members","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Build planters","description":"Fabricate 4 planter boxes with drainage","units":"hours","rate":"85.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS10_ID/tasks/" '{"name":"Install","description":"On-site assembly, set posts in concrete, 2 crew","units":"hours","rate":"100.00","est_qty":"12","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "Worksheet with 5 tasks"
 
 EST10_GEN_RESP=$(post "/api/est-worksheets/$WS10_ID/generate-estimate/")
@@ -945,13 +945,13 @@ post "/api/jobs/$JOB11_ID/notes/" '{"text":"Aisha closing the restaurant for 2 w
 
 WS11_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB11_ID"'}')
 WS11_ID=$(echo "$WS11_RESP" | jval "est_worksheet_id")
-post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Site measure","description":"Measure restaurant, coordinate with electrician","units":"hours","rate":"200.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Design","description":"CAD drawings, steel frame shop drawings","units":"hours","rate":"150.00","est_qty":"8","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Steel frame fabrication","description":"Weld steel base frame, powder coat","units":"hours","rate":"100.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Walnut top","description":"Glue up, flatten, and shape walnut counter top","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Display case","description":"Build display case frame, install glass panels","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Finish","description":"Sand and oil walnut, final assembly","units":"hours","rate":"70.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Install","description":"Deliver, set counter, connect power, 2 person crew","units":"hours","rate":"100.00","est_qty":"6","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Site measure","description":"Measure restaurant, coordinate with electrician","units":"hours","rate":"200.00","est_qty":"2","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Design","description":"CAD drawings, steel frame shop drawings","units":"hours","rate":"150.00","est_qty":"8","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Steel frame fabrication","description":"Weld steel base frame, powder coat","units":"hours","rate":"100.00","est_qty":"12","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Walnut top","description":"Glue up, flatten, and shape walnut counter top","units":"hours","rate":"85.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Display case","description":"Build display case frame, install glass panels","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Finish","description":"Sand and oil walnut, final assembly","units":"hours","rate":"70.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS11_ID/tasks/" '{"name":"Install","description":"Deliver, set counter, connect power, 2 person crew","units":"hours","rate":"100.00","est_qty":"6","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "Worksheet with 7 tasks"
 
 EST11_GEN_RESP=$(post "/api/est-worksheets/$WS11_ID/generate-estimate/")
@@ -963,13 +963,13 @@ info "Estimate $EST11_NUM accepted — job auto-approved"
 
 WO11_RESP=$(post "/api/work-orders/" '{"job": '"$JOB11_ID"'}')
 WO11_ID=$(echo "$WO11_RESP" | jval "work_order_id")
-post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Site measure","description":"Measure restaurant, coordinate with electrician","units":"hours","rate":"200.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Design","description":"CAD drawings, steel frame shop drawings","units":"hours","rate":"150.00","est_qty":"8","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Steel frame fabrication","description":"Weld steel base frame, powder coat","units":"hours","rate":"100.00","est_qty":"12","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Walnut top","description":"Glue up, flatten, and shape walnut counter top","units":"hours","rate":"85.00","est_qty":"10","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Display case","description":"Build display case frame, install glass panels","units":"hours","rate":"85.00","est_qty":"8","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Finish","description":"Sand and oil walnut, final assembly","units":"hours","rate":"70.00","est_qty":"6","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Install","description":"Deliver, set counter, connect power, 2 person crew","units":"hours","rate":"100.00","est_qty":"6","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Site measure","description":"Measure restaurant, coordinate with electrician","units":"hours","rate":"200.00","est_qty":"2","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Design","description":"CAD drawings, steel frame shop drawings","units":"hours","rate":"150.00","est_qty":"8","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Steel frame fabrication","description":"Weld steel base frame, powder coat","units":"hours","rate":"100.00","est_qty":"12","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Walnut top","description":"Glue up, flatten, and shape walnut counter top","units":"hours","rate":"85.00","est_qty":"10","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Display case","description":"Build display case frame, install glass panels","units":"hours","rate":"85.00","est_qty":"8","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Finish","description":"Sand and oil walnut, final assembly","units":"hours","rate":"70.00","est_qty":"6","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO11_ID/tasks/" '{"name":"Install","description":"Deliver, set counter, connect power, 2 person crew","units":"hours","rate":"100.00","est_qty":"6","accounting_category":'"$LIT_DLV"'}' > /dev/null
 complete_all_tasks "$WO11_ID"
 info "All tasks started+completed (WO auto-completed)"
 
@@ -999,11 +999,11 @@ post "/api/jobs/$JOB12_ID/notes/" '{"text":"Follow-up project from the counter j
 
 WS12_RESP=$(post "/api/est-worksheets/" '{"job": '"$JOB12_ID"'}')
 WS12_ID=$(echo "$WS12_RESP" | jval "est_worksheet_id")
-post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Design","description":"Layout and bracket design","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Cut & shape walnut","description":"Mill shelves from walnut offcuts","units":"hours","rate":"85.00","est_qty":"3","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Weld brackets","description":"Fabricate 8 steel shelf brackets","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Finish & LED","description":"Oil shelves, install LED strip on top shelf","units":"hours","rate":"70.00","est_qty":"3","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Install","description":"Mount brackets and shelves on-site","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Design","description":"Layout and bracket design","units":"hours","rate":"100.00","est_qty":"2","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Cut & shape walnut","description":"Mill shelves from walnut offcuts","units":"hours","rate":"85.00","est_qty":"3","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Weld brackets","description":"Fabricate 8 steel shelf brackets","units":"hours","rate":"100.00","est_qty":"2","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Finish & LED","description":"Oil shelves, install LED strip on top shelf","units":"hours","rate":"70.00","est_qty":"3","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/est-worksheets/$WS12_ID/tasks/" '{"name":"Install","description":"Mount brackets and shelves on-site","units":"hours","rate":"100.00","est_qty":"2","accounting_category":'"$LIT_DLV"'}' > /dev/null
 info "Worksheet with 5 tasks"
 
 EST12_GEN_RESP=$(post "/api/est-worksheets/$WS12_ID/generate-estimate/")
@@ -1015,11 +1015,11 @@ info "Estimate $EST12_NUM accepted — job auto-approved"
 
 WO12_RESP=$(post "/api/work-orders/" '{"job": '"$JOB12_ID"'}')
 WO12_ID=$(echo "$WO12_RESP" | jval "work_order_id")
-post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Design","description":"Layout and bracket design","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_SVC"'}' > /dev/null
-post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Cut & shape walnut","description":"Mill shelves from walnut offcuts","units":"hours","rate":"85.00","est_qty":"3","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Weld brackets","description":"Fabricate 8 steel shelf brackets","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Finish & LED","description":"Oil shelves, install LED strip on top shelf","units":"hours","rate":"70.00","est_qty":"3","line_item_type":'"$LIT_PRD"'}' > /dev/null
-post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Install","description":"Mount brackets and shelves on-site","units":"hours","rate":"100.00","est_qty":"2","line_item_type":'"$LIT_DLV"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Design","description":"Layout and bracket design","units":"hours","rate":"100.00","est_qty":"2","accounting_category":'"$LIT_SVC"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Cut & shape walnut","description":"Mill shelves from walnut offcuts","units":"hours","rate":"85.00","est_qty":"3","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Weld brackets","description":"Fabricate 8 steel shelf brackets","units":"hours","rate":"100.00","est_qty":"2","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Finish & LED","description":"Oil shelves, install LED strip on top shelf","units":"hours","rate":"70.00","est_qty":"3","accounting_category":'"$LIT_PRD"'}' > /dev/null
+post "/api/work-orders/$WO12_ID/tasks/" '{"name":"Install","description":"Mount brackets and shelves on-site","units":"hours","rate":"100.00","est_qty":"2","accounting_category":'"$LIT_DLV"'}' > /dev/null
 complete_all_tasks "$WO12_ID"
 info "All tasks started+completed (WO auto-completed)"
 

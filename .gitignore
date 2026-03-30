@@ -16,4 +16,5 @@ Miniterminal.code-workspace
 database_commands.txt
 runserver_commands.txt
 .superpowers/
+.worktrees/
 media/

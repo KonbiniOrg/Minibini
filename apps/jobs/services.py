@@ -142,7 +142,7 @@ class WorkOrderService:
                 work_order=wo,
                 name=bundle.name,
                 description=bundle.description,
-                line_item_type=bundle.line_item_type,
+                accounting_category=bundle.accounting_category,
                 sort_order=bundle.sort_order,
                 source_template_bundle=bundle.source_template_bundle,
             )
@@ -159,7 +159,7 @@ class WorkOrderService:
                 rate=task.rate,
                 est_qty=task.est_qty,
                 assignee=task.assignee,
-                line_item_type=task.line_item_type,
+                accounting_category=task.accounting_category,
                 mapping_strategy=task.mapping_strategy,
                 bundle=new_bundle,
                 sort_order=task.sort_order,
@@ -168,7 +168,7 @@ class WorkOrderService:
                 Material.objects.create(
                     task=new_task,
                     price_list_item=material.price_list_item,
-                    line_item_type=material.line_item_type,
+                    accounting_category=material.accounting_category,
                     description=material.description,
                     quantity=material.quantity,
                     unit_cost=material.unit_cost,
@@ -217,7 +217,7 @@ class TaskService:
                 rate=source_task.rate,
                 est_qty=source_task.est_qty,
                 assignee=source_task.assignee,
-                line_item_type=source_task.line_item_type,
+                accounting_category=source_task.accounting_category,
                 parent_task=None  # Set in second pass
             )
             task_id_mapping[source_task.task_id] = new_task
@@ -282,7 +282,7 @@ class TaskService:
 
         task = Task.objects.create(
             work_order=work_order,
-            line_item_type=template.line_item_type,
+            accounting_category=template.accounting_category,
             name=template.template_name,
             assignee=assignee
         )

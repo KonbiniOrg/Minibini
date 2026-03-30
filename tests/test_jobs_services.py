@@ -11,7 +11,7 @@ from apps.estimates.models import (
 from apps.inventory.models import Material, PriceListItem
 from apps.inventory.services import InventoryService
 from apps.core.services import NotFoundError
-from apps.core.models import LineItemType
+from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact, Business
 
 
@@ -30,7 +30,7 @@ class JobsTestBase(TestCase):
         )
         self.contact.business = self.business
         self.contact.save()
-        self.lit = LineItemType.objects.create(
+        self.lit = AccountingCategory.objects.create(
             code='SVC', name='Service', taxable=True,
         )
 
@@ -229,11 +229,11 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Cut steel',
             qty=Decimal('2.00'), units='hrs', price=Decimal('50.00'),
-            line_item_type=self.lit)
+            accounting_category=self.lit)
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Weld frame',
             qty=Decimal('3.00'), units='hrs', price=Decimal('60.00'),
-            line_item_type=self.lit)
+            accounting_category=self.lit)
 
         wo = WorkOrderService.create_from_estimate(self.estimate)
 
@@ -245,7 +245,7 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Custom fabrication',
             qty=Decimal('4.00'), units='pcs', price=Decimal('100.00'),
-            line_item_type=self.lit)
+            accounting_category=self.lit)
 
         wo = WorkOrderService.create_from_estimate(self.estimate)
         task = Task.objects.get(work_order=wo)
@@ -265,7 +265,7 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
             estimate=self.estimate, description='Steel plate',
             price_list_item=pli,
             qty=Decimal('10.00'), units='', price=Decimal('0.00'),
-            line_item_type=self.lit)
+            accounting_category=self.lit)
 
         wo = WorkOrderService.create_from_estimate(self.estimate)
         task = Task.objects.get(work_order=wo)
@@ -314,10 +314,10 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
             template_name='Standard Build')
         self.task_tmpl_1 = TaskTemplate.objects.create(
             template_name='Cut', units='hrs', rate=Decimal('50.00'),
-            line_item_type=self.lit)
+            accounting_category=self.lit)
         self.task_tmpl_2 = TaskTemplate.objects.create(
             template_name='Weld', units='hrs', rate=Decimal('60.00'),
-            line_item_type=self.lit)
+            accounting_category=self.lit)
         TemplateTaskAssociation.objects.create(
             work_order_template=self.template, task_template=self.task_tmpl_1,
             est_qty=Decimal('2.00'), sort_order=1)
@@ -349,7 +349,7 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
         self.assertEqual(cut_task.units, 'hrs')
         self.assertEqual(cut_task.rate, Decimal('50.00'))
         self.assertEqual(cut_task.est_qty, Decimal('2.00'))
-        self.assertEqual(cut_task.line_item_type, self.lit)
+        self.assertEqual(cut_task.accounting_category, self.lit)
 
         weld_task = tasks[1]
         self.assertEqual(weld_task.name, 'Weld')
@@ -421,11 +421,11 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
         Task.objects.create(
             est_worksheet=self.worksheet, name='Cut', units='hrs',
             rate=Decimal('50.00'), est_qty=Decimal('2.00'),
-            line_item_type=self.lit, sort_order=1)
+            accounting_category=self.lit, sort_order=1)
         Task.objects.create(
             est_worksheet=self.worksheet, name='Weld', units='hrs',
             rate=Decimal('60.00'), est_qty=Decimal('3.00'),
-            line_item_type=self.lit, sort_order=2)
+            accounting_category=self.lit, sort_order=2)
 
         WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
 
@@ -442,7 +442,7 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
             est_worksheet=self.worksheet, name='Paint',
             description='Apply primer and topcoat',
             units='sq ft', rate=Decimal('5.00'), est_qty=Decimal('100.00'),
-            line_item_type=self.lit, mapping_strategy='direct', sort_order=1)
+            accounting_category=self.lit, mapping_strategy='direct', sort_order=1)
 
         WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
 
@@ -450,7 +450,7 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
         self.assertEqual(task.name, 'Paint')
         self.assertEqual(task.description, 'Apply primer and topcoat')
         self.assertEqual(task.units, 'sq ft')
-        self.assertEqual(task.line_item_type, self.lit)
+        self.assertEqual(task.accounting_category, self.lit)
         self.assertEqual(task.mapping_strategy, 'direct')
 
     def test_copies_materials(self):
@@ -482,7 +482,7 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
         """TaskBundles are copied, and bundled tasks point to the new bundles."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Assembly',
-            sort_order=1, line_item_type=self.lit)
+            sort_order=1, accounting_category=self.lit)
         Task.objects.create(
             est_worksheet=self.worksheet, name='Assemble part A',
             bundle=bundle, mapping_strategy='bundle', sort_order=1)
@@ -496,7 +496,7 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
         self.assertEqual(wo_bundles.count(), 1)
         wo_bundle = wo_bundles[0]
         self.assertEqual(wo_bundle.name, 'Assembly')
-        self.assertEqual(wo_bundle.line_item_type, self.lit)
+        self.assertEqual(wo_bundle.accounting_category, self.lit)
 
         bundled_tasks = Task.objects.filter(
             work_order=self.wo, bundle=wo_bundle).order_by('sort_order')

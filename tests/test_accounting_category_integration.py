@@ -1,17 +1,17 @@
-"""Integration tests for LineItemType feature."""
+"""Integration tests for AccountingCategory feature."""
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.core.models import Configuration, LineItemType
+from apps.core.models import Configuration, AccountingCategory
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.inventory.models import PriceListItem
 
 
-class LineItemTypeIntegrationTest(TestCase):
-    """End-to-end tests for LineItemType workflow."""
+class AccountingCategoryIntegrationTest(TestCase):
+    """End-to-end tests for AccountingCategory workflow."""
 
     def setUp(self):
         self.client = Client()
@@ -21,16 +21,16 @@ class LineItemTypeIntegrationTest(TestCase):
 
     def test_full_workflow_taxable_item(self):
         """Test complete workflow: Create type -> PriceListItem -> Estimate with tax."""
-        # 1. Create LineItemType
-        response = self.client.post(reverse('core:line_item_type_create'), {
+        # 1. Create AccountingCategory
+        response = self.client.post(reverse('core:accounting_category_create'), {
             'code': 'HWRE',
             'name': 'Hardware',
             'taxable': True,
             'default_description': 'Hardware items',
             'is_active': True,
         })
-        self.assertRedirects(response, reverse('core:line_item_type_list'))
-        hardware_type = LineItemType.objects.get(code='HWRE')
+        self.assertRedirects(response, reverse('core:accounting_category_list'))
+        hardware_type = AccountingCategory.objects.get(code='HWRE')
         self.assertTrue(hardware_type.taxable)
 
         # 2. Create PriceListItem with that type
@@ -42,11 +42,11 @@ class LineItemTypeIntegrationTest(TestCase):
             'qty_on_hand': '100.00',
             'qty_sold': '0.00',
             'qty_wasted': '0.00',
-            'line_item_type': hardware_type.pk,
+            'accounting_category': hardware_type.pk,
         })
         self.assertRedirects(response, reverse('inventory:price_list_item_list'))
         price_list_item = PriceListItem.objects.get(code='BOLT-001')
-        self.assertEqual(price_list_item.line_item_type, hardware_type)
+        self.assertEqual(price_list_item.accounting_category, hardware_type)
 
         # 3. Create Contact, Job, Estimate
         contact = Contact.objects.create(
@@ -74,7 +74,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # 5. Verify line item has correct type
         line_item = EstimateLineItem.objects.get(estimate=estimate)
-        self.assertEqual(line_item.line_item_type, hardware_type)
+        self.assertEqual(line_item.accounting_category, hardware_type)
         self.assertEqual(line_item.total_amount, Decimal('100.00'))  # 10 x $10
 
         # 6. Verify tax calculation on estimate detail
@@ -90,7 +90,7 @@ class LineItemTypeIntegrationTest(TestCase):
     def test_full_workflow_nontaxable_item(self):
         """Test workflow with non-taxable service item."""
         # Create non-taxable type
-        service_type = LineItemType.objects.create(
+        service_type = AccountingCategory.objects.create(
             code='SRVC',
             name='Service',
             taxable=False,
@@ -120,7 +120,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'qty': '5.00',
                 'units': 'hours',
                 'price': '100.00',
-                'line_item_type': service_type.pk,
+                'accounting_category': service_type.pk,
             }
         )
 
@@ -134,7 +134,7 @@ class LineItemTypeIntegrationTest(TestCase):
     def test_customer_tax_exemption_workflow(self):
         """Test workflow with tax-exempt customer."""
         # Create taxable type
-        material_type = LineItemType.objects.create(
+        material_type = AccountingCategory.objects.create(
             code='MTAL',
             name='Metal',
             taxable=True,
@@ -173,7 +173,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'qty': '1.00',
                 'units': 'each',
                 'price': '200.00',
-                'line_item_type': material_type.pk,
+                'accounting_category': material_type.pk,
             }
         )
 
@@ -184,29 +184,29 @@ class LineItemTypeIntegrationTest(TestCase):
         self.assertContains(response, '200.00')  # Subtotal
         self.assertContains(response, 'exempt')   # Exemption indicator
 
-    def test_line_item_type_crud_workflow(self):
-        """Test full CRUD workflow for LineItemType."""
+    def test_accounting_category_crud_workflow(self):
+        """Test full CRUD workflow for AccountingCategory."""
         # CREATE
-        response = self.client.post(reverse('core:line_item_type_create'), {
+        response = self.client.post(reverse('core:accounting_category_create'), {
             'code': 'TEST',
             'name': 'Test Type',
             'taxable': True,
             'default_description': 'Test description',
             'is_active': True,
         })
-        self.assertRedirects(response, reverse('core:line_item_type_list'))
-        line_item_type = LineItemType.objects.get(code='TEST')
-        self.assertEqual(line_item_type.name, 'Test Type')
-        self.assertTrue(line_item_type.taxable)
+        self.assertRedirects(response, reverse('core:accounting_category_list'))
+        accounting_category = AccountingCategory.objects.get(code='TEST')
+        self.assertEqual(accounting_category.name, 'Test Type')
+        self.assertTrue(accounting_category.taxable)
 
         # READ - List view
-        response = self.client.get(reverse('core:line_item_type_list'))
+        response = self.client.get(reverse('core:accounting_category_list'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Test Type')
 
         # READ - Detail view
         response = self.client.get(
-            reverse('core:line_item_type_detail', args=[line_item_type.pk])
+            reverse('core:accounting_category_detail', args=[accounting_category.pk])
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Test Type')
@@ -214,7 +214,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # UPDATE
         response = self.client.post(
-            reverse('core:line_item_type_edit', args=[line_item_type.pk]),
+            reverse('core:accounting_category_edit', args=[accounting_category.pk]),
             {
                 'code': 'TEST',
                 'name': 'Updated Test Type',
@@ -225,15 +225,15 @@ class LineItemTypeIntegrationTest(TestCase):
         )
         self.assertRedirects(
             response,
-            reverse('core:line_item_type_detail', args=[line_item_type.pk])
+            reverse('core:accounting_category_detail', args=[accounting_category.pk])
         )
-        line_item_type.refresh_from_db()
-        self.assertEqual(line_item_type.name, 'Updated Test Type')
-        self.assertFalse(line_item_type.taxable)
+        accounting_category.refresh_from_db()
+        self.assertEqual(accounting_category.name, 'Updated Test Type')
+        self.assertFalse(accounting_category.taxable)
 
         # SOFT DELETE (deactivate)
         response = self.client.post(
-            reverse('core:line_item_type_edit', args=[line_item_type.pk]),
+            reverse('core:accounting_category_edit', args=[accounting_category.pk]),
             {
                 'code': 'TEST',
                 'name': 'Updated Test Type',
@@ -242,26 +242,26 @@ class LineItemTypeIntegrationTest(TestCase):
                 'is_active': False,  # Deactivate
             }
         )
-        line_item_type.refresh_from_db()
-        self.assertFalse(line_item_type.is_active)
+        accounting_category.refresh_from_db()
+        self.assertFalse(accounting_category.is_active)
 
         # Verify inactive type is hidden from list by default
         # Use a fresh client to avoid flash messages interfering
         fresh_client = Client()
         fresh_client.force_login(get_user_model().objects.create_superuser(username='admin_fresh', password='testpass'))
-        response = fresh_client.get(reverse('core:line_item_type_list'))
+        response = fresh_client.get(reverse('core:accounting_category_list'))
         self.assertNotContains(response, 'Updated Test Type')
 
         # Verify inactive type is shown with show_all parameter
         response = fresh_client.get(
-            reverse('core:line_item_type_list') + '?show_all=1'
+            reverse('core:accounting_category_list') + '?show_all=1'
         )
         self.assertContains(response, 'Updated Test Type')
 
     def test_price_list_item_inherits_type_to_estimate(self):
         """Test that PriceListItem type is correctly inherited by EstimateLineItem."""
         # Create line item type
-        material_type = LineItemType.objects.create(
+        material_type = AccountingCategory.objects.create(
             code='MATL',
             name='Material',
             taxable=True,
@@ -276,7 +276,7 @@ class LineItemTypeIntegrationTest(TestCase):
             purchase_price=Decimal('5.00'),
             selling_price=Decimal('10.00'),
             qty_on_hand=Decimal('50.00'),
-            line_item_type=material_type
+            accounting_category=material_type
         )
 
         # Create contact, job, estimate
@@ -305,7 +305,7 @@ class LineItemTypeIntegrationTest(TestCase):
 
         # Verify the estimate line item has the correct type
         line_item = EstimateLineItem.objects.get(estimate=estimate)
-        self.assertEqual(line_item.line_item_type, material_type)
+        self.assertEqual(line_item.accounting_category, material_type)
         self.assertEqual(line_item.description, 'Widget')
         self.assertEqual(line_item.price, Decimal('10.00'))
         self.assertEqual(line_item.total_amount, Decimal('50.00'))
@@ -313,7 +313,7 @@ class LineItemTypeIntegrationTest(TestCase):
     def test_mixed_taxable_and_nontaxable_items(self):
         """Test estimate with both taxable and non-taxable items."""
         # Create taxable type
-        product_type = LineItemType.objects.create(
+        product_type = AccountingCategory.objects.create(
             code='PROD',
             name='Product',
             taxable=True,
@@ -321,7 +321,7 @@ class LineItemTypeIntegrationTest(TestCase):
         )
 
         # Create non-taxable type
-        service_type = LineItemType.objects.create(
+        service_type = AccountingCategory.objects.create(
             code='SERV',
             name='Service',
             taxable=False,
@@ -351,7 +351,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'qty': '2.00',
                 'units': 'each',
                 'price': '100.00',
-                'line_item_type': product_type.pk,
+                'accounting_category': product_type.pk,
             }
         )
 
@@ -364,7 +364,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'qty': '1.00',
                 'units': 'hours',
                 'price': '50.00',
-                'line_item_type': service_type.pk,
+                'accounting_category': service_type.pk,
             }
         )
 
@@ -385,7 +385,7 @@ class LineItemTypeIntegrationTest(TestCase):
     def test_partial_tax_exemption(self):
         """Test workflow with partial tax exemption (e.g., 50% off)."""
         # Create taxable type
-        material_type = LineItemType.objects.create(
+        material_type = AccountingCategory.objects.create(
             code='PART',
             name='Parts',
             taxable=True,
@@ -424,7 +424,7 @@ class LineItemTypeIntegrationTest(TestCase):
                 'qty': '1.00',
                 'units': 'each',
                 'price': '100.00',
-                'line_item_type': material_type.pk,
+                'accounting_category': material_type.pk,
             }
         )
 
@@ -439,18 +439,18 @@ class LineItemTypeIntegrationTest(TestCase):
         self.assertContains(response, '105.00')
 
 
-class LineItemTypeFormIntegrationTest(TestCase):
-    """Test LineItemType appears correctly in forms."""
+class AccountingCategoryFormIntegrationTest(TestCase):
+    """Test AccountingCategory appears correctly in forms."""
 
     def setUp(self):
         self.client = Client()
         self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
         Configuration.objects.create(key='default_tax_rate', value='0.10')
 
-    def test_line_item_type_appears_in_estimate_manual_form(self):
-        """Test that LineItemType dropdown appears in manual line item form."""
+    def test_accounting_category_appears_in_estimate_manual_form(self):
+        """Test that AccountingCategory dropdown appears in manual line item form."""
         # Create a line item type
-        LineItemType.objects.create(
+        AccountingCategory.objects.create(
             code='TEST',
             name='Test Type',
             taxable=True,
@@ -477,13 +477,13 @@ class LineItemTypeFormIntegrationTest(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'line_item_type')
+        self.assertContains(response, 'accounting_category')
         self.assertContains(response, 'Test Type')
 
     def test_inactive_types_hidden_from_forms(self):
-        """Test that inactive LineItemTypes are hidden from form dropdowns."""
+        """Test that inactive AccountingCategorys are hidden from form dropdowns."""
         # Create active type
-        active_type = LineItemType.objects.create(
+        active_type = AccountingCategory.objects.create(
             code='ACTIVE',
             name='Active Type',
             taxable=True,
@@ -491,7 +491,7 @@ class LineItemTypeFormIntegrationTest(TestCase):
         )
 
         # Create inactive type
-        inactive_type = LineItemType.objects.create(
+        inactive_type = AccountingCategory.objects.create(
             code='INACTIVE',
             name='Inactive Type',
             taxable=True,
@@ -521,10 +521,10 @@ class LineItemTypeFormIntegrationTest(TestCase):
         self.assertContains(response, 'Active Type')
         self.assertNotContains(response, 'Inactive Type')
 
-    def test_line_item_type_appears_in_price_list_form(self):
-        """Test that LineItemType dropdown appears in price list item form."""
+    def test_accounting_category_appears_in_price_list_form(self):
+        """Test that AccountingCategory dropdown appears in price list item form."""
         # Create a line item type
-        LineItemType.objects.create(
+        AccountingCategory.objects.create(
             code='PRLIST',
             name='Price List Type',
             taxable=True,
@@ -535,7 +535,7 @@ class LineItemTypeFormIntegrationTest(TestCase):
         response = self.client.get(reverse('inventory:price_list_item_add'))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'line_item_type')
+        self.assertContains(response, 'accounting_category')
         self.assertContains(response, 'Price List Type')
 
 
@@ -550,7 +550,7 @@ class TaxCalculationIntegrationTest(TestCase):
     def test_tax_rate_applied_correctly(self):
         """Test that configured tax rate is applied correctly."""
         # Create taxable type
-        taxable_type = LineItemType.objects.create(
+        taxable_type = AccountingCategory.objects.create(
             code='TAX',
             name='Taxable Item',
             taxable=True,
@@ -580,7 +580,7 @@ class TaxCalculationIntegrationTest(TestCase):
                 'qty': '1.00',
                 'units': 'each',
                 'price': '100.00',
-                'line_item_type': taxable_type.pk,
+                'accounting_category': taxable_type.pk,
             }
         )
 
@@ -594,7 +594,7 @@ class TaxCalculationIntegrationTest(TestCase):
     def test_no_tax_when_no_taxable_items(self):
         """Test that no tax is shown when all items are non-taxable."""
         # Create non-taxable type
-        nontaxable_type = LineItemType.objects.create(
+        nontaxable_type = AccountingCategory.objects.create(
             code='NOTAX',
             name='Non-Taxable',
             taxable=False,
@@ -624,7 +624,7 @@ class TaxCalculationIntegrationTest(TestCase):
                 'qty': '10.00',
                 'units': 'hours',
                 'price': '75.00',
-                'line_item_type': nontaxable_type.pk,
+                'accounting_category': nontaxable_type.pk,
             }
         )
 

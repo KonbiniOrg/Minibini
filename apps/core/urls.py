@@ -12,8 +12,8 @@ urlpatterns = [
     path('inbox/<int:email_record_id>/associate-job/', views.associate_email_with_job, name='associate_email_with_job'),
     path('inbox/<int:email_record_id>/disassociate-job/', views.disassociate_email_from_job, name='disassociate_email_from_job'),
     path('compose/', views.compose_email, name='compose_email'),
-    path('line-item-types/', views.line_item_type_list, name='line_item_type_list'),
-    path('line-item-types/create/', views.line_item_type_create, name='line_item_type_create'),
-    path('line-item-types/<int:pk>/', views.line_item_type_detail, name='line_item_type_detail'),
-    path('line-item-types/<int:pk>/edit/', views.line_item_type_edit, name='line_item_type_edit'),
+    path('accounting-categories/', views.accounting_category_list, name='accounting_category_list'),
+    path('accounting-categories/create/', views.accounting_category_create, name='accounting_category_create'),
+    path('accounting-categories/<int:pk>/', views.accounting_category_detail, name='accounting_category_detail'),
+    path('accounting-categories/<int:pk>/edit/', views.accounting_category_edit, name='accounting_category_edit'),
 ]

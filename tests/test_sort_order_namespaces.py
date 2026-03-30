@@ -5,7 +5,7 @@ from django.urls import reverse
 from apps.jobs.models import Task, TaskBundle, Job
 from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
-from apps.core.models import User, LineItemType
+from apps.core.models import User, AccountingCategory
 
 
 class SortOrderAutoGenerationTest(TestCase):
@@ -15,7 +15,7 @@ class SortOrderAutoGenerationTest(TestCase):
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
         self.job = Job.objects.create(job_number='J001', contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.lit, _ = LineItemType.objects.get_or_create(
+        self.lit, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
 
@@ -23,7 +23,7 @@ class SortOrderAutoGenerationTest(TestCase):
         """Adding an unbundled task should not consider bundled tasks' sort_order values."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
-            line_item_type=self.lit, sort_order=1
+            accounting_category=self.lit, sort_order=1
         )
         # Bundled tasks with HIGH within-bundle sort_orders (50, 99)
         # If save() wrongly considers these, the new unbundled task would get 100
@@ -52,7 +52,7 @@ class SortOrderAutoGenerationTest(TestCase):
         """Adding an unbundled task should consider TaskBundle sort_orders (they share container namespace)."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
-            line_item_type=self.lit, sort_order=5
+            accounting_category=self.lit, sort_order=5
         )
         Task.objects.create(
             est_worksheet=self.worksheet, name='Bundled 1',
@@ -74,7 +74,7 @@ class SortOrderAutoGenerationTest(TestCase):
         """Adding a bundled task should get sort_order based on max within that bundle only."""
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
-            line_item_type=self.lit, sort_order=1
+            accounting_category=self.lit, sort_order=1
         )
         Task.objects.create(
             est_worksheet=self.worksheet, name='Bundled 1',
@@ -111,7 +111,7 @@ class BundleCreationSortOrderTest(TestCase):
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
         self.job = Job.objects.create(job_number='J001', contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.lit, _ = LineItemType.objects.get_or_create(
+        self.lit, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
 
@@ -133,7 +133,7 @@ class BundleCreationSortOrderTest(TestCase):
             'selected_tasks': [t1.task_id, t2.task_id, t3.task_id],
             'bundle_name': 'Test Bundle',
             'bundle_description': '',
-            'line_item_type': self.lit.pk,
+            'accounting_category': self.lit.pk,
         })
 
         t1.refresh_from_db()
@@ -157,7 +157,7 @@ class UnbundleSortOrderTest(TestCase):
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
         self.job = Job.objects.create(job_number='J001', contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.lit, _ = LineItemType.objects.get_or_create(
+        self.lit, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
 
@@ -170,7 +170,7 @@ class UnbundleSortOrderTest(TestCase):
         # Bundle at container sort_order 5
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
-            line_item_type=self.lit, sort_order=5
+            accounting_category=self.lit, sort_order=5
         )
         t1 = Task.objects.create(
             est_worksheet=self.worksheet, name='Bundled A', rate=10,
@@ -207,7 +207,7 @@ class UnbundleSortOrderTest(TestCase):
         # Bundle at container sort_order 5
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
-            line_item_type=self.lit, sort_order=5
+            accounting_category=self.lit, sort_order=5
         )
         t1 = Task.objects.create(
             est_worksheet=self.worksheet, name='Bundled A', rate=10,
@@ -237,7 +237,7 @@ class UnbundleSortOrderTest(TestCase):
         # Bundle at container sort_order 5
         bundle = TaskBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
-            line_item_type=self.lit, sort_order=5
+            accounting_category=self.lit, sort_order=5
         )
         t1 = Task.objects.create(
             est_worksheet=self.worksheet, name='Bundled A', rate=10,
@@ -274,10 +274,10 @@ class GenerateTaskSortOrderTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
         self.job = Job.objects.create(job_number='J001', contact=self.contact)
-        self.lit_labor, _ = LineItemType.objects.get_or_create(
+        self.lit_labor, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
-        self.lit_material, _ = LineItemType.objects.get_or_create(
+        self.lit_material, _ = AccountingCategory.objects.get_or_create(
             code='MAT', defaults={'name': 'Material'}
         )
 
@@ -286,13 +286,13 @@ class GenerateTaskSortOrderTest(TestCase):
         wot = WorkOrderTemplate.objects.create(template_name='Test Template')
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name='Prep',
-            line_item_type=self.lit_labor, sort_order=1
+            accounting_category=self.lit_labor, sort_order=1
         )
         tt1 = TaskTemplate.objects.create(
-            template_name='Sand', rate=50, line_item_type=self.lit_labor
+            template_name='Sand', rate=50, accounting_category=self.lit_labor
         )
         tt2 = TaskTemplate.objects.create(
-            template_name='Clean', rate=25, line_item_type=self.lit_labor
+            template_name='Clean', rate=25, accounting_category=self.lit_labor
         )
         # Use non-sequential sort_orders (5, 10) to distinguish from auto-generated (1, 2)
         TemplateTaskAssociation.objects.create(
@@ -319,13 +319,13 @@ class GenerateTaskSortOrderTest(TestCase):
         wot = WorkOrderTemplate.objects.create(template_name='Test Template')
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name='Prep',
-            line_item_type=self.lit_labor, sort_order=5
+            accounting_category=self.lit_labor, sort_order=5
         )
         tt_direct = TaskTemplate.objects.create(
-            template_name='Finish', rate=100, line_item_type=self.lit_labor
+            template_name='Finish', rate=100, accounting_category=self.lit_labor
         )
         tt_bundled = TaskTemplate.objects.create(
-            template_name='Sand', rate=50, line_item_type=self.lit_labor
+            template_name='Sand', rate=50, accounting_category=self.lit_labor
         )
         # Direct task at sort_order 3 (not 1, to avoid coincidental match with auto-gen)
         TemplateTaskAssociation.objects.create(
@@ -339,7 +339,7 @@ class GenerateTaskSortOrderTest(TestCase):
         )
         # Excluded task at container sort_order 7
         tt_excl = TaskTemplate.objects.create(
-            template_name='Overhead', rate=0, line_item_type=self.lit_labor
+            template_name='Overhead', rate=0, accounting_category=self.lit_labor
         )
         TemplateTaskAssociation.objects.create(
             work_order_template=wot, task_template=tt_excl,
@@ -364,7 +364,7 @@ class TemplateUnbundleSortOrderTest(TestCase):
         )
         self.client = Client()
         self.client.force_login(self.user)
-        self.lit, _ = LineItemType.objects.get_or_create(
+        self.lit, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
 
@@ -373,16 +373,16 @@ class TemplateUnbundleSortOrderTest(TestCase):
         wot = WorkOrderTemplate.objects.create(template_name='Test')
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name='Bundle',
-            line_item_type=self.lit, sort_order=5
+            accounting_category=self.lit, sort_order=5
         )
         tt1 = TaskTemplate.objects.create(
-            template_name='Alpha', rate=10, line_item_type=self.lit
+            template_name='Alpha', rate=10, accounting_category=self.lit
         )
         tt2 = TaskTemplate.objects.create(
-            template_name='Beta', rate=20, line_item_type=self.lit
+            template_name='Beta', rate=20, accounting_category=self.lit
         )
         tt3 = TaskTemplate.objects.create(
-            template_name='Gamma', rate=30, line_item_type=self.lit
+            template_name='Gamma', rate=30, accounting_category=self.lit
         )
         # Two bundled associations
         a1 = TemplateTaskAssociation.objects.create(

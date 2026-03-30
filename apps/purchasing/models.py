@@ -186,6 +186,10 @@ class Bill(models.Model):
     paid_date = models.DateTimeField(null=True, blank=True)
     cancelled_date = models.DateTimeField(null=True, blank=True)
 
+    # QuickBooks Online sync
+    qbo_id = models.CharField(max_length=50, null=True, blank=True)
+    qbo_payment_status = models.CharField(max_length=50, blank=True, default='')
+
     def clean(self):
         """Validate Bill state transitions, protect immutable date fields, and enforce line item requirement."""
         super().clean()

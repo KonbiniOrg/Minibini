@@ -48,8 +48,9 @@ class BusinessSerializer(serializers.ModelSerializer):
             'business_id', 'our_reference_code', 'business_name',
             'business_address', 'business_phone', 'tax_exemption_number',
             'website', 'terms', 'default_contact', 'default_contact_id', 'tax_multiplier',
+            'qbo_customer_id', 'qbo_vendor_id',
         ]
-        read_only_fields = ['business_id', 'our_reference_code']
+        read_only_fields = ['business_id', 'our_reference_code', 'qbo_customer_id', 'qbo_vendor_id']
 
 
 class BusinessDetailSerializer(BusinessSerializer):

@@ -4,12 +4,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.estimates.models import WorkOrderTemplate, TaskTemplate
 from apps.estimates.services import WorkOrderTemplateService
-from apps.core.models import Configuration, LineItemType
+from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
 from apps.api.permissions import CanManageConfig
 from .serializers import (
     WorkOrderTemplateSerializer, TaskTemplateSerializer,
-    ConfigurationSerializer, LineItemTypeSerializer,
+    ConfigurationSerializer, AccountingCategorySerializer,
 )
 
 
@@ -57,9 +57,9 @@ class TaskTemplateViewSet(viewsets.ModelViewSet):
         WorkOrderTemplateService.delete_task_template(instance.pk)
 
 
-class LineItemTypeViewSet(viewsets.ModelViewSet):
-    queryset = LineItemType.objects.all()
-    serializer_class = LineItemTypeSerializer
+class AccountingCategoryViewSet(viewsets.ModelViewSet):
+    queryset = AccountingCategory.objects.all()
+    serializer_class = AccountingCategorySerializer
     lookup_field = 'pk'
 
     def get_permissions(self):
@@ -68,11 +68,11 @@ class LineItemTypeViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated(), CanManageConfig()]
 
     def perform_create(self, serializer):
-        lit = ConfigurationService.create_line_item_type(**serializer.validated_data)
-        serializer.instance = lit
+        cat = ConfigurationService.create_accounting_category(**serializer.validated_data)
+        serializer.instance = cat
 
     def perform_update(self, serializer):
-        ConfigurationService.update_line_item_type(
+        ConfigurationService.update_accounting_category(
             self.get_object().pk, **serializer.validated_data
         )
 

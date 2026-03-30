@@ -1,16 +1,16 @@
-"""Tests for LineItemType in Bill line items."""
+"""Tests for AccountingCategory in Bill line items."""
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.core.models import LineItemType, Configuration
+from apps.core.models import AccountingCategory, Configuration
 from apps.contacts.models import Contact, Business
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
 from apps.inventory.models import PriceListItem
 
 
-class BillLineItemTypeFormTest(TestCase):
-    """Tests for LineItemType in Bill line item forms."""
+class BillAccountingCategoryFormTest(TestCase):
+    """Tests for AccountingCategory in Bill line item forms."""
 
     @classmethod
     def setUpTestData(cls):
@@ -29,7 +29,7 @@ class BillLineItemTypeFormTest(TestCase):
             vendor_invoice_number='INV-001',
             status='draft'
         )
-        cls.service_type, _ = LineItemType.objects.get_or_create(
+        cls.service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False}
         )
@@ -38,15 +38,15 @@ class BillLineItemTypeFormTest(TestCase):
         self.client = Client()
         self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
-    def test_form_includes_line_item_type_field(self):
-        """Test that line item form shows LineItemType field."""
+    def test_form_includes_accounting_category_field(self):
+        """Test that line item form shows AccountingCategory field."""
         response = self.client.get(
             reverse('purchasing:bill_add_line_item', args=[self.bill.bill_id])
         )
-        self.assertContains(response, 'line_item_type')
+        self.assertContains(response, 'accounting_category')
 
     def test_manual_entry_creates_line_item_with_type(self):
-        """Test that manual form creates line item with LineItemType."""
+        """Test that manual form creates line item with AccountingCategory."""
         response = self.client.post(
             reverse('purchasing:bill_add_line_item', args=[self.bill.bill_id]),
             {
@@ -54,15 +54,15 @@ class BillLineItemTypeFormTest(TestCase):
                 'qty': '2.00',
                 'units': 'hours',
                 'price': '50.00',
-                'line_item_type': self.service_type.pk,
+                'accounting_category': self.service_type.pk,
             }
         )
         line_item = BillLineItem.objects.filter(bill=self.bill).first()
         self.assertIsNotNone(line_item)
-        self.assertEqual(line_item.line_item_type, self.service_type)
+        self.assertEqual(line_item.accounting_category, self.service_type)
 
-    def test_manual_entry_requires_line_item_type(self):
-        """Test that manual entry requires LineItemType."""
+    def test_manual_entry_requires_accounting_category(self):
+        """Test that manual entry requires AccountingCategory."""
         response = self.client.post(
             reverse('purchasing:bill_add_line_item', args=[self.bill.bill_id]),
             {
@@ -70,7 +70,7 @@ class BillLineItemTypeFormTest(TestCase):
                 'qty': '2.00',
                 'units': 'hours',
                 'price': '50.00',
-                # No line_item_type
+                # No accounting_category
             }
         )
         # Should stay on page with error
@@ -79,7 +79,7 @@ class BillLineItemTypeFormTest(TestCase):
 
 
 class BillLineItemFromPriceListTest(TestCase):
-    """Tests for LineItemType when adding from PriceList."""
+    """Tests for AccountingCategory when adding from PriceList."""
 
     @classmethod
     def setUpTestData(cls):
@@ -98,7 +98,7 @@ class BillLineItemFromPriceListTest(TestCase):
             vendor_invoice_number='INV-002',
             status='draft'
         )
-        cls.product_type, _ = LineItemType.objects.get_or_create(
+        cls.product_type, _ = AccountingCategory.objects.get_or_create(
             code='PRD',
             defaults={'name': 'Product', 'taxable': True}
         )
@@ -107,15 +107,15 @@ class BillLineItemFromPriceListTest(TestCase):
             description='Test Product',
             selling_price=Decimal('100.00'),
             purchase_price=Decimal('75.00'),
-            line_item_type=cls.product_type
+            accounting_category=cls.product_type
         )
 
     def setUp(self):
         self.client = Client()
         self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
-    def test_pricelist_form_copies_line_item_type(self):
-        """Test that adding from price list copies the LineItemType."""
+    def test_pricelist_form_copies_accounting_category(self):
+        """Test that adding from price list copies the AccountingCategory."""
         response = self.client.post(
             reverse('purchasing:bill_add_line_item', args=[self.bill.bill_id]),
             {
@@ -125,11 +125,11 @@ class BillLineItemFromPriceListTest(TestCase):
         )
         line_item = BillLineItem.objects.filter(bill=self.bill).first()
         self.assertIsNotNone(line_item)
-        self.assertEqual(line_item.line_item_type, self.product_type)
+        self.assertEqual(line_item.accounting_category, self.product_type)
 
 
-class BillCreateFromPOLineItemTypeTest(TestCase):
-    """Tests for LineItemType when creating Bill from PO."""
+class BillCreateFromPOAccountingCategoryTest(TestCase):
+    """Tests for AccountingCategory when creating Bill from PO."""
 
     @classmethod
     def setUpTestData(cls):
@@ -157,11 +157,11 @@ class BillCreateFromPOLineItemTypeTest(TestCase):
             po_number='PO-003',
             status='draft'
         )
-        cls.product_type, _ = LineItemType.objects.get_or_create(
+        cls.product_type, _ = AccountingCategory.objects.get_or_create(
             code='PRD',
             defaults={'name': 'Product', 'taxable': True}
         )
-        cls.service_type, _ = LineItemType.objects.get_or_create(
+        cls.service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False}
         )
@@ -172,7 +172,7 @@ class BillCreateFromPOLineItemTypeTest(TestCase):
             qty=Decimal('2.00'),
             units='ea',
             price=Decimal('50.00'),
-            line_item_type=cls.product_type
+            accounting_category=cls.product_type
         )
         # Issue the PO so we can create a bill from it
         cls.po.status = 'issued'
@@ -182,8 +182,8 @@ class BillCreateFromPOLineItemTypeTest(TestCase):
         self.client = Client()
         self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
 
-    def test_bill_from_po_copies_line_item_type(self):
-        """Test that creating a Bill from PO copies LineItemType to line items."""
+    def test_bill_from_po_copies_accounting_category(self):
+        """Test that creating a Bill from PO copies AccountingCategory to line items."""
         response = self.client.post(
             reverse('purchasing:bill_create_for_po', args=[self.po.po_id]),
             {
@@ -196,7 +196,7 @@ class BillCreateFromPOLineItemTypeTest(TestCase):
         bill = Bill.objects.filter(vendor_invoice_number='VENDOR-INV-001').first()
         self.assertIsNotNone(bill)
 
-        # Check the line item was copied with line_item_type
+        # Check the line item was copied with accounting_category
         bill_line_item = BillLineItem.objects.filter(bill=bill).first()
         self.assertIsNotNone(bill_line_item)
-        self.assertEqual(bill_line_item.line_item_type, self.product_type)
+        self.assertEqual(bill_line_item.accounting_category, self.product_type)

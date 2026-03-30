@@ -459,7 +459,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -477,7 +477,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -495,7 +495,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -513,7 +513,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -531,7 +531,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -549,7 +549,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -567,7 +567,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -585,7 +585,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -603,7 +603,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -621,7 +621,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -639,7 +639,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -657,7 +657,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -675,7 +675,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -693,7 +693,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -711,7 +711,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -729,7 +729,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -747,7 +747,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1529,7 +1529,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1548,7 +1548,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1567,7 +1567,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1586,7 +1586,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1605,7 +1605,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1624,7 +1624,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1643,7 +1643,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1662,7 +1662,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1681,7 +1681,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1700,7 +1700,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1719,7 +1719,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1738,7 +1738,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1757,7 +1757,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1776,7 +1776,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1795,7 +1795,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {
@@ -1814,7 +1814,7 @@
             "sort_order": null,
             "mapping_strategy": "direct",
             "bundle": null,
-            "line_item_type": null
+            "accounting_category": null
         }
     },
     {

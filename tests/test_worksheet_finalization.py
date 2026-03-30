@@ -70,8 +70,8 @@ class WorksheetFinalizationTests(TestCase):
         )
 
         # Add a task to the worksheet
-        from apps.core.models import LineItemType
-        self.line_item_type, _ = LineItemType.objects.get_or_create(
+        from apps.core.models import AccountingCategory
+        self.accounting_category, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
         self.task = Task.objects.create(
@@ -80,7 +80,7 @@ class WorksheetFinalizationTests(TestCase):
             units='hours',
             rate=Decimal('50.00'),
             est_qty=Decimal('2.0'),
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
         )
 
     def test_worksheet_marked_final_after_generating_estimate(self):
@@ -289,8 +289,8 @@ class WorksheetEstimateIntegrationTests(TestCase):
             rate=Decimal('50.00')
         )
 
-        from apps.core.models import LineItemType
-        self.line_item_type, _ = LineItemType.objects.get_or_create(
+        from apps.core.models import AccountingCategory
+        self.accounting_category, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
 
@@ -312,7 +312,7 @@ class WorksheetEstimateIntegrationTests(TestCase):
             units='hours',
             rate=Decimal('50.00'),
             est_qty=Decimal('2.0'),
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
         )
 
         # Verify worksheet is draft
@@ -360,7 +360,7 @@ class WorksheetEstimateIntegrationTests(TestCase):
             units='hours',
             rate=Decimal('60.00'),
             est_qty=Decimal('3.0'),
-            line_item_type=self.line_item_type,
+            accounting_category=self.accounting_category,
         )
 
         # Generate estimate from v2

@@ -1,6 +1,6 @@
 [
     {
-        "model": "core.lineitemtype",
+        "model": "core.accountingcategory",
         "pk": 100,
         "fields": {
             "name": "Electrical Work",
@@ -8,7 +8,7 @@
         }
     },
     {
-        "model": "core.lineitemtype",
+        "model": "core.accountingcategory",
         "pk": 101,
         "fields": {
             "name": "Plumbing Work",
@@ -116,7 +116,7 @@
             "work_order_template": 1,
             "name": "Complete Electrical",
             "description": "All electrical installation tasks bundled together",
-            "line_item_type": 100,
+            "accounting_category": 100,
             "sort_order": 1
         }
     },
@@ -127,7 +127,7 @@
             "work_order_template": 1,
             "name": "Complete Plumbing",
             "description": "All plumbing installation tasks bundled together",
-            "line_item_type": 101,
+            "accounting_category": 101,
             "sort_order": 2
         }
     },
