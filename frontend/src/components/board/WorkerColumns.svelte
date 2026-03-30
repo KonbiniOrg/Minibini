@@ -147,7 +147,7 @@
   .worker-task-count { font-size: 11px; color: #999; margin-left: auto; }
   .worker-tasks { flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 5px; background: #f8faf9; overflow-y: auto; min-height: 40px; }
   .task-card-wrapper { transition: transform 0.15s ease; }
-  .task-card-wrapper.dragging-source { opacity: 0; height: 0; overflow: hidden; margin: 0; padding: 0; }
+  .task-card-wrapper.dragging-source { opacity: 0.15; }
   .dimmed { opacity: 0.25; transition: opacity 0.2s; }
 
   .drop-placeholder {

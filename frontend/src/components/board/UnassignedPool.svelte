@@ -64,6 +64,6 @@
     display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 5px; align-content: start;
   }
   .dimmed { opacity: 0.25; transition: opacity 0.2s; }
-  .dragging-source { opacity: 0; height: 0; overflow: hidden; margin: 0; padding: 0; }
+  .dragging-source { opacity: 0.15; }
   .empty { font-size: 13px; color: #999; text-align: center; padding: 20px 0; grid-column: 1 / -1; }
 </style>
