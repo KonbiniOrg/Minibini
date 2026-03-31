@@ -15,16 +15,4 @@
     <a href="{% url 'inventory:inventory_list' %}">Cancel</a>
 </form>
 
-<script>
-    const unitsSelect = document.getElementById('id_units_select');
-    const customRow = document.getElementById('id_units_custom').closest('tr');
-
-    function toggleCustomUnits() {
-        customRow.style.display = unitsSelect.value === 'other' ? '' : 'none';
-    }
-
-    unitsSelect.addEventListener('change', toggleCustomUnits);
-    toggleCustomUnits();
-</script>
-
 {% endblock %}
