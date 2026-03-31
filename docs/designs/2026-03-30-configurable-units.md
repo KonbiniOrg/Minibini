@@ -108,6 +108,8 @@ Add a units management section to the settings page (alongside other config). Al
 
 Saves via `PUT /api/settings/units/`.
 
+Note displayed in the UI: removing a unit does not update existing records that use it — they keep their current value, but the unit won't be available for selection going forward unless re-added. Validation only applies to new input, not existing data.
+
 ## Templates (Django HTML)
 
 Templates that display units (read-only) need no changes — they still render the string value. Templates with forms get the `<select>` dropdown as described in the Forms section.
