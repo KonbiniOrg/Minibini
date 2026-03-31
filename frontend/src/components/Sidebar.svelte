@@ -46,7 +46,7 @@
   onmouseleave={scheduleClose}
 >
   <nav>
-    <a href="/jobs" use:link>Jobs</a>
+    <a href="/jobs/board" use:link>Jobs</a>
     <a href="/contacts" use:link>Contacts</a>
     <a href="/email" use:link>Email</a>
     {#if showPurchasing}
@@ -65,8 +65,8 @@
     <div class="spacer"></div>
     <div class="bottom-area">
       {#if $user}
-        <a href="/profile" use:link>{$user.username} Profile</a>
-        <button class="nav-link" onclick={handleLogout}>Logout</button>
+        <a href="/profile" use:link>{$user.username}</a>
+        <a href="#" class="nav-link" onclick={(e) => { e.preventDefault(); handleLogout(); }}>Logout</a>
       {/if}
     </div>
   </nav>
@@ -80,7 +80,7 @@
     z-index: 1000;
     width: 44px;
     height: 44px;
-    background: #222;
+    background: #1a3344;
     border: none;
     cursor: pointer;
     display: flex;
@@ -103,7 +103,8 @@
     left: 0;
     width: 120px;
     height: 100vh;
-    background: #222;
+    box-sizing: border-box;
+    background: #1a3344;
     color: #eee;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
@@ -121,6 +122,7 @@
     display: flex;
     flex-direction: column;
     padding: 8px 0;
+    width: 120px;
   }
 
   a, .nav-link {
@@ -136,24 +138,27 @@
     width: 100%;
     font-family: inherit;
     white-space: nowrap;
+    overflow: hidden;
+    box-sizing: border-box;
   }
   a:hover, .nav-link:hover {
-    background: #333;
+    background: #264a5e;
     color: #fff;
+    box-shadow: 8px 0 0 #264a5e;
   }
 
   .section-label {
     padding: 14px 12px 4px;
     font-size: 10px;
     text-transform: uppercase;
-    color: #777;
+    color: #6a9aab;
     letter-spacing: 0.5px;
   }
 
   .spacer { flex: 1; }
 
   .bottom-area {
-    border-top: 1px solid #444;
+    border-top: 1px solid #2d5468;
     padding: 4px 0;
   }
 </style>
