@@ -711,7 +711,7 @@ class EstimateGenerationService:
             line_number=self.line_number,
             description=task.name,
             qty=qty,
-            units=task.units or 'each',
+            units=task.units or 'none',
             price=rate,
             accounting_category=accounting_category
         )
@@ -736,7 +736,7 @@ class EstimateGenerationService:
             line_number=self.line_number,
             description=material.description,
             qty=material.quantity,
-            units='each',
+            units='none',
             price=material.sell_price,
             accounting_category=accounting_category,
         )
@@ -761,7 +761,7 @@ class EstimateGenerationService:
             line_number=self.line_number,
             description=bundle.name,
             qty=Decimal('1.00'),
-            units='each',
+            units='none',
             price=total_price,
             accounting_category=bundle.accounting_category
         )
