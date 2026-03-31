@@ -1,5 +1,12 @@
 [
     {
+        "model": "core.configuration",
+        "pk": "units_list",
+        "fields": {
+            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
+    },
+    {
         "model": "core.accountingcategory",
         "pk": 100,
         "fields": {
@@ -43,7 +50,7 @@
         "fields": {
             "template_name": "Install Electrical Outlets",
             "description": "Install standard electrical outlets",
-            "units": "outlets",
+            "units": "ea",
             "rate": "45.00",
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
@@ -55,7 +62,7 @@
         "fields": {
             "template_name": "Run Electrical Wiring",
             "description": "Run electrical wiring through walls",
-            "units": "linear feet",
+            "units": "ln ft",
             "rate": "12.50",
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
@@ -67,7 +74,7 @@
         "fields": {
             "template_name": "Install Plumbing Fixtures",
             "description": "Install bathroom and kitchen fixtures",
-            "units": "fixtures",
+            "units": "ea",
             "rate": "85.00",
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
@@ -79,7 +86,7 @@
         "fields": {
             "template_name": "Run Water Lines",
             "description": "Install water supply lines",
-            "units": "linear feet",
+            "units": "ln ft",
             "rate": "18.75",
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
@@ -91,7 +98,7 @@
         "fields": {
             "template_name": "Frame Walls",
             "description": "Frame interior walls",
-            "units": "square feet",
+            "units": "sq ft",
             "rate": "25.00",
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"
@@ -103,7 +110,7 @@
         "fields": {
             "template_name": "Install Drywall",
             "description": "Install and finish drywall",
-            "units": "square feet",
+            "units": "sq ft",
             "rate": "15.50",
             "is_active": true,
             "created_date": "2024-01-01T10:00:00Z"

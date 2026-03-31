@@ -12,10 +12,12 @@ class GetUnitsListTest(BaseTestCase):
         self.assertIsInstance(result, list)
         self.assertEqual(result[0], 'none')
 
-    def test_raises_if_config_missing(self):
+    def test_falls_back_to_defaults_if_config_missing(self):
         Configuration.objects.filter(key='units_list').delete()
-        with self.assertRaises(Configuration.DoesNotExist):
-            get_units_list()
+        result = get_units_list()
+        self.assertIsInstance(result, list)
+        self.assertEqual(result[0], 'none')
+        self.assertIn('hours', result)
 
 
 class ValidateUnitTest(BaseTestCase):

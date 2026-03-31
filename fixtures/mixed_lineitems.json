@@ -1,5 +1,12 @@
 [
     {
+        "model": "core.configuration",
+        "pk": "units_list",
+        "fields": {
+            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
+    },
+    {
         "model": "contacts.contact",
         "pk": 200,
         "fields": {
@@ -52,7 +59,7 @@
         "pk": 200,
         "fields": {
             "code": "WOOD001",
-            "units": "board_feet",
+            "units": "bd ft",
             "description": "Premium oak lumber for furniture",
             "purchase_price": "4.50",
             "selling_price": "8.00",
@@ -66,7 +73,7 @@
         "pk": 201,
         "fields": {
             "code": "FINISH001",
-            "units": "quart",
+            "units": "qt",
             "description": "Water-based polyurethane finish",
             "purchase_price": "15.00",
             "selling_price": "25.00",
@@ -167,7 +174,7 @@
             "price_list_item": 200,
             "line_number": 2,
             "qty": "25.00",
-            "units": "board_feet",
+            "units": "bd ft",
             "description": "Premium oak lumber",
             "price": "200.00"
         }
@@ -181,7 +188,7 @@
             "price_list_item": 201,
             "line_number": 3,
             "qty": "2.00",
-            "units": "quart",
+            "units": "qt",
             "description": "Polyurethane finish",
             "price": "50.00"
         }
@@ -195,7 +202,7 @@
             "price_list_item": null,
             "line_number": 4,
             "qty": "1.00",
-            "units": "each",
+            "units": "ea",
             "description": "Custom hardware installation",
             "price": "75.00"
         }
@@ -209,7 +216,7 @@
             "price_list_item": null,
             "line_number": 5,
             "qty": "1.00",
-            "units": "each",
+            "units": "ea",
             "description": "Delivery and setup",
             "price": "50.00"
         }

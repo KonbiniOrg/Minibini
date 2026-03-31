@@ -39,7 +39,7 @@ class TaskTemplateAPITest(BaseTestCase):
         response = self.client.post('/api/task-templates/', {
             'template_name': 'API Test Template',
             'description': 'Created via API',
-            'units': 'hr',
+            'units': 'hours',
         }, format='json')
         self.assertEqual(response.status_code, 201)
 

@@ -35,7 +35,7 @@ class EarmarkModelTest(TestCase):
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
-            units='sheet',
+            units='sheets',
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
@@ -44,7 +44,7 @@ class EarmarkModelTest(TestCase):
         self.screws = PriceListItem.objects.create(
             code='SCR.100',
             description='Wood Screws Box of 100',
-            units='box',
+            units='ea',
             qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
@@ -147,7 +147,7 @@ class InventoryItemAvailabilityTest(TestCase):
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
-            units='sheet',
+            units='sheets',
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
@@ -186,7 +186,7 @@ class InventoryAdjustmentModelTest(TestCase):
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
-            units='sheet',
+            units='sheets',
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),

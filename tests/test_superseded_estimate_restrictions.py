@@ -66,7 +66,7 @@ class SupersededEstimateRestrictionTests(TestCase):
         self.price_list_item = PriceListItem.objects.create(
             code='TEST001',
             description='Test Item',
-            units='each',
+            units='ea',
             purchase_price=Decimal('10.00'),
             selling_price=Decimal('20.00')
         )
@@ -79,7 +79,7 @@ class SupersededEstimateRestrictionTests(TestCase):
         response = self.client.post(url, {
             'price_list_item': self.price_list_item.pk,
             'qty': '5',
-            'units': 'each',
+            'units': 'ea',
             'description': 'Test line item',
             'price': '20.00'
         })
@@ -247,7 +247,7 @@ class SupersededEstimateModelTests(TestCase):
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
             qty=Decimal('10'),
-            units='each',
+            units='ea',
             description='Test item',
             price=Decimal('25.00')
         )

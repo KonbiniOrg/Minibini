@@ -132,7 +132,7 @@ class EstWorksheetCreateFromJobTest(TestCase):
         )
         task_template2 = TaskTemplate.objects.create(
             template_name="Test Task 2",
-            units="pieces",
+            units="pcs",
             rate=25.00,
             is_active=True
         )

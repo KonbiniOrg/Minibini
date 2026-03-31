@@ -55,7 +55,7 @@ class BillLineItemAdditionTests(TestCase):
         # Create price list items
         self.price_list_item = PriceListItem.objects.create(
             code='WIDGET001',
-            units='each',
+            units='ea',
             description='Widget Type A',
             purchase_price=Decimal('25.00'),
             selling_price=Decimal('50.00'),
@@ -64,7 +64,7 @@ class BillLineItemAdditionTests(TestCase):
 
         self.price_list_item2 = PriceListItem.objects.create(
             code='GADGET001',
-            units='box',
+            units='ea',
             description='Gadget Type B',
             purchase_price=Decimal('15.50'),
             selling_price=Decimal('30.00'),
@@ -252,7 +252,7 @@ class BillLineItemAdditionTests(TestCase):
             price_list_item=self.price_list_item,
             description='Item 1',
             qty=Decimal('2.00'),
-            units='each',
+            units='ea',
             price=Decimal('10.00')
         )
         BillLineItem.objects.create(
@@ -260,7 +260,7 @@ class BillLineItemAdditionTests(TestCase):
             price_list_item=self.price_list_item2,
             description='Item 2',
             qty=Decimal('3.00'),
-            units='each',
+            units='ea',
             price=Decimal('15.00')
         )
 

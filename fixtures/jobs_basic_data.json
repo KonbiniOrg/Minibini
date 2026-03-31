@@ -1,5 +1,12 @@
 [
     {
+        "model": "core.configuration",
+        "pk": "units_list",
+        "fields": {
+            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
+    },
+    {
         "model": "jobs.job",
         "pk": 1,
         "fields": {
@@ -65,7 +72,7 @@
             "assignee": 2,
             "work_order": 1,
             "name": "Electrical rough-in",
-            "units": "linear_feet",
+            "units": "ln ft",
             "rate": "12.50",
             "est_qty": "150.00",
             "description": "",

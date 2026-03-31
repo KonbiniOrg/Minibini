@@ -109,7 +109,7 @@ class LineItemTaskGenerationTestCase(TestCase):
             estimate=estimate,
             line_number=10,
             qty=Decimal('1.00'),
-            units='each',
+            units='ea',
             description='',  # Empty description
             price=Decimal('100.00')
         )
@@ -191,7 +191,7 @@ class LineItemTaskGenerationTestCase(TestCase):
             price_list_item=price_list_item,
             line_number=20,
             qty=Decimal('5.00'),
-            units='',  # Empty units (should use price_list_item.units)
+            units='none',  # Empty units (should use price_list_item.units)
             description='Test fallback',
             price=Decimal('0.00')  # Zero price
         )
@@ -237,7 +237,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
             estimate=self.estimate,
             line_number=1,
             qty=Decimal('0.00'),  # Zero quantity
-            units='',  # Empty units
+            units='none',  # Empty units
             description='',  # Empty description
             price=Decimal('0.00')  # Zero price
         )
@@ -250,7 +250,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
 
         # Should handle null/empty values gracefully (using line_number since description is empty)
         self.assertIn(f'Line Item {line_item.line_number}', task.name)
-        self.assertEqual(task.units, '')
+        self.assertEqual(task.units, 'none')
         self.assertEqual(task.rate, Decimal('0.00'))
         self.assertEqual(task.est_qty, Decimal('0.00'))
 
@@ -259,7 +259,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
         price_list_item = PriceListItem.objects.create(
             code='LONG001',
             description='This is a very long description that should be truncated when creating a task name because it exceeds the reasonable length for display',
-            units='each',
+            units='ea',
             selling_price=Decimal('10.00')
         )
 
@@ -268,7 +268,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
             price_list_item=price_list_item,
             line_number=1,
             qty=Decimal('1.00'),
-            units='each',
+            units='ea',
             description='',
             price=Decimal('10.00')
         )

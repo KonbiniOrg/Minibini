@@ -37,6 +37,7 @@ class AccountingCategoryIntegrationTest(TestCase):
         response = self.client.post(reverse('inventory:price_list_item_add'), {
             'code': 'BOLT-001',
             'description': 'Steel Bolt',
+            'units': 'ea',
             'selling_price': '10.00',
             'purchase_price': '5.00',
             'qty_on_hand': '100.00',
@@ -171,7 +172,7 @@ class AccountingCategoryIntegrationTest(TestCase):
                 'manual_submit': '1',
                 'description': 'Metal Sheet',
                 'qty': '1.00',
-                'units': 'each',
+                'units': 'ea',
                 'price': '200.00',
                 'accounting_category': material_type.pk,
             }
@@ -272,7 +273,7 @@ class AccountingCategoryIntegrationTest(TestCase):
         pli = PriceListItem.objects.create(
             code='WIDGET-001',
             description='Widget',
-            units='each',
+            units='ea',
             purchase_price=Decimal('5.00'),
             selling_price=Decimal('10.00'),
             qty_on_hand=Decimal('50.00'),
@@ -349,7 +350,7 @@ class AccountingCategoryIntegrationTest(TestCase):
                 'manual_submit': '1',
                 'description': 'Physical Product',
                 'qty': '2.00',
-                'units': 'each',
+                'units': 'ea',
                 'price': '100.00',
                 'accounting_category': product_type.pk,
             }
@@ -422,7 +423,7 @@ class AccountingCategoryIntegrationTest(TestCase):
                 'manual_submit': '1',
                 'description': 'Parts',
                 'qty': '1.00',
-                'units': 'each',
+                'units': 'ea',
                 'price': '100.00',
                 'accounting_category': material_type.pk,
             }
@@ -578,7 +579,7 @@ class TaxCalculationIntegrationTest(TestCase):
                 'manual_submit': '1',
                 'description': 'Test Item',
                 'qty': '1.00',
-                'units': 'each',
+                'units': 'ea',
                 'price': '100.00',
                 'accounting_category': taxable_type.pk,
             }

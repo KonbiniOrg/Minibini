@@ -261,7 +261,7 @@ class EstimateServiceAddLineItemTest(EstimatesTestBase):
     def test_add_line_item_from_pli(self):
         from apps.inventory.models import PriceListItem
         pli = PriceListItem.objects.create(
-            code='WLD-001', description='Welding rod', units='each',
+            code='WLD-001', description='Welding rod', units='ea',
             purchase_price=Decimal('5.00'), selling_price=Decimal('10.00'),
             accounting_category=self.lit,
         )
@@ -416,7 +416,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
     def test_add_task_manual(self):
         from apps.estimates.services import WorksheetService
         task = WorksheetService.add_task_manual(
-            self.ws.pk, name='Custom task', units='each',
+            self.ws.pk, name='Custom task', units='ea',
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
         )
         self.assertEqual(task.name, 'Custom task')

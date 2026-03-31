@@ -239,14 +239,14 @@ class TaskCreationWorkflowTest(TestCase):
             is_active=True
         )
         
-        self.assertEqual(template.units, "")  # CharField blank=True defaults to empty
+        self.assertEqual(template.units, "none")  # CharField defaults to 'none'
         self.assertIsNone(template.rate)  # DecimalField null=True
     
     def test_task_template_calculation_example(self):
         """Test using TaskTemplate fields with association for calculations."""
         template = TaskTemplate.objects.create(
             template_name="Material Template",
-            units="square_feet",
+            units="sq ft",
             rate=Decimal('12.75'),
             is_active=True
         )

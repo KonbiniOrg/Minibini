@@ -138,6 +138,7 @@ class PriceListItemFormArchiveTest(TestCase):
         form = PriceListItemForm(data={
             'code': 'NEW001',
             'description': 'New Item',
+            'units': 'ea',
             'selling_price': '10.00',
             'purchase_price': '5.00',
             'qty_on_hand': '0.00',
@@ -161,6 +162,7 @@ class PriceListItemFormArchiveTest(TestCase):
             data={
                 'code': 'TEST001',
                 'description': 'Test Item',
+                'units': 'ea',
                 'selling_price': '10.00',
                 'purchase_price': '0.00',
                 'qty_on_hand': '0.00',
@@ -187,6 +189,7 @@ class PriceListItemFormArchiveTest(TestCase):
             data={
                 'code': 'TEST001',
                 'description': 'Test Item',
+                'units': 'ea',
                 'selling_price': '10.00',
                 'purchase_price': '0.00',
                 'qty_on_hand': '0.00',
@@ -391,6 +394,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
             {
                 'code': 'WORKFLOW001',
                 'description': 'Workflow Test Item',
+                'units': 'ea',
                 'selling_price': '50.00',
                 'purchase_price': '25.00',
                 'qty_on_hand': '100.00',
@@ -409,6 +413,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
             {
                 'code': 'WORKFLOW001',
                 'description': 'Workflow Test Item',
+                'units': 'ea',
                 'selling_price': '50.00',
                 'purchase_price': '25.00',
                 'qty_on_hand': '100.00',
@@ -438,6 +443,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
             {
                 'code': 'WORKFLOW001',
                 'description': 'Workflow Test Item',
+                'units': 'ea',
                 'selling_price': '50.00',
                 'purchase_price': '25.00',
                 'qty_on_hand': '100.00',

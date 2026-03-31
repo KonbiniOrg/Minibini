@@ -243,7 +243,7 @@ class TaskService:
         task = Task.objects.create(
             work_order=work_order,
             name=task_name,
-            units=line_item.units or line_item.price_list_item.units,
+            units=line_item.units if line_item.units not in ('', 'none') else line_item.price_list_item.units,
             rate=line_item.price or line_item.price_list_item.selling_price,
             est_qty=line_item.qty,
             assignee=None,

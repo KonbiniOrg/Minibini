@@ -75,7 +75,7 @@ class TaskDescriptionFromTemplateTests(TestCase):
         self.task_template = TaskTemplate.objects.create(
             template_name='Painting',
             description='Apply two coats of primer and paint',
-            units='sqft',
+            units='sq ft',
             rate=Decimal('3.50'),
             accounting_category=self.accounting_category,
         )
@@ -130,7 +130,7 @@ class TaskDescriptionInViewsTests(TestCase):
             name='Detailed Task',
             description='Sand and finish hardwood floors',
             est_worksheet=self.worksheet,
-            units='sqft',
+            units='sq ft',
             rate=Decimal('5.00'),
             est_qty=Decimal('200.00'),
         )
@@ -153,7 +153,7 @@ class TaskDescriptionInViewsTests(TestCase):
         response = self.client.post(url, {
             'name': 'Detailed Task',
             'description': 'Updated: sand, stain, and finish hardwood floors',
-            'units': 'sqft',
+            'units': 'sq ft',
             'rate': '5.00',
             'est_qty': '200.00',
         })

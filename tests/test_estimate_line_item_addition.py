@@ -52,7 +52,7 @@ class EstimateLineItemAdditionTests(TestCase):
         # Create a price list item
         self.price_list_item = PriceListItem.objects.create(
             code='ITEM001',
-            units='each',
+            units='ea',
             description='Test Price List Item',
             purchase_price=Decimal('10.00'),
             selling_price=Decimal('15.00'),
@@ -200,7 +200,7 @@ class EstimateLineItemAdditionTests(TestCase):
         form_data = {
             'description': 'Should not be added',
             'qty': '1.00',
-            'units': 'each',
+            'units': 'ea',
             'price': '10.00',
             'accounting_category': self.service_type.pk,
             'manual_submit': 'Add Manual Line Item'
@@ -223,7 +223,7 @@ class EstimateLineItemAdditionTests(TestCase):
         form_data_1 = {
             'description': 'First item',
             'qty': '1.00',
-            'units': 'each',
+            'units': 'ea',
             'price': '100.00',
             'accounting_category': self.service_type.pk,
             'manual_submit': 'Add Manual Line Item'
@@ -317,7 +317,7 @@ class EstimateLineItemDeletionTests(TestCase):
             estimate=self.estimate,
             description='Test item',
             qty=Decimal('1.00'),
-            units='each',
+            units='ea',
             price=Decimal('10.00')
         )
 
@@ -338,21 +338,21 @@ class EstimateLineItemDeletionTests(TestCase):
             estimate=self.estimate,
             description='Item 1',
             qty=Decimal('1.00'),
-            units='each',
+            units='ea',
             price=Decimal('10.00')
         )
         item2 = EstimateLineItem.objects.create(
             estimate=self.estimate,
             description='Item 2',
             qty=Decimal('2.00'),
-            units='each',
+            units='ea',
             price=Decimal('20.00')
         )
         item3 = EstimateLineItem.objects.create(
             estimate=self.estimate,
             description='Item 3',
             qty=Decimal('3.00'),
-            units='each',
+            units='ea',
             price=Decimal('30.00')
         )
 
@@ -390,21 +390,21 @@ class EstimateLineItemDeletionTests(TestCase):
             estimate=self.estimate,
             description='Item 1',
             qty=Decimal('1.00'),
-            units='each',
+            units='ea',
             price=Decimal('10.00')
         )
         item2 = EstimateLineItem.objects.create(
             estimate=self.estimate,
             description='Item 2',
             qty=Decimal('2.00'),
-            units='each',
+            units='ea',
             price=Decimal('20.00')
         )
         item3 = EstimateLineItem.objects.create(
             estimate=self.estimate,
             description='Item 3',
             qty=Decimal('3.00'),
-            units='each',
+            units='ea',
             price=Decimal('30.00')
         )
 
@@ -430,21 +430,21 @@ class EstimateLineItemDeletionTests(TestCase):
             estimate=self.estimate,
             description='Item 1',
             qty=Decimal('1.00'),
-            units='each',
+            units='ea',
             price=Decimal('10.00')
         )
         item2 = EstimateLineItem.objects.create(
             estimate=self.estimate,
             description='Item 2',
             qty=Decimal('2.00'),
-            units='each',
+            units='ea',
             price=Decimal('20.00')
         )
         item3 = EstimateLineItem.objects.create(
             estimate=self.estimate,
             description='Item 3',
             qty=Decimal('3.00'),
-            units='each',
+            units='ea',
             price=Decimal('30.00')
         )
 
@@ -468,7 +468,7 @@ class EstimateLineItemDeletionTests(TestCase):
             estimate=self.estimate,
             description='Test item',
             qty=Decimal('1.00'),
-            units='each',
+            units='ea',
             price=Decimal('10.00')
         )
 
@@ -503,7 +503,7 @@ class EstimateLineItemDeletionTests(TestCase):
                 estimate=self.estimate,
                 description=f'Item {i}',
                 qty=Decimal('1.00'),
-                units='each',
+                units='ea',
                 price=Decimal('10.00')
             )
             items.append(item)
@@ -530,7 +530,7 @@ class EstimateLineItemDeletionTests(TestCase):
             estimate=self.estimate,
             description='Test item',
             qty=Decimal('1.00'),
-            units='each',
+            units='ea',
             price=Decimal('10.00')
         )
 

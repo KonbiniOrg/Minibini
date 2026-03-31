@@ -44,7 +44,7 @@ class TaskDetailViewTests(TestCase):
         )
         self.final_task = Task.objects.create(
             name='Final Task', est_worksheet=self.final_worksheet,
-            units='sqft', rate=Decimal('10.00'), est_qty=Decimal('100.00')
+            units='sq ft', rate=Decimal('10.00'), est_qty=Decimal('100.00')
         )
 
     def test_detail_shows_edit_link_for_draft_worksheet_task(self):
@@ -118,7 +118,7 @@ class TaskEditViewTests(TestCase):
         url = reverse('jobs:task_edit', args=[self.task.task_id])
         response = self.client.post(url, {
             'name': 'Updated Task',
-            'units': 'sqft',
+            'units': 'sq ft',
             'rate': '75.00',
             'est_qty': '10.00',
         })
@@ -132,7 +132,7 @@ class TaskEditViewTests(TestCase):
         # Verify task was updated
         self.task.refresh_from_db()
         self.assertEqual(self.task.name, 'Updated Task')
-        self.assertEqual(self.task.units, 'sqft')
+        self.assertEqual(self.task.units, 'sq ft')
         self.assertEqual(self.task.rate, Decimal('75.00'))
         self.assertEqual(self.task.est_qty, Decimal('10.00'))
 

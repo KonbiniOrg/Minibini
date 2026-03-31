@@ -28,7 +28,7 @@ class InvoiceAPITest(BaseTestCase):
         if invoice:
             response = self.client.post(f'/api/invoices/{invoice.pk}/line-items/', {
                 'qty': '1.00',
-                'units': 'hr',
+                'units': 'hours',
                 'description': 'Consulting',
                 'price': '150.00',
             }, format='json')

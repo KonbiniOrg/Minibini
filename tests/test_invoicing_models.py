@@ -18,7 +18,7 @@ class PriceListItemModelTest(TestCase):
     def test_price_list_item_creation(self):
         item = PriceListItem.objects.create(
             code="ITEM001",
-            units="each",
+            units="ea",
             description="Test item description",
             purchase_price=Decimal('10.50'),
             selling_price=Decimal('15.75'),
@@ -27,7 +27,7 @@ class PriceListItemModelTest(TestCase):
             qty_wasted=Decimal('2.00')
         )
         self.assertEqual(item.code, "ITEM001")
-        self.assertEqual(item.units, "each")
+        self.assertEqual(item.units, "ea")
         self.assertEqual(item.description, "Test item description")
         self.assertEqual(item.purchase_price, Decimal('10.50'))
         self.assertEqual(item.selling_price, Decimal('15.75'))

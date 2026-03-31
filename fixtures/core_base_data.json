@@ -1,129 +1,136 @@
 [
-  {
-    "model": "core.user",
-    "pk": 1,
-    "fields": {
-      "password": "pbkdf2_sha256$870000$test$hash",
-      "last_login": null,
-      "is_superuser": true,
-      "username": "admin",
-      "first_name": "Admin",
-      "last_name": "User",
-      "email": "admin@minibini.com",
-      "is_staff": true,
-      "is_active": true,
-      "date_joined": "2024-01-01T00:00:00Z",
-      "contact": 1,
-      "groups": [],
-      "user_permissions": []
+    {
+        "model": "core.user",
+        "pk": 1,
+        "fields": {
+            "password": "pbkdf2_sha256$870000$test$hash",
+            "last_login": null,
+            "is_superuser": true,
+            "username": "admin",
+            "first_name": "Admin",
+            "last_name": "User",
+            "email": "admin@minibini.com",
+            "is_staff": true,
+            "is_active": true,
+            "date_joined": "2024-01-01T00:00:00Z",
+            "contact": 1,
+            "groups": [],
+            "user_permissions": []
+        }
+    },
+    {
+        "model": "core.user",
+        "pk": 2,
+        "fields": {
+            "password": "pbkdf2_sha256$870000$test$hash",
+            "last_login": null,
+            "is_superuser": false,
+            "username": "manager1",
+            "first_name": "John",
+            "last_name": "Manager",
+            "email": "manager@minibini.com",
+            "is_staff": true,
+            "is_active": true,
+            "date_joined": "2024-01-01T00:00:00Z",
+            "contact": 2,
+            "groups": [],
+            "user_permissions": []
+        }
+    },
+    {
+        "model": "core.user",
+        "pk": 3,
+        "fields": {
+            "password": "pbkdf2_sha256$870000$test$hash",
+            "last_login": null,
+            "is_superuser": false,
+            "username": "johnq",
+            "first_name": "John Q",
+            "last_name": "Public",
+            "email": "john.public@example.com",
+            "is_staff": false,
+            "is_active": true,
+            "date_joined": "2024-01-01T00:00:00Z",
+            "contact": 4,
+            "groups": [],
+            "user_permissions": []
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "job_number_sequence",
+        "fields": {
+            "value": "JOB-{year}-{counter:04d}"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "job_counter",
+        "fields": {
+            "value": "0"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "estimate_number_sequence",
+        "fields": {
+            "value": "EST-{year}-{counter:04d}"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "estimate_counter",
+        "fields": {
+            "value": "0"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "invoice_number_sequence",
+        "fields": {
+            "value": "INV-{year}-{counter:04d}"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "invoice_counter",
+        "fields": {
+            "value": "0"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "po_number_sequence",
+        "fields": {
+            "value": "PO-{year}-{counter:04d}"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "po_counter",
+        "fields": {
+            "value": "0"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "bill_number_sequence",
+        "fields": {
+            "value": "BILL-{year}-{counter:04d}"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "bill_counter",
+        "fields": {
+            "value": "0"
+        }
+    },
+    {
+        "model": "core.configuration",
+        "pk": "units_list",
+        "fields": {
+            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
     }
-  },
-  {
-    "model": "core.user",
-    "pk": 2,
-    "fields": {
-      "password": "pbkdf2_sha256$870000$test$hash",
-      "last_login": null,
-      "is_superuser": false,
-      "username": "manager1",
-      "first_name": "John",
-      "last_name": "Manager",
-      "email": "manager@minibini.com",
-      "is_staff": true,
-      "is_active": true,
-      "date_joined": "2024-01-01T00:00:00Z",
-      "contact": 2,
-      "groups": [],
-      "user_permissions": []
-    }
-  },
-  {
-    "model": "core.user",
-    "pk": 3,
-    "fields": {
-      "password": "pbkdf2_sha256$870000$test$hash",
-      "last_login": null,
-      "is_superuser": false,
-      "username": "johnq",
-      "first_name": "John Q",
-      "last_name": "Public",
-      "email": "john.public@example.com",
-      "is_staff": false,
-      "is_active": true,
-      "date_joined": "2024-01-01T00:00:00Z",
-      "contact": 4,
-      "groups": [],
-      "user_permissions": []
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "job_number_sequence",
-    "fields": {
-      "value": "JOB-{year}-{counter:04d}"
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "job_counter",
-    "fields": {
-      "value": "0"
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "estimate_number_sequence",
-    "fields": {
-      "value": "EST-{year}-{counter:04d}"
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "estimate_counter",
-    "fields": {
-      "value": "0"
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "invoice_number_sequence",
-    "fields": {
-      "value": "INV-{year}-{counter:04d}"
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "invoice_counter",
-    "fields": {
-      "value": "0"
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "po_number_sequence",
-    "fields": {
-      "value": "PO-{year}-{counter:04d}"
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "po_counter",
-    "fields": {
-      "value": "0"
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "bill_number_sequence",
-    "fields": {
-      "value": "BILL-{year}-{counter:04d}"
-    }
-  },
-  {
-    "model": "core.configuration",
-    "pk": "bill_counter",
-    "fields": {
-      "value": "0"
-    }
-  }
 ]

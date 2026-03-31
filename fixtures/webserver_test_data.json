@@ -1,5 +1,12 @@
 [
     {
+        "model": "core.configuration",
+        "pk": "units_list",
+        "fields": {
+            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
+    },
+    {
         "model": "auth.group",
         "pk": 1,
         "fields": {
@@ -445,7 +452,7 @@
         "fields": {
             "template_name": "CUT",
             "description": "Cutting parts",
-            "units": "minutes",
+            "units": "ea",
             "rate": "22.00",
             "created_date": "2025-09-06T17:31:44.072Z",
             "is_active": true
@@ -502,7 +509,7 @@
         "pk": 1,
         "fields": {
             "code": "LAB001",
-            "units": "hour",
+            "units": "hours",
             "description": "General Labor - per hour",
             "purchase_price": "25.00",
             "selling_price": "45.00",
@@ -516,7 +523,7 @@
         "pk": 2,
         "fields": {
             "code": "LAB002",
-            "units": "hour",
+            "units": "hours",
             "description": "Skilled Labor - per hour",
             "purchase_price": "35.00",
             "selling_price": "65.00",
@@ -530,7 +537,7 @@
         "pk": 3,
         "fields": {
             "code": "MAT001",
-            "units": "sheet",
+            "units": "sheets",
             "description": "Plywood - per sheet",
             "purchase_price": "80.00",
             "selling_price": "100.00",
@@ -544,7 +551,7 @@
         "pk": 4,
         "fields": {
             "code": "MAT002",
-            "units": "board foot",
+            "units": "bd ft",
             "description": "White Oak Lumber - per board foot",
             "purchase_price": "5.50",
             "selling_price": "7.00",
@@ -558,7 +565,7 @@
         "pk": 5,
         "fields": {
             "code": "MAT003",
-            "units": "piece",
+            "units": "pcs",
             "description": "HDU Material - per piece",
             "purchase_price": "250.00",
             "selling_price": "300.00",
@@ -681,7 +688,7 @@
             "price_list_item": null,
             "line_number": 2,
             "qty": "1.00",
-            "units": "job",
+            "units": "ea",
             "description": "CNC cutting of concrete forms",
             "price": "3800.00"
         }
@@ -723,7 +730,7 @@
             "price_list_item": 5,
             "line_number": 5,
             "qty": "1.00",
-            "units": "piece",
+            "units": "pcs",
             "description": "HDU material for sign",
             "price": "300.00"
         }
@@ -737,7 +744,7 @@
             "price_list_item": null,
             "line_number": 6,
             "qty": "120.00",
-            "units": "minutes",
+            "units": "ea",
             "description": "CNC cutting of sign",
             "price": "2640.00"
         }
@@ -793,7 +800,7 @@
             "price_list_item": 5,
             "line_number": 10,
             "qty": "1.00",
-            "units": "piece",
+            "units": "pcs",
             "description": "HDU material for sign",
             "price": "300.00"
         }
@@ -807,7 +814,7 @@
             "price_list_item": null,
             "line_number": 11,
             "qty": "140.00",
-            "units": "minutes",
+            "units": "ea",
             "description": "CNC cutting of sign",
             "price": "3080.00"
         }
@@ -863,7 +870,7 @@
             "price_list_item": 5,
             "line_number": 15,
             "qty": "1.00",
-            "units": "piece",
+            "units": "pcs",
             "description": "Premium HDU material for sign",
             "price": "300.00"
         }
@@ -877,7 +884,7 @@
             "price_list_item": null,
             "line_number": 16,
             "qty": "150.00",
-            "units": "minutes",
+            "units": "ea",
             "description": "Precision CNC cutting with detail work",
             "price": "3300.00"
         }
@@ -951,7 +958,7 @@
             "work_order": null,
             "est_worksheet": 1,
             "name": "White oak lumber purchase",
-            "units": "board feet",
+            "units": "bd ft",
             "rate": "7.00",
             "est_qty": "300.00",
             "description": "",
@@ -970,7 +977,7 @@
             "work_order": null,
             "est_worksheet": 1,
             "name": "Cutting task for dining set",
-            "units": "minutes",
+            "units": "ea",
             "rate": "22.00",
             "est_qty": "125.00",
             "description": "",

@@ -48,7 +48,7 @@ class PriceListItemTypeUITest(TestCase):
         """Test creating PriceListItem with AccountingCategory."""
         response = self.client.post(reverse('inventory:price_list_item_add'), {
             'code': 'TEST-001',
-            'units': 'each',
+            'units': 'ea',
             'description': 'Test Product',
             'purchase_price': '50.00',
             'selling_price': '100.00',
@@ -91,7 +91,7 @@ class PriceListItemTypeUITest(TestCase):
             reverse('inventory:price_list_item_edit', args=[item.price_list_item_id]),
             {
                 'code': 'UPDATE-001',
-                'units': '',
+                'units': 'ea',
                 'description': 'Update Test',
                 'purchase_price': '0.00',
                 'selling_price': '75.00',
@@ -110,7 +110,7 @@ class PriceListItemTypeUITest(TestCase):
         """Test that accounting_category is optional (for now)."""
         response = self.client.post(reverse('inventory:price_list_item_add'), {
             'code': 'NO-TYPE-001',
-            'units': 'each',
+            'units': 'ea',
             'description': 'No Type Product',
             'purchase_price': '50.00',
             'selling_price': '100.00',

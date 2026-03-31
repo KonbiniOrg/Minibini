@@ -34,7 +34,7 @@ class TaskTemplateEditViewTest(TestCase):
             {
                 'template_name': 'Updated Task',
                 'description': 'Updated description',
-                'units': 'pieces',
+                'units': 'pcs',
                 'rate': '75.00',
             }
         )
@@ -43,7 +43,7 @@ class TaskTemplateEditViewTest(TestCase):
         self.template.refresh_from_db()
         self.assertEqual(self.template.template_name, 'Updated Task')
         self.assertEqual(self.template.description, 'Updated description')
-        self.assertEqual(self.template.units, 'pieces')
+        self.assertEqual(self.template.units, 'pcs')
         self.assertEqual(self.template.rate, Decimal('75.00'))
 
     def test_edit_view_shows_success_message(self):

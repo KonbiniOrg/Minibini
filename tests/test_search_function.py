@@ -125,7 +125,7 @@ class SearchViewTests(TestCase):
         self.price_item1 = PriceListItem.objects.create(
             code='WOOD-001',
             description='Oak plank 2x4x8',
-            units='piece',
+            units='pcs',
             purchase_price=Decimal('15.00'),
             selling_price=Decimal('25.00')
         )
@@ -133,7 +133,7 @@ class SearchViewTests(TestCase):
         self.price_item2 = PriceListItem.objects.create(
             code='HARDWARE-001',
             description='Wood screws box of 100',
-            units='box',
+            units='ea',
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00')
         )

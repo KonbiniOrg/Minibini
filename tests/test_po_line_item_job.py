@@ -45,7 +45,7 @@ class POLineItemJobTest(TestCase):
         self.inventoried_item = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Plywood',
-            units='sheet',
+            units='sheets',
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,

@@ -188,7 +188,7 @@ class EstimateCRUDTests(TestCase):
             'description': 'Test Line Item',
             'qty': 5.0,
             'price': 100.0,
-            'units': 'each',
+            'units': 'ea',
             'accounting_category': service_type.pk,
             'manual_submit': 'Add Manual Line Item'
         }
@@ -203,7 +203,7 @@ class EstimateCRUDTests(TestCase):
         self.assertEqual(line_item.description, 'Test Line Item')
         self.assertEqual(line_item.qty, 5.0)
         self.assertEqual(line_item.price, 100.0)
-        self.assertEqual(line_item.units, 'each')
+        self.assertEqual(line_item.units, 'ea')
 
     def test_update_status_get(self):
         """Test GET request to update status form."""

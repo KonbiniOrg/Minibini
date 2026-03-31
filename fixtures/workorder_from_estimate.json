@@ -1,5 +1,12 @@
 [
     {
+        "model": "core.configuration",
+        "pk": "units_list",
+        "fields": {
+            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
+    },
+    {
         "model": "contacts.contact",
         "pk": 100,
         "fields": {
@@ -209,7 +216,7 @@
             "work_order": null,
             "est_worksheet": 100,
             "name": "Child Task - Component B",
-            "units": "pieces",
+            "units": "pcs",
             "rate": "25.00",
             "est_qty": "10.00",
             "description": "",
@@ -264,7 +271,7 @@
             "estimate": 100,
             "line_number": 1,
             "qty": "1.00",
-            "units": "each",
+            "units": "ea",
             "description": "Test Product Bundle - Complete Assembly",
             "price": "540.00",
             "price_list_item": null,

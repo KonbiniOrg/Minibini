@@ -15,7 +15,7 @@ class PriceListItemViewsTest(TestCase):
         # Create test price list items
         self.item1 = PriceListItem.objects.create(
             code="TEST001",
-            units="each",
+            units="ea",
             description="Test item 1 description",
             purchase_price=Decimal('10.00'),
             selling_price=Decimal('15.00'),
@@ -27,7 +27,7 @@ class PriceListItemViewsTest(TestCase):
 
         self.item2 = PriceListItem.objects.create(
             code="TEST002",
-            units="box",
+            units="ea",
             description="Test item 2 description",
             purchase_price=Decimal('20.00'),
             selling_price=Decimal('30.00'),
@@ -102,7 +102,7 @@ class PriceListItemViewsTest(TestCase):
         url = reverse('inventory:price_list_item_add')
         data = {
             'code': 'TEST001',  # Duplicate code
-            'units': 'each',
+            'units': 'ea',
             'description': 'Duplicate item',
             'purchase_price': '10.00',
             'selling_price': '15.00',
@@ -141,7 +141,7 @@ class PriceListItemViewsTest(TestCase):
                      kwargs={'item_id': self.item1.price_list_item_id})
         data = {
             'code': 'TEST001',  # Keep same code
-            'units': 'piece',  # Changed
+            'units': 'pcs',  # Changed
             'description': 'Updated test item description',  # Changed
             'purchase_price': '12.00',  # Changed
             'selling_price': '18.00',  # Changed
@@ -158,7 +158,7 @@ class PriceListItemViewsTest(TestCase):
 
         # Check item was updated
         self.item1.refresh_from_db()
-        self.assertEqual(self.item1.units, 'piece')
+        self.assertEqual(self.item1.units, 'pcs')
         self.assertEqual(self.item1.description, 'Updated test item description')
         self.assertEqual(self.item1.purchase_price, Decimal('12.00'))
         self.assertEqual(self.item1.selling_price, Decimal('18.00'))
@@ -183,7 +183,7 @@ class PriceListItemViewsTest(TestCase):
         # Test with empty required field
         form = PriceListItemForm(data={
             'code': '',  # Required field
-            'units': 'each',
+            'units': 'ea',
             'description': 'Test',
             'purchase_price': '10.00',
             'selling_price': '15.00',
@@ -197,7 +197,7 @@ class PriceListItemViewsTest(TestCase):
         # Test with negative price
         form = PriceListItemForm(data={
             'code': 'NEGATIVE001',
-            'units': 'each',
+            'units': 'ea',
             'description': 'Test',
             'purchase_price': '-10.00',  # Negative not allowed
             'selling_price': '15.00',
@@ -211,7 +211,7 @@ class PriceListItemViewsTest(TestCase):
         # Test valid form
         form = PriceListItemForm(data={
             'code': 'VALID001',
-            'units': 'each',
+            'units': 'ea',
             'description': 'Valid test item',
             'purchase_price': '10.00',
             'selling_price': '15.00',

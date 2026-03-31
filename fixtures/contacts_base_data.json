@@ -1,124 +1,131 @@
 [
-  {
-    "model": "contacts.contact",
-    "pk": 1,
-    "fields": {
-      "first_name": "John",
-      "middle_initial": "",
-      "last_name": "Doe",
-      "email": "john.doe@example.com",
-      "addr1": "123 Main St",
-      "addr2": "",
-      "addr3": "",
-      "city": "Anytown",
-      "municipality": "ST",
-      "postal_code": "12345",
-      "country_code": "US",
-      "mobile_number": "555-123-4567",
-      "work_number": "",
-      "home_number": "",
-      "business": null
+    {
+        "model": "core.configuration",
+        "pk": "units_list",
+        "fields": {
+            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
+    },
+    {
+        "model": "contacts.contact",
+        "pk": 1,
+        "fields": {
+            "first_name": "John",
+            "middle_initial": "",
+            "last_name": "Doe",
+            "email": "john.doe@example.com",
+            "addr1": "123 Main St",
+            "addr2": "",
+            "addr3": "",
+            "city": "Anytown",
+            "municipality": "ST",
+            "postal_code": "12345",
+            "country_code": "US",
+            "mobile_number": "555-123-4567",
+            "work_number": "",
+            "home_number": "",
+            "business": null
+        }
+    },
+    {
+        "model": "contacts.contact",
+        "pk": 2,
+        "fields": {
+            "first_name": "Jane",
+            "middle_initial": "",
+            "last_name": "Smith",
+            "email": "jane.smith@company.com",
+            "addr1": "456 Business Ave",
+            "addr2": "",
+            "addr3": "",
+            "city": "City",
+            "municipality": "",
+            "postal_code": "67890",
+            "country_code": "US",
+            "mobile_number": "555-987-6543",
+            "work_number": "",
+            "home_number": "",
+            "business": 1
+        }
+    },
+    {
+        "model": "contacts.contact",
+        "pk": 3,
+        "fields": {
+            "first_name": "Acme",
+            "middle_initial": "",
+            "last_name": "Vendor",
+            "email": "vendor@acme.com",
+            "addr1": "789 Industrial Blvd",
+            "addr2": "",
+            "addr3": "",
+            "city": "Factory Town",
+            "municipality": "",
+            "postal_code": "11111",
+            "country_code": "US",
+            "mobile_number": "555-555-5555",
+            "work_number": "",
+            "home_number": "",
+            "business": 2
+        }
+    },
+    {
+        "model": "contacts.contact",
+        "pk": 4,
+        "fields": {
+            "first_name": "John",
+            "middle_initial": "Q",
+            "last_name": "Public",
+            "email": "john.public@example.com",
+            "addr1": "789 Residential Lane",
+            "addr2": "",
+            "addr3": "",
+            "city": "Hometown",
+            "municipality": "ST",
+            "postal_code": "54321",
+            "country_code": "US",
+            "mobile_number": "555-456-7890",
+            "work_number": "",
+            "home_number": "",
+            "business": null
+        }
+    },
+    {
+        "model": "contacts.paymentterms",
+        "pk": 1,
+        "fields": {}
+    },
+    {
+        "model": "contacts.paymentterms",
+        "pk": 2,
+        "fields": {}
+    },
+    {
+        "model": "contacts.business",
+        "pk": 1,
+        "fields": {
+            "our_reference_code": "CUST001",
+            "business_name": "ABC Corporation",
+            "business_address": "100 Corporate Plaza, Suite 200, Business City, ST 22222",
+            "business_phone": "123-456-7890",
+            "tax_exemption_number": "TX123456789",
+            "website": "",
+            "terms": 1,
+            "default_contact": 2
+        }
+    },
+    {
+        "model": "contacts.business",
+        "pk": 2,
+        "fields": {
+            "our_reference_code": "CUST002",
+            "business_name": "XYZ Industries",
+            "business_address": "200 Manufacturing Way, Industrial Park, ST 33333",
+            "business_phone": "987-654-3210",
+            "tax_exemption_number": "",
+            "website": "",
+            "terms": 2,
+            "default_contact": 3
+        }
     }
-  },
-  {
-    "model": "contacts.contact",
-    "pk": 2,
-    "fields": {
-      "first_name": "Jane",
-      "middle_initial": "",
-      "last_name": "Smith",
-      "email": "jane.smith@company.com",
-      "addr1": "456 Business Ave",
-      "addr2": "",
-      "addr3": "",
-      "city": "City",
-      "municipality": "",
-      "postal_code": "67890",
-      "country_code": "US",
-      "mobile_number": "555-987-6543",
-      "work_number": "",
-      "home_number": "",
-      "business": 1
-    }
-  },
-  {
-    "model": "contacts.contact",
-    "pk": 3,
-    "fields": {
-      "first_name": "Acme",
-      "middle_initial": "",
-      "last_name": "Vendor",
-      "email": "vendor@acme.com",
-      "addr1": "789 Industrial Blvd",
-      "addr2": "",
-      "addr3": "",
-      "city": "Factory Town",
-      "municipality": "",
-      "postal_code": "11111",
-      "country_code": "US",
-      "mobile_number": "555-555-5555",
-      "work_number": "",
-      "home_number": "",
-      "business": 2
-    }
-  },
-  {
-    "model": "contacts.contact",
-    "pk": 4,
-    "fields": {
-      "first_name": "John",
-      "middle_initial": "Q",
-      "last_name": "Public",
-      "email": "john.public@example.com",
-      "addr1": "789 Residential Lane",
-      "addr2": "",
-      "addr3": "",
-      "city": "Hometown",
-      "municipality": "ST",
-      "postal_code": "54321",
-      "country_code": "US",
-      "mobile_number": "555-456-7890",
-      "work_number": "",
-      "home_number": "",
-      "business": null
-    }
-  },
-  {
-    "model": "contacts.paymentterms",
-    "pk": 1,
-    "fields": {}
-  },
-  {
-    "model": "contacts.paymentterms",
-    "pk": 2,
-    "fields": {}
-  },
-  {
-    "model": "contacts.business",
-    "pk": 1,
-    "fields": {
-      "our_reference_code": "CUST001",
-      "business_name": "ABC Corporation",
-      "business_address": "100 Corporate Plaza, Suite 200, Business City, ST 22222",
-      "business_phone": "123-456-7890",
-      "tax_exemption_number": "TX123456789",
-      "website": "",
-      "terms": 1,
-      "default_contact": 2
-    }
-  },
-  {
-    "model": "contacts.business",
-    "pk": 2,
-    "fields": {
-      "our_reference_code": "CUST002",
-      "business_name": "XYZ Industries",
-      "business_address": "200 Manufacturing Way, Industrial Park, ST 33333",
-      "business_phone": "987-654-3210",
-      "tax_exemption_number": "",
-      "website": "",
-      "terms": 2,
-      "default_contact": 3
-    }
-  }
 ]

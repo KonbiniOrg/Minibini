@@ -1,72 +1,77 @@
 [
-  {
-    "model": "purchasing.purchaseorder",
-    "pk": 1,
-    "fields": {
-      "business": 2,
-
-      "po_number": "PO-2024-0001",
-      "status": "issued"
+    {
+        "model": "core.configuration",
+        "pk": "units_list",
+        "fields": {
+            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
+    },
+    {
+        "model": "purchasing.purchaseorder",
+        "pk": 1,
+        "fields": {
+            "business": 2,
+            "po_number": "PO-2024-0001",
+            "status": "issued"
+        }
+    },
+    {
+        "model": "purchasing.purchaseorder",
+        "pk": 2,
+        "fields": {
+            "business": 2,
+            "po_number": "PO-2024-0002",
+            "status": "issued"
+        }
+    },
+    {
+        "model": "purchasing.bill",
+        "pk": 1,
+        "fields": {
+            "purchase_order": 1,
+            "business": 2,
+            "contact": 3,
+            "vendor_invoice_number": "ACME-INV-001",
+            "bill_number": "BILL-FIXTURE-001"
+        }
+    },
+    {
+        "model": "purchasing.bill",
+        "pk": 2,
+        "fields": {
+            "purchase_order": 2,
+            "business": 2,
+            "contact": 3,
+            "vendor_invoice_number": "ACME-INV-002",
+            "bill_number": "BILL-FIXTURE-002"
+        }
+    },
+    {
+        "model": "purchasing.purchaseorderlineitem",
+        "pk": 1,
+        "fields": {
+            "purchase_order": 1,
+            "task": null,
+            "price_list_item": 1,
+            "line_number": 3,
+            "qty": "100.00",
+            "units": "ea",
+            "description": "Screws for purchase order",
+            "price": "25.00"
+        }
+    },
+    {
+        "model": "purchasing.billlineitem",
+        "pk": 1,
+        "fields": {
+            "bill": 1,
+            "task": null,
+            "price_list_item": 1,
+            "line_number": 4,
+            "qty": "100.00",
+            "units": "ea",
+            "description": "Screws received on bill",
+            "price": "25.00"
+        }
     }
-  },
-  {
-    "model": "purchasing.purchaseorder",
-    "pk": 2,
-    "fields": {
-      "business": 2,
-
-      "po_number": "PO-2024-0002",
-      "status": "issued"
-    }
-  },
-  {
-    "model": "purchasing.bill",
-    "pk": 1,
-    "fields": {
-      "purchase_order": 1,
-      "business": 2,
-      "contact": 3,
-      "vendor_invoice_number": "ACME-INV-001",
-      "bill_number": "BILL-FIXTURE-001"
-    }
-  },
-  {
-    "model": "purchasing.bill",
-    "pk": 2,
-    "fields": {
-      "purchase_order": 2,
-      "business": 2,
-      "contact": 3,
-      "vendor_invoice_number": "ACME-INV-002",
-      "bill_number": "BILL-FIXTURE-002"
-    }
-  },
-  {
-    "model": "purchasing.purchaseorderlineitem",
-    "pk": 1,
-    "fields": {
-      "purchase_order": 1,
-      "task": null,
-      "price_list_item": 1,
-      "line_number": 3,
-      "qty": "100.00",
-      "units": "each",
-      "description": "Screws for purchase order",
-      "price": "25.00"
-    }
-  },
-  {
-    "model": "purchasing.billlineitem",
-    "pk": 1,
-    "fields": {
-      "bill": 1,
-      "task": null,
-      "price_list_item": 1,
-      "line_number": 4,
-      "qty": "100.00",
-      "units": "each",
-      "description": "Screws received on bill",
-      "price": "25.00"
-    }
-  }
 ]

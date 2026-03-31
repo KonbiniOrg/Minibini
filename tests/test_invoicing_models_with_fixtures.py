@@ -43,7 +43,7 @@ class PriceListItemModelFixtureTest(FixtureTestCase):
         """Test creating a new price list item"""
         new_item = PriceListItem.objects.create(
             code="WOOD001",
-            units="board_foot",
+            units="bd ft",
             description="Oak lumber 1x6",
             purchase_price=Decimal('3.50'),
             selling_price=Decimal('5.25')
@@ -110,7 +110,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
         """Test that estimate line items from fixture data exist and have correct properties"""
         estimate_item1 = EstimateLineItem.objects.get(line_number=1)
         self.assertEqual(estimate_item1.qty, Decimal('50.00'))
-        self.assertEqual(estimate_item1.units, "each")
+        self.assertEqual(estimate_item1.units, "ea")
         self.assertEqual(estimate_item1.description, "Screws for kitchen cabinet installation")
         self.assertEqual(estimate_item1.price, Decimal('25.00'))
         self.assertEqual(estimate_item1.estimate.estimate_number, "EST-2024-0001")
@@ -119,7 +119,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
         
         estimate_item2 = EstimateLineItem.objects.get(line_number=2)
         self.assertEqual(estimate_item2.qty, Decimal('8.00'))
-        self.assertEqual(estimate_item2.units, "hour")
+        self.assertEqual(estimate_item2.units, "hours")
         self.assertEqual(estimate_item2.description, "Electrical rough-in labor")
         self.assertEqual(estimate_item2.price, Decimal('600.00'))
         self.assertEqual(estimate_item2.task.name, "Electrical rough-in")
@@ -130,7 +130,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
         """Test that invoice line items from fixture data exist and have correct properties"""
         invoice_item1 = InvoiceLineItem.objects.get(line_number=1)
         self.assertEqual(invoice_item1.qty, Decimal('50.00'))
-        self.assertEqual(invoice_item1.units, "each")
+        self.assertEqual(invoice_item1.units, "ea")
         self.assertEqual(invoice_item1.description, "Screws for kitchen cabinet installation")
         self.assertEqual(invoice_item1.price, Decimal('25.00'))
         self.assertEqual(invoice_item1.invoice.invoice_number, "INV-2024-0001")
@@ -139,7 +139,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
         
         invoice_item2 = InvoiceLineItem.objects.get(line_number=2)
         self.assertEqual(invoice_item2.qty, Decimal('8.00'))
-        self.assertEqual(invoice_item2.units, "hour")
+        self.assertEqual(invoice_item2.units, "hours")
         self.assertEqual(invoice_item2.description, "Electrical rough-in labor")
         self.assertEqual(invoice_item2.price, Decimal('600.00'))
         self.assertEqual(invoice_item2.invoice.invoice_number, "INV-2024-0001")
@@ -151,7 +151,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
         """Test that purchase order line items from fixture data exist and have correct properties"""
         po_item = PurchaseOrderLineItem.objects.get(line_number=3)
         self.assertEqual(po_item.qty, Decimal('100.00'))
-        self.assertEqual(po_item.units, "each")
+        self.assertEqual(po_item.units, "ea")
         self.assertEqual(po_item.description, "Screws for purchase order")
         self.assertEqual(po_item.price, Decimal('25.00'))
         self.assertEqual(po_item.purchase_order.po_number, "PO-2024-0001")
@@ -162,7 +162,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
         """Test that bill line items from fixture data exist and have correct properties"""
         bill_item = BillLineItem.objects.get(line_number=4)
         self.assertEqual(bill_item.qty, Decimal('100.00'))
-        self.assertEqual(bill_item.units, "each")
+        self.assertEqual(bill_item.units, "ea")
         self.assertEqual(bill_item.description, "Screws received on bill")
         self.assertEqual(bill_item.price, Decimal('25.00'))
         self.assertEqual(bill_item.bill.bill_id, 1)
@@ -245,7 +245,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
             price_list_item=None,
             line_number=5,
             qty=Decimal('2.00'),
-            units="hour",
+            units="hours",
             description="Cleanup labor estimate",
             price=Decimal('150.00')
         )
@@ -256,7 +256,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
             price_list_item=None,
             line_number=6,
             qty=Decimal('2.00'),
-            units="hour",
+            units="hours",
             description="Cleanup labor invoice",
             price=Decimal('150.00')
         )

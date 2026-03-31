@@ -228,11 +228,11 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
         """Each estimate line item becomes a task on the work order."""
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Cut steel',
-            qty=Decimal('2.00'), units='hrs', price=Decimal('50.00'),
+            qty=Decimal('2.00'), units='hours', price=Decimal('50.00'),
             accounting_category=self.lit)
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Weld frame',
-            qty=Decimal('3.00'), units='hrs', price=Decimal('60.00'),
+            qty=Decimal('3.00'), units='hours', price=Decimal('60.00'),
             accounting_category=self.lit)
 
         wo = WorkOrderService.create_from_estimate(self.estimate)
@@ -264,7 +264,7 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Steel plate',
             price_list_item=pli,
-            qty=Decimal('10.00'), units='', price=Decimal('0.00'),
+            qty=Decimal('10.00'), units='none', price=Decimal('0.00'),
             accounting_category=self.lit)
 
         wo = WorkOrderService.create_from_estimate(self.estimate)
@@ -313,10 +313,10 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
         self.template = WorkOrderTemplate.objects.create(
             template_name='Standard Build')
         self.task_tmpl_1 = TaskTemplate.objects.create(
-            template_name='Cut', units='hrs', rate=Decimal('50.00'),
+            template_name='Cut', units='hours', rate=Decimal('50.00'),
             accounting_category=self.lit)
         self.task_tmpl_2 = TaskTemplate.objects.create(
-            template_name='Weld', units='hrs', rate=Decimal('60.00'),
+            template_name='Weld', units='hours', rate=Decimal('60.00'),
             accounting_category=self.lit)
         TemplateTaskAssociation.objects.create(
             work_order_template=self.template, task_template=self.task_tmpl_1,
@@ -346,7 +346,7 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
 
         cut_task = tasks[0]
         self.assertEqual(cut_task.name, 'Cut')
-        self.assertEqual(cut_task.units, 'hrs')
+        self.assertEqual(cut_task.units, 'hours')
         self.assertEqual(cut_task.rate, Decimal('50.00'))
         self.assertEqual(cut_task.est_qty, Decimal('2.00'))
         self.assertEqual(cut_task.accounting_category, self.lit)
@@ -419,11 +419,11 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
     def test_copies_tasks(self):
         """Tasks are copied from worksheet to work order."""
         Task.objects.create(
-            est_worksheet=self.worksheet, name='Cut', units='hrs',
+            est_worksheet=self.worksheet, name='Cut', units='hours',
             rate=Decimal('50.00'), est_qty=Decimal('2.00'),
             accounting_category=self.lit, sort_order=1)
         Task.objects.create(
-            est_worksheet=self.worksheet, name='Weld', units='hrs',
+            est_worksheet=self.worksheet, name='Weld', units='hours',
             rate=Decimal('60.00'), est_qty=Decimal('3.00'),
             accounting_category=self.lit, sort_order=2)
 

@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.inventory.models import PriceListItem
-from apps.inventory.forms import InventoryItemForm, UNIT_CHOICES
+from apps.inventory.forms import InventoryItemForm
 
 
 class InventoryItemModelTest(TestCase):
@@ -65,8 +65,7 @@ class InventoryItemFormTest(TestCase):
         data = {
             'code': 'NEW.001',
             'description': 'New test item',
-            'units_select': 'sq ft',
-            'units_custom': '',
+            'units': 'sq ft',
             'qty_on_hand': '5.00',
             'purchase_price': '25.00',
             'selling_price': '50.00',
@@ -78,8 +77,8 @@ class InventoryItemFormTest(TestCase):
         form = InventoryItemForm(data=self._form_data())
         self.assertTrue(form.is_valid())
 
-    def test_save_sets_units_from_select(self):
-        form = InventoryItemForm(data=self._form_data(units_select='sheets'))
+    def test_save_sets_units(self):
+        form = InventoryItemForm(data=self._form_data(units='sheets'))
         self.assertTrue(form.is_valid())
         item = form.save()
         self.assertEqual(item.units, 'sheets')
@@ -90,22 +89,10 @@ class InventoryItemFormTest(TestCase):
         item = form.save()
         self.assertTrue(item.is_inventoried)
 
-    def test_save_sets_units_from_custom(self):
-        form = InventoryItemForm(data=self._form_data(
-            units_select='other',
-            units_custom='pallets',
-        ))
-        self.assertTrue(form.is_valid())
-        item = form.save()
-        self.assertEqual(item.units, 'pallets')
-
-    def test_other_requires_custom_units(self):
-        form = InventoryItemForm(data=self._form_data(
-            units_select='other',
-            units_custom='',
-        ))
+    def test_invalid_unit_rejected(self):
+        form = InventoryItemForm(data=self._form_data(units='pallets'))
         self.assertFalse(form.is_valid())
-        self.assertIn('units_custom', form.errors)
+        self.assertIn('units', form.errors)
 
     def test_duplicate_code_rejected(self):
         PriceListItem.objects.create(code='DUPE.001', is_inventoried=True)
@@ -143,16 +130,10 @@ class InventoryItemFormTest(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn('qty_on_hand', form.errors)
 
-    def test_edit_populates_predefined_unit(self):
+    def test_edit_populates_unit(self):
         item = PriceListItem.objects.create(code='UNIT.001', units='lbs', is_inventoried=True)
         form = InventoryItemForm(instance=item)
-        self.assertEqual(form.fields['units_select'].initial, 'lbs')
-
-    def test_edit_populates_custom_unit(self):
-        item = PriceListItem.objects.create(code='UNIT.002', units='pallets', is_inventoried=True)
-        form = InventoryItemForm(instance=item)
-        self.assertEqual(form.fields['units_select'].initial, 'other')
-        self.assertEqual(form.fields['units_custom'].initial, 'pallets')
+        self.assertEqual(form.initial.get('units'), 'lbs')
 
 
 class InventoryListViewTest(TestCase):
@@ -221,8 +202,7 @@ class InventoryItemAddViewTest(TestCase):
         data = {
             'code': 'NEW.001',
             'description': 'New item',
-            'units_select': 'sheets',
-            'units_custom': '',
+            'units': 'sheets',
             'qty_on_hand': '10.00',
             'purchase_price': '25.00',
             'selling_price': '50.00',
@@ -234,12 +214,11 @@ class InventoryItemAddViewTest(TestCase):
         self.assertEqual(item.qty_on_hand, Decimal('10.00'))
         self.assertTrue(item.is_inventoried)
 
-    def test_post_with_custom_units(self):
+    def test_post_with_valid_units(self):
         data = {
             'code': 'CUST.001',
             'description': 'Custom unit item',
-            'units_select': 'other',
-            'units_custom': 'rolls',
+            'units': 'lbs',
             'qty_on_hand': '3.00',
             'purchase_price': '10.00',
             'selling_price': '20.00',
@@ -247,14 +226,13 @@ class InventoryItemAddViewTest(TestCase):
         response = self.client.post(self.url, data)
         self.assertRedirects(response, reverse('inventory:inventory_list'))
         item = PriceListItem.objects.get(code='CUST.001')
-        self.assertEqual(item.units, 'rolls')
+        self.assertEqual(item.units, 'lbs')
 
     def test_post_invalid_stays_on_form(self):
         data = {
             'code': '',
             'description': '',
-            'units_select': 'sq ft',
-            'units_custom': '',
+            'units': 'sq ft',
             'qty_on_hand': '0',
             'purchase_price': '0',
             'selling_price': '0',
@@ -293,8 +271,7 @@ class InventoryItemEditViewTest(TestCase):
         data = {
             'code': 'EDIT.001',
             'description': 'Updated description',
-            'units_select': 'lbs',
-            'units_custom': '',
+            'units': 'lbs',
             'qty_on_hand': '15.00',
             'purchase_price': '30.00',
             'selling_price': '60.00',

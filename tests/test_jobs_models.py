@@ -301,7 +301,7 @@ class TaskModelTest(TestCase):
             work_order=self.work_order,
             name="Simple Task"
         )
-        self.assertEqual(task.units, "")  # CharField blank=True defaults to empty string
+        self.assertEqual(task.units, "none")  # CharField defaults to 'none'
         self.assertIsNone(task.rate)  # DecimalField null=True
         self.assertIsNone(task.est_qty)  # DecimalField null=True
 
@@ -405,7 +405,7 @@ class TaskTemplateModelTest(TestCase):
         template = TaskTemplate.objects.create(
             template_name="Electrical Installation",
             description="Standard electrical installation task",
-            units="outlets",
+            units="ea",
             rate=Decimal('45.00'),
             is_active=True
         )
@@ -420,7 +420,7 @@ class TaskTemplateModelTest(TestCase):
 
         self.assertEqual(template.template_name, "Electrical Installation")
         self.assertEqual(template.description, "Standard electrical installation task")
-        self.assertEqual(template.units, "outlets")
+        self.assertEqual(template.units, "ea")
         self.assertEqual(template.rate, Decimal('45.00'))
         self.assertIn(self.work_order_template, template.work_order_templates.all())
         self.assertEqual(association.est_qty, Decimal('12.00'))
@@ -439,7 +439,7 @@ class TaskTemplateModelTest(TestCase):
         )
         self.assertTrue(template.is_active)
         self.assertEqual(template.description, "")
-        self.assertEqual(template.units, "")
+        self.assertEqual(template.units, "none")
         self.assertIsNone(template.rate)
         self.assertEqual(template.work_order_templates.count(), 0)
 
@@ -448,14 +448,14 @@ class TaskTemplateModelTest(TestCase):
         template = TaskTemplate.objects.create(
             template_name="Simple Template"
         )
-        self.assertEqual(template.units, "")
+        self.assertEqual(template.units, "none")
         self.assertIsNone(template.rate)
 
     def test_task_template_pricing_calculation(self):
         """Test using TaskTemplate fields with association quantities for cost calculations."""
         template = TaskTemplate.objects.create(
             template_name="Material Template",
-            units="square_feet",
+            units="sq ft",
             rate=Decimal('15.25')
         )
 

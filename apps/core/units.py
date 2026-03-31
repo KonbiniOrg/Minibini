@@ -6,14 +6,23 @@ from django.core.exceptions import ValidationError
 from apps.core.models import Configuration
 
 
+DEFAULT_UNITS = [
+    "none", "hours", "ea", "sq ft", "ft", "yd", "m",
+    "sheets", "pcs", "lbs", "kg", "gal", "qt", "L", "bd ft", "ln ft",
+]
+
+
 def get_units_list():
     """Load the allowed units list from Configuration.
 
-    Returns a list of strings. Raises Configuration.DoesNotExist
-    if the units_list key has not been set up.
+    Returns a list of strings. Falls back to DEFAULT_UNITS if the
+    units_list key has not been set up yet.
     """
-    config = Configuration.objects.get(key='units_list')
-    return json.loads(config.value)
+    try:
+        config = Configuration.objects.get(key='units_list')
+        return json.loads(config.value)
+    except Configuration.DoesNotExist:
+        return list(DEFAULT_UNITS)
 
 
 def validate_unit(value):

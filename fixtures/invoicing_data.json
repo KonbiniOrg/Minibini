@@ -1,104 +1,111 @@
 [
-  {
-    "model": "inventory.pricelistitem",
-    "pk": 1,
-    "fields": {
-      "code": "SCREW001",
-      "units": "each",
-      "description": "Stainless steel screws 2.5 inch",
-      "purchase_price": "0.25",
-      "selling_price": "0.50",
-      "qty_on_hand": "1000.00",
-      "qty_sold": "150.00",
-      "qty_wasted": "5.00"
+    {
+        "model": "core.configuration",
+        "pk": "units_list",
+        "fields": {
+            "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
+    },
+    {
+        "model": "inventory.pricelistitem",
+        "pk": 1,
+        "fields": {
+            "code": "SCREW001",
+            "units": "ea",
+            "description": "Stainless steel screws 2.5 inch",
+            "purchase_price": "0.25",
+            "selling_price": "0.50",
+            "qty_on_hand": "1000.00",
+            "qty_sold": "150.00",
+            "qty_wasted": "5.00"
+        }
+    },
+    {
+        "model": "inventory.pricelistitem",
+        "pk": 2,
+        "fields": {
+            "code": "LABOR001",
+            "units": "hours",
+            "description": "Skilled labor hourly rate",
+            "purchase_price": "0.00",
+            "selling_price": "75.00",
+            "qty_on_hand": "0.00",
+            "qty_sold": "240.00",
+            "qty_wasted": "0.00"
+        }
+    },
+    {
+        "model": "invoicing.invoice",
+        "pk": 1,
+        "fields": {
+            "job": 1,
+            "invoice_number": "INV-2024-0001",
+            "status": "active"
+        }
+    },
+    {
+        "model": "invoicing.invoice",
+        "pk": 2,
+        "fields": {
+            "job": 2,
+            "invoice_number": "INV-2024-0002",
+            "status": "active"
+        }
+    },
+    {
+        "model": "estimates.estimatelineitem",
+        "pk": 1,
+        "fields": {
+            "estimate": 1,
+            "task": null,
+            "price_list_item": 1,
+            "line_number": 1,
+            "qty": "50.00",
+            "units": "ea",
+            "description": "Screws for kitchen cabinet installation",
+            "price": "25.00"
+        }
+    },
+    {
+        "model": "estimates.estimatelineitem",
+        "pk": 2,
+        "fields": {
+            "estimate": 1,
+            "task": 2,
+            "price_list_item": null,
+            "line_number": 2,
+            "qty": "8.00",
+            "units": "hours",
+            "description": "Electrical rough-in labor",
+            "price": "600.00"
+        }
+    },
+    {
+        "model": "invoicing.invoicelineitem",
+        "pk": 1,
+        "fields": {
+            "invoice": 1,
+            "task": null,
+            "price_list_item": 1,
+            "line_number": 1,
+            "qty": "50.00",
+            "units": "ea",
+            "description": "Screws for kitchen cabinet installation",
+            "price": "25.00"
+        }
+    },
+    {
+        "model": "invoicing.invoicelineitem",
+        "pk": 2,
+        "fields": {
+            "invoice": 1,
+            "task": 2,
+            "price_list_item": null,
+            "line_number": 2,
+            "qty": "8.00",
+            "units": "hours",
+            "description": "Electrical rough-in labor",
+            "price": "600.00"
+        }
     }
-  },
-  {
-    "model": "inventory.pricelistitem",
-    "pk": 2,
-    "fields": {
-      "code": "LABOR001",
-      "units": "hour",
-      "description": "Skilled labor hourly rate",
-      "purchase_price": "0.00",
-      "selling_price": "75.00",
-      "qty_on_hand": "0.00",
-      "qty_sold": "240.00",
-      "qty_wasted": "0.00"
-    }
-  },
-  {
-    "model": "invoicing.invoice",
-    "pk": 1,
-    "fields": {
-      "job": 1,
-      "invoice_number": "INV-2024-0001",
-      "status": "active"
-    }
-  },
-  {
-    "model": "invoicing.invoice",
-    "pk": 2,
-    "fields": {
-      "job": 2,
-      "invoice_number": "INV-2024-0002",
-      "status": "active"
-    }
-  },
-  {
-    "model": "estimates.estimatelineitem",
-    "pk": 1,
-    "fields": {
-      "estimate": 1,
-      "task": null,
-      "price_list_item": 1,
-      "line_number": 1,
-      "qty": "50.00",
-      "units": "each",
-      "description": "Screws for kitchen cabinet installation",
-      "price":"25.00"
-    }
-  },
-  {
-    "model": "estimates.estimatelineitem",
-    "pk": 2,
-    "fields": {
-      "estimate": 1,
-      "task": 2,
-      "price_list_item": null,
-      "line_number": 2,
-      "qty": "8.00",
-      "units": "hour",
-      "description": "Electrical rough-in labor",
-      "price":"600.00"
-    }
-  },
-  {
-    "model": "invoicing.invoicelineitem",
-    "pk": 1,
-    "fields": {
-      "invoice": 1,
-      "task": null,
-      "price_list_item": 1,
-      "line_number": 1,
-      "qty": "50.00",
-      "units": "each",
-      "description": "Screws for kitchen cabinet installation",
-      "price":"25.00"
-    }
-  },
-  {
-    "model": "invoicing.invoicelineitem",
-    "pk": 2,
-    "fields": {
-      "invoice": 1,
-      "task": 2,
-      "price_list_item": null,
-      "line_number": 2,
-      "qty": "8.00",
-      "units": "hour",
-      "description": "Electrical rough-in labor",
-      "price":"600.00"
-    }
-  }
 ]
