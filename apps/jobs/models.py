@@ -189,6 +189,8 @@ class Task(models.Model):
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
+    worker_queue = models.PositiveIntegerField(null=True, blank=True,
+        help_text="Position in assignee's work queue on the board")
     accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT,

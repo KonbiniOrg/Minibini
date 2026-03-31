@@ -4,8 +4,7 @@ from apps.jobs.models import WorkOrder
 from apps.jobs.services import WorkOrderService
 from apps.api.mixins import StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixin
 from apps.api.permissions import CanManageJobs
-from apps.api.worksheets.serializers import TaskSerializer, TaskBundleSerializer
-from .serializers import WorkOrderSerializer
+from .serializers import WorkOrderSerializer, TaskSerializer, TaskBundleSerializer
 
 
 class WorkOrderViewSet(StatusTransitionMixin, TaskLifecycleMixin, TaskBundleMixin, viewsets.ModelViewSet):

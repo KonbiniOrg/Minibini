@@ -11,7 +11,7 @@ from django.db import transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from .models import Job, WorkOrder, Task, TaskBundle, Blep
+from apps.jobs.models import Job, WorkOrder, Task, TaskBundle, Blep
 from apps.estimates.models import (
     Estimate, WorkOrderTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,

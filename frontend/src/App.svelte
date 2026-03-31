@@ -15,6 +15,7 @@
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
+  import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
 
   const routes = {
     '/': Home,
@@ -27,6 +28,7 @@
     '/businesses/:id/edit': BusinessFormPage,
     '/businesses/:id': BusinessDetailPage,
     '/jobs': JobListPage,
+    '/jobs/board': JobBoardPage,
     '/jobs/:id': JobDetailPage,
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
