@@ -16,7 +16,7 @@ from apps.api.jobs.board_views import board_view, task_reorder_view, task_assign
 from apps.api.stubs import stub_501
 from apps.api.templates_config.views import (
     WorkOrderTemplateViewSet, TaskTemplateViewSet,
-    AccountingCategoryViewSet, settings_view,
+    AccountingCategoryViewSet, settings_view, units_view,
 )
 
 
@@ -70,6 +70,7 @@ urlpatterns = [
     path('auth/', include('apps.api.auth.urls')),
     path('emails/', include('apps.api.email.urls')),
     path('search/', search_view, name='api-search'),
+    path('settings/units/', units_view, name='api-settings-units'),
     path('settings/', settings_view, name='api-settings'),
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),

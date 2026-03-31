@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -93,3 +95,30 @@ def settings_view(request):
     configs = Configuration.objects.all()
     data = {c.key: c.value for c in configs}
     return Response(data)
+
+
+@api_view(['GET', 'PATCH'])
+def units_view(request):
+    if request.method == 'GET':
+        if not request.user.is_authenticated:
+            return Response(status=403)
+        config = Configuration.objects.get(key='units_list')
+        return Response(json.loads(config.value))
+
+    # PATCH — replace the units list
+    if not request.user.has_perm('core.can_manage_config'):
+        return Response(status=403)
+
+    units = request.data
+    if not isinstance(units, list) or len(units) == 0:
+        return Response({'error': 'Units must be a non-empty list.'}, status=400)
+    if units[0] != 'none':
+        return Response({'error': '"none" must be the first entry.'}, status=400)
+    if len(units) != len(set(units)):
+        return Response({'error': 'Duplicate units are not allowed.'}, status=400)
+
+    Configuration.objects.update_or_create(
+        key='units_list',
+        defaults={'value': json.dumps(units)},
+    )
+    return Response(units)
