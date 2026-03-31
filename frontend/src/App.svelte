@@ -1,7 +1,6 @@
 <script>
   import Router from 'svelte-spa-router';
-  import Nav from './components/Nav.svelte';
-  import { viewMode, toggleViewMode } from './stores/viewMode.js';
+  import Sidebar from './components/Sidebar.svelte';
   import { user, authChecked, checkAuth } from './stores/auth.js';
   import LoginPage from './routes/LoginPage.svelte';
   import Home from './routes/Home.svelte';
@@ -16,6 +15,7 @@
   import SettingsPage from './routes/SettingsPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
+  import ProfilePage from './routes/ProfilePage.svelte';
 
   const routes = {
     '/': Home,
@@ -32,7 +32,10 @@
     '/jobs/:id': JobDetailPage,
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
+    '/profile': ProfilePage,
   };
+
+  let sidebarOpen = $state(false);
 
   checkAuth();
 </script>
@@ -42,15 +45,19 @@
 {:else if !$user}
   <LoginPage />
 {:else}
-  <!-- Site header placeholder — will contain navigation and user info -->
-  <div class="site-header-placeholder">
-    <Nav />
+  <Sidebar bind:open={sidebarOpen} />
+  <!--
+    Push behavior: margin-left shifts content when sidebar opens.
+    To switch to overlay: remove the style:margin-left line below.
+  -->
+  <div class="page-content" style:margin-left={sidebarOpen ? '120px' : '0'}>
+    <Router {routes} />
   </div>
-  <Router {routes} />
-  <hr>
-  <footer>
-    <a href="#" onclick={(e) => { e.preventDefault(); toggleViewMode(); }}>
-      Switch to {$viewMode === 'full' ? 'lite' : 'full'} view
-    </a>
-  </footer>
 {/if}
+
+<style>
+  .page-content {
+    transition: margin-left 0.25s ease;
+    padding-top: 8px;
+  }
+</style>
