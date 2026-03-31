@@ -1,5 +1,6 @@
 # apps/core/units.py
 import json
+from django import forms
 from django.core.exceptions import ValidationError
 from apps.core.models import Configuration
 
@@ -22,3 +23,22 @@ def validate_unit(value):
             f'"{value}" is not a configured unit.',
             code='invalid_unit',
         )
+
+
+def units_choices():
+    """Return units as Django form choices: list of (value, label) tuples."""
+    return [(u, u) for u in get_units_list()]
+
+
+class UnitsFieldMixin:
+    """Mixin for ModelForms that have a 'units' field.
+    Replaces the default CharField widget with a Select dropdown
+    populated from the configured units list.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if 'units' in self.fields:
+            self.fields['units'] = forms.ChoiceField(
+                choices=units_choices(),
+                initial='none',
+            )

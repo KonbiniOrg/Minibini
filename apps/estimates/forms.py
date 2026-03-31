@@ -4,6 +4,7 @@ from apps.estimates.models import (
     EstWorksheet, EstimateLineItem
 )
 from apps.core.models import AccountingCategory
+from apps.core.units import UnitsFieldMixin
 
 
 class WorkOrderTemplateForm(forms.ModelForm):
@@ -15,13 +16,12 @@ class WorkOrderTemplateForm(forms.ModelForm):
         }
 
 
-class TaskTemplateForm(forms.ModelForm):
+class TaskTemplateForm(UnitsFieldMixin, forms.ModelForm):
     class Meta:
         model = TaskTemplate
         fields = ['template_name', 'description', 'units', 'rate', 'accounting_category']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
-            'units': forms.TextInput(attrs={'placeholder': 'e.g., hours, pieces'}),
             'rate': forms.NumberInput(attrs={'step': '0.01', 'placeholder': '0.00'}),
         }
 
@@ -42,7 +42,7 @@ class EstWorksheetForm(forms.ModelForm):
         self.fields['template'].empty_label = "-- No Template (Manual) --"
 
 
-class ManualLineItemForm(forms.ModelForm):
+class ManualLineItemForm(UnitsFieldMixin, forms.ModelForm):
     """Form for creating a manual line item (not linked to a Price List Item)"""
     class Meta:
         model = EstimateLineItem

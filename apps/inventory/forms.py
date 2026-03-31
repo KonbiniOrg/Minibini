@@ -1,65 +1,22 @@
 from django import forms
 from apps.inventory.models import PriceListItem
 from apps.core.models import AccountingCategory
-
-UNIT_CHOICES = [
-    ('sq ft', 'sq ft (square feet)'),
-    ('ft', 'ft (feet)'),
-    ('yd', 'yd (yards)'),
-    ('m', 'm (meters)'),
-    ('sheets', 'sheets'),
-    ('pcs', 'pcs (pieces)'),
-    ('ea', 'ea (each)'),
-    ('lbs', 'lbs (pounds)'),
-    ('kg', 'kg (kilograms)'),
-    ('gal', 'gal (gallons)'),
-    ('qt', 'qt (quarts)'),
-    ('L', 'L (liters)'),
-    ('bd ft', 'bd ft (board feet)'),
-    ('ln ft', 'ln ft (linear feet)'),
-    ('other', 'Other'),
-]
+from apps.core.units import UnitsFieldMixin
 
 
-class InventoryItemForm(forms.ModelForm):
+class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
     """Form for adding and editing inventoried price list items."""
-
-    units_select = forms.ChoiceField(choices=UNIT_CHOICES, label='Units')
-    units_custom = forms.CharField(required=False, label='Custom units')
 
     class Meta:
         model = PriceListItem
         fields = [
             'code',
+            'units',
             'description',
             'qty_on_hand',
             'purchase_price',
             'selling_price',
         ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance.pk and self.instance.units:
-            predefined = [c[0] for c in UNIT_CHOICES if c[0] != 'other']
-            if self.instance.units in predefined:
-                self.fields['units_select'].initial = self.instance.units
-            else:
-                self.fields['units_select'].initial = 'other'
-                self.fields['units_custom'].initial = self.instance.units
-
-    def clean(self):
-        cleaned_data = super().clean()
-        units_select = cleaned_data.get('units_select')
-        units_custom = cleaned_data.get('units_custom', '').strip()
-
-        if units_select == 'other':
-            if not units_custom:
-                self.add_error('units_custom', 'Please enter a custom unit.')
-            else:
-                cleaned_data['units'] = units_custom
-        else:
-            cleaned_data['units'] = units_select
-        return cleaned_data
 
     def clean_code(self):
         code = self.cleaned_data['code']
@@ -91,16 +48,12 @@ class InventoryItemForm(forms.ModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.is_inventoried = True
-        if self.cleaned_data['units_select'] == 'other':
-            instance.units = self.cleaned_data['units_custom'].strip()
-        else:
-            instance.units = self.cleaned_data['units_select']
         if commit:
             instance.save()
         return instance
 
 
-class PriceListItemForm(forms.ModelForm):
+class PriceListItemForm(UnitsFieldMixin, forms.ModelForm):
     """Form for creating and editing PriceListItem."""
 
     class Meta:

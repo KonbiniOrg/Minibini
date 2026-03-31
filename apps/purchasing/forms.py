@@ -4,6 +4,7 @@ from .models import PurchaseOrder, Bill, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 from apps.inventory.models import PriceListItem
 from apps.core.models import AccountingCategory
+from apps.core.units import UnitsFieldMixin, units_choices
 
 
 class PurchaseOrderForm(forms.ModelForm):
@@ -50,7 +51,7 @@ class PurchaseOrderForm(forms.ModelForm):
 
 
 
-class POManualLineItemForm(forms.ModelForm):
+class POManualLineItemForm(UnitsFieldMixin, forms.ModelForm):
     """Form for creating a manual PO line item (not linked to a Price List Item)"""
     class Meta:
         model = PurchaseOrderLineItem
@@ -117,11 +118,11 @@ class BillLineItemForm(forms.Form):
         widget=forms.NumberInput(attrs={'step': '0.01'}),
         label="Quantity"
     )
-    units = forms.CharField(
-        max_length=50,
+    units = forms.ChoiceField(
+        choices=[],  # populated in __init__
+        initial='none',
         required=False,
         label="Units",
-        help_text="e.g., ea, hr, kg"
     )
     price = forms.DecimalField(
         max_digits=10,
@@ -142,6 +143,7 @@ class BillLineItemForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
+        self.fields['units'].choices = units_choices()
 
     def clean(self):
         """Validate that either price_list_item is selected OR manual fields are filled"""

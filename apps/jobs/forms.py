@@ -5,6 +5,7 @@ from .models import Task, Job
 from apps.estimates.models import TaskTemplate
 from apps.inventory.models import Material
 from apps.contacts.models import Contact
+from apps.core.units import UnitsFieldMixin
 
 
 class JobCreateForm(forms.ModelForm):
@@ -144,7 +145,7 @@ class JobEditForm(forms.ModelForm):
         return str(contact)
 
 
-class TaskEditForm(forms.ModelForm):
+class TaskEditForm(UnitsFieldMixin, forms.ModelForm):
     """Form for editing an existing Task's details."""
     class Meta:
         model = Task
