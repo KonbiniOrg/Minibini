@@ -1,9 +1,11 @@
 from rest_framework import serializers
 from apps.jobs.models import WorkOrder, Blep, Task, TaskBundle
+from apps.core.units import UnitsField
 
 
 class TaskSerializer(serializers.ModelSerializer):
     assignee_name = serializers.SerializerMethodField()
+    units = UnitsField()
 
     class Meta:
         model = Task

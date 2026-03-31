@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
+from apps.core.units import UnitsField
 
 
 class PurchaseOrderSummarySerializer(serializers.ModelSerializer):
@@ -15,6 +16,8 @@ class BillSummarySerializer(serializers.ModelSerializer):
 
 
 class POLineItemSerializer(serializers.ModelSerializer):
+    units = UnitsField()
+
     class Meta:
         model = PurchaseOrderLineItem
         fields = [
@@ -42,6 +45,8 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
 
 
 class BillLineItemSerializer(serializers.ModelSerializer):
+    units = UnitsField()
+
     class Meta:
         model = BillLineItem
         fields = [

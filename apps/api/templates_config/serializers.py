@@ -3,9 +3,12 @@ from apps.estimates.models import (
     WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
 )
 from apps.core.models import Configuration, AccountingCategory
+from apps.core.units import UnitsField
 
 
 class TaskTemplateSerializer(serializers.ModelSerializer):
+    units = UnitsField()
+
     class Meta:
         model = TaskTemplate
         fields = [

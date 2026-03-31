@@ -1,8 +1,11 @@
 from rest_framework import serializers
 from apps.estimates.models import Estimate, EstimateLineItem
+from apps.core.units import UnitsField
 
 
 class EstimateLineItemSerializer(serializers.ModelSerializer):
+    units = UnitsField()
+
     class Meta:
         model = EstimateLineItem
         fields = [

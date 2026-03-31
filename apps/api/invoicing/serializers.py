@@ -1,9 +1,11 @@
 from rest_framework import serializers
 from apps.invoicing.models import Invoice, InvoiceLineItem
+from apps.core.units import UnitsField
 
 
 class InvoiceLineItemSerializer(serializers.ModelSerializer):
     accounting_category_name = serializers.SerializerMethodField()
+    units = UnitsField()
 
     class Meta:
         model = InvoiceLineItem

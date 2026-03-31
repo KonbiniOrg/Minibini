@@ -1,8 +1,10 @@
 from rest_framework import serializers
 from apps.inventory.models import PriceListItem
+from apps.core.units import UnitsField
 
 
 class PriceListItemSerializer(serializers.ModelSerializer):
+    units = UnitsField()
     qty_earmarked = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     qty_available = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
