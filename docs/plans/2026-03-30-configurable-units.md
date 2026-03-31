@@ -274,34 +274,34 @@ class UnitsUpdateEndpointTest(BaseTestCase):
         self.admin = User.objects.get(username='admin_user')
         self.worker = User.objects.get(username='worker_user')
 
-    def test_put_units_list(self):
+    def test_patch_units_list(self):
         self.client.force_authenticate(user=self.admin)
         new_list = ['none', 'hours', 'ea', 'custom_unit']
-        response = self.client.put('/api/settings/units/', new_list, format='json')
+        response = self.client.patch('/api/settings/units/', new_list, format='json')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, new_list)
         # Verify persisted
         config = Configuration.objects.get(key='units_list')
         self.assertEqual(json.loads(config.value), new_list)
 
-    def test_put_requires_none_first(self):
+    def test_patch_requires_none_first(self):
         self.client.force_authenticate(user=self.admin)
-        response = self.client.put('/api/settings/units/', ['hours', 'ea'], format='json')
+        response = self.client.patch('/api/settings/units/', ['hours', 'ea'], format='json')
         self.assertEqual(response.status_code, 400)
 
-    def test_put_rejects_empty_list(self):
+    def test_patch_rejects_empty_list(self):
         self.client.force_authenticate(user=self.admin)
-        response = self.client.put('/api/settings/units/', [], format='json')
+        response = self.client.patch('/api/settings/units/', [], format='json')
         self.assertEqual(response.status_code, 400)
 
-    def test_put_rejects_duplicates(self):
+    def test_patch_rejects_duplicates(self):
         self.client.force_authenticate(user=self.admin)
-        response = self.client.put('/api/settings/units/', ['none', 'hours', 'hours'], format='json')
+        response = self.client.patch('/api/settings/units/', ['none', 'hours', 'hours'], format='json')
         self.assertEqual(response.status_code, 400)
 
-    def test_put_requires_can_manage_config(self):
+    def test_patch_requires_can_manage_config(self):
         self.client.force_authenticate(user=self.worker)
-        response = self.client.put('/api/settings/units/', ['none', 'hours'], format='json')
+        response = self.client.patch('/api/settings/units/', ['none', 'hours'], format='json')
         self.assertEqual(response.status_code, 403)
 ```
 
@@ -321,7 +321,7 @@ import json
 Add the view function after `settings_view`:
 
 ```python
-@api_view(['GET', 'PUT'])
+@api_view(['GET', 'PATCH'])
 def units_view(request):
     if request.method == 'GET':
         if not request.user.is_authenticated:
@@ -329,7 +329,7 @@ def units_view(request):
         config = Configuration.objects.get(key='units_list')
         return Response(json.loads(config.value))
 
-    # PUT — replace the units list
+    # PATCH — replace the units list
     if not request.user.has_perm('core.can_manage_config'):
         return Response(status=403)
 
@@ -376,7 +376,7 @@ Expected: All tests PASS.
 
 ```bash
 git add apps/api/templates_config/views.py apps/api/urls.py tests/test_units_api.py
-git commit -m "feat: add GET/PUT /api/settings/units/ endpoint"
+git commit -m "feat: add GET/PATCH /api/settings/units/ endpoint"
 ```
 
 ---
@@ -1022,23 +1022,8 @@ git commit -m "chore: normalize all unit strings to match configured units list"
 
 **Files:**
 - Create: `frontend/src/components/UnitsSelect.svelte`
-- Modify: `frontend/src/lib/api.js` (add `put` method)
 
-- [ ] **Step 1: Add `put` to the API client**
-
-In `frontend/src/lib/api.js`, add to the export:
-
-```javascript
-export const api = {
-  get: (url) => request('GET', url),
-  post: (url, data) => request('POST', url, data),
-  put: (url, data) => request('PUT', url, data),
-  patch: (url, data) => request('PATCH', url, data),
-  delete: (url) => request('DELETE', url),
-};
-```
-
-- [ ] **Step 2: Create the UnitsSelect component**
+- [ ] **Step 1: Create the UnitsSelect component**
 
 ```svelte
 <!-- frontend/src/components/UnitsSelect.svelte -->
@@ -1083,8 +1068,8 @@ export const api = {
 - [ ] **Step 3: Commit**
 
 ```bash
-git add frontend/src/components/UnitsSelect.svelte frontend/src/lib/api.js
-git commit -m "feat: add reusable UnitsSelect Svelte component and api.put"
+git add frontend/src/components/UnitsSelect.svelte
+git commit -m "feat: add reusable UnitsSelect Svelte component"
 ```
 
 ---
@@ -1122,7 +1107,7 @@ git commit -m "feat: add reusable UnitsSelect Svelte component and api.put"
     saving = true;
     error = '';
     try {
-      units = await api.put('/api/settings/units/', units);
+      units = await api.patch('/api/settings/units/', units);
     } catch (e) {
       error = e.data?.error || e.message || 'Failed to save.';
     } finally {

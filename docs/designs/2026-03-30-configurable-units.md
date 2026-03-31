@@ -84,7 +84,7 @@ Expose the configured units list for the Svelte frontend to populate dropdowns:
 
 For the settings UI to manage the list:
 
-- **PUT /api/settings/units/** — replace the entire list (must include `"none"` as first element)
+- **PATCH /api/settings/units/** — replace the entire list (must include `"none"` as first element)
 - **Permission:** `CanManageConfig`
 
 ## Frontend (Svelte)
@@ -106,7 +106,7 @@ Add a units management section to the settings page (alongside other config). Al
 - Remove units (except `"none"`)
 - Reorder units (drag or move up/down)
 
-Saves via `PUT /api/settings/units/`.
+Saves via `PATCH /api/settings/units/`.
 
 Note displayed in the UI: removing a unit does not update existing records that use it — they keep their current value, but the unit won't be available for selection going forward unless re-added. Validation only applies to new input, not existing data.
 
