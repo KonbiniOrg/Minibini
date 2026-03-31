@@ -35,7 +35,7 @@ class InventoryAdjustment(models.Model):
 class PriceListItem(models.Model):
     price_list_item_id = models.AutoField(primary_key=True)
     code = models.CharField(max_length=50, unique=True)
-    units = models.CharField(max_length=50, blank=True)
+    units = models.CharField(max_length=50, default='none')
     description = models.TextField(blank=True)
     purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))

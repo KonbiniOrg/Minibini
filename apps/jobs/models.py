@@ -185,7 +185,7 @@ class Task(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default='')
     sort_order = models.PositiveIntegerField(blank=True, null=True)
-    units = models.CharField(max_length=50, blank=True)
+    units = models.CharField(max_length=50, default='none')
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
