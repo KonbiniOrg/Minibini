@@ -46,8 +46,16 @@ class Invoice(models.Model):
         return self.job.customer_po_number
 
     def save(self, *args, **kwargs):
-        """Override save to auto-generate invoice_number if not provided."""
+        """Override save to auto-generate invoice_number and check job completion."""
         from apps.core.services import NumberGenerationService
+
+        old_status = None
+        if self.pk:
+            try:
+                old_invoice = Invoice.objects.get(pk=self.pk)
+                old_status = old_invoice.status
+            except Invoice.DoesNotExist:
+                pass
 
         # Auto-generate invoice_number if not provided
         if not self.invoice_number:
@@ -55,6 +63,45 @@ class Invoice(models.Model):
 
         # Call parent save
         super().save(*args, **kwargs)
+
+        # Check if status changed to paid and all invoices for the job are now paid
+        if old_status and old_status != self.status and self.status == Invoice.STATUS_PAID:
+            self._maybe_complete_job()
+
+    def _maybe_complete_job(self):
+        """Complete the job if all its invoices are paid (or cancelled)."""
+        from apps.core.models import HistoryEntry, User
+        from apps.jobs.models import Job
+
+        job = self.job
+        # Don't touch completed or cancelled jobs
+        if job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
+            return
+
+        # Check if any invoices are still unresolved
+        unresolved = Invoice.objects.filter(job=job).exclude(
+            status__in=(Invoice.STATUS_PAID, Invoice.STATUS_CANCELLED)
+        ).exists()
+
+        if not unresolved:
+            old_status = job.status
+            job.status = Job.STATUS_COMPLETED
+            job.save()
+
+            system_user, _ = User.objects.get_or_create(
+                username='system',
+                defaults={'first_name': 'System', 'is_active': False},
+            )
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='job',
+                object_id=job.pk,
+                user=system_user,
+                changes={
+                    'status': {'old': old_status, 'new': Job.STATUS_COMPLETED},
+                    '_action': 'All invoices paid — job completed',
+                },
+            )
 
     class Meta:
         db_table = 'invoices'
