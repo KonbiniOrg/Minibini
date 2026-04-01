@@ -3,7 +3,7 @@ from django.test import TestCase
 from apps.core.models import Configuration, User
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
-from apps.estimates.models import Estimate
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.invoicing.models import Invoice, InvoiceLineItem
 
 
@@ -28,6 +28,10 @@ class EstimateSentJobSubmittedTest(TestCase):
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-TEST-0001',
             status=Estimate.STATUS_DRAFT,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, description='Test item',
+            price=Decimal('100.00'),
         )
 
     def test_job_moves_to_submitted_when_estimate_sent(self):

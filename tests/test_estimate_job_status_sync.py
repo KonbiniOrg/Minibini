@@ -9,6 +9,7 @@ Business Rules:
 5. All existing EstWorksheet-Estimate status links remain unchanged
 """
 
+from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
@@ -44,6 +45,13 @@ class EstimateJobStatusSyncTest(TestCase):
             description='Test job for status sync'
         )
 
+    def _add_line_item(self, estimate):
+        from apps.estimates.models import EstimateLineItem
+        EstimateLineItem.objects.create(
+            estimate=estimate, description='Test item',
+            price=Decimal('100.00'),
+        )
+
     def test_only_one_approved_estimate_per_job(self):
         """Test that only one estimate per job can be in Estimate.STATUS_ACCEPTED status."""
         # Create first estimate and approve it
@@ -53,6 +61,7 @@ class EstimateJobStatusSyncTest(TestCase):
             status=Job.STATUS_DRAFT
         )
         # Must go through 'open' first
+        self._add_line_item(estimate1)
         estimate1.status = Estimate.STATUS_OPEN
         estimate1.save()
         estimate1.status = Estimate.STATUS_ACCEPTED
@@ -66,6 +75,7 @@ class EstimateJobStatusSyncTest(TestCase):
         )
 
         # Move to open first
+        self._add_line_item(estimate2)
         estimate2.status = Estimate.STATUS_OPEN
         estimate2.save()
 
@@ -89,6 +99,7 @@ class EstimateJobStatusSyncTest(TestCase):
         )
 
         # Change estimate to open first (following valid transition)
+        self._add_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
@@ -113,6 +124,7 @@ class EstimateJobStatusSyncTest(TestCase):
         )
 
         # Move through valid transitions to accepted
+        self._add_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         estimate.status = Estimate.STATUS_ACCEPTED
@@ -134,6 +146,7 @@ class EstimateJobStatusSyncTest(TestCase):
         )
 
         # Move to accepted
+        self._add_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         estimate.status = Estimate.STATUS_ACCEPTED
@@ -157,6 +170,7 @@ class EstimateJobStatusSyncTest(TestCase):
             version=1,
             status=Job.STATUS_DRAFT
         )
+        self._add_line_item(estimate1)
         estimate1.status = Estimate.STATUS_OPEN
         estimate1.save()
 
@@ -192,6 +206,7 @@ class EstimateJobStatusSyncTest(TestCase):
         )
 
         # When estimate goes to open, worksheet should go to final
+        self._add_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
@@ -221,6 +236,7 @@ class EstimateJobStatusSyncTest(TestCase):
         )
 
         # Must go through 'open' first to reach superseded
+        self._add_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
@@ -266,6 +282,7 @@ class EstimateJobStatusSyncTest(TestCase):
             version=1,
             status=Job.STATUS_DRAFT
         )
+        self._add_line_item(estimate1)
         estimate1.status = Estimate.STATUS_OPEN
         estimate1.save()
         estimate1.status = Job.STATUS_REJECTED
@@ -282,6 +299,7 @@ class EstimateJobStatusSyncTest(TestCase):
             version=1,
             status=Job.STATUS_DRAFT
         )
+        self._add_line_item(estimate2)
         estimate2.status = Estimate.STATUS_OPEN
         estimate2.save()
         estimate2.status = Estimate.STATUS_ACCEPTED
@@ -310,6 +328,7 @@ class EstimateJobStatusSyncTest(TestCase):
             estimate_number='EST-2024-0001',
             status=Job.STATUS_DRAFT
         )
+        self._add_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         estimate.status = Estimate.STATUS_ACCEPTED
@@ -328,6 +347,7 @@ class EstimateJobStatusSyncTest(TestCase):
             estimate_number='EST-2024-0001',
             status=Job.STATUS_DRAFT
         )
+        self._add_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         estimate.status = Estimate.STATUS_ACCEPTED
@@ -348,6 +368,7 @@ class EstimateJobStatusSyncTest(TestCase):
             estimate_number='EST-2024-0002',
             status=Job.STATUS_DRAFT
         )
+        self._add_line_item(estimate2)
         estimate2.status = Estimate.STATUS_OPEN
         estimate2.save()
         estimate2.status = Estimate.STATUS_SUPERSEDED
@@ -368,6 +389,7 @@ class EstimateJobStatusSyncTest(TestCase):
             estimate_number='EST-2024-0001',
             status=Job.STATUS_DRAFT
         )
+        self._add_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
@@ -391,6 +413,7 @@ class EstimateJobStatusSyncTest(TestCase):
             version=1,
             status=Job.STATUS_DRAFT
         )
+        self._add_line_item(estimate1)
         estimate1.status = Estimate.STATUS_OPEN
         estimate1.save()
         estimate1.status = Estimate.STATUS_ACCEPTED
@@ -409,6 +432,7 @@ class EstimateJobStatusSyncTest(TestCase):
             version=1,
             status=Job.STATUS_DRAFT
         )
+        self._add_line_item(estimate1)
         estimate1.status = Estimate.STATUS_OPEN
         estimate1.save()
 
@@ -435,6 +459,7 @@ class EstimateJobStatusSyncTest(TestCase):
         self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
 
         # Open and accept the new estimate
+        self._add_line_item(estimate2)
         estimate2.status = Estimate.STATUS_OPEN
         estimate2.save()
 

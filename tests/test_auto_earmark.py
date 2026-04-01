@@ -5,7 +5,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, Task
-from apps.estimates.models import Estimate, EstWorksheet
+from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.inventory.models import Material
 from apps.inventory.models import PriceListItem
 from apps.inventory.models import Earmark
@@ -63,6 +63,12 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
             sort_order=1,
         )
 
+    def _add_line_item(self, estimate):
+        EstimateLineItem.objects.create(
+            estimate=estimate, description='Test item',
+            price=Decimal('100.00'),
+        )
+
     def test_earmarks_created_on_estimate_accepted(self):
         """Earmarks are auto-created when estimate transitions to accepted."""
         Material.objects.create(
@@ -75,6 +81,7 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
         )
 
         # Transition estimate: draft → open → accepted
+        self._add_line_item(self.estimate)
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
         self.estimate.status = Estimate.STATUS_ACCEPTED
@@ -103,6 +110,7 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
 
+        self._add_line_item(self.estimate)
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
         self.estimate.status = Estimate.STATUS_ACCEPTED
@@ -119,6 +127,7 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
         )
 
+        self._add_line_item(self.estimate)
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
         self.estimate.status = Estimate.STATUS_ACCEPTED
@@ -134,6 +143,7 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
         )
 
         # draft → open should not create earmarks
+        self._add_line_item(self.estimate)
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
@@ -141,6 +151,7 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
 
     def test_no_earmarks_when_no_materials(self):
         """No earmarks created when job has no materials at all."""
+        self._add_line_item(self.estimate)
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
         self.estimate.status = Estimate.STATUS_ACCEPTED
