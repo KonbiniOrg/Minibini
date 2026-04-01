@@ -170,6 +170,15 @@ class Estimate(models.Model):
         """Send signal to update job status if the change is relevant."""
         from apps.estimates.signals import estimate_status_changed_for_job, estimate_accepted
 
+        # Signal when estimate is sent (draft → open): job should become submitted
+        if self.status == Estimate.STATUS_OPEN and old_status == Estimate.STATUS_DRAFT:
+            from apps.jobs.models import Job
+            estimate_status_changed_for_job.send(
+                sender=self.__class__,
+                estimate=self,
+                new_job_status=Job.STATUS_SUBMITTED
+            )
+
         # Signal when estimate is accepted
         if self.status == Estimate.STATUS_ACCEPTED and old_status != Estimate.STATUS_ACCEPTED:
             from apps.jobs.models import Job

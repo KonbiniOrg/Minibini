@@ -53,6 +53,15 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
     if job.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
         return 0
 
+    # Don't downgrade a job to a state it has already passed through
+    # (e.g., don't move approved → submitted when sending a second estimate)
+    JOB_STATUS_ORDER = [
+        Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+    ]
+    if (new_job_status in JOB_STATUS_ORDER and job.status in JOB_STATUS_ORDER and
+            JOB_STATUS_ORDER.index(job.status) > JOB_STATUS_ORDER.index(new_job_status)):
+        return 0
+
     # Update job status if needed, respecting state transition rules
     if job.status != new_job_status:
         system_user, _ = User.objects.get_or_create(
