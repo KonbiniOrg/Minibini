@@ -98,6 +98,11 @@ class TaskTransitionValidationTest(BaseTestCase):
         task.status = Task.STATUS_CANCELLED
         task.full_clean()
 
+    def test_blocked_to_complete(self):
+        task = self._create_task_with_status(Task.STATUS_BLOCKED)
+        task.status = Task.STATUS_COMPLETE
+        task.full_clean()  # should not raise
+
     # Invalid transitions
     def test_complete_to_in_progress_raises(self):
         task = self._create_task_with_status(Task.STATUS_COMPLETE)
@@ -116,13 +121,6 @@ class TaskTransitionValidationTest(BaseTestCase):
     def test_in_progress_to_pending_raises(self):
         task = self._create_task_with_status(Task.STATUS_IN_PROGRESS)
         task.status = Task.STATUS_PENDING
-        with self.assertRaises(ValidationError) as ctx:
-            task.full_clean()
-        self.assertIn('status', str(ctx.exception))
-
-    def test_blocked_to_complete_raises(self):
-        task = self._create_task_with_status(Task.STATUS_BLOCKED)
-        task.status = Task.STATUS_COMPLETE
         with self.assertRaises(ValidationError) as ctx:
             task.full_clean()
         self.assertIn('status', str(ctx.exception))
@@ -264,11 +262,12 @@ class CompleteTaskTest(BaseTestCase):
         blep.refresh_from_db()
         self.assertIsNotNone(blep.end_time)
 
-    def test_complete_rejects_blocked(self):
+    def test_complete_from_blocked(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_BLOCKED)
         self.task.refresh_from_db()
-        with self.assertRaises(ValidationError):
-            TaskLifecycleService.complete_task(self.task.pk)
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
 
     def test_complete_last_task_auto_completes_wo(self):
         TaskLifecycleService.complete_task(self.task.pk)

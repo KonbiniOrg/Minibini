@@ -369,13 +369,13 @@ class TaskLifecycleService:
 
     @staticmethod
     def complete_task(task_pk):
-        """Transition task from pending/in_progress -> complete."""
+        """Transition task from pending/in_progress/blocked -> complete."""
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
-            if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
+            if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED):
                 raise ValidationError(
                     f"Cannot complete task: status is '{task.status}', "
-                    f"must be 'pending' or 'in_progress'."
+                    f"must be 'pending', 'in_progress', or 'blocked'."
                 )
             now = timezone.now()
             Blep.objects.filter(task=task, end_time__isnull=True).update(end_time=now)
