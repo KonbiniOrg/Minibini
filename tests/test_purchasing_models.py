@@ -1,6 +1,7 @@
+from decimal import Decimal
 from django.test import TestCase
 from django.db import models
-from apps.purchasing.models import PurchaseOrder, Bill
+from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill
 from apps.contacts.models import Contact, Business
 
 
@@ -59,6 +60,7 @@ class PurchaseOrderFormTest(TestCase):
             po_number="PO-PRESERVE-001",
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=existing_po, description='Test item', price=Decimal('100.00'))
         original_po_number = existing_po.po_number
 
         # Use the form to edit it
@@ -98,6 +100,7 @@ class BillModelTest(TestCase):
             po_number="PO001",
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=self.purchase_order, description='Test item', price=Decimal('100.00'))
         self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
         

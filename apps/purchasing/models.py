@@ -97,6 +97,13 @@ class PurchaseOrder(models.Model):
                         f'Valid transitions from {old_status} are: {", ".join(valid_next_states) if valid_next_states else "none (terminal state)"}'
                     )
 
+                # If transitioning out of draft, ensure at least one line item exists
+                if old_status == PurchaseOrder.STATUS_DRAFT and self.status != PurchaseOrder.STATUS_DRAFT:
+                    if not PurchaseOrderLineItem.objects.filter(purchase_order=self).exists():
+                        raise ValidationError(
+                            'Cannot change Purchase Order status from Draft without at least one line item.'
+                        )
+
             except PurchaseOrder.DoesNotExist:
                 pass
 

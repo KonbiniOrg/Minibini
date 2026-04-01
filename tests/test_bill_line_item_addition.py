@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.purchasing.models import Bill, BillLineItem, PurchaseOrder
+from apps.purchasing.models import Bill, BillLineItem, PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 from apps.inventory.models import PriceListItem
 
@@ -40,6 +40,7 @@ class BillLineItemAdditionTests(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=self.purchase_order, description='Test item', price=Decimal('100.00'))
         self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
 

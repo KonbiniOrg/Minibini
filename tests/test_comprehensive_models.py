@@ -140,6 +140,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             po_number="PO001",
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=purchase_order, description='Test item', price=Decimal('100.00'))
         purchase_order.status = PurchaseOrder.STATUS_ISSUED
         purchase_order.save()
 
@@ -365,6 +366,7 @@ class LineItemValidationTest(TestCase):
             po_number="PO_VALID001",
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=self.purchase_order, description='Test item', price=Decimal('100.00'))
         self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
 

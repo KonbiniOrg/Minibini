@@ -1,10 +1,11 @@
 """Tests for Estimate and EstWorksheet state transitions and version management."""
 
+from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth.models import User
 from apps.jobs.models import Job, Task
-from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate
+from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem, TaskTemplate
 from apps.estimates.services import EstimateGenerationService
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
@@ -59,6 +60,10 @@ class EstimateStateTests(TestCase):
 
     def test_mark_estimate_as_open(self):
         """Test marking a draft estimate as open."""
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, description='Test item',
+            price=Decimal('100.00'),
+        )
         url = reverse('estimates:estimate_mark_open', args=[self.estimate.estimate_id])
         response = self.client.post(url)
 
@@ -75,6 +80,10 @@ class EstimateStateTests(TestCase):
     def test_cannot_mark_non_draft_estimate_as_open(self):
         """Test that only draft estimates can be marked as open."""
         # Set estimate to already be open
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, description='Test item',
+            price=Decimal('100.00'),
+        )
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 

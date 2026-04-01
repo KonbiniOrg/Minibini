@@ -1,9 +1,10 @@
+from decimal import Decimal
 from django.test import TestCase
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import timedelta
 from apps.jobs.models import Job
-from apps.estimates.models import Estimate
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 
@@ -457,6 +458,9 @@ class EstimateStateTransitionTest(TestCase):
             value='30'
         )
 
+    def _add_estimate_line_item(self, estimate):
+        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
+
     def test_estimate_starts_in_draft(self):
         """Test that new Estimates start in Draft state."""
         estimate = Estimate.objects.create(
@@ -502,6 +506,7 @@ class EstimateStateTransitionTest(TestCase):
             estimate_number="EST002",
             status=Job.STATUS_DRAFT
         )
+        self._add_estimate_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         estimate.refresh_from_db()
@@ -536,6 +541,7 @@ class EstimateStateTransitionTest(TestCase):
             estimate_number="EST005",
             status=Job.STATUS_DRAFT
         )
+        self._add_estimate_line_item(estimate)
         estimate.status = Estimate.STATUS_REJECTED
         estimate.save()
         estimate.refresh_from_db()
@@ -598,6 +604,7 @@ class EstimateStateTransitionTest(TestCase):
             status=Job.STATUS_DRAFT
         )
         self.assertIsNone(estimate.sent_date)
+        self._add_estimate_line_item(estimate)
 
         before_transition = timezone.now()
         estimate.status = Estimate.STATUS_OPEN
@@ -616,6 +623,7 @@ class EstimateStateTransitionTest(TestCase):
             estimate_number="EST011",
             status=Job.STATUS_DRAFT
         )
+        self._add_estimate_line_item(estimate)
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         estimate.refresh_from_db()
@@ -637,6 +645,7 @@ class EstimateStateTransitionTest(TestCase):
             status=Job.STATUS_DRAFT
         )
         self.assertIsNone(estimate.expiration_date)
+        self._add_estimate_line_item(estimate)
 
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
@@ -732,6 +741,7 @@ class EstimateStateTransitionTest(TestCase):
             estimate_number="EST018",
             status=Job.STATUS_DRAFT
         )
+        self._add_estimate_line_item(estimate)
         # Must go through 'open' first
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
@@ -832,6 +842,7 @@ class EstimateStateTransitionTest(TestCase):
             estimate_number="EST100",
             status=Job.STATUS_DRAFT
         )
+        self._add_estimate_line_item(estimate)
 
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
@@ -851,6 +862,7 @@ class EstimateStateTransitionTest(TestCase):
             estimate_number="EST101",
             status=Job.STATUS_DRAFT
         )
+        self._add_estimate_line_item(estimate)
 
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
@@ -868,6 +880,7 @@ class EstimateStateTransitionTest(TestCase):
             estimate_number="EST102",
             status=Job.STATUS_DRAFT
         )
+        self._add_estimate_line_item(estimate)
 
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
@@ -887,6 +900,7 @@ class EstimateStateTransitionTest(TestCase):
             estimate_number="EST103",
             status=Job.STATUS_DRAFT
         )
+        self._add_estimate_line_item(estimate)
 
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
@@ -906,6 +920,7 @@ class EstimateStateTransitionTest(TestCase):
             estimate_number="EST104",
             status=Job.STATUS_DRAFT
         )
+        self._add_estimate_line_item(estimate)
 
         estimate.status = Estimate.STATUS_REJECTED
         estimate.save()

@@ -1,9 +1,10 @@
 """Tests for creating estimates directly from jobs"""
 
+from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import Job
-from apps.estimates.models import Estimate
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 
@@ -80,6 +81,7 @@ class EstimateCreationFromJobTests(TestCase):
         # Get the created estimate and mark it as open
         estimate = Estimate.objects.filter(job=self.job).first()
         estimate_number = estimate.estimate_number  # Store the auto-generated number
+        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 

@@ -80,6 +80,13 @@ class Estimate(models.Model):
                         f'Valid transitions from {old_status} are: {", ".join(valid_next_states) if valid_next_states else "none (terminal state)"}'
                     )
 
+                # If transitioning out of draft, ensure at least one line item exists
+                if old_status == Estimate.STATUS_DRAFT and self.status != Estimate.STATUS_DRAFT:
+                    if not EstimateLineItem.objects.filter(estimate=self).exists():
+                        raise ValidationError(
+                            'Cannot change Estimate status from Draft without at least one line item.'
+                        )
+
             except Estimate.DoesNotExist:
                 pass
 

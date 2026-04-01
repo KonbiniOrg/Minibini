@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, WorkOrder, Task
-from apps.estimates.models import Estimate, EstWorksheet, WorkOrderTemplate, TaskTemplate
+from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem, WorkOrderTemplate, TaskTemplate
 from apps.core.models import User
 
 
@@ -184,8 +184,9 @@ class EstWorksheetStatusTransitionTest(TestCase):
         )
         
         self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
-        
+
         # Change estimate to open
+        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
         

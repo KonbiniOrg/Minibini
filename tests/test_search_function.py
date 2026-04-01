@@ -5,7 +5,7 @@ from apps.estimates.models import Estimate, EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.invoicing.models import Invoice
 from apps.inventory.models import PriceListItem
-from apps.purchasing.models import PurchaseOrder, Bill
+from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill
 from apps.core.models import User
 from decimal import Decimal
 
@@ -144,6 +144,7 @@ class SearchViewTests(TestCase):
             po_number='PO-2024-001'
         )
         # Transition PO to issued status so bills can be created from it
+        PurchaseOrderLineItem.objects.create(purchase_order=self.po1, description='Test item', price=Decimal('100.00'))
         self.po1.status = PurchaseOrder.STATUS_ISSUED
         self.po1.save()
 

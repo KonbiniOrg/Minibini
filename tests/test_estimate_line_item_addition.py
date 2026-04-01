@@ -184,6 +184,7 @@ class EstimateLineItemAdditionTests(TestCase):
     def test_cannot_add_line_item_to_superseded_estimate(self):
         """Test that line items cannot be added to superseded estimates."""
         # First transition estimate to open (valid transition from draft)
+        EstimateLineItem.objects.create(estimate=self.estimate, description='Test item', price=Decimal('100.00'))
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
@@ -211,9 +212,9 @@ class EstimateLineItemAdditionTests(TestCase):
         # Should redirect to estimate detail (with error message)
         self.assertEqual(response.status_code, 302)
 
-        # No line item should be created on the superseded estimate
+        # No new line item should be created on the superseded estimate (only the one added for transition)
         line_items = EstimateLineItem.objects.filter(estimate=self.estimate)
-        self.assertEqual(line_items.count(), 0)
+        self.assertEqual(line_items.count(), 1)
 
     def test_multiple_line_items_can_be_added(self):
         """Test that multiple line items can be added to an estimate."""

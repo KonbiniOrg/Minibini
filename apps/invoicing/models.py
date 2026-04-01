@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from decimal import Decimal
 from apps.core.models import BaseLineItem
 from apps.core.history import history
@@ -45,6 +46,19 @@ class Invoice(models.Model):
         """Get customer PO number from the associated Job."""
         return self.job.customer_po_number
 
+    def clean(self):
+        super().clean()
+        if self.pk:
+            try:
+                old_invoice = Invoice.objects.get(pk=self.pk)
+                if old_invoice.status == Invoice.STATUS_DRAFT and self.status != Invoice.STATUS_DRAFT:
+                    if not InvoiceLineItem.objects.filter(invoice=self).exists():
+                        raise ValidationError(
+                            'Cannot change Invoice status from Draft without at least one line item.'
+                        )
+            except Invoice.DoesNotExist:
+                pass
+
     def save(self, *args, **kwargs):
         """Override save to auto-generate invoice_number and check job completion."""
         from apps.core.services import NumberGenerationService
@@ -60,6 +74,8 @@ class Invoice(models.Model):
         # Auto-generate invoice_number if not provided
         if not self.invoice_number:
             self.invoice_number = NumberGenerationService.generate_next_number('invoice')
+
+        self.clean()
 
         # Call parent save
         super().save(*args, **kwargs)

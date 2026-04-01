@@ -59,6 +59,7 @@ class PurchaseOrderDeletionTest(TestCase):
             po_number='PO-ISSUED-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=self.issued_po, description='Test item', price=Decimal('100.00'))
         self.issued_po.status = PurchaseOrder.STATUS_ISSUED
         self.issued_po.save()
 
@@ -139,6 +140,7 @@ class BillDeletionTest(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=self.po, description='Test item', price=Decimal('100.00'))
         self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
 
@@ -243,6 +245,7 @@ class PurchaseOrderLineItemDeletionTest(TestCase):
             po_number='PO-ISSUED-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=self.issued_po, description='Test item', price=Decimal('100.00'))
         self.issued_po.status = PurchaseOrder.STATUS_ISSUED
         self.issued_po.save()
 
@@ -346,6 +349,7 @@ class BillLineItemDeletionTest(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=self.po, description='Test item', price=Decimal('100.00'))
         self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
 

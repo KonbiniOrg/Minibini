@@ -7,9 +7,10 @@ Business Rules:
 3. Bills can be created without a PO (purchase_order=None)
 """
 
+from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.purchasing.models import Bill, PurchaseOrder
+from apps.purchasing.models import Bill, PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 
 
@@ -34,6 +35,9 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
             email='test.vendor@test.com',
             business=self.business
         )
+
+    def _add_po_line_item(self, po):
+        PurchaseOrderLineItem.objects.create(purchase_order=po, description='Test item', price=Decimal('100.00'))
 
     def test_bill_creation_without_po_succeeds(self):
         """Test that a Bill can be created without a Purchase Order."""
@@ -73,6 +77,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(po)
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
 
@@ -93,6 +98,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(po)
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
@@ -115,6 +121,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(po)
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         po.status = PurchaseOrder.STATUS_RECEIVED_IN_FULL
@@ -137,6 +144,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(po)
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         po.status = PurchaseOrder.STATUS_CANCELLED
@@ -185,6 +193,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
             po_number='PO-ISSUED-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(issued_po)
         issued_po.status = PurchaseOrder.STATUS_ISSUED
         issued_po.save()
 
@@ -219,6 +228,7 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(po)
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
 

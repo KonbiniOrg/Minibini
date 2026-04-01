@@ -8,9 +8,10 @@ from django.db import connection
 from django.db import reset_queries
 from unittest.mock import patch, MagicMock
 
+from decimal import Decimal
 from apps.contacts.models import Contact
 from apps.jobs.models import Job
-from apps.estimates.models import Estimate, EstWorksheet
+from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
 from apps.estimates.signals import estimate_status_changed_for_worksheet
 
 
@@ -100,6 +101,7 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
             status=Estimate.STATUS_DRAFT
         )
 
+        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
         with patch('apps.estimates.signals.estimate_status_changed_for_worksheet.send') as mock_signal:
             # Change from 'draft' to 'open' - should trigger signal
             estimate.status = Estimate.STATUS_OPEN
@@ -120,6 +122,7 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
         )
 
         # No worksheets created
+        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
 
         # Change status to trigger signal
         estimate.status = Estimate.STATUS_OPEN
@@ -174,6 +177,7 @@ class EstWorksheetSignalIntegrationTest(TestCase):
         self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
 
         # Change estimate to open
+        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
@@ -207,6 +211,7 @@ class EstWorksheetSignalIntegrationTest(TestCase):
         )
 
         # Change estimate status
+        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
@@ -241,6 +246,7 @@ class EstWorksheetSignalIntegrationTest(TestCase):
         )
 
         # Change only estimate1
+        EstimateLineItem.objects.create(estimate=estimate1, description='Test item', price=Decimal('100.00'))
         estimate1.status = Estimate.STATUS_OPEN
         estimate1.save()
 

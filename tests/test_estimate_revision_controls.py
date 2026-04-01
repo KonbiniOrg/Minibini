@@ -461,6 +461,7 @@ class EstimateWorkflowIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 302)
 
         # Step 3: Mark as open
+        EstimateLineItem.objects.create(estimate=estimate_v1, description='Test item', price=100)
         estimate_v1.status = Estimate.STATUS_OPEN
         estimate_v1.save()
 

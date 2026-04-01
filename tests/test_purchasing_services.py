@@ -82,6 +82,7 @@ class PurchaseOrderServiceStatusTest(PurchasingTestBase):
 
     def test_update_status_draft_to_issued(self):
         """Valid transition: draft → issued."""
+        PurchaseOrderLineItem.objects.create(purchase_order=self.po, description='Test item', price=Decimal('100.00'))
         updated = PurchaseOrderService.update_status(self.po.pk, PurchaseOrder.STATUS_ISSUED)
         self.assertEqual(updated.status, PurchaseOrder.STATUS_ISSUED)
 
@@ -97,6 +98,7 @@ class PurchaseOrderServiceCancelTest(PurchasingTestBase):
     def test_cancel_issued_po(self):
         """Cancel an issued PO."""
         po = PurchaseOrderService.create_po(business=self.business)
+        PurchaseOrderLineItem.objects.create(purchase_order=po, description='Test item', price=Decimal('100.00'))
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         cancelled = PurchaseOrderService.cancel_po(po.pk)
@@ -122,6 +124,7 @@ class PurchaseOrderServiceDeleteTest(PurchasingTestBase):
     def test_delete_issued_po_raises(self):
         """Cannot delete an issued PO."""
         po = PurchaseOrderService.create_po(business=self.business)
+        PurchaseOrderLineItem.objects.create(purchase_order=po, description='Test item', price=Decimal('100.00'))
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         with self.assertRaises(ValidationError):

@@ -172,6 +172,7 @@ class EstimateServiceStatusTest(EstimatesTestBase):
 
     def test_update_status_draft_to_open(self):
         est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
         updated = EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
         self.assertEqual(updated.status, Estimate.STATUS_OPEN)
 
@@ -190,11 +191,13 @@ class EstimateServiceMarkOpenTest(EstimatesTestBase):
 
     def test_mark_open(self):
         est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
         updated = EstimateService.mark_open(est.pk)
         self.assertEqual(updated.status, Estimate.STATUS_OPEN)
 
     def test_mark_open_updates_worksheet(self):
         est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
         ws = EstWorksheet.objects.create(
             job=self.job, estimate=est, status=Job.STATUS_DRAFT,
         )
@@ -204,6 +207,7 @@ class EstimateServiceMarkOpenTest(EstimatesTestBase):
 
     def test_mark_open_non_draft_raises(self):
         est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
         EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             EstimateService.mark_open(est.pk)
@@ -214,6 +218,7 @@ class EstimateServiceReviseTest(EstimatesTestBase):
 
     def test_revise_estimate(self):
         est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
         # Must be non-draft to revise
         EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
         new_est = EstimateService.revise_estimate(est.pk)
@@ -273,6 +278,7 @@ class EstimateServiceAddLineItemTest(EstimatesTestBase):
         self.assertEqual(li.description, 'Welding rod')
 
     def test_add_line_item_to_non_draft_raises(self):
+        EstimateLineItem.objects.create(estimate=self.est, description='Test item', price=Decimal('100.00'))
         EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             EstimateService.add_line_item(

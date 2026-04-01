@@ -9,7 +9,7 @@ from decimal import Decimal
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 from apps.jobs.models import Job, WorkOrder, Task
-from apps.estimates.models import Estimate, WorkOrderTemplate, TaskTemplate
+from apps.estimates.models import Estimate, EstimateLineItem, WorkOrderTemplate, TaskTemplate
 from apps.jobs.services import WorkOrderService, TaskService
 from apps.estimates.services import EstimateService
 from apps.core.models import User
@@ -375,9 +375,10 @@ class StatusTransitionPreventionTest(TestCase):
             WorkOrderService.create_from_estimate(estimate)
         
         # Change estimate to open
+        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-        
+
         # Open estimate can create WorkOrder (incomplete status)
         work_order = WorkOrderService.create_from_estimate(estimate)
         self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
@@ -391,9 +392,10 @@ class StatusTransitionPreventionTest(TestCase):
         )
         
         # Move to open
+        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-        
+
         # This business rule would be enforced in model validation or admin interface
         # For now, we document that this should not happen
         self.assertEqual(estimate.status, Estimate.STATUS_OPEN)

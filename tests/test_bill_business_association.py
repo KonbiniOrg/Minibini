@@ -1,5 +1,6 @@
 from django.test import TestCase
-from apps.purchasing.models import Bill, PurchaseOrder
+from decimal import Decimal
+from apps.purchasing.models import Bill, PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 
 
@@ -105,6 +106,7 @@ class BillBusinessAutoAssociationTest(TestCase):
             po_number="PO001",
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=po, description='Test item', price=Decimal('100.00'))
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
 

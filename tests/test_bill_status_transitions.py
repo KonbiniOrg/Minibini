@@ -18,7 +18,7 @@ Business Rules:
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from apps.purchasing.models import Bill, PurchaseOrder, BillLineItem
+from apps.purchasing.models import Bill, PurchaseOrder, BillLineItem, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 from datetime import timedelta
 from decimal import Decimal
@@ -52,6 +52,7 @@ class BillStatusTransitionTest(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=self.purchase_order, description='Test item', price=Decimal('100.00'))
         self.purchase_order.status = PurchaseOrder.STATUS_ISSUED
         self.purchase_order.save()
 

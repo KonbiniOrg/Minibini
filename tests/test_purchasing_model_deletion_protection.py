@@ -13,7 +13,7 @@ Business Rules:
 
 from django.test import TestCase
 from django.core.exceptions import PermissionDenied
-from apps.purchasing.models import PurchaseOrder, Bill, BillLineItem
+from apps.purchasing.models import PurchaseOrder, Bill, BillLineItem, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 from decimal import Decimal
 
@@ -28,6 +28,9 @@ class PurchaseOrderModelDeletionTest(TestCase):
             business_name='Test Vendor Business',
             default_contact=self.default_contact
         )
+
+    def _add_po_line_item(self, po):
+        PurchaseOrderLineItem.objects.create(purchase_order=po, description='Test item', price=Decimal('100.00'))
 
     def test_can_delete_draft_purchase_order_via_orm(self):
         """Test that draft POs can be deleted via direct ORM operation."""
@@ -52,6 +55,7 @@ class PurchaseOrderModelDeletionTest(TestCase):
             po_number='PO-ISSUED-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(po)
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
 
@@ -71,6 +75,7 @@ class PurchaseOrderModelDeletionTest(TestCase):
             po_number='PO-PARTLY-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(po)
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
@@ -92,6 +97,7 @@ class PurchaseOrderModelDeletionTest(TestCase):
             po_number='PO-RECEIVED-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(po)
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         po.status = PurchaseOrder.STATUS_RECEIVED_IN_FULL
@@ -113,6 +119,7 @@ class PurchaseOrderModelDeletionTest(TestCase):
             po_number='PO-CANCELLED-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        self._add_po_line_item(po)
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         po.status = PurchaseOrder.STATUS_CANCELLED
@@ -151,6 +158,7 @@ class BillModelDeletionTest(TestCase):
             po_number='PO-TEST-001',
             status=PurchaseOrder.STATUS_DRAFT
         )
+        PurchaseOrderLineItem.objects.create(purchase_order=self.po, description='Test item', price=Decimal('100.00'))
         self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
 

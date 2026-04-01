@@ -1,5 +1,6 @@
 """Tests for CRUD operations for EstWorksheet and Task creation."""
 
+from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import Job, Task
@@ -215,6 +216,7 @@ class EstimateCRUDTests(TestCase):
 
     def test_update_status_post(self):
         """Test POST request to update status."""
+        EstimateLineItem.objects.create(estimate=self.estimate, description='Test item', price=Decimal('100.00'))
         url = reverse('estimates:estimate_update_status', args=[self.estimate.estimate_id])
         data = {
             'status': Estimate.STATUS_OPEN
@@ -231,6 +233,7 @@ class EstimateCRUDTests(TestCase):
     def test_update_status_invalid_transition(self):
         """Test that invalid status transitions are handled."""
         # Set estimate to open (superseded isn't allowed directly after draft)
+        EstimateLineItem.objects.create(estimate=self.estimate, description='Test item', price=Decimal('100.00'))
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.purchasing.models import PurchaseOrder, Bill, BillLineItem, PurchaseOrderLineItem
@@ -207,7 +208,8 @@ class BillFromPurchaseOrderTest(TestCase):
             status=PurchaseOrder.STATUS_DRAFT
         )
 
-        # Transition PO to issued status
+        # Add initial line item and transition PO to issued status
+        PurchaseOrderLineItem.objects.create(purchase_order=self.po, description='Initial item', price=Decimal('100.00'))
         self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
 
@@ -301,19 +303,18 @@ class BillFromPurchaseOrderTest(TestCase):
                 line_number=po_line_item.line_number
             )
 
-        # Verify line items were copied
+        # Verify line items were copied (3 = initial item + 2 price list items)
         bill_line_items = BillLineItem.objects.filter(bill=bill).order_by('line_number')
-        self.assertEqual(bill_line_items.count(), 2)
+        self.assertEqual(bill_line_items.count(), 3)
 
-        # Verify first line item
-        self.assertEqual(bill_line_items[0].description, "Test Item 1")
-        self.assertEqual(bill_line_items[0].qty, 5)
-        self.assertEqual(bill_line_items[0].price, 10.00)
+        # Verify price list line items (filter by description)
+        item1 = bill_line_items.get(description="Test Item 1")
+        self.assertEqual(item1.qty, 5)
+        self.assertEqual(item1.price, 10.00)
 
-        # Verify second line item
-        self.assertEqual(bill_line_items[1].description, "Test Item 2")
-        self.assertEqual(bill_line_items[1].qty, 3)
-        self.assertEqual(bill_line_items[1].price, 20.00)
+        item2 = bill_line_items.get(description="Test Item 2")
+        self.assertEqual(item2.qty, 3)
+        self.assertEqual(item2.price, 20.00)
 
     def test_bill_line_items_can_be_modified_after_creation(self):
         """Bill line items can be modified after creation from PO"""
@@ -357,5 +358,5 @@ class BillFromPurchaseOrderTest(TestCase):
             line_number=3
         )
 
-        # Verify new line item was added
-        self.assertEqual(BillLineItem.objects.filter(bill=bill).count(), 3)
+        # Verify new line item was added (3 from PO + 1 new = 4)
+        self.assertEqual(BillLineItem.objects.filter(bill=bill).count(), 4)
