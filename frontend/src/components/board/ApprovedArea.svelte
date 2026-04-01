@@ -148,7 +148,6 @@
 </script>
 
 <div class="approved-header">
-  <span class="col-indicator"></span>
   <strong>In Progress</strong>
   <span class="count">{data.jobs?.length || 0}</span>
 </div>
@@ -186,9 +185,8 @@
 </div>
 
 <style>
-  .approved-header { padding: 14px 16px 10px; display: flex; align-items: center; gap: 10px; border-bottom: 3px solid #4ade80; flex-shrink: 0; }
-  .col-indicator { width: 4px; height: 24px; border-radius: 2px; background: #4ade80; }
-  .count { font-size: 12px; color: #999; margin-left: auto; }
+  .approved-header { padding: 14px 16px 10px; display: flex; align-items: center; justify-content: center; gap: 10px; border-bottom: 3px solid #4ade80; flex-shrink: 0; }
+  .count { font-size: 12px; color: #999; }
   .approved-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
   .worker-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
   .worker-section { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
