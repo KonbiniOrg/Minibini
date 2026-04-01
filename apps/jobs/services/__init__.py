@@ -421,7 +421,18 @@ class TaskLifecycleService:
                 return {'conflict': 'active_workers', 'workers': workers}
             Task.objects.filter(pk=task.pk).update(status=Task.STATUS_BLOCKED)
             task.status = Task.STATUS_BLOCKED
+            TaskLifecycleService._check_wo_blocked(task)
             return task
+
+    @staticmethod
+    def _check_wo_blocked(task):
+        """Block WorkOrder if a task on it is blocked."""
+        if not task.work_order:
+            return
+        wo = task.work_order
+        if wo.status in (WorkOrder.STATUS_BLOCKED, WorkOrder.STATUS_COMPLETE):
+            return
+        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_BLOCKED)
 
     @staticmethod
     def unblock_task(task_pk):

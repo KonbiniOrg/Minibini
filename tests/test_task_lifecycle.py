@@ -338,6 +338,35 @@ class BlockTaskTest(BaseTestCase):
             TaskLifecycleService.unblock_task(self.task.pk)
 
 
+class TaskBlockedWorkOrderBlockedTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
+        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+
+    def test_workorder_blocked_when_task_blocked(self):
+        TaskLifecycleService.block_task(self.task.pk)
+        self.wo.refresh_from_db()
+        self.assertEqual(self.wo.status, WorkOrder.STATUS_BLOCKED)
+
+    def test_workorder_stays_blocked_if_already_blocked(self):
+        WorkOrder.objects.filter(pk=self.wo.pk).update(status=WorkOrder.STATUS_BLOCKED)
+        task2 = Task.objects.create(name='Task 2', work_order=self.wo)
+        TaskLifecycleService.block_task(task2.pk)
+        self.wo.refresh_from_db()
+        self.assertEqual(self.wo.status, WorkOrder.STATUS_BLOCKED)
+
+    def test_worksheet_task_block_does_not_affect_workorder(self):
+        """Blocking a task on an EstWorksheet should not try to block a WorkOrder."""
+        from apps.estimates.models import EstWorksheet
+        ws = EstWorksheet.objects.create(job=self.job)
+        ws_task = Task.objects.create(name='WS Task', est_worksheet=ws)
+        TaskLifecycleService.block_task(ws_task.pk)
+        ws_task.refresh_from_db()
+        self.assertEqual(ws_task.status, Task.STATUS_BLOCKED)
+
+
 class CancelTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
