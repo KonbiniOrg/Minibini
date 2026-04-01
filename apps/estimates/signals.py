@@ -68,7 +68,12 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             username='system',
             defaults={'first_name': 'System', 'is_active': False},
         )
-        action_desc = f"Estimate {estimate.estimate_number} accepted"
+        if new_job_status == Job.STATUS_SUBMITTED:
+            action_desc = f"Estimate {estimate.estimate_number} sent"
+        elif new_job_status == Job.STATUS_APPROVED:
+            action_desc = f"Estimate {estimate.estimate_number} accepted"
+        else:
+            action_desc = f"Estimate {estimate.estimate_number} status changed"
 
         # If trying to go to 'approved' from 'draft', first go through 'submitted'
         if new_job_status == Job.STATUS_APPROVED and job.status == Job.STATUS_DRAFT:

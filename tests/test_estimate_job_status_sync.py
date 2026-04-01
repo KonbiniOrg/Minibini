@@ -92,9 +92,9 @@ class EstimateJobStatusSyncTest(TestCase):
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
-        # Job should still be draft
+        # Job should now be submitted (sending estimate triggers draft→submitted)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_DRAFT)
+        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
 
         # Now approve the estimate
         estimate.status = Estimate.STATUS_ACCEPTED
@@ -271,9 +271,9 @@ class EstimateJobStatusSyncTest(TestCase):
         estimate1.status = Job.STATUS_REJECTED
         estimate1.save()
 
-        # Job should still be draft (rejection doesn't auto-update job)
+        # Job should be submitted (sending estimate triggers draft→submitted)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_DRAFT)
+        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
 
         # Create second estimate and approve it
         estimate2 = Estimate.objects.create(
@@ -371,16 +371,16 @@ class EstimateJobStatusSyncTest(TestCase):
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
-        # Job is still draft (no signal handler for open->submitted transition)
+        # Job should be submitted (sending estimate triggers draft→submitted)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_DRAFT)
+        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
 
         estimate.status = Estimate.STATUS_REJECTED
         estimate.save()
 
-        # Job should still be draft (rejecting estimate doesn't affect job)
+        # Job should still be submitted (rejecting estimate doesn't affect job)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_DRAFT)
+        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
 
     def test_estimate_revision_workflow(self):
         """Test the full workflow of estimate revision with job status updates."""
@@ -417,9 +417,9 @@ class EstimateJobStatusSyncTest(TestCase):
         estimate1.status = Estimate.STATUS_SUPERSEDED
         estimate1.save()
 
-        # Job should still be draft (no signal handler for superseding non-accepted estimates)
+        # Job should be submitted (sending first estimate triggered draft→submitted)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_DRAFT)
+        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
 
         # Create new version
         estimate2 = Estimate.objects.create(
@@ -430,17 +430,17 @@ class EstimateJobStatusSyncTest(TestCase):
             status=Job.STATUS_DRAFT
         )
 
-        # Job remains draft
+        # Job remains submitted
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_DRAFT)
+        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
 
         # Open and accept the new estimate
         estimate2.status = Estimate.STATUS_OPEN
         estimate2.save()
 
-        # Job still draft (no signal for open state)
+        # Job still submitted (already past draft, no-downgrade guard)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_DRAFT)
+        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
 
         # Accept the new estimate
         estimate2.status = Estimate.STATUS_ACCEPTED
