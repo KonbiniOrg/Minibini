@@ -345,10 +345,20 @@ class NealsDataConverter:
             if org:
                 referenced_orgs.add(org)
 
-        # Contacts: Keep only those from referenced organisations
+        # Also collect individual names referenced by projects (no org)
+        referenced_names = set()
+        for project in self.filtered_projects:
+            if not project.get('Client Organisation'):
+                name = project.get('Client Name')
+                if name:
+                    referenced_names.add(name)
+
+        # Contacts: Keep those from referenced orgs OR referenced by name (no org)
         self.filtered_contacts = [
             c for c in self.loader.sheets_data.get('Contacts', [])
             if c.get('Organisation') in referenced_orgs
+            or (not c.get('Organisation')
+                and f"{c.get('First Name', '')} {c.get('Last Name', '')}".strip() in referenced_names)
         ]
 
         # Tasks: Keep those linked to kept projects
@@ -444,14 +454,20 @@ class NealsDataConverter:
 
         return estimates
 
+    def _is_bill_header_row(self, row: Dict) -> bool:
+        """Detect bill header rows. A header has Contact Organisation, Contact Name, or Reference
+        but NOT Item Type (which indicates a line item row)."""
+        if row.get('Item Type'):
+            return False
+        return bool(row.get('Contact Organisation') or row.get('Contact Name') or row.get('Reference'))
+
     def _filter_bills(self, project_names: set, cutoff_date: datetime) -> List[Dict]:
         """Filter bill records (header + line items)."""
         bills = []
         current_bill = None
 
         for row in self.loader.sheets_data.get('Bills', []):
-            # Check if this is a header row (has Contact Organisation)
-            if row.get('Contact Organisation'):
+            if self._is_bill_header_row(row):
                 # Save previous bill if exists
                 if current_bill:
                     project = current_bill.get('Project', '')
@@ -464,7 +480,7 @@ class NealsDataConverter:
                 current_bill = row.copy()
                 current_bill['_line_items'] = []
 
-            # Check if this is a line item row (has Item Type but no Contact Organisation)
+            # Line item row: has Item Type
             elif row.get('Item Type') and current_bill:
                 current_bill['_line_items'].append(row)
 
@@ -478,17 +494,106 @@ class NealsDataConverter:
 
         return bills
 
+    def _collect_all_estimates(self) -> List[Dict]:
+        """Parse ALL estimates from raw sheet data (with line items attached)."""
+        estimates = []
+        current = None
+
+        for row in self.loader.sheets_data.get('Estimates', []):
+            if row.get('Reference'):
+                if current:
+                    estimates.append(current)
+                current = row.copy()
+                current['_line_items'] = []
+            elif row.get('Item Type') and current:
+                current['_line_items'].append(row)
+
+        if current:
+            estimates.append(current)
+        return estimates
+
+    def _collect_all_invoices(self) -> List[Dict]:
+        """Parse ALL invoices from raw sheet data (with line items attached)."""
+        invoices = []
+        current = None
+
+        for row in self.loader.sheets_data.get('Invoices', []):
+            if row.get('Contact Organisation') or (row.get('Contact Name') and row.get('Reference')):
+                if current:
+                    invoices.append(current)
+                current = row.copy()
+                current['_line_items'] = []
+            elif row.get('Item Type') and current:
+                current['_line_items'].append(row)
+
+        if current:
+            invoices.append(current)
+        return invoices
+
+    def _collect_all_bills(self) -> List[Dict]:
+        """Parse ALL bills from raw sheet data (with line items attached)."""
+        bills = []
+        current = None
+
+        for row in self.loader.sheets_data.get('Bills', []):
+            if self._is_bill_header_row(row):
+                if current:
+                    bills.append(current)
+                current = row.copy()
+                current['_line_items'] = []
+            elif row.get('Item Type') and current:
+                current['_line_items'].append(row)
+
+        if current:
+            bills.append(current)
+        return bills
+
     def _build_all_objects(self):
         """Build all Django objects in dependency order."""
+        self._build_users()
         self._build_businesses()
         self._build_contacts()
         self._build_jobs_and_workorders()
         self._build_purchase_orders_and_bills()
+        self._backfill_default_contacts()
         self._build_tasks()
         self._build_estimates()
         self._build_invoices()
         self._build_bleps()
         self._build_price_list_items()
+        self._build_implicit_jobs()
+        self._build_recent_unlinked_estimates()
+        self._reconcile_states()
+
+    def _build_users(self):
+        """Create 4 worker users for blep assignment."""
+        if self.verbose:
+            print("  Building users...")
+
+        workers = [
+            {'first_name': 'Alex', 'last_name': 'Rivera', 'username': 'arivera'},
+            {'first_name': 'Sam', 'last_name': 'Chen', 'username': 'schen'},
+            {'first_name': 'Jordan', 'last_name': 'Kim', 'username': 'jkim'},
+            {'first_name': 'Taylor', 'last_name': 'Brooks', 'username': 'tbrooks'},
+        ]
+
+        self.worker_user_pks = []
+        for w in workers:
+            pk = self.get_next_pk('core.user')
+            self.worker_user_pks.append(pk)
+            self.add_fixture('core.user', pk, {
+                'username': w['username'],
+                'first_name': w['first_name'],
+                'last_name': w['last_name'],
+                'email': f"{w['username']}@nealscnc.com",
+                'password': '!',  # Unusable password
+                'is_active': True,
+                'is_staff': False,
+                'is_superuser': False,
+            })
+
+        if self.verbose:
+            print(f"    Created {len(self.worker_user_pks)} worker users (PKs: {self.worker_user_pks})")
 
     def _build_businesses(self):
         """Create Business objects from Contacts sheet."""
@@ -496,6 +601,19 @@ class NealsDataConverter:
             print("  Building businesses...")
 
         seen_orgs = set()
+        ref_counter = 1
+
+        # Check base fixtures for existing reference codes
+        for fixture in self.fixture_data:
+            if fixture['model'] == 'contacts.business':
+                code = fixture['fields'].get('our_reference_code', '')
+                if code.startswith('BUS-'):
+                    try:
+                        num = int(code.split('-')[1])
+                        ref_counter = max(ref_counter, num + 1)
+                    except (ValueError, IndexError):
+                        pass
+
         for contact_row in self.filtered_contacts:
             org = contact_row.get('Organisation')
             if org and org not in seen_orgs:
@@ -506,12 +624,13 @@ class NealsDataConverter:
                 self.add_fixture('contacts.business', pk, {
                     'business_name': org,
                     'business_address': contact_row.get('Address 1', '') or '',
-                    'business_number': contact_row.get('Phone Number', '') or '',
+                    'business_phone': contact_row.get('Phone Number', '') or '',
                     'tax_exemption_number': contact_row.get('Contact VAT Number', '') or '',
-                    'our_reference_code': '',  # Will be auto-generated by model
-                    'tax_cloud': '',
+                    'our_reference_code': f'BUS-{ref_counter:04d}',
                     'terms': None,
+                    'default_contact': None,  # Backfilled after contacts are built
                 })
+                ref_counter += 1
 
         if self.verbose:
             print(f"    Created {len(self.business_map)} businesses")
@@ -538,9 +657,8 @@ class NealsDataConverter:
             pk = self.get_next_pk('contacts.contact')
             full_name = f"{first_name} {last_name}".strip()
 
-            # Map contact
-            if org:
-                self.contact_map[(org, full_name)] = pk
+            # Map contact — use org if available, else None
+            self.contact_map[(org, full_name)] = pk
 
             # Get business FK
             business_fk = self.business_map.get(org) if org else None
@@ -551,9 +669,21 @@ class NealsDataConverter:
             work_number = str(work_phone)[:20] if work_phone else ''
             mobile_number = str(mobile_phone)[:20] if mobile_phone else ''
 
+            # Ensure required fields have values
+            email = contact_row.get('Email', '') or ''
+            if not email:
+                # Generate fake email from name
+                slug = f"{first_name.lower()}.{last_name.lower()}".replace(' ', '').replace('(', '').replace(')', '')
+                email = f"{slug}@example.com"
+
+            if not work_number and not mobile_number:
+                # Generate fake phone number
+                work_number = f"555-{pk:04d}"
+
             self.add_fixture('contacts.contact', pk, {
-                'name': full_name,
-                'email': contact_row.get('Email', '') or '',
+                'first_name': first_name,
+                'last_name': last_name,
+                'email': email,
                 'work_number': work_number,
                 'mobile_number': mobile_number,
                 'home_number': '',
@@ -563,12 +693,37 @@ class NealsDataConverter:
                 'city': contact_row.get('Town', '') or '',
                 'municipality': contact_row.get('Region', '') or '',
                 'postal_code': contact_row.get('Postcode', '') or '',
-                'country_code': 'US',  # All contacts are in USA
+                'country_code': 'US',
                 'business': business_fk,
             })
 
         if self.verbose:
             print(f"    Created {len(self.contact_map)} contacts")
+
+    def _backfill_default_contacts(self):
+        """Set default_contact on each Business fixture to its first Contact."""
+        if self.verbose:
+            print("  Setting default contacts on businesses...")
+
+        # Build business_pk -> first contact_pk map
+        first_contact_for_business = {}
+        for fixture in self.fixture_data:
+            if fixture['model'] == 'contacts.contact':
+                biz_pk = fixture['fields'].get('business')
+                if biz_pk and biz_pk not in first_contact_for_business:
+                    first_contact_for_business[biz_pk] = fixture['pk']
+
+        # Backfill default_contact on business fixtures
+        updated = 0
+        for fixture in self.fixture_data:
+            if fixture['model'] == 'contacts.business':
+                contact_pk = first_contact_for_business.get(fixture['pk'])
+                if contact_pk:
+                    fixture['fields']['default_contact'] = contact_pk
+                    updated += 1
+
+        if self.verbose:
+            print(f"    Set default_contact on {updated} businesses")
 
     def _resolve_contact(
         self,
@@ -630,10 +785,12 @@ class NealsDataConverter:
         if decision == 'update':
             # Update existing contact's name
             self.contact_updates[existing_contact] = contact_name
+            new_first, new_last = self._split_name(contact_name)
             # Update in fixture data
             for fixture in self.fixture_data:
                 if fixture['model'] == 'contacts.contact' and fixture['pk'] == existing_contact:
-                    fixture['fields']['name'] = contact_name
+                    fixture['fields']['first_name'] = new_first
+                    fixture['fields']['last_name'] = new_last
                     break
             # Update map
             self.contact_map[(org, contact_name)] = existing_contact
@@ -642,15 +799,17 @@ class NealsDataConverter:
         elif decision == 'create':
             # Create new contact
             pk = self.get_next_pk('contacts.contact')
+            new_first, new_last = self._split_name(contact_name)
 
-            # Invent email/phone based on existing contact
-            base_email = existing_email
-            new_email = base_email  # Could modify this to make unique
+            # Generate email/phone
+            slug = f"{new_first.lower()}.{new_last.lower()}".replace(' ', '')
+            new_email = f"{slug}@example.com"
 
             self.add_fixture('contacts.contact', pk, {
-                'name': contact_name,
+                'first_name': new_first,
+                'last_name': new_last,
                 'email': new_email,
-                'work_number': '',
+                'work_number': f"555-{pk:04d}",
                 'mobile_number': '',
                 'home_number': '',
                 'addr1': '',
@@ -659,7 +818,7 @@ class NealsDataConverter:
                 'city': '',
                 'municipality': '',
                 'postal_code': '',
-                'country_code': 'US',  # All contacts are in USA
+                'country_code': 'US',
                 'business': self.business_map[org],
             })
 
@@ -746,12 +905,21 @@ class NealsDataConverter:
 
             # If no org or normal resolution failed, try to find contact by name only
             if not contact_fk and client_name:
-                # Search through contact_map for matching name (regardless of org)
-                for (org, name), pk in self.contact_map.items():
-                    if name == client_name:
+                for (map_org, map_name), pk in self.contact_map.items():
+                    if map_name == client_name:
                         contact_fk = pk
                         if self.verbose:
-                            print(f"    Found contact '{client_name}' by name match (org='{org}')")
+                            print(f"    Found contact '{client_name}' by name match (org='{map_org}')")
+                        break
+
+            # If org but no name, find any contact for that business
+            if not contact_fk and client_org and client_org in self.business_map:
+                biz_pk = self.business_map[client_org]
+                for (map_org, map_name), pk in self.contact_map.items():
+                    if map_org == client_org:
+                        contact_fk = pk
+                        if self.verbose:
+                            print(f"    Found contact '{map_name}' for org '{client_org}' (no client name given)")
                         break
 
             # Skip this job if we still couldn't resolve a contact (Job model requires contact)
@@ -808,7 +976,7 @@ class NealsDataConverter:
             job_number = f"J{year}-{job_counters[year]:04d}"
 
             self.add_fixture('jobs.job', job_pk, {
-                'name': project_name,
+                'name': project_name[:50],
                 'job_number': job_number,
                 'contact': contact_fk,
                 'start_date': start_date,
@@ -825,7 +993,7 @@ class NealsDataConverter:
             if project.get('Status') != 'CANCELLED':
                 workorder_pk = self.get_next_pk('jobs.workorder')
 
-                wo_status = 'complete' if job_status == 'completed' else 'draft'
+                wo_status = 'complete' if job_status == 'completed' else 'incomplete'
 
                 self.add_fixture('jobs.workorder', workorder_pk, {
                     'job': job_pk,
@@ -857,26 +1025,107 @@ class NealsDataConverter:
             print(f"    Created {self.pk_counters.get('purchasing.purchaseorder', 1) - 1} purchase orders")
             print(f"    Created {self.pk_counters.get('purchasing.bill', 1) - 1} bills")
 
+    def _ensure_individual_vendor(self, contact_name: str) -> Tuple[int, int]:
+        """Create a personal Business + Contact for an individual vendor (no org in source data).
+        Returns (business_pk, contact_pk)."""
+        # Use the person's name as a synthetic org key
+        synthetic_org = f"(individual) {contact_name}"
+
+        if synthetic_org in self.business_map:
+            # Already created — find the contact
+            contact_pk = self.contact_map.get((synthetic_org, contact_name))
+            return self.business_map[synthetic_org], contact_pk
+
+        # Create contact first (we need the PK for default_contact)
+        contact_pk = self.get_next_pk('contacts.contact')
+        first_name, last_name = self._split_name(contact_name)
+        slug = f"{first_name.lower()}.{last_name.lower()}".replace(' ', '')
+
+        self.add_fixture('contacts.contact', contact_pk, {
+            'first_name': first_name,
+            'last_name': last_name,
+            'email': f"{slug}@example.com",
+            'work_number': f"555-{contact_pk:04d}",
+            'mobile_number': '',
+            'home_number': '',
+            'addr1': '',
+            'addr2': '',
+            'addr3': '',
+            'city': '',
+            'municipality': '',
+            'postal_code': '',
+            'country_code': 'US',
+            'business': None,  # Will be set below after business is created
+        })
+
+        # Create business
+        biz_pk = self.get_next_pk('contacts.business')
+        # Generate reference code
+        ref_counter = 1
+        for fixture in self.fixture_data:
+            if fixture['model'] == 'contacts.business':
+                code = fixture['fields'].get('our_reference_code', '')
+                if code.startswith('BUS-'):
+                    try:
+                        num = int(code.split('-')[1])
+                        ref_counter = max(ref_counter, num + 1)
+                    except (ValueError, IndexError):
+                        pass
+
+        self.add_fixture('contacts.business', biz_pk, {
+            'business_name': contact_name,
+            'business_address': '',
+            'business_phone': '',
+            'tax_exemption_number': '',
+            'our_reference_code': f'BUS-{ref_counter:04d}',
+            'terms': None,
+            'default_contact': contact_pk,
+        })
+
+        # Update contact's business FK
+        for fixture in self.fixture_data:
+            if fixture['model'] == 'contacts.contact' and fixture['pk'] == contact_pk:
+                fixture['fields']['business'] = biz_pk
+                break
+
+        self.business_map[synthetic_org] = biz_pk
+        self.contact_map[(synthetic_org, contact_name)] = contact_pk
+
+        if self.verbose:
+            print(f"    Created individual vendor: {contact_name} (business PK {biz_pk})")
+
+        return biz_pk, contact_pk
+
     def _save_bill_and_po(self, bill_row: Dict, line_items: List[Dict], bill_counters: Dict, po_counters: Dict):
         """Save a Bill and its associated PurchaseOrder and line items."""
         # Create PurchaseOrder
         po_pk = self.get_next_pk('purchasing.purchaseorder')
 
-        # Resolve contact
+        # Resolve contact and business
         contact_org = bill_row.get('Contact Organisation')
         contact_name = bill_row.get('Contact Name')
         contact_fk = None
+        business_fk = None
 
-        if contact_org and contact_name:
-            contact_fk = self._resolve_contact(
-                org=contact_org,
-                contact_name=contact_name,
-                sheet='Bills',
-                row=bill_row.get('_row', 0),
-                context=bill_row.get('Reference', 'Unknown')
-            )
-
-        business_fk = self.business_map.get(contact_org) if contact_org else None
+        if contact_org:
+            # Normal case: has an organisation
+            if contact_name:
+                contact_fk = self._resolve_contact(
+                    org=contact_org,
+                    contact_name=contact_name,
+                    sheet='Bills',
+                    row=bill_row.get('_row', 0),
+                    context=bill_row.get('Reference', 'Unknown')
+                )
+            business_fk = self.business_map.get(contact_org)
+        elif contact_name:
+            # Individual vendor: no org, just a person's name
+            business_fk, contact_fk = self._ensure_individual_vendor(contact_name)
+        else:
+            # Neither org nor name — skip this bill
+            if self.verbose:
+                print(f"    Warning: Skipping bill row {bill_row.get('_row', '?')} — no contact info")
+            return
 
         # Get job FK
         project_name = bill_row.get('Project')
@@ -902,15 +1151,24 @@ class NealsDataConverter:
 
         po_number = f"PO{year}-{po_counters[year]:04d}"
 
+        # Line item requirement: cannot leave draft without line items
+        if line_items:
+            po_status = 'issued'
+            po_issued_date = created_date
+        else:
+            if self.verbose:
+                print(f"    Warning: PO {po_number} has no line items, keeping as draft")
+            po_status = 'draft'
+            po_issued_date = None
+
         self.add_fixture('purchasing.purchaseorder', po_pk, {
             'po_number': po_number,
             'business': business_fk,
             'contact': contact_fk,
-            'job': job_fk,
-            'status': 'issued',  # All imported POs are issued
+            'status': po_status,
             'created_date': created_date,
             'requested_date': None,
-            'issued_date': created_date,
+            'issued_date': po_issued_date,
             'received_date': None,
             'cancel_date': None,
         })
@@ -954,6 +1212,7 @@ class NealsDataConverter:
 
             self.add_fixture('purchasing.purchaseorderlineitem', po_item_pk, {
                 'purchase_order': po_pk,
+                'job': job_fk,
                 'task': None,
                 'price_list_item': None,
                 'line_number': line_number,
@@ -984,6 +1243,25 @@ class NealsDataConverter:
         if self.verbose:
             print("  Building tasks...")
 
+        task_status_map = {
+            'Completed': 'complete',
+            'Active': 'in_progress',
+        }
+
+        # Build set of (project, task) pairs that have timeslips
+        tasks_with_timeslips = set()
+        for ts in self.filtered_timeslips:
+            proj = ts.get('Project')
+            task = ts.get('Task')
+            if proj and task:
+                tasks_with_timeslips.add((proj, task))
+
+        # Build WO PK -> WO status lookup
+        wo_status_map = {}
+        for fixture in self.fixture_data:
+            if fixture['model'] == 'jobs.workorder':
+                wo_status_map[fixture['pk']] = fixture['fields']['status']
+
         # Group tasks by project/work order
         tasks_by_wo = {}
 
@@ -1003,6 +1281,8 @@ class NealsDataConverter:
 
         # Create tasks with line numbers
         for workorder_pk, tasks in tasks_by_wo.items():
+            wo_status = wo_status_map.get(workorder_pk, 'incomplete')
+
             for line_num, task_row in enumerate(tasks, start=1):
                 task_pk = self.get_next_pk('jobs.task')
 
@@ -1014,6 +1294,24 @@ class NealsDataConverter:
 
                 rate = self._parse_decimal(task_row.get('Billing Rate', 0))
 
+                # Determine task status:
+                # - Tasks on complete WOs must be complete
+                # - Source 'Completed' → complete
+                # - Source 'Active' with timeslips → in_progress
+                # - Source 'Active' without timeslips → pending
+                source_status = task_row.get('Status', '')
+                if wo_status == 'complete':
+                    task_status = 'complete'
+                elif source_status in task_status_map:
+                    task_status = task_status_map[source_status]
+                else:
+                    task_status = 'pending'
+
+                # Tasks with timeslips must be at least in_progress
+                has_timeslips = (project_name, task_name) in tasks_with_timeslips
+                if has_timeslips and task_status == 'pending':
+                    task_status = 'in_progress'
+
                 self.add_fixture('jobs.task', task_pk, {
                     'parent_task': None,
                     'assignee': None,
@@ -1021,10 +1319,10 @@ class NealsDataConverter:
                     'est_worksheet': None,
                     'name': task_name,
                     'sort_order': line_num,
-                    'units': 'hours',  # Default
+                    'status': task_status,
+                    'units': 'hours',
                     'rate': str(rate),
                     'est_qty': '0',
-                    'template': None,
                 })
 
         if self.verbose:
@@ -1161,7 +1459,7 @@ class NealsDataConverter:
 
         # Create workorder
         workorder_pk = self.get_next_pk('jobs.workorder')
-        wo_status = 'complete' if job_status == 'completed' else 'draft'
+        wo_status = 'complete' if job_status == 'completed' else 'incomplete'
 
         self.add_fixture('jobs.workorder', workorder_pk, {
             'job': job_pk,
@@ -1286,7 +1584,7 @@ class NealsDataConverter:
                     revision = rev_data['revision']
 
                     # Create Estimate
-                    estimate_pk = self.get_next_pk('jobs.estimate')
+                    estimate_pk = self.get_next_pk('estimates.estimate')
                     estimate_count += 1
 
                     # Store PK for parent relationship
@@ -1302,9 +1600,17 @@ class NealsDataConverter:
                     if revision < max_revision:
                         status = 'superseded'
 
+                    # Line item requirement: cannot leave draft without line items
+                    # (superseded is exempt — set by version chain, not by transition)
+                    line_items = estimate.get('_line_items', [])
+                    if status not in ('draft', 'superseded') and not line_items:
+                        if self.verbose:
+                            print(f"    Warning: Estimate {reference} has no line items, keeping as draft")
+                        status = 'draft'
+
                     created_date = self._format_date(estimate.get('Date'))
 
-                    self.add_fixture('jobs.estimate', estimate_pk, {
+                    self.add_fixture('estimates.estimate', estimate_pk, {
                         'job': job_fk,
                         'estimate_number': base_ref,
                         'version': revision,
@@ -1319,13 +1625,13 @@ class NealsDataConverter:
                     # Create line items with sequential line numbers starting at 1
                     line_number = 1
                     for item_row in estimate.get('_line_items', []):
-                        line_item_pk = self.get_next_pk('jobs.estimatelineitem')
+                        line_item_pk = self.get_next_pk('estimates.estimatelineitem')
                         line_item_count += 1
 
                         qty = self._parse_decimal(item_row.get('Quantity', 1))
                         price = self._parse_decimal(item_row.get('Price', 0))
 
-                        self.add_fixture('jobs.estimatelineitem', line_item_pk, {
+                        self.add_fixture('estimates.estimatelineitem', line_item_pk, {
                             'estimate': estimate_pk,
                             'task': None,
                             'price_list_item': None,
@@ -1351,6 +1657,9 @@ class NealsDataConverter:
         status_map = {
             'Draft': 'draft',
             'Sent': 'open',
+            'Paid': 'paid',
+            'Part Paid': 'partly-paid',
+            'Overdue': 'open',
             'Cancelled': 'cancelled',
         }
 
@@ -1382,15 +1691,30 @@ class NealsDataConverter:
             invoice_count += 1
 
             status = status_map.get(invoice.get('Status'), 'draft')
+
+            # FreeAgent marks paid invoices as 'Sent' with a Paid Date
+            paid_date = invoice.get('Paid Date')
+            if status == 'open' and paid_date:
+                paid_amount = float(invoice.get('Paid Amount', 0) or 0)
+                total_value = float(invoice.get('Total Value', 0) or 0)
+                if total_value and abs(paid_amount - total_value) < 0.01:
+                    status = 'paid'
+
+            # Line item requirement: cannot leave draft without line items
+            if status != 'draft' and not invoice.get('_line_items'):
+                if self.verbose:
+                    print(f"    Warning: Invoice {invoice.get('Reference', '?')} has no line items, keeping as draft")
+                status = 'draft'
+
             created_date = self._format_date(invoice.get('Date'))
-            closed_date = self._format_date(invoice.get('Paid Date')) if status == 'paid' else None
+            closed_date = self._format_date(paid_date) if status == 'paid' else None
 
             self.add_fixture('invoicing.invoice', invoice_pk, {
                 'job': job_fk,
                 'invoice_number': invoice.get('Reference', '') or '',
                 'status': status,
                 'created_date': created_date,
-                'sent_date': created_date if status in ['open', 'paid'] else None,
+                'sent_date': created_date if status in ['open', 'paid', 'partly-paid'] else None,
                 'closed_date': closed_date,
             })
 
@@ -1421,10 +1745,10 @@ class NealsDataConverter:
 
     def _build_bleps(self):
         """Create Blep objects from Timeslips sheet."""
-        import random
-
         if self.verbose:
             print("  Building bleps (time tracking)...")
+
+        blep_user_idx = 0  # Round-robin index
 
         for timeslip in self.filtered_timeslips:
             # Find task
@@ -1454,8 +1778,9 @@ class NealsDataConverter:
 
             blep_pk = self.get_next_pk('jobs.blep')
 
-            # Randomly assign user to either PK 2 or 3
-            user_pk = random.choice([2, 3])
+            # Assign user round-robin among worker users
+            user_pk = self.worker_user_pks[blep_user_idx % len(self.worker_user_pks)]
+            blep_user_idx += 1
 
             self.add_fixture('jobs.blep', blep_pk, {
                 'user': user_pk,
@@ -1474,12 +1799,12 @@ class NealsDataConverter:
             print("  Building price list items...")
 
         for item in self.filtered_price_list:
-            pk = self.get_next_pk('invoicing.pricelistitem')
+            pk = self.get_next_pk('inventory.pricelistitem')
 
             qty = self._parse_decimal(item.get('Quantity', 1))
             price = self._parse_decimal(item.get('Price', 0))
 
-            self.add_fixture('invoicing.pricelistitem', pk, {
+            self.add_fixture('inventory.pricelistitem', pk, {
                 'code': item.get('Code', '') or '',
                 'units': item.get('Type', '') or '',
                 'description': item.get('Description', '') or '',
@@ -1493,6 +1818,783 @@ class NealsDataConverter:
 
         if self.verbose:
             print(f"    Created {len(self.filtered_price_list)} price list items")
+
+    def _resolve_or_create_contact_for_estimate(self, estimate: Dict) -> Tuple[Optional[int], Optional[int]]:
+        """Resolve or create contact + business for an implicit job from estimate data.
+        Returns (contact_pk, business_pk)."""
+        org = estimate.get('Sent to Contact Organisation') or ''
+        first_name = estimate.get('Sent to Contact First Name', '') or ''
+        last_name = estimate.get('Sent to Contact Last Name', '') or ''
+        full_name = f"{first_name} {last_name}".strip()
+
+        if not full_name and not org:
+            # Try the Contact field as a fallback
+            contact_field = estimate.get('Contact', '') or ''
+            if contact_field:
+                full_name = contact_field
+                first_name, last_name = self._split_name(contact_field)
+
+        if not full_name:
+            return None, None
+
+        # Try to find existing contact
+        if org and (org, full_name) in self.contact_map:
+            biz_pk = self.business_map.get(org)
+            return self.contact_map[(org, full_name)], biz_pk
+
+        # Try name-only match
+        for (map_org, map_name), pk in self.contact_map.items():
+            if map_name == full_name:
+                biz_pk = self.business_map.get(map_org) if map_org else None
+                return pk, biz_pk
+
+        # Create new business + contact
+        if org and org in self.business_map:
+            biz_pk = self.business_map[org]
+        elif org:
+            biz_pk = self.get_next_pk('contacts.business')
+            ref_counter = sum(1 for f in self.fixture_data if f['model'] == 'contacts.business') + 1
+            self.add_fixture('contacts.business', biz_pk, {
+                'business_name': org,
+                'business_address': '',
+                'business_phone': '',
+                'tax_exemption_number': '',
+                'our_reference_code': f'BUS-{ref_counter:04d}',
+                'terms': None,
+                'default_contact': None,
+            })
+            self.business_map[org] = biz_pk
+        else:
+            # Individual — create personal business
+            biz_pk, contact_pk = self._ensure_individual_vendor(full_name)
+            return contact_pk, biz_pk
+
+        # Create contact
+        if not first_name:
+            first_name, last_name = self._split_name(full_name)
+
+        contact_pk = self.get_next_pk('contacts.contact')
+        slug = f"{first_name.lower()}.{last_name.lower()}".replace(' ', '').replace('(', '').replace(')', '')
+
+        self.add_fixture('contacts.contact', contact_pk, {
+            'first_name': first_name,
+            'last_name': last_name,
+            'email': f"{slug}@example.com",
+            'work_number': f"555-{contact_pk:04d}",
+            'mobile_number': '',
+            'home_number': '',
+            'addr1': '',
+            'addr2': '',
+            'addr3': '',
+            'city': '',
+            'municipality': '',
+            'postal_code': '',
+            'country_code': 'US',
+            'business': biz_pk,
+        })
+        self.contact_map[(org or None, full_name)] = contact_pk
+
+        # Set default_contact on business if not yet set
+        for f in self.fixture_data:
+            if f['model'] == 'contacts.business' and f['pk'] == biz_pk:
+                if not f['fields'].get('default_contact'):
+                    f['fields']['default_contact'] = contact_pk
+                break
+
+        return contact_pk, biz_pk
+
+    def _create_implicit_job(
+        self, estimate: Dict, invoices: List[Dict], bills: List[Dict],
+        job_counters: Dict, po_counters: Dict, bill_counters: Dict
+    ) -> Optional[int]:
+        """Create a full implicit Job from an unlinked estimate + its linked invoices/bills.
+        Returns the job PK or None."""
+        import re
+
+        est_ref = estimate.get('Reference', '') or ''
+        est_date = estimate.get('Date')
+
+        # Resolve contact
+        contact_pk, business_pk = self._resolve_or_create_contact_for_estimate(estimate)
+        if not contact_pk:
+            return None
+
+        # Determine job status from estimate + invoice states
+        est_status_map = {
+            'Draft': 'draft', 'Sent': 'open',
+            'Approved': 'accepted', 'Rejected': 'rejected',
+        }
+        est_status = est_status_map.get(estimate.get('Status'), 'draft')
+
+        inv_status_map = {
+            'Draft': 'draft', 'Sent': 'open',
+            'Cancelled': 'cancelled',
+        }
+
+        # Determine if all invoices are paid
+        all_paid = bool(invoices)
+        for inv in invoices:
+            inv_st = inv_status_map.get(inv.get('Status'), 'draft')
+            paid_date = inv.get('Paid Date')
+            if inv_st == 'open' and paid_date:
+                paid_amount = float(inv.get('Paid Amount', 0) or 0)
+                total_value = float(inv.get('Total Value', 0) or 0)
+                if total_value and abs(paid_amount - total_value) < 0.01:
+                    continue  # This one is paid
+            all_paid = False
+
+        if all_paid:
+            job_status = 'completed'
+        elif est_status == 'accepted':
+            job_status = 'approved'
+        elif est_status in ('open', 'rejected'):
+            job_status = 'submitted'
+        else:
+            job_status = 'draft'
+
+        # Dates
+        created_date = self._format_date(est_date)
+        year = est_date.year if isinstance(est_date, datetime) else 2025
+
+        if year not in job_counters:
+            job_counters[year] = 0
+        job_counters[year] += 1
+        job_number = f"J{year}-{job_counters[year]:04d}"
+
+        start_date = created_date if job_status in ('approved', 'completed') else None
+        completed_date = None
+        if job_status == 'completed' and invoices:
+            # Use latest paid date
+            paid_dates = [self._format_date(i.get('Paid Date')) for i in invoices if i.get('Paid Date')]
+            completed_date = max(paid_dates) if paid_dates else created_date
+
+        # Job name from estimate reference or description
+        est_line_items = estimate.get('_line_items', [])
+        # Use second line item for name (first is usually boilerplate/setup)
+        desc_item = est_line_items[1] if len(est_line_items) > 1 else est_line_items[0] if est_line_items else None
+        first_desc = (desc_item.get('Description', '') or '')[:40] if desc_item else ''
+        job_name = f"Est {est_ref}"
+        if first_desc:
+            job_name = f"Est {est_ref} - {first_desc}"
+        job_name = job_name[:50]
+
+        # Create Job
+        job_pk = self.get_next_pk('jobs.job')
+
+        self.add_fixture('jobs.job', job_pk, {
+            'name': job_name,
+            'job_number': job_number,
+            'contact': contact_pk,
+            'start_date': start_date,
+            'due_date': None,
+            'created_date': created_date,
+            'customer_po_number': '',
+            'status': job_status,
+            'description': estimate.get('Notes', '') or '',
+            'completed_date': completed_date,
+        })
+
+        # Create Estimate + line items
+        estimate_pk = self.get_next_pk('estimates.estimate')
+
+        # Line item gating
+        if est_status not in ('draft', 'superseded') and not est_line_items:
+            est_status = 'draft'
+
+        self.add_fixture('estimates.estimate', estimate_pk, {
+            'job': job_pk,
+            'estimate_number': est_ref,
+            'version': 1,
+            'status': est_status,
+            'parent': None,
+            'created_date': created_date,
+            'sent_date': created_date if est_status in ('open', 'accepted', 'rejected') else None,
+            'closed_date': None,
+            'expiration_date': None,
+        })
+
+        line_number = 1
+        for item in est_line_items:
+            li_pk = self.get_next_pk('estimates.estimatelineitem')
+            qty = self._parse_decimal(item.get('Quantity', 1))
+            price = self._parse_decimal(item.get('Price', 0))
+            self.add_fixture('estimates.estimatelineitem', li_pk, {
+                'estimate': estimate_pk,
+                'task': None,
+                'price_list_item': None,
+                'line_number': line_number,
+                'qty': str(qty),
+                'units': '',
+                'description': item.get('Description', '') or '',
+                'price': str(price),
+            })
+            line_number += 1
+
+        # Create WorkOrder + Tasks from estimate line items (if job is approved or completed)
+        if job_status in ('approved', 'completed') and est_line_items:
+            wo_pk = self.get_next_pk('jobs.workorder')
+            wo_status = 'complete' if job_status == 'completed' else 'incomplete'
+
+            self.add_fixture('jobs.workorder', wo_pk, {
+                'job': job_pk,
+                'status': wo_status,
+                'template': None,
+            })
+
+            for task_num, item in enumerate(est_line_items, start=1):
+                task_pk = self.get_next_pk('jobs.task')
+                desc = item.get('Description', '') or ''
+                task_name = desc[:255] if desc else f"Task {task_num}"
+                task_status = 'complete' if wo_status == 'complete' else 'pending'
+
+                self.add_fixture('jobs.task', task_pk, {
+                    'parent_task': None,
+                    'assignee': None,
+                    'work_order': wo_pk,
+                    'est_worksheet': None,
+                    'name': task_name,
+                    'sort_order': task_num,
+                    'status': task_status,
+                    'units': 'hours',
+                    'rate': str(self._parse_decimal(item.get('Price', 0))),
+                    'est_qty': str(self._parse_decimal(item.get('Quantity', 0))),
+                })
+
+        # Create Invoice(s) + line items
+        for inv in invoices:
+            inv_status = inv_status_map.get(inv.get('Status'), 'draft')
+            paid_date = inv.get('Paid Date')
+            if inv_status == 'open' and paid_date:
+                paid_amount = float(inv.get('Paid Amount', 0) or 0)
+                total_value = float(inv.get('Total Value', 0) or 0)
+                if total_value and abs(paid_amount - total_value) < 0.01:
+                    inv_status = 'paid'
+
+            inv_line_items = inv.get('_line_items', [])
+            if inv_status != 'draft' and not inv_line_items:
+                inv_status = 'draft'
+
+            inv_created = self._format_date(inv.get('Date'))
+            inv_closed = self._format_date(paid_date) if inv_status == 'paid' else None
+
+            inv_pk = self.get_next_pk('invoicing.invoice')
+            self.add_fixture('invoicing.invoice', inv_pk, {
+                'job': job_pk,
+                'invoice_number': inv.get('Reference', '') or '',
+                'status': inv_status,
+                'created_date': inv_created,
+                'sent_date': inv_created if inv_status in ('open', 'paid', 'partly-paid') else None,
+                'closed_date': inv_closed,
+            })
+
+            ln = 1
+            for item in inv_line_items:
+                li_pk = self.get_next_pk('invoicing.invoicelineitem')
+                qty = self._parse_decimal(item.get('Quantity', 1))
+                price = self._parse_decimal(item.get('Price', 0))
+                self.add_fixture('invoicing.invoicelineitem', li_pk, {
+                    'invoice': inv_pk,
+                    'task': None,
+                    'price_list_item': None,
+                    'line_number': ln,
+                    'qty': str(qty),
+                    'units': '',
+                    'description': item.get('Description', '') or '',
+                    'price': str(price),
+                })
+                ln += 1
+
+        # Create PO + Bill for linked bills
+        for bill in bills:
+            bill_line_items = bill.get('_line_items', [])
+
+            bill_date = self._format_date(bill.get('Date'))
+            bill_year = bill.get('Date').year if isinstance(bill.get('Date'), datetime) else year
+
+            if bill_year not in po_counters:
+                po_counters[bill_year] = 0
+            po_counters[bill_year] += 1
+            po_number = f"PO{bill_year}-{po_counters[bill_year]:04d}"
+
+            # Resolve bill contact/business
+            bill_org = bill.get('Contact Organisation')
+            bill_contact_name = bill.get('Contact Name')
+            bill_contact_pk = None
+            bill_biz_pk = None
+
+            if bill_org:
+                bill_biz_pk = self.business_map.get(bill_org)
+                if bill_contact_name:
+                    bill_contact_pk = self._resolve_contact(
+                        org=bill_org, contact_name=bill_contact_name,
+                        sheet='Bills', row=bill.get('_row', 0),
+                        context=est_ref
+                    )
+            elif bill_contact_name:
+                bill_biz_pk, bill_contact_pk = self._ensure_individual_vendor(bill_contact_name)
+
+            if not bill_biz_pk:
+                continue  # Skip bills we can't associate
+
+            po_status = 'issued' if bill_line_items else 'draft'
+            po_pk = self.get_next_pk('purchasing.purchaseorder')
+            self.add_fixture('purchasing.purchaseorder', po_pk, {
+                'po_number': po_number,
+                'business': bill_biz_pk,
+                'contact': bill_contact_pk,
+                'status': po_status,
+                'created_date': bill_date,
+                'requested_date': None,
+                'issued_date': bill_date if po_status == 'issued' else None,
+                'received_date': None,
+                'cancel_date': None,
+            })
+
+            if bill_year not in bill_counters:
+                bill_counters[bill_year] = 0
+            bill_counters[bill_year] += 1
+            bill_number = f"B{bill_year}-{bill_counters[bill_year]:04d}"
+
+            bill_pk = self.get_next_pk('purchasing.bill')
+            self.add_fixture('purchasing.bill', bill_pk, {
+                'bill_number': bill_number,
+                'purchase_order': po_pk,
+                'business': bill_biz_pk,
+                'contact': bill_contact_pk,
+                'vendor_invoice_number': bill.get('Reference', '') or '',
+                'status': 'draft',
+                'created_date': bill_date,
+                'due_date': self._format_date(bill.get('Due Date')),
+                'received_date': None,
+                'paid_date': None,
+                'cancelled_date': None,
+            })
+
+            ln = 1
+            for item in bill_line_items:
+                qty = self._parse_decimal(item.get('Quantity', 1))
+                price = self._parse_decimal(item.get('Net Value', 0))
+
+                po_li_pk = self.get_next_pk('purchasing.purchaseorderlineitem')
+                self.add_fixture('purchasing.purchaseorderlineitem', po_li_pk, {
+                    'purchase_order': po_pk,
+                    'job': job_pk,
+                    'task': None, 'price_list_item': None,
+                    'line_number': ln,
+                    'qty': str(qty),
+                    'units': item.get('Item Type', '-no unit-') or '-no unit-',
+                    'description': item.get('Description', '') or '',
+                    'price': str(price),
+                })
+
+                bill_li_pk = self.get_next_pk('purchasing.billlineitem')
+                self.add_fixture('purchasing.billlineitem', bill_li_pk, {
+                    'bill': bill_pk,
+                    'task': None, 'price_list_item': None,
+                    'line_number': ln,
+                    'qty': str(qty),
+                    'units': item.get('Item Type', '-no unit-') or '-no unit-',
+                    'description': item.get('Description', '') or '',
+                    'price': str(price),
+                })
+                ln += 1
+
+        return job_pk
+
+    def _build_implicit_jobs(self):
+        """Create Jobs for estimates linked to invoices but not to any project."""
+        import re
+
+        if self.verbose:
+            print("  Building implicit jobs from unlinked estimates...")
+
+        # Parse all records
+        all_estimates = self._collect_all_estimates()
+        all_invoices = self._collect_all_invoices()
+        all_bills = self._collect_all_bills()
+
+        # Build set of already-processed estimate refs
+        processed_est_refs = set()
+        for f in self.fixture_data:
+            if f['model'] == 'estimates.estimate':
+                processed_est_refs.add(f['fields'].get('estimate_number'))
+
+        # Build set of already-processed invoice refs
+        processed_inv_refs = set()
+        for f in self.fixture_data:
+            if f['model'] == 'invoicing.invoice':
+                processed_inv_refs.add(f['fields'].get('invoice_number'))
+
+        # Index unlinked invoices by reference
+        invoice_by_ref = {}
+        for inv in all_invoices:
+            ref = inv.get('Reference')
+            if ref and ref not in processed_inv_refs:
+                invoice_by_ref[ref] = inv
+
+        # Index unlinked bills by estimate ref found in Comments
+        bills_by_est_ref = {}
+        for bill in all_bills:
+            comment = bill.get('Comments', '') or ''
+            matches = re.findall(r'\b(\d{5})\b', comment)
+            for m in matches:
+                bills_by_est_ref.setdefault(m, []).append(bill)
+
+        # Build deposit invoice index: estimate_ref → [invoices]
+        deposit_invoices_by_est = {}
+        for inv in all_invoices:
+            ref = inv.get('Reference')
+            if ref in processed_inv_refs:
+                continue
+            for item in inv.get('_line_items', []):
+                desc = (item.get('Description', '') or '').lower()
+                matches = re.findall(r'\b(\d{5})\b', desc)
+                for m in matches:
+                    deposit_invoices_by_est.setdefault(m, []).append(inv)
+                    break  # One match per invoice is enough
+
+        # Initialize counters from existing fixture data
+        job_counters = {}
+        po_counters = {}
+        bill_counters = {}
+        for f in self.fixture_data:
+            if f['model'] == 'jobs.job':
+                jn = f['fields'].get('job_number', '')
+                if jn.startswith('J'):
+                    try:
+                        parts = jn.split('-')
+                        y, c = int(parts[0][1:]), int(parts[1])
+                        job_counters[y] = max(job_counters.get(y, 0), c)
+                    except (ValueError, IndexError):
+                        pass
+            elif f['model'] == 'purchasing.purchaseorder':
+                pn = f['fields'].get('po_number', '')
+                if pn.startswith('PO'):
+                    try:
+                        parts = pn.split('-')
+                        y, c = int(parts[0][2:]), int(parts[1])
+                        po_counters[y] = max(po_counters.get(y, 0), c)
+                    except (ValueError, IndexError):
+                        pass
+            elif f['model'] == 'purchasing.bill':
+                bn = f['fields'].get('bill_number', '')
+                if bn.startswith('B') and '-' in bn:
+                    try:
+                        parts = bn.split('-')
+                        y, c = int(parts[0][1:]), int(parts[1])
+                        bill_counters[y] = max(bill_counters.get(y, 0), c)
+                    except (ValueError, IndexError):
+                        pass
+
+        # Process unlinked estimates that have an Invoice Reference
+        implicit_count = 0
+        used_invoice_refs = set()
+
+        for est in all_estimates:
+            est_ref = est.get('Reference')
+            if not est_ref or est_ref in processed_est_refs:
+                continue
+
+            # Find linked invoices
+            inv_ref = est.get('Invoice Reference')
+            linked_invoices = []
+            if inv_ref and inv_ref in invoice_by_ref and inv_ref not in used_invoice_refs:
+                linked_invoices.append(invoice_by_ref[inv_ref])
+                used_invoice_refs.add(inv_ref)
+
+            # Also check deposit invoices
+            for dep_inv in deposit_invoices_by_est.get(est_ref, []):
+                dep_ref = dep_inv.get('Reference')
+                if dep_ref and dep_ref not in used_invoice_refs:
+                    linked_invoices.append(dep_inv)
+                    used_invoice_refs.add(dep_ref)
+
+            if not linked_invoices:
+                continue  # No invoices — may be handled by _build_recent_unlinked_estimates
+
+            # Find linked bills
+            linked_bills = bills_by_est_ref.get(est_ref, [])
+
+            job_pk = self._create_implicit_job(
+                est, linked_invoices, linked_bills,
+                job_counters, po_counters, bill_counters,
+            )
+            if job_pk:
+                implicit_count += 1
+                processed_est_refs.add(est_ref)
+
+        # Store processed refs for _build_recent_unlinked_estimates
+        self._processed_est_refs = processed_est_refs
+
+        if self.verbose:
+            print(f"    Created {implicit_count} implicit jobs")
+
+    def _build_recent_unlinked_estimates(self):
+        """Create draft Jobs for recent unlinked estimates (< 6 months old, not rejected)."""
+        if self.verbose:
+            print("  Building jobs for recent unlinked estimates...")
+
+        cutoff_date = datetime(2025, 10, 1)
+
+        all_estimates = self._collect_all_estimates()
+        processed = getattr(self, '_processed_est_refs', set())
+
+        est_status_map = {
+            'Draft': 'draft', 'Sent': 'open',
+            'Approved': 'accepted', 'Rejected': 'rejected',
+        }
+
+        # Initialize job counters from existing data
+        job_counters = {}
+        for f in self.fixture_data:
+            if f['model'] == 'jobs.job':
+                jn = f['fields'].get('job_number', '')
+                if jn.startswith('J'):
+                    try:
+                        parts = jn.split('-')
+                        y, c = int(parts[0][1:]), int(parts[1])
+                        job_counters[y] = max(job_counters.get(y, 0), c)
+                    except (ValueError, IndexError):
+                        pass
+
+        count = 0
+        for est in all_estimates:
+            est_ref = est.get('Reference')
+            if not est_ref or est_ref in processed:
+                continue
+
+            est_status = est_status_map.get(est.get('Status'), 'draft')
+            if est_status == 'rejected':
+                continue
+
+            est_date = est.get('Date')
+            if not est_date or not isinstance(est_date, datetime) or est_date < cutoff_date:
+                continue
+
+            est_line_items = est.get('_line_items', [])
+
+            # Resolve contact
+            contact_pk, business_pk = self._resolve_or_create_contact_for_estimate(est)
+            if not contact_pk:
+                continue
+
+            # Job status from estimate status
+            if est_status == 'accepted':
+                job_status = 'approved'
+            elif est_status == 'open':
+                job_status = 'submitted'
+            else:
+                job_status = 'draft'
+
+            created_date = self._format_date(est_date)
+            year = est_date.year
+
+            if year not in job_counters:
+                job_counters[year] = 0
+            job_counters[year] += 1
+            job_number = f"J{year}-{job_counters[year]:04d}"
+
+            # Job name
+            first_desc = ''
+            if est_line_items:
+                first_desc = (est_line_items[0].get('Description', '') or '')[:40]
+            job_name = f"Est {est_ref}"
+            if first_desc:
+                job_name = f"Est {est_ref} - {first_desc}"
+            job_name = job_name[:50]
+
+            start_date = created_date if job_status == 'approved' else None
+
+            job_pk = self.get_next_pk('jobs.job')
+            self.add_fixture('jobs.job', job_pk, {
+                'name': job_name,
+                'job_number': job_number,
+                'contact': contact_pk,
+                'start_date': start_date,
+                'due_date': None,
+                'created_date': created_date,
+                'customer_po_number': '',
+                'status': job_status,
+                'description': est.get('Notes', '') or '',
+                'completed_date': None,
+            })
+
+            # Create Estimate + line items
+            estimate_pk = self.get_next_pk('estimates.estimate')
+
+            if est_status not in ('draft', 'superseded') and not est_line_items:
+                est_status = 'draft'
+
+            self.add_fixture('estimates.estimate', estimate_pk, {
+                'job': job_pk,
+                'estimate_number': est_ref,
+                'version': 1,
+                'status': est_status,
+                'parent': None,
+                'created_date': created_date,
+                'sent_date': created_date if est_status in ('open', 'accepted') else None,
+                'closed_date': None,
+                'expiration_date': None,
+            })
+
+            line_number = 1
+            for item in est_line_items:
+                li_pk = self.get_next_pk('estimates.estimatelineitem')
+                qty = self._parse_decimal(item.get('Quantity', 1))
+                price = self._parse_decimal(item.get('Price', 0))
+                self.add_fixture('estimates.estimatelineitem', li_pk, {
+                    'estimate': estimate_pk,
+                    'task': None,
+                    'price_list_item': None,
+                    'line_number': line_number,
+                    'qty': str(qty),
+                    'units': '',
+                    'description': item.get('Description', '') or '',
+                    'price': str(price),
+                })
+                line_number += 1
+
+            # If approved, create WorkOrder + Tasks from line items
+            if job_status == 'approved' and est_line_items:
+                wo_pk = self.get_next_pk('jobs.workorder')
+                self.add_fixture('jobs.workorder', wo_pk, {
+                    'job': job_pk,
+                    'status': 'incomplete',
+                    'template': None,
+                })
+
+                for task_num, item in enumerate(est_line_items, start=1):
+                    task_pk = self.get_next_pk('jobs.task')
+                    desc = item.get('Description', '') or ''
+                    task_name = desc[:255] if desc else f"Task {task_num}"
+
+                    self.add_fixture('jobs.task', task_pk, {
+                        'parent_task': None,
+                        'assignee': None,
+                        'work_order': wo_pk,
+                        'est_worksheet': None,
+                        'name': task_name,
+                        'sort_order': task_num,
+                        'status': 'pending',
+                        'units': 'hours',
+                        'rate': str(self._parse_decimal(item.get('Price', 0))),
+                        'est_qty': str(self._parse_decimal(item.get('Quantity', 0))),
+                    })
+
+            count += 1
+            processed.add(est_ref)
+
+        if self.verbose:
+            print(f"    Created {count} jobs from recent unlinked estimates")
+
+    def _reconcile_states(self):
+        """
+        Reconcile cross-model state constraints after all objects are built.
+
+        Enforces:
+        - Estimate sent → Job at least submitted (constraint #2)
+        - Estimate accepted → Job at least approved (constraint #2 + #6)
+        - All invoices paid → Job completed (constraint #3)
+        """
+        if self.verbose:
+            print("  Reconciling cross-model states...")
+
+        # Index fixtures by model for lookup
+        estimates_by_job = {}  # job_pk -> [fixture]
+        invoices_by_job = {}   # job_pk -> [fixture]
+        job_fixtures = {}      # job_pk -> fixture
+
+        for fixture in self.fixture_data:
+            model = fixture['model']
+            if model == 'estimates.estimate':
+                job_pk = fixture['fields']['job']
+                estimates_by_job.setdefault(job_pk, []).append(fixture)
+            elif model == 'invoicing.invoice':
+                job_pk = fixture['fields']['job']
+                invoices_by_job.setdefault(job_pk, []).append(fixture)
+            elif model == 'jobs.job':
+                job_fixtures[fixture['pk']] = fixture
+
+        changes = 0
+
+        for job_pk, job_fix in job_fixtures.items():
+            fields = job_fix['fields']
+            status = fields['status']
+
+            # Skip terminal statuses
+            if status in ('completed', 'cancelled', 'rejected'):
+                continue
+
+            estimates = estimates_by_job.get(job_pk, [])
+            invoices = invoices_by_job.get(job_pk, [])
+
+            # Constraint #2: If any estimate has been sent (open or later),
+            # the job must be at least submitted
+            has_sent = any(
+                e['fields']['status'] in ('open', 'accepted', 'rejected',
+                                          'expired', 'superseded')
+                for e in estimates
+            )
+            if has_sent and status == 'draft':
+                fields['status'] = 'submitted'
+                status = 'submitted'
+                changes += 1
+                if self.verbose:
+                    print(f"    Job {fields.get('job_number')}: draft → submitted (has sent estimate)")
+
+            # Constraint #2 continued: If any estimate is accepted,
+            # the job must be at least approved
+            has_accepted = any(
+                e['fields']['status'] == 'accepted' for e in estimates
+            )
+            if has_accepted and status in ('draft', 'submitted'):
+                fields['status'] = 'approved'
+                if not fields.get('start_date'):
+                    # Use the accepted estimate's sent_date or created_date
+                    for est in estimates:
+                        if est['fields']['status'] == 'accepted':
+                            fields['start_date'] = (
+                                est['fields'].get('sent_date')
+                                or est['fields'].get('created_date')
+                            )
+                            break
+                status = 'approved'
+                changes += 1
+                if self.verbose:
+                    print(f"    Job {fields.get('job_number')}: → approved (has accepted estimate)")
+
+            # Constraint #3: If all invoices for the job are paid,
+            # the job must be completed
+            if invoices and all(
+                inv['fields']['status'] == 'paid' for inv in invoices
+            ):
+                if status in ('draft', 'submitted', 'approved'):
+                    fields['status'] = 'completed'
+                    # Set completed_date from the last invoice's closed_date
+                    closed_dates = [
+                        inv['fields']['closed_date']
+                        for inv in invoices
+                        if inv['fields'].get('closed_date')
+                    ]
+                    if closed_dates:
+                        fields['completed_date'] = max(closed_dates)
+                    status = 'completed'
+                    changes += 1
+                    if self.verbose:
+                        print(f"    Job {fields.get('job_number')}: → completed (all invoices paid)")
+
+        if self.verbose:
+            print(f"    Reconciled {changes} job statuses")
+
+    @staticmethod
+    def _split_name(full_name: str) -> Tuple[str, str]:
+        """Split 'First Last' into (first_name, last_name)."""
+        parts = full_name.strip().split(None, 1)
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        elif len(parts) == 1:
+            return parts[0], '(unknown)'
+        return '(unknown)', '(unknown)'
 
     def _format_date(self, value) -> Optional[str]:
         """Format date value to ISO string."""

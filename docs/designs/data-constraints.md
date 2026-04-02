@@ -331,7 +331,7 @@ Valid transitions:
 #### Line item requirement
 
 Cannot transition out of `draft` without at least one EstimateLineItem.
-Not enforced in code — the validator should check this. See Section 4.
+Enforced in `Estimate.clean()`.
 
 #### EstimateLineItem
 
@@ -435,7 +435,7 @@ No explicit transition validation in `clean()`. The validator checks:
 #### Line item requirement
 
 Cannot transition out of `draft` without at least one InvoiceLineItem.
-Not enforced in code — the validator should check this. See Section 4.
+Enforced in `Invoice.clean()`.
 
 #### InvoiceLineItem
 
@@ -495,7 +495,7 @@ Only `draft` POs can be deleted.
 #### Line item requirement
 
 Cannot transition out of `draft` without at least one PurchaseOrderLineItem.
-Not enforced in code — the validator should check this. See Section 4.
+Enforced in `PurchaseOrder.clean()`.
 
 #### PurchaseOrderLineItem
 
@@ -617,10 +617,9 @@ Work through these in order — later rules may depend on earlier ones.
 **Data constraint:** If any Estimate for a Job is `open` or later, the Job must
 be `submitted` or later (never `draft`).
 
-> **Not yet automated.** This side effect is not yet implemented in code. The
-> current code handles this as part of 2.2 below (double-transition on
-> acceptance). When implemented, the double-transition in 2.2 will no longer
-> be needed.
+Implemented in `Estimate._maybe_update_job_status()` which fires
+`estimate_status_changed_for_job` with `Job.STATUS_SUBMITTED` on the
+`draft` → `open` transition.
 
 ---
 
@@ -633,10 +632,10 @@ be `submitted` or later (never `draft`).
 - Job's `start_date` is set to `now()` on the `approved` transition (if not
   already set).
 - Does NOT affect Jobs already in `completed` or `cancelled` status.
-- **Current code behavior:** If Job is still in `draft` (because 2.1 is not yet
-  automated), the signal does a double-transition `draft` → `submitted` →
-  `approved`. Once 2.1 is implemented, the Job will already be `submitted` by
-  the time an Estimate is accepted.
+- **Current code behavior:** The `update_job_status` signal handler still
+  includes a double-transition path (`draft` → `submitted` → `approved`) as
+  a safety net, even though 2.1 should ensure the Job is already `submitted`
+  by the time the Estimate is accepted.
 
 **Data constraint:** If an Estimate is `accepted`, its Job must be `approved`,
 `completed`, or `cancelled`.
@@ -657,7 +656,9 @@ be `submitted` or later (never `draft`).
 `completed` with a `completed_date` no earlier than the last Invoice's
 `closed_date`.
 
-> **Not yet automated.** This side effect is not yet implemented in code.
+Implemented in `Invoice.save()` → `_maybe_complete_job()`. Checks whether
+all Invoices for the Job are `paid` (or `cancelled`) and transitions the Job
+to `completed`.
 
 ---
 
@@ -695,9 +696,10 @@ a WorkOrder should exist for the same Job containing the same task/bundle
 structure as the worksheet. The WorkOrder's Tasks should be in `pending` or
 later status.
 
-> **Not yet automated.** The `copy_from_worksheet` service method exists but is
-> not triggered automatically on estimate acceptance. Currently requires manual
-> invocation.
+Implemented as a manual step via the `work_order_create_from_estimate` view.
+The user clicks a button after estimate acceptance; the view calls
+`WorkOrderService.copy_from_worksheet` (or generates tasks from line items
+if no worksheet exists). Not auto-triggered by a signal.
 
 ---
 
@@ -737,7 +739,8 @@ earmarks directly.
 
 **Data constraint:** A WorkOrder with any `blocked` Tasks must be `blocked`.
 
-> **Not yet automated.** This side effect is not yet implemented in code.
+Implemented in `TaskLifecycleService._check_wo_blocked()`, called when a
+Task transitions to `blocked`.
 
 ---
 
@@ -865,24 +868,26 @@ After all objects and states are reconciled:
 Constraints documented above that differ from current code behavior. These
 should be implemented to match the intended design.
 
-- **Task: blocked → complete transition** (Section 1.10) — `VALID_TRANSITIONS`
-  in `apps/jobs/models.py` does not include `complete` as a valid transition
-  from `blocked`. Add `STATUS_COMPLETE` to the `STATUS_BLOCKED` list.
-- **Estimate sent → Job submitted** (Section 2.1) — No signal/side effect
-  exists to transition Job from `draft` → `submitted` when Estimate moves to
-  `open`. Once implemented, the double-transition workaround in Section 2.2
-  can be removed.
-- **Last Invoice paid → Job completed** (Section 2.3) — No signal/side effect
-  exists to transition Job to `completed` when all Invoices are `paid`.
-- **Task blocked → WorkOrder blocked** (Section 2.6) — No signal/side effect
-  exists to transition WorkOrder to `blocked` when a Task is blocked.
+### Completed
+
+- **Task: blocked → complete transition** (Section 1.10) — Added
+  `STATUS_COMPLETE` to `STATUS_BLOCKED` transitions in `Task.VALID_TRANSITIONS`.
+- **Estimate sent → Job submitted** (Section 2.1) — Signal in
+  `Estimate._maybe_update_job_status()` fires `estimate_status_changed_for_job`
+  with `Job.STATUS_SUBMITTED` on the `draft` → `open` transition.
+- **Last Invoice paid → Job completed** (Section 2.3) — Implemented in
+  `Invoice.save()` → `_maybe_complete_job()`.
+- **Task blocked → WorkOrder blocked** (Section 2.7) — Implemented in
+  `TaskLifecycleService._check_wo_blocked()`.
 - **Line item requirement on Estimate, Invoice, PurchaseOrder** (Sections 1.11,
-  1.15, 1.16) — Bill enforces this in `clean()` but Estimate, Invoice, and
-  PurchaseOrder do not. Add the same check to all line item container types.
-- **Estimate accepted → WorkOrder created** (Section 2.5) — The
-  `copy_from_worksheet` service method exists but is not wired into the
-  estimate acceptance signal. Should auto-create a WorkOrder by copying the
-  accepted estimate's worksheet (bundles, tasks, materials).
+  1.15, 1.16) — All four line item container types (Estimate, Invoice,
+  PurchaseOrder, Bill) now enforce this in `clean()`.
+- **Estimate accepted → WorkOrder created** (Section 2.5) — Manual step via
+  `work_order_create_from_estimate` view. Uses
+  `WorkOrderService.copy_from_worksheet` or generates tasks from line items.
+
+### Remaining
+
 - **Earmarks from Material creation on WorkOrder Tasks** (Section 2.6) —
   Adding an inventoried Material to a WO Task should trigger earmark
   creation. This replaces the current `auto_earmark_inventory` signal on
