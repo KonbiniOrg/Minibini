@@ -125,7 +125,7 @@
     width: 120px;
   }
 
-  a, .nav-link {
+  nav a, .nav-link {
     display: block;
     padding: 9px 12px;
     color: #ddd;
@@ -141,7 +141,7 @@
     overflow: hidden;
     box-sizing: border-box;
   }
-  a:hover, .nav-link:hover {
+  nav a:hover, .nav-link:hover {
     background: #264a5e;
     color: #fff;
     box-shadow: 8px 0 0 #264a5e;
