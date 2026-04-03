@@ -15,6 +15,7 @@ Usage:
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -317,7 +318,7 @@ class NealsDataConverter:
         # Filter other data based on project references
         # or has a recent date
 
-        cutoff_date = datetime(2025, 10, 1)
+        cutoff_date = datetime(2026, 1, 1)
 
         # Bills, Invoices and Estimates: Filter these first (they have line items mixed in)
         self.filtered_bills = self._filter_bills(project_names, cutoff_date)
@@ -564,11 +565,25 @@ class NealsDataConverter:
         self._build_implicit_jobs()
         self._build_recent_unlinked_estimates()
         self._reconcile_states()
+        self._build_configuration()
 
     def _build_users(self):
-        """Create 4 worker users for blep assignment."""
+        """Create dev_user and 4 worker users for blep assignment."""
         if self.verbose:
             print("  Building users...")
+
+        # dev_user — needed for dev autologin and seed scripts
+        dev_pk = self.get_next_pk('core.user')
+        self.add_fixture('core.user', dev_pk, {
+            'username': 'dev_user',
+            'first_name': 'Dev',
+            'last_name': 'User',
+            'email': 'dev@localhost',
+            'password': 'pbkdf2_sha256$1000000$szxKWr4DX4YNiiemLSRyVO$qx8Bb006xEfdlhciXd7u+f3j1QghIn+CN5C85knNzdI=',
+            'is_active': True,
+            'is_staff': True,
+            'is_superuser': True,
+        })
 
         workers = [
             {'first_name': 'Alex', 'last_name': 'Rivera', 'username': 'arivera'},
@@ -2583,8 +2598,106 @@ class NealsDataConverter:
                     if self.verbose:
                         print(f"    Job {fields.get('job_number')}: → completed (all invoices paid)")
 
+        # Cancel old approved jobs: if the job started before 2026 and is
+        # still in 'approved' status, it's stale — mark it cancelled.
+        cancelled = 0
+        for job_pk, job_fix in job_fixtures.items():
+            fields = job_fix['fields']
+            if fields['status'] != 'approved':
+                continue
+            # Use start_date if available, otherwise created_date
+            ref_date = fields.get('start_date') or fields.get('created_date')
+            if ref_date and ref_date < '2026-01-01':
+                fields['status'] = 'cancelled'
+                cancelled += 1
+                if self.verbose:
+                    print(f"    Job {fields.get('job_number')}: approved → cancelled (started before 2026)")
+
         if self.verbose:
             print(f"    Reconciled {changes} job statuses")
+            print(f"    Cancelled {cancelled} old approved jobs (pre-2026)")
+
+    def _build_configuration(self):
+        """
+        Build Configuration fixtures for all app settings.
+
+        Scans generated fixtures to compute document number counters, then
+        emits sequence patterns matching the formats used in this script,
+        plus all other configuration keys the app expects.
+        """
+        if self.verbose:
+            print("  Building configuration...")
+
+        # Remove any Configuration entries that came from base fixtures —
+        # we'll replace them with computed values.
+        self.fixture_data = [
+            f for f in self.fixture_data
+            if f['model'] != 'core.configuration'
+        ]
+
+        # --- Compute max counters from generated document numbers ---
+        # The script uses per-year counters but the app uses a single global
+        # counter, so we take the max counter value across all years.
+        counter_patterns = {
+            'job': ('jobs.job', 'job_number', r'J(\d{4})-(\d+)'),
+            'po': ('purchasing.purchaseorder', 'po_number', r'PO(\d{4})-(\d+)'),
+            'bill': ('purchasing.bill', 'bill_number', r'B(\d{4})-(\d+)'),
+        }
+
+        max_counters = {doc_type: 0 for doc_type in counter_patterns}
+
+        for fixture in self.fixture_data:
+            for doc_type, (model, field, pattern) in counter_patterns.items():
+                if fixture['model'] == model:
+                    value = fixture['fields'].get(field, '')
+                    match = re.match(pattern, value)
+                    if match:
+                        counter = int(match.group(2))
+                        max_counters[doc_type] = max(max_counters[doc_type], counter)
+
+        # Estimates and invoices use spreadsheet reference numbers, not
+        # generated sequences — start their counters at 0.
+        max_counters['estimate'] = 0
+        max_counters['invoice'] = 0
+
+        # --- Document numbering sequences ---
+        # Patterns match the formats this script generates
+        sequences = {
+            'job_number_sequence': 'J{year}-{counter:04d}',
+            'job_counter': str(max_counters['job']),
+            'estimate_number_sequence': 'EST-{year}-{counter:04d}',
+            'estimate_counter': str(max_counters['estimate']),
+            'invoice_number_sequence': 'INV-{year}-{counter:04d}',
+            'invoice_counter': str(max_counters['invoice']),
+            'po_number_sequence': 'PO{year}-{counter:04d}',
+            'po_counter': str(max_counters['po']),
+            'bill_number_sequence': 'B{year}-{counter:04d}',
+            'bill_counter': str(max_counters['bill']),
+        }
+
+        # --- Other configuration keys ---
+        other_configs = {
+            'default_tax_rate': '0.0825',
+            'est_expire_days': '30',
+            'board_closed_retention_days': '14',
+            'email_retention_days': '90',
+            'email_display_limit': '30',
+            'units_list': json.dumps([
+                "none", "hours", "ea", "sq ft", "ft", "yd", "m",
+                "sheets", "pcs", "lbs", "kg", "gal", "qt", "L",
+                "bd ft", "ln ft"
+            ]),
+        }
+
+        all_configs = {**sequences, **other_configs}
+
+        for key, value in all_configs.items():
+            self.add_fixture('core.configuration', key, {'value': value})
+
+        if self.verbose:
+            print(f"    Created {len(all_configs)} configuration entries")
+            for doc_type in ('job', 'estimate', 'invoice', 'po', 'bill'):
+                print(f"    {doc_type} counter: {max_counters[doc_type]}")
 
     @staticmethod
     def _split_name(full_name: str) -> Tuple[str, str]:
