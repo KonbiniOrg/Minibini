@@ -105,6 +105,114 @@ class BoardService:
         }
 
     @staticmethod
+    def get_pipeline_data():
+        """Return pipeline jobs (draft + submitted)."""
+        from apps.jobs.models import Job
+        pipeline_jobs = Job.objects.filter(
+            status__in=['draft', 'submitted']
+        ).select_related('contact').order_by('due_date')
+        return [BoardService._serialize_job(job) for job in pipeline_jobs]
+
+    @staticmethod
+    def get_approved_data():
+        """Return approved jobs where work is still active (not unpaid)."""
+        from apps.jobs.models import Job, WorkOrder, Task
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        approved_jobs = Job.objects.filter(
+            status='approved'
+        ).select_related('contact').order_by('due_date')
+
+        approved_list = []
+        for i, job in enumerate(approved_jobs):
+            sub_status = BoardService.compute_sub_status(job)
+            if sub_status in BoardService.UNPAID_SUB_STATUSES:
+                continue
+            job_data = BoardService._serialize_job(job)
+            job_data['accent_color'] = BoardService.ACCENT_COLORS[
+                i % len(BoardService.ACCENT_COLORS)
+            ]
+            approved_list.append(job_data)
+
+        color_map = {j['job_id']: j['accent_color'] for j in approved_list}
+
+        approved_job_ids = [j['job_id'] for j in approved_list]
+        tasks = Task.objects.filter(
+            work_order__job_id__in=approved_job_ids,
+            work_order__status='incomplete',
+        ).exclude(
+            status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
+        ).select_related(
+            'work_order__job', 'assignee'
+        ).order_by('worker_queue', 'pk')
+
+        worker_map = {}
+        unassigned = []
+        for task in tasks:
+            task_data = BoardService._serialize_task(task, color_map)
+            if task.assignee_id:
+                if task.assignee_id not in worker_map:
+                    worker_map[task.assignee_id] = {
+                        'user': BoardService._serialize_user(task.assignee),
+                        'tasks': [],
+                    }
+                worker_map[task.assignee_id]['tasks'].append(task_data)
+            else:
+                unassigned.append(task_data)
+
+        unassigned.sort(key=lambda t: t.get('job_due_date') or '9999-12-31')
+
+        existing_worker_ids = set(worker_map.keys())
+        available_users = User.objects.filter(
+            is_active=True
+        ).exclude(pk__in=existing_worker_ids).order_by('first_name', 'last_name')
+        available_workers = [BoardService._serialize_user(u) for u in available_users]
+
+        return {
+            'jobs': approved_list,
+            'workers': list(worker_map.values()),
+            'unassigned': unassigned,
+            'available_workers': available_workers,
+        }
+
+    @staticmethod
+    def get_unpaid_data():
+        """Return approved jobs where work is done (unpaid sub-statuses)."""
+        from apps.jobs.models import Job
+        approved_jobs = Job.objects.filter(
+            status='approved'
+        ).select_related('contact').order_by('due_date')
+
+        unpaid_list = []
+        for job in approved_jobs:
+            job_data = BoardService._serialize_job(job)
+            if job_data['sub_status'] in BoardService.UNPAID_SUB_STATUSES:
+                unpaid_list.append(job_data)
+
+        return unpaid_list
+
+    @staticmethod
+    def get_closed_data():
+        """Return terminal-status jobs within retention window."""
+        from apps.jobs.models import Job
+
+        retention_days = 14
+        try:
+            config = Configuration.objects.get(key='board_closed_retention_days')
+            retention_days = int(config.value)
+        except (Configuration.DoesNotExist, ValueError):
+            pass
+
+        cutoff = timezone.now() - timedelta(days=retention_days)
+
+        closed_jobs = Job.objects.filter(
+            status__in=['completed', 'rejected', 'cancelled'],
+            completed_date__gte=cutoff,
+        ).select_related('contact').order_by('-completed_date')
+        return [BoardService._serialize_job(job) for job in closed_jobs]
+
+    @staticmethod
     def _serialize_job(job):
         return {
             'job_id': job.job_id,
@@ -178,6 +286,8 @@ class BoardService:
 
         return 'needs-scoping'
 
+    UNPAID_SUB_STATUSES = {'invoice-sent', 'invoice-prepped', 'needs-invoice'}
+
     @staticmethod
     def _approved_sub_status(job):
         """Sub-status for Approved jobs."""
@@ -195,7 +305,13 @@ class BoardService:
             active_wo = work_orders.order_by('-pk').first()
 
         if active_wo.status == 'complete':
-            return 'invoice-prepped'
+            # Check for non-cancelled, non-superseded invoices
+            has_invoice = invoices.exclude(
+                status__in=['cancelled', 'superseded']
+            ).exists()
+            if has_invoice:
+                return 'invoice-prepped'
+            return 'needs-invoice'
 
         tasks = active_wo.task_set.exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]

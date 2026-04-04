@@ -249,3 +249,113 @@ class BoardDataAssemblyTest(FixtureTestCase):
         data = BoardService.get_board_data()
         self.assertIn('sub_status', data['pipeline'][0])
         self.assertEqual(data['pipeline'][0]['sub_status'], 'needs-scoping')
+
+
+class LazyBoardMethodsTest(FixtureTestCase):
+    """Test lazy board methods that return individual sections."""
+
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days',
+            defaults={'value': '14'}
+        )
+        self.contact = Contact.objects.first()
+
+    def _make_job(self, status='draft', **kwargs):
+        return Job.objects.create(
+            job_number=f'JOB-TEST-{Job.objects.count() + 1:04d}',
+            name='Test Job',
+            status=status,
+            contact=self.contact,
+            **kwargs,
+        )
+
+    def test_get_pipeline_data_returns_draft_and_submitted(self):
+        from apps.jobs.services.board_service import BoardService
+        self._make_job(status='draft')
+        self._make_job(status='submitted')
+        self._make_job(status='approved')
+        data = BoardService.get_pipeline_data()
+        statuses = [j['status'] for j in data]
+        self.assertIn('draft', statuses)
+        self.assertIn('submitted', statuses)
+        self.assertNotIn('approved', statuses)
+
+    def test_get_approved_data_excludes_completed_work_order(self):
+        from apps.jobs.services.board_service import BoardService
+        job = self._make_job(status='approved')
+        WorkOrder.objects.create(job=job, status='complete')
+        data = BoardService.get_approved_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertNotIn(job.job_id, job_ids)
+
+    def test_get_approved_data_excludes_invoice_sent(self):
+        from apps.jobs.services.board_service import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(status='approved')
+        WorkOrder.objects.create(job=job, status='complete')
+        Invoice.objects.create(
+            job=job, invoice_number='INV-TEST-001', status='open'
+        )
+        data = BoardService.get_approved_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertNotIn(job.job_id, job_ids)
+
+    def test_get_unpaid_data_returns_invoice_sent_jobs(self):
+        from apps.jobs.services.board_service import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(status='approved')
+        WorkOrder.objects.create(job=job, status='complete')
+        Invoice.objects.create(
+            job=job, invoice_number='INV-TEST-001', status='open'
+        )
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data]
+        self.assertIn(job.job_id, job_ids)
+        match = [j for j in data if j['job_id'] == job.job_id][0]
+        self.assertEqual(match['sub_status'], 'invoice-sent')
+
+    def test_get_unpaid_data_returns_needs_invoice_jobs(self):
+        from apps.jobs.services.board_service import BoardService
+        job = self._make_job(status='approved')
+        WorkOrder.objects.create(job=job, status='complete')
+        # No invoice at all
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data]
+        self.assertIn(job.job_id, job_ids)
+        match = [j for j in data if j['job_id'] == job.job_id][0]
+        self.assertEqual(match['sub_status'], 'needs-invoice')
+
+    def test_get_unpaid_data_returns_invoice_prepped_jobs(self):
+        from apps.jobs.services.board_service import BoardService
+        from apps.invoicing.models import Invoice
+        job = self._make_job(status='approved')
+        WorkOrder.objects.create(job=job, status='complete')
+        Invoice.objects.create(
+            job=job, invoice_number='INV-TEST-001', status='draft'
+        )
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data]
+        self.assertIn(job.job_id, job_ids)
+        match = [j for j in data if j['job_id'] == job.job_id][0]
+        self.assertEqual(match['sub_status'], 'invoice-prepped')
+
+    def test_get_closed_data_returns_terminal_jobs(self):
+        from apps.jobs.services.board_service import BoardService
+        job = self._make_job(status='completed', completed_date=timezone.now())
+        data = BoardService.get_closed_data()
+        job_ids = [j['job_id'] for j in data]
+        self.assertIn(job.job_id, job_ids)
+
+    def test_get_closed_data_respects_retention(self):
+        from apps.jobs.services.board_service import BoardService
+        old_job = self._make_job(status='completed')
+        Job.objects.filter(pk=old_job.pk).update(
+            completed_date=timezone.now() - timedelta(days=30)
+        )
+        recent_job = self._make_job(status='completed', completed_date=timezone.now())
+        data = BoardService.get_closed_data()
+        job_ids = [j['job_id'] for j in data]
+        self.assertIn(recent_job.job_id, job_ids)
+        self.assertNotIn(old_job.job_id, job_ids)
