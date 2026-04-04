@@ -2,8 +2,14 @@
   import TaskCard from './TaskCard.svelte';
   import { onMount } from 'svelte';
 
-  let { tasks = [], canManage = false, focusedJobId = null, onAssign = () => {} } = $props();
+  let { tasks = [], canManage = false, focusedJobIds = [], onAssign = () => {} } = $props();
   let draggingTaskId = $state(null);
+
+  let visibleTasks = $derived(
+    focusedJobIds.length === 0
+      ? tasks
+      : tasks.filter(t => focusedJobIds.includes(t.job_id))
+  );
 
   onMount(() => {
     function onDragStart(e) {
@@ -30,29 +36,29 @@
     e.preventDefault();
     if (!canManage) return;
     const taskId = parseInt(e.dataTransfer.getData('text/plain'));
+    draggingTaskId = null;
     if (!taskId) return;
     onAssign(taskId, null, -1);
   }
 </script>
 
 <div class="unassigned-header">
-  Unassigned <span class="ua-count">&middot; {tasks.length} tasks</span>
+  Unassigned <span class="ua-count">&middot; {visibleTasks.length} task{visibleTasks.length === 1 ? '' : 's'}{focusedJobIds.length > 0 && visibleTasks.length !== tasks.length ? ` (of ${tasks.length})` : ''}</span>
 </div>
 <div
   class="unassigned-body"
   ondragover={handleDragOver}
   ondrop={handleDrop}
 >
-  {#each tasks as task (task.task_id)}
+  {#each visibleTasks as task (task.task_id)}
     <div
-      class:dimmed={focusedJobId !== null && task.job_id !== focusedJobId}
       class:dragging-source={draggingTaskId === task.task_id}
     >
       <TaskCard {task} draggable={canManage} />
     </div>
   {/each}
-  {#if tasks.length === 0}
-    <p class="empty">All tasks assigned</p>
+  {#if visibleTasks.length === 0}
+    <p class="empty">{tasks.length === 0 ? 'All tasks assigned' : 'No unassigned tasks for focused jobs'}</p>
   {/if}
 </div>
 

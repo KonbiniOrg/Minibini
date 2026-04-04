@@ -42,29 +42,33 @@
   class:urgent={isUrgent()}
   draggable={draggable ? 'true' : 'false'}
   ondragstart={draggable ? handleDragStart : null}
-  style="border-left-color: {task.accent_color || '#94a3b8'};"
   data-task-id={task.task_id}
   data-job-id={task.job_id}
 >
-  <span class="task-dot {dotClass()}"></span>
-  <div class="task-info">
-    <div class="task-name">{task.name}</div>
-    <div class="task-job-label">{deadlineLabel()}</div>
+  <div class="task-border" style="background: {task.accent_color || '#94a3b8'};"></div>
+  <div class="task-body">
+    <span class="task-dot {dotClass()}"></span>
+    <div class="task-info">
+      <div class="task-name">{task.name}</div>
+      <div class="task-job-label">{deadlineLabel()}</div>
+    </div>
+    {#if STATUS_LABELS[task.status]}
+      <span class="task-status-badge {labelClass()}">{STATUS_LABELS[task.status]}</span>
+    {/if}
   </div>
-  {#if STATUS_LABELS[task.status]}
-    <span class="task-status-badge {labelClass()}">{STATUS_LABELS[task.status]}</span>
-  {/if}
 </div>
 
 <style>
   .task-card {
-    background: #fff; border-radius: 7px; padding: 7px 8px 7px 12px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04); border-left: 4px solid #94a3b8;
-    display: flex; align-items: center; gap: 6px;
+    background: #fff; border-radius: 7px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    display: flex;
     cursor: grab; user-select: none; transition: opacity 0.15s, box-shadow 0.15s;
   }
   .task-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
   .task-card.urgent { background: #fff5f5; }
+  .task-border { width: 8px; flex-shrink: 0; border-radius: 7px 0 0 7px; }
+  .task-body { flex: 1; min-width: 0; padding: 7px 8px; display: flex; align-items: center; gap: 6px; }
   .task-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .dot-pending { background: #cbd5e1; }
   .dot-in-progress { background: #3b82f6; box-shadow: 0 0 4px rgba(59,130,246,0.27); }

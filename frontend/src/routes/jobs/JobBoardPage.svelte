@@ -7,7 +7,8 @@
   import UnpaidColumn from '../../components/board/UnpaidColumn.svelte';
   import ClosedColumn from '../../components/board/ClosedColumn.svelte';
 
-  let activeCol = $state('approved');
+  const VALID_COLS = ['pipeline', 'approved', 'unpaid', 'closed'];
+  let activeCol = $state(VALID_COLS.includes(sessionStorage.getItem('boardActiveCol')) ? sessionStorage.getItem('boardActiveCol') : 'approved');
 
   let pipelineData = $state(null);
   let approvedData = $state(null);
@@ -50,6 +51,7 @@
 
   function openCol(col) {
     activeCol = col;
+    sessionStorage.setItem('boardActiveCol', col);
     loadColumn(col);
   }
 
@@ -58,7 +60,7 @@
   }
 
   $effect(() => {
-    loadColumn('approved');
+    loadColumn(activeCol);
   });
 </script>
 

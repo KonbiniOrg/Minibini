@@ -12,23 +12,21 @@
   }
 
   function borderColor() {
+    // Gray: work done, no invoice created yet
     if (job.sub_status === 'needs-invoice') return '#64748b';
-    if (hasOverdue()) return '#dc2626';
-    return '#f59e0b';
-  }
-
-  function hasOverdue() {
-    return job.invoices?.some(inv => {
-      if (inv.status === 'paid') return false;
-      if (!inv.sent_date) return false;
-      return inv.status === 'open' || inv.status === 'partly-paid';
-    }) || false;
+    // Amber: invoice drafted but not sent yet
+    if (job.sub_status === 'invoice-prepped') return '#f59e0b';
+    // TODO: Red (#dc2626) for overdue invoices, once Invoice has
+    // a due_date field or PaymentTerms has net_days to compute it.
+    // Default: invoice sent, awaiting payment
+    return '#3b82f6';
   }
 
   function invoiceStatusPill(inv) {
     if (inv.status === 'paid') return { label: 'Paid', cls: 'paid' };
     if (inv.status === 'partly-paid') return { label: 'Partly Paid', cls: 'partly' };
-    if (inv.status === 'open') return { label: 'Unpaid', cls: 'open' };
+    if (inv.status === 'open') return { label: 'Sent', cls: 'open' };
+    if (inv.status === 'draft') return { label: 'Draft', cls: 'draft' };
     return { label: inv.status, cls: '' };
   }
 
@@ -174,6 +172,7 @@
   .pill.paid { background: #dcfce7; color: #15803d; }
   .pill.partly { background: #e0e7ff; color: #4338ca; }
   .pill.payment { background: #dcfce7; color: #15803d; }
+  .pill.draft { background: #f1f5f9; color: #64748b; }
   .pill.needs-inv { background: #f1f5f9; color: #64748b; }
 
   .card-foot {

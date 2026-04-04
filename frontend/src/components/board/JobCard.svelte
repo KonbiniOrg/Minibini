@@ -114,10 +114,9 @@
 <style>
   .job-card {
     background: #fff; border-radius: 10px; overflow: hidden; cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: transform 0.1s, box-shadow 0.15s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     display: flex;
   }
-  .job-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 
   .card-border {
     width: 18px; flex-shrink: 0; position: relative;
