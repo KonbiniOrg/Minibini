@@ -17,7 +17,7 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -2510,6 +2510,7 @@ class NealsDataConverter:
         - Estimate sent → Job at least submitted (constraint #2)
         - Estimate accepted → Job at least approved (constraint #2 + #6)
         - All invoices paid → Job completed (constraint #3)
+        - Sent invoice similar to estimate → tasks complete
         """
         if self.verbose:
             print("  Reconciling cross-model states...")
@@ -2518,6 +2519,10 @@ class NealsDataConverter:
         estimates_by_job = {}  # job_pk -> [fixture]
         invoices_by_job = {}   # job_pk -> [fixture]
         job_fixtures = {}      # job_pk -> fixture
+        est_line_items = {}    # estimate_pk -> [fixture]
+        inv_line_items = {}    # invoice_pk -> [fixture]
+        wo_by_job = {}         # job_pk -> wo_pk
+        tasks_by_wo = {}       # wo_pk -> [fixture]
 
         for fixture in self.fixture_data:
             model = fixture['model']
@@ -2529,6 +2534,19 @@ class NealsDataConverter:
                 invoices_by_job.setdefault(job_pk, []).append(fixture)
             elif model == 'jobs.job':
                 job_fixtures[fixture['pk']] = fixture
+            elif model == 'estimates.estimatelineitem':
+                est_pk = fixture['fields']['estimate']
+                est_line_items.setdefault(est_pk, []).append(fixture)
+            elif model == 'invoicing.invoicelineitem':
+                inv_pk = fixture['fields']['invoice']
+                inv_line_items.setdefault(inv_pk, []).append(fixture)
+            elif model == 'jobs.workorder':
+                job_pk = fixture['fields']['job']
+                wo_by_job[job_pk] = fixture['pk']
+            elif model == 'jobs.task':
+                wo_pk = fixture['fields']['work_order']
+                if wo_pk:
+                    tasks_by_wo.setdefault(wo_pk, []).append(fixture)
 
         changes = 0
 
@@ -2597,6 +2615,137 @@ class NealsDataConverter:
                     changes += 1
                     if self.verbose:
                         print(f"    Job {fields.get('job_number')}: → completed (all invoices paid)")
+
+        # Expire old open estimates: if created_date is more than 30 days ago,
+        # an estimate cannot remain 'open' — move it to 'expired'.
+        # When the latest estimate on a job expires, reject the job.
+        expire_days = 30
+        today = date.today()
+        expired_estimates = 0
+        rejected_jobs = 0
+
+        for job_pk, estimates in estimates_by_job.items():
+            for est in estimates:
+                est_fields = est['fields']
+                if est_fields['status'] != 'open':
+                    continue
+                created = est_fields.get('created_date')
+                if not created:
+                    continue
+                created_date = date.fromisoformat(created) if isinstance(created, str) else created
+                if (today - created_date).days > expire_days:
+                    est_fields['status'] = 'expired'
+                    est_fields['closed_date'] = today.isoformat()
+                    expired_estimates += 1
+                    if self.verbose:
+                        print(f"    Estimate {est['pk']}: open → expired (older than {expire_days} days)")
+
+            # After expiring estimates, check if the job should be rejected.
+            # If all non-superseded estimates are now in terminal states
+            # (expired/rejected) and none are accepted, reject the job.
+            job_fix = job_fixtures.get(job_pk)
+            if not job_fix:
+                continue
+            job_status = job_fix['fields']['status']
+            if job_status in ('completed', 'cancelled', 'rejected'):
+                continue
+            non_superseded = [e for e in estimates if e['fields']['status'] != 'superseded']
+            if non_superseded and all(
+                e['fields']['status'] in ('expired', 'rejected') for e in non_superseded
+            ):
+                job_fix['fields']['status'] = 'rejected'
+                rejected_jobs += 1
+                if self.verbose:
+                    print(f"    Job {job_fix['fields'].get('job_number')}: → rejected (all estimates expired/rejected)")
+
+        if self.verbose:
+            print(f"    Expired {expired_estimates} open estimates (>{expire_days} days old)")
+            print(f"    Rejected {rejected_jobs} jobs (all estimates expired/rejected)")
+
+        # Sent invoice matches estimate → complete all tasks on the job.
+        # "Substantially similar" = total values within 10%.
+        def _line_item_total(items):
+            total = Decimal('0')
+            for li in items:
+                f = li['fields']
+                total += Decimal(f.get('qty', '0')) * Decimal(f.get('price', '0'))
+            return total
+
+        tasks_completed = 0
+        jobs_with_completed_tasks = 0
+        for job_pk in job_fixtures:
+            estimates = estimates_by_job.get(job_pk, [])
+            invoices = invoices_by_job.get(job_pk, [])
+            if not estimates or not invoices:
+                continue
+
+            # Check for any sent invoice (non-draft)
+            sent_invoices = [
+                inv for inv in invoices if inv['fields']['status'] != 'draft'
+            ]
+            if not sent_invoices:
+                continue
+
+            # Get estimate totals (use latest non-superseded estimate)
+            active_estimates = [
+                e for e in estimates if e['fields']['status'] != 'superseded'
+            ]
+            if not active_estimates:
+                active_estimates = estimates
+
+            est_totals = []
+            for est in active_estimates:
+                items = est_line_items.get(est['pk'], [])
+                if items:
+                    est_totals.append(_line_item_total(items))
+
+            if not est_totals:
+                continue
+
+            # Check if any sent invoice total is within 10% of any estimate total
+            match_found = False
+            for inv in sent_invoices:
+                inv_items = inv_line_items.get(inv['pk'], [])
+                if not inv_items:
+                    continue
+                inv_total = _line_item_total(inv_items)
+                if inv_total == 0:
+                    continue
+                for est_total in est_totals:
+                    if est_total == 0:
+                        continue
+                    ratio = inv_total / est_total
+                    if Decimal('0.9') <= ratio <= Decimal('1.1'):
+                        match_found = True
+                        break
+                if match_found:
+                    break
+
+            if not match_found:
+                continue
+
+            # Complete all tasks on this job's work order
+            wo_pk = wo_by_job.get(job_pk)
+            if not wo_pk:
+                continue
+            tasks = tasks_by_wo.get(wo_pk, [])
+            if not tasks:
+                continue
+
+            job_touched = False
+            for task_fix in tasks:
+                if task_fix['fields']['status'] != 'complete':
+                    task_fix['fields']['status'] = 'complete'
+                    tasks_completed += 1
+                    job_touched = True
+            if job_touched:
+                jobs_with_completed_tasks += 1
+                if self.verbose:
+                    job_num = job_fixtures[job_pk]['fields'].get('job_number')
+                    print(f"    Job {job_num}: completed tasks (sent invoice matches estimate)")
+
+        if self.verbose:
+            print(f"    Completed {tasks_completed} tasks across {jobs_with_completed_tasks} jobs (invoice ≈ estimate)")
 
         # Cancel old approved jobs: if the job started before 2026 and is
         # still in 'approved' status, it's stale — mark it cancelled.

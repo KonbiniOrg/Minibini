@@ -63,6 +63,10 @@ Complete Job Date Rules:
   - If status='approved' → None
   - Else → Updated Date from spreadsheet
 
+Non-Database Constraints:
+- Estimates expire after 30 days.  If an Estimate's created_date is more than 30 days old, it cannot remain in 'open' status — it must be moved to 'expired'.  When an Estimate expires and it is the only (or latest) estimate on a Job, the Job should be moved to 'rejected'.  (The 30-day threshold will eventually be a Configuration option via est_expire_days, but is not enforced in app code yet.)
+- If a Job has both an Estimate and a sent Invoice (any non-draft status) whose total values are substantially similar (within 10%), all Tasks on that Job's WorkOrder should be marked complete — the work has been invoiced.  "Substantially similar" compares sum of qty*price across line items.
+
 TODO:
 - Check Blep data when I've written the UI to view it
 - Alter the handling of multiple Estimates per project when I've implemented Change Orders (project Round Desks for sure, likely others)
