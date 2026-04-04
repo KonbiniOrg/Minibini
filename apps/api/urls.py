@@ -12,7 +12,10 @@ from apps.api.invoicing.views import InvoiceViewSet
 from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
 from apps.api.inventory.views import PriceListItemViewSet
 from apps.api.search.views import search_view
-from apps.api.jobs.board_views import board_view, task_reorder_view, task_assign_view
+from apps.api.jobs.board_views import (
+    board_view, pipeline_view, approved_view, unpaid_view, closed_view,
+    task_reorder_view, task_assign_view,
+)
 from apps.api.stubs import stub_501
 from apps.api.templates_config.views import (
     WorkOrderTemplateViewSet, TaskTemplateViewSet,
@@ -75,6 +78,10 @@ urlpatterns = [
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),
     path('qbo/', include('apps.qbo.urls')),
+    path('jobs/board/pipeline/', pipeline_view, name='board-pipeline'),
+    path('jobs/board/approved/', approved_view, name='board-approved'),
+    path('jobs/board/unpaid/', unpaid_view, name='board-unpaid'),
+    path('jobs/board/closed/', closed_view, name='board-closed'),
     path('jobs/board/', board_view, name='job-board'),
     path('tasks/reorder/', task_reorder_view, name='task-reorder'),
     path('tasks/<int:task_pk>/assign/', task_assign_view, name='task-assign'),

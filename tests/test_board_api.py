@@ -210,3 +210,41 @@ class TaskAssignEndpointTest(FixtureTestCase):
             content_type='application/json',
         )
         self.assertEqual(response.status_code, 403)
+
+
+class LazyBoardEndpointTest(FixtureTestCase):
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days',
+            defaults={'value': '14'}
+        )
+        self.user = User.objects.create_user(username='boarduser', password='testpass')
+        self.client.login(username='boarduser', password='testpass')
+
+    def test_pipeline_endpoint_returns_200(self):
+        response = self.client.get('/api/jobs/board/pipeline/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('jobs', response.json())
+
+    def test_approved_endpoint_returns_200(self):
+        response = self.client.get('/api/jobs/board/approved/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('jobs', response.json())
+
+    def test_unpaid_endpoint_returns_200(self):
+        response = self.client.get('/api/jobs/board/unpaid/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('jobs', response.json())
+
+    def test_closed_endpoint_returns_200(self):
+        response = self.client.get('/api/jobs/board/closed/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('jobs', response.json())
+
+    def test_endpoints_require_auth(self):
+        self.client.logout()
+        for path in ['/api/jobs/board/pipeline/', '/api/jobs/board/approved/',
+                     '/api/jobs/board/unpaid/', '/api/jobs/board/closed/']:
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 403, f'{path} should require auth')
