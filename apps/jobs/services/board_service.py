@@ -191,11 +191,11 @@ class BoardService:
 
         unpaid_list = []
         for job in approved_jobs:
-            job_data = BoardService._serialize_job(job)
-            if job_data['sub_status'] in BoardService.UNPAID_SUB_STATUSES:
-                unpaid_list.append(job_data)
+            sub_status = BoardService.compute_sub_status(job)
+            if sub_status in BoardService.UNPAID_SUB_STATUSES:
+                unpaid_list.append(BoardService._serialize_unpaid_job(job))
 
-        return unpaid_list
+        return {'jobs': unpaid_list}
 
     @staticmethod
     def get_closed_data():
@@ -259,6 +259,69 @@ class BoardService:
                 'total': total,
             })
         data['estimates'] = estimates
+        return data
+
+    @staticmethod
+    def _compute_profitability(job):
+        """Compute billed/spent/profit for a job."""
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.purchasing.models import PurchaseOrderLineItem
+        from apps.jobs.models import Blep
+
+        billed = InvoiceLineItem.objects.filter(
+            invoice__job=job
+        ).exclude(
+            invoice__status__in=['cancelled', 'superseded']
+        ).aggregate(
+            total=models.Sum(models.F('qty') * models.F('price'))
+        )['total'] or Decimal('0.00')
+
+        material_cost = PurchaseOrderLineItem.objects.filter(
+            job=job
+        ).exclude(
+            purchase_order__status='cancelled'
+        ).aggregate(
+            total=models.Sum(models.F('qty') * models.F('price'))
+        )['total'] or Decimal('0.00')
+
+        # TODO: Replace task.rate / 2 with actual User.pay_rate once that
+        # field exists. Using half the billing rate as a temporary proxy.
+        labor_cost = Decimal('0.00')
+        bleps = Blep.objects.filter(
+            task__work_order__job=job,
+            start_time__isnull=False,
+            end_time__isnull=False,
+        ).select_related('task')
+        for blep in bleps:
+            if blep.task.rate:
+                elapsed_hours = Decimal(str(blep.elapsed.total_seconds() / 3600))
+                labor_cost += elapsed_hours * (blep.task.rate / 2)
+
+        spent = material_cost + labor_cost
+        return {'billed': billed, 'spent': spent, 'profit': billed - spent}
+
+    @staticmethod
+    def _serialize_unpaid_job(job):
+        """Serialize an unpaid job with invoice details and profitability."""
+        data = BoardService._serialize_job(job)
+        invoices = []
+        for inv in job.invoice_set.exclude(status__in=['cancelled', 'superseded']).order_by('created_date'):
+            total = inv.invoicelineitem_set.aggregate(
+                total=models.Sum(models.F('qty') * models.F('price'))
+            )['total'] or Decimal('0.00')
+            invoices.append({
+                'invoice_id': inv.invoice_id,
+                'invoice_number': inv.invoice_number,
+                'status': inv.status,
+                'total': total,
+                'created_date': inv.created_date.isoformat() if inv.created_date else None,
+                'sent_date': inv.sent_date.isoformat() if inv.sent_date else None,
+                'closed_date': inv.closed_date.isoformat() if inv.closed_date else None,
+                'amount_paid': inv.qbo_amount_paid,
+            })
+        data['invoices'] = invoices
+        profitability = BoardService._compute_profitability(job)
+        data.update(profitability)
         return data
 
     @staticmethod
