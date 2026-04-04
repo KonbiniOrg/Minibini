@@ -1,58 +1,117 @@
 <script>
   import { api } from '../../lib/api.js';
   import { user } from '../../stores/auth.js';
+  import CollapsedTab from '../../components/board/CollapsedTab.svelte';
   import PipelineColumn from '../../components/board/PipelineColumn.svelte';
   import ApprovedArea from '../../components/board/ApprovedArea.svelte';
+  import UnpaidColumn from '../../components/board/UnpaidColumn.svelte';
   import ClosedColumn from '../../components/board/ClosedColumn.svelte';
-  import ResizeHandle from '../../components/board/ResizeHandle.svelte';
 
-  let boardData = $state(null);
-  let loading = $state(true);
-  let error = $state(null);
-  let pipelineWidth = $state(270);
-  let closedWidth = $state(270);
+  let activeCol = $state('approved');
 
-  async function loadBoard() {
-    loading = true;
-    error = null;
+  let pipelineData = $state(null);
+  let approvedData = $state(null);
+  let unpaidData = $state(null);
+  let closedData = $state(null);
+
+  let pipelineLoading = $state(false);
+  let approvedLoading = $state(false);
+  let unpaidLoading = $state(false);
+  let closedLoading = $state(false);
+
+  let pipelineCount = $state(null);
+  let unpaidCount = $state(null);
+
+  async function loadColumn(col) {
+    const endpoints = {
+      pipeline: '/api/jobs/board/pipeline/',
+      approved: '/api/jobs/board/approved/',
+      unpaid: '/api/jobs/board/unpaid/',
+      closed: '/api/jobs/board/closed/',
+    };
+    const setLoading = { pipeline: v => pipelineLoading = v, approved: v => approvedLoading = v, unpaid: v => unpaidLoading = v, closed: v => closedLoading = v };
+    const setData = {
+      pipeline: d => { pipelineData = d; pipelineCount = d.jobs?.length ?? null; },
+      approved: d => { approvedData = d; },
+      unpaid: d => { unpaidData = d; unpaidCount = d.jobs?.length ?? null; },
+      closed: d => { closedData = d; },
+    };
+
+    setLoading[col](true);
     try {
-      boardData = await api.get('/api/jobs/board/');
+      const data = await api.get(endpoints[col]);
+      setData[col](data);
     } catch (e) {
-      error = e.message || 'Failed to load board';
+      console.error(`Failed to load ${col}:`, e);
     } finally {
-      loading = false;
+      setLoading[col](false);
     }
   }
 
-  $effect(() => {
-    loadBoard();
-  });
+  function openCol(col) {
+    activeCol = col;
+    loadColumn(col);
+  }
 
   function canManageJobs() {
     return $user?.permissions?.includes('can_manage_jobs');
   }
+
+  $effect(() => {
+    loadColumn('approved');
+  });
 </script>
 
 <div class="board-page">
-  {#if loading}
-    <p>Loading board...</p>
-  {:else if error}
-    <p>Error: {error}</p>
-  {:else if boardData}
-    <div class="board">
-      <div class="board-col pipeline" style="width: {pipelineWidth}px;">
-        <PipelineColumn jobs={boardData.pipeline} />
+  <div class="board">
+    {#if activeCol === 'pipeline'}
+      <div class="col-expanded">
+        {#if pipelineLoading}
+          <p class="loading">Loading pipeline...</p>
+        {:else if pipelineData}
+          <PipelineColumn jobs={pipelineData.jobs} />
+        {/if}
       </div>
-      <ResizeHandle direction="vertical" onResize={(delta) => { pipelineWidth = Math.max(200, pipelineWidth + delta); }} />
-      <div class="board-col approved">
-        <ApprovedArea data={boardData.approved} canManage={canManageJobs()} onUpdate={loadBoard} />
+    {:else}
+      <CollapsedTab label="Pipeline" count={pipelineCount} theme="pipeline" onclick={() => openCol('pipeline')} />
+    {/if}
+
+    {#if activeCol === 'approved'}
+      <div class="col-expanded">
+        {#if approvedLoading}
+          <p class="loading">Loading...</p>
+        {:else if approvedData}
+          <ApprovedArea data={approvedData} canManage={canManageJobs()} onUpdate={() => loadColumn('approved')} />
+        {/if}
       </div>
-      <ResizeHandle direction="vertical" onResize={(delta) => { closedWidth = Math.max(200, closedWidth - delta); }} />
-      <div class="board-col closed" style="width: {closedWidth}px;">
-        <ClosedColumn jobs={boardData.closed} />
+    {:else}
+      <CollapsedTab label="In Progress" count={approvedData?.jobs?.length ?? null} theme="approved" onclick={() => openCol('approved')} />
+    {/if}
+
+    {#if activeCol === 'unpaid'}
+      <div class="col-expanded">
+        {#if unpaidLoading}
+          <p class="loading">Loading unpaid...</p>
+        {:else if unpaidData}
+          <UnpaidColumn jobs={unpaidData.jobs} />
+        {/if}
       </div>
-    </div>
-  {/if}
+    {:else}
+      <CollapsedTab label="Unpaid" count={unpaidCount} theme="unpaid" onclick={() => openCol('unpaid')} />
+    {/if}
+
+    {#if activeCol === 'closed'}
+      <div class="col-expanded">
+        {#if closedLoading}
+          <p class="loading">Loading closed...</p>
+        {:else if closedData}
+          <ClosedColumn jobs={closedData.jobs} />
+        {/if}
+      </div>
+    {:else}
+      <CollapsedTab label="Closed" theme="closed" onclick={() => openCol('closed')} />
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -62,14 +121,25 @@
     flex-direction: column;
     overflow: hidden;
   }
-
   .board {
     display: flex;
     flex: 1;
     overflow: hidden;
   }
-  .board-col { display: flex; flex-direction: column; overflow: hidden; }
-  .board-col.pipeline { flex-shrink: 0; }
-  .board-col.approved { flex: 1; }
-  .board-col.closed { flex-shrink: 0; }
+  .col-expanded {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: expand 0.18s ease-in-out;
+  }
+  @keyframes expand {
+    from { opacity: 0.5; }
+    to { opacity: 1; }
+  }
+  .loading {
+    padding: 20px;
+    text-align: center;
+    color: #999;
+  }
 </style>
