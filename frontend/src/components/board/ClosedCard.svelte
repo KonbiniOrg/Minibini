@@ -39,26 +39,29 @@
     if (remainder === 0) return `${weeks} week${weeks !== 1 ? 's' : ''}`;
     return `${weeks} week${weeks !== 1 ? 's' : ''} ${remainder} day${remainder !== 1 ? 's' : ''}`;
   }
-
-  let margin = $derived(() => {
-    const billed = Number(job.billed) || 0;
-    if (billed === 0) return null;
-    return Math.round(((billed - (Number(job.spent) || 0)) / billed) * 100);
-  });
 </script>
 
-<div class="closed-card" style="border-left-color: {borderColor()};">
-  <div class="card-head">
-    <div class="card-head-top">
-      <span class="job-name">{job.name}</span>
-      <span class="substatus {statusClass()}">{statusLabel()}</span>
-    </div>
-    <div class="card-head-sub">
-      <a class="customer" href="#/contacts/{job.contact_id}">{job.contact_name || 'No contact'}</a>
-      <span class="job-num">{job.job_number}</span>
-    </div>
+<div class="closed-card">
+  <div class="card-border" style="background: {borderColor()};">
+    <span class="border-num">{job.job_number}</span>
   </div>
-  <div class="card-details">
+  <div class="card-main">
+    <div class="card-head">
+      <div class="card-head-top">
+        <div class="card-left">
+          <div class="job-name">{job.name}</div>
+          <div class="card-sub">
+            <a class="customer" href="#/contacts/{job.contact_id}">{job.contact_name || 'No contact'}</a>
+          </div>
+          <span class="substatus {statusClass()}">{statusLabel()}</span>
+        </div>
+        <div class="card-right">
+          <div class="pr-line"><span class="pr-label">Billed</span> <span class="pr-val">{formatAmount(job.billed)}</span></div>
+          <div class="pr-line"><span class="pr-label">Spent</span> <span class="pr-val">{formatAmount(job.spent)}</span></div>
+          <div class="pr-line"><span class="pr-label">Profit</span> <span class="pr-val" class:green={Number(job.profit) >= 0} class:red={Number(job.profit) < 0}>{formatAmount(job.profit)}</span></div>
+        </div>
+      </div>
+    </div>
     <div class="detail-row">
       <span class="label">Start</span>
       <span class="value">{formatDate(job.start_date)}</span>
@@ -69,52 +72,54 @@
       {/if}
     </div>
   </div>
-  <div class="profit-row">
-    <span>Billed <span class="val">{formatAmount(job.billed)}</span></span>
-    <span>Spent <span class="val">{formatAmount(job.spent)}</span></span>
-    <span>Profit <span class="val" class:green={Number(job.profit) >= 0} class:red={Number(job.profit) < 0}>{formatAmount(job.profit)}</span></span>
-    <span class="spacer"></span>
-    {#if margin() !== null}
-      <span class="margin" class:green={margin() >= 0} class:red={margin() < 0}>{margin()}%</span>
-    {/if}
-  </div>
 </div>
 
 <style>
   .closed-card {
     background: #fff; border-radius: 10px; overflow: hidden;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    border-left: 4px solid #9ca3af;
+    display: flex;
   }
 
+  .card-border {
+    width: 18px; flex-shrink: 0; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px 0 0 10px;
+  }
+  .border-num {
+    writing-mode: vertical-rl; text-orientation: mixed;
+    transform: rotate(180deg);
+    font-size: 8px; font-weight: 600; font-family: 'SF Mono', 'Fira Code', monospace;
+    letter-spacing: 0.3px; white-space: nowrap; user-select: none;
+    color: #fff; opacity: 0.85;
+  }
+
+  .card-main { flex: 1; min-width: 0; }
+
   .card-head { padding: 8px 10px 6px; }
-  .card-head-top { display: flex; align-items: baseline; gap: 6px; }
-  .job-name { font-size: 13px; font-weight: 600; }
-  .substatus { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; margin-left: auto; }
+  .card-head-top { display: flex; align-items: flex-start; gap: 8px; }
+  .card-left { flex: 1; min-width: 0; }
+  .job-name { font-size: 13px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
+  .customer { font-size: 11px; color: #2563eb; text-decoration: none; }
+  .customer:hover { text-decoration: underline; }
+  .substatus { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; display: inline-block; margin-top: 4px; }
   .substatus.completed { background: #f3e8ff; color: #7c3aed; }
   .substatus.rejected { background: #fee2e2; color: #b91c1c; }
   .substatus.cancelled { background: #f1f5f9; color: #64748b; }
-  .card-head-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
-  .customer { font-size: 11px; color: #2563eb; text-decoration: none; }
-  .customer:hover { text-decoration: underline; }
-  .job-num { font-size: 10px; color: #999; font-family: 'SF Mono', 'Fira Code', monospace; }
 
-  .card-details { padding: 0 10px 8px; }
+  .card-right { flex-shrink: 0; text-align: right; font-size: 10px; color: #888; line-height: 1.5; }
+  .pr-line { display: flex; justify-content: flex-end; gap: 3px; }
+  .pr-label { color: #aaa; }
+  .pr-val { font-weight: 600; font-family: 'SF Mono', 'Fira Code', monospace; min-width: 52px; text-align: right; }
+  .pr-val.green { color: #15803d; }
+  .pr-val.red { color: #dc2626; }
+
   .detail-row {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 11px; color: #666; margin-top: 4px;
+    display: flex; align-items: center; gap: 6px; padding: 0 10px 6px;
+    font-size: 11px; color: #666;
   }
-  .label { color: #999; font-size: 10px; min-width: 36px; }
+  .label { color: #999; font-size: 10px; }
   .value { font-size: 11px; }
   .duration { margin-left: auto; font-size: 10px; color: #888; }
-
-  .profit-row {
-    display: flex; align-items: center; gap: 8px; padding: 5px 10px;
-    font-size: 10px; color: #888; background: #f8f9fa; border-top: 1px solid #f0f0f0;
-  }
-  .val { font-weight: 600; font-family: 'SF Mono', 'Fira Code', monospace; }
-  .val.green, .green { color: #15803d; }
-  .val.red, .red { color: #dc2626; }
-  .spacer { flex: 1; }
-  .margin { font-weight: 600; }
 </style>
