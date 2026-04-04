@@ -346,7 +346,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         from apps.jobs.services.board_service import BoardService
         job = self._make_job(status='completed', completed_date=timezone.now())
         data = BoardService.get_closed_data()
-        job_ids = [j['job_id'] for j in data]
+        job_ids = [j['job_id'] for j in data['jobs']]
         self.assertIn(job.job_id, job_ids)
 
     def test_get_unpaid_data_returns_dict_with_jobs(self):
@@ -369,7 +369,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         )
         recent_job = self._make_job(status='completed', completed_date=timezone.now())
         data = BoardService.get_closed_data()
-        job_ids = [j['job_id'] for j in data]
+        job_ids = [j['job_id'] for j in data['jobs']]
         self.assertIn(recent_job.job_id, job_ids)
         self.assertNotIn(old_job.job_id, job_ids)
 
@@ -433,6 +433,45 @@ class PipelineDocDataTest(FixtureTestCase):
         self.assertEqual(len(job_data['estimates']), 1)
         self.assertEqual(job_data['estimates'][0]['status'], 'open')
         self.assertEqual(job_data['estimates'][0]['total'], Decimal('150.00'))
+
+
+class ClosedDataTest(FixtureTestCase):
+    """Test that closed data includes start_date, completed_date, and profitability."""
+
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days',
+            defaults={'value': '14'}
+        )
+        self.contact = Contact.objects.first()
+
+    def _make_job(self, status='completed'):
+        return Job.objects.create(
+            job_number=f'JOB-TEST-{Job.objects.count() + 1:04d}',
+            name='Test Job', status=status, contact=self.contact,
+            start_date=timezone.now() - timedelta(days=30),
+            completed_date=timezone.now(),
+        )
+
+    def test_closed_job_includes_start_date(self):
+        from apps.jobs.services.board_service import BoardService
+        job = self._make_job()
+        result = BoardService.get_closed_data()
+        job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
+        self.assertIn('start_date', job_data)
+        self.assertIsNotNone(job_data['start_date'])
+
+    def test_closed_job_includes_profitability(self):
+        from apps.jobs.services.board_service import BoardService
+        from apps.invoicing.models import Invoice, InvoiceLineItem
+        job = self._make_job()
+        inv = Invoice.objects.create(job=job, invoice_number='INV-TEST-010', status='paid')
+        InvoiceLineItem.objects.create(invoice=inv, qty=Decimal('1'), price=Decimal('2000.00'))
+        result = BoardService.get_closed_data()
+        job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
+        self.assertEqual(job_data['billed'], Decimal('2000.00'))
+        self.assertIn('profit', job_data)
 
 
 class UnpaidDataTest(FixtureTestCase):

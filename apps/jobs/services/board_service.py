@@ -87,7 +87,7 @@ class BoardService:
             status__in=['completed', 'rejected', 'cancelled'],
             completed_date__gte=cutoff,
         ).select_related('contact').order_by('-completed_date')
-        closed = [BoardService._serialize_job(job) for job in closed_jobs]
+        closed = [BoardService._serialize_closed_job(job) for job in closed_jobs]
 
         # Available workers: active users not already shown in worker columns
         existing_worker_ids = set(worker_map.keys())
@@ -215,7 +215,7 @@ class BoardService:
             status__in=['completed', 'rejected', 'cancelled'],
             completed_date__gte=cutoff,
         ).select_related('contact').order_by('-completed_date')
-        return [BoardService._serialize_job(job) for job in closed_jobs]
+        return {'jobs': [BoardService._serialize_closed_job(job) for job in closed_jobs]}
 
     @staticmethod
     def _serialize_job(job):
@@ -230,6 +230,15 @@ class BoardService:
             'due_date': job.due_date.isoformat() if job.due_date else None,
             'completed_date': job.completed_date.isoformat() if job.completed_date else None,
         }
+
+    @staticmethod
+    def _serialize_closed_job(job):
+        """Serialize a closed job with dates and profitability."""
+        data = BoardService._serialize_job(job)
+        data['start_date'] = job.start_date.isoformat() if job.start_date else None
+        profitability = BoardService._compute_profitability(job)
+        data.update(profitability)
+        return data
 
     @staticmethod
     def _serialize_pipeline_job(job):
