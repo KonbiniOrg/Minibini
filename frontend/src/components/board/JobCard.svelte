@@ -79,55 +79,80 @@
   };
 </script>
 
-<div class="job-card" style="border-left-color: {borderColor()};">
-  <div class="card-top">
-    <span class="card-number">{job.job_number}</span>
-    {#if job.sub_status || job.status}
-      <span class="card-substatus" style={pillStyle(job.sub_status)}>{pillLabel(job.sub_status)}</span>
-    {/if}
+<div class="job-card">
+  <div class="card-border" style="background: {borderColor()};">
+    <span class="border-num">{job.job_number}</span>
   </div>
-  <div class="card-body">
-    <div class="card-name">{job.name}</div>
-    {#if job.contact_name}
-      <a class="card-customer" href="#/contacts/{job.contact_id}">{job.contact_name}</a>
-    {/if}
-    {#if deadlineText()}
-      <div class="card-deadline {deadlineClass()}">{deadlineText()}</div>
-    {/if}
-  </div>
-  {#each docs as doc}
-    <div class="doc-row">
-      <span class="doc-type">{doc.type}</span>
-      <span class="doc-pill {DOC_PILL_STYLES[doc.status] || ''}">{doc.statusLabel}</span>
-      <span class="doc-date">{formatDate(doc.created_date)}</span>
-      <span class="doc-amount">{formatAmount(doc.total)}</span>
+  <div class="card-main">
+    <div class="card-head">
+      <div class="card-left">
+        <div class="job-name">{job.name}</div>
+        <div class="card-sub">
+          {#if job.contact_name}
+            <a class="card-customer" href="#/contacts/{job.contact_id}">{job.contact_name}</a>
+          {/if}
+        </div>
+        {#if job.sub_status || job.status}
+          <span class="card-substatus" style={pillStyle(job.sub_status)}>{pillLabel(job.sub_status)}</span>
+        {/if}
+        {#if deadlineText()}
+          <div class="card-deadline {deadlineClass()}">{deadlineText()}</div>
+        {/if}
+      </div>
     </div>
-  {/each}
+    {#each docs as doc}
+      <div class="doc-row">
+        <span class="doc-type">{doc.type}</span>
+        <span class="doc-pill {DOC_PILL_STYLES[doc.status] || ''}">{doc.statusLabel}</span>
+        <span class="doc-date">{formatDate(doc.created_date)}</span>
+        <span class="doc-amount">{formatAmount(doc.total)}</span>
+      </div>
+    {/each}
+  </div>
 </div>
 
 <style>
   .job-card {
     background: #fff; border-radius: 10px; overflow: hidden; cursor: pointer;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: transform 0.1s, box-shadow 0.15s;
-    border-left: 4px solid #94a3b8;
+    display: flex;
   }
   .job-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-  .card-top { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px 0; margin-bottom: 6px; }
-  .card-number { font-size: 11px; color: #999; font-family: 'SF Mono', 'Fira Code', monospace; }
-  .card-substatus { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
-  .card-body { padding: 0 12px 8px; }
-  .card-name { font-size: 14px; font-weight: 600; line-height: 1.3; margin-bottom: 3px; }
-  .card-customer { font-size: 12px; color: #2563eb; text-decoration: none; display: inline-block; }
+
+  .card-border {
+    width: 18px; flex-shrink: 0; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px 0 0 10px;
+  }
+  .border-num {
+    writing-mode: vertical-rl; text-orientation: mixed;
+    transform: rotate(180deg);
+    font-size: 8px; font-weight: 600; font-family: 'SF Mono', 'Fira Code', monospace;
+    letter-spacing: 0.3px; white-space: nowrap; user-select: none;
+    color: #fff; opacity: 0.85;
+  }
+
+  .card-main { flex: 1; min-width: 0; }
+
+  .card-head { padding: 8px 10px 6px; }
+  .card-left { min-width: 0; }
+  .job-name {
+    font-size: 13px; font-weight: 600; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
+  .card-customer { font-size: 11px; color: #2563eb; text-decoration: none; }
   .card-customer:hover { text-decoration: underline; }
-  .card-deadline { font-size: 11px; color: #888; margin-top: 6px; }
+  .card-substatus { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; display: inline-block; margin-top: 4px; }
+  .card-deadline { font-size: 11px; color: #888; margin-top: 4px; }
   .card-deadline.overdue { color: #dc2626; font-weight: 600; }
   .card-deadline.soon { color: #d97706; }
 
   .doc-row {
-    display: flex; align-items: center; gap: 6px; padding: 5px 12px;
+    display: flex; align-items: center; gap: 6px; padding: 5px 10px;
     font-size: 11px; color: #666; background: #f8f9fb; border-top: 1px solid #f0f0f0;
   }
-  .doc-type { font-weight: 600; color: #555; min-width: 68px; }
+  .doc-type { font-weight: 600; color: #555; min-width: 62px; }
   .doc-pill { font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
   .doc-pill-draft { background: #f1f5f9; color: #64748b; }
   .doc-pill-final { background: #dcfce7; color: #15803d; }
