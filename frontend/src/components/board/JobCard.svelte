@@ -1,11 +1,18 @@
 <script>
-  let { job, docs = [] } = $props();
+  let { job, docs = [], borderColorOverride = null, showProgress = false } = $props();
 
   const SUB_STATUS_STYLES = {
     'needs-scoping':     { bg: '#f1f5f9', color: '#64748b' },
     'estimating':        { bg: '#dbeafe', color: '#2563eb' },
     'estimate-ready':    { bg: '#e0e7ff', color: '#4338ca' },
     'awaiting-response': { bg: '#fef3c7', color: '#b45309' },
+    'needs-work-order':  { bg: '#dcfce7', color: '#15803d' },
+    'work-ready':        { bg: '#dcfce7', color: '#0d9488' },
+    'in-progress':       { bg: '#ccfbf1', color: '#0f766e' },
+    'blocked':           { bg: '#fee2e2', color: '#b91c1c' },
+    'invoice-prepped':   { bg: '#f3e8ff', color: '#7c3aed' },
+    'invoice-sent':      { bg: '#fce7f3', color: '#be185d' },
+    'needs-invoice':     { bg: '#f1f5f9', color: '#64748b' },
     'completed':         { bg: '#f3e8ff', color: '#7c3aed' },
     'rejected':          { bg: '#fee2e2', color: '#b91c1c' },
     'cancelled':         { bg: '#f1f5f9', color: '#64748b' },
@@ -34,6 +41,7 @@
   }
 
   function borderColor() {
+    if (borderColorOverride) return borderColorOverride;
     const key = job.sub_status || job.status;
     return BORDER_COLORS[key] || '#94a3b8';
   }
@@ -92,7 +100,7 @@
             <a class="card-customer" href="#/contacts/{job.contact_id}">{job.contact_name}</a>
           {/if}
         </div>
-        {#if job.sub_status || job.status}
+        {#if !showProgress && (job.sub_status || job.status)}
           <span class="card-substatus" style={pillStyle(job.sub_status)}>{pillLabel(job.sub_status)}</span>
         {/if}
         {#if deadlineText()}
@@ -108,6 +116,24 @@
         <span class="doc-amount">{formatAmount(doc.total)}</span>
       </div>
     {/each}
+    {#if showProgress}
+      {@const total = job.task_total ?? 0}
+      {@const completed = job.task_completed ?? 0}
+      {@const pct = total > 0 ? Math.round((completed / total) * 100) : 0}
+      {@const barColor = borderColor()}
+      <div
+        class="progress-bar"
+        style="background: linear-gradient(to right, {barColor} 0%, {barColor} {pct}%, color-mix(in srgb, {barColor} 18%, #fff) {pct}%, color-mix(in srgb, {barColor} 18%, #fff) 100%);"
+      >
+        <span class="progress-text">
+          {#if total === 0}
+            No tasks
+          {:else}
+            {pct}% complete &middot; {completed} of {total}
+          {/if}
+        </span>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -158,4 +184,20 @@
   .doc-pill-open { background: #fef3c7; color: #b45309; }
   .doc-date { font-size: 10px; color: #999; }
   .doc-amount { margin-left: auto; font-weight: 600; font-family: 'SF Mono', 'Fira Code', monospace; color: #333; }
+
+  .progress-bar {
+    position: relative;
+    height: 22px;
+    border-top: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .progress-text {
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 3px rgba(0,0,0,0.45);
+    letter-spacing: 0.3px;
+  }
 </style>

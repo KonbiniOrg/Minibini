@@ -143,6 +143,23 @@ class BoardService:
         color_map = {j['job_id']: j['accent_color'] for j in approved_list}
 
         approved_job_ids = [j['job_id'] for j in approved_list]
+
+        # Task counts per job (for progress bar in popup)
+        from django.db.models import Count, Q as DjQ
+        stats = Task.objects.filter(
+            work_order__job_id__in=approved_job_ids
+        ).exclude(status=Task.STATUS_CANCELLED).values(
+            'work_order__job_id'
+        ).annotate(
+            total=Count('task_id'),
+            completed=Count('task_id', filter=DjQ(status=Task.STATUS_COMPLETE)),
+        )
+        stats_by_job = {s['work_order__job_id']: s for s in stats}
+        for j in approved_list:
+            s = stats_by_job.get(j['job_id'], {'total': 0, 'completed': 0})
+            j['task_total'] = s['total']
+            j['task_completed'] = s['completed']
+
         tasks = Task.objects.filter(
             work_order__job_id__in=approved_job_ids,
             work_order__status='incomplete',

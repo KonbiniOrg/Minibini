@@ -1,5 +1,51 @@
 <script>
+  import JobCard from './JobCard.svelte';
+
   let { jobs = [], focusedJobIds = $bindable([]) } = $props();
+
+  let hoveredJobId = $state(null);
+  let popupPos = $state({ anchor: 'below', y: 0, left: 0 });
+  let showTimer = null;
+  let hideTimer = null;
+
+  function scheduleShow(jobId, el) {
+    clearTimeout(hideTimer); hideTimer = null;
+    clearTimeout(showTimer); showTimer = null;
+    if (hoveredJobId === jobId) return;
+    // Hide any other popup immediately when switching chips
+    if (hoveredJobId !== null) hoveredJobId = null;
+    showTimer = setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      const popupWidth = 280;
+      const popupHeightEst = 160;
+      let left = rect.left;
+      if (left + popupWidth > window.innerWidth - 8) {
+        left = window.innerWidth - popupWidth - 8;
+      }
+      // Anchor to card bottom (below) or card top (above, via bottom CSS)
+      // so the gap stays 4px regardless of popup's actual height.
+      if (rect.bottom + 4 + popupHeightEst > window.innerHeight - 8) {
+        popupPos = { anchor: 'above', y: window.innerHeight - rect.top + 4, left };
+      } else {
+        popupPos = { anchor: 'below', y: rect.bottom + 4, left };
+      }
+      hoveredJobId = jobId;
+    }, 300);
+  }
+
+  function scheduleHide() {
+    clearTimeout(showTimer); showTimer = null;
+    hideTimer = setTimeout(() => { hoveredJobId = null; }, 100);
+  }
+
+  function cancelHide() {
+    clearTimeout(hideTimer); hideTimer = null;
+  }
+
+  $effect(() => () => {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+  });
 
   function handleChipClick(jobId) {
     const next = focusedJobIds.includes(jobId)
@@ -7,10 +53,6 @@
       : [...focusedJobIds, jobId];
     // Treat "all selected" the same as "none selected" (no filter)
     focusedJobIds = next.length === jobs.length ? [] : next;
-  }
-
-  function handleChipDblClick(jobId) {
-    window.location.hash = `#/jobs/${jobId}`;
   }
 
   function deadlineClass(job) {
@@ -28,6 +70,8 @@
     if (due < new Date()) return `Overdue — ${due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
     return `Due ${due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
   }
+
+  let hoveredJob = $derived(hoveredJobId !== null ? jobs.find(j => j.job_id === hoveredJobId) : null);
 </script>
 
 <div class="job-strip">
@@ -37,7 +81,8 @@
       class:focused={focusedJobIds.includes(job.job_id)}
       class:dimmed={focusedJobIds.length > 0 && !focusedJobIds.includes(job.job_id)}
       onclick={() => handleChipClick(job.job_id)}
-      ondblclick={() => handleChipDblClick(job.job_id)}
+      onmouseenter={(e) => scheduleShow(job.job_id, e.currentTarget)}
+      onmouseleave={scheduleHide}
       role="button"
       tabindex="0"
     >
@@ -52,6 +97,19 @@
     </div>
   {/each}
 </div>
+
+{#if hoveredJob}
+  <div
+    class="chip-popup"
+    style="{popupPos.anchor === 'above' ? 'bottom' : 'top'}: {popupPos.y}px; left: {popupPos.left}px;"
+    onmouseenter={cancelHide}
+    onmouseleave={scheduleHide}
+  >
+    <a href="#/jobs/{hoveredJob.job_id}" class="popup-link">
+      <JobCard job={hoveredJob} borderColorOverride={hoveredJob.accent_color} showProgress={true} />
+    </a>
+  </div>
+{/if}
 
 <style>
   .job-strip { background: #e8f5ec; padding: 8px 12px; display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid #d0e8d6; flex-shrink: 0; }
@@ -70,4 +128,12 @@
   .chip-deadline { font-size: 10px; color: #888; }
   .chip-deadline.overdue { color: #dc2626; font-weight: 600; }
   .chip-deadline.soon { color: #d97706; }
+
+  .chip-popup {
+    position: fixed;
+    width: 280px;
+    z-index: 1000;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.15));
+  }
+  .popup-link { display: block; text-decoration: none; color: inherit; }
 </style>
