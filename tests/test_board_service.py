@@ -5,7 +5,8 @@ from datetime import timedelta
 from tests.base import FixtureTestCase
 from apps.jobs.models import Job, WorkOrder, Task
 from apps.contacts.models import Contact
-from apps.estimates.models import Estimate, EstWorksheet
+from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
+from decimal import Decimal
 from apps.core.models import Configuration
 
 User = get_user_model()
@@ -277,7 +278,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self._make_job(status='submitted')
         self._make_job(status='approved')
         data = BoardService.get_pipeline_data()
-        statuses = [j['status'] for j in data]
+        statuses = [j['status'] for j in data['jobs']]
         self.assertIn('draft', statuses)
         self.assertIn('submitted', statuses)
         self.assertNotIn('approved', statuses)
@@ -359,3 +360,64 @@ class LazyBoardMethodsTest(FixtureTestCase):
         job_ids = [j['job_id'] for j in data]
         self.assertIn(recent_job.job_id, job_ids)
         self.assertNotIn(old_job.job_id, job_ids)
+
+
+class PipelineDocDataTest(FixtureTestCase):
+    """Test that pipeline data includes worksheet and estimate info."""
+
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days',
+            defaults={'value': '14'}
+        )
+        self.contact = Contact.objects.first()
+
+    def _make_job(self, status='draft'):
+        return Job.objects.create(
+            job_number=f'JOB-TEST-{Job.objects.count() + 1:04d}',
+            name='Test Job',
+            status=status,
+            contact=self.contact,
+        )
+
+    def test_pipeline_job_with_no_docs_has_empty_arrays(self):
+        from apps.jobs.services.board_service import BoardService
+        job = self._make_job()
+        result = BoardService.get_pipeline_data()
+        job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
+        self.assertEqual(job_data['worksheets'], [])
+        self.assertEqual(job_data['estimates'], [])
+
+    def test_pipeline_job_includes_worksheet_with_total(self):
+        from apps.jobs.services.board_service import BoardService
+        job = self._make_job()
+        estimate = Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', status='draft'
+        )
+        ws = EstWorksheet.objects.create(
+            job=job, estimate=estimate, status='draft'
+        )
+        EstimateLineItem.objects.create(
+            estimate=estimate, qty=Decimal('2'), price=Decimal('100.00'),
+        )
+        result = BoardService.get_pipeline_data()
+        job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
+        self.assertEqual(len(job_data['worksheets']), 1)
+        self.assertEqual(job_data['worksheets'][0]['status'], 'draft')
+        self.assertIsNotNone(job_data['worksheets'][0]['created_date'])
+
+    def test_pipeline_job_includes_estimate_with_total(self):
+        from apps.jobs.services.board_service import BoardService
+        job = self._make_job()
+        estimate = Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-002', status='open'
+        )
+        EstimateLineItem.objects.create(
+            estimate=estimate, qty=Decimal('3'), price=Decimal('50.00'),
+        )
+        result = BoardService.get_pipeline_data()
+        job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
+        self.assertEqual(len(job_data['estimates']), 1)
+        self.assertEqual(job_data['estimates'][0]['status'], 'open')
+        self.assertEqual(job_data['estimates'][0]['total'], Decimal('150.00'))

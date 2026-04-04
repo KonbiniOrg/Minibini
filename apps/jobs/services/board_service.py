@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from django.db import models
 from django.utils import timezone
 from datetime import timedelta
 
@@ -106,12 +109,14 @@ class BoardService:
 
     @staticmethod
     def get_pipeline_data():
-        """Return pipeline jobs (draft + submitted)."""
+        """Return pipeline jobs (draft + submitted) with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
             status__in=['draft', 'submitted']
         ).select_related('contact').order_by('due_date')
-        return [BoardService._serialize_job(job) for job in pipeline_jobs]
+        return {
+            'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
+        }
 
     @staticmethod
     def get_approved_data():
@@ -225,6 +230,36 @@ class BoardService:
             'due_date': job.due_date.isoformat() if job.due_date else None,
             'completed_date': job.completed_date.isoformat() if job.completed_date else None,
         }
+
+    @staticmethod
+    def _serialize_pipeline_job(job):
+        """Serialize a pipeline job with worksheet and estimate info."""
+        from apps.estimates.models import EstimateLineItem
+        data = BoardService._serialize_job(job)
+
+        worksheets = []
+        for ws in job.estworksheet_set.order_by('-pk'):
+            worksheets.append({
+                'est_worksheet_id': ws.est_worksheet_id,
+                'status': ws.status,
+                'created_date': ws.created_date.isoformat() if ws.created_date else None,
+            })
+        data['worksheets'] = worksheets
+
+        estimates = []
+        for est in job.estimate_set.order_by('-pk'):
+            total = EstimateLineItem.objects.filter(estimate=est).aggregate(
+                total=models.Sum(models.F('qty') * models.F('price'))
+            )['total'] or Decimal('0.00')
+            estimates.append({
+                'estimate_id': est.estimate_id,
+                'estimate_number': est.estimate_number,
+                'status': est.status,
+                'created_date': est.created_date.isoformat() if est.created_date else None,
+                'total': total,
+            })
+        data['estimates'] = estimates
+        return data
 
     @staticmethod
     def _serialize_task(task, color_map):
