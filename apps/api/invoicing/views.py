@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.invoicing.models import Invoice
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
-from apps.api.permissions import CanViewFinancials, CanManageFinancials
+from apps.api.permissions import CanManageFinancials
 from .serializers import InvoiceSerializer, InvoiceLineItemSerializer
 
 
@@ -14,12 +14,10 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
     lookup_field = 'pk'
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve')
-        mixed_actions = ('line_items',)
-        if self.action in read_actions:
-            return [IsAuthenticated(), CanViewFinancials()]
-        if self.action in mixed_actions and self.request.method == 'GET':
-            return [IsAuthenticated(), CanViewFinancials()]
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated()]
+        if self.action == 'line_items' and self.request.method == 'GET':
+            return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageFinancials()]
 
     # Line item mixin config

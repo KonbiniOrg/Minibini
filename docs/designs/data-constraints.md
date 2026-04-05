@@ -48,9 +48,9 @@ set later).
 
 - Standard Django user fields apply (username unique, etc.)
 - **contact** (optional OneToOne → Contact): set after Contacts exist
-- **Permissions**: 6 custom atoms defined on the model: `can_view_financials`,
-  `can_manage_jobs`, `can_manage_financials`, `can_manage_time`,
-  `can_approve_expenses`, `can_manage_config`
+- **Permissions**: 5 custom atoms defined on the model: `can_manage_jobs`,
+  `can_manage_financials`, `can_manage_time`, `can_approve_expenses`,
+  `can_manage_config`
 - A `system` user (username='system', is_active=False) is auto-created by
   signals when needed — data sets should include one
 

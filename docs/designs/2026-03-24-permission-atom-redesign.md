@@ -1,8 +1,10 @@
 # Permission Atom Redesign
 
-**Date:** 2026-03-24
-**Status:** Draft
+**Date:** 2026-03-24 (revised 2026-04-05)
+**Status:** Implemented
 **Scope:** API permission atoms, DRF permission classes, group definitions, fixtures
+
+**2026-04-05 revision:** `can_view_financials` was removed. All authenticated users can now read invoices, POs, and bills. Writes remain gated on `can_manage_financials`. Atom count: 5.
 
 ---
 
@@ -22,12 +24,11 @@ Customer/external access (object-level permissions for client contacts to approv
 
 ---
 
-## Permission Atoms (6)
+## Permission Atoms (5)
 
 ```python
 class Meta:
     permissions = [
-        ('can_view_financials', 'Read-only access to invoices, POs, bills'),
         ('can_manage_jobs', 'Can manage jobs, estimates, worksheets, work orders, tasks, contacts'),
         ('can_manage_financials', 'Can manage invoices, POs, bills, price list'),
         ('can_manage_time', "Can edit/delete anyone's time entries"),
@@ -43,12 +44,12 @@ class Meta:
 | `can_view_jobs` | Dropped — absorbed into `IsAuthenticated` |
 | `can_manage_invoicing` | Merged into `can_manage_financials` |
 | `can_manage_purchasing` | Merged into `can_manage_financials` |
+| `can_view_financials` | Dropped 2026-04-05 — absorbed into `IsAuthenticated` |
 
 ### Coverage
 
 | Atom | Gates |
 |------|-------|
-| `can_view_financials` | **Read:** invoices, invoice line items, POs, PO line items, bills, bill line items, others' expenses (future) |
 | `can_manage_jobs` | **Read+write:** emails. **Write:** jobs, work orders, worksheets, bundles, estimates, estimate line items, contacts, businesses, email-to-job linking, status transitions on all of the above. (Notes on jobs/contacts/businesses and adding tasks to work orders are `IsAuthenticated` — see above.) |
 | `can_manage_financials` | **Write:** invoices, POs, bills, price list items, and their line items, status transitions (issue, cancel) |
 | `can_manage_time` | **Edit/delete** anyone's time entries (shifts, bleps) |
@@ -75,6 +76,9 @@ Read access to:
 - Line item types
 - Search
 - Price list items
+- Invoices, invoice line items
+- Purchase orders, PO line items
+- Bills, bill line items
 
 Write access to:
 - Notes on jobs, contacts, and businesses
@@ -120,15 +124,6 @@ Write access to:
 | `/api/search/?q=...` | GET |
 | `/api/price-list-items/` | GET |
 | `/api/price-list-items/{id}/` | GET |
-| `/api/jobs/{id}/notes/` | POST |
-| `/api/contacts/{id}/notes/` | POST |
-| `/api/businesses/{id}/notes/` | POST |
-| `/api/work-orders/{id}/tasks/` | POST |
-
-### `can_view_financials`
-
-| Endpoint | Method |
-|----------|--------|
 | `/api/invoices/` | GET |
 | `/api/invoices/{id}/` | GET |
 | `/api/invoices/{id}/line-items/` | GET |
@@ -138,6 +133,10 @@ Write access to:
 | `/api/bills/` | GET |
 | `/api/bills/{id}/` | GET |
 | `/api/bills/{id}/line-items/` | GET |
+| `/api/jobs/{id}/notes/` | POST |
+| `/api/contacts/{id}/notes/` | POST |
+| `/api/businesses/{id}/notes/` | POST |
+| `/api/work-orders/{id}/tasks/` | POST |
 
 ### `can_manage_jobs`
 
@@ -248,10 +247,10 @@ Defined in fixture data (not migrations). Shops customize to suit their needs.
 | Group | Atoms |
 |-------|-------|
 | Worker | *(none — IsAuthenticated covers read access)* |
-| Admin | `can_manage_jobs`, `can_view_financials` |
-| Bookkeeper | `can_view_financials`, `can_manage_financials`, `can_approve_expenses` |
-| Manager | `can_manage_jobs`, `can_view_financials`, `can_manage_financials`, `can_manage_time`, `can_approve_expenses` |
-| Owner | all 6 atoms |
+| Admin | `can_manage_jobs` |
+| Bookkeeper | `can_manage_financials`, `can_approve_expenses` |
+| Manager | `can_manage_jobs`, `can_manage_financials`, `can_manage_time`, `can_approve_expenses` |
+| Owner | all 5 atoms |
 
 ---
 
@@ -260,7 +259,6 @@ Defined in fixture data (not migrations). Shops customize to suit their needs.
 ```python
 # apps/api/permissions.py
 
-CanViewFinancials = atom_permission('can_view_financials')
 CanManageJobs = atom_permission('can_manage_jobs')
 CanManageFinancials = atom_permission('can_manage_financials')
 CanManageTime = atom_permission('can_manage_time')
@@ -268,7 +266,7 @@ CanApproveExpenses = atom_permission('can_approve_expenses')
 CanManageConfig = atom_permission('can_manage_config')
 ```
 
-Removed: `CanViewJobs`, `CanManageInvoicing`, `CanManagePurchasing`
+Removed: `CanViewJobs`, `CanManageInvoicing`, `CanManagePurchasing`, `CanViewFinancials` (2026-04-05)
 
 ---
 
@@ -285,9 +283,9 @@ Explicit mapping of what changes per viewset:
 | EstimateViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageJobs` | `CanManageJobs` |
 | EstWorksheetViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageJobs` | `CanManageJobs` |
 | WorkOrderViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageJobs` | mixed (see notes) |
-| InvoiceViewSet | `CanViewJobs` | `CanViewFinancials` | `CanManageInvoicing` | `CanManageFinancials` |
-| PurchaseOrderViewSet | `CanViewJobs` | `CanViewFinancials` | `CanManagePurchasing` | `CanManageFinancials` |
-| BillViewSet | `CanViewJobs` | `CanViewFinancials` | `CanManagePurchasing` | `CanManageFinancials` |
+| InvoiceViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManageInvoicing` | `CanManageFinancials` |
+| PurchaseOrderViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManagePurchasing` | `CanManageFinancials` |
+| BillViewSet | `CanViewJobs` | `IsAuthenticated` | `CanManagePurchasing` | `CanManageFinancials` |
 | PriceListItemViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageInvoicing` | `CanManageFinancials` |
 | WorkOrderTemplateViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageConfig` | `CanManageConfig` |
 | TaskTemplateViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageConfig` | `CanManageConfig` |

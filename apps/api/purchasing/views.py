@@ -6,7 +6,7 @@ from apps.purchasing.models import PurchaseOrder, Bill
 from apps.purchasing.services import PurchaseOrderService, BillService
 from apps.core.services import ServiceError
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
-from apps.api.permissions import CanViewFinancials, CanManageFinancials
+from apps.api.permissions import CanManageFinancials
 from .serializers import (
     PurchaseOrderSerializer, POLineItemSerializer,
     BillSerializer, BillLineItemSerializer,
@@ -19,12 +19,10 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     lookup_field = 'pk'
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve')
-        mixed_actions = ('line_items',)
-        if self.action in read_actions:
-            return [IsAuthenticated(), CanViewFinancials()]
-        if self.action in mixed_actions and self.request.method == 'GET':
-            return [IsAuthenticated(), CanViewFinancials()]
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated()]
+        if self.action == 'line_items' and self.request.method == 'GET':
+            return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageFinancials()]
 
     def get_queryset(self):
@@ -69,12 +67,10 @@ class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
     lookup_field = 'pk'
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve')
-        mixed_actions = ('line_items',)
-        if self.action in read_actions:
-            return [IsAuthenticated(), CanViewFinancials()]
-        if self.action in mixed_actions and self.request.method == 'GET':
-            return [IsAuthenticated(), CanViewFinancials()]
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated()]
+        if self.action == 'line_items' and self.request.method == 'GET':
+            return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageFinancials()]
 
     def get_queryset(self):

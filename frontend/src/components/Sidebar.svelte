@@ -24,7 +24,6 @@
     return $user?.permissions?.includes(perm) ?? false;
   }
 
-  let showPurchasing = $derived(hasPerm('can_view_financials') || hasPerm('can_manage_financials'));
   let showManage = $derived(hasPerm('can_manage_time') || hasPerm('can_approve_expenses'));
   let showSettings = $derived(hasPerm('can_manage_config'));
   let showAdminLabel = $derived(showManage || showSettings);
@@ -50,9 +49,7 @@
     <a href="/jobs/board" use:link>Jobs</a>
     <a href="/contacts" use:link>Contacts</a>
     <a href="/email" use:link>Email</a>
-    {#if showPurchasing}
-      <a href="/purchasing" use:link>Purchasing</a>
-    {/if}
+    <a href="/purchasing" use:link>Purchasing</a>
     {#if showAdminLabel}
       <div class="section-label">Admin</div>
     {/if}

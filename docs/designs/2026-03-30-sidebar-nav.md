@@ -27,7 +27,7 @@ All authenticated users see:
 Jobs
 Contacts
 Email
-Purchasing          ← can_view_financials OR can_manage_financials
+Purchasing
 My Tasks
 ─── Admin ──────    ← label hidden if user has none of the permissions below
 Manage              ← can_manage_time OR can_approve_expenses
@@ -48,7 +48,7 @@ Logout
 | Jobs | IsAuthenticated |
 | Contacts | IsAuthenticated |
 | Email | IsAuthenticated |
-| Purchasing | `can_view_financials` OR `can_manage_financials` |
+| Purchasing | IsAuthenticated |
 | My Tasks | IsAuthenticated |
 | Manage | `can_manage_time` OR `can_approve_expenses` |
 | Settings | `can_manage_config` |

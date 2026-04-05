@@ -9,7 +9,6 @@ class PermissionAtomsTest(BaseTestCase):
     """Verify custom permission atoms exist after migration."""
 
     EXPECTED_ATOMS = [
-        'can_view_financials',
         'can_manage_jobs',
         'can_manage_financials',
         'can_manage_time',
@@ -40,7 +39,7 @@ class PermissionAtomsTest(BaseTestCase):
 
 
 from apps.api.permissions import (
-    atom_permission, CanManageJobs, CanViewFinancials,
+    atom_permission, CanManageJobs,
     CanManageFinancials, CanManageTime, CanApproveExpenses, CanManageConfig,
 )
 
@@ -87,12 +86,12 @@ class AtomPermissionFactoryTest(BaseTestCase):
         self.assertTrue(CanManageConfig().has_permission(request, None))
 
     def test_all_constants_are_defined(self):
-        """All 6 permission class constants are importable and functional."""
+        """All 5 permission class constants are importable and functional."""
         classes = [
-            CanManageJobs, CanViewFinancials, CanManageFinancials,
+            CanManageJobs, CanManageFinancials,
             CanManageTime, CanApproveExpenses, CanManageConfig,
         ]
-        self.assertEqual(len(classes), 6)
+        self.assertEqual(len(classes), 5)
         for cls in classes:
             self.assertTrue(hasattr(cls, 'has_permission'))
 

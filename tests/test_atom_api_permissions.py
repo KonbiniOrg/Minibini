@@ -26,7 +26,7 @@ class AtomPermissionTestBase(BaseTestCase):
 
         self.users = {}
         atoms = [
-            'can_view_financials', 'can_manage_jobs',
+            'can_manage_jobs',
             'can_manage_financials', 'can_manage_time',
             'can_approve_expenses', 'can_manage_config',
         ]
@@ -96,6 +96,9 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/task-templates/',
         '/api/accounting-categories/',
         '/api/price-list-items/',
+        '/api/invoices/',
+        '/api/purchase-orders/',
+        '/api/bills/',
         '/api/search/?q=test',
     ]
 
@@ -118,6 +121,12 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/businesses/1/history/',
         '/api/payment-terms/1/',
         '/api/price-list-items/1/',
+        '/api/invoices/1/',
+        '/api/invoices/1/line-items/',
+        '/api/purchase-orders/1/',
+        '/api/purchase-orders/1/line-items/',
+        '/api/bills/1/',
+        '/api/bills/1/line-items/',
     ]
 
     # ── Write endpoints that are IsAuthenticated only ───────────────
@@ -170,44 +179,6 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
     def test_unauthenticated_denied_write(self):
         self.assert_requires_auth('post', '/api/jobs/1/notes/', {'text': 'x'})
         self.assert_requires_auth('post', '/api/contacts/1/notes/', {'text': 'x'})
-
-
-class TestCanViewFinancialsAPI(AtomPermissionTestBase):
-    """
-    can_view_financials — read-only access to invoices, POs, bills.
-    """
-
-    READ_ENDPOINTS = [
-        '/api/invoices/',
-        '/api/purchase-orders/',
-        '/api/bills/',
-        '/api/invoices/1/',
-        '/api/invoices/1/line-items/',
-        '/api/purchase-orders/1/',
-        '/api/purchase-orders/1/line-items/',
-        '/api/bills/1/',
-        '/api/bills/1/line-items/',
-    ]
-
-    def test_can_view_financials_allows_read(self):
-        user = self.users['can_view_financials']
-        for url in self.READ_ENDPOINTS:
-            with self.subTest(url=url):
-                resp = self.assert_allowed(user, 'get', url)
-                self.assertIn(resp.status_code, [200, 404])
-
-    def test_bare_user_denied_financial_reads(self):
-        for url in self.READ_ENDPOINTS:
-            with self.subTest(url=url):
-                self.assert_denied(self.bare_user, 'get', url)
-
-    def test_wrong_atom_denied_financial_reads(self):
-        user = self.users['can_manage_jobs']
-        # List endpoints must be 403
-        list_urls = ['/api/invoices/', '/api/purchase-orders/', '/api/bills/']
-        for url in list_urls:
-            with self.subTest(url=url, user='can_manage_jobs'):
-                self.assert_denied(user, 'get', url)
 
 
 class TestCanManageJobsAPI(AtomPermissionTestBase):
@@ -388,10 +359,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         user = self.users['can_manage_financials']
         self.assert_denied(user, 'get', '/api/emails/')
 
-    def test_wrong_atom_view_financials_denied_jobs(self):
-        user = self.users['can_view_financials']
-        self.assert_denied(user, 'post', '/api/jobs/', {'customer': 1})
-
     def test_wrong_atom_manage_config_denied_jobs(self):
         user = self.users['can_manage_config']
         self.assert_denied(user, 'post', '/api/jobs/', {'customer': 1})
@@ -501,18 +468,6 @@ class TestCanManageFinancialsAPI(AtomPermissionTestBase):
         for method, url, data in sample:
             with self.subTest(url=url):
                 self.assert_denied(user, method, url, data)
-
-    def test_wrong_atom_view_financials_denied_writes(self):
-        user = self.users['can_view_financials']
-        sample = [
-            ('post', '/api/invoices/', {'job': 1}),
-            ('post', '/api/purchase-orders/', {'vendor': 1}),
-            ('post', '/api/price-list-items/', {'code': 'TST', 'description': 'Test'}),
-        ]
-        for method, url, data in sample:
-            with self.subTest(url=url):
-                self.assert_denied(user, method, url, data)
-
 
 class TestCanManageConfigAPI(AtomPermissionTestBase):
     """

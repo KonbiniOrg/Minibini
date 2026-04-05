@@ -21,7 +21,6 @@ class User(AbstractUser):
         verbose_name = 'User'
         verbose_name_plural = 'Users'
         permissions = [
-            ('can_view_financials', 'Read-only access to invoices, POs, bills'),
             ('can_manage_jobs', 'Can manage jobs, estimates, worksheets, work orders, tasks, contacts'),
             ('can_manage_financials', 'Can manage invoices, POs, bills, price list'),
             ('can_manage_time', "Can edit/delete anyone's time entries"),

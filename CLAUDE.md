@@ -268,14 +268,13 @@ See `docs/designs/2026-03-24-permission-atom-redesign.md` for atoms, group mappi
 
 | Permission | Covers |
 |---|---|
-| `can_view_financials` | Read-only access to invoices, POs, bills |
 | `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, work orders, tasks, bundles, contacts, businesses; read+write emails |
 | `can_manage_financials` | Full CRUD on invoices, POs, bills, price list items |
 | `can_manage_time` | Edit/delete anyone's time entries (shifts + bleps) |
 | `can_approve_expenses` | Approve/reject expenses over threshold |
 | `can_manage_config` | Settings, templates, accounting categories, user admin |
 
-**`IsAuthenticated` (no atom):** Read access to jobs, work orders, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items. Write access to notes on jobs/contacts/businesses and adding tasks to work orders.
+**`IsAuthenticated` (no atom):** Read access to jobs, work orders, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, bills. Write access to notes on jobs/contacts/businesses and adding tasks to work orders.
 
 **Implicit:** All authenticated users can track own time and submit own expenses.
 
@@ -284,9 +283,9 @@ See `docs/designs/2026-03-24-permission-atom-redesign.md` for atoms, group mappi
 | Group | Permissions |
 |---|---|
 | Worker | *(none — IsAuthenticated covers read access)* |
-| Admin | `can_manage_jobs`, `can_view_financials` |
-| Bookkeeper | `can_view_financials`, `can_manage_financials`, `can_approve_expenses` |
-| Manager | `can_manage_jobs`, `can_view_financials`, `can_manage_financials`, `can_manage_time`, `can_approve_expenses` |
+| Admin | `can_manage_jobs` |
+| Bookkeeper | `can_manage_financials`, `can_approve_expenses` |
+| Manager | `can_manage_jobs`, `can_manage_financials`, `can_manage_time`, `can_approve_expenses` |
 | Owner | all atoms |
 
 Groups are defined in fixture data, not migrations. Shops customize to suit their needs.
