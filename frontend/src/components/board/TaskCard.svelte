@@ -119,7 +119,7 @@
 {#if popupVisible}
   <a
     class="task-popup"
-    href="#/tasks/{task.task_id}"
+    href="#/jobs/{task.job_id}/tasks/{task.task_id}"
     style="{popupPos.anchor === 'above' ? 'bottom' : 'top'}: {popupPos.y}px; left: {popupPos.left}px;"
     onmouseenter={cancelHide}
     onmouseleave={scheduleHide}
