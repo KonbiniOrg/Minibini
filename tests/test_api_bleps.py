@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -35,3 +37,57 @@ class BlepListAndRetrieveTest(BaseTestCase):
         self.client.force_authenticate(user=None)
         resp = self.client.get('/api/bleps/')
         self.assertIn(resp.status_code, [401, 403])
+
+
+class BlepListFiltersTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.get(username='admin')
+        self.worker = User.objects.create_user(username='worker', password='x')
+        self.client.force_authenticate(user=self.admin)
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
+        self.task_a = Task.objects.create(name='A', work_order=self.wo)
+        self.task_b = Task.objects.create(name='B', work_order=self.wo)
+        now = timezone.now()
+        self.old = Blep.objects.create(
+            task=self.task_a, user=self.admin,
+            start_time=now - timedelta(days=10), end_time=now - timedelta(days=10, hours=-1),
+        )
+        self.recent_admin = Blep.objects.create(
+            task=self.task_a, user=self.admin, start_time=now - timedelta(hours=2),
+        )
+        self.recent_worker = Blep.objects.create(
+            task=self.task_b, user=self.worker, start_time=now - timedelta(hours=1),
+        )
+
+    def _ids(self, resp):
+        return {b['blep_id'] for b in resp.data['results']}
+
+    def test_filter_user_me(self):
+        resp = self.client.get('/api/bleps/?user=me')
+        self.assertEqual(resp.status_code, 200)
+        ids = self._ids(resp)
+        self.assertEqual(ids, {self.old.blep_id, self.recent_admin.blep_id})
+
+    def test_filter_user_by_id(self):
+        resp = self.client.get(f'/api/bleps/?user={self.worker.pk}')
+        self.assertEqual(self._ids(resp), {self.recent_worker.blep_id})
+
+    def test_filter_task(self):
+        resp = self.client.get(f'/api/bleps/?task={self.task_b.pk}')
+        self.assertEqual(self._ids(resp), {self.recent_worker.blep_id})
+
+    def test_filter_since(self):
+        cutoff = (timezone.now() - timedelta(days=1)).isoformat()
+        resp = self.client.get('/api/bleps/', {'since': cutoff})
+        self.assertEqual(
+            self._ids(resp),
+            {self.recent_admin.blep_id, self.recent_worker.blep_id},
+        )
+
+    def test_filters_combine(self):
+        cutoff = (timezone.now() - timedelta(days=1)).isoformat()
+        resp = self.client.get('/api/bleps/', {'user': 'me', 'since': cutoff})
+        self.assertEqual(self._ids(resp), {self.recent_admin.blep_id})
