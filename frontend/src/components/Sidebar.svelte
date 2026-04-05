@@ -46,13 +46,13 @@
   onmouseleave={scheduleClose}
 >
   <nav>
+    <a href="/" use:link>Home</a>
     <a href="/jobs/board" use:link>Jobs</a>
     <a href="/contacts" use:link>Contacts</a>
     <a href="/email" use:link>Email</a>
     {#if showPurchasing}
       <a href="/purchasing" use:link>Purchasing</a>
     {/if}
-    <a href="/my-tasks" use:link>My Tasks</a>
     {#if showAdminLabel}
       <div class="section-label">Admin</div>
     {/if}

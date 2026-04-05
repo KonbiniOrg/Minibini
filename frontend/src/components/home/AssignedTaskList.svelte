@@ -84,13 +84,22 @@
           <th>Task</th>
           <th>Job</th>
           <th>Status</th>
-          <th>Actions</th>
+          <th>Start</th>
+          <th>Reorder</th>
         </tr>
       </thead>
       <tbody>
         {#each items as task, i (task.id)}
           <tr>
-            <td>{task.name}</td>
+            <td>
+              {#if task.job}
+                <a href={`/jobs/${task.job.id}/tasks/${task.id}`} use:link>
+                  {task.name}
+                </a>
+              {:else}
+                {task.name}
+              {/if}
+            </td>
             <td>
               {#if task.job}
                 <a href={`/jobs/${task.job.id}`} use:link>
@@ -103,6 +112,8 @@
               <button type="button" onclick={() => startWork(task)} disabled={busy}>
                 Start Work
               </button>
+            </td>
+            <td>
               <button type="button" onclick={() => moveUp(i)}
                       disabled={busy || i === 0}>Up</button>
               <button type="button" onclick={() => moveDown(i)}
