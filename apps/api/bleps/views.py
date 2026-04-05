@@ -79,3 +79,32 @@ class BlepViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(BlepSerializer(blep).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        # Treat PUT the same as PATCH; we never do full-replacement updates.
+        return self.partial_update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        blep = self.get_object()
+        allowed = {'start_time', 'end_time'}
+        fields = {}
+        for k, v in request.data.items():
+            if k not in allowed:
+                continue
+            if isinstance(v, str):
+                parsed = parse_datetime(v)
+                if parsed is None:
+                    return Response(
+                        {k: [f'Invalid datetime: {v}']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                v = parsed
+            fields[k] = v
+        try:
+            BlepService.update(blep, request.user, **fields)
+        except BlepPermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except DjangoValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        blep.refresh_from_db()
+        return Response(BlepSerializer(blep).data)

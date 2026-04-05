@@ -148,3 +148,59 @@ class BlepCreateAPITest(BaseTestCase):
                                  self._payload(hours_ago=2, duration_hours=1),
                                  format='json')
         self.assertEqual(resp.status_code, 400)
+
+
+from django.contrib.auth.models import Permission
+
+
+class BlepUpdateAPITest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='worker1_update_api', password='x')
+        self.manager = User.objects.create_user(username='m', password='x')
+        perm = Permission.objects.get(codename='can_manage_time', content_type__app_label='core')
+        self.manager.user_permissions.add(perm)
+        self.manager = User.objects.get(pk=self.manager.pk)
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
+        self.task = Task.objects.create(name='T', work_order=self.wo)
+
+    def _blep(self, user, hours_ago_start=2, hours_ago_end=1):
+        now = timezone.now()
+        return Blep.objects.create(
+            task=self.task, user=user,
+            start_time=now - timedelta(hours=hours_ago_start),
+            end_time=now - timedelta(hours=hours_ago_end),
+        )
+
+    def test_patch_own_recent_blep(self):
+        blep = self._blep(self.user)
+        self.client.force_authenticate(user=self.user)
+        new_end = (blep.end_time + timedelta(minutes=10)).isoformat()
+        resp = self.client.patch(
+            f'/api/bleps/{blep.blep_id}/',
+            {'end_time': new_end}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        blep.refresh_from_db()
+
+    def test_patch_old_blep_as_non_manager_denied(self):
+        blep = self._blep(self.user, 48, 47)
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.patch(
+            f'/api/bleps/{blep.blep_id}/',
+            {'end_time': (blep.end_time + timedelta(minutes=5)).isoformat()},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_patch_old_blep_as_manager(self):
+        blep = self._blep(self.user, 48, 47)
+        self.client.force_authenticate(user=self.manager)
+        resp = self.client.patch(
+            f'/api/bleps/{blep.blep_id}/',
+            {'end_time': (blep.end_time + timedelta(minutes=5)).isoformat()},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
