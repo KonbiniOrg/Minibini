@@ -335,18 +335,18 @@ class WorkOrderTemplate(models.Model):
         return self.template_name
 
     def generate_tasks_for_worksheet(self, worksheet, quantity=1):
-        """Generate all tasks for a worksheet, with proper product grouping and bundling."""
-        from apps.jobs.models import Task, TaskBundle
+        """Generate all plan tasks for a worksheet, with proper product grouping and bundling."""
+        from apps.jobs.models import PlanBundle
 
         generated_tasks = []
 
         for instance in range(1, quantity + 1):
             bundle_identifier = f"{self.template_name}_{worksheet.est_worksheet_id}_{instance}"
 
-            # Create TaskBundles from TemplateBundles
+            # Create PlanBundles from TemplateBundles
             template_to_instance_bundle = {}
             for template_bundle in self.bundles.all():
-                task_bundle = TaskBundle.objects.create(
+                plan_bundle = PlanBundle.objects.create(
                     est_worksheet=worksheet,
                     name=template_bundle.name,
                     description=template_bundle.description,
@@ -354,7 +354,7 @@ class WorkOrderTemplate(models.Model):
                     sort_order=template_bundle.sort_order,
                     source_template_bundle=template_bundle,
                 )
-                template_to_instance_bundle[template_bundle.pk] = task_bundle
+                template_to_instance_bundle[template_bundle.pk] = plan_bundle
 
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(

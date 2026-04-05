@@ -11,8 +11,7 @@ from .models import (
     TaskTemplate, TemplateTaskAssociation, TemplateBundle
 )
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, Task, WorkOrder, TaskBundle
-from apps.inventory.models import Material
+from apps.jobs.models import Job, WorkOrder, PlanTask, PlanBundle
 from apps.core.services import TaxCalculationService, NotFoundError
 from .services import (
     EstimateService, WorkOrderTemplateService, WorksheetService,
@@ -82,27 +81,27 @@ def _next_container_sort_order(template):
 
 
 def _build_container_items_from_tasks(worksheet):
-    """Normalize worksheet Tasks/TaskBundles into the shared container_items format."""
-    tasks = Task.objects.filter(
+    """Normalize worksheet PlanTasks/PlanBundles into the shared container_items format."""
+    tasks = PlanTask.objects.filter(
         est_worksheet=worksheet
-    ).select_related('bundle').prefetch_related('materials').order_by('sort_order', 'task_id')
+    ).select_related('bundle').prefetch_related('plan_materials').order_by('sort_order', 'plan_task_id')
 
     bundles_by_id = {}
     unbundled = []
 
     for task in tasks:
-        materials = list(task.materials.all())
+        materials = list(task.plan_materials.all())
         item = {
-            'id': task.task_id,
+            'id': task.plan_task_id,
             'name': task.name,
             'description': task.description,
             'units': task.units,
             'rate': task.rate,
             'est_qty': task.est_qty,
             'mapping_strategy': task.mapping_strategy,
-            'remove_id': task.task_id,
+            'remove_id': task.plan_task_id,
             'sort_order': task.sort_order or 0,
-            'detail_url': reverse('jobs:task_detail', args=[task.task_id]),
+            'detail_url': reverse('jobs:task_detail', args=[task.plan_task_id]),
             'materials': materials,
         }
         if task.mapping_strategy == 'bundle' and task.bundle:
@@ -133,11 +132,10 @@ def _build_container_items_from_tasks(worksheet):
 
 def _next_worksheet_sort_order(worksheet):
     """Get the next sort_order in the shared container-level space for a worksheet."""
-    from apps.jobs.models import TaskBundle
-    max_task = Task.objects.filter(
+    max_task = PlanTask.objects.filter(
         est_worksheet=worksheet, bundle__isnull=True
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-    max_bundle = TaskBundle.objects.filter(
+    max_bundle = PlanBundle.objects.filter(
         est_worksheet=worksheet
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
     return max(max_task, max_bundle) + 1
@@ -394,7 +392,7 @@ def estworksheet_detail(request, worksheet_id):
     # Handle unbundle / remove
     if request.method == 'POST' and 'remove_task' in request.POST and can_edit:
         task_id = request.POST.get('remove_task')
-        task = get_object_or_404(Task, task_id=task_id, est_worksheet=worksheet)
+        task = get_object_or_404(PlanTask, plan_task_id=task_id, est_worksheet=worksheet)
 
         if task.mapping_strategy == 'bundle' and task.bundle:
             WorksheetService.unbundle_task(worksheet.pk, task.pk)
@@ -411,7 +409,7 @@ def estworksheet_detail(request, worksheet_id):
     accounting_categories = AccountingCategory.objects.all().order_by('name')
 
     # Calculate total cost from all tasks
-    all_tasks = Task.objects.filter(est_worksheet=worksheet)
+    all_tasks = PlanTask.objects.filter(est_worksheet=worksheet)
     total_cost = sum(
         (t.rate * t.est_qty) for t in all_tasks if t.rate and t.est_qty
     )
@@ -438,20 +436,22 @@ def estworksheet_generate_estimate(request, worksheet_id):
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':
-        # Save any accounting_category assignments from the form via TaskService
+        # Save any accounting_category assignments from the form
         from apps.core.models import AccountingCategory
-        from apps.jobs.services import TaskService
         for key, value in request.POST.items():
             if key.startswith('task_accounting_category_') and value:
                 task_pk = key.replace('task_accounting_category_', '')
                 try:
                     lit = AccountingCategory.objects.get(pk=value)
-                    TaskService.update_task(int(task_pk), accounting_category=lit)
-                except (NotFoundError, AccountingCategory.DoesNotExist):
+                    plan_task = PlanTask.objects.get(pk=int(task_pk))
+                    plan_task.accounting_category = lit
+                    plan_task.full_clean()
+                    plan_task.save()
+                except (PlanTask.DoesNotExist, AccountingCategory.DoesNotExist):
                     pass
 
         # Check if any direct tasks still lack accounting_category
-        untyped_direct = Task.objects.filter(
+        untyped_direct = PlanTask.objects.filter(
             est_worksheet=worksheet,
             mapping_strategy='direct',
             accounting_category__isnull=True,
@@ -477,12 +477,12 @@ def estworksheet_generate_estimate(request, worksheet_id):
             return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     # Show confirmation page
-    tasks = Task.objects.filter(est_worksheet=worksheet).prefetch_related('materials')
+    tasks = PlanTask.objects.filter(est_worksheet=worksheet).prefetch_related('plan_materials')
     total_cost = sum(task.rate * task.est_qty for task in tasks if task.rate and task.est_qty)
 
     # Find direct tasks missing accounting_category
     from apps.core.models import AccountingCategory
-    untyped_tasks = list(Task.objects.filter(
+    untyped_tasks = list(PlanTask.objects.filter(
         est_worksheet=worksheet,
         mapping_strategy='direct',
         accounting_category__isnull=True,
@@ -659,7 +659,7 @@ def task_add_manual(request, worksheet_id):
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':
-        task_instance = Task(est_worksheet=worksheet)
+        task_instance = PlanTask(est_worksheet=worksheet)
         form = TaskEditForm(request.POST, instance=task_instance)
         if form.is_valid():
             task = WorksheetService.add_task_manual(
@@ -820,9 +820,7 @@ def estimate_revise(request, estimate_id):
 
 @require_POST
 def task_reorder_worksheet(request, worksheet_id, task_id, direction):
-    """Reorder tasks within an EstWorksheet by swapping sort_order."""
-    from apps.jobs.services import TaskService
-
+    """Reorder plan tasks within an EstWorksheet by swapping sort_order."""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
 
     # Prevent reordering non-draft worksheets
@@ -831,7 +829,7 @@ def task_reorder_worksheet(request, worksheet_id, task_id, direction):
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     try:
-        TaskService.reorder_tasks(task_id, direction)
+        WorksheetService.reorder_items(worksheet.pk, 'task', task_id, direction)
     except (ValidationError, NotFoundError) as e:
         messages.error(request, str(e.message if hasattr(e, 'message') else e))
 

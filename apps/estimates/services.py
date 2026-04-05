@@ -613,7 +613,7 @@ class EstimateGenerationService:
 
         Tasks are processed based on their own mapping_strategy field:
         - 'direct': Task becomes its own line item
-        - 'bundle': Tasks in same TaskBundle are combined into one line item
+        - 'bundle': Tasks in same PlanBundle are combined into one line item
         - 'exclude': Task is not included on estimate
         """
         plan_tasks = worksheet.plan_tasks.select_related('bundle').prefetch_related('plan_materials').all()

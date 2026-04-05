@@ -27,7 +27,7 @@ Per-model field checks:
   EstWorksheet     E  valid status value
   Task             E  must belong to exactly one container (WorkOrder xor EstWorksheet)
                    E  mapping_strategy='bundle' requires bundle; bundle requires strategy='bundle'
-  TaskBundle       E  must belong to exactly one container
+  PlanBundle       E  must belong to an EstWorksheet
   Material         E  must have description or price_list_item
                    E  negative quantity
                    W  has PLI but empty description (--fix: auto-fill)
@@ -230,39 +230,53 @@ class Command(BaseCommand):
     # ── Tasks ─────────────────────────────────────────────────
 
     def check_tasks(self):
-        from apps.jobs.models import Task
-        for t in Task.objects.select_related('work_order', 'est_worksheet', 'bundle').all():
-            # Must belong to exactly one container
-            if t.work_order and t.est_worksheet:
-                self.errors.append(f'Task {t.pk} ({t.name}): attached to both WorkOrder and EstWorksheet')
-            if not t.work_order and not t.est_worksheet:
-                self.errors.append(f'Task {t.pk} ({t.name}): not attached to any container')
-
-            # Bundle consistency
+        from apps.jobs.models import Task, PlanTask
+        # Work-order tasks: Task is now WO-only after the 2026-04-05 split
+        for t in Task.objects.select_related('work_order').all():
+            if not t.work_order_id:
+                self.errors.append(f'Task {t.pk} ({t.name}): not attached to a WorkOrder')
+        # Plan tasks: PlanTask is worksheet-only
+        for t in PlanTask.objects.select_related('est_worksheet', 'bundle').all():
+            if not t.est_worksheet_id:
+                self.errors.append(f'PlanTask {t.pk} ({t.name}): not attached to an EstWorksheet')
             if t.mapping_strategy == 'bundle' and not t.bundle:
-                self.errors.append(f'Task {t.pk} ({t.name}): mapping_strategy=bundle but no bundle assigned')
+                self.errors.append(f'PlanTask {t.pk} ({t.name}): mapping_strategy=bundle but no bundle assigned')
             if t.bundle and t.mapping_strategy != 'bundle':
                 self.errors.append(
-                    f'Task {t.pk} ({t.name}): has bundle but mapping_strategy={t.mapping_strategy}'
+                    f'PlanTask {t.pk} ({t.name}): has bundle but mapping_strategy={t.mapping_strategy}'
                 )
 
-    # ── TaskBundles ───────────────────────────────────────────
+    # ── PlanBundles ───────────────────────────────────────────
 
     def check_task_bundles(self):
-        from apps.jobs.models import TaskBundle
-        for tb in TaskBundle.objects.select_related('est_worksheet', 'work_order').all():
-            has_ws = tb.est_worksheet_id is not None
-            has_wo = tb.work_order_id is not None
-            if has_ws == has_wo:
+        from apps.jobs.models import PlanBundle
+        for pb in PlanBundle.objects.select_related('est_worksheet').all():
+            if not pb.est_worksheet_id:
                 self.errors.append(
-                    f'TaskBundle {tb.pk} ({tb.name}): must belong to exactly one container '
-                    f'(has est_worksheet={has_ws}, work_order={has_wo})'
+                    f'PlanBundle {pb.pk} ({pb.name}): not attached to an EstWorksheet'
                 )
 
     # ── Materials ─────────────────────────────────────────────
 
     def check_materials(self):
-        from apps.inventory.models import Material
+        from apps.inventory.models import Material, PlanMaterial
+        # Check PlanMaterials (worksheet-side)
+        for m in PlanMaterial.objects.select_related('price_list_item', 'plan_task').all():
+            if not m.description and not m.price_list_item:
+                self.errors.append(
+                    f'PlanMaterial {m.pk}: no description and no price_list_item (nothing to derive from)'
+                )
+            if m.price_list_item and not m.description:
+                if self.fix:
+                    m.description = m.price_list_item.description[:255]
+                    m.save()
+                    self.fixes.append(f'PlanMaterial {m.pk}: set description from PLI')
+                else:
+                    self.warnings.append(f'PlanMaterial {m.pk}: has PLI but empty description')
+            if m.quantity < 0:
+                self.errors.append(f'PlanMaterial {m.pk}: negative quantity {m.quantity}')
+
+        # Check Materials (work-order side)
         for m in Material.objects.select_related('price_list_item', 'task').all():
             if not m.description and not m.price_list_item:
                 self.errors.append(
@@ -597,46 +611,29 @@ class Command(BaseCommand):
                 )
 
     def check_task_container_job_consistency(self):
-        """Tasks on a worksheet/workorder should be for the same job
-        as their container."""
-        from apps.jobs.models import Task
+        """PlanTasks with a bundle should share the same worksheet as the bundle."""
+        from apps.jobs.models import PlanTask
 
-        for t in Task.objects.select_related(
-            'est_worksheet__job', 'work_order__job', 'bundle'
+        for t in PlanTask.objects.select_related(
+            'est_worksheet__job', 'bundle'
         ).all():
-            container = t.work_order or t.est_worksheet
-            if not container:
-                continue  # Already caught by check_tasks
-
-            # If task has a bundle, the bundle should belong to the same container
-            if t.bundle:
-                if t.est_worksheet and t.bundle.est_worksheet_id != t.est_worksheet_id:
-                    self.errors.append(
-                        f'Task {t.pk} ({t.name}): bundle {t.bundle.pk} belongs to '
-                        f'worksheet {t.bundle.est_worksheet_id}, task is on worksheet {t.est_worksheet_id}'
-                    )
-                if t.work_order and t.bundle.work_order_id != t.work_order_id:
-                    self.errors.append(
-                        f'Task {t.pk} ({t.name}): bundle {t.bundle.pk} belongs to '
-                        f'work_order {t.bundle.work_order_id}, task is on work_order {t.work_order_id}'
-                    )
+            if t.bundle and t.bundle.est_worksheet_id != t.est_worksheet_id:
+                self.errors.append(
+                    f'PlanTask {t.pk} ({t.name}): bundle {t.bundle.pk} belongs to '
+                    f'worksheet {t.bundle.est_worksheet_id}, task is on worksheet {t.est_worksheet_id}'
+                )
 
     def check_bundle_container_consistency(self):
-        """TaskBundles should only contain tasks from the same container."""
-        from apps.jobs.models import TaskBundle, Task
+        """PlanBundles should only contain PlanTasks from the same worksheet."""
+        from apps.jobs.models import PlanBundle, PlanTask
 
-        for tb in TaskBundle.objects.select_related('est_worksheet', 'work_order').all():
-            tasks = Task.objects.filter(bundle=tb)
-            for t in tasks:
-                if tb.est_worksheet_id and t.est_worksheet_id != tb.est_worksheet_id:
+        for pb in PlanBundle.objects.select_related('est_worksheet').all():
+            plan_tasks = PlanTask.objects.filter(bundle=pb)
+            for t in plan_tasks:
+                if t.est_worksheet_id != pb.est_worksheet_id:
                     self.errors.append(
-                        f'TaskBundle {tb.pk} ({tb.name}): contains task {t.pk} from '
-                        f'worksheet {t.est_worksheet_id}, bundle is on worksheet {tb.est_worksheet_id}'
-                    )
-                if tb.work_order_id and t.work_order_id != tb.work_order_id:
-                    self.errors.append(
-                        f'TaskBundle {tb.pk} ({tb.name}): contains task {t.pk} from '
-                        f'work_order {t.work_order_id}, bundle is on work_order {tb.work_order_id}'
+                        f'PlanBundle {pb.pk} ({pb.name}): contains plan task {t.pk} from '
+                        f'worksheet {t.est_worksheet_id}, bundle is on worksheet {pb.est_worksheet_id}'
                     )
 
     def check_estimate_line_item_job_consistency(self):
@@ -645,13 +642,13 @@ class Command(BaseCommand):
         from apps.estimates.models import EstimateLineItem
 
         for li in EstimateLineItem.objects.select_related(
-            'estimate__job', 'task__est_worksheet__job', 'task__work_order__job'
+            'estimate__job', 'task__est_worksheet__job'
         ).filter(task__isnull=False):
-            task_container = li.task.work_order or li.task.est_worksheet
-            if task_container and task_container.job_id != li.estimate.job_id:
+            task_worksheet = li.task.est_worksheet
+            if task_worksheet and task_worksheet.job_id != li.estimate.job_id:
                 self.errors.append(
                     f'EstimateLineItem {li.pk}: estimate is for job {li.estimate.job_id} '
-                    f'but task {li.task.pk} belongs to job {task_container.job_id}'
+                    f'but plan task {li.task.pk} belongs to job {task_worksheet.job_id}'
                 )
 
     def check_po_contact_business_match(self):
