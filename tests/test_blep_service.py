@@ -61,3 +61,97 @@ class BlepServicePrimitivesTest(BaseTestCase):
     def test_close_open_requires_filter(self):
         with self.assertRaises(ValueError):
             BlepService._close_open()
+
+
+from django.core.exceptions import ValidationError
+from apps.jobs.services.blep_service import BlepPermissionError
+
+
+class CreateHistoricalTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
+        self.task = Task.objects.create(name='T', work_order=self.wo)
+        self.user = User.objects.create_user(username='worker1_historical', password='x')
+        self.manager = User.objects.create_user(username='m', password='x')
+        from django.contrib.auth.models import Permission
+        perm = Permission.objects.get(codename='can_manage_time', content_type__app_label='core')
+        self.manager.user_permissions.add(perm)
+        self.manager = User.objects.get(pk=self.manager.pk)
+        self.other_user = User.objects.create_user(username='worker2', password='x')
+
+    def _times(self, hours_ago_start, hours_ago_end):
+        now = timezone.now()
+        return (now - timedelta(hours=hours_ago_start),
+                now - timedelta(hours=hours_ago_end))
+
+    def test_create_for_self_within_24h(self):
+        start, end = self._times(2, 1)
+        blep = BlepService.create_historical(self.user, self.task, start, end)
+        self.assertEqual(blep.user, self.user)
+        self.assertEqual(blep.start_time, start)
+        self.assertEqual(blep.end_time, end)
+
+    def test_create_for_self_older_than_24h_requires_manage_time(self):
+        start, end = self._times(48, 47)
+        with self.assertRaises(BlepPermissionError):
+            BlepService.create_historical(self.user, self.task, start, end)
+
+    def test_create_for_self_older_than_24h_manager_allowed(self):
+        start, end = self._times(48, 47)
+        blep = BlepService.create_historical(self.manager, self.task, start, end)
+        self.assertEqual(blep.user, self.manager)
+
+    def test_create_for_other_user_requires_manage_time(self):
+        start, end = self._times(2, 1)
+        with self.assertRaises(BlepPermissionError):
+            BlepService.create_historical(
+                self.user, self.task, start, end, target_user=self.other_user,
+            )
+
+    def test_create_for_other_user_as_manager(self):
+        start, end = self._times(2, 1)
+        blep = BlepService.create_historical(
+            self.manager, self.task, start, end, target_user=self.other_user,
+        )
+        self.assertEqual(blep.user, self.other_user)
+
+    def test_create_rejects_worksheet_task(self):
+        from apps.estimates.models import EstWorksheet
+        ws = EstWorksheet.objects.create(job=self.job)
+        ws_task = Task.objects.create(name='WS', est_worksheet=ws)
+        start, end = self._times(2, 1)
+        with self.assertRaises(ValidationError):
+            BlepService.create_historical(self.user, ws_task, start, end)
+
+    def test_create_rejects_end_before_start(self):
+        start, end = self._times(1, 2)  # end < start
+        with self.assertRaises(ValidationError):
+            BlepService.create_historical(self.user, self.task, start, end)
+
+    def test_create_rejects_overlap_with_existing_user_blep(self):
+        now = timezone.now()
+        Blep.objects.create(
+            task=self.task, user=self.user,
+            start_time=now - timedelta(hours=3),
+            end_time=now - timedelta(hours=1),
+        )
+        overlap_start = now - timedelta(hours=2)
+        overlap_end = now - timedelta(minutes=30)
+        with self.assertRaises(ValidationError):
+            BlepService.create_historical(
+                self.user, self.task, overlap_start, overlap_end,
+            )
+
+    def test_create_allows_overlap_across_different_users(self):
+        now = timezone.now()
+        Blep.objects.create(
+            task=self.task, user=self.other_user,
+            start_time=now - timedelta(hours=3),
+            end_time=now - timedelta(hours=1),
+        )
+        start = now - timedelta(hours=2)
+        end = now - timedelta(minutes=30)
+        blep = BlepService.create_historical(self.user, self.task, start, end)
+        self.assertIsNotNone(blep)

@@ -1,6 +1,43 @@
+from datetime import timedelta
+
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.jobs.models import Blep
+
+
+class BlepPermissionError(Exception):
+    """Raised when a caller is not permitted to perform a blep operation."""
+    pass
+
+
+_EDIT_WINDOW = timedelta(hours=24)
+
+
+def _has_manage_time(user):
+    return user.has_perm('core.can_manage_time')
+
+
+def _within_edit_window(start_time, now=None):
+    if now is None:
+        now = timezone.now()
+    return (now - start_time) < _EDIT_WINDOW
+
+
+def _existing_overlaps(user, start_time, end_time, exclude_blep_id=None):
+    """Does `user` already have a blep whose interval intersects
+    [start_time, end_time)? Open bleps are treated as [start, now)."""
+    # A blep's effective interval is [start, end or now).
+    # Overlap: existing.start < new.end AND (existing.end or now) > new.start
+    qs = Blep.objects.filter(user=user, start_time__lt=end_time)
+    qs = qs.exclude(
+        end_time__isnull=False, end_time__lte=start_time,
+    ).exclude(
+        end_time__isnull=True, start_time__gte=end_time,
+    )
+    if exclude_blep_id is not None:
+        qs = qs.exclude(blep_id=exclude_blep_id)
+    return qs.exists()
 
 
 class BlepService:
@@ -40,3 +77,41 @@ class BlepService:
         if task is not None:
             qs = qs.filter(task=task)
         return qs.update(end_time=now)
+
+    # ─────────────────────────── public API ───────────────────────────
+
+    @staticmethod
+    def create_historical(actor, task, start_time, end_time, target_user=None):
+        """Create a historical blep with validation.
+
+        - actor: the user performing the action
+        - target_user: user the blep belongs to (defaults to actor)
+        - Creating for another user requires can_manage_time
+        - Creating older than 24h requires can_manage_time
+        - Task must belong to a WorkOrder
+        - end_time must be >= start_time
+        - Must not overlap another blep for target_user
+        """
+        if target_user is None:
+            target_user = actor
+        if target_user != actor and not _has_manage_time(actor):
+            raise BlepPermissionError(
+                "Creating a time entry for another user requires can_manage_time."
+            )
+        if not task.work_order_id:
+            raise ValidationError(
+                "Cannot create blep: task must belong to a WorkOrder, not a worksheet."
+            )
+        if end_time < start_time:
+            raise ValidationError("end_time must be >= start_time.")
+        if not _within_edit_window(start_time) and not _has_manage_time(actor):
+            raise BlepPermissionError(
+                "Creating a time entry older than 24 hours requires can_manage_time."
+            )
+        if _existing_overlaps(target_user, start_time, end_time):
+            raise ValidationError(
+                "This time entry overlaps an existing entry for the user."
+            )
+        return BlepService._create(
+            task, target_user, start_time=start_time, end_time=end_time,
+        )
