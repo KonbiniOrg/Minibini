@@ -208,7 +208,7 @@ MaterialBase (abstract)
   accounting_category FK (optional, nullable)
   line_item_type      FK (required; drives estimate/invoice line item generation)
 
-PlannedMaterial(MaterialBase)
+PlanMaterial(MaterialBase)
   plan_task  FK to PlanTask
 
 Material(MaterialBase)
@@ -222,13 +222,13 @@ Notes:
   PLI-linked. A freeform material and a PLI-linked material are
   different kinds of records and promoting one to the other would
   quietly rewrite inventory history.
-- `price_list_item` **carries forward** from `PlannedMaterial` to
+- `price_list_item` **carries forward** from `PlanMaterial` to
   `Material` at worksheet → WO copy time. The FK is preserved, not
   re-derived.
 - `line_item_type` lives on the base because both estimate line items
   and invoice line items need it regardless of which side the
   material was on.
-- `PlannedMaterial` has **zero inventory side effects**. No earmarks,
+- `PlanMaterial` has **zero inventory side effects**. No earmarks,
   no QOH touch. It is purely planning data.
 
 ### `EstimateLineItem.task` retargeting
@@ -269,7 +269,7 @@ def copy_from_worksheet(work_order_pk, worksheet_pk):
             # assignee and status use their own defaults
             # parent_task is None — hierarchy emerges during work
         )
-        for pm in plan_task.plannedmaterial_set.all():
+        for pm in plan_task.planmaterial_set.all():
             Material.objects.create(
                 task=task,
                 description=pm.description,
@@ -286,7 +286,7 @@ No bundle handling. No parent_task handling. No `mapping_strategy`
 carryover. No filtering based on `mapping_strategy='exclude'` (that
 concept belongs to estimate generation, not WO creation). Every
 `PlanTask` on the worksheet becomes a `Task` on the WorkOrder; every
-`PlannedMaterial` becomes a `Material`.
+`PlanMaterial` becomes a `Material`.
 
 After the loop, the new earmark hook runs (see "Earmark lifecycle"
 below).
@@ -379,7 +379,7 @@ Earmark creation moves off the `estimate_accepted` signal entirely.
 - WO completion releases any un-consumed remainder (trailing
   garbage collection).
 
-**`PlannedMaterial` has no inventory interaction whatsoever.** No
+**`PlanMaterial` has no inventory interaction whatsoever.** No
 earmarks, no QOH touches, no signals. This is a clean, verifiable
 invariant.
 
@@ -487,7 +487,7 @@ Tests exercising worksheet → WO conversion (existing
 - Path A still works for workflows 2 and 3-with-override.
 - Earmarks derive from WO materials on WO creation for all three
   paths.
-- `PlannedMaterial` never touches inventory.
+- `PlanMaterial` never touches inventory.
 - Workflow routing warnings fire at the right times.
 
 ### Frontend
