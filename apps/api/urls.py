@@ -11,6 +11,7 @@ from apps.api.work_orders.views import WorkOrderViewSet
 from apps.api.invoicing.views import InvoiceViewSet
 from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
 from apps.api.inventory.views import PriceListItemViewSet
+from apps.api.tasks.views import TaskViewSet
 from apps.api.search.views import search_view
 from apps.api.jobs.board_views import board_view, task_reorder_view, task_assign_view
 from apps.api.home.views import current_blep_view, home_view
@@ -62,6 +63,7 @@ router.register(r'invoices', InvoiceViewSet, basename='invoice')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchase-order')
 router.register(r'bills', BillViewSet, basename='bill')
 router.register(r'price-list-items', PriceListItemViewSet, basename='price-list-item')
+router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'work-order-templates', WorkOrderTemplateViewSet, basename='work-order-template')
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
