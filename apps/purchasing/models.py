@@ -355,6 +355,7 @@ class PurchaseOrderLineItem(BaseLineItem):
     """Line item for purchase orders - inherits shared functionality from BaseLineItem."""
 
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE)
+    task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)
     job = models.ForeignKey(
         'jobs.Job', on_delete=models.SET_NULL,
         null=True, blank=True,
@@ -377,6 +378,7 @@ class BillLineItem(BaseLineItem):
     """Line item for bills - inherits shared functionality from BaseLineItem."""
 
     bill = models.ForeignKey(Bill, on_delete=models.CASCADE)
+    task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
         db_table = 'bill_li'

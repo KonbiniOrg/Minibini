@@ -93,21 +93,23 @@ class PriceListItem(models.Model):
         )
 
 
-class Material(models.Model):
-    material_id = models.AutoField(primary_key=True)
-    task = models.ForeignKey('jobs.Task', on_delete=models.CASCADE, related_name='materials')
+class MaterialBase(models.Model):
+    """Abstract base for PlanMaterial (planning) and Material (actual)."""
+    description = models.CharField(max_length=255, blank=True, default='')
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    sell_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     price_list_item = models.ForeignKey(
-        PriceListItem, on_delete=models.SET_NULL,
+        'PriceListItem', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
     accounting_category = models.ForeignKey(
         'core.AccountingCategory', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
-    description = models.CharField(max_length=255, blank=True, default='')
-    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    sell_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    class Meta:
+        abstract = True
 
     @property
     def total_cost(self):
@@ -117,8 +119,8 @@ class Material(models.Model):
     def total_sell(self):
         return self.quantity * self.sell_price
 
-    def save(self, *args, **kwargs):
-        # Auto-fill from price list item if linked
+    def _populate_from_pli(self):
+        """Copy description/unit_cost/sell_price/accounting_category from linked PriceListItem if not already set."""
         if self.price_list_item:
             if not self.description:
                 self.description = self.price_list_item.description[:255]
@@ -128,11 +130,41 @@ class Material(models.Model):
                 self.sell_price = self.price_list_item.selling_price
             if not self.accounting_category:
                 self.accounting_category = self.price_list_item.accounting_category
+
+
+class PlanMaterial(MaterialBase):
+    """Planning material on a PlanTask. No inventory side effects."""
+    plan_material_id = models.AutoField(primary_key=True)
+    plan_task = models.ForeignKey(
+        'jobs.PlanTask', on_delete=models.CASCADE, related_name='plan_materials'
+    )
+
+    class Meta:
+        db_table = 'plan_materials'
+
+    def save(self, *args, **kwargs):
+        self._populate_from_pli()
         self.full_clean()
         super().save(*args, **kwargs)
 
+    def __str__(self):
+        return f"{self.description} (qty: {self.quantity})"
+
+
+class Material(MaterialBase):
+    """Actual material on a Task (work order). Participates in earmark/QOH flows."""
+    material_id = models.AutoField(primary_key=True)
+    task = models.ForeignKey(
+        'jobs.Task', on_delete=models.CASCADE, related_name='materials'
+    )
+
     class Meta:
         db_table = 'materials'
+
+    def save(self, *args, **kwargs):
+        self._populate_from_pli()
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.description} (qty: {self.quantity})"

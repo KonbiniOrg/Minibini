@@ -162,7 +162,84 @@ class WorkOrder(AbstractWorkContainer):
         return f"Work Order {self.pk}"
 
 
-class Task(models.Model):
+class TaskBase(models.Model):
+    """Abstract base for PlanTask (worksheet) and Task (work order)."""
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
+    sort_order = models.PositiveIntegerField(blank=True, null=True)
+    units = models.CharField(max_length=50, default='none')
+    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    accounting_category = models.ForeignKey(
+        'core.AccountingCategory',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text="Type of line item this task produces when mapped directly"
+    )
+
+    class Meta:
+        abstract = True
+
+    def __str__(self):
+        return self.name
+
+
+class PlanTask(TaskBase):
+    """Planning task on an EstWorksheet. No lifecycle, no hierarchy, no bleps."""
+    plan_task_id = models.AutoField(primary_key=True)
+    est_worksheet = models.ForeignKey(
+        'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_tasks'
+    )
+
+    MAPPING_CHOICES = [
+        ('direct', 'Direct'),
+        ('bundle', 'Bundle'),
+        ('exclude', 'Exclude'),
+    ]
+    mapping_strategy = models.CharField(max_length=20, choices=MAPPING_CHOICES, default='direct')
+    bundle = models.ForeignKey(
+        'PlanBundle',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='plan_tasks'
+    )
+
+    class Meta:
+        db_table = 'plan_tasks'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.mapping_strategy == 'bundle' and not self.bundle:
+            raise ValidationError("Bundled plan tasks must have a bundle assigned")
+        if self.bundle and self.mapping_strategy != 'bundle':
+            raise ValidationError("Plan tasks with a bundle must use 'bundle' mapping strategy")
+
+    def save(self, *args, **kwargs):
+        """Auto-assign sort_order at the worksheet level (tasks + bundles share the ordering space)."""
+        from django.db import transaction
+        if self.sort_order is None:
+            with transaction.atomic():
+                if self.bundle:
+                    max_order = PlanTask.objects.filter(bundle=self.bundle).aggregate(
+                        models.Max('sort_order')
+                    )['sort_order__max'] or 0
+                else:
+                    max_task = PlanTask.objects.filter(
+                        bundle__isnull=True, est_worksheet=self.est_worksheet
+                    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
+                    max_bundle = PlanBundle.objects.filter(
+                        est_worksheet=self.est_worksheet
+                    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
+                    max_order = max(max_task, max_bundle)
+                self.sort_order = max_order + 1
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class Task(TaskBase):
+    """Work task on a WorkOrder. Has lifecycle, hierarchy, bleps."""
     STATUS_PENDING = 'pending'
     STATUS_IN_PROGRESS = 'in_progress'
     STATUS_BLOCKED = 'blocked'
@@ -177,28 +254,6 @@ class Task(models.Model):
         (STATUS_CANCELLED, 'Cancelled'),
     ]
 
-    task_id = models.AutoField(primary_key=True)
-    parent_task = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks')
-    assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
-    work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, null=True, blank=True)
-    est_worksheet = models.ForeignKey('estimates.EstWorksheet', on_delete=models.CASCADE, null=True, blank=True)
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, default='')
-    sort_order = models.PositiveIntegerField(blank=True, null=True)
-    units = models.CharField(max_length=50, default='none')
-    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
-    worker_queue = models.PositiveIntegerField(null=True, blank=True,
-        help_text="Position in assignee's work queue on the board")
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        help_text="Type of line item this task produces when mapped directly"
-    )
-
     VALID_TRANSITIONS = {
         STATUS_PENDING: [STATUS_IN_PROGRESS, STATUS_BLOCKED, STATUS_COMPLETE, STATUS_CANCELLED],
         STATUS_IN_PROGRESS: [STATUS_BLOCKED, STATUS_COMPLETE, STATUS_CANCELLED],
@@ -207,9 +262,23 @@ class Task(models.Model):
         STATUS_CANCELLED: [],
     }
 
+    task_id = models.AutoField(primary_key=True)
+    parent_task = models.ForeignKey(
+        'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks'
+    )
+    assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
+    work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, related_name='tasks')
+    status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
+    worker_queue = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Position in assignee's work queue on the board"
+    )
+
+    class Meta:
+        db_table = 'tasks'
+
     def clean(self):
         from django.core.exceptions import ValidationError
-        # Validate status transitions on existing tasks
         if self.pk:
             old_status = Task.objects.get(pk=self.pk).status
             if old_status != self.status:
@@ -218,109 +287,30 @@ class Task(models.Model):
                     raise ValidationError(
                         {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
                     )
-        # Must belong to exactly one container
-        if self.work_order and self.est_worksheet:
-            raise ValidationError("Task cannot be attached to both WorkOrder and EstWorksheet")
-        if not self.work_order and not self.est_worksheet:
-            raise ValidationError("Task must be attached to either WorkOrder or EstWorksheet")
-        # Bundle consistency
-        if self.mapping_strategy == 'bundle' and not self.bundle:
-            raise ValidationError("Bundled tasks must have a bundle assigned")
-        if self.bundle and self.mapping_strategy != 'bundle':
-            raise ValidationError("Tasks with a bundle must use 'bundle' mapping strategy")
 
     def save(self, *args, **kwargs):
-        """Override save to auto-generate sort order.
-
-        sort_order means different things depending on context:
-        - Unbundled tasks: position at the container level (alongside bundles)
-        - Bundled tasks: position within the bundle
-        """
         from django.db import transaction
-
         if self.sort_order is None:
             with transaction.atomic():
-                container = self.work_order or self.est_worksheet
-                if container:
-                    if self.bundle:
-                        # Within-bundle: max among tasks in the same bundle
-                        max_order = Task.objects.filter(
-                            bundle=self.bundle
-                        ).aggregate(
-                            models.Max('sort_order')
-                        )['sort_order__max']
-                    else:
-                        # Container-level: max among unbundled tasks AND TaskBundles
-                        if self.work_order:
-                            container_kwargs = {'work_order': container}
-                            bundle_kwargs = {'work_order': container}
-                        else:
-                            container_kwargs = {'est_worksheet': container}
-                            bundle_kwargs = {'est_worksheet': container}
-
-                        max_task = Task.objects.filter(
-                            bundle__isnull=True, **container_kwargs
-                        ).aggregate(
-                            models.Max('sort_order')
-                        )['sort_order__max'] or 0
-
-                        max_bundle = TaskBundle.objects.filter(
-                            **bundle_kwargs
-                        ).aggregate(
-                            models.Max('sort_order')
-                        )['sort_order__max'] or 0
-
-                        max_order = max(max_task, max_bundle)
-
-                    self.sort_order = (max_order or 0) + 1
-
+                max_order = Task.objects.filter(
+                    work_order=self.work_order
+                ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
+                self.sort_order = max_order + 1
         self.full_clean()
         super().save(*args, **kwargs)
 
-    def get_container(self):
-        """Return the container (WorkOrder or EstWorksheet) this task belongs to."""
-        return self.work_order or self.est_worksheet
 
-    # Mapping config for estimate generation
-    MAPPING_CHOICES = [
-        ('direct', 'Direct'),
-        ('bundle', 'Bundle'),
-        ('exclude', 'Exclude'),
-    ]
-    mapping_strategy = models.CharField(max_length=20, choices=MAPPING_CHOICES, default='direct')
-    bundle = models.ForeignKey(
-        'TaskBundle',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='tasks'
-    )
+class PlanBundle(models.Model):
+    """Instance-level grouping of PlanTasks within a worksheet.
 
-    class Meta:
-        db_table = 'tasks'
-
-    def __str__(self):
-        return self.name
-
-
-class TaskBundle(models.Model):
-    """
-    Instance-level grouping of Tasks within a worksheet or work order.
-
-    Parallel to TemplateBundle, but lives on the instance container.
-    Tasks with mapping_strategy='bundle' point to a TaskBundle, and
+    Parallel to TemplateBundle, but lives on the worksheet instance.
+    PlanTasks with mapping_strategy='bundle' point to a PlanBundle, and
     the bundle becomes a single line item on the estimate.
     """
-    # Dual FK pattern (same as Task)
+    plan_bundle_id = models.AutoField(primary_key=True)
     est_worksheet = models.ForeignKey(
-        'estimates.EstWorksheet', on_delete=models.CASCADE,
-        null=True, blank=True, related_name='bundles'
+        'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_bundles'
     )
-    work_order = models.ForeignKey(
-        WorkOrder, on_delete=models.CASCADE,
-        null=True, blank=True, related_name='bundles'
-    )
-
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     accounting_category = models.ForeignKey(
@@ -328,28 +318,17 @@ class TaskBundle(models.Model):
         on_delete=models.PROTECT
     )
     sort_order = models.IntegerField(default=0)
-
-    # Traceability
     source_template_bundle = models.ForeignKey(
         'estimates.TemplateBundle', on_delete=models.SET_NULL,
         null=True, blank=True
     )
 
     class Meta:
-        db_table = 'task_bundles'
+        db_table = 'plan_bundles'
         ordering = ['sort_order', 'name']
 
-    def get_container(self):
-        return self.est_worksheet or self.work_order
-
-    def clean(self):
-        from django.core.exceptions import ValidationError
-        if bool(self.est_worksheet) == bool(self.work_order):
-            raise ValidationError("TaskBundle must belong to exactly one container")
-
     def __str__(self):
-        container = self.get_container()
-        return f"{container} - {self.name}"
+        return f"{self.est_worksheet} - {self.name}"
 
 
 class Blep(models.Model):

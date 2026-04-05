@@ -471,7 +471,6 @@ class TaskTemplate(models.Model):
 
     # Relationships
     work_order_templates = models.ManyToManyField(WorkOrderTemplate, through='TemplateTaskAssociation', related_name='task_templates')
-    parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')
 
     created_date = models.DateTimeField(auto_now_add=True)
     # is_active no longer used but kept in case we change our minds later and to avoid a migration
@@ -485,43 +484,44 @@ class TaskTemplate(models.Model):
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
                        assignee=None, mapping_strategy='direct', bundle=None, sort_order=None):
-        """Generate a Task from this template with specified quantity and mapping config."""
-        from apps.jobs.models import WorkOrder, Task
+        """Generate a PlanTask or Task from this template with specified quantity and mapping config.
 
-        task = Task.objects.create(
-            work_order=container if isinstance(container, WorkOrder) else None,
-            est_worksheet=container if isinstance(container, EstWorksheet) else None,
-            name=self.template_name,
-            description=self.description,
-            units=self.units,
-            rate=self.rate,
-            est_qty=est_qty,
-            accounting_category=self.accounting_category,
-            assignee=assignee,
-            mapping_strategy=mapping_strategy,
-            bundle=bundle,
-            sort_order=sort_order,
-        )
+        The return type depends on the container: EstWorksheet -> PlanTask, WorkOrder -> Task.
+        """
+        from apps.jobs.models import WorkOrder, Task, PlanTask
 
-        # Generate child tasks if this template has children
-        for child_template in self.child_templates.filter(is_active=True):
-            child_task = child_template.generate_task(
-                container,
-                est_qty=est_qty,  # Pass the same quantity to child tasks
-                bundle_identifier=bundle_identifier,
-                product_instance=product_instance,
-                assignee=assignee
+        if isinstance(container, WorkOrder):
+            return Task.objects.create(
+                work_order=container,
+                name=self.template_name,
+                description=self.description,
+                units=self.units,
+                rate=self.rate,
+                est_qty=est_qty,
+                accounting_category=self.accounting_category,
+                assignee=assignee,
+                sort_order=sort_order,
             )
-            child_task.parent_task = task
-            child_task.save()
-
-        return task
+        else:  # EstWorksheet
+            return PlanTask.objects.create(
+                est_worksheet=container,
+                name=self.template_name,
+                description=self.description,
+                units=self.units,
+                rate=self.rate,
+                est_qty=est_qty,
+                accounting_category=self.accounting_category,
+                mapping_strategy=mapping_strategy,
+                bundle=bundle,
+                sort_order=sort_order,
+            )
 
 
 class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
+    task = models.ForeignKey('jobs.PlanTask', on_delete=models.PROTECT, null=True, blank=True)
     material = models.ForeignKey(
         'inventory.Material', on_delete=models.SET_NULL,
         null=True, blank=True,
