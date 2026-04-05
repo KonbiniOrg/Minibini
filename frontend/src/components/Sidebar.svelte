@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { user, logout } from '../stores/auth.js';
+  import { viewMode, toggleViewMode } from '../stores/viewMode.js';
 
   let { open = $bindable(false) } = $props();
   let closeTimeout = $state(null);
@@ -60,6 +61,15 @@
       <a href="/settings" use:link>Settings</a>
     {/if}
     <div class="spacer"></div>
+    <div class="view-mode-toggle">
+      {#if $viewMode === 'full'}
+        <span class="active">FULL</span>
+        <a href="#" class="inactive" onclick={(e) => { e.preventDefault(); toggleViewMode(); }}>LITE</a>
+      {:else}
+        <a href="#" class="inactive" onclick={(e) => { e.preventDefault(); toggleViewMode(); }}>FULL</a>
+        <span class="active">LITE</span>
+      {/if}
+    </div>
     <div class="bottom-area">
       {#if $user}
         <a href="/profile" use:link>{$user.username}</a>
@@ -153,6 +163,38 @@
   }
 
   .spacer { flex: 1; }
+
+  .view-mode-toggle {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+  }
+  .view-mode-toggle .active,
+  nav .view-mode-toggle a.inactive {
+    display: inline;
+    padding: 0;
+    width: auto;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    text-decoration: none;
+    background: none;
+  }
+  .view-mode-toggle .active {
+    color: #fff;
+  }
+  nav .view-mode-toggle a.inactive {
+    color: #6a9aab;
+  }
+  nav .view-mode-toggle a.inactive:hover {
+    color: #aac7d6;
+    background: none;
+    box-shadow: none;
+  }
 
   .bottom-area {
     border-top: 1px solid #2d5468;
