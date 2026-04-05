@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from django.core.exceptions import ValidationError
 from apps.jobs.models import WorkOrder
 from apps.jobs.services import WorkOrderService
-from apps.estimates.models import WorkOrderTemplate
+from apps.estimates.models import WorkOrderTemplate, Estimate
 from apps.api.mixins import StatusTransitionMixin, WorkOrderTaskMixin
 from apps.api.permissions import CanManageJobs
 from .serializers import WorkOrderSerializer, TaskSerializer
@@ -88,6 +88,30 @@ class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.Model
 
         try:
             wo = WorkOrderService.create_from_template(template, job)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(wo)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='create-from-estimate')
+    def create_from_estimate(self, request):
+        estimate_pk = request.data.get('estimate')
+        if not estimate_pk:
+            return Response(
+                {'estimate': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            estimate = Estimate.objects.get(pk=estimate_pk)
+        except Estimate.DoesNotExist:
+            return Response(
+                {'estimate': ['Estimate not found.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            wo = WorkOrderService.create_from_estimate(estimate)
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

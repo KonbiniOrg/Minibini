@@ -83,3 +83,70 @@ class CreateFromTemplateTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 403)
+
+
+class CreateFromEstimateTest(TestCase):
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = make_admin()
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='Test', last_name='EstContact')
+        self.job = Job.objects.create(job_number='WO-E-001', name='Estimate Job', contact=self.contact)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-001',
+            status=Estimate.STATUS_ACCEPTED,
+        )
+
+    def test_create_from_accepted_estimate(self):
+        response = self.client.post(
+            '/api/work-orders/create-from-estimate/',
+            {'estimate': self.estimate.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIn('work_order_id', response.data)
+        wo = WorkOrder.objects.get(pk=response.data['work_order_id'])
+        self.assertEqual(wo.job, self.job)
+
+    def test_create_from_open_estimate(self):
+        open_estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-002',
+            status=Estimate.STATUS_OPEN,
+        )
+        response = self.client.post(
+            '/api/work-orders/create-from-estimate/',
+            {'estimate': open_estimate.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_rejects_draft_estimate(self):
+        draft_estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-003',
+            status=Estimate.STATUS_DRAFT,
+        )
+        response = self.client.post(
+            '/api/work-orders/create-from-estimate/',
+            {'estimate': draft_estimate.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_missing_estimate(self):
+        response = self.client.post(
+            '/api/work-orders/create-from-estimate/',
+            {},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_requires_can_manage_jobs(self):
+        worker = User.objects.create_user(username='worker_est', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(
+            '/api/work-orders/create-from-estimate/',
+            {'estimate': self.estimate.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
