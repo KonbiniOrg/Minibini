@@ -13,6 +13,7 @@ from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
 from apps.api.inventory.views import PriceListItemViewSet
 from apps.api.search.views import search_view
 from apps.api.jobs.board_views import board_view, task_reorder_view, task_assign_view
+from apps.api.home.views import current_blep_view, home_view
 from apps.api.stubs import stub_501
 from apps.api.templates_config.views import (
     WorkOrderTemplateViewSet, TaskTemplateViewSet,
@@ -76,6 +77,8 @@ urlpatterns = [
     path('expenses/', include('apps.api.expenses.urls')),
     path('qbo/', include('apps.qbo.urls')),
     path('jobs/board/', board_view, name='job-board'),
+    path('home/', home_view, name='home'),
+    path('bleps/current/', current_blep_view, name='bleps-current'),
     path('tasks/reorder/', task_reorder_view, name='task-reorder'),
     path('tasks/<int:task_pk>/assign/', task_assign_view, name='task-assign'),
     path('time-tracking/status/', stub_501('GET /api/time-tracking/status/'), name='time-tracking-status'),

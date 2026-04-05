@@ -1,7 +1,9 @@
 <script>
-  import Router from 'svelte-spa-router';
+  import Router, { location } from 'svelte-spa-router';
   import Sidebar from './components/Sidebar.svelte';
+  import CurrentBlepBand from './components/CurrentBlepBand.svelte';
   import { user, authChecked, checkAuth } from './stores/auth.js';
+  import { refreshCurrentBlep, currentBlep } from './stores/currentBlep.js';
   import LoginPage from './routes/LoginPage.svelte';
   import Home from './routes/Home.svelte';
   import ContactListPage from './routes/contacts/ContactListPage.svelte';
@@ -12,13 +14,16 @@
   import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
+  import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import ProfilePage from './routes/ProfilePage.svelte';
+  import SearchPage from './routes/Search.svelte';
 
   const routes = {
     '/': Home,
+    '/search': SearchPage,
     '/contacts': ContactListPage,
     '/contacts/new': ContactFormPage,
     '/contacts/:id/edit': ContactFormPage,
@@ -30,6 +35,7 @@
     '/jobs': JobListPage,
     '/jobs/board': JobBoardPage,
     '/jobs/:id': JobDetailPage,
+    '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
     '/profile': ProfilePage,
@@ -38,6 +44,17 @@
   let sidebarOpen = $state(false);
 
   checkAuth();
+
+  // Refresh the global current-Blep band on auth + every SPA route change.
+  $effect(() => {
+    if ($user) {
+      // Touch $location so this effect re-runs on navigation.
+      $location;
+      refreshCurrentBlep();
+    } else {
+      currentBlep.set(null);
+    }
+  });
 </script>
 
 {#if !$authChecked}
@@ -45,6 +62,7 @@
 {:else if !$user}
   <LoginPage />
 {:else}
+  <CurrentBlepBand />
   <Sidebar bind:open={sidebarOpen} />
   <!--
     Push behavior: margin-left shifts content when sidebar opens.

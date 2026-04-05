@@ -117,9 +117,24 @@ class TaskReorderEndpointTest(FixtureTestCase):
         self.assertEqual(self.task1.worker_queue, 2)
         self.assertEqual(self.task2.worker_queue, 3)
 
-    def test_reorder_requires_can_manage_jobs(self):
+    def test_reorder_allowed_for_any_authenticated_user(self):
         viewer = User.objects.create_user(username='viewer', password='testpass')
         self.client.login(username='viewer', password='testpass')
+        response = self.client.post(
+            '/api/tasks/reorder/',
+            data={'task_ids': [self.task3.pk, self.task1.pk, self.task2.pk]},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.task1.refresh_from_db()
+        self.task2.refresh_from_db()
+        self.task3.refresh_from_db()
+        self.assertEqual(self.task3.worker_queue, 1)
+        self.assertEqual(self.task1.worker_queue, 2)
+        self.assertEqual(self.task2.worker_queue, 3)
+
+    def test_reorder_requires_authentication(self):
+        self.client.logout()
         response = self.client.post(
             '/api/tasks/reorder/',
             data={'task_ids': [self.task1.pk]},

@@ -16,12 +16,16 @@ def board_view(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, CanManageJobs])
+@permission_classes([IsAuthenticated])
 def task_reorder_view(request):
     """Bulk update worker_queue for a list of task IDs.
 
     Expects: {"task_ids": [3, 1, 2]}
     Sets worker_queue = 1, 2, 3 in the order provided.
+
+    Any authenticated user may call this endpoint. Workers use it to
+    rearrange their own queue on the home page; managers use it on the
+    job board. No ownership check is performed.
     """
     task_ids = request.data.get('task_ids', [])
     if not task_ids or not isinstance(task_ids, list):
