@@ -6,6 +6,7 @@
   import TaskActions from '../../components/tasks/TaskActions.svelte';
   import StartWorkConflictModal from '../../components/tasks/StartWorkConflictModal.svelte';
   import BlepList from '../../components/tasks/BlepList.svelte';
+  import BlepEditModal from '../../components/tasks/BlepEditModal.svelte';
 
   let { params = {} } = $props();
 
@@ -14,6 +15,14 @@
   let error = $state('');
   let conflict = $state(null);
   let bleps = $state([]);
+  let editingBlep = $state(null);
+  let modalMode = $state('edit'); // 'edit' | 'create-open'
+  const modalOpen = $derived(editingBlep !== null || modalMode === 'create-open');
+
+  function openEdit(blep) { editingBlep = blep; modalMode = 'edit'; }
+  function openCreate() { editingBlep = null; modalMode = 'create-open'; }
+  function closeModal() { editingBlep = null; modalMode = 'edit'; }
+  async function handleSaved() { closeModal(); await loadBleps(); }
 
   function handleConflict(c) { conflict = c; }
   function handleResolved() { conflict = null; refresh(); }
@@ -106,9 +115,20 @@
     {bleps}
     currentUser={$userStore}
     {userPermissions}
-    onEdit={() => { /* Task 16 */ }}
-    onDelete={() => { /* Task 17 */ }}
-    onAdd={() => { /* Task 17 */ }}
+    onEdit={openEdit}
+    onDelete={(b) => { editingBlep = b; modalMode = 'edit'; }}
+    onAdd={openCreate}
+  />
+
+  <BlepEditModal
+    open={modalOpen}
+    mode={modalMode === 'create-open' ? 'create' : 'edit'}
+    blep={editingBlep}
+    taskId={task?.task_id}
+    currentUser={$userStore}
+    {userPermissions}
+    onSaved={handleSaved}
+    onClose={closeModal}
   />
 {/if}
 
