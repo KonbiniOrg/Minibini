@@ -1,7 +1,11 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.core.exceptions import ValidationError
 from apps.jobs.models import WorkOrder
 from apps.jobs.services import WorkOrderService
+from apps.estimates.models import WorkOrderTemplate
 from apps.api.mixins import StatusTransitionMixin, WorkOrderTaskMixin
 from apps.api.permissions import CanManageJobs
 from .serializers import WorkOrderSerializer, TaskSerializer
@@ -54,3 +58,38 @@ class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.Model
         job = data.get('job')
         wo = WorkOrderService.create_direct(job)
         serializer.instance = wo
+
+    @action(detail=False, methods=['post'], url_path='create-from-template')
+    def create_from_template(self, request):
+        job_pk = request.data.get('job')
+        template_pk = request.data.get('template')
+        if not job_pk:
+            return Response(
+                {'job': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not template_pk:
+            return Response(
+                {'template': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from apps.jobs.models import Job
+        try:
+            job = Job.objects.get(pk=job_pk)
+        except Job.DoesNotExist:
+            return Response({'job': ['Job not found.']}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            template = WorkOrderTemplate.objects.get(pk=template_pk)
+        except WorkOrderTemplate.DoesNotExist:
+            return Response(
+                {'template': ['Template not found.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            wo = WorkOrderService.create_from_template(template, job)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(wo)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
