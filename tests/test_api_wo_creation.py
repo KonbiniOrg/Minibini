@@ -150,3 +150,78 @@ class CreateFromEstimateTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 403)
+
+
+class CopyFromWorksheetTest(TestCase):
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = make_admin()
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='Test', last_name='WsContact')
+        self.job = Job.objects.create(job_number='WO-W-001', name='Worksheet Job', contact=self.contact)
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.plan_task = PlanTask.objects.create(
+            est_worksheet=self.worksheet,
+            name='Build cabinet',
+            units='each',
+            rate=200,
+            est_qty=1,
+        )
+        PlanMaterial.objects.create(
+            plan_task=self.plan_task,
+            description='Plywood sheet',
+            quantity=2,
+            unit_cost=40,
+            sell_price=60,
+        )
+
+    def test_copy_from_worksheet_success(self):
+        response = self.client.post(
+            '/api/work-orders/copy-from-worksheet/',
+            {'job': self.job.pk, 'worksheet': self.worksheet.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIn('work_order_id', response.data)
+        wo = WorkOrder.objects.get(pk=response.data['work_order_id'])
+        self.assertEqual(wo.job, self.job)
+        self.assertEqual(wo.tasks.count(), 1)
+        task = wo.tasks.first()
+        self.assertEqual(task.name, 'Build cabinet')
+        self.assertEqual(task.materials.count(), 1)
+        self.assertEqual(task.materials.first().description, 'Plywood sheet')
+
+    def test_missing_worksheet(self):
+        response = self.client.post(
+            '/api/work-orders/copy-from-worksheet/',
+            {'job': self.job.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_missing_job(self):
+        response = self.client.post(
+            '/api/work-orders/copy-from-worksheet/',
+            {'worksheet': self.worksheet.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_worksheet_not_found(self):
+        response = self.client.post(
+            '/api/work-orders/copy-from-worksheet/',
+            {'job': self.job.pk, 'worksheet': 99999},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_requires_can_manage_jobs(self):
+        worker = User.objects.create_user(username='worker_ws', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(
+            '/api/work-orders/copy-from-worksheet/',
+            {'job': self.job.pk, 'worksheet': self.worksheet.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
