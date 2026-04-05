@@ -23,24 +23,16 @@ class TaskLifecycleAPITest(BaseTestCase):
         from apps.core.models import User
         return User.objects.create_user(username=username, password='test')
 
-    def test_start_task(self):
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/start/'
-        resp = self.client.post(url)
-        self.assertEqual(resp.status_code, 200)
-        self.task.refresh_from_db()
-        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
-        self.assertIn('blep_id', resp.data)
-
     def test_complete_task(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/complete/'
+        url = f'/api/tasks/{self.task.pk}/complete/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
 
     def test_block_task(self):
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/block/'
+        url = f'/api/tasks/{self.task.pk}/block/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         self.task.refresh_from_db()
@@ -48,14 +40,14 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_unblock_task(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_BLOCKED)
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/unblock/'
+        url = f'/api/tasks/{self.task.pk}/unblock/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
 
     def test_cancel_task(self):
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/cancel/'
+        url = f'/api/tasks/{self.task.pk}/cancel/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         self.task.refresh_from_db()
@@ -63,34 +55,38 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_start_work(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/start-work/'
+        url = f'/api/tasks/{self.task.pk}/start-work/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         self.assertIn('blep_id', resp.data)
         self.assertTrue(Blep.objects.filter(task=self.task, user=self.user).exists())
 
+    def test_start_work_on_pending_task_auto_promotes(self):
+        # Task is pending by default; start-work should transition it to
+        # in_progress and create a Blep in one step.
+        self.assertEqual(self.task.status, Task.STATUS_PENDING)
+        url = f'/api/tasks/{self.task.pk}/start-work/'
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('blep_id', resp.data)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+        self.assertTrue(Blep.objects.filter(task=self.task, user=self.user).exists())
+
     def test_stop_work(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/stop-work/'
+        url = f'/api/tasks/{self.task.pk}/stop-work/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         blep = Blep.objects.get(task=self.task, user=self.user)
         self.assertIsNotNone(blep.end_time)
 
-    def test_bleps_list(self):
-        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
-        Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/bleps/'
-        resp = self.client.get(url)
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(len(resp.data), 1)
-
     def test_start_work_conflict_response(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         other_user = self._create_user('otherworker')
         Blep.objects.create(task=self.task, user=other_user, start_time=timezone.now())
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/start-work/'
+        url = f'/api/tasks/{self.task.pk}/start-work/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         self.assertIn('conflict', resp.data)
@@ -99,7 +95,7 @@ class TaskLifecycleAPITest(BaseTestCase):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         other_user = self._create_user('otherworker')
         Blep.objects.create(task=self.task, user=other_user, start_time=timezone.now())
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/start-work/'
+        url = f'/api/tasks/{self.task.pk}/start-work/'
         resp = self.client.post(url, {'action': 'join'})
         self.assertEqual(resp.status_code, 200)
         # Both users should have open bleps
@@ -111,7 +107,7 @@ class TaskLifecycleAPITest(BaseTestCase):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         other_user = self._create_user('otherworker')
         Blep.objects.create(task=self.task, user=other_user, start_time=timezone.now())
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/start-work/'
+        url = f'/api/tasks/{self.task.pk}/start-work/'
         resp = self.client.post(url, {'action': 'takeover'})
         self.assertEqual(resp.status_code, 200)
         # Other user's blep should be closed
@@ -123,13 +119,13 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_invalid_transition_returns_400(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)
-        url = f'/api/work-orders/{self.wo.pk}/tasks/{self.task.pk}/start/'
+        url = f'/api/tasks/{self.task.pk}/start-work/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 400)
         self.assertIn('detail', resp.data)
 
     def test_wrong_task_returns_404(self):
-        url = f'/api/work-orders/{self.wo.pk}/tasks/99999/start/'
+        url = f'/api/tasks/99999/start-work/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 404)
 

@@ -19,9 +19,9 @@ export async function refreshCurrentBlep() {
 export async function stopCurrentBlep() {
   let current;
   currentBlep.subscribe((v) => (current = v))();
-  if (!current || !current.work_order || !current.task) return;
+  if (!current || !current.task) return;
   await api.post(
-    `/api/work-orders/${current.work_order.id}/tasks/${current.task.id}/stop-work`,
+    `/api/tasks/${current.task.id}/stop-work/`,
     {}
   );
   await refreshCurrentBlep();

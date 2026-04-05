@@ -230,7 +230,7 @@
       <tbody>
         {#each wo.tasks as task}
           <tr class:row-active={task.status === 'in_progress'}>
-            <td><a href="#/tasks/{task.task_id}">{task.name}</a></td>
+            <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a></td>
             <td class="assigned">{task.assignee_name || '—'}</td>
             <td class="text-center"><span class="pill pill-{task.status}">{task.status}</span></td>
           </tr>

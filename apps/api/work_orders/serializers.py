@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.jobs.models import WorkOrder, Blep, Task, TaskBundle
+from apps.jobs.models import WorkOrder, Task, TaskBundle
 from apps.core.units import UnitsField
 
 
@@ -34,13 +34,6 @@ class TaskBundleSerializer(serializers.ModelSerializer):
             'sort_order', 'tasks',
         ]
         read_only_fields = ['id', 'sort_order']
-
-
-class BlepSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Blep
-        fields = ['blep_id', 'user', 'task', 'start_time', 'end_time']
-        read_only_fields = ['blep_id']
 
 
 class WorkOrderSerializer(serializers.ModelSerializer):

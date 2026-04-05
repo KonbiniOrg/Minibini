@@ -9,6 +9,7 @@
   import RecentLoginsList from '../components/home/RecentLoginsList.svelte';
   import TimeManagementList from '../components/home/TimeManagementList.svelte';
   import ExpenseApprovalsList from '../components/home/ExpenseApprovalsList.svelte';
+  import RecentTimeList from '../components/home/RecentTimeList.svelte';
 
   let loading = $state(true);
   let error = $state('');
@@ -45,6 +46,7 @@
   <p>{error}</p>
 {:else}
   <AssignedTaskList tasks={assignedTasks} />
+  <RecentTimeList />
   <ExpensesList />
   {#if canManageTime}
     <TimeManagementList />
