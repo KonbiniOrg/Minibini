@@ -180,7 +180,8 @@ class WorkOrderStatusTest(BaseTestCase):
             wo.full_clean()
 
 
-class StartTaskTest(BaseTestCase):
+class StartWorkOnPendingTaskTest(BaseTestCase):
+    """start_work on a pending task promotes it and consumes materials."""
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
@@ -188,47 +189,46 @@ class StartTaskTest(BaseTestCase):
         self.task = Task.objects.create(name='Test Task', work_order=self.wo)
         self.user = User.objects.get(username='admin')
 
-    def test_start_task_changes_status(self):
-        result = TaskLifecycleService.start_task(self.task.pk, self.user)
+    def test_start_work_promotes_pending_to_in_progress(self):
+        TaskLifecycleService.start_work(self.task.pk, self.user)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
 
-    def test_start_task_creates_blep(self):
-        result = TaskLifecycleService.start_task(self.task.pk, self.user)
+    def test_start_work_creates_blep(self):
+        result = TaskLifecycleService.start_work(self.task.pk, self.user)
         blep = result['blep']
         self.assertIsNotNone(blep.start_time)
         self.assertIsNone(blep.end_time)
         self.assertEqual(blep.user, self.user)
         self.assertEqual(blep.task, self.task)
 
-    def test_start_task_rejects_non_pending(self):
-        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
-        self.task.refresh_from_db()
+    def test_start_work_rejects_terminal_status(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)
         with self.assertRaises(ValidationError):
-            TaskLifecycleService.start_task(self.task.pk, self.user)
+            TaskLifecycleService.start_work(self.task.pk, self.user)
 
-    def test_start_task_rejects_worksheet_task(self):
+    def test_start_work_rejects_worksheet_task(self):
         from apps.estimates.models import EstWorksheet
         ws = EstWorksheet.objects.create(job=self.job)
         ws_task = Task.objects.create(name='WS Task', est_worksheet=ws)
         with self.assertRaises(ValidationError):
-            TaskLifecycleService.start_task(ws_task.pk, self.user)
+            TaskLifecycleService.start_work(ws_task.pk, self.user)
 
-    def test_start_task_closes_users_other_open_blep(self):
+    def test_start_work_closes_users_other_open_blep(self):
         other_task = Task.objects.create(name='Other Task', work_order=self.wo)
         Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_IN_PROGRESS)
         old_blep = Blep.objects.create(
             task=other_task, user=self.user, start_time=timezone.now()
         )
-        TaskLifecycleService.start_task(self.task.pk, self.user)
+        TaskLifecycleService.start_work(self.task.pk, self.user)
         old_blep.refresh_from_db()
         self.assertIsNotNone(old_blep.end_time)
 
     @patch('apps.inventory.services.InventoryService.consume_material')
-    def test_start_task_consumes_materials(self, mock_consume):
+    def test_start_work_consumes_materials_on_first_start(self, mock_consume):
         from apps.inventory.models import Material
         mat = Material.objects.create(task=self.task, description='Test Material')
-        TaskLifecycleService.start_task(self.task.pk, self.user)
+        TaskLifecycleService.start_work(self.task.pk, self.user)
         mock_consume.assert_called_once_with(mat)
 
 
@@ -431,8 +431,9 @@ class StartStopWorkTest(BaseTestCase):
         self.assertIsNone(blep.end_time)
         self.assertEqual(blep.user, self.user)
 
-    def test_start_work_rejects_non_in_progress(self):
-        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_PENDING)
+    def test_start_work_rejects_non_startable_status(self):
+        # pending and in_progress are both startable; anything else must reject.
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)
         self.task.refresh_from_db()
         with self.assertRaises(ValidationError):
             TaskLifecycleService.start_work(self.task.pk, self.user)

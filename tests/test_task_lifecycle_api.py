@@ -23,14 +23,6 @@ class TaskLifecycleAPITest(BaseTestCase):
         from apps.core.models import User
         return User.objects.create_user(username=username, password='test')
 
-    def test_start_task(self):
-        url = f'/api/tasks/{self.task.pk}/start/'
-        resp = self.client.post(url)
-        self.assertEqual(resp.status_code, 200)
-        self.task.refresh_from_db()
-        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
-        self.assertIn('blep_id', resp.data)
-
     def test_complete_task(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         url = f'/api/tasks/{self.task.pk}/complete/'
@@ -67,6 +59,18 @@ class TaskLifecycleAPITest(BaseTestCase):
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         self.assertIn('blep_id', resp.data)
+        self.assertTrue(Blep.objects.filter(task=self.task, user=self.user).exists())
+
+    def test_start_work_on_pending_task_auto_promotes(self):
+        # Task is pending by default; start-work should transition it to
+        # in_progress and create a Blep in one step.
+        self.assertEqual(self.task.status, Task.STATUS_PENDING)
+        url = f'/api/tasks/{self.task.pk}/start-work/'
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('blep_id', resp.data)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
         self.assertTrue(Blep.objects.filter(task=self.task, user=self.user).exists())
 
     def test_stop_work(self):
@@ -123,13 +127,13 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_invalid_transition_returns_400(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)
-        url = f'/api/tasks/{self.task.pk}/start/'
+        url = f'/api/tasks/{self.task.pk}/start-work/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 400)
         self.assertIn('detail', resp.data)
 
     def test_wrong_task_returns_404(self):
-        url = f'/api/tasks/99999/start/'
+        url = f'/api/tasks/99999/start-work/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 404)
 

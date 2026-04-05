@@ -60,7 +60,7 @@
     errorMessage = '';
     try {
       await api.post(
-        `/api/tasks/${task.id}/start-work`,
+        `/api/tasks/${task.id}/start-work/`,
         {}
       );
       await refreshCurrentBlep();
