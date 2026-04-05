@@ -204,3 +204,36 @@ class BlepUpdateAPITest(BaseTestCase):
             format='json',
         )
         self.assertEqual(resp.status_code, 200, resp.data)
+
+
+class BlepDeleteAPITest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='worker1_delete_api', password='x')
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
+        self.task = Task.objects.create(name='T', work_order=self.wo)
+
+    def test_delete_own_recent_blep(self):
+        now = timezone.now()
+        blep = Blep.objects.create(
+            task=self.task, user=self.user,
+            start_time=now - timedelta(hours=2),
+            end_time=now - timedelta(hours=1),
+        )
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.delete(f'/api/bleps/{blep.blep_id}/')
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Blep.objects.filter(pk=blep.blep_id).exists())
+
+    def test_delete_old_blep_non_manager_denied(self):
+        now = timezone.now()
+        blep = Blep.objects.create(
+            task=self.task, user=self.user,
+            start_time=now - timedelta(hours=48),
+            end_time=now - timedelta(hours=47),
+        )
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.delete(f'/api/bleps/{blep.blep_id}/')
+        self.assertEqual(resp.status_code, 403)

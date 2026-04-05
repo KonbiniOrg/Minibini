@@ -155,3 +155,18 @@ class BlepService:
             setattr(blep, k, v)
         blep.save()
         return blep
+
+    @staticmethod
+    def delete(blep, actor):
+        is_own = blep.user_id == actor.pk
+        if is_own:
+            if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):
+                raise BlepPermissionError(
+                    "Deleting a time entry older than 24 hours requires can_manage_time."
+                )
+        else:
+            if not _has_manage_time(actor):
+                raise BlepPermissionError(
+                    "Deleting another user's time entry requires can_manage_time."
+                )
+        blep.delete()

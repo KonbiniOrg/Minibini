@@ -108,3 +108,11 @@ class BlepViewSet(viewsets.ModelViewSet):
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         blep.refresh_from_db()
         return Response(BlepSerializer(blep).data)
+
+    def destroy(self, request, *args, **kwargs):
+        blep = self.get_object()
+        try:
+            BlepService.delete(blep, request.user)
+        except BlepPermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        return Response(status=status.HTTP_204_NO_CONTENT)

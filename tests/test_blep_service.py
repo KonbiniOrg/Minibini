@@ -220,3 +220,46 @@ class UpdateBlepTest(BaseTestCase):
                 target, self.user,
                 start_time=now - timedelta(hours=4, minutes=30),
             )
+
+
+class DeleteBlepTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
+        self.task = Task.objects.create(name='T', work_order=self.wo)
+        self.user = User.objects.create_user(username='worker1_delete', password='x')
+        from django.contrib.auth.models import Permission
+        self.manager = User.objects.create_user(username='m', password='x')
+        perm = Permission.objects.get(codename='can_manage_time', content_type__app_label='core')
+        self.manager.user_permissions.add(perm)
+        self.manager = User.objects.get(pk=self.manager.pk)
+        self.other = User.objects.create_user(username='w2', password='x')
+
+    def _blep(self, user, hours_ago_start=2):
+        now = timezone.now()
+        return Blep.objects.create(
+            task=self.task, user=user,
+            start_time=now - timedelta(hours=hours_ago_start),
+            end_time=now - timedelta(hours=hours_ago_start - 0.5),
+        )
+
+    def test_delete_own_recent(self):
+        blep = self._blep(self.user)
+        BlepService.delete(blep, self.user)
+        self.assertFalse(Blep.objects.filter(pk=blep.blep_id).exists())
+
+    def test_delete_own_old_without_manage_time_denied(self):
+        blep = self._blep(self.user, hours_ago_start=48)
+        with self.assertRaises(BlepPermissionError):
+            BlepService.delete(blep, self.user)
+
+    def test_delete_other_without_manage_time_denied(self):
+        blep = self._blep(self.other)
+        with self.assertRaises(BlepPermissionError):
+            BlepService.delete(blep, self.user)
+
+    def test_delete_other_as_manager(self):
+        blep = self._blep(self.other)
+        BlepService.delete(blep, self.manager)
+        self.assertFalse(Blep.objects.filter(pk=blep.blep_id).exists())
