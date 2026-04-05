@@ -88,3 +88,5 @@ This parallels the Estimate/Worksheet <-> Invoice/WorkOrder symmetry:
 
 - `docs/2026-03-04-materials-and-inventory-design.md` -- original materials design
 - `docs/plans/2026-03-04-materials-inventory-implementation.md` -- implementation plan
+- `docs/plans/2026-04-05-materials-in-svelte-and-workorders.md` -- active
+  project implementing phases 3-4 in the Svelte SPA (in brainstorm)
