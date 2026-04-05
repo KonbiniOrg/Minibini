@@ -326,3 +326,13 @@ The spec sets these defaults. If any are wrong, flag before implementation:
 - `BlepSerializer` includes nested `task` and `job` references so the
   Recent Time list can render without extra fetches.
 - The "Request Edit" button is a stub alert. No backend wiring.
+
+## Later
+
+- Stop Work on the task detail page: the global blep band updates
+  correctly (disappears), but the Work Sessions list on the same page
+  still shows the stopped blep as "Active" until reload. `TaskActions`
+  calls `onChanged={refresh}` which already runs `loadTask()` and
+  `loadBleps()`, so the wiring looks right — needs investigation (stale
+  closure? `$state` array reactivity in keyed each?). Low priority;
+  workaround is a page reload.
