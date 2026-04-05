@@ -2,19 +2,18 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from apps.jobs.models import WorkOrder
 from apps.jobs.services import WorkOrderService
-from apps.api.mixins import StatusTransitionMixin, TaskBundleMixin
+from apps.api.mixins import StatusTransitionMixin, WorkOrderTaskMixin
 from apps.api.permissions import CanManageJobs
-from .serializers import WorkOrderSerializer, TaskSerializer, TaskBundleSerializer
+from .serializers import WorkOrderSerializer, TaskSerializer
 
 
-class WorkOrderViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.ModelViewSet):
+class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.ModelViewSet):
     queryset = WorkOrder.objects.all().order_by('-pk')
     serializer_class = WorkOrderSerializer
     lookup_field = 'pk'
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve')
-        mixed_read_actions = ('bundles',)
         if self.action in read_actions:
             return [IsAuthenticated()]
         if self.action == 'tasks':
@@ -23,14 +22,10 @@ class WorkOrderViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.ModelVie
             if self.request.method in ('GET', 'POST'):
                 return [IsAuthenticated()]
             return [IsAuthenticated(), CanManageJobs()]
-        if self.action in mixed_read_actions and self.request.method == 'GET':
-            return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
-    # TaskBundleMixin config
+    # WorkOrderTaskMixin config
     task_serializer_class = TaskSerializer
-    bundle_serializer_class = TaskBundleSerializer
-    container_field = 'work_order'
 
     status_actions = {
         'complete': {

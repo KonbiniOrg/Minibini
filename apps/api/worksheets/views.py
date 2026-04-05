@@ -5,13 +5,12 @@ from rest_framework.response import Response
 from apps.estimates.models import EstWorksheet
 from apps.estimates.services import WorksheetService, EstimateGenerationService
 from apps.core.services import ServiceError
-from apps.api.mixins import StatusTransitionMixin, TaskBundleMixin
+from apps.api.mixins import StatusTransitionMixin, PlanTaskBundleMixin
 from apps.api.permissions import CanManageJobs
-from apps.api.work_orders.serializers import TaskSerializer, TaskBundleSerializer
-from .serializers import EstWorksheetSerializer
+from .serializers import EstWorksheetSerializer, PlanTaskSerializer, PlanBundleSerializer
 
 
-class EstWorksheetViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.ModelViewSet):
+class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.ModelViewSet):
     queryset = EstWorksheet.objects.all().order_by('-created_date')
     serializer_class = EstWorksheetSerializer
     lookup_field = 'pk'
@@ -25,10 +24,9 @@ class EstWorksheetViewSet(StatusTransitionMixin, TaskBundleMixin, viewsets.Model
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
-    # TaskBundleMixin config
-    task_serializer_class = TaskSerializer
-    bundle_serializer_class = TaskBundleSerializer
-    container_field = 'est_worksheet'
+    # PlanTaskBundleMixin config
+    plan_task_serializer_class = PlanTaskSerializer
+    plan_bundle_serializer_class = PlanBundleSerializer
 
     status_actions = {
         'revise': {'service': WorksheetService.revise_worksheet},

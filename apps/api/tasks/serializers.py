@@ -25,8 +25,6 @@ class TaskDetailSerializer(serializers.ModelSerializer):
         return None
 
     def get_work_order(self, obj):
-        if not obj.work_order:
-            return None
         wo = obj.work_order
         job = wo.job
         return {
