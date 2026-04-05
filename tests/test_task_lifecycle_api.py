@@ -82,14 +82,6 @@ class TaskLifecycleAPITest(BaseTestCase):
         blep = Blep.objects.get(task=self.task, user=self.user)
         self.assertIsNotNone(blep.end_time)
 
-    def test_bleps_list(self):
-        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
-        Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
-        url = f'/api/tasks/{self.task.pk}/bleps/'
-        resp = self.client.get(url)
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(len(resp.data), 1)
-
     def test_start_work_conflict_response(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         other_user = self._create_user('otherworker')

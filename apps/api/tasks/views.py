@@ -9,7 +9,7 @@ from apps.jobs.models import Task
 
 
 class TaskViewSet(viewsets.GenericViewSet):
-    """Flat task endpoints — lifecycle actions and blep listing.
+    """Flat task endpoints — lifecycle actions.
 
     These operations only need the task id; they were previously nested
     under /api/work-orders/{wo_pk}/tasks/{task_id}/... via TaskLifecycleMixin.
@@ -94,11 +94,3 @@ class TaskViewSet(viewsets.GenericViewSet):
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'ok'})
 
-    @action(detail=True, methods=['get'])
-    def bleps(self, request, pk=None):
-        from apps.jobs.models import Blep
-        from apps.api.bleps.serializers import BlepSerializer
-        task = self._get_task_or_404(pk)
-        bleps = Blep.objects.filter(task=task)
-        serializer = BlepSerializer(bleps, many=True)
-        return Response(serializer.data)
