@@ -4,12 +4,18 @@
   import { user as userStore } from '../../stores/auth.js';
   import { currentBlep } from '../../stores/currentBlep.js';
   import TaskActions from '../../components/tasks/TaskActions.svelte';
+  import StartWorkConflictModal from '../../components/tasks/StartWorkConflictModal.svelte';
 
   let { params = {} } = $props();
 
   let task = $state(null);
   let loading = $state(true);
   let error = $state('');
+  let conflict = $state(null);
+
+  function handleConflict(c) { conflict = c; }
+  function handleResolved() { conflict = null; refresh(); }
+  function handleCancel() { conflict = null; }
 
   const activeBlepOnThisTask = $derived.by(() => {
     const cb = $currentBlep;
@@ -60,7 +66,14 @@
     {userPermissions}
     {activeBlepOnThisTask}
     onChanged={refresh}
-    onConflict={() => { /* wired in Task 14 */ }}
+    onConflict={handleConflict}
+  />
+
+  <StartWorkConflictModal
+    {conflict}
+    taskId={task?.task_id}
+    onResolved={handleResolved}
+    onCancel={handleCancel}
   />
 
   <table border="1">
