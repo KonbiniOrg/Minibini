@@ -351,7 +351,6 @@ class TaskLifecycleService:
                     f"Cannot complete task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
-            now = timezone.now()
             BlepService._close_open(task=task)
             Task.objects.filter(pk=task.pk).update(status=Task.STATUS_COMPLETE)
             task.status = Task.STATUS_COMPLETE
@@ -432,7 +431,6 @@ class TaskLifecycleService:
                     f"Cannot cancel task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
-            now = timezone.now()
             BlepService._close_open(task=task)
             Task.objects.filter(pk=task.pk).update(status=Task.STATUS_CANCELLED)
             task.status = Task.STATUS_CANCELLED
@@ -500,14 +498,11 @@ class TaskLifecycleService:
     @staticmethod
     def stop_work(task_pk, user):
         """Close user's open Blep on this task."""
-        from apps.jobs.models import Task
         with transaction.atomic():
             task = Task.objects.get(pk=task_pk)
-            if not Blep.objects.filter(
-                task=task, user=user, end_time__isnull=True
-            ).exists():
+            closed = BlepService._close_open(user=user, task=task)
+            if not closed:
                 raise ValidationError(
                     "No open time entry found for this user on this task."
                 )
-            BlepService._close_open(user=user, task=task)
 

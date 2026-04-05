@@ -27,7 +27,8 @@ class BlepService:
     def _close_open(user=None, task=None, now=None):
         """Close all open Bleps matching the given filter.
 
-        At least one of `user` or `task` must be provided.
+        At least one of `user` or `task` must be provided. Returns the
+        number of bleps that were closed.
         """
         if user is None and task is None:
             raise ValueError("_close_open requires user or task filter")
@@ -38,4 +39,4 @@ class BlepService:
             qs = qs.filter(user=user)
         if task is not None:
             qs = qs.filter(task=task)
-        qs.update(end_time=now)
+        return qs.update(end_time=now)
