@@ -115,3 +115,43 @@ class BlepService:
         return BlepService._create(
             task, target_user, start_time=start_time, end_time=end_time,
         )
+
+    @staticmethod
+    def update(blep, actor, **fields):
+        """Update a blep. Only `start_time` and `end_time` are editable here."""
+        is_own = blep.user_id == actor.pk
+        if is_own:
+            if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):
+                raise BlepPermissionError(
+                    "Editing a time entry older than 24 hours requires can_manage_time."
+                )
+        else:
+            if not _has_manage_time(actor):
+                raise BlepPermissionError(
+                    "Editing another user's time entry requires can_manage_time."
+                )
+
+        allowed_fields = {'start_time', 'end_time'}
+        unknown = set(fields) - allowed_fields
+        if unknown:
+            raise ValidationError(
+                f"Cannot update fields: {', '.join(sorted(unknown))}"
+            )
+
+        new_start = fields.get('start_time', blep.start_time)
+        new_end = fields.get('end_time', blep.end_time)
+        if new_end is not None and new_start is not None and new_end < new_start:
+            raise ValidationError("end_time must be >= start_time.")
+
+        effective_end = new_end if new_end is not None else timezone.now()
+        if _existing_overlaps(
+            blep.user, new_start, effective_end, exclude_blep_id=blep.blep_id,
+        ):
+            raise ValidationError(
+                "This time entry would overlap an existing entry for the user."
+            )
+
+        for k, v in fields.items():
+            setattr(blep, k, v)
+        blep.save()
+        return blep
