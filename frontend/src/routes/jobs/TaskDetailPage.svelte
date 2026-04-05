@@ -5,6 +5,7 @@
   import { currentBlep } from '../../stores/currentBlep.js';
   import TaskActions from '../../components/tasks/TaskActions.svelte';
   import StartWorkConflictModal from '../../components/tasks/StartWorkConflictModal.svelte';
+  import BlepList from '../../components/tasks/BlepList.svelte';
 
   let { params = {} } = $props();
 
@@ -12,6 +13,7 @@
   let loading = $state(true);
   let error = $state('');
   let conflict = $state(null);
+  let bleps = $state([]);
 
   function handleConflict(c) { conflict = c; }
   function handleResolved() { conflict = null; refresh(); }
@@ -37,12 +39,25 @@
     }
   }
 
+  async function loadBleps() {
+    try {
+      const resp = await api.get(`/api/bleps/?task=${params.taskId}`);
+      bleps = resp.results || resp;
+    } catch (e) {
+      // ignore; surfaced via task error if any
+    }
+  }
+
   async function refresh() {
     await loadTask();
+    await loadBleps();
   }
 
   $effect(() => {
-    if (params.taskId) loadTask();
+    if (params.taskId) {
+      loadTask();
+      loadBleps();
+    }
   });
 </script>
 
@@ -86,6 +101,15 @@
       <tr><td>Accounting category</td><td>{task.accounting_category || '-'}</td></tr>
     </tbody>
   </table>
+
+  <BlepList
+    {bleps}
+    currentUser={$userStore}
+    {userPermissions}
+    onEdit={() => { /* Task 16 */ }}
+    onDelete={() => { /* Task 17 */ }}
+    onAdd={() => { /* Task 17 */ }}
+  />
 {/if}
 
 <style>
