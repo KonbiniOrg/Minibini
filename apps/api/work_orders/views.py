@@ -110,6 +110,13 @@ class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.Model
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Soft warning: job has a worksheet
+        confirm = request.query_params.get('confirm') == 'true'
+        if not confirm:
+            warnings = self._check_estimate_workflow_warnings(estimate)
+            if warnings:
+                return Response({'warnings': warnings})
+
         try:
             wo = WorkOrderService.create_from_estimate(estimate)
         except ValidationError as e:
@@ -117,6 +124,17 @@ class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.Model
 
         serializer = self.get_serializer(wo)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @staticmethod
+    def _check_estimate_workflow_warnings(estimate):
+        warnings = []
+        has_worksheet = EstWorksheet.objects.filter(job=estimate.job).exists()
+        if has_worksheet:
+            warnings.append(
+                'This job has a Worksheet. Usually the Worksheet is the '
+                'source for the WorkOrder, not the Estimate. Proceed anyway?'
+            )
+        return warnings
 
     @action(detail=False, methods=['post'], url_path='copy-from-worksheet')
     def copy_from_worksheet(self, request):

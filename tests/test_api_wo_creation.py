@@ -225,3 +225,51 @@ class CopyFromWorksheetTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 403)
+
+
+class WorkflowWarningEstimateTest(TestCase):
+    """Soft warning: create-from-estimate when job has a worksheet."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = make_admin()
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='Test', last_name='WarnEst')
+        self.job = Job.objects.create(job_number='WRN-E-001', name='Warning Job', contact=self.contact)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-W-001',
+            status=Estimate.STATUS_ACCEPTED,
+        )
+        self.worksheet = EstWorksheet.objects.create(
+            job=self.job, estimate=self.estimate,
+        )
+
+    def test_warns_when_job_has_worksheet(self):
+        response = self.client.post(
+            '/api/work-orders/create-from-estimate/',
+            {'estimate': self.estimate.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('warnings', response.data)
+        self.assertTrue(len(response.data['warnings']) > 0)
+        self.assertNotIn('work_order_id', response.data)
+
+    def test_confirm_bypasses_warning(self):
+        response = self.client.post(
+            '/api/work-orders/create-from-estimate/?confirm=true',
+            {'estimate': self.estimate.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIn('work_order_id', response.data)
+
+    def test_no_warning_when_no_worksheet(self):
+        """Job with estimate but no worksheet — no warning."""
+        self.worksheet.delete()
+        response = self.client.post(
+            '/api/work-orders/create-from-estimate/',
+            {'estimate': self.estimate.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
