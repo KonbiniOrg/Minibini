@@ -616,48 +616,48 @@ class EstimateGenerationService:
         - 'bundle': Tasks in same TaskBundle are combined into one line item
         - 'exclude': Task is not included on estimate
         """
-        tasks = worksheet.task_set.select_related('bundle').prefetch_related('materials').all()
+        plan_tasks = worksheet.plan_tasks.select_related('bundle').prefetch_related('plan_materials').all()
 
-        if not tasks:
+        if not plan_tasks:
             raise ValueError(f"EstWorksheet {worksheet.pk} has no tasks to convert")
 
         # Create the estimate
         estimate = self._create_estimate(worksheet)
 
-        # Categorize tasks by their instance-level mapping strategy
+        # Categorize plan tasks by their instance-level mapping strategy
         direct_tasks = []
-        bundles = defaultdict(list)  # bundle_id -> [tasks]
+        bundles = defaultdict(list)  # bundle_id -> [plan tasks]
 
-        for task in tasks:
-            if task.mapping_strategy == 'exclude':
+        for plan_task in plan_tasks:
+            if plan_task.mapping_strategy == 'exclude':
                 continue
-            elif task.mapping_strategy == 'bundle' and task.bundle:
-                bundles[task.bundle_id].append(task)
+            elif plan_task.mapping_strategy == 'bundle' and plan_task.bundle:
+                bundles[plan_task.bundle_id].append(plan_task)
             else:
-                direct_tasks.append(task)
+                direct_tasks.append(plan_task)
 
         # Generate line items
         line_items = []
 
-        # Process bundled tasks
+        # Process bundled plan tasks
         for bundle_id, bundle_tasks in bundles.items():
-            task_bundle = bundle_tasks[0].bundle
-            line_item = self._create_bundle_line_item(bundle_tasks, task_bundle, estimate)
+            plan_bundle = bundle_tasks[0].bundle
+            line_item = self._create_bundle_line_item(bundle_tasks, plan_bundle, estimate)
             line_items.append(line_item)
 
-        # Process direct tasks
-        for task in direct_tasks:
-            has_materials = task.materials.exists()
-            is_pass_through = (not task.rate or task.rate == Decimal('0.00')) and has_materials
+        # Process direct plan tasks
+        for plan_task in direct_tasks:
+            has_materials = plan_task.plan_materials.exists()
+            is_pass_through = (not plan_task.rate or plan_task.rate == Decimal('0.00')) and has_materials
 
             # Skip labor line item for pass-through tasks (no rate, only materials)
             if not is_pass_through:
-                line_item = self._create_direct_line_item(task, estimate)
+                line_item = self._create_direct_line_item(plan_task, estimate)
                 line_items.append(line_item)
 
-            # Create material line items for each material on direct tasks
-            for material in task.materials.all():
-                mat_li = self._create_material_line_item(material, estimate)
+            # Create material line items for each plan material on direct plan tasks
+            for plan_material in plan_task.plan_materials.all():
+                mat_li = self._create_material_line_item(plan_material, estimate)
                 line_items.append(mat_li)
 
         # Bulk create all line items
@@ -753,7 +753,7 @@ class EstimateGenerationService:
             rate = task.rate or Decimal('0.00')
             total_price += qty * rate
             # Add material sell totals to bundle price
-            for material in task.materials.all():
+            for material in task.plan_materials.all():
                 total_price += material.total_sell
 
         line_item = EstimateLineItem(

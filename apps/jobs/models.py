@@ -331,6 +331,29 @@ class PlanBundle(models.Model):
         return f"{self.est_worksheet} - {self.name}"
 
 
+# Transitional shim: TaskBundle was deleted in the Phase 1 model refactor
+# (2026-04-05 split). Phases 3-4 still need to rewrite API mixins, viewsets,
+# serializers, and HTML views to stop importing this name. Until then, this
+# placeholder lets modules import successfully so the test runner can enumerate
+# tests. Any attribute access raises immediately so real usage surfaces loudly.
+class _TaskBundleRemovedStub:
+    def __getattr__(self, name):
+        raise AttributeError(
+            "TaskBundle was removed in the 2026-04-05 task split refactor. "
+            "Use PlanBundle (worksheet-side) instead. "
+            "API/view layer still references TaskBundle and will be updated in Phases 3-4."
+        )
+
+    def __call__(self, *args, **kwargs):
+        raise RuntimeError(
+            "TaskBundle was removed in the 2026-04-05 task split refactor. "
+            "Use PlanBundle (worksheet-side) instead."
+        )
+
+
+TaskBundle = _TaskBundleRemovedStub()
+
+
 class Blep(models.Model):
     blep_id = models.AutoField(primary_key=True)
     user = models.ForeignKey('core.User', on_delete=models.PROTECT, null=True, blank=True)

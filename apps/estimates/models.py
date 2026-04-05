@@ -248,8 +248,8 @@ class EstWorksheet(AbstractWorkContainer):
 
     def create_new_version(self):
         """Create a new version of this worksheet, marking this one as superseded."""
-        from apps.jobs.models import Task, TaskBundle
-        from apps.inventory.models import Material
+        from apps.jobs.models import PlanTask, PlanBundle
+        from apps.inventory.models import PlanMaterial
 
         # Mark current worksheet as superseded
         self.status = EstWorksheet.STATUS_SUPERSEDED
@@ -265,10 +265,10 @@ class EstWorksheet(AbstractWorkContainer):
             estimate=None  # New version starts without an estimate
         )
 
-        # Copy TaskBundles, mapping old bundle PKs to new ones
+        # Copy PlanBundles, mapping old bundle PKs to new ones
         bundle_mapping = {}
-        for bundle in self.bundles.all():
-            new_bundle = TaskBundle.objects.create(
+        for bundle in self.plan_bundles.all():
+            new_bundle = PlanBundle.objects.create(
                 est_worksheet=new_worksheet,
                 name=bundle.name,
                 description=bundle.description,
@@ -278,32 +278,31 @@ class EstWorksheet(AbstractWorkContainer):
             )
             bundle_mapping[bundle.pk] = new_bundle
 
-        # Copy all tasks to the new worksheet
-        for task in self.task_set.all():
-            new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
-            new_task = Task.objects.create(
-                parent_task=task.parent_task,
-                assignee=task.assignee,
+        # Copy all plan tasks to the new worksheet
+        for plan_task in self.plan_tasks.all():
+            new_bundle = bundle_mapping.get(plan_task.bundle_id) if plan_task.bundle_id else None
+            new_plan_task = PlanTask.objects.create(
                 est_worksheet=new_worksheet,
-                name=task.name,
-                units=task.units,
-                rate=task.rate,
-                est_qty=task.est_qty,
-                accounting_category=task.accounting_category,
-                mapping_strategy=task.mapping_strategy,
+                name=plan_task.name,
+                description=plan_task.description,
+                units=plan_task.units,
+                rate=plan_task.rate,
+                est_qty=plan_task.est_qty,
+                accounting_category=plan_task.accounting_category,
+                mapping_strategy=plan_task.mapping_strategy,
                 bundle=new_bundle,
             )
 
-            # Copy materials to the new task
-            for material in task.materials.all():
-                Material.objects.create(
-                    task=new_task,
-                    price_list_item=material.price_list_item,
-                    accounting_category=material.accounting_category,
-                    description=material.description,
-                    quantity=material.quantity,
-                    unit_cost=material.unit_cost,
-                    sell_price=material.sell_price,
+            # Copy plan materials to the new plan task
+            for plan_material in plan_task.plan_materials.all():
+                PlanMaterial.objects.create(
+                    plan_task=new_plan_task,
+                    price_list_item=plan_material.price_list_item,
+                    accounting_category=plan_material.accounting_category,
+                    description=plan_material.description,
+                    quantity=plan_material.quantity,
+                    unit_cost=plan_material.unit_cost,
+                    sell_price=plan_material.sell_price,
                 )
 
         return new_worksheet

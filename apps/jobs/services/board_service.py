@@ -437,7 +437,7 @@ class BoardService:
                 return 'invoice-prepped'
             return 'needs-invoice'
 
-        tasks = active_wo.task_set.exclude(
+        tasks = active_wo.tasks.exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         )
         if tasks.filter(status=Task.STATUS_BLOCKED).exists():
