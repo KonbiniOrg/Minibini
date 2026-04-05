@@ -273,3 +273,73 @@ class WorkflowWarningEstimateTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 201)
+
+
+class WorkflowWarningTemplateTest(TestCase):
+    """Soft warning: create-from-template when job has worksheet or estimate."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = make_admin()
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='Test', last_name='WarnTpl')
+        self.job = Job.objects.create(job_number='WRN-T-001', name='Warning Template Job', contact=self.contact)
+        self.template = WorkOrderTemplate.objects.create(
+            template_name='Quick Template', is_active=True,
+        )
+
+    def test_warns_when_job_has_worksheet(self):
+        EstWorksheet.objects.create(job=self.job)
+        response = self.client.post(
+            '/api/work-orders/create-from-template/',
+            {'job': self.job.pk, 'template': self.template.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('warnings', response.data)
+        self.assertIn('Worksheet', response.data['warnings'][0])
+
+    def test_warns_when_job_has_estimate(self):
+        Estimate.objects.create(
+            job=self.job, estimate_number='EST-WT-001',
+            status=Estimate.STATUS_OPEN,
+        )
+        response = self.client.post(
+            '/api/work-orders/create-from-template/',
+            {'job': self.job.pk, 'template': self.template.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('warnings', response.data)
+        self.assertIn('Estimate', response.data['warnings'][0])
+
+    def test_warns_when_job_has_both(self):
+        EstWorksheet.objects.create(job=self.job)
+        Estimate.objects.create(
+            job=self.job, estimate_number='EST-WT-002',
+            status=Estimate.STATUS_OPEN,
+        )
+        response = self.client.post(
+            '/api/work-orders/create-from-template/',
+            {'job': self.job.pk, 'template': self.template.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('warnings', response.data)
+
+    def test_confirm_bypasses_warning(self):
+        EstWorksheet.objects.create(job=self.job)
+        response = self.client.post(
+            '/api/work-orders/create-from-template/?confirm=true',
+            {'job': self.job.pk, 'template': self.template.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_no_warning_for_clean_job(self):
+        response = self.client.post(
+            '/api/work-orders/create-from-template/',
+            {'job': self.job.pk, 'template': self.template.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)

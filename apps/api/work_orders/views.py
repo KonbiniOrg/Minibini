@@ -86,6 +86,13 @@ class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.Model
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Soft warning: job already has planning artifacts
+        confirm = request.query_params.get('confirm') == 'true'
+        if not confirm:
+            warnings = self._check_template_workflow_warnings(job)
+            if warnings:
+                return Response({'warnings': warnings})
+
         try:
             wo = WorkOrderService.create_from_template(template, job)
         except ValidationError as e:
@@ -93,6 +100,31 @@ class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.Model
 
         serializer = self.get_serializer(wo)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @staticmethod
+    def _check_template_workflow_warnings(job):
+        warnings = []
+        has_worksheet = EstWorksheet.objects.filter(job=job).exists()
+        has_estimate = Estimate.objects.filter(job=job).exists()
+        if has_worksheet and has_estimate:
+            warnings.append(
+                'This job already has a Worksheet and an Estimate. '
+                'Template \u2192 WO is usually for jobs that go straight to work. '
+                'Proceed anyway?'
+            )
+        elif has_worksheet:
+            warnings.append(
+                'This job already has a Worksheet. '
+                'Template \u2192 WO is usually for jobs that go straight to work. '
+                'Proceed anyway?'
+            )
+        elif has_estimate:
+            warnings.append(
+                'This job already has an Estimate. '
+                'Template \u2192 WO is usually for jobs that go straight to work. '
+                'Proceed anyway?'
+            )
+        return warnings
 
     @action(detail=False, methods=['post'], url_path='create-from-estimate')
     def create_from_estimate(self, request):
