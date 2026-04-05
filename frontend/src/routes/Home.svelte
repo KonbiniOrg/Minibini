@@ -4,6 +4,8 @@
   import SearchBox from '../components/home/SearchBox.svelte';
   import AssignedTaskList from '../components/home/AssignedTaskList.svelte';
   import RecentJobsList from '../components/home/RecentJobsList.svelte';
+  import ExpensesList from '../components/home/ExpensesList.svelte';
+  import RecentLoginsList from '../components/home/RecentLoginsList.svelte';
 
   let loading = $state(true);
   let error = $state('');
@@ -33,5 +35,7 @@
   <p>{error}</p>
 {:else}
   <AssignedTaskList tasks={assignedTasks} />
+  <ExpensesList />
   <RecentJobsList jobs={recentJobs} />
+  <RecentLoginsList />
 {/if}
