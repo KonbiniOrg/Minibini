@@ -91,3 +91,60 @@ class BlepListFiltersTest(BaseTestCase):
         cutoff = (timezone.now() - timedelta(days=1)).isoformat()
         resp = self.client.get('/api/bleps/', {'user': 'me', 'since': cutoff})
         self.assertEqual(self._ids(resp), {self.recent_admin.blep_id})
+
+
+class BlepCreateAPITest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='worker1_create', password='x')
+        self.other = User.objects.create_user(username='worker2', password='x')
+        self.client.force_authenticate(user=self.user)
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
+        self.task = Task.objects.create(name='T', work_order=self.wo)
+
+    def _payload(self, hours_ago=2, duration_hours=1, user=None, task=None):
+        now = timezone.now()
+        start = now - timedelta(hours=hours_ago)
+        end = start + timedelta(hours=duration_hours)
+        data = {
+            'task': (task or self.task).pk,
+            'start_time': start.isoformat(),
+            'end_time': end.isoformat(),
+        }
+        if user is not None:
+            data['user'] = user.pk
+        return data
+
+    def test_create_historical_for_self(self):
+        resp = self.client.post('/api/bleps/', self._payload(), format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['user'], self.user.pk)
+
+    def test_create_defaults_user_to_self_when_omitted(self):
+        payload = self._payload()
+        payload.pop('user', None)
+        resp = self.client.post('/api/bleps/', payload, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['user'], self.user.pk)
+
+    def test_create_for_other_user_without_manage_time_denied(self):
+        resp = self.client.post('/api/bleps/',
+                                 self._payload(user=self.other), format='json')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_create_older_than_24h_without_manage_time_denied(self):
+        resp = self.client.post('/api/bleps/',
+                                 self._payload(hours_ago=48, duration_hours=1),
+                                 format='json')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_create_overlap_returns_400(self):
+        first = self.client.post('/api/bleps/', self._payload(hours_ago=3, duration_hours=2),
+                                  format='json')
+        self.assertEqual(first.status_code, 201)
+        resp = self.client.post('/api/bleps/',
+                                 self._payload(hours_ago=2, duration_hours=1),
+                                 format='json')
+        self.assertEqual(resp.status_code, 400)
