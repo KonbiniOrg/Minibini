@@ -237,3 +237,26 @@ class BlepDeleteAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
         resp = self.client.delete(f'/api/bleps/{blep.blep_id}/')
         self.assertEqual(resp.status_code, 403)
+
+
+class TaskRetrieveAPITest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+        self.job = Job.objects.first()
+        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
+        self.task = Task.objects.create(
+            name='T', description='desc', work_order=self.wo,
+            units='hours', rate='10.00', est_qty='1',
+        )
+
+    def test_retrieve_task(self):
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['task_id'], self.task.pk)
+        self.assertEqual(resp.data['name'], 'T')
+        self.assertIn('work_order', resp.data)
+        self.assertEqual(resp.data['work_order']['id'], self.wo.pk)
+        self.assertEqual(resp.data['work_order']['job']['id'], self.job.pk)

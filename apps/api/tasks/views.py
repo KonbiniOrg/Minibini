@@ -2,13 +2,14 @@ from django.core.exceptions import ValidationError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
+from rest_framework.mixins import RetrieveModelMixin
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.jobs.models import Task
 
 
-class TaskViewSet(viewsets.GenericViewSet):
+class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
     """Flat task endpoints — lifecycle actions.
 
     These operations only need the task id; they were previously nested
@@ -21,6 +22,10 @@ class TaskViewSet(viewsets.GenericViewSet):
     queryset = Task.objects.all()
     lookup_field = 'pk'
     permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        from apps.api.tasks.serializers import TaskDetailSerializer
+        return TaskDetailSerializer
 
     def _get_task_or_404(self, pk):
         try:
