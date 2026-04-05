@@ -97,7 +97,7 @@ class TaskViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=['get'])
     def bleps(self, request, pk=None):
         from apps.jobs.models import Blep
-        from apps.api.work_orders.serializers import BlepSerializer
+        from apps.api.bleps.serializers import BlepSerializer
         task = self._get_task_or_404(pk)
         bleps = Blep.objects.filter(task=task)
         serializer = BlepSerializer(bleps, many=True)
