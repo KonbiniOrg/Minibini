@@ -4,7 +4,9 @@
 **Status:** Implemented
 **Scope:** API permission atoms, DRF permission classes, group definitions, fixtures
 
-**2026-04-05 revision:** `can_view_financials` was removed. All authenticated users can now read invoices, POs, and bills. Writes remain gated on `can_manage_financials`. Atom count: 5.
+**2026-04-05 revisions:**
+- `can_view_financials` was removed. All authenticated users can now read invoices, POs, and bills. Writes remain gated on `can_manage_financials`. Atom count: 5.
+- Email reads (`GET /api/emails/`, `GET /api/emails/{id}/`) moved from `can_manage_jobs` to `IsAuthenticated`. Email-to-job actions (link, unlink, create-job) remain gated on `can_manage_jobs`.
 
 ---
 
@@ -50,7 +52,7 @@ class Meta:
 
 | Atom | Gates |
 |------|-------|
-| `can_manage_jobs` | **Read+write:** emails. **Write:** jobs, work orders, worksheets, bundles, estimates, estimate line items, contacts, businesses, email-to-job linking, status transitions on all of the above. (Notes on jobs/contacts/businesses and adding tasks to work orders are `IsAuthenticated` — see above.) |
+| `can_manage_jobs` | **Write:** jobs, work orders, worksheets, bundles, estimates, estimate line items, contacts, businesses, email-to-job linking (link, unlink, create-job-from-email), status transitions on all of the above. (Notes on jobs/contacts/businesses and adding tasks to work orders are `IsAuthenticated` — see above. Email *reads* are also `IsAuthenticated` as of 2026-04-05.) |
 | `can_manage_financials` | **Write:** invoices, POs, bills, price list items, and their line items, status transitions (issue, cancel) |
 | `can_manage_time` | **Edit/delete** anyone's time entries (shifts, bleps) |
 | `can_approve_expenses` | **Approve/reject** expenses over threshold |
@@ -79,6 +81,7 @@ Read access to:
 - Invoices, invoice line items
 - Purchase orders, PO line items
 - Bills, bill line items
+- Emails (list, detail)
 
 Write access to:
 - Notes on jobs, contacts, and businesses
@@ -133,6 +136,8 @@ Write access to:
 | `/api/bills/` | GET |
 | `/api/bills/{id}/` | GET |
 | `/api/bills/{id}/line-items/` | GET |
+| `/api/emails/` | GET |
+| `/api/emails/{id}/` | GET |
 | `/api/jobs/{id}/notes/` | POST |
 | `/api/contacts/{id}/notes/` | POST |
 | `/api/businesses/{id}/notes/` | POST |
@@ -142,8 +147,6 @@ Write access to:
 
 | Endpoint | Method |
 |----------|--------|
-| `/api/emails/` | GET |
-| `/api/emails/{id}/` | GET |
 | `/api/jobs/` | POST |
 | `/api/jobs/{id}/` | PUT, PATCH, DELETE |
 | `/api/jobs/{id}/complete/` | POST |
@@ -291,7 +294,7 @@ Explicit mapping of what changes per viewset:
 | TaskTemplateViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageConfig` | `CanManageConfig` |
 | LineItemTypeViewSet | `IsAuthenticated` | `IsAuthenticated` | `CanManageConfig` | `CanManageConfig` |
 | settings_view | `CanManageConfig` | `CanManageConfig` | `CanManageConfig` | `CanManageConfig` |
-| email_list/detail | `IsAuthenticated` | `CanManageJobs` | — | — |
+| email_list/detail | `IsAuthenticated` | `IsAuthenticated` | — | — |
 | email link/unlink/create-job | — | — | `CanManageJobs` | `CanManageJobs` |
 | search_view | `IsAuthenticated` | `IsAuthenticated` | — | — |
 
@@ -308,7 +311,7 @@ Explicit mapping of what changes per viewset:
 - InvoiceViewSet — read: `CanViewJobs` → `CanViewFinancials`, write: `CanManageInvoicing` → `CanManageFinancials`
 - PurchaseOrderViewSet, BillViewSet — read: `CanViewJobs` → `CanViewFinancials`, write: `CanManagePurchasing` → `CanManageFinancials`
 - PriceListItemViewSet — write: `CanManageInvoicing` → `CanManageFinancials`
-- email_list/detail — read: `IsAuthenticated` → `CanManageJobs`
+- email_list/detail — read: `IsAuthenticated` (briefly moved to `CanManageJobs` in the original redesign, reverted 2026-04-05)
 
 ---
 

@@ -100,6 +100,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/purchase-orders/',
         '/api/bills/',
         '/api/bleps/',
+        '/api/emails/',
         '/api/search/?q=test',
     ]
 
@@ -128,6 +129,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/purchase-orders/1/line-items/',
         '/api/bills/1/',
         '/api/bills/1/line-items/',
+        '/api/emails/1/',
     ]
 
     # ── Write endpoints that are IsAuthenticated only ───────────────
@@ -184,15 +186,10 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
 
 class TestCanManageJobsAPI(AtomPermissionTestBase):
     """
-    can_manage_jobs — manage jobs, estimates, worksheets, work orders,
-    contacts, businesses, emails.
+    can_manage_jobs — write access to jobs, estimates, worksheets, work
+    orders, contacts, businesses, and email-to-job actions. Email *reads*
+    are IsAuthenticated (covered in TestAuthenticatedOnlyAPI).
     """
-
-    # ── Email reads ─────────────────────────────────────────────────
-    EMAIL_READ_ENDPOINTS = [
-        ('get', '/api/emails/', None),
-        ('get', '/api/emails/1/', None),
-    ]
 
     # ── Job writes ──────────────────────────────────────────────────
     JOB_WRITE_ENDPOINTS = [
@@ -259,20 +256,13 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
 
     def _all_manage_jobs_endpoints(self):
         return (
-            self.EMAIL_READ_ENDPOINTS
-            + self.JOB_WRITE_ENDPOINTS
+            self.JOB_WRITE_ENDPOINTS
             + self.CONTACT_WRITE_ENDPOINTS
             + self.ESTIMATE_WRITE_ENDPOINTS
             + self.WORKSHEET_WRITE_ENDPOINTS
             + self.WORK_ORDER_WRITE_ENDPOINTS
             + self.EMAIL_WRITE_ENDPOINTS
         )
-
-    def test_can_manage_jobs_allows_emails(self):
-        user = self.users['can_manage_jobs']
-        for method, url, data in self.EMAIL_READ_ENDPOINTS:
-            with self.subTest(url=url):
-                self.assert_allowed(user, method, url, data)
 
     def test_can_manage_jobs_allows_job_writes(self):
         user = self.users['can_manage_jobs']
@@ -310,11 +300,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
             with self.subTest(url=url, method=method):
                 self.assert_allowed(user, method, url, data)
 
-    def test_bare_user_denied_email_read(self):
-        for method, url, data in self.EMAIL_READ_ENDPOINTS:
-            with self.subTest(url=url):
-                self.assert_denied(self.bare_user, method, url, data)
-
     def test_bare_user_denied_job_writes(self):
         for method, url, data in self.JOB_WRITE_ENDPOINTS:
             with self.subTest(url=url, method=method):
@@ -348,10 +333,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
     def test_wrong_atom_manage_financials_denied_jobs(self):
         user = self.users['can_manage_financials']
         self.assert_denied(user, 'post', '/api/jobs/', {'customer': 1})
-
-    def test_wrong_atom_manage_financials_denied_emails(self):
-        user = self.users['can_manage_financials']
-        self.assert_denied(user, 'get', '/api/emails/')
 
     def test_wrong_atom_manage_config_denied_jobs(self):
         user = self.users['can_manage_config']
