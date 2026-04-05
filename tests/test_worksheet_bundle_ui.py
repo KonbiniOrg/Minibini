@@ -2,7 +2,7 @@
 from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
-from apps.jobs.models import Task, TaskBundle, Job
+from apps.jobs.models import PlanTask, PlanBundle, Job
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import User, AccountingCategory
@@ -36,15 +36,15 @@ class WorksheetBundleUITestBase(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, status=Job.STATUS_DRAFT, version=1
         )
-        self.task1 = Task.objects.create(
+        self.task1 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Sand Floor',
             rate=Decimal('50'), est_qty=Decimal('1'), units='hours'
         )
-        self.task2 = Task.objects.create(
+        self.task2 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Clean Floor',
             rate=Decimal('25'), est_qty=Decimal('1'), units='hours'
         )
-        self.task3 = Task.objects.create(
+        self.task3 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Apply Finish',
             rate=Decimal('100'), est_qty=Decimal('2'), units='hours'
         )
@@ -53,19 +53,19 @@ class WorksheetBundleUITestBase(TestCase):
 class WorksheetBundleCreationTest(WorksheetBundleUITestBase):
 
     def test_bundle_selected_tasks(self):
-        """POSTing bundle_tasks creates a TaskBundle and assigns selected tasks."""
+        """POSTing bundle_tasks creates a PlanBundle and assigns selected tasks."""
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url, {
             'bundle_tasks': '',
-            'selected_tasks': [self.task1.task_id, self.task2.task_id],
+            'selected_tasks': [self.task1.plan_task_id, self.task2.plan_task_id],
             'bundle_name': 'Prep Work',
             'bundle_description': 'Floor preparation',
             'accounting_category': self.lit_labor.pk,
         })
         self.assertEqual(response.status_code, 302)
 
-        # TaskBundle should exist
-        bundles = list(self.worksheet.bundles.all())
+        # PlanBundle should exist
+        bundles = list(self.worksheet.plan_bundles.all())
         self.assertEqual(len(bundles), 1)
         self.assertEqual(bundles[0].name, 'Prep Work')
         self.assertEqual(bundles[0].accounting_category, self.lit_labor)
@@ -87,29 +87,29 @@ class WorksheetBundleCreationTest(WorksheetBundleUITestBase):
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url, {
             'bundle_tasks': '',
-            'selected_tasks': [self.task1.task_id],
+            'selected_tasks': [self.task1.plan_task_id],
             'bundle_name': 'Too Small',
             'accounting_category': self.lit_labor.pk,
         }, follow=True)
-        self.assertEqual(self.worksheet.bundles.count(), 0)
+        self.assertEqual(self.worksheet.plan_bundles.count(), 0)
 
     def test_bundle_requires_name(self):
         """Bundling without a name shows error."""
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         self.client.post(url, {
             'bundle_tasks': '',
-            'selected_tasks': [self.task1.task_id, self.task2.task_id],
+            'selected_tasks': [self.task1.plan_task_id, self.task2.plan_task_id],
             'bundle_name': '',
             'accounting_category': self.lit_labor.pk,
         })
-        self.assertEqual(self.worksheet.bundles.count(), 0)
+        self.assertEqual(self.worksheet.plan_bundles.count(), 0)
 
 
 class WorksheetUnbundleTest(WorksheetBundleUITestBase):
 
     def setUp(self):
         super().setUp()
-        self.bundle = TaskBundle.objects.create(
+        self.bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
             accounting_category=self.lit_labor, sort_order=1
         )
@@ -124,7 +124,7 @@ class WorksheetUnbundleTest(WorksheetBundleUITestBase):
         """Removing a task from a bundle sets it to direct."""
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         response = self.client.post(url, {
-            'remove_task': self.task1.task_id,
+            'remove_task': self.task1.plan_task_id,
         })
         self.assertEqual(response.status_code, 302)
 
@@ -135,20 +135,20 @@ class WorksheetUnbundleTest(WorksheetBundleUITestBase):
     def test_unbundle_last_two_dissolves_bundle(self):
         """Unbundling a task when only 2 remain dissolves the bundle entirely."""
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
-        self.client.post(url, {'remove_task': self.task1.task_id})
+        self.client.post(url, {'remove_task': self.task1.plan_task_id})
 
         # Only 1 task left in bundle -> auto-dissolve
         self.task2.refresh_from_db()
         self.assertEqual(self.task2.mapping_strategy, 'direct')
         self.assertIsNone(self.task2.bundle)
-        self.assertEqual(self.worksheet.bundles.count(), 0)
+        self.assertEqual(self.worksheet.plan_bundles.count(), 0)
 
 
 class WorksheetBundleReorderTest(WorksheetBundleUITestBase):
 
     def test_container_level_reorder(self):
         """Reordering at container level swaps sort_order between a bundle and an unbundled task."""
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
             accounting_category=self.lit_labor, sort_order=1
         )
@@ -177,7 +177,7 @@ class WorksheetBundleReorderTest(WorksheetBundleUITestBase):
 
     def test_within_bundle_reorder(self):
         """Reordering within a bundle swaps sort_order of two bundled tasks."""
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
             accounting_category=self.lit_labor, sort_order=1
         )
@@ -192,7 +192,7 @@ class WorksheetBundleReorderTest(WorksheetBundleUITestBase):
 
         # Move task1 down within bundle
         url = reverse('estimates:worksheet_reorder_in_bundle', args=[
-            self.worksheet.est_worksheet_id, self.task1.task_id, 'down'
+            self.worksheet.est_worksheet_id, self.task1.plan_task_id, 'down'
         ])
         response = self.client.post(url)
         self.assertEqual(response.status_code, 302)

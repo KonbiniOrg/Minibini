@@ -382,6 +382,14 @@ class LineItemValidationTest(TestCase):
             work_order=self.work_order,
             name="Test Task",
         )
+        # EstimateLineItem.task targets PlanTask, not Task
+        from apps.estimates.models import EstWorksheet
+        from apps.jobs.models import PlanTask
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.plan_task = PlanTask.objects.create(
+            est_worksheet=self.worksheet,
+            name="Plan Test Task",
+        )
 
         # Create price list item
         self.price_list_item = PriceListItem.objects.create(
@@ -405,7 +413,7 @@ class LineItemValidationTest(TestCase):
         """Test EstimateLineItem cannot have both task and price_list_item"""
         line_item = EstimateLineItem(
             estimate=self.estimate,
-            task=self.task,
+            task=self.plan_task,
             price_list_item=self.price_list_item,
             description="Invalid - has both"
         )

@@ -359,7 +359,6 @@ class WorkOrderTemplate(models.Model):
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
                 work_order_template=self,
-                task_template__parent_template__isnull=True,  # Root-level templates only
                 task_template__is_active=True
             ).select_related('bundle').order_by('sort_order', 'task_template__template_name')
 
@@ -522,7 +521,7 @@ class EstimateLineItem(BaseLineItem):
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
     task = models.ForeignKey('jobs.PlanTask', on_delete=models.PROTECT, null=True, blank=True)
     material = models.ForeignKey(
-        'inventory.Material', on_delete=models.SET_NULL,
+        'inventory.PlanMaterial', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
 

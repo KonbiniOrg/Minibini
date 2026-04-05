@@ -2,13 +2,13 @@
 from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, WorkOrder, Task, TaskBundle
+from apps.jobs.models import Job, WorkOrder, Task, PlanTask, PlanBundle
 from apps.jobs.services import JobService, WorkOrderService, TaskService
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet,
     WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation,
 )
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, PlanMaterial, PriceListItem
 from apps.inventory.services import InventoryService
 from apps.core.services import NotFoundError
 from apps.core.models import AccountingCategory
@@ -159,53 +159,51 @@ class TaskServiceReorderTest(JobsTestBase):
 
 
 class MaterialServiceTest(JobsTestBase):
-    """Tests for InventoryService material CRUD."""
+    """Tests for InventoryService PlanMaterial CRUD."""
 
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.wo = WorkOrder.objects.create(
-            job=self.job,
-        )
-        self.task = Task.objects.create(
-            work_order=self.wo, name='Task 1', sort_order=1,
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.plan_task = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='Task 1', sort_order=1,
         )
 
     def test_create_material(self):
-        """Create a material on a task."""
-        mat = InventoryService.create_material(
-            self.task.pk, description='Steel plate',
+        """Create a plan material on a plan task."""
+        mat = InventoryService.create_plan_material(
+            self.plan_task.pk, description='Steel plate',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'),
             sell_price=Decimal('15.00'),
         )
         self.assertIsNotNone(mat.pk)
-        self.assertEqual(mat.task, self.task)
+        self.assertEqual(mat.plan_task, self.plan_task)
         self.assertEqual(mat.description, 'Steel plate')
 
     def test_update_material(self):
-        """Update a material."""
-        mat = Material.objects.create(
-            task=self.task, description='Old', quantity=Decimal('1.00'),
+        """Update a plan material."""
+        mat = PlanMaterial.objects.create(
+            plan_task=self.plan_task, description='Old', quantity=Decimal('1.00'),
         )
-        updated = InventoryService.update_material(
+        updated = InventoryService.update_plan_material(
             mat.pk, description='New', quantity=Decimal('3.00'),
         )
         self.assertEqual(updated.description, 'New')
         self.assertEqual(updated.quantity, Decimal('3.00'))
 
     def test_delete_material(self):
-        """Delete a material."""
-        mat = Material.objects.create(
-            task=self.task, description='Delete me', quantity=Decimal('1.00'),
+        """Delete a plan material."""
+        mat = PlanMaterial.objects.create(
+            plan_task=self.plan_task, description='Delete me', quantity=Decimal('1.00'),
         )
         pk = mat.pk
-        InventoryService.delete_material(pk)
-        self.assertFalse(Material.objects.filter(pk=pk).exists())
+        InventoryService.delete_plan_material(pk)
+        self.assertFalse(PlanMaterial.objects.filter(pk=pk).exists())
 
     def test_delete_material_not_found(self):
         """Nonexistent material raises NotFoundError."""
         with self.assertRaises(NotFoundError):
-            InventoryService.delete_material(99999)
+            InventoryService.delete_plan_material(99999)
 
 
 class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
@@ -417,12 +415,12 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
         self.wo = WorkOrder.objects.create(job=self.job, status=Job.STATUS_DRAFT)
 
     def test_copies_tasks(self):
-        """Tasks are copied from worksheet to work order."""
-        Task.objects.create(
+        """PlanTasks are copied from worksheet to work order as Tasks."""
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', units='hours',
             rate=Decimal('50.00'), est_qty=Decimal('2.00'),
             accounting_category=self.lit, sort_order=1)
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Weld', units='hours',
             rate=Decimal('60.00'), est_qty=Decimal('3.00'),
             accounting_category=self.lit, sort_order=2)
@@ -438,7 +436,7 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
 
     def test_copies_task_fields(self):
         """All task fields are copied faithfully."""
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Paint',
             description='Apply primer and topcoat',
             units='sq ft', rate=Decimal('5.00'), est_qty=Decimal('100.00'),
@@ -451,18 +449,17 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
         self.assertEqual(task.description, 'Apply primer and topcoat')
         self.assertEqual(task.units, 'sq ft')
         self.assertEqual(task.accounting_category, self.lit)
-        self.assertEqual(task.mapping_strategy, 'direct')
 
     def test_copies_materials(self):
-        """Materials on tasks are copied to the new tasks."""
-        ws_task = Task.objects.create(
+        """PlanMaterials on PlanTasks are copied as Materials to the new tasks."""
+        ws_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut',
             sort_order=1)
         pli = PriceListItem.objects.create(
             code='STL-001', description='Steel plate',
             purchase_price=Decimal('50.00'))
-        Material(
-            task=ws_task, price_list_item=pli,
+        PlanMaterial(
+            plan_task=ws_task, price_list_item=pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'), sell_price=Decimal('75.00')).save()
 
@@ -478,37 +475,55 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
         self.assertEqual(mat.sell_price, Decimal('75.00'))
         self.assertEqual(mat.price_list_item, pli)
 
-    def test_copies_bundles_and_remaps_tasks(self):
-        """TaskBundles are copied, and bundled tasks point to the new bundles."""
-        bundle = TaskBundle.objects.create(
+    def test_bundles_are_dropped_on_copy(self):
+        """PlanBundles on the worksheet are NOT copied; bundled PlanTasks become flat Tasks."""
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Assembly',
             sort_order=1, accounting_category=self.lit)
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Assemble part A',
             bundle=bundle, mapping_strategy='bundle', sort_order=1)
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Assemble part B',
             bundle=bundle, mapping_strategy='bundle', sort_order=2)
 
         WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
 
-        wo_bundles = TaskBundle.objects.filter(work_order=self.wo)
-        self.assertEqual(wo_bundles.count(), 1)
-        wo_bundle = wo_bundles[0]
-        self.assertEqual(wo_bundle.name, 'Assembly')
-        self.assertEqual(wo_bundle.accounting_category, self.lit)
-
-        bundled_tasks = Task.objects.filter(
-            work_order=self.wo, bundle=wo_bundle).order_by('sort_order')
-        self.assertEqual(bundled_tasks.count(), 2)
-        self.assertEqual(bundled_tasks[0].name, 'Assemble part A')
-        self.assertEqual(bundled_tasks[1].name, 'Assemble part B')
+        wo_tasks = Task.objects.filter(work_order=self.wo).order_by('sort_order')
+        self.assertEqual(wo_tasks.count(), 2)
+        # Tasks on WO have no bundle field
+        for t in wo_tasks:
+            self.assertFalse(hasattr(t, 'bundle'))
 
     def test_empty_worksheet(self):
         """Empty worksheet copies nothing."""
         WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
         self.assertEqual(Task.objects.filter(work_order=self.wo).count(), 0)
-        self.assertEqual(TaskBundle.objects.filter(work_order=self.wo).count(), 0)
+
+    def test_copy_flat_no_parent_task(self):
+        """Tasks copied from the worksheet are flat (PlanTask has no hierarchy)."""
+        PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='Alpha', sort_order=1)
+        PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='Beta', sort_order=2)
+        WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
+        for task in Task.objects.filter(work_order=self.wo):
+            self.assertIsNone(task.parent_task)
+
+    def test_copy_preserves_plan_material_pli_linkage(self):
+        """PlanMaterial with a PLI is copied to a Material with the same PLI."""
+        plan_task = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='Cut', sort_order=1)
+        pli = PriceListItem.objects.create(
+            code='LINK-001', description='Linked item',
+            purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'))
+        PlanMaterial.objects.create(
+            plan_task=plan_task, price_list_item=pli,
+            description='Linked', quantity=Decimal('2.00'))
+        WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
+        wo_task = Task.objects.get(work_order=self.wo)
+        material = wo_task.materials.get()
+        self.assertEqual(material.price_list_item, pli)
 
     def test_work_order_not_found(self):
         """Nonexistent work order raises NotFoundError."""

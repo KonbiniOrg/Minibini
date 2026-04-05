@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth.models import User
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem, TaskTemplate
 from apps.estimates.services import EstimateGenerationService
 from apps.contacts.models import Contact
@@ -161,7 +161,7 @@ class EstWorksheetStateTests(TestCase):
         )
 
         # Create a task in the worksheet
-        self.task = Task.objects.create(
+        self.task = PlanTask.objects.create(
             name='Test Task',
             est_worksheet=self.worksheet,
             est_qty=10.0,
@@ -210,7 +210,7 @@ class EstWorksheetStateTests(TestCase):
         ).first()
 
         # Check that tasks were copied
-        new_tasks = Task.objects.filter(est_worksheet=new_worksheet)
+        new_tasks = PlanTask.objects.filter(est_worksheet=new_worksheet)
         self.assertEqual(new_tasks.count(), 1)
 
         new_task = new_tasks.first()
@@ -313,7 +313,7 @@ class EstimateGenerationServiceTests(TestCase):
             status=EstWorksheet.STATUS_FINAL,
             version=1
         )
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='Task',
             est_worksheet=parent_worksheet,
             est_qty=5.0,
@@ -334,7 +334,7 @@ class EstimateGenerationServiceTests(TestCase):
             status=Job.STATUS_DRAFT,
             version=2
         )
-        task2 = Task.objects.create(
+        task2 = PlanTask.objects.create(
             name='Task',
             est_worksheet=child_worksheet,
             est_qty=5.0,
@@ -362,7 +362,7 @@ class EstimateGenerationServiceTests(TestCase):
             version=1
         )
 
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='Task',
             est_worksheet=worksheet,
             est_qty=5.0,
@@ -428,7 +428,7 @@ class IntegrationTests(TestCase):
             version=1
         )
 
-        task_v1 = Task.objects.create(
+        task_v1 = PlanTask.objects.create(
             name='Task v1',
             est_worksheet=worksheet_v1,
             est_qty=5.0,

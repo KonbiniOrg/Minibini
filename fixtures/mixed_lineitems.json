@@ -99,7 +99,6 @@
         "fields": {
             "template_name": "Mixed Assembly Task",
             "description": "Assembly task for mixed testing",
-            "parent_template": null,
             "units": "hours",
             "rate": "40.00",
             "is_active": true,
@@ -133,12 +132,9 @@
         }
     },
     {
-        "model": "jobs.task",
+        "model": "jobs.plantask",
         "pk": 200,
         "fields": {
-            "parent_task": null,
-            "assignee": null,
-            "work_order": null,
             "est_worksheet": 200,
             "name": "Mixed Assembly Task",
             "units": "hours",

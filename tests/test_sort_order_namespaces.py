@@ -2,14 +2,14 @@
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Task, TaskBundle, Job
+from apps.jobs.models import PlanTask, PlanBundle, Job
 from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
 from apps.core.models import User, AccountingCategory
 
 
 class SortOrderAutoGenerationTest(TestCase):
-    """Task.save() auto-generation should be namespace-aware."""
+    """PlanTask.save() auto-generation should be namespace-aware."""
 
     def setUp(self):
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
@@ -21,78 +21,78 @@ class SortOrderAutoGenerationTest(TestCase):
 
     def test_new_unbundled_task_ignores_bundled_task_sort_orders(self):
         """Adding an unbundled task should not consider bundled tasks' sort_order values."""
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
             accounting_category=self.lit, sort_order=1
         )
         # Bundled tasks with HIGH within-bundle sort_orders (50, 99)
         # If save() wrongly considers these, the new unbundled task would get 100
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled 1',
             rate=10, mapping_strategy='bundle', bundle=bundle, sort_order=50
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled 2',
             rate=10, mapping_strategy='bundle', bundle=bundle, sort_order=99
         )
         # Unbundled task at container sort_order 2
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Unbundled 1',
             rate=10, sort_order=2
         )
 
         # New unbundled task should get sort_order 3 (max of unbundled=2, bundle=1, so max=2, +1=3)
         # NOT sort_order 100 (max across all tasks including bundled = 99, +1)
-        new_task = Task.objects.create(
+        new_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Unbundled 2', rate=10
         )
         self.assertEqual(new_task.sort_order, 3)
 
     def test_new_unbundled_task_considers_bundle_sort_order(self):
-        """Adding an unbundled task should consider TaskBundle sort_orders (they share container namespace)."""
-        bundle = TaskBundle.objects.create(
+        """Adding an unbundled task should consider PlanBundle sort_orders (they share container namespace)."""
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
             accounting_category=self.lit, sort_order=5
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled 1',
             rate=10, mapping_strategy='bundle', bundle=bundle, sort_order=1
         )
         # Unbundled task at sort_order 2
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Unbundled 1',
             rate=10, sort_order=2
         )
 
         # New unbundled task should be after the bundle (sort_order=5), so 6
-        new_task = Task.objects.create(
+        new_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Unbundled 2', rate=10
         )
         self.assertEqual(new_task.sort_order, 6)
 
     def test_new_bundled_task_uses_within_bundle_namespace(self):
         """Adding a bundled task should get sort_order based on max within that bundle only."""
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
             accounting_category=self.lit, sort_order=1
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled 1',
             rate=10, mapping_strategy='bundle', bundle=bundle, sort_order=1
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled 2',
             rate=10, mapping_strategy='bundle', bundle=bundle, sort_order=2
         )
         # Unbundled task with high sort_order
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Unbundled',
             rate=10, sort_order=10
         )
 
         # New bundled task should get sort_order 3 (max within bundle = 2, +1)
         # NOT 11 (max across all tasks = 10, +1)
-        new_task = Task.objects.create(
+        new_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled 3',
             rate=10, mapping_strategy='bundle', bundle=bundle
         )
@@ -117,20 +117,20 @@ class BundleCreationSortOrderTest(TestCase):
 
     def test_bundled_tasks_get_sequential_within_bundle_sort_order(self):
         """Tasks bundled together should get sort_order 1, 2, 3... regardless of original values."""
-        t1 = Task.objects.create(
-            est_worksheet=self.worksheet, name='Task A', rate=10, sort_order=3
+        t1 = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='PlanTask A', rate=10, sort_order=3
         )
-        t2 = Task.objects.create(
-            est_worksheet=self.worksheet, name='Task B', rate=20, sort_order=7
+        t2 = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='PlanTask B', rate=20, sort_order=7
         )
-        t3 = Task.objects.create(
-            est_worksheet=self.worksheet, name='Task C', rate=30, sort_order=12
+        t3 = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='PlanTask C', rate=30, sort_order=12
         )
 
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         self.client.post(url, {
             'bundle_tasks': '1',
-            'selected_tasks': [t1.task_id, t2.task_id, t3.task_id],
+            'selected_tasks': [t1.plan_task_id, t2.plan_task_id, t3.plan_task_id],
             'bundle_name': 'Test Bundle',
             'bundle_description': '',
             'accounting_category': self.lit.pk,
@@ -164,30 +164,30 @@ class UnbundleSortOrderTest(TestCase):
     def test_unbundled_task_goes_right_after_bundle(self):
         """Unbundled task should get sort_order = bundle.sort_order + 1."""
         # Unbundled task at container sort_order 10 (higher than bundle)
-        solo = Task.objects.create(
+        solo = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Solo', rate=10, sort_order=10
         )
         # Bundle at container sort_order 5
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
             accounting_category=self.lit, sort_order=5
         )
-        t1 = Task.objects.create(
+        t1 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled A', rate=10,
             mapping_strategy='bundle', bundle=bundle, sort_order=1
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled B', rate=10,
             mapping_strategy='bundle', bundle=bundle, sort_order=2
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled C', rate=10,
             mapping_strategy='bundle', bundle=bundle, sort_order=3
         )
 
         # Unbundle t1
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
-        self.client.post(url, {'remove_task': t1.task_id})
+        self.client.post(url, {'remove_task': t1.plan_task_id})
 
         t1.refresh_from_db()
         solo.refresh_from_db()
@@ -200,26 +200,26 @@ class UnbundleSortOrderTest(TestCase):
 
     def test_unbundle_bumps_items_at_insertion_point(self):
         """Existing container items at bundle.sort_order + 1 get bumped to make room."""
-        # Task right after the bundle
-        neighbor = Task.objects.create(
+        # PlanTask right after the bundle
+        neighbor = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Neighbor', rate=10, sort_order=6
         )
         # Bundle at container sort_order 5
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
             accounting_category=self.lit, sort_order=5
         )
-        t1 = Task.objects.create(
+        t1 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled A', rate=10,
             mapping_strategy='bundle', bundle=bundle, sort_order=1
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled B', rate=10,
             mapping_strategy='bundle', bundle=bundle, sort_order=2
         )
 
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
-        self.client.post(url, {'remove_task': t1.task_id})
+        self.client.post(url, {'remove_task': t1.plan_task_id})
 
         t1.refresh_from_db()
         neighbor.refresh_from_db()
@@ -231,26 +231,26 @@ class UnbundleSortOrderTest(TestCase):
     def test_auto_dissolve_positions_tasks_at_bundle_location(self):
         """When bundle dissolves, both tasks appear where the bundle was."""
         # Solo task further down
-        solo = Task.objects.create(
+        solo = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Solo', rate=10, sort_order=10
         )
         # Bundle at container sort_order 5
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Bundle',
             accounting_category=self.lit, sort_order=5
         )
-        t1 = Task.objects.create(
+        t1 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled A', rate=10,
             mapping_strategy='bundle', bundle=bundle, sort_order=1
         )
-        t2 = Task.objects.create(
+        t2 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Bundled B', rate=10,
             mapping_strategy='bundle', bundle=bundle, sort_order=2
         )
 
         # Unbundle t1 — only t2 remains, triggers auto-dissolve
         url = reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
-        self.client.post(url, {'remove_task': t1.task_id})
+        self.client.post(url, {'remove_task': t1.plan_task_id})
 
         t1.refresh_from_db()
         t2.refresh_from_db()
@@ -265,7 +265,7 @@ class UnbundleSortOrderTest(TestCase):
         # Solo bumped from 10 to 11
         self.assertEqual(solo.sort_order, 11)
         # Bundle should be deleted
-        self.assertFalse(TaskBundle.objects.filter(pk=bundle.pk).exists())
+        self.assertFalse(PlanBundle.objects.filter(pk=bundle.pk).exists())
 
 
 class GenerateTaskSortOrderTest(TestCase):

@@ -1,13 +1,13 @@
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Task, TaskBundle, WorkOrder, Job
+from apps.jobs.models import PlanTask, PlanBundle, WorkOrder, Job
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 
 
-class TaskBundleTestBase(TestCase):
-    """Shared setup for TaskBundle tests."""
+class PlanBundleTestBase(TestCase):
+    """Shared setup for PlanBundle tests."""
 
     def setUp(self):
         self.default_contact = Contact.objects.create(
@@ -29,72 +29,38 @@ class TaskBundleTestBase(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, status=Job.STATUS_DRAFT, version=1
         )
-        self.work_order = WorkOrder.objects.create(
-            job=self.job, status=WorkOrder.STATUS_INCOMPLETE
-        )
         self.accounting_category, _ = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': True}
         )
 
 
-class TaskBundleModelTest(TaskBundleTestBase):
-    """Tests for the TaskBundle model."""
+class PlanBundleModelTest(PlanBundleTestBase):
+    """Tests for the PlanBundle model."""
 
     def test_create_bundle_on_worksheet(self):
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet,
             name='Prep Work',
             accounting_category=self.accounting_category,
             sort_order=1
         )
-        self.assertEqual(bundle.get_container(), self.worksheet)
-        self.assertIsNone(bundle.work_order)
-
-    def test_create_bundle_on_work_order(self):
-        bundle = TaskBundle.objects.create(
-            work_order=self.work_order,
-            name='Prep Work',
-            accounting_category=self.accounting_category,
-            sort_order=1
-        )
-        self.assertEqual(bundle.get_container(), self.work_order)
-        self.assertIsNone(bundle.est_worksheet)
-
-    def test_bundle_requires_exactly_one_container(self):
-        """Bundle with both containers should fail validation."""
-        bundle = TaskBundle(
-            est_worksheet=self.worksheet,
-            work_order=self.work_order,
-            name='Bad Bundle',
-            accounting_category=self.accounting_category
-        )
-        with self.assertRaises(ValidationError):
-            bundle.full_clean()
-
-    def test_bundle_requires_at_least_one_container(self):
-        """Bundle with no container should fail validation."""
-        bundle = TaskBundle(
-            name='Orphan Bundle',
-            accounting_category=self.accounting_category
-        )
-        with self.assertRaises(ValidationError):
-            bundle.full_clean()
+        self.assertEqual(bundle.est_worksheet, self.worksheet)
 
     def test_bundle_ordering(self):
         """Bundles should be ordered by sort_order then name."""
-        b2 = TaskBundle.objects.create(
+        b2 = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='B Bundle',
             accounting_category=self.accounting_category, sort_order=2
         )
-        b1 = TaskBundle.objects.create(
+        b1 = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='A Bundle',
             accounting_category=self.accounting_category, sort_order=1
         )
-        bundles = list(self.worksheet.bundles.all())
+        bundles = list(self.worksheet.plan_bundles.all())
         self.assertEqual(bundles, [b1, b2])
 
     def test_bundle_str(self):
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet,
             name='Prep Work',
             accounting_category=self.accounting_category
@@ -102,31 +68,31 @@ class TaskBundleModelTest(TaskBundleTestBase):
         self.assertIn('Prep Work', str(bundle))
 
 
-class TaskMappingFieldsTest(TaskBundleTestBase):
-    """Tests for Task's mapping_strategy and bundle fields."""
+class PlanTaskMappingFieldsTest(PlanBundleTestBase):
+    """Tests for PlanTask's mapping_strategy and bundle fields."""
 
     def test_default_mapping_strategy_is_direct(self):
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Test Task'
         )
         self.assertEqual(task.mapping_strategy, 'direct')
         self.assertIsNone(task.bundle)
 
     def test_task_with_bundle(self):
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
             accounting_category=self.accounting_category, sort_order=1
         )
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Sand Floor',
             mapping_strategy='bundle', bundle=bundle
         )
         self.assertEqual(task.bundle, bundle)
         self.assertEqual(task.mapping_strategy, 'bundle')
-        self.assertIn(task, bundle.tasks.all())
+        self.assertIn(task, bundle.plan_tasks.all())
 
     def test_exclude_mapping_strategy(self):
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Internal Task',
             mapping_strategy='exclude'
         )
@@ -134,7 +100,7 @@ class TaskMappingFieldsTest(TaskBundleTestBase):
 
     def test_bundled_task_requires_bundle(self):
         """mapping_strategy='bundle' without a bundle should fail."""
-        task = Task(
+        task = PlanTask(
             est_worksheet=self.worksheet, name='Bad Task',
             mapping_strategy='bundle', bundle=None
         )
@@ -142,12 +108,12 @@ class TaskMappingFieldsTest(TaskBundleTestBase):
             task.full_clean()
 
     def test_bundle_fk_requires_bundle_strategy(self):
-        """Task with a bundle FK but non-bundle strategy should fail."""
-        bundle = TaskBundle.objects.create(
+        """PlanTask with a bundle FK but non-bundle strategy should fail."""
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
             accounting_category=self.accounting_category
         )
-        task = Task(
+        task = PlanTask(
             est_worksheet=self.worksheet, name='Bad Task',
             mapping_strategy='direct', bundle=bundle
         )
@@ -155,12 +121,12 @@ class TaskMappingFieldsTest(TaskBundleTestBase):
             task.full_clean()
 
     def test_bundle_set_null_on_delete(self):
-        """Deleting a TaskBundle should null out the FK on tasks, not cascade."""
-        bundle = TaskBundle.objects.create(
+        """Deleting a PlanBundle should null out the FK on plan tasks, not cascade."""
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
             accounting_category=self.accounting_category
         )
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Sand Floor',
             mapping_strategy='bundle', bundle=bundle
         )
@@ -169,16 +135,16 @@ class TaskMappingFieldsTest(TaskBundleTestBase):
         self.assertIsNone(task.bundle)
 
     def test_multiple_tasks_in_bundle(self):
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.worksheet, name='Prep',
             accounting_category=self.accounting_category
         )
-        t1 = Task.objects.create(
+        t1 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Sand Floor',
             mapping_strategy='bundle', bundle=bundle
         )
-        t2 = Task.objects.create(
+        t2 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Clean Floor',
             mapping_strategy='bundle', bundle=bundle
         )
-        self.assertEqual(set(bundle.tasks.all()), {t1, t2})
+        self.assertEqual(set(bundle.plan_tasks.all()), {t1, t2})

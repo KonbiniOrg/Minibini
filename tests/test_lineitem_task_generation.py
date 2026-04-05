@@ -3,7 +3,7 @@ from django.urls import reverse
 from django.contrib.auth import get_user_model
 from decimal import Decimal
 
-from apps.jobs.models import Job, WorkOrder, Task
+from apps.jobs.models import Job, WorkOrder, Task, PlanTask
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate, TaskTemplate
 from apps.jobs.services import TaskService
 from apps.contacts.models import Contact
@@ -135,7 +135,7 @@ class LineItemTaskGenerationTestCase(TestCase):
         self.assertIsNotNone(work_order)
 
         # When worksheet exists, tasks are copied from worksheet (not line items)
-        ws_task_count = Task.objects.filter(est_worksheet=worksheet).count()
+        ws_task_count = PlanTask.objects.filter(est_worksheet=worksheet).count()
         wo_task_count = Task.objects.filter(work_order=work_order).count()
         self.assertEqual(wo_task_count, ws_task_count)
 

@@ -2,7 +2,7 @@
 from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
-from apps.jobs.models import Task, TaskBundle, Job
+from apps.jobs.models import PlanTask, PlanBundle, Job
 from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact, Business
 from apps.core.models import User, AccountingCategory
@@ -78,8 +78,8 @@ class WorksheetCreateFromTemplateTest(TestCase):
 
         worksheet = EstWorksheet.objects.get(job=self.job)
 
-        # TaskBundle should have been created
-        bundles = list(worksheet.bundles.all())
+        # PlanBundle should have been created
+        bundles = list(worksheet.plan_bundles.all())
         self.assertEqual(len(bundles), 1)
         self.assertEqual(bundles[0].name, 'Prep Work')
         self.assertEqual(bundles[0].accounting_category, self.lit_labor)
@@ -94,7 +94,7 @@ class WorksheetCreateFromTemplateTest(TestCase):
         })
 
         worksheet = EstWorksheet.objects.get(job=self.job)
-        tasks = {t.name: t for t in Task.objects.filter(est_worksheet=worksheet)}
+        tasks = {t.name: t for t in PlanTask.objects.filter(est_worksheet=worksheet)}
 
         self.assertEqual(tasks['Sand Floor'].mapping_strategy, 'bundle')
         self.assertIsNotNone(tasks['Sand Floor'].bundle)
@@ -112,5 +112,5 @@ class WorksheetCreateFromTemplateTest(TestCase):
         })
 
         worksheet = EstWorksheet.objects.get(job=self.job)
-        tasks = Task.objects.filter(est_worksheet=worksheet)
+        tasks = PlanTask.objects.filter(est_worksheet=worksheet)
         self.assertEqual(tasks.count(), 3)

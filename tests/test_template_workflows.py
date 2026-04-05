@@ -328,7 +328,7 @@ class TemplateIntegrationTest(TestCase):
         self.assertEqual(work_order.template, work_order_template)
         
         # Verify Tasks were created
-        tasks = work_order.task_set.all()
+        tasks = work_order.tasks.all()
         self.assertEqual(tasks.count(), 2)
         
         task_names = [task.name for task in tasks]

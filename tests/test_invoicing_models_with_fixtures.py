@@ -122,9 +122,9 @@ class LineItemModelFixtureTest(FixtureTestCase):
         self.assertEqual(estimate_item2.units, "hours")
         self.assertEqual(estimate_item2.description, "Electrical rough-in labor")
         self.assertEqual(estimate_item2.price, Decimal('600.00'))
-        self.assertEqual(estimate_item2.task.name, "Electrical rough-in")
+        # Post-split: fixture ELI task is null (ELI.task targets PlanTask, fixture has none)
+        self.assertIsNone(estimate_item2.task)
         self.assertIsNone(estimate_item2.price_list_item)
-        # CLI002 has task but no price_list_item
         
     def test_invoice_line_items_exist_from_fixture(self):
         """Test that invoice line items from fixture data exist and have correct properties"""
@@ -143,6 +143,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
         self.assertEqual(invoice_item2.description, "Electrical rough-in labor")
         self.assertEqual(invoice_item2.price, Decimal('600.00'))
         self.assertEqual(invoice_item2.invoice.invoice_number, "INV-2024-0001")
+        # InvoiceLineItem.task targets WO Task; fixture task #2 is "Electrical rough-in"
         self.assertEqual(invoice_item2.task.name, "Electrical rough-in")
         self.assertIsNone(invoice_item2.price_list_item)
         # CLI002 has task but no price_list_item
@@ -191,20 +192,22 @@ class LineItemModelFixtureTest(FixtureTestCase):
         invoice = invoice_item.invoice
         self.assertEqual(invoice.invoice_number, "INV-2024-0001")
         
-        # Test task relationships for items that have tasks
-        from apps.jobs.models import Task
+        # Post-split: ELI.task targets PlanTask, InvoiceLineItem.task targets WO Task
+        # (different model types). The fixture's line_number=2 items have null tasks
+        # since the fixture only has WO Tasks, not PlanTasks on this worksheet.
         estimate_item2 = EstimateLineItem.objects.get(line_number=2)
         invoice_item2 = InvoiceLineItem.objects.get(line_number=2)
-        task = Task.objects.get(name="Electrical rough-in")
-        self.assertEqual(estimate_item2.task, task)
-        self.assertEqual(invoice_item2.task, task)
-        
+        # Post-split: ELI.task targets PlanTask (fixture has none)
+        self.assertIsNone(estimate_item2.task)
+        # InvoiceLineItem.task targets WO Task; fixture points to #2 "Electrical rough-in"
+        self.assertIsNotNone(invoice_item2.task)
+
         # Test price list item relationship for items that have price list items
         price_item = PriceListItem.objects.get(code="SCREW001")
         self.assertEqual(estimate_item.price_list_item, price_item)
         self.assertEqual(invoice_item.price_list_item, price_item)
-        
-        # Verify items with tasks don't have price list items
+
+        # Verify items without price list items
         self.assertIsNone(estimate_item2.price_list_item)
         self.assertIsNone(invoice_item2.price_list_item)
         
@@ -230,18 +233,24 @@ class LineItemModelFixtureTest(FixtureTestCase):
         self.assertEqual(invoice_item2.price, Decimal('600.00'))
         
     def test_create_new_line_items_with_existing_relationships(self):
-        """Test creating new line items with existing related objects from fixtures"""
-        from apps.jobs.models import Task
-        from apps.estimates.models import Estimate
-        
+        """Test creating new line items with existing related objects from fixtures.
+        Post-split: ELI.task targets PlanTask; InvoiceLineItem.task targets WO Task."""
+        from apps.jobs.models import Task, PlanTask
+        from apps.estimates.models import Estimate, EstWorksheet
+
         estimate = Estimate.objects.get(estimate_number="EST-2024-0001")
         invoice = Invoice.objects.get(invoice_number="INV-2024-0001")
-        task = Task.objects.get(name="Kitchen demolition")
+        wo_task = Task.objects.get(name="Kitchen demolition")
+        # Create a worksheet + plan task for ELI
+        worksheet = EstWorksheet.objects.create(job=estimate.job)
+        plan_task = PlanTask.objects.create(
+            est_worksheet=worksheet, name="Cleanup plan task",
+        )
         price_item = PriceListItem.objects.get(code="LABOR001")
-        
+
         new_estimate_item = EstimateLineItem.objects.create(
             estimate=estimate,
-            task=task,
+            task=plan_task,
             price_list_item=None,
             line_number=5,
             qty=Decimal('2.00'),
@@ -249,10 +258,10 @@ class LineItemModelFixtureTest(FixtureTestCase):
             description="Cleanup labor estimate",
             price=Decimal('150.00')
         )
-        
+
         new_invoice_item = InvoiceLineItem.objects.create(
             invoice=invoice,
-            task=task,
+            task=wo_task,
             price_list_item=None,
             line_number=6,
             qty=Decimal('2.00'),
@@ -260,10 +269,10 @@ class LineItemModelFixtureTest(FixtureTestCase):
             description="Cleanup labor invoice",
             price=Decimal('150.00')
         )
-        
+
         self.assertEqual(new_estimate_item.estimate, estimate)
-        self.assertEqual(new_estimate_item.task, task)
+        self.assertEqual(new_estimate_item.task, plan_task)
         self.assertEqual(new_invoice_item.invoice, invoice)
-        self.assertEqual(new_invoice_item.task, task)
+        self.assertEqual(new_invoice_item.task, wo_task)
         self.assertEqual(EstimateLineItem.objects.count(), 3)  # 2 from fixture + 1 new
         self.assertEqual(InvoiceLineItem.objects.count(), 3)  # 2 from fixture + 1 new

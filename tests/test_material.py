@@ -2,9 +2,9 @@ from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import EstWorksheet
-from apps.inventory.models import Material
+from apps.inventory.models import PlanMaterial
 from apps.inventory.models import PriceListItem
 from apps.core.models import AccountingCategory
 
@@ -31,7 +31,7 @@ class MaterialTestBase(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job,
         )
-        self.task = Task.objects.create(
+        self.task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install shelving',
             rate=Decimal('50.00'),
@@ -58,8 +58,8 @@ class MaterialModelTest(MaterialTestBase):
 
     def test_create_material_freeform(self):
         """Material with no price list link — a one-off."""
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             description='Custom bracket',
             quantity=Decimal('4.00'),
             unit_cost=Decimal('5.00'),
@@ -73,8 +73,8 @@ class MaterialModelTest(MaterialTestBase):
 
     def test_create_material_with_inventoried_item(self):
         """Material linked to an inventoried item auto-fills fields."""
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             price_list_item=self.inventoried_item,
             quantity=Decimal('3.00'),
         )
@@ -84,8 +84,8 @@ class MaterialModelTest(MaterialTestBase):
 
     def test_create_material_with_price_list_item(self):
         """Material linked to a price list item auto-fills fields."""
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             price_list_item=self.price_list_item,
             quantity=Decimal('10.00'),
         )
@@ -95,8 +95,8 @@ class MaterialModelTest(MaterialTestBase):
 
     def test_auto_fill_does_not_overwrite_explicit_values(self):
         """If description/cost/price are provided, auto-fill doesn't overwrite."""
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             price_list_item=self.inventoried_item,
             description='Custom description',
             quantity=Decimal('2.00'),
@@ -108,8 +108,8 @@ class MaterialModelTest(MaterialTestBase):
         self.assertEqual(material.sell_price, Decimal('110.00'))
 
     def test_total_cost_property(self):
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             description='Screws',
             quantity=Decimal('100.00'),
             unit_cost=Decimal('0.10'),
@@ -118,8 +118,8 @@ class MaterialModelTest(MaterialTestBase):
         self.assertEqual(material.total_cost, Decimal('10.00'))
 
     def test_total_sell_property(self):
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             description='Screws',
             quantity=Decimal('100.00'),
             unit_cost=Decimal('0.10'),
@@ -129,7 +129,7 @@ class MaterialModelTest(MaterialTestBase):
 
     def test_material_requires_task(self):
         """Material must be attached to a task."""
-        material = Material(
+        material = PlanMaterial(
             description='Orphan material',
             quantity=Decimal('1.00'),
             unit_cost=Decimal('5.00'),
@@ -140,19 +140,19 @@ class MaterialModelTest(MaterialTestBase):
 
     def test_cascade_on_task_delete(self):
         """Materials are deleted when their task is deleted."""
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             description='Will be deleted',
             quantity=Decimal('1.00'),
         )
-        material_id = material.material_id
+        plan_material_id = material.plan_material_id
         self.task.delete()
-        self.assertFalse(Material.objects.filter(material_id=material_id).exists())
+        self.assertFalse(PlanMaterial.objects.filter(plan_material_id=plan_material_id).exists())
 
     def test_set_null_on_price_list_item_delete(self):
         """Price list item FK set to null when price list item is deleted."""
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             price_list_item=self.price_list_item,
             quantity=Decimal('1.00'),
         )
@@ -162,19 +162,19 @@ class MaterialModelTest(MaterialTestBase):
 
     def test_task_can_have_multiple_materials(self):
         """A task can have several materials attached."""
-        Material.objects.create(
-            task=self.task, description='Plywood',
+        PlanMaterial.objects.create(
+            plan_task=self.task, description='Plywood',
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
-        Material.objects.create(
-            task=self.task, description='Screws',
+        PlanMaterial.objects.create(
+            plan_task=self.task, description='Screws',
             quantity=Decimal('50.00'), unit_cost=Decimal('0.05'), sell_price=Decimal('0.10'),
         )
-        Material.objects.create(
-            task=self.task, description='Glue',
+        PlanMaterial.objects.create(
+            plan_task=self.task, description='Glue',
             quantity=Decimal('1.00'), unit_cost=Decimal('8.00'), sell_price=Decimal('12.00'),
         )
-        self.assertEqual(self.task.materials.count(), 3)
+        self.assertEqual(self.task.plan_materials.count(), 3)
 
     def test_pli_auto_fills_accounting_category(self):
         """Material linked to a PLI auto-fills accounting_category from PLI."""
@@ -182,8 +182,8 @@ class MaterialModelTest(MaterialTestBase):
         self.inventoried_item.accounting_category = lit
         self.inventoried_item.save()
 
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             price_list_item=self.inventoried_item,
             quantity=Decimal('2.00'),
         )
@@ -196,8 +196,8 @@ class MaterialModelTest(MaterialTestBase):
         self.inventoried_item.accounting_category = lit_mat
         self.inventoried_item.save()
 
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             price_list_item=self.inventoried_item,
             quantity=Decimal('2.00'),
             accounting_category=lit_labor,
@@ -205,8 +205,8 @@ class MaterialModelTest(MaterialTestBase):
         self.assertEqual(material.accounting_category, lit_labor)
 
     def test_str_representation(self):
-        material = Material.objects.create(
-            task=self.task,
+        material = PlanMaterial.objects.create(
+            plan_task=self.task,
             description='Edge banding',
             quantity=Decimal('20.00'),
         )
@@ -218,16 +218,16 @@ class MaterialWorksheetVersioningTest(MaterialTestBase):
 
     def test_version_copies_materials(self):
         """Creating a new worksheet version copies materials on tasks."""
-        Material.objects.create(
-            task=self.task,
+        PlanMaterial.objects.create(
+            plan_task=self.task,
             price_list_item=self.inventoried_item,
             description='Plywood',
             quantity=Decimal('3.00'),
             unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
-        Material.objects.create(
-            task=self.task,
+        PlanMaterial.objects.create(
+            plan_task=self.task,
             description='Custom bracket',
             quantity=Decimal('4.00'),
             unit_cost=Decimal('5.00'),
@@ -237,10 +237,10 @@ class MaterialWorksheetVersioningTest(MaterialTestBase):
         new_worksheet = self.worksheet.create_new_version()
 
         # New worksheet should have a task with 2 materials
-        new_tasks = new_worksheet.task_set.all()
+        new_tasks = new_worksheet.plan_tasks.all()
         self.assertEqual(new_tasks.count(), 1)
         new_task = new_tasks.first()
-        new_materials = new_task.materials.all()
+        new_materials = new_task.plan_materials.all()
         self.assertEqual(new_materials.count(), 2)
 
         # Verify material data was copied
@@ -256,8 +256,8 @@ class MaterialWorksheetVersioningTest(MaterialTestBase):
 
     def test_version_materials_are_independent(self):
         """Modifying materials on new version doesn't affect original."""
-        Material.objects.create(
-            task=self.task,
+        PlanMaterial.objects.create(
+            plan_task=self.task,
             description='Original material',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'),
@@ -266,11 +266,11 @@ class MaterialWorksheetVersioningTest(MaterialTestBase):
 
         new_worksheet = self.worksheet.create_new_version()
 
-        new_task = new_worksheet.task_set.first()
-        new_material = new_task.materials.first()
+        new_task = new_worksheet.plan_tasks.first()
+        new_material = new_task.plan_materials.first()
         new_material.quantity = Decimal('99.00')
         new_material.save()
 
         # Original should be unchanged
-        original_material = self.task.materials.first()
+        original_material = self.task.plan_materials.first()
         self.assertEqual(original_material.quantity, Decimal('5.00'))

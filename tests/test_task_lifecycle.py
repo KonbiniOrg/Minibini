@@ -207,12 +207,8 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         with self.assertRaises(ValidationError):
             TaskLifecycleService.start_work(self.task.pk, self.user)
 
-    def test_start_work_rejects_worksheet_task(self):
-        from apps.estimates.models import EstWorksheet
-        ws = EstWorksheet.objects.create(job=self.job)
-        ws_task = Task.objects.create(name='WS Task', est_worksheet=ws)
-        with self.assertRaises(ValidationError):
-            TaskLifecycleService.start_work(ws_task.pk, self.user)
+    # Obsolete post-split: Task is WO-only by type, so constructing a
+    # worksheet Task is no longer possible. (test_start_work_rejects_worksheet_task)
 
     def test_start_work_closes_users_other_open_blep(self):
         other_task = Task.objects.create(name='Other Task', work_order=self.wo)
@@ -357,14 +353,8 @@ class TaskBlockedWorkOrderBlockedTest(BaseTestCase):
         self.wo.refresh_from_db()
         self.assertEqual(self.wo.status, WorkOrder.STATUS_BLOCKED)
 
-    def test_worksheet_task_block_does_not_affect_workorder(self):
-        """Blocking a task on an EstWorksheet should not try to block a WorkOrder."""
-        from apps.estimates.models import EstWorksheet
-        ws = EstWorksheet.objects.create(job=self.job)
-        ws_task = Task.objects.create(name='WS Task', est_worksheet=ws)
-        TaskLifecycleService.block_task(ws_task.pk)
-        ws_task.refresh_from_db()
-        self.assertEqual(ws_task.status, Task.STATUS_BLOCKED)
+    # Obsolete post-split: Task is WO-only (no status on PlanTask).
+    # (test_worksheet_task_block_does_not_affect_workorder)
 
 
 class CancelTaskTest(BaseTestCase):

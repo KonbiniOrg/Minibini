@@ -3,7 +3,7 @@
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, PlanTask
 from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate, EstimateLineItem, WorkOrderTemplate
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
@@ -102,7 +102,7 @@ class TaskCRUDTests(TestCase):
         self.assertEqual(response.status_code, 302)
 
         # Check task was created
-        task = Task.objects.filter(est_worksheet=self.worksheet).first()
+        task = PlanTask.objects.filter(est_worksheet=self.worksheet).first()
         self.assertIsNotNone(task)
         self.assertEqual(task.est_qty, 5.0)
         self.assertEqual(task.rate, self.task_template.rate)
@@ -132,7 +132,7 @@ class TaskCRUDTests(TestCase):
         self.assertEqual(response.status_code, 302)
 
         # Check task was created
-        task = Task.objects.filter(est_worksheet=self.worksheet).first()
+        task = PlanTask.objects.filter(est_worksheet=self.worksheet).first()
         self.assertIsNotNone(task)
         self.assertEqual(task.name, 'Manual Task')
         self.assertEqual(task.est_qty, 10.0)

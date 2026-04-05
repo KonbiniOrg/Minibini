@@ -331,8 +331,6 @@
             "est_qty": "8.00",
             "description": "",
             "sort_order": null,
-            "mapping_strategy": "direct",
-            "bundle": null,
             "accounting_category": null
         }
     },
@@ -348,8 +346,6 @@
             "est_qty": "150.00",
             "description": "",
             "sort_order": null,
-            "mapping_strategy": "direct",
-            "bundle": null,
             "accounting_category": null
         }
     },
@@ -497,7 +493,7 @@
         "pk": 2,
         "fields": {
             "estimate": 1,
-            "task": 2,
+            "task": null,
             "price_list_item": null,
             "line_number": 2,
             "qty": "8.00",

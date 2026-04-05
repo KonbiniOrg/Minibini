@@ -4,9 +4,9 @@ Tests for automatic earmarking when an estimate is accepted.
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
-from apps.inventory.models import Material
+from apps.inventory.models import PlanMaterial
 from apps.inventory.models import PriceListItem
 from apps.inventory.models import Earmark
 
@@ -56,7 +56,7 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, estimate=self.estimate, version=1,
         )
-        self.task = Task.objects.create(
+        self.task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build cabinets',
             description='Build cabinets',
@@ -71,12 +71,12 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
 
     def test_earmarks_created_on_estimate_accepted(self):
         """Earmarks are auto-created when estimate transitions to accepted."""
-        Material.objects.create(
-            task=self.task, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
-        Material.objects.create(
-            task=self.task, price_list_item=self.screws,
+        PlanMaterial.objects.create(
+            plan_task=self.task, price_list_item=self.screws,
             quantity=Decimal('2.00'), unit_cost=Decimal('8.00'), sell_price=Decimal('12.00'),
         )
 
@@ -95,18 +95,17 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
 
     def test_aggregates_across_tasks(self):
         """Earmarks aggregate material quantities across multiple tasks."""
-        task_b = Task.objects.create(
+        task_b = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install trim',
             description='Install trim',
             sort_order=2,
         )
-        Material.objects.create(
-            task=self.task, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
-        Material.objects.create(
-            task=task_b, price_list_item=self.plywood,
+        PlanMaterial.objects.create(plan_task=task_b, price_list_item=self.plywood,
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
 
@@ -121,8 +120,8 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
 
     def test_no_earmarks_without_inventoried_materials(self):
         """No earmarks created when materials don't reference inventoried items."""
-        Material.objects.create(
-            task=self.task,
+        PlanMaterial.objects.create(
+            plan_task=self.task,
             description='Custom brackets',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
         )
@@ -137,8 +136,8 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
 
     def test_no_earmarks_on_non_accepted_transitions(self):
         """Earmarks are NOT created for other status transitions."""
-        Material.objects.create(
-            task=self.task, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
 

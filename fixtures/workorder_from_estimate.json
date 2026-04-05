@@ -71,7 +71,6 @@
         "fields": {
             "template_name": "Parent Task Template",
             "description": "Parent task for hierarchy testing",
-            "parent_template": null,
             "units": "hours",
             "rate": "50.00",
             "is_active": true,
@@ -84,7 +83,6 @@
         "fields": {
             "template_name": "Child Task Template",
             "description": "Child task for hierarchy testing",
-            "parent_template": 50,
             "units": "hours",
             "rate": "45.00",
             "is_active": true,
@@ -170,12 +168,9 @@
         }
     },
     {
-        "model": "jobs.task",
+        "model": "jobs.plantask",
         "pk": 100,
         "fields": {
-            "parent_task": null,
-            "assignee": null,
-            "work_order": null,
             "est_worksheet": 100,
             "name": "Parent Task - Assembly",
             "units": "hours",
@@ -189,12 +184,9 @@
         }
     },
     {
-        "model": "jobs.task",
+        "model": "jobs.plantask",
         "pk": 101,
         "fields": {
-            "parent_task": 100,
-            "assignee": null,
-            "work_order": null,
             "est_worksheet": 100,
             "name": "Child Task - Component A",
             "units": "hours",
@@ -208,12 +200,9 @@
         }
     },
     {
-        "model": "jobs.task",
+        "model": "jobs.plantask",
         "pk": 102,
         "fields": {
-            "parent_task": 100,
-            "assignee": null,
-            "work_order": null,
             "est_worksheet": 100,
             "name": "Child Task - Component B",
             "units": "pcs",
@@ -227,12 +216,9 @@
         }
     },
     {
-        "model": "jobs.task",
+        "model": "jobs.plantask",
         "pk": 103,
         "fields": {
-            "parent_task": null,
-            "assignee": null,
-            "work_order": null,
             "est_worksheet": 100,
             "name": "Standalone Task - Material Delivery",
             "units": "hours",
@@ -246,12 +232,9 @@
         }
     },
     {
-        "model": "jobs.task",
+        "model": "jobs.plantask",
         "pk": 104,
         "fields": {
-            "parent_task": null,
-            "assignee": null,
-            "work_order": null,
             "est_worksheet": 100,
             "name": "Standalone Task - Quality Check",
             "units": "hours",

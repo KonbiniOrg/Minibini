@@ -1,10 +1,10 @@
 """
 Tests that EstimateGenerationService reads mapping config from instance-level
-Task fields (mapping_strategy, bundle) rather than reaching back to templates.
+PlanTask fields (mapping_strategy, bundle) rather than reaching back to templates.
 """
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import Task, TaskBundle, Job
+from apps.jobs.models import PlanTask, PlanBundle, Job
 from apps.estimates.models import EstWorksheet, EstimateLineItem
 from apps.estimates.services import EstimateGenerationService
 from apps.contacts.models import Contact
@@ -12,7 +12,7 @@ from apps.core.models import AccountingCategory, Configuration
 
 
 class InstanceLevelEstimateGenerationTest(TestCase):
-    """EstimateGenerationService should use Task.mapping_strategy and Task.bundle,
+    """EstimateGenerationService should use PlanTask.mapping_strategy and PlanTask.bundle,
     not reach back to TemplateTaskAssociation."""
 
     def setUp(self):
@@ -37,8 +37,8 @@ class InstanceLevelEstimateGenerationTest(TestCase):
     def test_direct_task_without_template(self):
         """A manually created task (no template) with mapping_strategy='direct' becomes a line item."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        Task.objects.create(
-            est_worksheet=worksheet, name="Custom Task",
+        PlanTask.objects.create(
+            est_worksheet=worksheet, name="Custom PlanTask",
             rate=Decimal('100'), est_qty=Decimal('2'), units='hours',
             mapping_strategy='direct'
         )
@@ -48,7 +48,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
 
         self.assertEqual(estimate.estimatelineitem_set.count(), 1)
         li = estimate.estimatelineitem_set.first()
-        self.assertEqual(li.description, "Custom Task")
+        self.assertEqual(li.description, "Custom PlanTask")
         # price is the unit price, total_amount = qty * price
         self.assertEqual(li.price, Decimal('100.00'))
         self.assertEqual(li.qty, Decimal('2.00'))
@@ -57,13 +57,13 @@ class InstanceLevelEstimateGenerationTest(TestCase):
     def test_excluded_task_without_template(self):
         """A manually created task with mapping_strategy='exclude' does not become a line item."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        Task.objects.create(
-            est_worksheet=worksheet, name="Visible Task",
+        PlanTask.objects.create(
+            est_worksheet=worksheet, name="Visible PlanTask",
             rate=Decimal('50'), est_qty=Decimal('1'),
             mapping_strategy='direct'
         )
-        Task.objects.create(
-            est_worksheet=worksheet, name="Internal Task",
+        PlanTask.objects.create(
+            est_worksheet=worksheet, name="Internal PlanTask",
             rate=Decimal('25'), est_qty=Decimal('1'),
             mapping_strategy='exclude'
         )
@@ -72,21 +72,21 @@ class InstanceLevelEstimateGenerationTest(TestCase):
         estimate = service.generate_estimate_from_worksheet(worksheet)
 
         self.assertEqual(estimate.estimatelineitem_set.count(), 1)
-        self.assertEqual(estimate.estimatelineitem_set.first().description, "Visible Task")
+        self.assertEqual(estimate.estimatelineitem_set.first().description, "Visible PlanTask")
 
     def test_bundled_tasks_without_template(self):
-        """Manually created tasks with TaskBundle become one line item, no template needed."""
+        """Manually created tasks with PlanBundle become one line item, no template needed."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=worksheet, name="Prep Work",
             accounting_category=self.lit_labor, sort_order=1
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Sand",
             rate=Decimal('50'), est_qty=Decimal('1'),
             mapping_strategy='bundle', bundle=bundle
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Clean",
             rate=Decimal('25'), est_qty=Decimal('1'),
             mapping_strategy='bundle', bundle=bundle
@@ -104,27 +104,27 @@ class InstanceLevelEstimateGenerationTest(TestCase):
     def test_mixed_strategies_without_template(self):
         """Mixed direct, bundled, excluded - all from instance-level config, no templates."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=worksheet, name="Prep",
             accounting_category=self.lit_labor, sort_order=1
         )
 
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Sand",
             rate=Decimal('50'), est_qty=Decimal('1'),
             mapping_strategy='bundle', bundle=bundle
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Clean",
             rate=Decimal('25'), est_qty=Decimal('1'),
             mapping_strategy='bundle', bundle=bundle
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Apply Finish",
             rate=Decimal('100'), est_qty=Decimal('2'),
             mapping_strategy='direct'
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="QC Check",
             rate=Decimal('0'), est_qty=Decimal('1'),
             mapping_strategy='exclude'
@@ -159,7 +159,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
 
         worksheet = EstWorksheet.objects.create(job=self.job)
         # But instance says 'exclude'
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Sand",
             rate=Decimal('50'), est_qty=Decimal('1'),
             accounting_category=self.lit_labor,

@@ -5,9 +5,9 @@ InventoryService earmark methods: get_earmark_preview() and create_earmarks_for_
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import EstWorksheet
-from apps.inventory.models import Material
+from apps.inventory.models import PlanMaterial
 from apps.inventory.models import PriceListItem
 from apps.inventory.models import Earmark
 from apps.inventory.services import InventoryService
@@ -54,13 +54,13 @@ class EarmarkPreviewTest(TestCase):
             is_inventoried=True,
         )
 
-        self.task_a = Task.objects.create(
+        self.task_a = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build cabinets',
             description='Build cabinets',
             sort_order=1,
         )
-        self.task_b = Task.objects.create(
+        self.task_b = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install trim',
             description='Install trim',
@@ -69,12 +69,12 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_aggregates_by_item(self):
         """Preview aggregates material quantities by price list item across tasks."""
-        Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
-        Material.objects.create(
-            task=self.task_b, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task_b, price_list_item=self.plywood,
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -84,8 +84,8 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_shows_available_qty(self):
         """Preview shows current available quantity."""
-        Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -93,8 +93,8 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_shows_shortfall(self):
         """Preview shows shortfall when needed > available."""
-        Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('25.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -102,8 +102,8 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_no_shortfall_when_sufficient(self):
         """Preview shows zero shortfall when enough stock."""
-        Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -111,12 +111,12 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_multiple_items(self):
         """Preview handles multiple different items."""
-        Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
-        Material.objects.create(
-            task=self.task_a, price_list_item=self.screws,
+        PlanMaterial.objects.create(
+            plan_task=self.task_a, price_list_item=self.screws,
             quantity=Decimal('2.00'), unit_cost=Decimal('8.00'), sell_price=Decimal('12.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -133,8 +133,8 @@ class EarmarkPreviewTest(TestCase):
         Earmark.objects.create(
             price_list_item=self.plywood, job=other_job, quantity=Decimal('15.00'),
         )
-        Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+        PlanMaterial.objects.create(
+            plan_task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('10.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -144,8 +144,8 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_empty_when_no_inventoried_materials(self):
         """Preview returns empty list when no materials reference inventoried items."""
-        Material.objects.create(
-            task=self.task_a,
+        PlanMaterial.objects.create(
+            plan_task=self.task_a,
             description='Custom brackets',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
         )
@@ -157,8 +157,8 @@ class EarmarkPreviewTest(TestCase):
         non_inv = PriceListItem.objects.create(
             code='NONINV', description='Not tracked', is_inventoried=False,
         )
-        Material.objects.create(
-            task=self.task_a, price_list_item=non_inv,
+        PlanMaterial.objects.create(
+            plan_task=self.task_a, price_list_item=non_inv,
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)

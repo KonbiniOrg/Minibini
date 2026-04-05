@@ -538,14 +538,17 @@ class BundlingService:
         Additive: starts from existing max sort_order in the bundle + 1.
         """
         from django.db.models import Max
-        existing_max = bundle.tasks.aggregate(
-            Max('sort_order')
-        )['sort_order__max'] if hasattr(bundle, 'tasks') else None
-        if existing_max is None:
-            # Try associations (TemplateBundle)
+        # Try plan_tasks (PlanBundle) first, then associations (TemplateBundle)
+        if hasattr(bundle, 'plan_tasks'):
+            existing_max = bundle.plan_tasks.aggregate(
+                Max('sort_order')
+            )['sort_order__max']
+        elif hasattr(bundle, 'associations'):
             existing_max = bundle.associations.aggregate(
                 Max('sort_order')
-            )['sort_order__max'] if hasattr(bundle, 'associations') else None
+            )['sort_order__max']
+        else:
+            existing_max = None
         existing_max = existing_max or 0
 
         for i, item in enumerate(items_qs.order_by('sort_order', 'pk'), start=existing_max + 1):
@@ -611,8 +614,14 @@ class BundlingService:
         container_items = []
         seen_bundles = set()
 
-        for item in items_qs.select_related('bundle'):
-            if item.mapping_strategy == 'bundle' and item.bundle:
+        # WO Tasks have no 'bundle' field; only PlanTasks (and TemplateTaskAssociations) do.
+        has_bundle = any(
+            f.name == 'bundle' for f in items_qs.model._meta.get_fields()
+        )
+        qs = items_qs.select_related('bundle') if has_bundle else items_qs
+
+        for item in qs:
+            if has_bundle and item.mapping_strategy == 'bundle' and item.bundle:
                 if item.bundle_id not in seen_bundles:
                     seen_bundles.add(item.bundle_id)
                     container_items.append(

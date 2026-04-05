@@ -7,7 +7,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
@@ -38,23 +38,23 @@ class TaskDetailAccountingCategoryDisplayTests(TestCase):
 
     def test_detail_shows_accounting_category_when_set(self):
         """Task detail should display the line item type name when set."""
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='Task With Type', est_worksheet=self.worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
             accounting_category=self.lit,
         )
-        url = reverse('jobs:task_detail', args=[task.task_id])
+        url = reverse('jobs:task_detail', args=[task.plan_task_id])
         response = self.client.get(url)
         self.assertContains(response, 'Accounting Category')
         self.assertContains(response, 'Service')
 
     def test_detail_shows_accounting_category_row_when_null(self):
         """Task detail should always show the Accounting Category row, even when null."""
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='Task No Type', est_worksheet=self.worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
         )
-        url = reverse('jobs:task_detail', args=[task.task_id])
+        url = reverse('jobs:task_detail', args=[task.plan_task_id])
         response = self.client.get(url)
         self.assertContains(response, 'Accounting Category')
 
@@ -83,22 +83,22 @@ class TaskEditAccountingCategoryTests(TestCase):
 
     def test_edit_form_shows_accounting_category_field(self):
         """Task edit form should include a accounting_category dropdown."""
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='Editable Task', est_worksheet=self.worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
         )
-        url = reverse('jobs:task_edit', args=[task.task_id])
+        url = reverse('jobs:task_edit', args=[task.plan_task_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'accounting_category')
 
     def test_edit_post_can_set_accounting_category(self):
         """POST on task edit should be able to set accounting_category."""
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='Task', est_worksheet=self.worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
         )
-        url = reverse('jobs:task_edit', args=[task.task_id])
+        url = reverse('jobs:task_edit', args=[task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Task',
             'units': 'hours',
@@ -106,18 +106,18 @@ class TaskEditAccountingCategoryTests(TestCase):
             'est_qty': '2.00',
             'accounting_category': self.lit_svc.pk,
         })
-        self.assertRedirects(response, reverse('jobs:task_detail', args=[task.task_id]))
+        self.assertRedirects(response, reverse('jobs:task_detail', args=[task.plan_task_id]))
         task.refresh_from_db()
         self.assertEqual(task.accounting_category, self.lit_svc)
 
     def test_edit_post_can_change_accounting_category(self):
         """POST on task edit should be able to change accounting_category."""
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='Task', est_worksheet=self.worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
             accounting_category=self.lit_svc,
         )
-        url = reverse('jobs:task_edit', args=[task.task_id])
+        url = reverse('jobs:task_edit', args=[task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Task',
             'units': 'hours',
@@ -125,18 +125,18 @@ class TaskEditAccountingCategoryTests(TestCase):
             'est_qty': '2.00',
             'accounting_category': self.lit_prd.pk,
         })
-        self.assertRedirects(response, reverse('jobs:task_detail', args=[task.task_id]))
+        self.assertRedirects(response, reverse('jobs:task_detail', args=[task.plan_task_id]))
         task.refresh_from_db()
         self.assertEqual(task.accounting_category, self.lit_prd)
 
     def test_edit_post_can_clear_accounting_category(self):
         """POST on task edit should be able to clear accounting_category."""
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='Task', est_worksheet=self.worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
             accounting_category=self.lit_svc,
         )
-        url = reverse('jobs:task_edit', args=[task.task_id])
+        url = reverse('jobs:task_edit', args=[task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Task',
             'units': 'hours',
@@ -144,7 +144,7 @@ class TaskEditAccountingCategoryTests(TestCase):
             'est_qty': '2.00',
             'accounting_category': '',
         })
-        self.assertRedirects(response, reverse('jobs:task_detail', args=[task.task_id]))
+        self.assertRedirects(response, reverse('jobs:task_detail', args=[task.plan_task_id]))
         task.refresh_from_db()
         self.assertIsNone(task.accounting_category)
 
@@ -191,7 +191,7 @@ class TaskAddManualAccountingCategoryTests(TestCase):
             response,
             reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         )
-        task = Task.objects.get(name='New Manual Task')
+        task = PlanTask.objects.get(name='New Manual Task')
         self.assertEqual(task.accounting_category, self.lit)
 
 

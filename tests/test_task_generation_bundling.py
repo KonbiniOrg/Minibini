@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import Task, TaskBundle, WorkOrder, Job
+from apps.jobs.models import PlanTask, PlanBundle, WorkOrder, Job
 from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
@@ -56,7 +56,7 @@ class TaskGenerationBundlingTest(TestCase):
         self.assertIsNone(tasks[0].bundle)
 
     def test_bundled_tasks_create_task_bundle(self):
-        """Generating from a template with a TemplateBundle creates a TaskBundle on the worksheet."""
+        """Generating from a template with a TemplateBundle creates a PlanBundle on the worksheet."""
         wot = WorkOrderTemplate.objects.create(template_name="Bundle Job")
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name="Prep Work",
@@ -81,8 +81,8 @@ class TaskGenerationBundlingTest(TestCase):
         worksheet = EstWorksheet.objects.create(job=self.job)
         tasks = wot.generate_tasks_for_worksheet(worksheet)
 
-        # Should have created a TaskBundle on the worksheet
-        task_bundles = list(worksheet.bundles.all())
+        # Should have created a PlanBundle on the worksheet
+        task_bundles = list(worksheet.plan_bundles.all())
         self.assertEqual(len(task_bundles), 1)
         tb = task_bundles[0]
         self.assertEqual(tb.name, "Prep Work")
@@ -90,14 +90,14 @@ class TaskGenerationBundlingTest(TestCase):
         self.assertEqual(tb.source_template_bundle, template_bundle)
         self.assertEqual(tb.sort_order, 1)
 
-        # Both tasks should be bundled and point to the TaskBundle
+        # Both tasks should be bundled and point to the PlanBundle
         self.assertEqual(len(tasks), 2)
         for task in tasks:
             self.assertEqual(task.mapping_strategy, 'bundle')
             self.assertEqual(task.bundle, tb)
 
     def test_multiple_bundles_created_separately(self):
-        """Each TemplateBundle becomes its own TaskBundle."""
+        """Each TemplateBundle becomes its own PlanBundle."""
         wot = WorkOrderTemplate.objects.create(template_name="Multi Bundle")
         bundle_a = TemplateBundle.objects.create(
             work_order_template=wot, name="Prep",
@@ -126,7 +126,7 @@ class TaskGenerationBundlingTest(TestCase):
         worksheet = EstWorksheet.objects.create(job=self.job)
         tasks = wot.generate_tasks_for_worksheet(worksheet)
 
-        task_bundles = list(worksheet.bundles.order_by('sort_order'))
+        task_bundles = list(worksheet.plan_bundles.order_by('sort_order'))
         self.assertEqual(len(task_bundles), 2)
         self.assertEqual(task_bundles[0].name, "Prep")
         self.assertEqual(task_bundles[0].source_template_bundle, bundle_a)
@@ -182,8 +182,8 @@ class TaskGenerationBundlingTest(TestCase):
 
         self.assertEqual(len(tasks), 4)
 
-        # One TaskBundle created
-        self.assertEqual(worksheet.bundles.count(), 1)
+        # One PlanBundle created
+        self.assertEqual(worksheet.plan_bundles.count(), 1)
 
         task_map = {t.name: t for t in tasks}
         self.assertEqual(task_map["Sand"].mapping_strategy, 'bundle')

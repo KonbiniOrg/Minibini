@@ -5,7 +5,7 @@ Tests for task detail view enhancements and task editing.
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.contacts.models import Contact
 from decimal import Decimal
@@ -38,33 +38,33 @@ class TaskDetailViewTests(TestCase):
             job=self.job, status=EstWorksheet.STATUS_FINAL, version=2
         )
 
-        self.draft_task = Task.objects.create(
+        self.draft_task = PlanTask.objects.create(
             name='Draft Task', est_worksheet=self.draft_worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00')
         )
-        self.final_task = Task.objects.create(
+        self.final_task = PlanTask.objects.create(
             name='Final Task', est_worksheet=self.final_worksheet,
             units='sq ft', rate=Decimal('10.00'), est_qty=Decimal('100.00')
         )
 
     def test_detail_shows_edit_link_for_draft_worksheet_task(self):
         """Task detail should show an Edit link when the task is on a draft worksheet."""
-        url = reverse('jobs:task_detail', args=[self.draft_task.task_id])
+        url = reverse('jobs:task_detail', args=[self.draft_task.plan_task_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        edit_url = reverse('jobs:task_edit', args=[self.draft_task.task_id])
+        edit_url = reverse('jobs:task_edit', args=[self.draft_task.plan_task_id])
         self.assertContains(response, edit_url)
 
     def test_detail_hides_edit_link_for_final_worksheet_task(self):
         """Task detail should NOT show an Edit link when the task is on a non-draft worksheet."""
-        url = reverse('jobs:task_detail', args=[self.final_task.task_id])
+        url = reverse('jobs:task_detail', args=[self.final_task.plan_task_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'Edit')
 
     def test_detail_links_back_to_worksheet(self):
         """Task detail should link back to its worksheet, not the task list."""
-        url = reverse('jobs:task_detail', args=[self.draft_task.task_id])
+        url = reverse('jobs:task_detail', args=[self.draft_task.plan_task_id])
         response = self.client.get(url)
         worksheet_url = reverse('estimates:estworksheet_detail', args=[self.draft_worksheet.est_worksheet_id])
         self.assertContains(response, worksheet_url)
@@ -73,7 +73,7 @@ class TaskDetailViewTests(TestCase):
         """Worksheet detail should link task names to their detail pages."""
         url = reverse('estimates:estworksheet_detail', args=[self.draft_worksheet.est_worksheet_id])
         response = self.client.get(url)
-        task_detail_url = reverse('jobs:task_detail', args=[self.draft_task.task_id])
+        task_detail_url = reverse('jobs:task_detail', args=[self.draft_task.plan_task_id])
         self.assertContains(response, task_detail_url)
 
 
@@ -99,14 +99,14 @@ class TaskEditViewTests(TestCase):
             job=self.job, status=Job.STATUS_DRAFT, version=1
         )
 
-        self.task = Task.objects.create(
+        self.task = PlanTask.objects.create(
             name='Editable Task', est_worksheet=self.draft_worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00')
         )
 
     def test_edit_get_shows_form_with_current_values(self):
         """GET on task edit should show a form pre-filled with current task values."""
-        url = reverse('jobs:task_edit', args=[self.task.task_id])
+        url = reverse('jobs:task_edit', args=[self.task.plan_task_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Editable Task')
@@ -115,7 +115,7 @@ class TaskEditViewTests(TestCase):
 
     def test_edit_post_updates_task_fields(self):
         """POST on task edit should update the task's name, units, rate, and est_qty."""
-        url = reverse('jobs:task_edit', args=[self.task.task_id])
+        url = reverse('jobs:task_edit', args=[self.task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Updated Task',
             'units': 'sq ft',
@@ -126,7 +126,7 @@ class TaskEditViewTests(TestCase):
         # Should redirect to task detail
         self.assertRedirects(
             response,
-            reverse('jobs:task_detail', args=[self.task.task_id])
+            reverse('jobs:task_detail', args=[self.task.plan_task_id])
         )
 
         # Verify task was updated
@@ -138,7 +138,7 @@ class TaskEditViewTests(TestCase):
 
     def test_edit_post_shows_success_message(self):
         """POST on task edit should show a success message."""
-        url = reverse('jobs:task_edit', args=[self.task.task_id])
+        url = reverse('jobs:task_edit', args=[self.task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Updated Task',
             'units': 'hours',
@@ -151,7 +151,7 @@ class TaskEditViewTests(TestCase):
 
     def test_edit_post_with_invalid_data_redisplays_form(self):
         """POST with missing required name should redisplay the form with errors."""
-        url = reverse('jobs:task_edit', args=[self.task.task_id])
+        url = reverse('jobs:task_edit', args=[self.task.plan_task_id])
         response = self.client.post(url, {
             'name': '',  # required field
             'units': 'hours',
@@ -189,29 +189,29 @@ class TaskEditRestrictionTests(TestCase):
             job=self.job, status=EstWorksheet.STATUS_SUPERSEDED, version=2
         )
 
-        self.final_task = Task.objects.create(
+        self.final_task = PlanTask.objects.create(
             name='Final Task', est_worksheet=self.final_worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00')
         )
-        self.superseded_task = Task.objects.create(
+        self.superseded_task = PlanTask.objects.create(
             name='Superseded Task', est_worksheet=self.superseded_worksheet,
             units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00')
         )
 
     def test_edit_get_blocked_for_final_worksheet(self):
         """GET on task edit should redirect with error for final worksheet tasks."""
-        url = reverse('jobs:task_edit', args=[self.final_task.task_id])
+        url = reverse('jobs:task_edit', args=[self.final_task.plan_task_id])
         response = self.client.get(url)
         self.assertRedirects(
             response,
-            reverse('jobs:task_detail', args=[self.final_task.task_id])
+            reverse('jobs:task_detail', args=[self.final_task.plan_task_id])
         )
         msgs = list(response.wsgi_request._messages)
         self.assertTrue(any('cannot' in str(m).lower() for m in msgs))
 
     def test_edit_post_blocked_for_final_worksheet(self):
         """POST on task edit should redirect with error for final worksheet tasks."""
-        url = reverse('jobs:task_edit', args=[self.final_task.task_id])
+        url = reverse('jobs:task_edit', args=[self.final_task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Hacked Task',
             'units': 'hours',
@@ -220,7 +220,7 @@ class TaskEditRestrictionTests(TestCase):
         })
         self.assertRedirects(
             response,
-            reverse('jobs:task_detail', args=[self.final_task.task_id])
+            reverse('jobs:task_detail', args=[self.final_task.plan_task_id])
         )
         # Task should NOT be changed
         self.final_task.refresh_from_db()
@@ -228,18 +228,18 @@ class TaskEditRestrictionTests(TestCase):
 
     def test_edit_get_blocked_for_superseded_worksheet(self):
         """GET on task edit should redirect with error for superseded worksheet tasks."""
-        url = reverse('jobs:task_edit', args=[self.superseded_task.task_id])
+        url = reverse('jobs:task_edit', args=[self.superseded_task.plan_task_id])
         response = self.client.get(url)
         self.assertRedirects(
             response,
-            reverse('jobs:task_detail', args=[self.superseded_task.task_id])
+            reverse('jobs:task_detail', args=[self.superseded_task.plan_task_id])
         )
         msgs = list(response.wsgi_request._messages)
         self.assertTrue(any('cannot' in str(m).lower() for m in msgs))
 
     def test_edit_post_blocked_for_superseded_worksheet(self):
         """POST on task edit should redirect with error for superseded worksheet tasks."""
-        url = reverse('jobs:task_edit', args=[self.superseded_task.task_id])
+        url = reverse('jobs:task_edit', args=[self.superseded_task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Hacked Task',
             'units': 'hours',
@@ -248,7 +248,7 @@ class TaskEditRestrictionTests(TestCase):
         })
         self.assertRedirects(
             response,
-            reverse('jobs:task_detail', args=[self.superseded_task.task_id])
+            reverse('jobs:task_detail', args=[self.superseded_task.plan_task_id])
         )
         self.superseded_task.refresh_from_db()
         self.assertEqual(self.superseded_task.name, 'Superseded Task')

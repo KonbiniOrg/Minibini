@@ -113,16 +113,12 @@ class HomeEndpointTest(FixtureTestCase):
         self.wo = WorkOrder.objects.create(job=self.job)
 
     def _make_task(self, name, status=Task.STATUS_PENDING, assignee=None,
-                   worker_queue=None, work_order=None, est_worksheet=None):
-        kwargs = {'name': name, 'status': status}
+                   worker_queue=None, work_order=None):
+        kwargs = {'name': name, 'status': status, 'work_order': work_order or self.wo}
         if assignee is not None:
             kwargs['assignee'] = assignee
         if worker_queue is not None:
             kwargs['worker_queue'] = worker_queue
-        if work_order is not None:
-            kwargs['work_order'] = work_order
-        if est_worksheet is not None:
-            kwargs['est_worksheet'] = est_worksheet
         return Task.objects.create(**kwargs)
 
     def test_home_requires_authentication(self):
@@ -138,18 +134,15 @@ class HomeEndpointTest(FixtureTestCase):
         self.assertIn('recent_jobs', data)
 
     def test_assigned_tasks_includes_only_work_order_tasks(self):
+        # Post-split: Task is always WO-side; PlanTasks on a worksheet are a
+        # different model and cannot be assigned to the user, so they are
+        # never in the assigned-tasks feed.
         self._make_task('WO task', assignee=self.user, worker_queue=1,
                         work_order=self.wo)
-        # Create an EstWorksheet task assigned to the user — should be excluded
-        from apps.estimates.models import EstWorksheet
-        worksheet = EstWorksheet.objects.create(job=self.job)
-        self._make_task('Worksheet task', assignee=self.user, worker_queue=1,
-                        est_worksheet=worksheet)
 
         response = self.client.get('/api/home/')
         names = [t['name'] for t in response.json()['assigned_tasks']]
         self.assertIn('WO task', names)
-        self.assertNotIn('Worksheet task', names)
 
     def test_assigned_tasks_excludes_completed_and_cancelled(self):
         self._make_task('Pending task', status=Task.STATUS_PENDING,

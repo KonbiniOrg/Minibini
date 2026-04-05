@@ -5,7 +5,7 @@ Test that worksheets are properly finalized after generating estimates.
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate
 from apps.core.models import Configuration
 from apps.contacts.models import Contact
@@ -74,7 +74,7 @@ class WorksheetFinalizationTests(TestCase):
         self.accounting_category, _ = AccountingCategory.objects.get_or_create(
             code='LBR', defaults={'name': 'Labor'}
         )
-        self.task = Task.objects.create(
+        self.task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Test Task',
             units='hours',
@@ -306,7 +306,7 @@ class WorksheetEstimateIntegrationTests(TestCase):
         )
 
         # Add task
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet,
             name='Test Task',
             units='hours',
@@ -354,7 +354,7 @@ class WorksheetEstimateIntegrationTests(TestCase):
         )
 
         # Add task to v2
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet_v2,
             name='Test Task v2',
             units='hours',

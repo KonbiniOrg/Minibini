@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import EstWorksheet, WorkOrderTemplate
 from apps.contacts.models import Contact
 
@@ -164,7 +164,7 @@ class EstWorksheetCreateFromJobTest(TestCase):
         # Verify worksheet was created with tasks
         from apps.jobs.models import Task
         worksheet = EstWorksheet.objects.get(job=self.job)
-        tasks = Task.objects.filter(est_worksheet=worksheet)
+        tasks = PlanTask.objects.filter(est_worksheet=worksheet)
 
         self.assertEqual(tasks.count(), 2)
 

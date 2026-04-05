@@ -5,7 +5,7 @@ Test that tasks cannot be added to non-draft worksheets.
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.contacts.models import Contact
 from decimal import Decimal
@@ -86,7 +86,7 @@ class WorksheetTaskRestrictionTests(TestCase):
         )
 
         # Verify task was created
-        tasks = Task.objects.filter(est_worksheet=self.draft_worksheet)
+        tasks = PlanTask.objects.filter(est_worksheet=self.draft_worksheet)
         self.assertEqual(tasks.count(), 1)
 
         task = tasks.first()
@@ -113,7 +113,7 @@ class WorksheetTaskRestrictionTests(TestCase):
         self.assertTrue(any('Cannot add tasks to a final worksheet' in str(m) for m in messages))
 
         # Verify no task was created
-        tasks = Task.objects.filter(est_worksheet=self.final_worksheet)
+        tasks = PlanTask.objects.filter(est_worksheet=self.final_worksheet)
         self.assertEqual(tasks.count(), 0)
 
     def test_cannot_add_task_from_template_to_superseded_worksheet(self):
@@ -137,7 +137,7 @@ class WorksheetTaskRestrictionTests(TestCase):
         self.assertTrue(any('Cannot add tasks to a superseded worksheet' in str(m) for m in messages))
 
         # Verify no task was created
-        tasks = Task.objects.filter(est_worksheet=self.superseded_worksheet)
+        tasks = PlanTask.objects.filter(est_worksheet=self.superseded_worksheet)
         self.assertEqual(tasks.count(), 0)
 
     def test_cannot_add_task_manually_to_final_worksheet(self):
@@ -164,7 +164,7 @@ class WorksheetTaskRestrictionTests(TestCase):
         self.assertTrue(any('Cannot add tasks to a final worksheet' in str(m) for m in messages))
 
         # Verify no task was created
-        tasks = Task.objects.filter(est_worksheet=self.final_worksheet)
+        tasks = PlanTask.objects.filter(est_worksheet=self.final_worksheet)
         self.assertEqual(tasks.count(), 0)
 
     def test_cannot_add_task_manually_to_superseded_worksheet(self):
@@ -191,7 +191,7 @@ class WorksheetTaskRestrictionTests(TestCase):
         self.assertTrue(any('Cannot add tasks to a superseded worksheet' in str(m) for m in messages))
 
         # Verify no task was created
-        tasks = Task.objects.filter(est_worksheet=self.superseded_worksheet)
+        tasks = PlanTask.objects.filter(est_worksheet=self.superseded_worksheet)
         self.assertEqual(tasks.count(), 0)
 
     def test_get_request_rejected_for_final_worksheet_template_addition(self):
@@ -290,7 +290,7 @@ class WorksheetTaskRestrictionTests(TestCase):
         )
 
         # Verify task was created
-        tasks = Task.objects.filter(est_worksheet=self.draft_worksheet)
+        tasks = PlanTask.objects.filter(est_worksheet=self.draft_worksheet)
         self.assertEqual(tasks.count(), 1)
 
         task = tasks.first()
@@ -358,7 +358,7 @@ class WorksheetTaskWorkflowTests(TestCase):
         )
 
         # Verify task was added
-        self.assertEqual(Task.objects.filter(est_worksheet=worksheet).count(), 1)
+        self.assertEqual(PlanTask.objects.filter(est_worksheet=worksheet).count(), 1)
 
         # Mark worksheet as final
         worksheet.status = EstWorksheet.STATUS_FINAL
@@ -381,4 +381,4 @@ class WorksheetTaskWorkflowTests(TestCase):
         self.assertTrue(any('Cannot add tasks to a final worksheet' in str(m) for m in messages))
 
         # Verify only the original task exists
-        self.assertEqual(Task.objects.filter(est_worksheet=worksheet).count(), 1)
+        self.assertEqual(PlanTask.objects.filter(est_worksheet=worksheet).count(), 1)
