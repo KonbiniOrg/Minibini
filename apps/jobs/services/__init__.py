@@ -12,6 +12,7 @@ from django.db.models import Q, Prefetch
 from django.utils import timezone
 
 from apps.jobs.models import Job, WorkOrder, Task, TaskBundle, Blep
+from apps.jobs.services.blep_service import BlepService
 from apps.estimates.models import (
     Estimate, WorkOrderTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
@@ -351,7 +352,7 @@ class TaskLifecycleService:
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
             now = timezone.now()
-            Blep.objects.filter(task=task, end_time__isnull=True).update(end_time=now)
+            BlepService._close_open(task=task)
             Task.objects.filter(pk=task.pk).update(status=Task.STATUS_COMPLETE)
             task.status = Task.STATUS_COMPLETE
             TaskLifecycleService._check_wo_auto_complete(task)
@@ -432,7 +433,7 @@ class TaskLifecycleService:
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
             now = timezone.now()
-            Blep.objects.filter(task=task, end_time__isnull=True).update(end_time=now)
+            BlepService._close_open(task=task)
             Task.objects.filter(pk=task.pk).update(status=Task.STATUS_CANCELLED)
             task.status = Task.STATUS_CANCELLED
             TaskLifecycleService._check_wo_auto_complete(task)
@@ -464,13 +465,13 @@ class TaskLifecycleService:
             if task.status == Task.STATUS_PENDING:
                 # First worker on a pending task: promote and consume materials.
                 # No conflict possible — nobody has touched it yet.
-                Blep.objects.filter(user=user, end_time__isnull=True).update(end_time=now)
+                BlepService._close_open(user=user, now=now)
                 Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
                 task.status = Task.STATUS_IN_PROGRESS
                 from apps.inventory.services import InventoryService
                 for material in task.materials.all():
                     InventoryService.consume_material(material)
-                blep = Blep.objects.create(task=task, user=user, start_time=now)
+                blep = BlepService._create(task, user, start_time=now)
                 return {'task': task, 'blep': blep}
 
             # Task is in_progress: check for other active workers.
@@ -490,21 +491,23 @@ class TaskLifecycleService:
                     'options': ['join', 'takeover'],
                 }
             # Close user's open Blep on ANY task
-            Blep.objects.filter(user=user, end_time__isnull=True).update(end_time=now)
+            BlepService._close_open(user=user, now=now)
             if action == 'takeover':
                 other_bleps.update(end_time=now)
-            blep = Blep.objects.create(task=task, user=user, start_time=now)
+            blep = BlepService._create(task, user, start_time=now)
             return {'task': task, 'blep': blep}
 
     @staticmethod
     def stop_work(task_pk, user):
         """Close user's open Blep on this task."""
+        from apps.jobs.models import Task
         with transaction.atomic():
-            updated = Blep.objects.filter(
-                task_id=task_pk, user=user, end_time__isnull=True
-            ).update(end_time=timezone.now())
-            if not updated:
+            task = Task.objects.get(pk=task_pk)
+            if not Blep.objects.filter(
+                task=task, user=user, end_time__isnull=True
+            ).exists():
                 raise ValidationError(
                     "No open time entry found for this user on this task."
                 )
+            BlepService._close_open(user=user, task=task)
 
