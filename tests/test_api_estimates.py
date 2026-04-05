@@ -52,4 +52,4 @@ class EstimateAPITest(BaseTestCase):
             response = self.client.delete(
                 f'/api/estimates/{estimate.pk}/line-items/{line_item.pk}/'
             )
-            self.assertEqual(response.status_code, 204)
+            self.assertEqual(response.status_code, 200)

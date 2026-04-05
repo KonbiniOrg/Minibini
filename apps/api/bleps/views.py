@@ -115,4 +115,4 @@ class BlepViewSet(viewsets.ModelViewSet):
             BlepService.delete(blep, request.user)
         except BlepPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({'message': 'Time entry deleted.'})

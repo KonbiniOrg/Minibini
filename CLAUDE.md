@@ -190,6 +190,7 @@ DRF-based API serving the Svelte frontend. Session-based authentication (no toke
 - Permission classes in `apps/api/permissions.py` — factory-generated from permission atoms
 - `StandardPagination`: 25 items/page, max 100, via `?page_size=N`
 - Delete confirmation pattern: first DELETE returns impact counts, second with `?confirm=true` executes
+- **All DELETE responses return 200 with a JSON body** (e.g. `{'message': '... deleted.'}`), never 204. The frontend `api.js` wrapper assumes every response has JSON. Override DRF's default `destroy()` on new viewsets. Some legacy viewsets still return 204 via `ModelViewSet` default — fix opportunistically
 
 **Stubs (not yet implemented):** `/api/auth/refresh/`, `/api/emails/send/`, `/api/shifts/`, `/api/expenses/`, `/api/time-tracking/`
 

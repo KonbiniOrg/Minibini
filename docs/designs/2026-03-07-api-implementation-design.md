@@ -218,6 +218,11 @@ Nested routes (line items, tasks, bundles, bleps under parents) use `@action` on
 
 Standard DRF conventions, no custom envelope.
 
+**DELETE responses are 200 with a JSON body**, not 204. This gives us room
+to include a message, impact counts, or follow-up data (e.g. a new "active"
+record after one is deleted) without having to change status codes later.
+The frontend `api.js` wrapper assumes every response has a JSON body.
+
 ### Single Object
 
 ```json
@@ -264,7 +269,7 @@ For contacts and businesses, `DELETE` without `?confirm=true` returns an impact 
 {"confirm_required": true, "impact": {"jobs": 3, "estimates": 7, "invoices": 2}}
 
 // DELETE /api/contacts/5/?confirm=true
-// 204 No Content (actually deletes)
+// 200 OK {"message": "\"Jane Doe\" has been deleted."}
 ```
 
 **Note:** This pattern may be expanded to other object types and/or refined. Design is provisional — revisit when the broader deletion UX is worked out.

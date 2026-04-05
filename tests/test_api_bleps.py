@@ -224,7 +224,7 @@ class BlepDeleteAPITest(BaseTestCase):
         )
         self.client.force_authenticate(user=self.user)
         resp = self.client.delete(f'/api/bleps/{blep.blep_id}/')
-        self.assertEqual(resp.status_code, 204)
+        self.assertEqual(resp.status_code, 200)
         self.assertFalse(Blep.objects.filter(pk=blep.blep_id).exists())
 
     def test_delete_old_blep_non_manager_denied(self):

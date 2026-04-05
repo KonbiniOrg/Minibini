@@ -126,7 +126,7 @@ class LineItemMixin:
         if request.method == 'DELETE':
             from apps.core.services import LineItemService
             LineItemService.delete_line_item_with_renumber(item)
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response({'message': 'Line item deleted.'})
 
         serializer = self.line_item_serializer_class(item, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -203,7 +203,7 @@ class TaskBundleMixin:
 
         if request.method == 'DELETE':
             task.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response({'message': 'Task deleted.'})
 
         serializer = self.task_serializer_class(task, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -236,7 +236,7 @@ class TaskBundleMixin:
                 bundle=None, mapping_strategy='direct'
             )
             bundle.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response({'message': 'Bundle deleted.'})
 
         serializer = self.bundle_serializer_class(bundle, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
