@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { refreshCurrentBlep } from '../../stores/currentBlep.js';
 
   let {
     task,
@@ -44,6 +45,7 @@
       if (resp && resp.conflict) {
         onConflict(resp);
       } else {
+        await refreshCurrentBlep();
         onChanged();
       }
     } catch (e) {

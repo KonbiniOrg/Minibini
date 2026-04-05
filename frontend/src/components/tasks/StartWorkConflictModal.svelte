@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { refreshCurrentBlep } from '../../stores/currentBlep.js';
 
   let {
     conflict = null,
@@ -16,6 +17,7 @@
     error = '';
     try {
       await api.post(`/api/tasks/${taskId}/start-work/`, { action });
+      await refreshCurrentBlep();
       onResolved();
     } catch (e) {
       error = e.message || 'Could not resolve conflict.';
