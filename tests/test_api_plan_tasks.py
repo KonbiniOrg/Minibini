@@ -73,3 +73,44 @@ class PlanTaskAPITest(TestCase):
         self.client.force_authenticate(user=None)
         response = self.client.get(f'/api/plan-tasks/{self.plan_task.pk}/')
         self.assertEqual(response.status_code, 403)
+
+
+class WorksheetNestedPlanTaskTest(TestCase):
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='testuser2', password='testpass',
+        )
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='Contact2',
+        )
+        self.job = Job.objects.create(
+            job_number='TEST-002', name='Test Job 2', contact=self.contact,
+        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.plan_task = PlanTask.objects.create(
+            est_worksheet=self.worksheet,
+            name='Sand floor',
+            units='sqft',
+            rate=2,
+            est_qty=100,
+        )
+
+    def test_nested_task_list_includes_materials(self):
+        from apps.inventory.models import PlanMaterial
+        PlanMaterial.objects.create(
+            plan_task=self.plan_task,
+            description='Sandpaper 120 grit',
+            quantity=10,
+            unit_cost=3,
+            sell_price=5,
+        )
+        response = self.client.get(
+            f'/api/est-worksheets/{self.worksheet.pk}/tasks/'
+        )
+        self.assertEqual(response.status_code, 200)
+        task_data = response.data[0]
+        self.assertIn('plan_materials', task_data)
+        self.assertEqual(len(task_data['plan_materials']), 1)
