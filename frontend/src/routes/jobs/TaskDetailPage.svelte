@@ -1,6 +1,9 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
+  import { user as userStore } from '../../stores/auth.js';
+  import { currentBlep } from '../../stores/currentBlep.js';
+  import TaskActions from '../../components/tasks/TaskActions.svelte';
 
   let { params = {} } = $props();
 
@@ -8,7 +11,15 @@
   let loading = $state(true);
   let error = $state('');
 
-  async function load() {
+  const activeBlepOnThisTask = $derived.by(() => {
+    const cb = $currentBlep;
+    if (!cb || !task) return null;
+    return cb.task && cb.task.id === task.task_id ? cb : null;
+  });
+
+  const userPermissions = $derived($userStore?.permissions || []);
+
+  async function loadTask() {
     loading = true;
     error = '';
     try {
@@ -20,8 +31,12 @@
     }
   }
 
+  async function refresh() {
+    await loadTask();
+  }
+
   $effect(() => {
-    if (params.taskId) load();
+    if (params.taskId) loadTask();
   });
 </script>
 
@@ -38,6 +53,15 @@
       </a>
     </p>
   {/if}
+
+  <TaskActions
+    {task}
+    user={$userStore}
+    {userPermissions}
+    {activeBlepOnThisTask}
+    onChanged={refresh}
+    onConflict={() => { /* wired in Task 14 */ }}
+  />
 
   <table border="1">
     <tbody>
