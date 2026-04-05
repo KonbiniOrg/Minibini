@@ -96,6 +96,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/task-templates/',
         '/api/accounting-categories/',
         '/api/price-list-items/',
+        '/api/bleps/',
         '/api/search/?q=test',
     ]
 
@@ -111,7 +112,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/work-orders/1/',
         '/api/work-orders/1/tasks/',
         '/api/work-orders/1/bundles/',
-        '/api/tasks/1/bleps/',
+        '/api/bleps/1/',
         '/api/contacts/1/',
         '/api/contacts/1/history/',
         '/api/businesses/1/',
