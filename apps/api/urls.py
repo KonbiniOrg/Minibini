@@ -12,7 +12,10 @@ from apps.api.invoicing.views import InvoiceViewSet
 from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
 from apps.api.inventory.views import PriceListItemViewSet
 from apps.api.search.views import search_view
-from apps.api.jobs.board_views import board_view, task_reorder_view, task_assign_view
+from apps.api.jobs.board_views import (
+    board_view, pipeline_view, approved_view, unpaid_view, closed_view,
+    task_reorder_view, task_assign_view,
+)
 from apps.api.home.views import current_blep_view, home_view
 from apps.api.stubs import stub_501
 from apps.api.templates_config.views import (
@@ -76,6 +79,10 @@ urlpatterns = [
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),
     path('qbo/', include('apps.qbo.urls')),
+    path('jobs/board/pipeline/', pipeline_view, name='board-pipeline'),
+    path('jobs/board/approved/', approved_view, name='board-approved'),
+    path('jobs/board/unpaid/', unpaid_view, name='board-unpaid'),
+    path('jobs/board/closed/', closed_view, name='board-closed'),
     path('jobs/board/', board_view, name='job-board'),
     path('home/', home_view, name='home'),
     path('bleps/current/', current_blep_view, name='bleps-current'),

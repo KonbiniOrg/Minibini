@@ -2,7 +2,7 @@
   import TaskCard from './TaskCard.svelte';
   import { onMount } from 'svelte';
 
-  let { workers = [], availableWorkers = [], canManage = false, focusedJobId = null, onAssign = () => {}, onAddWorker = () => {} } = $props();
+  let { workers = [], availableWorkers = [], canManage = false, focusedJobIds = [], onAssign = () => {}, onAddWorker = () => {} } = $props();
 
   let showDropdown = $state(false);
   let dragOverWorker = $state(null);
@@ -51,6 +51,7 @@
     const insertAt = dragOverIndex;
     dragOverWorker = null;
     dragOverIndex = -1;
+    draggingTaskId = null;
     if (!taskId || !canManage) return;
     onAssign(taskId, workerId, insertAt);
   }
@@ -101,7 +102,7 @@
           {/if}
           <div
             class="task-card-wrapper"
-            class:dimmed={focusedJobId !== null && task.job_id !== focusedJobId}
+            class:dimmed={focusedJobIds.length > 0 && !focusedJobIds.includes(task.job_id)}
             class:dragging-source={draggingTaskId === task.task_id}
             ondragover={(e) => handleTaskDragOver(e, worker.user.id, i)}
           >

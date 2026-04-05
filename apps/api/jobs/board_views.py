@@ -9,6 +9,34 @@ from apps.jobs.services.board_service import BoardService
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def pipeline_view(request):
+    data = BoardService.get_pipeline_data()
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def approved_view(request):
+    data = BoardService.get_approved_data()
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def unpaid_view(request):
+    data = BoardService.get_unpaid_data()
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def closed_view(request):
+    data = BoardService.get_closed_data()
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def board_view(request):
     """Return all data needed to render the job board."""
     data = BoardService.get_board_data()

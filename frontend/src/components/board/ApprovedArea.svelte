@@ -6,7 +6,7 @@
   import { api } from '../../lib/api.js';
 
   let { data = {}, canManage = false, onUpdate = () => {} } = $props();
-  let focusedJobId = $state(null);
+  let focusedJobIds = $state([]);
   let workerPct = $state(50); // percentage of worker-area given to worker section
 
   let workers = $state([]);
@@ -152,14 +152,14 @@
   <span class="count">{data.jobs?.length || 0}</span>
 </div>
 <div class="approved-content">
-  <JobChipStrip jobs={data.jobs || []} bind:focusedJobId />
+  <JobChipStrip jobs={data.jobs || []} bind:focusedJobIds />
 
   <div class="worker-area" id="workerArea">
     <div class="worker-section" style="flex: {workerPct};">
       <WorkerColumns
         workers={allWorkers}
         {canManage}
-        {focusedJobId}
+        {focusedJobIds}
         onAssign={assignTask}
         availableWorkers={filteredAvailable}
         onAddWorker={addWorker}
@@ -177,7 +177,7 @@
       <UnassignedPool
         tasks={unassigned}
         {canManage}
-        {focusedJobId}
+        {focusedJobIds}
         onAssign={assignTask}
       />
     </div>
