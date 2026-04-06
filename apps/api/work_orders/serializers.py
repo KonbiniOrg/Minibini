@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.jobs.models import WorkOrder, Task, TaskBundle
+from apps.jobs.models import WorkOrder, Task
 from apps.core.units import UnitsField
 
 
@@ -12,8 +12,7 @@ class TaskSerializer(serializers.ModelSerializer):
         fields = [
             'task_id', 'name', 'description', 'sort_order', 'status',
             'units', 'rate', 'est_qty', 'accounting_category',
-            'mapping_strategy', 'bundle', 'parent_task', 'assignee',
-            'assignee_name', 'worker_queue',
+            'parent_task', 'assignee', 'assignee_name', 'worker_queue',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
@@ -24,27 +23,14 @@ class TaskSerializer(serializers.ModelSerializer):
         return None
 
 
-class TaskBundleSerializer(serializers.ModelSerializer):
-    tasks = TaskSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = TaskBundle
-        fields = [
-            'id', 'name', 'description', 'accounting_category',
-            'sort_order', 'tasks',
-        ]
-        read_only_fields = ['id', 'sort_order']
-
-
 class WorkOrderSerializer(serializers.ModelSerializer):
-    tasks = TaskSerializer(source='task_set', many=True, read_only=True)
-    bundles = TaskBundleSerializer(source='taskbundle_set', many=True, read_only=True)
+    tasks = TaskSerializer(many=True, read_only=True)
     template_name = serializers.CharField(source='template.name', read_only=True, default=None)
 
     class Meta:
         model = WorkOrder
         fields = [
             'work_order_id', 'job', 'template', 'template_name', 'status',
-            'tasks', 'bundles',
+            'tasks',
         ]
         read_only_fields = ['work_order_id']

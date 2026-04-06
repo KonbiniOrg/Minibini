@@ -1,7 +1,7 @@
 """Tests that within-bundle items are displayed in sort_order, not by ID."""
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import Task, TaskBundle, Job
+from apps.jobs.models import PlanTask, PlanBundle, Job
 from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
@@ -22,20 +22,20 @@ class WithinBundleDisplayOrderTest(TestCase):
         from apps.estimates.views import _build_container_items_from_tasks
 
         worksheet = EstWorksheet.objects.create(job=self.job)
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=worksheet, name='Bundle',
             accounting_category=self.lit, sort_order=1
         )
         # Create tasks with sort_order opposite to ID order
-        t1 = Task.objects.create(
+        t1 = PlanTask.objects.create(
             est_worksheet=worksheet, name='First by ID, Last by sort',
             rate=10, mapping_strategy='bundle', bundle=bundle, sort_order=3
         )
-        t2 = Task.objects.create(
+        t2 = PlanTask.objects.create(
             est_worksheet=worksheet, name='Second by ID, First by sort',
             rate=20, mapping_strategy='bundle', bundle=bundle, sort_order=1
         )
-        t3 = Task.objects.create(
+        t3 = PlanTask.objects.create(
             est_worksheet=worksheet, name='Third by ID, Middle by sort',
             rate=30, mapping_strategy='bundle', bundle=bundle, sort_order=2
         )

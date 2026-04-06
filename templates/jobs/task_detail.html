@@ -186,7 +186,7 @@
 {% endif %}
 
 {% if task.est_worksheet and task.est_worksheet.status == 'draft' %}
-<p><a href="{% url 'jobs:material_add' task.task_id %}">Add Material</a></p>
+<p><a href="{% url 'jobs:material_add' task.pk %}">Add Material</a></p>
 {% endif %}
 
 {% if task.work_order %}
@@ -215,7 +215,7 @@
 
 <p>
     {% if task.est_worksheet and task.est_worksheet.status == 'draft' %}
-        <a href="{% url 'jobs:task_edit' task.task_id %}">Edit</a> |
+        <a href="{% url 'jobs:task_edit' task.pk %}">Edit</a> |
     {% endif %}
     {% if task.est_worksheet %}
         <a href="{% url 'estimates:estworksheet_detail' task.est_worksheet.pk %}">Back to Worksheet</a>

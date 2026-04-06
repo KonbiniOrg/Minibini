@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.db.models import ProtectedError
 from django.core.exceptions import ValidationError
 
-from apps.jobs.models import TaskBundle, Job, Task
+from apps.jobs.models import PlanBundle, Job, PlanTask
 from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.estimates.services import EstimateGenerationService
 from apps.core.models import AccountingCategory
@@ -187,8 +187,8 @@ class TestEstimateGeneration(TestCase):
 
         # Create worksheet and tasks
         worksheet = EstWorksheet.objects.create(job=self.job)
-        Task.objects.create(est_worksheet=worksheet, name="Sand", rate=50, est_qty=2, accounting_category=self.lit_labor)
-        Task.objects.create(est_worksheet=worksheet, name="Stain", rate=75, est_qty=1, accounting_category=self.lit_labor)
+        PlanTask.objects.create(est_worksheet=worksheet, name="Sand", rate=50, est_qty=2, accounting_category=self.lit_labor)
+        PlanTask.objects.create(est_worksheet=worksheet, name="Stain", rate=75, est_qty=1, accounting_category=self.lit_labor)
 
         # Generate estimate
         service = EstimateGenerationService()
@@ -219,15 +219,15 @@ class TestEstimateGeneration(TestCase):
         )
 
         worksheet = EstWorksheet.objects.create(job=self.job)
-        task_bundle = TaskBundle.objects.create(
+        task_bundle = PlanBundle.objects.create(
             est_worksheet=worksheet, name="Prep Work",
             accounting_category=self.lit_labor, source_template_bundle=bundle
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Sand", rate=50, est_qty=1,
             accounting_category=self.lit_labor, mapping_strategy='bundle', bundle=task_bundle
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Clean", rate=25, est_qty=1,
             accounting_category=self.lit_labor, mapping_strategy='bundle', bundle=task_bundle
         )
@@ -256,11 +256,11 @@ class TestEstimateGeneration(TestCase):
         )
 
         worksheet = EstWorksheet.objects.create(job=self.job)
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Sand", rate=50, est_qty=1,
             accounting_category=self.lit_labor, mapping_strategy='direct'
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Internal Check", rate=0, est_qty=1,
             accounting_category=self.lit_labor, mapping_strategy='exclude'
         )

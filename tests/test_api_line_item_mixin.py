@@ -4,7 +4,7 @@ from apps.core.models import User
 
 
 class LineItemMixinTest(BaseTestCase):
-    """Test LineItemMixin and TaskBundleMixin are importable and have expected attributes."""
+    """Test LineItemMixin and PlanTaskBundleMixin are importable and have expected attributes."""
 
     def setUp(self):
         super().setUp()
@@ -13,7 +13,7 @@ class LineItemMixinTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
 
     def test_mixin_importable(self):
-        """LineItemMixin and TaskBundleMixin should be importable."""
-        from apps.api.mixins import LineItemMixin, TaskBundleMixin
+        """LineItemMixin and PlanTaskBundleMixin should be importable."""
+        from apps.api.mixins import LineItemMixin, PlanTaskBundleMixin
         self.assertTrue(hasattr(LineItemMixin, 'line_items'))
-        self.assertTrue(hasattr(TaskBundleMixin, 'tasks'))
+        self.assertTrue(hasattr(PlanTaskBundleMixin, 'tasks'))

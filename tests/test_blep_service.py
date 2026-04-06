@@ -117,13 +117,7 @@ class CreateHistoricalTest(BaseTestCase):
         )
         self.assertEqual(blep.user, self.other_user)
 
-    def test_create_rejects_worksheet_task(self):
-        from apps.estimates.models import EstWorksheet
-        ws = EstWorksheet.objects.create(job=self.job)
-        ws_task = Task.objects.create(name='WS', est_worksheet=ws)
-        start, end = self._times(2, 1)
-        with self.assertRaises(ValidationError):
-            BlepService.create_historical(self.user, ws_task, start, end)
+    # Obsolete post-split: Blep.task is type-enforced to Task (WO-only).
 
     def test_create_rejects_end_before_start(self):
         start, end = self._times(1, 2)  # end < start

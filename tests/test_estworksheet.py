@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, WorkOrder, Task
+from apps.jobs.models import Job, WorkOrder, Task, PlanTask
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem, WorkOrderTemplate, TaskTemplate
 from apps.core.models import User
 
@@ -223,18 +223,17 @@ class EstWorksheetVersioningTest(TestCase):
             version=1
         )
         
-        task1 = Task.objects.create(
+        task1 = PlanTask.objects.create(
             est_worksheet=worksheet_v1,
             name="Task 1",
             units="hours",
             rate=Decimal('50.00'),
             est_qty=Decimal('5.00')
         )
-        
-        task2 = Task.objects.create(
+
+        task2 = PlanTask.objects.create(
             est_worksheet=worksheet_v1,
             name="Task 2",
-            assignee=self.user
         )
         
         # Create new version
@@ -251,17 +250,16 @@ class EstWorksheetVersioningTest(TestCase):
         self.assertEqual(worksheet_v2.parent, worksheet_v1)  # New worksheet points to old as parent
         self.assertIsNone(worksheet_v2.estimate)
         
-        # Check tasks were copied
-        v2_tasks = Task.objects.filter(est_worksheet=worksheet_v2).order_by('name')
+        # Check plan tasks were copied
+        v2_tasks = PlanTask.objects.filter(est_worksheet=worksheet_v2).order_by('name')
         self.assertEqual(v2_tasks.count(), 2)
-        
+
         self.assertEqual(v2_tasks[0].name, "Task 1")
         self.assertEqual(v2_tasks[0].units, "hours")
         self.assertEqual(v2_tasks[0].rate, Decimal('50.00'))
         self.assertEqual(v2_tasks[0].est_qty, Decimal('5.00'))
-        
+
         self.assertEqual(v2_tasks[1].name, "Task 2")
-        self.assertEqual(v2_tasks[1].assignee, self.user)
         
     def test_version_chain(self):
         """Test creating multiple versions maintains proper chain."""
@@ -293,8 +291,8 @@ class EstWorksheetVersioningTest(TestCase):
 
 
 class TaskWorkContainerTest(TestCase):
-    """Test Task model working with both WorkOrder and EstWorksheet."""
-    
+    """Test Task and PlanTask are type-separated by container (post-split)."""
+
     def setUp(self):
         self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
@@ -303,91 +301,53 @@ class TaskWorkContainerTest(TestCase):
             description="Test job"
         )
         self.user = User.objects.create_user(username="testuser")
-        
+
     def test_task_with_workorder(self):
-        """Test creating task attached to WorkOrder."""
+        """Test creating Task on a WorkOrder."""
         work_order = WorkOrder.objects.create(
             job=self.job,
-            status=Job.STATUS_DRAFT
+            status=WorkOrder.STATUS_INCOMPLETE,
         )
-        
+
         task = Task.objects.create(
             work_order=work_order,
             name="WorkOrder Task"
         )
-        
+
         self.assertEqual(task.work_order, work_order)
-        self.assertIsNone(task.est_worksheet)
-        self.assertEqual(task.get_container(), work_order)
-        
-    def test_task_with_estworksheet(self):
-        """Test creating task attached to EstWorksheet."""
+
+    def test_plan_task_with_estworksheet(self):
+        """Test creating PlanTask on an EstWorksheet."""
         worksheet = EstWorksheet.objects.create(
             job=self.job,
             status=Job.STATUS_DRAFT
         )
-        
-        task = Task.objects.create(
+
+        task = PlanTask.objects.create(
             est_worksheet=worksheet,
             name="Worksheet Task"
         )
-        
-        self.assertIsNone(task.work_order)
+
         self.assertEqual(task.est_worksheet, worksheet)
-        self.assertEqual(task.get_container(), worksheet)
-        
-    def test_task_cannot_have_both_containers(self):
-        """Test task cannot be attached to both WorkOrder and EstWorksheet."""
-        work_order = WorkOrder.objects.create(
-            job=self.job,
-            status=Job.STATUS_DRAFT
-        )
-        
+
+    def test_worksheet_plan_tasks_accessor(self):
+        """Test accessing plan tasks through EstWorksheet.plan_tasks."""
         worksheet = EstWorksheet.objects.create(
             job=self.job,
             status=Job.STATUS_DRAFT
         )
-        
-        task = Task(
-            work_order=work_order,
-            est_worksheet=worksheet,
-            name="Invalid Task"
-        )
-        
-        with self.assertRaises(ValidationError) as context:
-            task.clean()
-        
-        self.assertIn("cannot be attached to both", str(context.exception))
-        
-    def test_task_must_have_container(self):
-        """Test task must be attached to either WorkOrder or EstWorksheet."""
-        task = Task(
-            name="Orphan Task"
-        )
-        
-        with self.assertRaises(ValidationError) as context:
-            task.clean()
-        
-        self.assertIn("must be attached to either", str(context.exception))
-        
-    def test_worksheet_task_set(self):
-        """Test accessing tasks through EstWorksheet."""
-        worksheet = EstWorksheet.objects.create(
-            job=self.job,
-            status=Job.STATUS_DRAFT
-        )
-        
-        task1 = Task.objects.create(
+
+        task1 = PlanTask.objects.create(
             est_worksheet=worksheet,
             name="Task 1"
         )
-        
-        task2 = Task.objects.create(
+
+        task2 = PlanTask.objects.create(
             est_worksheet=worksheet,
             name="Task 2"
         )
-        
-        tasks = worksheet.task_set.all()
+
+        tasks = worksheet.plan_tasks.all()
         self.assertEqual(tasks.count(), 2)
         self.assertIn(task1, tasks)
         self.assertIn(task2, tasks)

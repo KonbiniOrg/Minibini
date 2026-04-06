@@ -1,7 +1,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, WorkOrder, Task
+from apps.jobs.models import Job, WorkOrder, Task, PlanTask
 from apps.estimates.models import Estimate, EstWorksheet, WorkOrderTemplate, TaskTemplate
 from apps.contacts.models import Contact
 
@@ -33,7 +33,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         # Verify initial state
         self.assertEqual(estimate.status, Estimate.STATUS_ACCEPTED)
         self.assertEqual(worksheet.estimate_id, estimate.estimate_id)
-        initial_task_count = Task.objects.filter(est_worksheet=worksheet).count()
+        initial_task_count = PlanTask.objects.filter(est_worksheet=worksheet).count()
         self.assertEqual(initial_task_count, 5)  # 1 parent + 2 children + 2 standalone
 
         # GET request - should show confirmation page
@@ -137,7 +137,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         worksheet = EstWorksheet.objects.get(pk=100)
 
         # Verify worksheet has 5 tasks
-        ws_task_count = Task.objects.filter(est_worksheet=worksheet).count()
+        ws_task_count = PlanTask.objects.filter(est_worksheet=worksheet).count()
         self.assertEqual(ws_task_count, 5)
 
         # Create WorkOrder
@@ -152,7 +152,7 @@ class WorkOrderFromEstimateTestCase(TestCase):
         self.assertEqual(wo_tasks.count(), 5)
 
         # Verify task names match worksheet tasks
-        ws_task_names = set(Task.objects.filter(est_worksheet=worksheet).values_list('name', flat=True))
+        ws_task_names = set(PlanTask.objects.filter(est_worksheet=worksheet).values_list('name', flat=True))
         wo_task_names = set(wo_tasks.values_list('name', flat=True))
         self.assertEqual(wo_task_names, ws_task_names)
 

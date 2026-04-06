@@ -1,7 +1,7 @@
 """Tests that create_new_version copies TaskBundles and task mapping config."""
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import Task, TaskBundle, Job
+from apps.jobs.models import PlanTask, PlanBundle, Job
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
@@ -17,37 +17,37 @@ class WorksheetVersionBundlingTest(TestCase):
         )
 
     def test_direct_task_mapping_copied(self):
-        """Task mapping_strategy is preserved across versions."""
+        """PlanTask mapping_strategy is preserved across versions."""
         ws1 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws1, name="Sand", rate=Decimal('50'),
             est_qty=Decimal('1'), mapping_strategy='direct'
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws1, name="Internal", rate=Decimal('0'),
             est_qty=Decimal('1'), mapping_strategy='exclude'
         )
 
         ws2 = ws1.create_new_version()
 
-        v2_tasks = {t.name: t for t in Task.objects.filter(est_worksheet=ws2)}
+        v2_tasks = {t.name: t for t in PlanTask.objects.filter(est_worksheet=ws2)}
         self.assertEqual(v2_tasks["Sand"].mapping_strategy, 'direct')
         self.assertEqual(v2_tasks["Internal"].mapping_strategy, 'exclude')
 
     def test_task_bundles_copied(self):
         """TaskBundles are duplicated on the new worksheet version."""
         ws1 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=ws1, name="Prep Work",
             accounting_category=self.lit_labor, sort_order=1,
             description="Preparation tasks"
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws1, name="Sand",
             rate=Decimal('50'), est_qty=Decimal('1'),
             mapping_strategy='bundle', bundle=bundle
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws1, name="Clean",
             rate=Decimal('25'), est_qty=Decimal('1'),
             mapping_strategy='bundle', bundle=bundle
@@ -55,8 +55,8 @@ class WorksheetVersionBundlingTest(TestCase):
 
         ws2 = ws1.create_new_version()
 
-        # New worksheet should have its own TaskBundle
-        new_bundles = list(ws2.bundles.all())
+        # New worksheet should have its own PlanBundle
+        new_bundles = list(ws2.plan_bundles.all())
         self.assertEqual(len(new_bundles), 1)
         new_bundle = new_bundles[0]
         self.assertEqual(new_bundle.name, "Prep Work")
@@ -68,7 +68,7 @@ class WorksheetVersionBundlingTest(TestCase):
         self.assertNotEqual(new_bundle.pk, bundle.pk)
 
         # Tasks on new worksheet should point to the new bundle
-        v2_tasks = list(Task.objects.filter(est_worksheet=ws2))
+        v2_tasks = list(PlanTask.objects.filter(est_worksheet=ws2))
         for task in v2_tasks:
             self.assertEqual(task.mapping_strategy, 'bundle')
             self.assertEqual(task.bundle, new_bundle)
@@ -79,26 +79,26 @@ class WorksheetVersionBundlingTest(TestCase):
         lit_mat, _ = AccountingCategory.objects.get_or_create(
             code="MAT", defaults={"name": "Material"}
         )
-        bundle_a = TaskBundle.objects.create(
+        bundle_a = PlanBundle.objects.create(
             est_worksheet=ws1, name="Prep",
             accounting_category=self.lit_labor, sort_order=1
         )
-        bundle_b = TaskBundle.objects.create(
+        bundle_b = PlanBundle.objects.create(
             est_worksheet=ws1, name="Materials",
             accounting_category=lit_mat, sort_order=2
         )
 
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws1, name="Sand",
             rate=Decimal('50'), est_qty=Decimal('1'),
             mapping_strategy='bundle', bundle=bundle_a
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws1, name="Buy Stain",
             rate=Decimal('30'), est_qty=Decimal('1'),
             mapping_strategy='bundle', bundle=bundle_b
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws1, name="Apply Finish",
             rate=Decimal('100'), est_qty=Decimal('2'),
             mapping_strategy='direct'
@@ -106,12 +106,12 @@ class WorksheetVersionBundlingTest(TestCase):
 
         ws2 = ws1.create_new_version()
 
-        new_bundles = {b.name: b for b in ws2.bundles.all()}
+        new_bundles = {b.name: b for b in ws2.plan_bundles.all()}
         self.assertEqual(len(new_bundles), 2)
         self.assertIn("Prep", new_bundles)
         self.assertIn("Materials", new_bundles)
 
-        v2_tasks = {t.name: t for t in Task.objects.filter(est_worksheet=ws2)}
+        v2_tasks = {t.name: t for t in PlanTask.objects.filter(est_worksheet=ws2)}
         self.assertEqual(v2_tasks["Sand"].bundle, new_bundles["Prep"])
         self.assertEqual(v2_tasks["Buy Stain"].bundle, new_bundles["Materials"])
         self.assertEqual(v2_tasks["Apply Finish"].mapping_strategy, 'direct')
@@ -120,11 +120,11 @@ class WorksheetVersionBundlingTest(TestCase):
     def test_original_bundles_unchanged(self):
         """Versioning doesn't modify the original worksheet's bundles or tasks."""
         ws1 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=ws1, name="Prep",
             accounting_category=self.lit_labor, sort_order=1
         )
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=ws1, name="Sand",
             rate=Decimal('50'), est_qty=Decimal('1'),
             mapping_strategy='bundle', bundle=bundle

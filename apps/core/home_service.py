@@ -53,8 +53,8 @@ class HomeService:
         # most recent Blep start_time on that job, limited.
         job_rows = (
             Job.objects
-            .filter(workorder__task__blep__user=user)
-            .annotate(last_worked_at=Max('workorder__task__blep__start_time'))
+            .filter(workorder__tasks__blep__user=user)
+            .annotate(last_worked_at=Max('workorder__tasks__blep__start_time'))
             .order_by('-last_worked_at')
             .distinct()
         )[:cls.RECENT_JOBS_LIMIT]

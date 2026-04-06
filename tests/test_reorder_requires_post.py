@@ -9,7 +9,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
 from apps.core.models import User
-from apps.jobs.models import Job, WorkOrder, Task
+from apps.jobs.models import Job, WorkOrder, Task, PlanTask
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
@@ -121,12 +121,12 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
             estimate=self.estimate,
             template=None
         )
-        self.task1 = Task.objects.create(
+        self.task1 = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Task 1',
             sort_order=1
         )
-        self.task2 = Task.objects.create(
+        self.task2 = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Task 2',
             sort_order=2
@@ -136,7 +136,7 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
         """GET request to reorder should return 405 Method Not Allowed."""
         url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
-            'task_id': self.task1.task_id,
+            'task_id': self.task1.pk,
             'direction': 'down'
         })
         response = self.client.get(url)
@@ -146,7 +146,7 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
         """POST request to reorder should work correctly."""
         url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
-            'task_id': self.task1.task_id,
+            'task_id': self.task1.pk,
             'direction': 'down'
         })
         response = self.client.post(url)
@@ -195,7 +195,7 @@ class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
         """GET request to reorder should return 405 Method Not Allowed."""
         url = reverse('jobs:task_reorder_work_order', kwargs={
             'work_order_id': self.work_order.work_order_id,
-            'task_id': self.task1.task_id,
+            'task_id': self.task1.pk,
             'direction': 'down'
         })
         response = self.client.get(url)
@@ -205,7 +205,7 @@ class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
         """POST request to reorder should work correctly."""
         url = reverse('jobs:task_reorder_work_order', kwargs={
             'work_order_id': self.work_order.work_order_id,
-            'task_id': self.task1.task_id,
+            'task_id': self.task1.pk,
             'direction': 'down'
         })
         response = self.client.post(url)

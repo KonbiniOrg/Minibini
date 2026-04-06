@@ -71,7 +71,7 @@
         "pk": 2,
         "fields": {
             "estimate": 1,
-            "task": 2,
+            "task": null,
             "price_list_item": null,
             "line_number": 2,
             "qty": "8.00",

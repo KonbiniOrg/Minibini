@@ -130,6 +130,7 @@ class InvoiceLineItem(BaseLineItem):
     """Line item for invoices - inherits shared functionality from BaseLineItem."""
 
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
+    task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
         db_table = 'invoice_li'

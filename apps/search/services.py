@@ -278,7 +278,7 @@ class SearchService:
         work_orders = WorkOrder.objects.filter(
             Q(job__job_number__icontains=query) |
             Q(job__description__icontains=query)
-        ).select_related('job').prefetch_related('task_set')
+        ).select_related('job').prefetch_related('tasks')
 
         tasks = Task.objects.annotate(
             rate_text=Cast('rate', CharField())
@@ -287,7 +287,7 @@ class SearchService:
             Q(units__icontains=query) |
             Q(rate_text__icontains=query) |
             Q(work_order__job__job_number__icontains=query)
-        ).select_related('assignee', 'work_order', 'work_order__job', 'est_worksheet')
+        ).select_related('assignee', 'work_order', 'work_order__job')
 
         # Build a dict of work orders with their matching tasks
         wo_dict = {}

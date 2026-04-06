@@ -12,6 +12,7 @@ from apps.api.invoicing.views import InvoiceViewSet
 from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
 from apps.api.inventory.views import PriceListItemViewSet
 from apps.api.tasks.views import TaskViewSet
+from apps.api.plan_tasks.views import PlanTaskViewSet
 from apps.api.bleps.views import BlepViewSet
 from apps.api.search.views import search_view
 from apps.api.jobs.board_views import (
@@ -45,6 +46,7 @@ def api_root(request):
         'price-list-items': '/api/price-list-items/',
         'inventory-items': '/api/inventory-items/',
         'search': '/api/search/',
+        'plan-tasks': '/api/plan-tasks/',
         'emails': '/api/emails/',
         'work-order-templates': '/api/work-order-templates/',
         'task-templates': '/api/task-templates/',
@@ -68,6 +70,7 @@ router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchase-ord
 router.register(r'bills', BillViewSet, basename='bill')
 router.register(r'price-list-items', PriceListItemViewSet, basename='price-list-item')
 router.register(r'tasks', TaskViewSet, basename='task')
+router.register(r'plan-tasks', PlanTaskViewSet, basename='plan-task')
 router.register(r'bleps', BlepViewSet, basename='blep')
 router.register(r'work-order-templates', WorkOrderTemplateViewSet, basename='work-order-template')
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')

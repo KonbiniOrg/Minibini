@@ -8,9 +8,9 @@ from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
 from django.core.exceptions import ValidationError
-from .models import Job, Task, WorkOrder, Blep
+from .models import Job, Task, PlanTask, WorkOrder, Blep
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
-from apps.inventory.models import Material
+from apps.inventory.models import PlanMaterial
 from apps.core.services import TaxCalculationService, NotFoundError
 from .services import JobService, WorkOrderService, TaskService
 from apps.inventory.services import InventoryService
@@ -287,27 +287,37 @@ def task_list(request):
 
 @login_required
 def task_detail(request, task_id):
-    task = get_object_or_404(Task, task_id=task_id)
-    bleps = Blep.objects.filter(task=task).select_related('user').order_by('-start_time')
-    return render(request, 'jobs/task_detail.html', {'task': task, 'bleps': bleps})
+    # Try worksheet-side PlanTask first, fall back to WO-side Task.
+    # HTML side is legacy; SPA will supersede. This preserves existing URL behavior.
+    try:
+        task = PlanTask.objects.get(pk=task_id)
+        is_plan = True
+    except PlanTask.DoesNotExist:
+        task = get_object_or_404(Task, pk=task_id)
+        is_plan = False
+    if is_plan:
+        bleps = []
+    else:
+        bleps = Blep.objects.filter(task=task).select_related('user').order_by('-start_time')
+    return render(request, 'jobs/task_detail.html', {'task': task, 'bleps': bleps, 'is_plan': is_plan})
 
 
 @login_required
 @permission_required('core.can_manage_jobs', raise_exception=True)
 def task_edit(request, task_id):
-    """Edit a task's details. Only allowed for tasks on draft worksheets."""
-    task = get_object_or_404(Task, task_id=task_id)
+    """Edit a plan task's details. Only allowed for tasks on draft worksheets."""
+    task = get_object_or_404(PlanTask, plan_task_id=task_id)
 
     # Check if editing is allowed
-    container = task.get_container()
-    if hasattr(container, 'status') and container.status != EstWorksheet.STATUS_DRAFT:
-        messages.error(request, f'Cannot edit tasks on a {container.get_status_display().lower()} worksheet.')
+    worksheet = task.est_worksheet
+    if worksheet.status != EstWorksheet.STATUS_DRAFT:
+        messages.error(request, f'Cannot edit tasks on a {worksheet.get_status_display().lower()} worksheet.')
         return redirect('jobs:task_detail', task_id=task_id)
 
     if request.method == 'POST':
         form = TaskEditForm(request.POST, instance=task)
         if form.is_valid():
-            TaskService.update_task(task.pk, **form.cleaned_data)
+            form.save()
             messages.success(request, f'Task "{task.name}" updated.')
             return redirect('jobs:task_detail', task_id=task_id)
     else:
@@ -400,19 +410,18 @@ def task_reorder_work_order(request, work_order_id, task_id, direction):
 @login_required
 @permission_required('core.can_manage_jobs', raise_exception=True)
 def material_add(request, task_id):
-    """Add a material to a task. Only allowed on draft worksheets."""
-    task = get_object_or_404(Task, task_id=task_id)
-
-    container = task.get_container()
-    if hasattr(container, 'status') and container.status != EstWorksheet.STATUS_DRAFT:
+    """Add a PlanMaterial to a PlanTask. Only allowed on draft worksheets."""
+    plan_task = get_object_or_404(PlanTask, plan_task_id=task_id)
+    worksheet = plan_task.est_worksheet
+    if worksheet.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, 'Cannot add materials to tasks on a non-draft worksheet.')
         return redirect('jobs:task_detail', task_id=task_id)
 
     if request.method == 'POST':
-        material_instance = Material(task=task)
-        form = MaterialForm(request.POST, instance=material_instance)
+        pm_instance = PlanMaterial(plan_task=plan_task)
+        form = MaterialForm(request.POST, instance=pm_instance)
         if form.is_valid():
-            mat = InventoryService.create_material(task.pk, **form.cleaned_data)
+            mat = InventoryService.create_plan_material(plan_task.pk, **form.cleaned_data)
             messages.success(request, f'Material "{mat.description}" added.')
             return redirect('jobs:task_detail', task_id=task_id)
     else:
@@ -420,51 +429,51 @@ def material_add(request, task_id):
 
     return render(request, 'jobs/material_add.html', {
         'form': form,
-        'task': task,
+        'task': plan_task,
     })
 
 
 @login_required
 @permission_required('core.can_manage_jobs', raise_exception=True)
 def material_edit(request, material_id):
-    """Edit a material. Only allowed on draft worksheets."""
-    material = get_object_or_404(Material, material_id=material_id)
-    task = material.task
+    """Edit a PlanMaterial. Only allowed on draft worksheets."""
+    material = get_object_or_404(PlanMaterial, plan_material_id=material_id)
+    plan_task = material.plan_task
+    worksheet = plan_task.est_worksheet
 
-    container = task.get_container()
-    if hasattr(container, 'status') and container.status != EstWorksheet.STATUS_DRAFT:
+    if worksheet.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, 'Cannot edit materials on a non-draft worksheet.')
-        return redirect('jobs:task_detail', task_id=task.task_id)
+        return redirect('jobs:task_detail', task_id=plan_task.pk)
 
     if request.method == 'POST':
         form = MaterialForm(request.POST, instance=material)
         if form.is_valid():
-            material = InventoryService.update_material(material.pk, **form.cleaned_data)
+            material = InventoryService.update_plan_material(material.pk, **form.cleaned_data)
             messages.success(request, f'Material "{material.description}" updated.')
-            return redirect('jobs:task_detail', task_id=task.task_id)
+            return redirect('jobs:task_detail', task_id=plan_task.pk)
     else:
         form = MaterialForm(instance=material)
 
     return render(request, 'jobs/material_edit.html', {
         'form': form,
         'material': material,
-        'task': task,
+        'task': plan_task,
     })
 
 
 @login_required
 @permission_required('core.can_manage_jobs', raise_exception=True)
 def material_delete(request, material_id):
-    """Delete a material. Only allowed on draft worksheets."""
-    material = get_object_or_404(Material, material_id=material_id)
-    task = material.task
+    """Delete a PlanMaterial. Only allowed on draft worksheets."""
+    material = get_object_or_404(PlanMaterial, plan_material_id=material_id)
+    plan_task = material.plan_task
+    worksheet = plan_task.est_worksheet
 
-    container = task.get_container()
-    if hasattr(container, 'status') and container.status != EstWorksheet.STATUS_DRAFT:
+    if worksheet.status != EstWorksheet.STATUS_DRAFT:
         messages.error(request, 'Cannot delete materials on a non-draft worksheet.')
-        return redirect('jobs:task_detail', task_id=task.task_id)
+        return redirect('jobs:task_detail', task_id=plan_task.pk)
 
     description = material.description
-    InventoryService.delete_material(material.pk)
+    InventoryService.delete_plan_material(material.pk)
     messages.success(request, f'Material "{description}" deleted.')
-    return redirect('jobs:task_detail', task_id=task.task_id)
+    return redirect('jobs:task_detail', task_id=plan_task.pk)

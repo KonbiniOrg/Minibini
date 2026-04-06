@@ -1,9 +1,9 @@
 from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from .models import Task, Job
+from .models import Task, PlanTask, Job
 from apps.estimates.models import TaskTemplate
-from apps.inventory.models import Material
+from apps.inventory.models import PlanMaterial
 from apps.contacts.models import Contact
 from apps.core.units import UnitsFieldMixin
 
@@ -146,9 +146,13 @@ class JobEditForm(forms.ModelForm):
 
 
 class TaskEditForm(UnitsFieldMixin, forms.ModelForm):
-    """Form for editing an existing Task's details."""
+    """Form for editing an existing PlanTask's details (worksheet-side).
+
+    HTML UI currently only edits worksheet-side tasks; WO-side task edits
+    happen through the SPA.
+    """
     class Meta:
-        model = Task
+        model = PlanTask
         fields = ['name', 'description', 'units', 'rate', 'est_qty', 'accounting_category']
         widgets = {
             'est_qty': forms.NumberInput(attrs={'step': '0.01'}),
@@ -201,11 +205,11 @@ class WorkOrderStatusForm(forms.Form):
 
 
 class MaterialForm(forms.ModelForm):
-    """Form for adding/editing a Material on a Task."""
+    """Form for adding/editing a PlanMaterial on a PlanTask (worksheet-side)."""
     description = forms.CharField(max_length=255, required=False)
 
     class Meta:
-        model = Material
+        model = PlanMaterial
         fields = ['price_list_item', 'description', 'quantity', 'unit_cost', 'sell_price', 'accounting_category']
         widgets = {
             'quantity': forms.NumberInput(attrs={'step': '0.01'}),

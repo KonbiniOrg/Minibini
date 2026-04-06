@@ -7,9 +7,9 @@ from apps.estimates.models import (
     WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Job, Task, WorkOrder
+from apps.jobs.models import Job, Task, PlanTask, PlanBundle, WorkOrder
 from apps.jobs.services import WorkOrderService
-from apps.inventory.models import Material
+from apps.inventory.models import Material, PlanMaterial
 from apps.core.services import NotFoundError
 from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact, Business
@@ -381,7 +381,7 @@ class WorksheetServiceReviseTest(EstimatesTestBase):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
         # Add a task to make it non-empty
-        Task.objects.create(est_worksheet=ws, name='Task 1', sort_order=1)
+        PlanTask.objects.create(est_worksheet=ws, name='Task 1', sort_order=1)
         new_ws = WorksheetService.revise_worksheet(ws.pk)
         self.assertEqual(new_ws.version, 2)
         self.assertEqual(new_ws.status, EstWorksheet.STATUS_DRAFT)
@@ -391,10 +391,10 @@ class WorksheetServiceReviseTest(EstimatesTestBase):
     def test_revise_copies_tasks(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        Task.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
-        Task.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
+        PlanTask.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
+        PlanTask.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
         new_ws = WorksheetService.revise_worksheet(ws.pk)
-        new_tasks = Task.objects.filter(est_worksheet=new_ws)
+        new_tasks = PlanTask.objects.filter(est_worksheet=new_ws)
         self.assertEqual(new_tasks.count(), 2)
 
 
@@ -511,38 +511,39 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
     def test_copy_tasks(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        Task.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
-        Task.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
+        PlanTask.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
+        PlanTask.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
 
         wo = WorkOrder.objects.create(job=self.job)
         WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
         self.assertEqual(Task.objects.filter(work_order=wo).count(), 2)
 
-    def test_copy_bundles(self):
+    def test_copy_bundles_drops_bundle_info(self):
+        """PlanBundles on the worksheet are NOT copied; bundled PlanTasks become flat Tasks."""
         from apps.estimates.services import WorksheetService
-        from apps.jobs.models import TaskBundle
         ws = WorksheetService.create_worksheet(self.job.pk)
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=ws, name='Bundle 1',
             accounting_category=self.lit, sort_order=1,
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws, name='Bundled', sort_order=1,
             mapping_strategy='bundle', bundle=bundle,
         )
 
         wo = WorkOrder.objects.create(job=self.job)
         WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
-        wo_bundles = TaskBundle.objects.filter(work_order=wo)
-        self.assertEqual(wo_bundles.count(), 1)
-        self.assertEqual(wo_bundles.first().name, 'Bundle 1')
+        # Task is copied flat; no bundle info survives
+        tasks = Task.objects.filter(work_order=wo)
+        self.assertEqual(tasks.count(), 1)
+        self.assertEqual(tasks.first().name, 'Bundled')
 
     def test_copy_materials(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        task = Task.objects.create(est_worksheet=ws, name='Task', sort_order=1)
-        Material.objects.create(
-            task=task, description='Steel', quantity=Decimal('5.00'),
+        task = PlanTask.objects.create(est_worksheet=ws, name='Task', sort_order=1)
+        PlanMaterial.objects.create(
+            plan_task=task, description='Steel', quantity=Decimal('5.00'),
         )
 
         wo = WorkOrder.objects.create(job=self.job)

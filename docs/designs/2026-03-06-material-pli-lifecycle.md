@@ -90,3 +90,26 @@ This parallels the Estimate/Worksheet <-> Invoice/WorkOrder symmetry:
 - `docs/plans/2026-03-04-materials-inventory-implementation.md` -- implementation plan
 - `docs/plans/2026-04-05-materials-in-svelte-and-workorders.md` -- active
   project implementing phases 3-4 in the Svelte SPA (in brainstorm)
+
+---
+
+## Amendment (2026-04-05)
+
+Phases 4 and 5 of this document are superseded by the task/bundle/material
+split refactor. See `docs/designs/2026-04-05-task-split-and-worksheet-to-workorder.md`.
+
+Specifically:
+
+- **Phase 4 ("WorkOrder firm up") is deleted.** `price_list_item` on a
+  material is set at creation time or never. There is no firming-up
+  phase. The reasoning: a freeform material and a PLI-linked material
+  are factually different records, and retroactive linking would
+  quietly rewrite inventory history.
+- **Phase 5's invoice PLI gate is deleted.** A Material with a
+  `line_item_type` can become an `InvoiceLineItem` regardless of PLI
+  status. The original gate existed because `line_item_type` wasn't
+  yet a field on Material; once it was added (Phase 1 of this doc's
+  own implementation plan), the gate became redundant.
+
+The original phase descriptions above are preserved for decision-history
+purposes but do not reflect current behavior.

@@ -9,7 +9,7 @@ description is independent of the template.
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import EstWorksheet, TaskTemplate, WorkOrderTemplate
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
@@ -34,7 +34,7 @@ class TaskDescriptionModelTests(TestCase):
 
     def test_task_can_have_description(self):
         """Task should have a description field that can be set directly."""
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='Described Task',
             description='This is a task description',
             est_worksheet=self.worksheet,
@@ -47,7 +47,7 @@ class TaskDescriptionModelTests(TestCase):
 
     def test_task_description_defaults_to_blank(self):
         """Task description should default to empty string."""
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name='No Description Task',
             est_worksheet=self.worksheet,
             units='hours',
@@ -102,7 +102,7 @@ class TaskDescriptionFromTemplateTests(TestCase):
             'est_qty': '50.0',
         })
 
-        task = Task.objects.get(est_worksheet=self.worksheet)
+        task = PlanTask.objects.get(est_worksheet=self.worksheet)
         self.assertEqual(task.description, 'Apply two coats of primer and paint')
 
 
@@ -126,7 +126,7 @@ class TaskDescriptionInViewsTests(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, status=Job.STATUS_DRAFT, version=1
         )
-        self.task = Task.objects.create(
+        self.task = PlanTask.objects.create(
             name='Detailed Task',
             description='Sand and finish hardwood floors',
             est_worksheet=self.worksheet,
@@ -137,19 +137,19 @@ class TaskDescriptionInViewsTests(TestCase):
 
     def test_task_detail_shows_description(self):
         """Task detail page should display the task's description."""
-        url = reverse('jobs:task_detail', args=[self.task.task_id])
+        url = reverse('jobs:task_detail', args=[self.task.plan_task_id])
         response = self.client.get(url)
         self.assertContains(response, 'Sand and finish hardwood floors')
 
     def test_task_edit_shows_description_field(self):
         """Task edit form should include the description field."""
-        url = reverse('jobs:task_edit', args=[self.task.task_id])
+        url = reverse('jobs:task_edit', args=[self.task.plan_task_id])
         response = self.client.get(url)
         self.assertContains(response, 'Sand and finish hardwood floors')
 
     def test_task_edit_can_update_description(self):
         """Editing a task should allow updating the description."""
-        url = reverse('jobs:task_edit', args=[self.task.task_id])
+        url = reverse('jobs:task_edit', args=[self.task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Detailed Task',
             'description': 'Updated: sand, stain, and finish hardwood floors',
@@ -159,7 +159,7 @@ class TaskDescriptionInViewsTests(TestCase):
         })
         self.assertRedirects(
             response,
-            reverse('jobs:task_detail', args=[self.task.task_id])
+            reverse('jobs:task_detail', args=[self.task.plan_task_id])
         )
         self.task.refresh_from_db()
         self.assertEqual(self.task.description, 'Updated: sand, stain, and finish hardwood floors')
@@ -185,7 +185,7 @@ class WorksheetDescriptionFromTaskTests(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, status=Job.STATUS_DRAFT, version=1
         )
-        self.task = Task.objects.create(
+        self.task = PlanTask.objects.create(
             name='Task With Own Desc',
             description='My own description',
             est_worksheet=self.worksheet,
@@ -243,7 +243,7 @@ class TaskAddManualDescriptionTests(TestCase):
             response,
             reverse('estimates:estworksheet_detail', args=[self.worksheet.est_worksheet_id])
         )
-        task = Task.objects.get(est_worksheet=self.worksheet)
+        task = PlanTask.objects.get(est_worksheet=self.worksheet)
         self.assertEqual(task.description, 'Do the thing carefully')
 
     def test_manual_add_page_extends_base_template(self):

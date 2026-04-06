@@ -119,12 +119,9 @@ class ConsumeMaterialTest(TestCase):
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('0.00'))
 
-        self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-001')
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, estimate=self.estimate)
+        self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            est_worksheet=self.worksheet, name='Cut steel',
+            work_order=self.work_order, name='Cut steel',
             sort_order=1)
 
     def test_decreases_qoh_and_increases_qty_sold(self):
@@ -268,12 +265,9 @@ class CompleteTaskAdjustmentTest(TestCase):
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('5.00'))
 
-        self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-001')
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, estimate=self.estimate)
+        self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            est_worksheet=self.worksheet, name='Cut steel',
+            work_order=self.work_order, name='Cut steel',
             sort_order=1)
 
         self.material = Material(

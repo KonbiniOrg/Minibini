@@ -98,10 +98,7 @@ class BlepService:
             raise BlepPermissionError(
                 "Creating a time entry for another user requires can_manage_time."
             )
-        if not task.work_order_id:
-            raise ValidationError(
-                "Cannot create blep: task must belong to a WorkOrder, not a worksheet."
-            )
+        # Post-split: task is always a Task (work-order side); no container check needed.
         if end_time < start_time:
             raise ValidationError("end_time must be >= start_time.")
         if not _within_edit_window(start_time) and not _has_manage_time(actor):

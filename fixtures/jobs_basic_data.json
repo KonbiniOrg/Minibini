@@ -60,8 +60,6 @@
             "est_qty": "8.00",
             "description": "",
             "sort_order": null,
-            "mapping_strategy": "direct",
-            "bundle": null,
             "accounting_category": null
         }
     },
@@ -77,8 +75,6 @@
             "est_qty": "150.00",
             "description": "",
             "sort_order": null,
-            "mapping_strategy": "direct",
-            "bundle": null,
             "accounting_category": null
         }
     },

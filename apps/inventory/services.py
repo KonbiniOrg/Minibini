@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.db.models import F, Sum
-from apps.inventory.models import Earmark, InventoryAdjustment, Material
+from apps.inventory.models import Earmark, InventoryAdjustment, Material, PlanMaterial
 from apps.inventory.models import PriceListItem
 
 
@@ -70,9 +70,7 @@ class InventoryService:
         pli.refresh_from_db()
 
         # Reduce or clear earmark
-        job = material.task.est_worksheet.job if material.task.est_worksheet else (
-            material.task.work_order.job if material.task.work_order else None
-        )
+        job = material.task.work_order.job
         if job:
             try:
                 earmark = Earmark.objects.get(
@@ -123,56 +121,75 @@ class InventoryService:
             reason=reason,
         )
 
-    # --- Material CRUD ---
+    # --- PlanMaterial CRUD (worksheet-side) ---
 
     @staticmethod
-    def create_material(task_pk, **kwargs):
-        """Create a new Material on a task."""
+    def create_plan_material(plan_task_pk, **kwargs):
+        """Create a new PlanMaterial on a PlanTask."""
         from apps.core.services import NotFoundError
-        from apps.jobs.models import Task
+        from apps.jobs.models import PlanTask
         try:
-            task = Task.objects.get(pk=task_pk)
-        except Task.DoesNotExist:
-            raise NotFoundError(f'Task {task_pk} not found')
-        mat = Material(task=task, **kwargs)
+            plan_task = PlanTask.objects.get(pk=plan_task_pk)
+        except PlanTask.DoesNotExist:
+            raise NotFoundError(f'PlanTask {plan_task_pk} not found')
+        mat = PlanMaterial(plan_task=plan_task, **kwargs)
         mat.save()
         return mat
 
     @staticmethod
-    def update_material(pk, **kwargs):
-        """Update an existing Material by PK."""
+    def update_plan_material(pk, **kwargs):
+        """Update an existing PlanMaterial by PK."""
         from apps.core.services import NotFoundError
         try:
-            mat = Material.objects.get(pk=pk)
-        except Material.DoesNotExist:
-            raise NotFoundError(f'Material {pk} not found')
+            mat = PlanMaterial.objects.get(pk=pk)
+        except PlanMaterial.DoesNotExist:
+            raise NotFoundError(f'PlanMaterial {pk} not found')
         for field, value in kwargs.items():
             setattr(mat, field, value)
         mat.save()
         return mat
 
     @staticmethod
-    def delete_material(pk):
-        """Delete a Material by PK."""
+    def delete_plan_material(pk):
+        """Delete a PlanMaterial by PK."""
         from apps.core.services import NotFoundError
         try:
-            mat = Material.objects.get(pk=pk)
-        except Material.DoesNotExist:
-            raise NotFoundError(f'Material {pk} not found')
+            mat = PlanMaterial.objects.get(pk=pk)
+        except PlanMaterial.DoesNotExist:
+            raise NotFoundError(f'PlanMaterial {pk} not found')
         mat.delete()
+
+    # --- Thin wrappers for legacy HTML view call sites (to be removed in Phase 4) ---
+
+    @staticmethod
+    def create_material(task_pk, **kwargs):
+        """Legacy wrapper; HTML views still call this on worksheet tasks."""
+        return InventoryService.create_plan_material(task_pk, **kwargs)
+
+    @staticmethod
+    def update_material(pk, **kwargs):
+        """Legacy wrapper; HTML views still call this."""
+        return InventoryService.update_plan_material(pk, **kwargs)
+
+    @staticmethod
+    def delete_material(pk):
+        """Legacy wrapper; HTML views still call this."""
+        return InventoryService.delete_plan_material(pk)
 
     # --- Earmark operations ---
 
     @staticmethod
     def get_earmark_preview(job):
-        """Get preview of inventoried items needed for a job's materials.
-        Aggregates by price_list_item across all tasks on the job's worksheets.
-        Returns list of dicts with price_list_item, needed_qty, available_qty, shortfall."""
+        """Get preview of inventoried items needed for a job's work order materials.
+
+        Aggregates by price_list_item across all Materials on all WorkOrders
+        for this job. Returns list of dicts with price_list_item, needed_qty,
+        available_qty, shortfall.
+        """
         from apps.inventory.models import Material
 
-        # Find all materials with inventoried price list items across the job's worksheets
         materials = Material.objects.filter(
-            task__est_worksheet__job=job,
+            task__work_order__job=job,
             price_list_item__is_inventoried=True,
         ).values('price_list_item').annotate(
             total_qty=Sum('quantity'),
@@ -193,6 +210,36 @@ class InventoryService:
         return preview
 
     @staticmethod
+    def create_earmarks_for_work_order(work_order):
+        """Create earmarks from a WorkOrder's Materials.
+
+        Aggregates inventoried Materials by PLI across all Tasks on the WO,
+        then upserts Earmark records for the job. Called as a hook after
+        each WO creation path.
+        """
+        from apps.inventory.models import Material
+
+        job = work_order.job
+        materials = Material.objects.filter(
+            task__work_order=work_order,
+            price_list_item__is_inventoried=True,
+        ).values('price_list_item').annotate(
+            total_qty=Sum('quantity'),
+        )
+
+        if not materials:
+            return
+
+        earmark_data = [
+            {
+                'price_list_item_id': entry['price_list_item'],
+                'quantity': entry['total_qty'],
+            }
+            for entry in materials
+        ]
+        InventoryService.create_earmarks_for_job(job, earmark_data)
+
+    @staticmethod
     def create_earmarks_for_job(job, earmark_data):
         """Create or update earmarks from user-confirmed data.
         earmark_data: list of dicts with price_list_item_id and quantity."""
@@ -209,3 +256,12 @@ class InventoryService:
             if not created:
                 earmark.quantity = qty
                 earmark.save(update_fields=['quantity'])
+
+    @staticmethod
+    def release_earmarks_for_job(job):
+        """Delete all remaining earmarks for a job.
+
+        Called when a WorkOrder is completed — any un-consumed earmark
+        balance is released back to general inventory availability.
+        """
+        Earmark.objects.filter(job=job).delete()

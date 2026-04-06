@@ -3,9 +3,9 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import EstWorksheet
-from apps.inventory.models import Material
+from apps.inventory.models import PlanMaterial
 from apps.inventory.models import PriceListItem
 
 
@@ -33,7 +33,7 @@ class MaterialViewTestBase(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job,
         )
-        self.task = Task.objects.create(
+        self.task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install shelving',
             rate=Decimal('50.00'),
@@ -60,14 +60,14 @@ class MaterialAddViewTest(MaterialViewTestBase):
 
     def test_add_material_get(self):
         """GET renders the add material form."""
-        url = reverse('jobs:material_add', args=[self.task.task_id])
+        url = reverse('jobs:material_add', args=[self.task.plan_task_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Add Material')
 
     def test_add_material_post_freeform(self):
         """POST creates a freeform material and redirects."""
-        url = reverse('jobs:material_add', args=[self.task.task_id])
+        url = reverse('jobs:material_add', args=[self.task.plan_task_id])
         response = self.client.post(url, {
             'description': 'Custom bracket',
             'quantity': '4.00',
@@ -75,13 +75,13 @@ class MaterialAddViewTest(MaterialViewTestBase):
             'sell_price': '10.00',
         })
         self.assertEqual(response.status_code, 302)
-        material = Material.objects.get(description='Custom bracket')
-        self.assertEqual(material.task, self.task)
+        material = PlanMaterial.objects.get(description='Custom bracket')
+        self.assertEqual(material.plan_task, self.task)
         self.assertEqual(material.quantity, Decimal('4.00'))
 
     def test_add_material_post_with_price_list_item(self):
         """POST with price_list_item auto-fills fields."""
-        url = reverse('jobs:material_add', args=[self.task.task_id])
+        url = reverse('jobs:material_add', args=[self.task.plan_task_id])
         response = self.client.post(url, {
             'price_list_item': self.inventoried_item.pk,
             'quantity': '3.00',
@@ -90,7 +90,7 @@ class MaterialAddViewTest(MaterialViewTestBase):
             'sell_price': '0.00',
         })
         self.assertEqual(response.status_code, 302)
-        material = Material.objects.get(task=self.task)
+        material = PlanMaterial.objects.get(plan_task=self.task)
         self.assertEqual(material.description, '3/4" Baltic Birch Plywood')
         self.assertEqual(material.unit_cost, Decimal('45.00'))
 
@@ -98,7 +98,7 @@ class MaterialAddViewTest(MaterialViewTestBase):
         """Cannot add materials to tasks on non-draft worksheets."""
         self.worksheet.status = Job.STATUS_SUBMITTED
         self.worksheet.save()
-        url = reverse('jobs:material_add', args=[self.task.task_id])
+        url = reverse('jobs:material_add', args=[self.task.plan_task_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
 
@@ -108,8 +108,8 @@ class MaterialEditViewTest(MaterialViewTestBase):
 
     def setUp(self):
         super().setUp()
-        self.material = Material.objects.create(
-            task=self.task,
+        self.material = PlanMaterial.objects.create(
+            plan_task=self.task,
             description='Original material',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'),
@@ -118,14 +118,14 @@ class MaterialEditViewTest(MaterialViewTestBase):
 
     def test_edit_material_get(self):
         """GET renders the edit material form with existing data."""
-        url = reverse('jobs:material_edit', args=[self.material.material_id])
+        url = reverse('jobs:material_edit', args=[self.material.plan_material_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Original material')
 
     def test_edit_material_post(self):
         """POST updates the material and redirects."""
-        url = reverse('jobs:material_edit', args=[self.material.material_id])
+        url = reverse('jobs:material_edit', args=[self.material.plan_material_id])
         response = self.client.post(url, {
             'description': 'Updated material',
             'quantity': '10.00',
@@ -141,7 +141,7 @@ class MaterialEditViewTest(MaterialViewTestBase):
         """Cannot edit materials on tasks on non-draft worksheets."""
         self.worksheet.status = Job.STATUS_SUBMITTED
         self.worksheet.save()
-        url = reverse('jobs:material_edit', args=[self.material.material_id])
+        url = reverse('jobs:material_edit', args=[self.material.plan_material_id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
 
@@ -151,8 +151,8 @@ class MaterialDeleteViewTest(MaterialViewTestBase):
 
     def setUp(self):
         super().setUp()
-        self.material = Material.objects.create(
-            task=self.task,
+        self.material = PlanMaterial.objects.create(
+            plan_task=self.task,
             description='To be deleted',
             quantity=Decimal('1.00'),
             unit_cost=Decimal('5.00'),
@@ -161,17 +161,17 @@ class MaterialDeleteViewTest(MaterialViewTestBase):
 
     def test_delete_material(self):
         """POST deletes the material and redirects to task detail."""
-        url = reverse('jobs:material_delete', args=[self.material.material_id])
+        url = reverse('jobs:material_delete', args=[self.material.plan_material_id])
         response = self.client.post(url)
         self.assertEqual(response.status_code, 302)
-        self.assertFalse(Material.objects.filter(material_id=self.material.material_id).exists())
+        self.assertFalse(PlanMaterial.objects.filter(plan_material_id=self.material.plan_material_id).exists())
 
     def test_delete_material_blocked_on_non_draft_worksheet(self):
         """Cannot delete materials on tasks on non-draft worksheets."""
         self.worksheet.status = Job.STATUS_SUBMITTED
         self.worksheet.save()
-        url = reverse('jobs:material_delete', args=[self.material.material_id])
+        url = reverse('jobs:material_delete', args=[self.material.plan_material_id])
         response = self.client.post(url)
         self.assertEqual(response.status_code, 302)
         # Material should still exist
-        self.assertTrue(Material.objects.filter(material_id=self.material.material_id).exists())
+        self.assertTrue(PlanMaterial.objects.filter(plan_material_id=self.material.plan_material_id).exists())

@@ -11,7 +11,7 @@ from django.db import transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, WorkOrder, Task, TaskBundle, Blep
+from apps.jobs.models import Job, WorkOrder, Task, Blep
 from apps.jobs.services.blep_service import BlepService
 from apps.estimates.models import (
     Estimate, WorkOrderTemplate, TaskTemplate,
@@ -72,6 +72,9 @@ class WorkOrderService:
         for line_item in estimate.estimatelineitem_set.all():
             TaskService.create_from_line_item(line_item, work_order)
 
+        from apps.inventory.services import InventoryService
+        InventoryService.create_earmarks_for_work_order(work_order)
+
         return work_order
 
     @staticmethod
@@ -98,6 +101,9 @@ class WorkOrderService:
         for association in associations:
             association.task_template.generate_task(work_order, association.est_qty)
 
+        from apps.inventory.services import InventoryService
+        InventoryService.create_earmarks_for_work_order(work_order)
+
         return work_order
 
     @staticmethod
@@ -118,13 +124,26 @@ class WorkOrderService:
         wo.status = new_status
         wo.full_clean()
         wo.save()
+
+        # Release remaining earmarks when WO completes
+        if new_status == WorkOrder.STATUS_COMPLETE:
+            from apps.inventory.services import InventoryService
+            InventoryService.release_earmarks_for_job(wo.job)
+
         return wo
 
     @staticmethod
     def copy_from_worksheet(work_order_pk, worksheet_pk):
-        """Copy a worksheet's bundles, tasks, and materials to a work order."""
+        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a work order.
+
+        Per spec 2026-04-05-task-split-and-worksheet-to-workorder.md:
+        - No bundle copy (RealBundle does not exist).
+        - No parent_task copy (hierarchy emerges during work).
+        - No mapping_strategy copy (irrelevant on work order).
+        - PlanMaterials become Materials with price_list_item preserved.
+        """
         from apps.estimates.models import EstWorksheet
-        from apps.jobs.models import TaskBundle
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import Material
 
         try:
@@ -136,45 +155,32 @@ class WorkOrderService:
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
 
-        # Copy TaskBundles, mapping old bundle PKs to new ones
-        bundle_mapping = {}
-        for bundle in TaskBundle.objects.filter(est_worksheet=ws):
-            new_bundle = TaskBundle.objects.create(
-                work_order=wo,
-                name=bundle.name,
-                description=bundle.description,
-                accounting_category=bundle.accounting_category,
-                sort_order=bundle.sort_order,
-                source_template_bundle=bundle.source_template_bundle,
-            )
-            bundle_mapping[bundle.pk] = new_bundle
-
-        # Copy tasks with their materials
-        for task in Task.objects.filter(est_worksheet=ws).prefetch_related('materials'):
-            new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
+        for plan_task in PlanTask.objects.filter(
+            est_worksheet=ws
+        ).prefetch_related('plan_materials'):
             new_task = Task.objects.create(
                 work_order=wo,
-                name=task.name,
-                description=task.description,
-                units=task.units,
-                rate=task.rate,
-                est_qty=task.est_qty,
-                assignee=task.assignee,
-                accounting_category=task.accounting_category,
-                mapping_strategy=task.mapping_strategy,
-                bundle=new_bundle,
-                sort_order=task.sort_order,
+                name=plan_task.name,
+                description=plan_task.description,
+                units=plan_task.units,
+                rate=plan_task.rate,
+                est_qty=plan_task.est_qty,
+                accounting_category=plan_task.accounting_category,
+                sort_order=plan_task.sort_order,
             )
-            for material in task.materials.all():
+            for pm in plan_task.plan_materials.all():
                 Material.objects.create(
                     task=new_task,
-                    price_list_item=material.price_list_item,
-                    accounting_category=material.accounting_category,
-                    description=material.description,
-                    quantity=material.quantity,
-                    unit_cost=material.unit_cost,
-                    sell_price=material.sell_price,
+                    description=pm.description,
+                    quantity=pm.quantity,
+                    unit_cost=pm.unit_cost,
+                    sell_price=pm.sell_price,
+                    price_list_item=pm.price_list_item,
+                    accounting_category=pm.accounting_category,
                 )
+
+        from apps.inventory.services import InventoryService
+        InventoryService.create_earmarks_for_work_order(wo)
 
 
 class TaskService:
@@ -202,37 +208,24 @@ class TaskService:
 
     @staticmethod
     def _copy_worksheet_tasks(line_item, work_order):
-        """Copy the task that contributed to this EstimateLineItem."""
-        tasks = []
-        source_tasks = [line_item.task]
+        """Copy the PlanTask that contributed to this EstimateLineItem into a Task on the WO.
 
-        # Create mapping for parent-child relationships
-        task_id_mapping = {}
-
-        # First pass: create all tasks
-        for source_task in source_tasks:
-            new_task = Task.objects.create(
-                work_order=work_order,
-                name=source_task.name,
-                units=source_task.units,
-                rate=source_task.rate,
-                est_qty=source_task.est_qty,
-                assignee=source_task.assignee,
-                accounting_category=source_task.accounting_category,
-                parent_task=None  # Set in second pass
-            )
-            task_id_mapping[source_task.task_id] = new_task
-            tasks.append(new_task)
-
-        # Second pass: set parent relationships within this set of tasks
-        for source_task in source_tasks:
-            if source_task.parent_task and source_task.parent_task_id in task_id_mapping:
-                new_task = task_id_mapping[source_task.task_id]
-                new_parent = task_id_mapping[source_task.parent_task_id]
-                new_task.parent_task = new_parent
-                new_task.save()
-
-        return tasks
+        Note: after the spec 2026-04-05 model split, this function copies exactly one
+        PlanTask to one Task. The prior "multi-task with parent relationships" logic was
+        dead code (the source list was always a single element) and is removed.
+        """
+        plan_task = line_item.task  # now a PlanTask FK
+        new_task = Task.objects.create(
+            work_order=work_order,
+            name=plan_task.name,
+            description=plan_task.description,
+            units=plan_task.units,
+            rate=plan_task.rate,
+            est_qty=plan_task.est_qty,
+            accounting_category=plan_task.accounting_category,
+            # assignee and status use defaults; parent_task is None
+        )
+        return [new_task]
 
     @staticmethod
     def _create_task_from_catalog_item(line_item, work_order):
@@ -321,15 +314,8 @@ class TaskService:
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_id} not found')
 
-        container = task.get_container()
-        if container is None:
-            raise ValidationError('Task has no container.')
-
-        # Build queryset for the container
-        if task.work_order:
-            items_qs = Task.objects.filter(work_order=task.work_order)
-        else:
-            items_qs = Task.objects.filter(est_worksheet=task.est_worksheet)
+        # Post-split: Task is always work-order side.
+        items_qs = Task.objects.filter(work_order=task.work_order)
 
         BundlingService.reorder_container_items(
             items_qs, 'task', task_id, direction,
@@ -360,8 +346,7 @@ class TaskLifecycleService:
     @staticmethod
     def _check_wo_auto_complete(task):
         """Auto-complete WO if all its tasks are complete or cancelled."""
-        if not task.work_order:
-            return
+        # Post-split: task is always a Task (work-order side); no container check needed.
         wo = task.work_order
         terminal = {Task.STATUS_COMPLETE, Task.STATUS_CANCELLED}
         all_terminal = not Task.objects.filter(
@@ -400,8 +385,7 @@ class TaskLifecycleService:
     @staticmethod
     def _check_wo_blocked(task):
         """Block WorkOrder if a task on it is blocked."""
-        if not task.work_order:
-            return
+        # Post-split: task is always a Task (work-order side); no container check needed.
         wo = task.work_order
         if wo.status in (WorkOrder.STATUS_BLOCKED, WorkOrder.STATUS_COMPLETE):
             return
@@ -449,10 +433,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
-            if not task.work_order:
-                raise ValidationError(
-                    "Cannot start work: task must belong to a WorkOrder, not a worksheet."
-                )
+            # Post-split: task is always a Task (work-order side); no container check needed.
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
                 raise ValidationError(
                     f"Cannot start work: task status is '{task.status}', "

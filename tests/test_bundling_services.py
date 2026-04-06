@@ -7,7 +7,7 @@ from apps.estimates.models import (
     EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
 )
 from apps.estimates.services import WorkOrderTemplateService, WorksheetService
-from apps.jobs.models import Job, Task, TaskBundle
+from apps.jobs.models import Job, PlanTask, PlanBundle
 from apps.jobs.services import JobService
 from apps.core.services import NotFoundError, BundlingService
 from apps.core.models import AccountingCategory
@@ -44,23 +44,23 @@ class BundlingServiceBundleItemsTest(BundlingTestBase):
         super().setUp()
         from apps.estimates.models import EstWorksheet
         self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
-        self.t1 = Task.objects.create(
+        self.t1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 1', sort_order=1,
         )
-        self.t2 = Task.objects.create(
+        self.t2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 2', sort_order=2,
         )
-        self.t3 = Task.objects.create(
+        self.t3 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 3', sort_order=3,
         )
-        self.bundle = TaskBundle.objects.create(
+        self.bundle = PlanBundle.objects.create(
             est_worksheet=self.ws, name='Bundle A',
             accounting_category=self.lit, sort_order=10,
         )
 
     def test_bundle_items(self):
         """Bundle two tasks into a bundle."""
-        items = Task.objects.filter(pk__in=[self.t1.pk, self.t2.pk])
+        items = PlanTask.objects.filter(pk__in=[self.t1.pk, self.t2.pk])
         BundlingService.bundle_items(items, self.bundle)
         self.t1.refresh_from_db()
         self.t2.refresh_from_db()
@@ -71,7 +71,7 @@ class BundlingServiceBundleItemsTest(BundlingTestBase):
 
     def test_bundle_items_sequential_sort_order(self):
         """Bundled items get sequential within-bundle sort_order."""
-        items = Task.objects.filter(
+        items = PlanTask.objects.filter(
             pk__in=[self.t1.pk, self.t2.pk]
         ).order_by('sort_order')
         BundlingService.bundle_items(items, self.bundle)
@@ -88,7 +88,7 @@ class BundlingServiceBundleItemsTest(BundlingTestBase):
         self.t1.sort_order = 1
         self.t1.save()
         # Now add t2
-        items = Task.objects.filter(pk=self.t2.pk)
+        items = PlanTask.objects.filter(pk=self.t2.pk)
         BundlingService.bundle_items(items, self.bundle)
         self.t2.refresh_from_db()
         self.assertEqual(self.t2.sort_order, 2)  # continues from existing max
@@ -101,33 +101,33 @@ class BundlingServiceUnbundleItemTest(BundlingTestBase):
         super().setUp()
         from apps.estimates.models import EstWorksheet
         self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
-        self.bundle = TaskBundle.objects.create(
+        self.bundle = PlanBundle.objects.create(
             est_worksheet=self.ws, name='Bundle A',
             accounting_category=self.lit, sort_order=5,
         )
-        self.t1 = Task.objects.create(
+        self.t1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 1', sort_order=1,
             mapping_strategy='bundle', bundle=self.bundle,
         )
-        self.t2 = Task.objects.create(
+        self.t2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 2', sort_order=2,
             mapping_strategy='bundle', bundle=self.bundle,
         )
-        self.t3 = Task.objects.create(
+        self.t3 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 3', sort_order=3,
             mapping_strategy='bundle', bundle=self.bundle,
         )
         # An unbundled task at container level
-        self.t4 = Task.objects.create(
+        self.t4 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 4', sort_order=6,
         )
 
     def test_unbundle_item(self):
         """Unbundled item becomes direct and gets insert_point sort_order."""
-        container_items_qs = Task.objects.filter(
+        container_items_qs = PlanTask.objects.filter(
             est_worksheet=self.ws, bundle__isnull=True,
         )
-        container_bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
+        container_bundles_qs = PlanBundle.objects.filter(est_worksheet=self.ws)
         BundlingService.unbundle_item(
             self.t1, container_items_qs, container_bundles_qs,
         )
@@ -138,10 +138,10 @@ class BundlingServiceUnbundleItemTest(BundlingTestBase):
 
     def test_unbundle_bumps_existing(self):
         """Items at or after insert_point get bumped."""
-        container_items_qs = Task.objects.filter(
+        container_items_qs = PlanTask.objects.filter(
             est_worksheet=self.ws, bundle__isnull=True,
         )
-        container_bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
+        container_bundles_qs = PlanBundle.objects.filter(est_worksheet=self.ws)
         BundlingService.unbundle_item(
             self.t1, container_items_qs, container_bundles_qs,
         )
@@ -159,61 +159,61 @@ class BundlingServiceAutoDissolveTest(BundlingTestBase):
 
     def test_dissolve_empty_bundle(self):
         """Bundle with 0 items gets deleted."""
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.ws, name='Empty',
             accounting_category=self.lit, sort_order=1,
         )
-        bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
-        BundlingService.auto_dissolve_bundles(bundles_qs, Task)
-        self.assertFalse(TaskBundle.objects.filter(pk=bundle.pk).exists())
+        bundles_qs = PlanBundle.objects.filter(est_worksheet=self.ws)
+        BundlingService.auto_dissolve_bundles(bundles_qs, PlanTask)
+        self.assertFalse(PlanBundle.objects.filter(pk=bundle.pk).exists())
 
     def test_dissolve_single_item_bundle(self):
         """Bundle with 1 item: item is unbundled, bundle deleted."""
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.ws, name='Solo',
             accounting_category=self.lit, sort_order=5,
         )
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=self.ws, name='Lonely', sort_order=1,
             mapping_strategy='bundle', bundle=bundle,
         )
-        bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
-        BundlingService.auto_dissolve_bundles(bundles_qs, Task)
+        bundles_qs = PlanBundle.objects.filter(est_worksheet=self.ws)
+        BundlingService.auto_dissolve_bundles(bundles_qs, PlanTask)
         task.refresh_from_db()
         self.assertEqual(task.mapping_strategy, 'direct')
         self.assertIsNone(task.bundle)
         self.assertEqual(task.sort_order, 5)  # inherits bundle's sort_order
-        self.assertFalse(TaskBundle.objects.filter(pk=bundle.pk).exists())
+        self.assertFalse(PlanBundle.objects.filter(pk=bundle.pk).exists())
 
     def test_skip_healthy_bundle(self):
         """Bundle with 2+ items is left alone."""
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.ws, name='Healthy',
             accounting_category=self.lit, sort_order=5,
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.ws, name='T1', sort_order=1,
             mapping_strategy='bundle', bundle=bundle,
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=self.ws, name='T2', sort_order=2,
             mapping_strategy='bundle', bundle=bundle,
         )
-        bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
-        BundlingService.auto_dissolve_bundles(bundles_qs, Task)
-        self.assertTrue(TaskBundle.objects.filter(pk=bundle.pk).exists())
+        bundles_qs = PlanBundle.objects.filter(est_worksheet=self.ws)
+        BundlingService.auto_dissolve_bundles(bundles_qs, PlanTask)
+        self.assertTrue(PlanBundle.objects.filter(pk=bundle.pk).exists())
 
     def test_exclude_pk(self):
         """Excluded bundle is not dissolved even if empty."""
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=self.ws, name='Protected',
             accounting_category=self.lit, sort_order=1,
         )
-        bundles_qs = TaskBundle.objects.filter(est_worksheet=self.ws)
+        bundles_qs = PlanBundle.objects.filter(est_worksheet=self.ws)
         BundlingService.auto_dissolve_bundles(
-            bundles_qs, Task, exclude_pk=bundle.pk,
+            bundles_qs, PlanTask, exclude_pk=bundle.pk,
         )
-        self.assertTrue(TaskBundle.objects.filter(pk=bundle.pk).exists())
+        self.assertTrue(PlanBundle.objects.filter(pk=bundle.pk).exists())
 
 
 class BundlingServiceReorderContainerTest(BundlingTestBase):
@@ -223,24 +223,24 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
         super().setUp()
         from apps.estimates.models import EstWorksheet
         self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
-        self.t1 = Task.objects.create(
+        self.t1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 1', sort_order=1,
         )
-        self.bundle = TaskBundle.objects.create(
+        self.bundle = PlanBundle.objects.create(
             est_worksheet=self.ws, name='Bundle',
             accounting_category=self.lit, sort_order=2,
         )
-        self.bt1 = Task.objects.create(
+        self.bt1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='BT1', sort_order=1,
             mapping_strategy='bundle', bundle=self.bundle,
         )
-        self.t2 = Task.objects.create(
+        self.t2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 2', sort_order=3,
         )
 
     def test_move_task_down(self):
         """Move unbundled task down past a bundle."""
-        items_qs = Task.objects.filter(est_worksheet=self.ws)
+        items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
 
         BundlingService.reorder_container_items(
             items_qs, 'task', self.t1.pk, 'down',
@@ -252,7 +252,7 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
 
     def test_move_bundle_down(self):
         """Move a bundle down past an unbundled task."""
-        items_qs = Task.objects.filter(est_worksheet=self.ws)
+        items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
 
         BundlingService.reorder_container_items(
             items_qs, 'bundle', self.bundle.pk, 'down',
@@ -264,7 +264,7 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
 
     def test_cannot_move_past_boundary(self):
         """Moving beyond boundaries raises ValidationError."""
-        items_qs = Task.objects.filter(est_worksheet=self.ws)
+        items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
         with self.assertRaises(ValidationError):
             BundlingService.reorder_container_items(
                 items_qs, 'task', self.t1.pk, 'up',
@@ -274,24 +274,24 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
         """Two adjacent bundles can swap positions."""
         from apps.estimates.models import EstWorksheet
         ws2 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
-        bundle_a = TaskBundle.objects.create(
+        bundle_a = PlanBundle.objects.create(
             est_worksheet=ws2, name='Bundle A',
             accounting_category=self.lit, sort_order=1,
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws2, name='A1', sort_order=1,
             mapping_strategy='bundle', bundle=bundle_a,
         )
-        bundle_b = TaskBundle.objects.create(
+        bundle_b = PlanBundle.objects.create(
             est_worksheet=ws2, name='Bundle B',
             accounting_category=self.lit, sort_order=2,
         )
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=ws2, name='B1', sort_order=1,
             mapping_strategy='bundle', bundle=bundle_b,
         )
         # Container: bundle_a(1), bundle_b(2) — move bundle_b up
-        items_qs = Task.objects.filter(est_worksheet=ws2)
+        items_qs = PlanTask.objects.filter(est_worksheet=ws2)
         BundlingService.reorder_container_items(
             items_qs, 'bundle', bundle_b.pk, 'up',
         )
@@ -304,11 +304,11 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
         """Simple swap with no bundles present."""
         from apps.estimates.models import EstWorksheet
         ws2 = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
-        a = Task.objects.create(est_worksheet=ws2, name='A', sort_order=1)
-        b = Task.objects.create(est_worksheet=ws2, name='B', sort_order=2)
-        c = Task.objects.create(est_worksheet=ws2, name='C', sort_order=3)
+        a = PlanTask.objects.create(est_worksheet=ws2, name='A', sort_order=1)
+        b = PlanTask.objects.create(est_worksheet=ws2, name='B', sort_order=2)
+        c = PlanTask.objects.create(est_worksheet=ws2, name='C', sort_order=3)
 
-        items_qs = Task.objects.filter(est_worksheet=ws2)
+        items_qs = PlanTask.objects.filter(est_worksheet=ws2)
         BundlingService.reorder_container_items(
             items_qs, 'task', b.pk, 'down',
         )
@@ -322,12 +322,12 @@ class BundlingServiceReorderContainerTest(BundlingTestBase):
     def test_multi_member_bundle_moves_as_unit(self):
         """A bundle with multiple members moves as one unit; member sort_orders unchanged."""
         # Add a second member to the existing bundle
-        bt2 = Task.objects.create(
+        bt2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='BT2', sort_order=2,
             mapping_strategy='bundle', bundle=self.bundle,
         )
         # Container: t1(1), bundle(2), t2(3) — move bundle down
-        items_qs = Task.objects.filter(est_worksheet=self.ws)
+        items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
         BundlingService.reorder_container_items(
             items_qs, 'bundle', self.bundle.pk, 'down',
         )
@@ -350,22 +350,22 @@ class BundlingServiceReorderInBundleTest(BundlingTestBase):
         super().setUp()
         from apps.estimates.models import EstWorksheet
         self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
-        self.bundle = TaskBundle.objects.create(
+        self.bundle = PlanBundle.objects.create(
             est_worksheet=self.ws, name='Bundle',
             accounting_category=self.lit, sort_order=1,
         )
-        self.t1 = Task.objects.create(
+        self.t1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='T1', sort_order=1,
             mapping_strategy='bundle', bundle=self.bundle,
         )
-        self.t2 = Task.objects.create(
+        self.t2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='T2', sort_order=2,
             mapping_strategy='bundle', bundle=self.bundle,
         )
 
     def test_reorder_down(self):
         """Move first item down within bundle."""
-        bundle_items_qs = Task.objects.filter(bundle=self.bundle)
+        bundle_items_qs = PlanTask.objects.filter(bundle=self.bundle)
         BundlingService.reorder_in_bundle(bundle_items_qs, self.t1, 'down')
         self.t1.refresh_from_db()
         self.t2.refresh_from_db()
@@ -374,7 +374,7 @@ class BundlingServiceReorderInBundleTest(BundlingTestBase):
 
     def test_reorder_up(self):
         """Move second item up within bundle."""
-        bundle_items_qs = Task.objects.filter(bundle=self.bundle)
+        bundle_items_qs = PlanTask.objects.filter(bundle=self.bundle)
         BundlingService.reorder_in_bundle(bundle_items_qs, self.t2, 'up')
         self.t1.refresh_from_db()
         self.t2.refresh_from_db()
@@ -390,13 +390,13 @@ class WorksheetServiceBundleTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         self.ws = WorksheetService.create_worksheet(self.job.pk)
-        self.t1 = Task.objects.create(
+        self.t1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 1', sort_order=1,
         )
-        self.t2 = Task.objects.create(
+        self.t2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 2', sort_order=2,
         )
-        self.t3 = Task.objects.create(
+        self.t3 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 3', sort_order=3,
         )
 
@@ -437,19 +437,19 @@ class WorksheetServiceUnbundleTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         self.ws = WorksheetService.create_worksheet(self.job.pk)
-        self.bundle = TaskBundle.objects.create(
+        self.bundle = PlanBundle.objects.create(
             est_worksheet=self.ws, name='Bundle',
             accounting_category=self.lit, sort_order=5,
         )
-        self.t1 = Task.objects.create(
+        self.t1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='T1', sort_order=1,
             mapping_strategy='bundle', bundle=self.bundle,
         )
-        self.t2 = Task.objects.create(
+        self.t2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='T2', sort_order=2,
             mapping_strategy='bundle', bundle=self.bundle,
         )
-        self.t3 = Task.objects.create(
+        self.t3 = PlanTask.objects.create(
             est_worksheet=self.ws, name='T3', sort_order=3,
             mapping_strategy='bundle', bundle=self.bundle,
         )
@@ -469,7 +469,7 @@ class WorksheetServiceUnbundleTest(BundlingTestBase):
         self.t3.refresh_from_db()
         self.assertEqual(self.t3.mapping_strategy, 'direct')
         self.assertIsNone(self.t3.bundle)
-        self.assertFalse(TaskBundle.objects.filter(pk=self.bundle.pk).exists())
+        self.assertFalse(PlanBundle.objects.filter(pk=self.bundle.pk).exists())
 
 
 class WorksheetServiceReorderTest(BundlingTestBase):
@@ -478,10 +478,10 @@ class WorksheetServiceReorderTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         self.ws = WorksheetService.create_worksheet(self.job.pk)
-        self.t1 = Task.objects.create(
+        self.t1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 1', sort_order=1,
         )
-        self.t2 = Task.objects.create(
+        self.t2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 2', sort_order=2,
         )
 

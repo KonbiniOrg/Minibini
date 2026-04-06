@@ -4,9 +4,9 @@ Tests for QOH Automatic Updates via InventoryService.
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, PlanTask, Task, WorkOrder
 from apps.estimates.models import EstWorksheet
-from apps.inventory.models import Material
+from apps.inventory.models import PlanMaterial, Material
 from apps.inventory.models import PriceListItem
 from apps.inventory.models import Earmark, InventoryAdjustment
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
@@ -152,11 +152,10 @@ class ConsumeMaterialTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-QOH-002', contact=self.contact, description='Test Job',
         )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, version=1,
-        )
+        from apps.jobs.models import WorkOrder, Task
+        self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            est_worksheet=self.worksheet,
+            work_order=self.work_order,
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
@@ -267,11 +266,9 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-QOH-003', contact=self.contact, description='Test Job',
         )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, version=1,
-        )
+        self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            est_worksheet=self.worksheet,
+            work_order=self.work_order,
             name='Install plywood',
             description='Install plywood',
             sort_order=1,

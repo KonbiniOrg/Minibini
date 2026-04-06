@@ -248,8 +248,8 @@ class EstWorksheet(AbstractWorkContainer):
 
     def create_new_version(self):
         """Create a new version of this worksheet, marking this one as superseded."""
-        from apps.jobs.models import Task, TaskBundle
-        from apps.inventory.models import Material
+        from apps.jobs.models import PlanTask, PlanBundle
+        from apps.inventory.models import PlanMaterial
 
         # Mark current worksheet as superseded
         self.status = EstWorksheet.STATUS_SUPERSEDED
@@ -265,10 +265,10 @@ class EstWorksheet(AbstractWorkContainer):
             estimate=None  # New version starts without an estimate
         )
 
-        # Copy TaskBundles, mapping old bundle PKs to new ones
+        # Copy PlanBundles, mapping old bundle PKs to new ones
         bundle_mapping = {}
-        for bundle in self.bundles.all():
-            new_bundle = TaskBundle.objects.create(
+        for bundle in self.plan_bundles.all():
+            new_bundle = PlanBundle.objects.create(
                 est_worksheet=new_worksheet,
                 name=bundle.name,
                 description=bundle.description,
@@ -278,32 +278,31 @@ class EstWorksheet(AbstractWorkContainer):
             )
             bundle_mapping[bundle.pk] = new_bundle
 
-        # Copy all tasks to the new worksheet
-        for task in self.task_set.all():
-            new_bundle = bundle_mapping.get(task.bundle_id) if task.bundle_id else None
-            new_task = Task.objects.create(
-                parent_task=task.parent_task,
-                assignee=task.assignee,
+        # Copy all plan tasks to the new worksheet
+        for plan_task in self.plan_tasks.all():
+            new_bundle = bundle_mapping.get(plan_task.bundle_id) if plan_task.bundle_id else None
+            new_plan_task = PlanTask.objects.create(
                 est_worksheet=new_worksheet,
-                name=task.name,
-                units=task.units,
-                rate=task.rate,
-                est_qty=task.est_qty,
-                accounting_category=task.accounting_category,
-                mapping_strategy=task.mapping_strategy,
+                name=plan_task.name,
+                description=plan_task.description,
+                units=plan_task.units,
+                rate=plan_task.rate,
+                est_qty=plan_task.est_qty,
+                accounting_category=plan_task.accounting_category,
+                mapping_strategy=plan_task.mapping_strategy,
                 bundle=new_bundle,
             )
 
-            # Copy materials to the new task
-            for material in task.materials.all():
-                Material.objects.create(
-                    task=new_task,
-                    price_list_item=material.price_list_item,
-                    accounting_category=material.accounting_category,
-                    description=material.description,
-                    quantity=material.quantity,
-                    unit_cost=material.unit_cost,
-                    sell_price=material.sell_price,
+            # Copy plan materials to the new plan task
+            for plan_material in plan_task.plan_materials.all():
+                PlanMaterial.objects.create(
+                    plan_task=new_plan_task,
+                    price_list_item=plan_material.price_list_item,
+                    accounting_category=plan_material.accounting_category,
+                    description=plan_material.description,
+                    quantity=plan_material.quantity,
+                    unit_cost=plan_material.unit_cost,
+                    sell_price=plan_material.sell_price,
                 )
 
         return new_worksheet
@@ -336,18 +335,18 @@ class WorkOrderTemplate(models.Model):
         return self.template_name
 
     def generate_tasks_for_worksheet(self, worksheet, quantity=1):
-        """Generate all tasks for a worksheet, with proper product grouping and bundling."""
-        from apps.jobs.models import Task, TaskBundle
+        """Generate all plan tasks for a worksheet, with proper product grouping and bundling."""
+        from apps.jobs.models import PlanBundle
 
         generated_tasks = []
 
         for instance in range(1, quantity + 1):
             bundle_identifier = f"{self.template_name}_{worksheet.est_worksheet_id}_{instance}"
 
-            # Create TaskBundles from TemplateBundles
+            # Create PlanBundles from TemplateBundles
             template_to_instance_bundle = {}
             for template_bundle in self.bundles.all():
-                task_bundle = TaskBundle.objects.create(
+                plan_bundle = PlanBundle.objects.create(
                     est_worksheet=worksheet,
                     name=template_bundle.name,
                     description=template_bundle.description,
@@ -355,12 +354,11 @@ class WorkOrderTemplate(models.Model):
                     sort_order=template_bundle.sort_order,
                     source_template_bundle=template_bundle,
                 )
-                template_to_instance_bundle[template_bundle.pk] = task_bundle
+                template_to_instance_bundle[template_bundle.pk] = plan_bundle
 
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
                 work_order_template=self,
-                task_template__parent_template__isnull=True,  # Root-level templates only
                 task_template__is_active=True
             ).select_related('bundle').order_by('sort_order', 'task_template__template_name')
 
@@ -471,7 +469,6 @@ class TaskTemplate(models.Model):
 
     # Relationships
     work_order_templates = models.ManyToManyField(WorkOrderTemplate, through='TemplateTaskAssociation', related_name='task_templates')
-    parent_template = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='child_templates')
 
     created_date = models.DateTimeField(auto_now_add=True)
     # is_active no longer used but kept in case we change our minds later and to avoid a migration
@@ -485,45 +482,46 @@ class TaskTemplate(models.Model):
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
                        assignee=None, mapping_strategy='direct', bundle=None, sort_order=None):
-        """Generate a Task from this template with specified quantity and mapping config."""
-        from apps.jobs.models import WorkOrder, Task
+        """Generate a PlanTask or Task from this template with specified quantity and mapping config.
 
-        task = Task.objects.create(
-            work_order=container if isinstance(container, WorkOrder) else None,
-            est_worksheet=container if isinstance(container, EstWorksheet) else None,
-            name=self.template_name,
-            description=self.description,
-            units=self.units,
-            rate=self.rate,
-            est_qty=est_qty,
-            accounting_category=self.accounting_category,
-            assignee=assignee,
-            mapping_strategy=mapping_strategy,
-            bundle=bundle,
-            sort_order=sort_order,
-        )
+        The return type depends on the container: EstWorksheet -> PlanTask, WorkOrder -> Task.
+        """
+        from apps.jobs.models import WorkOrder, Task, PlanTask
 
-        # Generate child tasks if this template has children
-        for child_template in self.child_templates.filter(is_active=True):
-            child_task = child_template.generate_task(
-                container,
-                est_qty=est_qty,  # Pass the same quantity to child tasks
-                bundle_identifier=bundle_identifier,
-                product_instance=product_instance,
-                assignee=assignee
+        if isinstance(container, WorkOrder):
+            return Task.objects.create(
+                work_order=container,
+                name=self.template_name,
+                description=self.description,
+                units=self.units,
+                rate=self.rate,
+                est_qty=est_qty,
+                accounting_category=self.accounting_category,
+                assignee=assignee,
+                sort_order=sort_order,
             )
-            child_task.parent_task = task
-            child_task.save()
-
-        return task
+        else:  # EstWorksheet
+            return PlanTask.objects.create(
+                est_worksheet=container,
+                name=self.template_name,
+                description=self.description,
+                units=self.units,
+                rate=self.rate,
+                est_qty=est_qty,
+                accounting_category=self.accounting_category,
+                mapping_strategy=mapping_strategy,
+                bundle=bundle,
+                sort_order=sort_order,
+            )
 
 
 class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
+    task = models.ForeignKey('jobs.PlanTask', on_delete=models.PROTECT, null=True, blank=True)
     material = models.ForeignKey(
-        'inventory.Material', on_delete=models.SET_NULL,
+        'inventory.PlanMaterial', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
 

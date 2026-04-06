@@ -1,6 +1,6 @@
 from django.test import TestCase
 from django.urls import reverse
-from apps.jobs.models import Task, WorkOrder, Job
+from apps.jobs.models import Task, PlanTask, WorkOrder, Job
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import User
@@ -51,22 +51,22 @@ class TaskReorderingTestCase(TestCase):
             version=1
         )
 
-        # Create multiple tasks for the worksheet
-        self.task1 = Task.objects.create(
+        # Create multiple plan tasks for the worksheet
+        self.task1 = PlanTask.objects.create(
             name='Task 1',
             est_worksheet=self.worksheet,
             est_qty=1.0,
             rate=100.00,
             units='hours'
         )
-        self.task2 = Task.objects.create(
+        self.task2 = PlanTask.objects.create(
             name='Task 2',
             est_worksheet=self.worksheet,
             est_qty=2.0,
             rate=200.00,
             units='hours'
         )
-        self.task3 = Task.objects.create(
+        self.task3 = PlanTask.objects.create(
             name='Task 3',
             est_worksheet=self.worksheet,
             est_qty=3.0,
@@ -125,7 +125,7 @@ class TaskReorderingTestCase(TestCase):
         """Test moving a task down in the worksheet"""
         url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
-            'task_id': self.task1.task_id,
+            'task_id': self.task1.pk,
             'direction': 'down'
         })
         response = self.client.post(url)
@@ -145,7 +145,7 @@ class TaskReorderingTestCase(TestCase):
         """Test moving a task up in the worksheet"""
         url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
-            'task_id': self.task2.task_id,
+            'task_id': self.task2.pk,
             'direction': 'up'
         })
         response = self.client.post(url)
@@ -165,7 +165,7 @@ class TaskReorderingTestCase(TestCase):
         """Test that first task cannot be moved up"""
         url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
-            'task_id': self.task1.task_id,
+            'task_id': self.task1.pk,
             'direction': 'up'
         })
         response = self.client.post(url)
@@ -183,7 +183,7 @@ class TaskReorderingTestCase(TestCase):
         """Test that last task cannot be moved down"""
         url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
-            'task_id': self.task3.task_id,
+            'task_id': self.task3.pk,
             'direction': 'down'
         })
         response = self.client.post(url)
@@ -205,7 +205,7 @@ class TaskReorderingTestCase(TestCase):
 
         url = reverse('estimates:task_reorder_worksheet', kwargs={
             'worksheet_id': self.worksheet.est_worksheet_id,
-            'task_id': self.task1.task_id,
+            'task_id': self.task1.pk,
             'direction': 'down'
         })
         response = self.client.post(url)

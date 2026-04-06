@@ -421,8 +421,8 @@ class WorksheetService:
 
     @staticmethod
     def add_task_from_template(worksheet_pk, template_pk, est_qty=Decimal('1.00')):
-        """Add a task to a draft worksheet from a TaskTemplate."""
-        from apps.jobs.models import Task
+        """Add a PlanTask to a draft worksheet from a TaskTemplate."""
+        from apps.jobs.models import PlanTask
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
@@ -436,7 +436,7 @@ class WorksheetService:
         except TaskTemplate.DoesNotExist:
             raise NotFoundError(f'TaskTemplate {template_pk} not found')
 
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             name=tt.template_name,
             description=tt.description,
             accounting_category=tt.accounting_category,
@@ -449,8 +449,8 @@ class WorksheetService:
 
     @staticmethod
     def add_task_manual(worksheet_pk, **kwargs):
-        """Add a task manually to a draft worksheet."""
-        from apps.jobs.models import Task
+        """Add a PlanTask manually to a draft worksheet."""
+        from apps.jobs.models import PlanTask
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
@@ -459,7 +459,7 @@ class WorksheetService:
             raise ValidationError(
                 f'Cannot add tasks to a {ws.get_status_display().lower()} worksheet.'
             )
-        task = Task(est_worksheet=ws, **kwargs)
+        task = PlanTask(est_worksheet=ws, **kwargs)
         task.full_clean()
         task.save()
         return task
@@ -467,8 +467,8 @@ class WorksheetService:
     @staticmethod
     def bundle_tasks(worksheet_pk, task_ids, bundle_name, accounting_category,
                      description=''):
-        """Bundle tasks on a draft worksheet. Requires >= 2 tasks."""
-        from apps.jobs.models import Task, TaskBundle
+        """Bundle PlanTasks on a draft worksheet. Requires >= 2 tasks."""
+        from apps.jobs.models import PlanTask, PlanBundle
         from apps.core.services import BundlingService
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
@@ -481,15 +481,15 @@ class WorksheetService:
 
         # Get or create the bundle
         from django.db import models as db_models
-        max_task = Task.objects.filter(
+        max_task = PlanTask.objects.filter(
             est_worksheet=ws, bundle__isnull=True,
         ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
-        max_bundle = TaskBundle.objects.filter(
+        max_bundle = PlanBundle.objects.filter(
             est_worksheet=ws,
         ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
         next_sort = max(max_task, max_bundle) + 1
 
-        bundle, _ = TaskBundle.objects.get_or_create(
+        bundle, _ = PlanBundle.objects.get_or_create(
             est_worksheet=ws, name=bundle_name,
             defaults={
                 'description': description,
@@ -498,21 +498,21 @@ class WorksheetService:
             },
         )
 
-        selected = Task.objects.filter(
-            task_id__in=task_ids, est_worksheet=ws,
-        ).order_by('sort_order', 'task_id')
+        selected = PlanTask.objects.filter(
+            plan_task_id__in=task_ids, est_worksheet=ws,
+        ).order_by('sort_order', 'plan_task_id')
         BundlingService.bundle_items(selected, bundle)
 
         # Auto-dissolve other bundles that lost members
-        all_bundles = TaskBundle.objects.filter(est_worksheet=ws)
-        BundlingService.auto_dissolve_bundles(all_bundles, Task, exclude_pk=bundle.pk)
+        all_bundles = PlanBundle.objects.filter(est_worksheet=ws)
+        BundlingService.auto_dissolve_bundles(all_bundles, PlanTask, exclude_pk=bundle.pk)
 
         return bundle
 
     @staticmethod
     def unbundle_task(worksheet_pk, task_pk):
-        """Unbundle a task from its bundle on a draft worksheet."""
-        from apps.jobs.models import Task, TaskBundle
+        """Unbundle a PlanTask from its bundle on a draft worksheet."""
+        from apps.jobs.models import PlanTask, PlanBundle
         from apps.core.services import BundlingService
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
@@ -521,27 +521,27 @@ class WorksheetService:
         if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError('Cannot unbundle tasks on a non-draft worksheet.')
         try:
-            task = Task.objects.get(pk=task_pk, est_worksheet=ws)
-        except Task.DoesNotExist:
-            raise NotFoundError(f'Task {task_pk} not found')
+            task = PlanTask.objects.get(pk=task_pk, est_worksheet=ws)
+        except PlanTask.DoesNotExist:
+            raise NotFoundError(f'PlanTask {task_pk} not found')
         if task.mapping_strategy != 'bundle' or not task.bundle:
             return  # Nothing to unbundle
 
-        container_items_qs = Task.objects.filter(
+        container_items_qs = PlanTask.objects.filter(
             est_worksheet=ws, bundle__isnull=True,
         )
-        container_bundles_qs = TaskBundle.objects.filter(est_worksheet=ws)
+        container_bundles_qs = PlanBundle.objects.filter(est_worksheet=ws)
         BundlingService.unbundle_item(task, container_items_qs, container_bundles_qs)
 
         # Auto-dissolve bundles that may now have 0 or 1 items
         BundlingService.auto_dissolve_bundles(
-            TaskBundle.objects.filter(est_worksheet=ws), Task,
+            PlanBundle.objects.filter(est_worksheet=ws), PlanTask,
         )
 
     @staticmethod
     def reorder_items(worksheet_pk, item_type, item_id, direction):
-        """Reorder items at container level on a draft worksheet."""
-        from apps.jobs.models import Task, TaskBundle
+        """Reorder PlanTasks at container level on a draft worksheet."""
+        from apps.jobs.models import PlanTask
         from apps.core.services import BundlingService
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
@@ -550,15 +550,15 @@ class WorksheetService:
         if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError('Cannot reorder on a non-draft worksheet.')
 
-        items_qs = Task.objects.filter(est_worksheet=ws)
+        items_qs = PlanTask.objects.filter(est_worksheet=ws)
         BundlingService.reorder_container_items(
             items_qs, item_type, item_id, direction,
         )
 
     @staticmethod
     def reorder_in_bundle(worksheet_pk, task_pk, direction):
-        """Reorder a task within its bundle on a draft worksheet."""
-        from apps.jobs.models import Task
+        """Reorder a PlanTask within its bundle on a draft worksheet."""
+        from apps.jobs.models import PlanTask
         from apps.core.services import BundlingService
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
@@ -567,13 +567,13 @@ class WorksheetService:
         if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError('Cannot reorder on a non-draft worksheet.')
         try:
-            task = Task.objects.get(
+            task = PlanTask.objects.get(
                 pk=task_pk, est_worksheet=ws,
                 mapping_strategy='bundle', bundle__isnull=False,
             )
-        except Task.DoesNotExist:
-            raise NotFoundError(f'Task {task_pk} not found in bundle')
-        bundle_items_qs = Task.objects.filter(bundle=task.bundle)
+        except PlanTask.DoesNotExist:
+            raise NotFoundError(f'PlanTask {task_pk} not found in bundle')
+        bundle_items_qs = PlanTask.objects.filter(bundle=task.bundle)
         BundlingService.reorder_in_bundle(bundle_items_qs, task, direction)
 
     @staticmethod
@@ -613,51 +613,51 @@ class EstimateGenerationService:
 
         Tasks are processed based on their own mapping_strategy field:
         - 'direct': Task becomes its own line item
-        - 'bundle': Tasks in same TaskBundle are combined into one line item
+        - 'bundle': Tasks in same PlanBundle are combined into one line item
         - 'exclude': Task is not included on estimate
         """
-        tasks = worksheet.task_set.select_related('bundle').prefetch_related('materials').all()
+        plan_tasks = worksheet.plan_tasks.select_related('bundle').prefetch_related('plan_materials').all()
 
-        if not tasks:
+        if not plan_tasks:
             raise ValueError(f"EstWorksheet {worksheet.pk} has no tasks to convert")
 
         # Create the estimate
         estimate = self._create_estimate(worksheet)
 
-        # Categorize tasks by their instance-level mapping strategy
+        # Categorize plan tasks by their instance-level mapping strategy
         direct_tasks = []
-        bundles = defaultdict(list)  # bundle_id -> [tasks]
+        bundles = defaultdict(list)  # bundle_id -> [plan tasks]
 
-        for task in tasks:
-            if task.mapping_strategy == 'exclude':
+        for plan_task in plan_tasks:
+            if plan_task.mapping_strategy == 'exclude':
                 continue
-            elif task.mapping_strategy == 'bundle' and task.bundle:
-                bundles[task.bundle_id].append(task)
+            elif plan_task.mapping_strategy == 'bundle' and plan_task.bundle:
+                bundles[plan_task.bundle_id].append(plan_task)
             else:
-                direct_tasks.append(task)
+                direct_tasks.append(plan_task)
 
         # Generate line items
         line_items = []
 
-        # Process bundled tasks
+        # Process bundled plan tasks
         for bundle_id, bundle_tasks in bundles.items():
-            task_bundle = bundle_tasks[0].bundle
-            line_item = self._create_bundle_line_item(bundle_tasks, task_bundle, estimate)
+            plan_bundle = bundle_tasks[0].bundle
+            line_item = self._create_bundle_line_item(bundle_tasks, plan_bundle, estimate)
             line_items.append(line_item)
 
-        # Process direct tasks
-        for task in direct_tasks:
-            has_materials = task.materials.exists()
-            is_pass_through = (not task.rate or task.rate == Decimal('0.00')) and has_materials
+        # Process direct plan tasks
+        for plan_task in direct_tasks:
+            has_materials = plan_task.plan_materials.exists()
+            is_pass_through = (not plan_task.rate or plan_task.rate == Decimal('0.00')) and has_materials
 
             # Skip labor line item for pass-through tasks (no rate, only materials)
             if not is_pass_through:
-                line_item = self._create_direct_line_item(task, estimate)
+                line_item = self._create_direct_line_item(plan_task, estimate)
                 line_items.append(line_item)
 
-            # Create material line items for each material on direct tasks
-            for material in task.materials.all():
-                mat_li = self._create_material_line_item(material, estimate)
+            # Create material line items for each plan material on direct plan tasks
+            for plan_material in plan_task.plan_materials.all():
+                mat_li = self._create_material_line_item(plan_material, estimate)
                 line_items.append(mat_li)
 
         # Bulk create all line items
@@ -753,7 +753,7 @@ class EstimateGenerationService:
             rate = task.rate or Decimal('0.00')
             total_price += qty * rate
             # Add material sell totals to bundle price
-            for material in task.materials.all():
+            for material in task.plan_materials.all():
                 total_price += material.total_sell
 
         line_item = EstimateLineItem(

@@ -1,6 +1,6 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job, Task, WorkOrder
+from apps.jobs.models import Job, Task, PlanTask, WorkOrder
 from apps.estimates.models import Estimate, EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.invoicing.models import Invoice
@@ -97,17 +97,16 @@ class SearchViewTests(TestCase):
             version=1
         )
 
-        # Create tasks
-        self.task1 = Task.objects.create(
+        # Create plan tasks on the worksheet
+        self.task1 = PlanTask.objects.create(
             name='Cut wood pieces',
             est_worksheet=self.worksheet1,
             units='hours',
             rate=Decimal('50.00'),
-            est_qty=Decimal('10.00'),
-            assignee=self.user
+            est_qty=Decimal('10.00')
         )
 
-        self.task2 = Task.objects.create(
+        self.task2 = PlanTask.objects.create(
             name='Assemble furniture',
             est_worksheet=self.worksheet1,
             units='hours',

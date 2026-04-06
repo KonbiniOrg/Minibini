@@ -5,16 +5,13 @@ InventoryService earmark methods: get_earmark_preview() and create_earmarks_for_
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task
-from apps.estimates.models import EstWorksheet
-from apps.inventory.models import Material
-from apps.inventory.models import PriceListItem
-from apps.inventory.models import Earmark
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.inventory.models import Material, PriceListItem, Earmark
 from apps.inventory.services import InventoryService
 
 
 class EarmarkPreviewTest(TestCase):
-    """Tests for InventoryService.get_earmark_preview()."""
+    """Tests for InventoryService.get_earmark_preview() — queries WO-side Materials."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -31,9 +28,7 @@ class EarmarkPreviewTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-EMK-001', contact=self.contact, description='Earmark Job',
         )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, version=1,
-        )
+        self.work_order = WorkOrder.objects.create(job=self.job)
 
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
@@ -55,15 +50,13 @@ class EarmarkPreviewTest(TestCase):
         )
 
         self.task_a = Task.objects.create(
-            est_worksheet=self.worksheet,
+            work_order=self.work_order,
             name='Build cabinets',
-            description='Build cabinets',
             sort_order=1,
         )
         self.task_b = Task.objects.create(
-            est_worksheet=self.worksheet,
+            work_order=self.work_order,
             name='Install trim',
-            description='Install trim',
             sort_order=2,
         )
 
@@ -83,7 +76,6 @@ class EarmarkPreviewTest(TestCase):
         self.assertEqual(preview[0]['needed_qty'], Decimal('8.00'))
 
     def test_preview_shows_available_qty(self):
-        """Preview shows current available quantity."""
         Material.objects.create(
             task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
@@ -92,7 +84,6 @@ class EarmarkPreviewTest(TestCase):
         self.assertEqual(preview[0]['available_qty'], Decimal('20.00'))
 
     def test_preview_shows_shortfall(self):
-        """Preview shows shortfall when needed > available."""
         Material.objects.create(
             task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('25.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
@@ -101,7 +92,6 @@ class EarmarkPreviewTest(TestCase):
         self.assertEqual(preview[0]['shortfall'], Decimal('5.00'))
 
     def test_preview_no_shortfall_when_sufficient(self):
-        """Preview shows zero shortfall when enough stock."""
         Material.objects.create(
             task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
@@ -110,7 +100,6 @@ class EarmarkPreviewTest(TestCase):
         self.assertEqual(preview[0]['shortfall'], Decimal('0.00'))
 
     def test_preview_multiple_items(self):
-        """Preview handles multiple different items."""
         Material.objects.create(
             task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
@@ -126,7 +115,6 @@ class EarmarkPreviewTest(TestCase):
         self.assertEqual(items[self.screws]['needed_qty'], Decimal('2.00'))
 
     def test_preview_accounts_for_existing_earmarks(self):
-        """Preview reduces available qty by existing earmarks from other jobs."""
         other_job = Job.objects.create(
             job_number='J-EMK-002', contact=self.contact, description='Other Job',
         )
@@ -138,12 +126,10 @@ class EarmarkPreviewTest(TestCase):
             quantity=Decimal('10.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
-        # 20 on hand - 15 earmarked = 5 available, need 10 → shortfall 5
         self.assertEqual(preview[0]['available_qty'], Decimal('5.00'))
         self.assertEqual(preview[0]['shortfall'], Decimal('5.00'))
 
     def test_preview_empty_when_no_inventoried_materials(self):
-        """Preview returns empty list when no materials reference inventoried items."""
         Material.objects.create(
             task=self.task_a,
             description='Custom brackets',
@@ -153,7 +139,6 @@ class EarmarkPreviewTest(TestCase):
         self.assertEqual(len(preview), 0)
 
     def test_preview_ignores_non_inventoried_pli(self):
-        """Preview ignores materials linked to non-inventoried price list items."""
         non_inv = PriceListItem.objects.create(
             code='NONINV', description='Not tracked', is_inventoried=False,
         )

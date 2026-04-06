@@ -10,9 +10,9 @@ Phase 2: Materials produce their own line items on estimates.
 """
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import Task, TaskBundle, Job
+from apps.jobs.models import PlanTask, PlanBundle, Job
 from apps.estimates.models import EstWorksheet, EstimateLineItem
-from apps.inventory.models import Material
+from apps.inventory.models import Material, PlanMaterial
 from apps.estimates.services import EstimateGenerationService
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration
@@ -50,18 +50,16 @@ class EstimateGenerationMaterialsTest(TestCase):
     def test_direct_task_with_materials(self):
         """Direct task with materials produces labor + material line items."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=worksheet, name="Install shelving",
             rate=Decimal('50.00'), est_qty=Decimal('4.00'), units='hours',
             mapping_strategy='direct',
         )
-        Material.objects.create(
-            task=task, description='Plywood',
+        PlanMaterial.objects.create(plan_task=task, description='Plywood',
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
-        Material.objects.create(
-            task=task, description='Screws',
+        PlanMaterial.objects.create(plan_task=task, description='Screws',
             quantity=Decimal('100.00'), unit_cost=Decimal('0.10'),
             sell_price=Decimal('0.20'),
         )
@@ -95,15 +93,14 @@ class EstimateGenerationMaterialsTest(TestCase):
         self.assertEqual(screws_li.price, Decimal('0.20'))
 
     def test_pass_through_task_materials_only(self):
-        """Task with no rate (pass-through) produces material line items only, no labor."""
+        """PlanTask with no rate (pass-through) produces material line items only, no labor."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=worksheet, name="Materials pass-through",
             rate=None, est_qty=None,
             mapping_strategy='direct',
         )
-        Material.objects.create(
-            task=task, description='Special order hardware',
+        PlanMaterial.objects.create(plan_task=task, description='Special order hardware',
             quantity=Decimal('1.00'), unit_cost=Decimal('50.00'),
             sell_price=Decimal('100.00'),
         )
@@ -119,15 +116,14 @@ class EstimateGenerationMaterialsTest(TestCase):
         self.assertIsNotNone(li.accounting_category)
 
     def test_pass_through_task_zero_rate(self):
-        """Task with rate=0 is also pass-through — no labor line item."""
+        """PlanTask with rate=0 is also pass-through — no labor line item."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=worksheet, name="Pass-through task",
             rate=Decimal('0.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        Material.objects.create(
-            task=task, description='Widget',
+        PlanMaterial.objects.create(plan_task=task, description='Widget',
             quantity=Decimal('2.00'), unit_cost=Decimal('25.00'),
             sell_price=Decimal('50.00'),
         )
@@ -142,28 +138,26 @@ class EstimateGenerationMaterialsTest(TestCase):
     def test_bundled_tasks_include_material_costs(self):
         """Bundled tasks include material total_sell in the bundle price."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        bundle = TaskBundle.objects.create(
+        bundle = PlanBundle.objects.create(
             est_worksheet=worksheet, name="Cabinet Build",
             accounting_category=self.lit_labor, sort_order=1,
         )
-        task1 = Task.objects.create(
+        task1 = PlanTask.objects.create(
             est_worksheet=worksheet, name="Cut parts",
             rate=Decimal('50.00'), est_qty=Decimal('2.00'),
             mapping_strategy='bundle', bundle=bundle,
         )
-        task2 = Task.objects.create(
+        task2 = PlanTask.objects.create(
             est_worksheet=worksheet, name="Assemble",
             rate=Decimal('50.00'), est_qty=Decimal('3.00'),
             mapping_strategy='bundle', bundle=bundle,
         )
         # Materials on bundled tasks
-        Material.objects.create(
-            task=task1, description='Plywood',
+        PlanMaterial.objects.create(plan_task=task1, description='Plywood',
             quantity=Decimal('2.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
-        Material.objects.create(
-            task=task2, description='Screws',
+        PlanMaterial.objects.create(plan_task=task2, description='Screws',
             quantity=Decimal('50.00'), unit_cost=Decimal('0.05'),
             sell_price=Decimal('0.10'),
         )
@@ -183,18 +177,17 @@ class EstimateGenerationMaterialsTest(TestCase):
     def test_excluded_task_materials_also_excluded(self):
         """Materials on excluded tasks are not on the estimate."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        task = Task.objects.create(
+        task = PlanTask.objects.create(
             est_worksheet=worksheet, name="Internal prep",
             rate=Decimal('25.00'), est_qty=Decimal('1.00'),
             mapping_strategy='exclude',
         )
-        Material.objects.create(
-            task=task, description='Should not appear',
+        PlanMaterial.objects.create(plan_task=task, description='Should not appear',
             quantity=Decimal('1.00'), unit_cost=Decimal('10.00'),
             sell_price=Decimal('20.00'),
         )
         # Add a visible task so the estimate isn't empty
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Visible task",
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
@@ -212,7 +205,7 @@ class EstimateGenerationMaterialsTest(TestCase):
     def test_backward_compatibility_no_materials(self):
         """Tasks with no materials still work exactly as before."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        Task.objects.create(
+        PlanTask.objects.create(
             est_worksheet=worksheet, name="Simple task",
             rate=Decimal('100.00'), est_qty=Decimal('2.00'), units='hours',
             mapping_strategy='direct',
@@ -230,13 +223,12 @@ class EstimateGenerationMaterialsTest(TestCase):
     def test_material_line_item_has_material_fk(self):
         """Material line items have the material FK set for traceability."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        task = Task.objects.create(
-            est_worksheet=worksheet, name="Task",
+        task = PlanTask.objects.create(
+            est_worksheet=worksheet, name="PlanTask",
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        material = Material.objects.create(
-            task=task, description='Bracket',
+        material = PlanMaterial.objects.create(plan_task=task, description='Bracket',
             quantity=Decimal('4.00'), unit_cost=Decimal('5.00'),
             sell_price=Decimal('10.00'),
         )
@@ -253,13 +245,12 @@ class EstimateGenerationMaterialsTest(TestCase):
     def test_material_accounting_category_from_pli(self):
         """Material line items get their accounting_category from the PLI."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        task = Task.objects.create(
-            est_worksheet=worksheet, name="Task",
+        task = PlanTask.objects.create(
+            est_worksheet=worksheet, name="PlanTask",
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        Material.objects.create(
-            task=task, price_list_item=self.pli_plywood,
+        PlanMaterial.objects.create(plan_task=task, price_list_item=self.pli_plywood,
             quantity=Decimal('4.00'),
         )
 
@@ -274,13 +265,12 @@ class EstimateGenerationMaterialsTest(TestCase):
     def test_freeform_material_uses_own_accounting_category(self):
         """Freeform materials (no PLI) use their own accounting_category."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        task = Task.objects.create(
-            est_worksheet=worksheet, name="Task",
+        task = PlanTask.objects.create(
+            est_worksheet=worksheet, name="PlanTask",
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        Material.objects.create(
-            task=task, description='Custom bracket',
+        PlanMaterial.objects.create(plan_task=task, description='Custom bracket',
             quantity=Decimal('4.00'), unit_cost=Decimal('5.00'),
             sell_price=Decimal('10.00'),
             accounting_category=self.lit_material,
@@ -297,13 +287,12 @@ class EstimateGenerationMaterialsTest(TestCase):
     def test_freeform_material_no_type_gets_fallback(self):
         """Freeform materials with no accounting_category get fallback."""
         worksheet = EstWorksheet.objects.create(job=self.job)
-        task = Task.objects.create(
-            est_worksheet=worksheet, name="Task",
+        task = PlanTask.objects.create(
+            est_worksheet=worksheet, name="PlanTask",
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        Material.objects.create(
-            task=task, description='Mystery part',
+        PlanMaterial.objects.create(plan_task=task, description='Mystery part',
             quantity=Decimal('1.00'), unit_cost=Decimal('5.00'),
             sell_price=Decimal('10.00'),
         )
