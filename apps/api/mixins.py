@@ -323,30 +323,15 @@ class WorkOrderTaskMixin:
         task = self._get_task_or_404(work_order, task_id)
 
         if request.method == 'DELETE':
-            from apps.jobs.models import Task, Blep
-            non_deletable = (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE)
-            if task.status in non_deletable:
+            from django.core.exceptions import ValidationError
+            from apps.jobs.services import TaskService
+            try:
+                TaskService.delete_task(task.pk)
+            except ValidationError as e:
                 return Response(
-                    {'detail': f'Cannot delete a {task.status} task. Cancel it instead.'},
+                    {'detail': e.message if hasattr(e, 'message') else str(e)},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if Blep.objects.filter(task=task).exists():
-                return Response(
-                    {'detail': 'Cannot delete a task that has time entries. Cancel it instead.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            was_blocked = task.status == Task.STATUS_BLOCKED
-            wo = task.work_order
-            task.delete()
-            if was_blocked:
-                from apps.jobs.models import WorkOrder
-                if wo.status == WorkOrder.STATUS_BLOCKED:
-                    still_blocked = Task.objects.filter(
-                        work_order=wo, status=Task.STATUS_BLOCKED,
-                    ).exists()
-                    if not still_blocked:
-                        from apps.jobs.services import WorkOrderService
-                        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
             return Response({'message': 'Task deleted.'})
 
         serializer = self.task_serializer_class(task, data=request.data, partial=True)

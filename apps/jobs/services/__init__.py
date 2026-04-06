@@ -305,6 +305,42 @@ class TaskService:
         return task
 
     @staticmethod
+    def delete_task(task_pk):
+        """Delete a task if allowed.
+
+        Rules:
+        - In-progress and complete tasks cannot be deleted (cancel instead).
+        - Tasks with bleps (time entries) cannot be deleted (cancel instead).
+        - If the deleted task was the last blocked task on its WO, the WO
+          is auto-unblocked back to incomplete.
+        """
+        try:
+            task = Task.objects.get(pk=task_pk)
+        except Task.DoesNotExist:
+            raise NotFoundError(f'Task {task_pk} not found')
+
+        non_deletable = (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE)
+        if task.status in non_deletable:
+            raise ValidationError(
+                f"Cannot delete a {task.status} task. Cancel it instead."
+            )
+        if Blep.objects.filter(task=task).exists():
+            raise ValidationError(
+                "Cannot delete a task that has time entries. Cancel it instead."
+            )
+
+        was_blocked = task.status == Task.STATUS_BLOCKED
+        wo = task.work_order
+        task.delete()
+
+        if was_blocked and wo.status == WorkOrder.STATUS_BLOCKED:
+            still_blocked = Task.objects.filter(
+                work_order=wo, status=Task.STATUS_BLOCKED,
+            ).exists()
+            if not still_blocked:
+                WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
+
+    @staticmethod
     def reorder_tasks(task_id, direction):
         """Reorder a task within its container — delegates to BundlingService."""
         from apps.core.services import BundlingService
