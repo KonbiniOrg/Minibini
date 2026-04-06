@@ -38,6 +38,10 @@
   function closeModal() { editingBlep = null; modalMode = 'edit'; }
   async function handleSaved() { closeModal(); await loadBleps(); }
 
+  const taskIsTerminal = $derived(
+    task?.status === 'complete' || task?.status === 'cancelled'
+  );
+
   function handleConflict(c) { conflict = c; }
   function handleResolved() { conflict = null; refresh(); }
   function handleCancel() { conflict = null; }
@@ -286,7 +290,9 @@
   {:else}
     <p>No materials.</p>
   {/if}
-  <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
+  {#if !taskIsTerminal}
+    <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
+  {/if}
 
   <MaterialModal
     open={matModalOpen}
@@ -303,7 +309,7 @@
   {#if subtasks.length > 0}
       <TaskTree
         tasks={subtasks}
-        readonly={false}
+        readonly={taskIsTerminal}
         showStatus={true}
         showAssignee={true}
         onTaskClick={handleSubtaskTaskClick}
@@ -318,7 +324,9 @@
     {:else}
       <p>No subtasks.</p>
     {/if}
-  <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
+  {#if !taskIsTerminal}
+    <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
+  {/if}
 
   <SubtaskModal
     open={subtaskModalOpen}

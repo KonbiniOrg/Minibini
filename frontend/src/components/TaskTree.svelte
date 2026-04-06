@@ -26,6 +26,9 @@
     return qty * price;
   }
 
+  const TERMINAL = ['complete', 'cancelled'];
+  function isTerminal(task) { return TERMINAL.includes(task.status); }
+
   function taskWithMaterialsTotal(task) {
     let total = taskTotal(task);
     for (const m of (task.materials || [])) {
@@ -83,10 +86,12 @@
         <td class="text-right">{fmt(taskTotal(task))}</td>
         {#if !readonly}
           <td class="actions-cell">
-            <button type="button" onclick={() => onEditTask(task)}>edit</button>
-            <button type="button" onclick={() => onDeleteTask(task)}>del</button>
-            <button type="button" onclick={() => onAddMaterial(task)}>+mat</button>
-            <button type="button" onclick={() => onAddSubtask(task)}>+sub</button>
+            {#if !isTerminal(task)}
+              <button type="button" onclick={() => onEditTask(task)}>edit</button>
+              <button type="button" onclick={() => onDeleteTask(task)}>del</button>
+              <button type="button" onclick={() => onAddMaterial(task)}>+mat</button>
+              <button type="button" onclick={() => onAddSubtask(task)}>+sub</button>
+            {/if}
             <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
             <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === tasks.length - 1}>&#9660;</button>
           </td>
@@ -106,11 +111,13 @@
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
-          {#if !readonly}
+          {#if !readonly && !isTerminal(task)}
             <td class="actions-cell">
               <button type="button" onclick={() => onEditMaterial(mat, task)}>edit</button>
               <button type="button" onclick={() => onDeleteMaterial(mat, task)}>del</button>
             </td>
+          {:else if !readonly}
+            <td class="actions-cell"></td>
           {/if}
         </tr>
       {/each}
@@ -131,9 +138,11 @@
           <td class="text-right">{fmt(taskTotal(sub))}</td>
           {#if !readonly}
             <td class="actions-cell">
-              <button type="button" onclick={() => onEditTask(sub)}>edit</button>
-              <button type="button" onclick={() => onDeleteTask(sub)}>del</button>
-              <button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>
+              {#if !isTerminal(sub)}
+                <button type="button" onclick={() => onEditTask(sub)}>edit</button>
+                <button type="button" onclick={() => onDeleteTask(sub)}>del</button>
+                <button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>
+              {/if}
             </td>
           {/if}
         </tr>
@@ -151,11 +160,13 @@
             <td class="text-right">{fmt(mat.unit_cost)}</td>
             <td class="text-right">{fmt(mat.sell_price)}</td>
             <td class="text-right">{fmt(materialTotal(mat))}</td>
-            {#if !readonly}
+            {#if !readonly && !isTerminal(sub)}
               <td class="actions-cell">
                 <button type="button" onclick={() => onEditMaterial(mat, sub)}>edit</button>
                 <button type="button" onclick={() => onDeleteMaterial(mat, sub)}>del</button>
               </td>
+            {:else if !readonly}
+              <td class="actions-cell"></td>
             {/if}
           </tr>
         {/each}

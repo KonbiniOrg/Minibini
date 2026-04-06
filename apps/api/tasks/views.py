@@ -30,11 +30,22 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
         from apps.api.tasks.serializers import TaskDetailSerializer
         return TaskDetailSerializer
 
+    TERMINAL_STATUSES = (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
+
     def _get_task_or_404(self, pk):
         try:
             return Task.objects.get(pk=pk)
         except Task.DoesNotExist:
             raise NotFound()
+
+    def _check_task_mutable(self, task):
+        """Return a 400 Response if the task is in a terminal status, else None."""
+        if task.status in self.TERMINAL_STATUSES:
+            return Response(
+                {'detail': f'Cannot modify a {task.status} task.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return None
 
     # --- Material CRUD ---
 
@@ -47,6 +58,9 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             serializer = MaterialSerializer(materials, many=True)
             return Response(serializer.data)
 
+        err = self._check_task_mutable(task)
+        if err:
+            return err
         serializer = MaterialWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -67,6 +81,9 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
     def material_detail(self, request, pk=None, mid=None):
         from apps.api.tasks.serializers import MaterialSerializer, MaterialWriteSerializer
         task = self.get_object()
+        err = self._check_task_mutable(task)
+        if err:
+            return err
         try:
             material = Material.objects.get(pk=mid, task=task)
         except Material.DoesNotExist:
@@ -102,6 +119,9 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             serializer = TaskSerializer(children, many=True)
             return Response(serializer.data)
 
+        err = self._check_task_mutable(task)
+        if err:
+            return err
         serializer = TaskSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save(parent_task=task, work_order=task.work_order)

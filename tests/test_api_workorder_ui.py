@@ -410,3 +410,96 @@ class AddFromTemplateTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 403)
+
+
+class TerminalTaskGuardTest(TestCase):
+    """Completed and cancelled tasks reject material/subtask mutations."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='termuser', password='testpass')
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='Term', last_name='Test')
+        self.job = Job.objects.create(
+            job_number='TERM-001', name='Terminal Job', contact=self.contact,
+        )
+        self.wo = WorkOrder.objects.create(job=self.job)
+
+    def _make_task(self, task_status):
+        return Task.objects.create(
+            work_order=self.wo, name='A task', units='each',
+            rate=10, est_qty=1, status=task_status,
+        )
+
+    def test_cannot_add_material_to_complete_task(self):
+        task = self._make_task(Task.STATUS_COMPLETE)
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/materials/',
+            {'description': 'Nope', 'quantity': '1'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('complete', response.data['detail'].lower())
+
+    def test_cannot_add_material_to_cancelled_task(self):
+        task = self._make_task(Task.STATUS_CANCELLED)
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/materials/',
+            {'description': 'Nope', 'quantity': '1'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_cannot_edit_material_on_complete_task(self):
+        task = self._make_task(Task.STATUS_COMPLETE)
+        mat = Material.objects.create(
+            task=task, description='Existing', quantity=1,
+            unit_cost=Decimal('5.00'), sell_price=Decimal('10.00'),
+        )
+        response = self.client.patch(
+            f'/api/tasks/{task.pk}/materials/{mat.pk}/',
+            {'quantity': '99'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_cannot_delete_material_on_complete_task(self):
+        task = self._make_task(Task.STATUS_COMPLETE)
+        mat = Material.objects.create(
+            task=task, description='Existing', quantity=1,
+            unit_cost=Decimal('5.00'), sell_price=Decimal('10.00'),
+        )
+        response = self.client.delete(
+            f'/api/tasks/{task.pk}/materials/{mat.pk}/',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_cannot_add_subtask_to_complete_task(self):
+        task = self._make_task(Task.STATUS_COMPLETE)
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/subtasks/',
+            {'name': 'Nope', 'units': 'ea', 'rate': '10', 'est_qty': '1'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_can_list_materials_on_complete_task(self):
+        """Reading is still allowed on terminal tasks."""
+        task = self._make_task(Task.STATUS_COMPLETE)
+        response = self.client.get(f'/api/tasks/{task.pk}/materials/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_can_list_subtasks_on_complete_task(self):
+        task = self._make_task(Task.STATUS_COMPLETE)
+        response = self.client.get(f'/api/tasks/{task.pk}/subtasks/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_can_add_material_to_in_progress_task(self):
+        """Non-terminal statuses are fine."""
+        task = self._make_task(Task.STATUS_IN_PROGRESS)
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/materials/',
+            {'description': 'Yes', 'quantity': '1'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
