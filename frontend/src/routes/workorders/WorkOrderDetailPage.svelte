@@ -6,6 +6,7 @@
   import TaskModal from '../../components/TaskModal.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
   import SubtaskModal from '../../components/SubtaskModal.svelte';
+  import AssignModal from '../../components/AssignModal.svelte';
 
   let { params = {} } = $props();
 
@@ -28,6 +29,9 @@
 
   let subtaskModalOpen = $state(false);
   let subtaskModalParentTaskId = $state(null);
+
+  let assignModalOpen = $state(false);
+  let assignModalTask = $state(null);
 
   // Status action state
   let statusBusy = $state(false);
@@ -276,6 +280,7 @@
     onAddSubtask={openAddSubtask}
     onReorder={handleReorder}
     onTaskClick={handleTaskClick}
+    onAssignTask={(task) => { assignModalTask = task; assignModalOpen = true; }}
   />
 
   <!-- Modals -->
@@ -305,6 +310,13 @@
     parentTaskId={subtaskModalParentTaskId}
     onSaved={handleSubtaskSaved}
     onClose={() => { subtaskModalOpen = false; }}
+  />
+
+  <AssignModal
+    open={assignModalOpen}
+    task={assignModalTask}
+    onSaved={() => { assignModalOpen = false; assignModalTask = null; reload(); }}
+    onClose={() => { assignModalOpen = false; assignModalTask = null; }}
   />
 {/if}
 

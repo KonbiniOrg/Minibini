@@ -12,6 +12,7 @@
     onAddSubtask = () => {},
     onReorder = () => {},
     onTaskClick = () => {},
+    onAssignTask = () => {},
   } = $props();
 
   function taskTotal(task) {
@@ -77,7 +78,7 @@
           <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
           {#if task.description}<br><span class="dim">{task.description}</span>{/if}
         </td>
-        {#if showAssignee}<td>{task.assignee_name || 'Unassigned'}</td>{/if}
+        {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task)}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         {#if showStatus}<td><span class="status-pill status-{task.status}">{task.status}</span></td>{/if}
         <td class="text-right">{task.units || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
@@ -129,7 +130,7 @@
             <button type="button" class="link-btn" onclick={() => onTaskClick(sub)}>{sub.name}</button>
             {#if sub.description}<br><span class="dim indent">{sub.description}</span>{/if}
           </td>
-          {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'}</td>{/if}
+          {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub)}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
           {#if showStatus}<td><span class="status-pill status-{sub.status}">{sub.status}</span></td>{/if}
           <td class="text-right">{sub.units || '-'}</td>
           <td class="text-right">{sub.est_qty ?? '-'}</td>
@@ -221,4 +222,9 @@
     text-decoration: underline; text-align: left;
   }
   .link-btn:hover { color: #1e40af; }
+  .small-btn {
+    font-size: 11px; padding: 1px 5px; margin-left: 4px;
+    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
+  }
+  .small-btn:hover { background: #f0f0f0; }
 </style>

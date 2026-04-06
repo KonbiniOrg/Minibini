@@ -39,6 +39,19 @@ def me_view(request):
     return Response(UserSerializer(request.user).data)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def users_list(request):
+    """Return active users for assignee dropdowns."""
+    from apps.core.models import User
+    users = User.objects.filter(is_active=True).order_by('first_name', 'username')
+    data = []
+    for u in users:
+        name = u.get_full_name() or u.username
+        data.append({'id': u.pk, 'username': u.username, 'name': name})
+    return Response(data)
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def refresh_stub(request):

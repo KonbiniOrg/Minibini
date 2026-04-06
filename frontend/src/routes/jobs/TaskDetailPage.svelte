@@ -10,6 +10,7 @@
   import TaskTree from '../../components/TaskTree.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
   import SubtaskModal from '../../components/SubtaskModal.svelte';
+  import AssignModal from '../../components/AssignModal.svelte';
 
   let { params = {} } = $props();
 
@@ -32,6 +33,7 @@
   // Subtasks state
   let subtasks = $state([]);
   let subtaskModalOpen = $state(false);
+  let assignModalOpen = $state(false);
 
   function openEdit(blep) { editingBlep = blep; modalMode = 'edit'; }
   function openCreate() { editingBlep = null; modalMode = 'create-open'; }
@@ -254,7 +256,7 @@
     <tbody>
       <tr><td>Status</td><td>{task.status}</td></tr>
       <tr><td>Description</td><td>{task.description || '-'}</td></tr>
-      <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'}</td></tr>
+      <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.units || ''}</td></tr>
       <tr><td>Rate</td><td>{task.rate ? `$${task.rate}` : '-'}</td></tr>
       <tr><td>Accounting category</td><td>{task.accounting_category || '-'}</td></tr>
@@ -361,6 +363,13 @@
     {userPermissions}
     onSaved={handleSaved}
     onClose={closeModal}
+  />
+
+  <AssignModal
+    open={assignModalOpen}
+    {task}
+    onSaved={() => { assignModalOpen = false; refresh(); }}
+    onClose={() => { assignModalOpen = false; }}
   />
 {/if}
 
