@@ -156,9 +156,13 @@ Modal for creating or editing a PlanMaterial. Fields:
 - `sell_price` (auto-filled from PLI `selling_price`)
 - `accounting_category` — optional dropdown
 
-Auto-fill behavior: when a PLI is selected and the field is empty or at
-its default, copy the PLI's values in. If the user has already typed a
-value, don't overwrite. This mirrors `MaterialBase._populate_from_pli()`.
+Auto-fill behavior: when a PLI is selected, copy the PLI's description,
+purchase_price (→ unit_cost), and selling_price (→ sell_price) into the
+form fields and **disable those fields** (greyed out, not editable). The
+PLI is the source of truth for those values. If the user sets the picker
+back to "none", the fields are re-enabled and editable (cleared to
+defaults so the user fills them in manually). This makes the distinction
+between PLI-linked and freeform materials visually unambiguous.
 
 Submits `POST /api/plan-tasks/{id}/materials/` or
 `PATCH /api/plan-tasks/{id}/materials/{mid}/`.
