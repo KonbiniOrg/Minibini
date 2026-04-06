@@ -256,3 +256,12 @@ class InventoryService:
             if not created:
                 earmark.quantity = qty
                 earmark.save(update_fields=['quantity'])
+
+    @staticmethod
+    def release_earmarks_for_job(job):
+        """Delete all remaining earmarks for a job.
+
+        Called when a WorkOrder is completed — any un-consumed earmark
+        balance is released back to general inventory availability.
+        """
+        Earmark.objects.filter(job=job).delete()

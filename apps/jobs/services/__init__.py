@@ -124,6 +124,12 @@ class WorkOrderService:
         wo.status = new_status
         wo.full_clean()
         wo.save()
+
+        # Release remaining earmarks when WO completes
+        if new_status == WorkOrder.STATUS_COMPLETE:
+            from apps.inventory.services import InventoryService
+            InventoryService.release_earmarks_for_job(wo.job)
+
         return wo
 
     @staticmethod
