@@ -1,18 +1,24 @@
 """
-Tests for automatic earmarking when an estimate is accepted.
+Tests for automatic earmarking when a WorkOrder is created.
+
+After Plan 3, earmarks are created at WO creation time (not on
+estimate acceptance). The trigger is inside WorkOrderService's
+creation methods, which call InventoryService.create_earmarks_for_work_order().
 """
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, PlanTask
-from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
-from apps.inventory.models import PlanMaterial
-from apps.inventory.models import PriceListItem
-from apps.inventory.models import Earmark
+from apps.jobs.models import Job, WorkOrder, Task, PlanTask
+from apps.estimates.models import (
+    Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate,
+    TaskTemplate, TemplateTaskAssociation,
+)
+from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
+from apps.jobs.services import WorkOrderService
 
 
-class AutoEarmarkOnEstimateAcceptedTest(TestCase):
-    """When an estimate is accepted, earmarks are auto-created for inventoried materials."""
+class EarmarkOnCopyFromWorksheetTest(TestCase):
+    """Earmarks created when WO is created via copy_from_worksheet (workflow 3)."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -25,132 +31,191 @@ class AutoEarmarkOnEstimateAcceptedTest(TestCase):
         )
         self.contact.business = self.business
         self.contact.save()
-
         self.job = Job.objects.create(
-            job_number='J-AEM-001', contact=self.contact, description='Auto Earmark Job',
+            job_number='J-AEM-001', contact=self.contact,
         )
-
         self.plywood = PriceListItem.objects.create(
-            code='PLY.75',
-            description='3/4" Baltic Birch Plywood',
-            units='sheets',
-            qty_on_hand=Decimal('20.00'),
-            purchase_price=Decimal('45.00'),
-            selling_price=Decimal('90.00'),
+            code='PLY.75', description='Plywood',
+            units='sheets', qty_on_hand=Decimal('20.00'),
+            purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
             is_inventoried=True,
         )
         self.screws = PriceListItem.objects.create(
-            code='SCR.100',
-            description='Wood Screws Box of 100',
-            units='ea',
-            qty_on_hand=Decimal('50.00'),
-            purchase_price=Decimal('8.00'),
-            selling_price=Decimal('12.00'),
+            code='SCR.100', description='Screws',
+            units='ea', qty_on_hand=Decimal('50.00'),
+            purchase_price=Decimal('8.00'), selling_price=Decimal('12.00'),
             is_inventoried=True,
         )
-
-        # Create estimate and worksheet with materials
-        self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-AEM-001', version=1,
-        )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, estimate=self.estimate, version=1,
-        )
-        self.task = PlanTask.objects.create(
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
-            name='Build cabinets',
-            description='Build cabinets',
-            sort_order=1,
+            name='Build cabinets', sort_order=1,
         )
 
-    def _add_line_item(self, estimate):
-        EstimateLineItem.objects.create(
-            estimate=estimate, description='Test item',
-            price=Decimal('100.00'),
-        )
-
-    def test_earmarks_created_on_estimate_accepted(self):
-        """Earmarks are auto-created when estimate transitions to accepted."""
+    def test_earmarks_created_on_copy_from_worksheet(self):
         PlanMaterial.objects.create(
-            plan_task=self.task, price_list_item=self.plywood,
-            quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
+            plan_task=self.plan_task, price_list_item=self.plywood,
+            quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
+            sell_price=Decimal('90.00'),
         )
         PlanMaterial.objects.create(
-            plan_task=self.task, price_list_item=self.screws,
-            quantity=Decimal('2.00'), unit_cost=Decimal('8.00'), sell_price=Decimal('12.00'),
+            plan_task=self.plan_task, price_list_item=self.screws,
+            quantity=Decimal('2.00'), unit_cost=Decimal('8.00'),
+            sell_price=Decimal('12.00'),
         )
 
-        # Transition estimate: draft → open → accepted
-        self._add_line_item(self.estimate)
-        self.estimate.status = Estimate.STATUS_OPEN
-        self.estimate.save()
-        self.estimate.status = Estimate.STATUS_ACCEPTED
-        self.estimate.save()
+        wo = WorkOrderService.create_direct(self.job)
+        WorkOrderService.copy_from_worksheet(wo.pk, self.worksheet.pk)
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 2)
-        plywood_earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
-        self.assertEqual(plywood_earmark.quantity, Decimal('5.00'))
-        screws_earmark = Earmark.objects.get(price_list_item=self.screws, job=self.job)
-        self.assertEqual(screws_earmark.quantity, Decimal('2.00'))
+        self.assertEqual(
+            Earmark.objects.get(price_list_item=self.plywood, job=self.job).quantity,
+            Decimal('5.00'),
+        )
+        self.assertEqual(
+            Earmark.objects.get(price_list_item=self.screws, job=self.job).quantity,
+            Decimal('2.00'),
+        )
 
     def test_aggregates_across_tasks(self):
-        """Earmarks aggregate material quantities across multiple tasks."""
-        task_b = PlanTask.objects.create(
+        plan_task_b = PlanTask.objects.create(
             est_worksheet=self.worksheet,
-            name='Install trim',
-            description='Install trim',
-            sort_order=2,
+            name='Install trim', sort_order=2,
         )
         PlanMaterial.objects.create(
-            plan_task=self.task, price_list_item=self.plywood,
-            quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
+            plan_task=self.plan_task, price_list_item=self.plywood,
+            quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
+            sell_price=Decimal('90.00'),
         )
-        PlanMaterial.objects.create(plan_task=task_b, price_list_item=self.plywood,
-            quantity=Decimal('3.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
+        PlanMaterial.objects.create(
+            plan_task=plan_task_b, price_list_item=self.plywood,
+            quantity=Decimal('3.00'), unit_cost=Decimal('45.00'),
+            sell_price=Decimal('90.00'),
         )
 
-        self._add_line_item(self.estimate)
-        self.estimate.status = Estimate.STATUS_OPEN
-        self.estimate.save()
-        self.estimate.status = Estimate.STATUS_ACCEPTED
-        self.estimate.save()
+        wo = WorkOrderService.create_direct(self.job)
+        WorkOrderService.copy_from_worksheet(wo.pk, self.worksheet.pk)
 
         earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('8.00'))
 
     def test_no_earmarks_without_inventoried_materials(self):
-        """No earmarks created when materials don't reference inventoried items."""
         PlanMaterial.objects.create(
-            plan_task=self.task,
+            plan_task=self.plan_task,
             description='Custom brackets',
-            quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
+            quantity=Decimal('5.00'), unit_cost=Decimal('10.00'),
+            sell_price=Decimal('20.00'),
         )
 
-        self._add_line_item(self.estimate)
-        self.estimate.status = Estimate.STATUS_OPEN
-        self.estimate.save()
-        self.estimate.status = Estimate.STATUS_ACCEPTED
-        self.estimate.save()
-
-        self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
-
-    def test_no_earmarks_on_non_accepted_transitions(self):
-        """Earmarks are NOT created for other status transitions."""
-        PlanMaterial.objects.create(
-            plan_task=self.task, price_list_item=self.plywood,
-            quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
-        )
-
-        # draft → open should not create earmarks
-        self._add_line_item(self.estimate)
-        self.estimate.status = Estimate.STATUS_OPEN
-        self.estimate.save()
+        wo = WorkOrderService.create_direct(self.job)
+        WorkOrderService.copy_from_worksheet(wo.pk, self.worksheet.pk)
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
     def test_no_earmarks_when_no_materials(self):
-        """No earmarks created when job has no materials at all."""
-        self._add_line_item(self.estimate)
+        wo = WorkOrderService.create_direct(self.job)
+        WorkOrderService.copy_from_worksheet(wo.pk, self.worksheet.pk)
+
+        self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
+
+
+class EarmarkOnCreateFromTemplateTest(TestCase):
+    """Earmarks created (if any materials exist) after create_from_template."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='Contact',
+            email='test@example.com', work_number='555-0100',
+        )
+        self.job = Job.objects.create(
+            job_number='J-AEM-002', contact=self.contact,
+        )
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.create(name='Labor')
+        self.template = WorkOrderTemplate.objects.create(
+            template_name='Quick', is_active=True,
+        )
+        tt = TaskTemplate.objects.create(
+            template_name='Countertop', is_active=True,
+            units='each', rate=100, accounting_category=cat,
+        )
+        TemplateTaskAssociation.objects.create(
+            work_order_template=self.template,
+            task_template=tt, est_qty=1, sort_order=1,
+        )
+
+    def test_no_earmarks_from_template_with_no_materials(self):
+        """Template -> WO has no materials, so no earmarks."""
+        wo = WorkOrderService.create_from_template(self.template, self.job)
+        self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
+
+
+class EarmarkOnCreateFromEstimateTest(TestCase):
+    """Earmarks created (if any materials copy over) after create_from_estimate."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='Contact',
+            email='test@example.com', work_number='555-0100',
+        )
+        self.job = Job.objects.create(
+            job_number='J-AEM-003', contact=self.contact,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-AEM-001', version=1,
+        )
+
+    def test_no_earmarks_from_estimate_with_no_materials(self):
+        """Estimate -> WO with no task materials produces no earmarks."""
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, description='Manual item',
+            price=Decimal('100.00'),
+        )
+        self.estimate.status = Estimate.STATUS_OPEN
+        self.estimate.save()
+
+        wo = WorkOrderService.create_from_estimate(self.estimate)
+        self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
+
+
+class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
+    """Verify that the old estimate_accepted signal no longer creates earmarks."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='Contact',
+            email='test@example.com', work_number='555-0100',
+        )
+        self.job = Job.objects.create(
+            job_number='J-AEM-004', contact=self.contact,
+        )
+        self.plywood = PriceListItem.objects.create(
+            code='PLY.99', description='Plywood',
+            units='sheets', qty_on_hand=Decimal('20.00'),
+            purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
+            is_inventoried=True,
+        )
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-AEM-005', version=1,
+        )
+        self.worksheet = EstWorksheet.objects.create(
+            job=self.job, estimate=self.estimate, version=1,
+        )
+        self.plan_task = PlanTask.objects.create(
+            est_worksheet=self.worksheet,
+            name='Build stuff', sort_order=1,
+        )
+        PlanMaterial.objects.create(
+            plan_task=self.plan_task, price_list_item=self.plywood,
+            quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
+            sell_price=Decimal('90.00'),
+        )
+
+    def test_accepting_estimate_does_not_create_earmarks(self):
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, description='Test item',
+            price=Decimal('100.00'),
+        )
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
         self.estimate.status = Estimate.STATUS_ACCEPTED

@@ -72,6 +72,9 @@ class WorkOrderService:
         for line_item in estimate.estimatelineitem_set.all():
             TaskService.create_from_line_item(line_item, work_order)
 
+        from apps.inventory.services import InventoryService
+        InventoryService.create_earmarks_for_work_order(work_order)
+
         return work_order
 
     @staticmethod
@@ -97,6 +100,9 @@ class WorkOrderService:
 
         for association in associations:
             association.task_template.generate_task(work_order, association.est_qty)
+
+        from apps.inventory.services import InventoryService
+        InventoryService.create_earmarks_for_work_order(work_order)
 
         return work_order
 
@@ -166,6 +172,9 @@ class WorkOrderService:
                     price_list_item=pm.price_list_item,
                     accounting_category=pm.accounting_category,
                 )
+
+        from apps.inventory.services import InventoryService
+        InventoryService.create_earmarks_for_work_order(wo)
 
 
 class TaskService:

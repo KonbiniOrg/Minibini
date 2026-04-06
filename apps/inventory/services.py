@@ -210,6 +210,36 @@ class InventoryService:
         return preview
 
     @staticmethod
+    def create_earmarks_for_work_order(work_order):
+        """Create earmarks from a WorkOrder's Materials.
+
+        Aggregates inventoried Materials by PLI across all Tasks on the WO,
+        then upserts Earmark records for the job. Called as a hook after
+        each WO creation path.
+        """
+        from apps.inventory.models import Material
+
+        job = work_order.job
+        materials = Material.objects.filter(
+            task__work_order=work_order,
+            price_list_item__is_inventoried=True,
+        ).values('price_list_item').annotate(
+            total_qty=Sum('quantity'),
+        )
+
+        if not materials:
+            return
+
+        earmark_data = [
+            {
+                'price_list_item_id': entry['price_list_item'],
+                'quantity': entry['total_qty'],
+            }
+            for entry in materials
+        ]
+        InventoryService.create_earmarks_for_job(job, earmark_data)
+
+    @staticmethod
     def create_earmarks_for_job(job, earmark_data):
         """Create or update earmarks from user-confirmed data.
         earmark_data: list of dicts with price_list_item_id and quantity."""
