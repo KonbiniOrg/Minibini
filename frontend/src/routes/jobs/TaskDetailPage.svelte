@@ -268,7 +268,7 @@
           <th class="text-right">Unit Cost</th>
           <th class="text-right">Sell Price</th>
           <th class="text-right">Total</th>
-          <th>Actions</th>
+          {#if !taskIsTerminal}<th>Actions</th>{/if}
         </tr>
       </thead>
       <tbody>
@@ -279,10 +279,14 @@
             <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
             <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
             <td class="text-right">{(Number(mat.quantity) && Number(mat.sell_price)) ? `$${(Number(mat.quantity) * Number(mat.sell_price)).toFixed(2)}` : '-'}</td>
-            <td>
-              <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
-              <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
-            </td>
+            {#if !taskIsTerminal}
+              <td>
+                <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
+                <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
+              </td>
+            {:else}
+              <td></td>
+            {/if}
           </tr>
         {/each}
       </tbody>
