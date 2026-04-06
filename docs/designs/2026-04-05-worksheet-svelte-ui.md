@@ -176,6 +176,12 @@ for "none / freeform").
 
 This component will be reused in sub-project A for WO-side materials.
 
+**Scaling note:** The picker loads the entire PLI catalog on first focus
+and filters client-side. This is fine for catalogs up to a few hundred
+items (the expected size). If the catalog grows very large (1000+), this
+should switch to server-side search by adding `SearchFilter` to
+`PriceListItemViewSet` and using `?search=query` with debounced input.
+
 ## Permissions
 
 All mutations (create, edit, delete, reorder, add-from-template, generate
