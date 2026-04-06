@@ -227,6 +227,10 @@
       <a href={`/jobs/${task.work_order.job.id}`} use:link>
         &laquo; {task.work_order.job.job_number} {task.work_order.job.name}
       </a>
+      &nbsp;·&nbsp;
+      <a href={`/work-orders/${task.work_order.id}`} use:link>
+        Work Order
+      </a>
     </p>
   {/if}
 
