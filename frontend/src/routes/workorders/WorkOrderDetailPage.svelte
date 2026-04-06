@@ -270,7 +270,7 @@
         <button type="button" onclick={() => handleStatusAction('block')} disabled={statusBusy}>Block</button>
       {/if}
       {#if workOrder.status === 'complete' || workOrder.status === 'blocked'}
-        <button type="button" onclick={() => handleStatusAction('reopen')} disabled={statusBusy}>Reopen</button>
+        <button type="button" onclick={() => handleStatusAction('reopen')} disabled={statusBusy}>Unblock</button>
       {/if}
     </div>
   {/if}
