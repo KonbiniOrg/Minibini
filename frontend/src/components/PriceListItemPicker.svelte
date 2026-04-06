@@ -104,8 +104,8 @@
       {disabled}
     >
     {#if showDropdown && !disabled}
-      <div class="dropdown">
-        <div class="dropdown-item none-option" onmousedown={() => selectItem(null)}>
+      <div class="dropdown" role="listbox">
+        <div class="dropdown-item none-option" role="option" onmousedown={() => selectItem(null)}>
           None (freeform)
         </div>
         {#if loading}
@@ -114,7 +114,7 @@
           <div class="dropdown-item loading">No items found</div>
         {:else}
           {#each items as item}
-            <div class="dropdown-item" onmousedown={() => selectItem(item)}>
+            <div class="dropdown-item" role="option" onmousedown={() => selectItem(item)}>
               <strong>{item.code}</strong> — {item.description}
             </div>
           {/each}
