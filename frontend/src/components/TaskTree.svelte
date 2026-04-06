@@ -63,7 +63,7 @@
       {#if showAssignee}<th>Assignee</th>{/if}
       {#if showStatus}<th>Status</th>{/if}
       <th class="text-right">Units</th>
-      <th class="text-right">Qty</th>
+      <th class="text-right">Est Qty</th>
       <th class="text-right">Unit Cost</th>
       <th class="text-right">Sell Price</th>
       <th class="text-right">Total</th>
