@@ -28,7 +28,9 @@
   }
 
   const TERMINAL = ['complete', 'cancelled'];
+  const NON_DELETABLE = ['in_progress', 'complete', 'cancelled'];
   function isTerminal(task) { return TERMINAL.includes(task.status); }
+  function canDelete(task) { return !NON_DELETABLE.includes(task.status); }
 
   function taskWithMaterialsTotal(task) {
     let total = taskTotal(task);
@@ -89,7 +91,7 @@
           <td class="actions-cell">
             {#if !isTerminal(task)}
               <button type="button" onclick={() => onEditTask(task)}>edit</button>
-              <button type="button" onclick={() => onDeleteTask(task)}>del</button>
+              {#if canDelete(task)}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
               <button type="button" onclick={() => onAddMaterial(task)}>+mat</button>
               <button type="button" onclick={() => onAddSubtask(task)}>+sub</button>
             {/if}
@@ -141,7 +143,7 @@
             <td class="actions-cell">
               {#if !isTerminal(sub)}
                 <button type="button" onclick={() => onEditTask(sub)}>edit</button>
-                <button type="button" onclick={() => onDeleteTask(sub)}>del</button>
+                {#if canDelete(sub)}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
                 <button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>
               {/if}
             </td>
