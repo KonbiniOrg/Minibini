@@ -144,8 +144,8 @@
           <td class="indent">{row.task.name}{#if row.task.description}<br><span class="dim">{row.task.description}</span>{/if}</td>
           <td class="text-right">{row.task.units || '-'}</td>
           <td class="text-right">{row.task.est_qty ?? '-'}</td>
-          <td class="text-right">{fmt(row.task.rate)}</td>
           <td class="text-right">-</td>
+          <td class="text-right">{fmt(row.task.rate)}</td>
           <td class="text-right">{fmt(taskTotal(row.task))}</td>
           {#if !readonly}
             <td class="actions-cell">
@@ -163,8 +163,8 @@
           <td>{row.task.name}{#if row.task.description}<br><span class="dim">{row.task.description}</span>{/if}</td>
           <td class="text-right">{row.task.units || '-'}</td>
           <td class="text-right">{row.task.est_qty ?? '-'}</td>
-          <td class="text-right">{fmt(row.task.rate)}</td>
           <td class="text-right">-</td>
+          <td class="text-right">{fmt(row.task.rate)}</td>
           <td class="text-right">{fmt(taskTotal(row.task))}</td>
           {#if !readonly}
             <td class="actions-cell">
