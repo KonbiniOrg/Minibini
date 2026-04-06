@@ -392,6 +392,18 @@ class TaskLifecycleService:
         WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_BLOCKED)
 
     @staticmethod
+    def _check_wo_unblocked(task):
+        """Unblock WorkOrder if no other tasks on it are blocked."""
+        wo = task.work_order
+        if wo.status != WorkOrder.STATUS_BLOCKED:
+            return
+        still_blocked = Task.objects.filter(
+            work_order=wo, status=Task.STATUS_BLOCKED,
+        ).exclude(pk=task.pk).exists()
+        if not still_blocked:
+            WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
+
+    @staticmethod
     def unblock_task(task_pk):
         """Transition task from blocked -> in_progress."""
         with transaction.atomic():
@@ -402,6 +414,7 @@ class TaskLifecycleService:
                 )
             Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
             task.status = Task.STATUS_IN_PROGRESS
+            TaskLifecycleService._check_wo_unblocked(task)
             return task
 
     @staticmethod
