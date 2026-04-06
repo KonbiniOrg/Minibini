@@ -12,7 +12,6 @@
   } = $props();
 
   let name = $state('');
-  let description = $state('');
   let accountingCategory = $state('');
   let busy = $state(false);
   let error = $state('');
@@ -21,11 +20,9 @@
     if (open) {
       if (mode === 'edit' && bundle) {
         name = bundle.name || '';
-        description = bundle.description || '';
         accountingCategory = bundle.accounting_category ?? '';
       } else {
         name = '';
-        description = '';
         accountingCategory = '';
       }
       error = '';
@@ -37,7 +34,6 @@
     error = '';
     const payload = {
       name,
-      description,
       accounting_category: accountingCategory || null,
     };
     try {
@@ -61,14 +57,8 @@
       <h3>{mode === 'edit' ? 'Edit Bundle' : 'Create Bundle'}</h3>
 
       <p>
-        <label><strong>Name *</strong><br>
-          <input type="text" bind:value={name} style="width:100%;box-sizing:border-box;">
-        </label>
-      </p>
-
-      <p>
-        <label><strong>Description</strong><br>
-          <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
+        <label><strong>Description *</strong><br>
+          <input type="text" bind:value={name} placeholder="Appears as the estimate line item description" style="width:100%;box-sizing:border-box;">
         </label>
       </p>
 
