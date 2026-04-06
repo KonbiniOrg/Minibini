@@ -8,45 +8,42 @@
   } = $props();
 
   let query = $state('');
-  let items = $state([]);
+  let allItems = $state([]);
   let showDropdown = $state(false);
   let loading = $state(false);
-  let debounceTimer = $state(null);
   let selectedLabel = $state('');
+
+  // Filtered view — client-side filter on the full list
+  let items = $derived.by(() => {
+    if (!query) return allItems;
+    const lower = query.toLowerCase();
+    return allItems.filter(i =>
+      i.code.toLowerCase().includes(lower) ||
+      i.description.toLowerCase().includes(lower)
+    );
+  });
 
   // When value changes externally (e.g. edit mode), resolve the label
   $effect(() => {
-    if (value && items.length > 0) {
-      const found = items.find(i => i.price_list_item_id === value);
+    if (value && allItems.length > 0) {
+      const found = allItems.find(i => i.price_list_item_id === value);
       if (found) selectedLabel = `${found.code} — ${found.description}`;
     } else if (!value) {
       selectedLabel = '';
     }
   });
 
-  function debounceSearch(q) {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => fetchItems(q), 300);
-  }
-
-  async function fetchItems(q) {
+  async function fetchAllItems() {
+    if (allItems.length > 0) return; // already loaded
     loading = true;
     try {
-      const url = q
-        ? `/api/price-list-items/?page_size=50&code=${encodeURIComponent(q)}`
-        : '/api/price-list-items/?page_size=50';
-      const resp = await api.get(url);
-      items = resp.results || resp;
-      // Client-side filter if API doesn't support search
-      if (q) {
-        const lower = q.toLowerCase();
-        items = items.filter(i =>
-          i.code.toLowerCase().includes(lower) ||
-          i.description.toLowerCase().includes(lower)
-        );
-      }
+      // Fetch all PLIs without pagination. The catalog is expected to be
+      // small (a couple hundred items at most). If it grows very large,
+      // this should switch to server-side search with SearchFilter.
+      const resp = await api.get('/api/price-list-items/?page_size=9999');
+      allItems = resp.results || resp;
     } catch (e) {
-      items = [];
+      allItems = [];
     } finally {
       loading = false;
     }
@@ -55,12 +52,11 @@
   function handleInput(e) {
     query = e.target.value;
     showDropdown = true;
-    debounceSearch(query);
   }
 
   function handleFocus() {
     showDropdown = true;
-    if (items.length === 0) fetchItems(query);
+    fetchAllItems();
   }
 
   function handleBlur() {
