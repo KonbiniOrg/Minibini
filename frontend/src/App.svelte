@@ -20,6 +20,7 @@
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
+  import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
 
   const routes = {
     '/': Home,
@@ -36,6 +37,7 @@
     '/jobs/board': JobBoardPage,
     '/jobs/:id': JobDetailPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
+    '/worksheets/:id': WorksheetDetailPage,
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
     '/profile': ProfilePage,
