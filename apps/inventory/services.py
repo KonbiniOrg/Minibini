@@ -180,12 +180,16 @@ class InventoryService:
 
     @staticmethod
     def get_earmark_preview(job):
-        """Get preview of inventoried items needed for a job's materials.
-        Aggregates by price_list_item across all plan tasks on the job's worksheets.
-        Returns list of dicts with price_list_item, needed_qty, available_qty, shortfall."""
-        # Find all plan materials with inventoried price list items across the job's worksheets
-        materials = PlanMaterial.objects.filter(
-            plan_task__est_worksheet__job=job,
+        """Get preview of inventoried items needed for a job's work order materials.
+
+        Aggregates by price_list_item across all Materials on all WorkOrders
+        for this job. Returns list of dicts with price_list_item, needed_qty,
+        available_qty, shortfall.
+        """
+        from apps.inventory.models import Material
+
+        materials = Material.objects.filter(
+            task__work_order__job=job,
             price_list_item__is_inventoried=True,
         ).values('price_list_item').annotate(
             total_qty=Sum('quantity'),
