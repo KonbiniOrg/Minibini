@@ -7,6 +7,9 @@
   import StartWorkConflictModal from '../../components/tasks/StartWorkConflictModal.svelte';
   import BlepList from '../../components/tasks/BlepList.svelte';
   import BlepEditModal from '../../components/tasks/BlepEditModal.svelte';
+  import TaskTree from '../../components/TaskTree.svelte';
+  import MaterialModal from '../../components/MaterialModal.svelte';
+  import SubtaskModal from '../../components/SubtaskModal.svelte';
 
   let { params = {} } = $props();
 
@@ -18,6 +21,17 @@
   let editingBlep = $state(null);
   let modalMode = $state('edit'); // 'edit' | 'create-open'
   const modalOpen = $derived(editingBlep !== null || modalMode === 'create-open');
+
+  // Materials state
+  let materials = $state([]);
+  let categories = $state([]);
+  let matModalOpen = $state(false);
+  let matModalMode = $state('create');
+  let matModalMaterial = $state(null);
+
+  // Subtasks state
+  let subtasks = $state([]);
+  let subtaskModalOpen = $state(false);
 
   function openEdit(blep) { editingBlep = blep; modalMode = 'edit'; }
   function openCreate() { editingBlep = null; modalMode = 'create-open'; }
@@ -57,17 +71,145 @@
     }
   }
 
+  async function loadMaterials() {
+    try {
+      materials = await api.get(`/api/tasks/${params.taskId}/materials/`);
+    } catch (e) {
+      materials = [];
+    }
+  }
+
+  async function loadCategories() {
+    try {
+      const resp = await api.get('/api/accounting-categories/?page_size=100');
+      categories = resp.results || resp;
+    } catch (e) {
+      categories = [];
+    }
+  }
+
+  async function loadSubtasks() {
+    try {
+      const rawSubs = await api.get(`/api/tasks/${params.taskId}/subtasks/`);
+      // Enrich each subtask with its materials
+      subtasks = await Promise.all(rawSubs.map(async (sub) => {
+        try {
+          const subMats = await api.get(`/api/tasks/${sub.task_id}/materials/`);
+          return { ...sub, materials: subMats };
+        } catch (e) {
+          return { ...sub, materials: [] };
+        }
+      }));
+    } catch (e) {
+      subtasks = [];
+    }
+  }
+
   async function refresh() {
     await loadTask();
     await loadBleps();
+    await loadMaterials();
+    await loadSubtasks();
   }
 
   $effect(() => {
     if (params.taskId) {
       loadTask();
       loadBleps();
+      loadMaterials();
+      loadSubtasks();
+      loadCategories();
     }
   });
+
+  // Material modal handlers
+  function openAddMaterial() {
+    matModalMaterial = null;
+    matModalMode = 'create';
+    matModalOpen = true;
+  }
+
+  function openEditMaterial(material) {
+    matModalMaterial = material;
+    matModalMode = 'edit';
+    matModalOpen = true;
+  }
+
+  async function handleDeleteMaterial(material) {
+    if (!confirm('Delete this material?')) return;
+    try {
+      await api.delete(`/api/tasks/${params.taskId}/materials/${material.material_id}/`);
+      await loadMaterials();
+    } catch (e) {
+      alert(e.message || 'Could not delete material.');
+    }
+  }
+
+  function handleMaterialSaved() {
+    matModalOpen = false;
+    matModalMaterial = null;
+    loadMaterials();
+  }
+
+  // Subtask modal handlers
+  function openAddSubtask() {
+    subtaskModalOpen = true;
+  }
+
+  function handleSubtaskSaved() {
+    subtaskModalOpen = false;
+    loadSubtasks();
+  }
+
+  // Subtask tree callbacks
+  function handleSubtaskTaskClick(sub) {
+    if (task && task.work_order) {
+      window.location.hash = `/jobs/${task.work_order.job.id}/tasks/${sub.task_id}`;
+    }
+  }
+
+  function handleSubtaskEditMaterial(material, parentTask) {
+    matModalMaterial = material;
+    matModalMode = 'edit';
+    // Use the subtask's task_id for the material modal
+    matModalOpen = true;
+    // Override taskId to the subtask
+    subtaskMatTaskId = parentTask.task_id;
+  }
+
+  async function handleSubtaskDeleteMaterial(material, parentTask) {
+    if (!confirm('Delete this material?')) return;
+    try {
+      await api.delete(`/api/tasks/${parentTask.task_id}/materials/${material.material_id}/`);
+      await loadSubtasks();
+    } catch (e) {
+      alert(e.message || 'Could not delete material.');
+    }
+  }
+
+  // Track which task the material modal targets (for subtask materials)
+  let subtaskMatTaskId = $state(null);
+  const effectiveMatTaskId = $derived(subtaskMatTaskId || params.taskId);
+
+  // Reset subtaskMatTaskId when modal closes
+  function handleMatModalClose() {
+    matModalOpen = false;
+    subtaskMatTaskId = null;
+  }
+
+  function handleSubtaskAddMaterial(parentTask) {
+    matModalMaterial = null;
+    matModalMode = 'create';
+    subtaskMatTaskId = parentTask.task_id;
+    matModalOpen = true;
+  }
+
+  function handleMaterialSavedForSubtask() {
+    matModalOpen = false;
+    matModalMaterial = null;
+    subtaskMatTaskId = null;
+    loadSubtasks();
+  }
 </script>
 
 {#if loading}
@@ -111,6 +253,80 @@
     </tbody>
   </table>
 
+  <!-- Materials section -->
+  <h3>Materials</h3>
+  {#if materials.length > 0}
+    <table border="1" class="materials-table">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="text-right">Qty</th>
+          <th class="text-right">Unit Cost</th>
+          <th class="text-right">Sell Price</th>
+          <th class="text-right">Total</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each materials as mat}
+          <tr>
+            <td>{mat.description || '(no description)'}</td>
+            <td class="text-right">{mat.quantity ?? '-'}</td>
+            <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
+            <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
+            <td class="text-right">{(Number(mat.quantity) && Number(mat.sell_price)) ? `$${(Number(mat.quantity) * Number(mat.sell_price)).toFixed(2)}` : '-'}</td>
+            <td>
+              <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
+              <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p>No materials.</p>
+  {/if}
+  <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
+
+  <MaterialModal
+    open={matModalOpen}
+    mode={matModalMode}
+    material={matModalMaterial}
+    taskId={effectiveMatTaskId}
+    {categories}
+    onSaved={subtaskMatTaskId ? handleMaterialSavedForSubtask : handleMaterialSaved}
+    onClose={handleMatModalClose}
+  />
+
+  <!-- Subtasks section -->
+  <h3>Subtasks</h3>
+  {#if subtasks.length > 0}
+      <TaskTree
+        tasks={subtasks}
+        readonly={false}
+        showStatus={true}
+        showAssignee={true}
+        onTaskClick={handleSubtaskTaskClick}
+        onEditTask={(sub) => {}}
+        onDeleteTask={(sub) => {}}
+        onAddMaterial={handleSubtaskAddMaterial}
+        onEditMaterial={handleSubtaskEditMaterial}
+        onDeleteMaterial={handleSubtaskDeleteMaterial}
+        onAddSubtask={() => {}}
+        onReorder={() => {}}
+      />
+    {:else}
+      <p>No subtasks.</p>
+    {/if}
+  <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
+
+  <SubtaskModal
+    open={subtaskModalOpen}
+    parentTaskId={task?.task_id}
+    onSaved={handleSubtaskSaved}
+    onClose={() => { subtaskModalOpen = false; }}
+  />
+
   <BlepList
     {bleps}
     currentUser={$userStore}
@@ -134,4 +350,13 @@
 
 <style>
   .error { color: #a8071a; }
+  .materials-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
+  .materials-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
+  .materials-table td { padding: 6px 10px; }
+  .text-right { text-align: right; }
+  .materials-table button {
+    font-size: 11px; padding: 2px 6px; margin-right: 2px;
+    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
+  }
+  .materials-table button:hover { background: #f0f0f0; }
 </style>
