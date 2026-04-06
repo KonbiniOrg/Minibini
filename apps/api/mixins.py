@@ -323,11 +323,16 @@ class WorkOrderTaskMixin:
         task = self._get_task_or_404(work_order, task_id)
 
         if request.method == 'DELETE':
-            from apps.jobs.models import Task
+            from apps.jobs.models import Task, Blep
             non_deletable = (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
             if task.status in non_deletable:
                 return Response(
                     {'detail': f'Cannot delete a {task.status} task. Cancel it instead.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if Blep.objects.filter(task=task).exists():
+                return Response(
+                    {'detail': 'Cannot delete a task that has time entries. Cancel it instead.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             task.delete()
