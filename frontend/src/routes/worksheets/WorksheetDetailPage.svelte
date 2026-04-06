@@ -221,11 +221,11 @@
     if (!confirm('Generate an estimate from this worksheet?')) return;
     generating = true;
     try {
-      await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/generate-estimate/`);
-      await reload();
+      const result = await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/generate-estimate/`);
+      // Redirect to job page where the new estimate will appear
+      window.location.hash = `/jobs/${worksheet.job}`;
     } catch (e) {
       alert(e.message || 'Could not generate estimate.');
-    } finally {
       generating = false;
     }
   }
