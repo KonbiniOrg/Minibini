@@ -7,10 +7,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.jobs.models import Task
+from apps.inventory.models import Material
+from apps.inventory.services import InventoryService
+from apps.core.services import NotFoundError, ServiceError
 
 
 class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
-    """Flat task endpoints — lifecycle actions.
+    """Flat task endpoints — lifecycle actions, materials, subtasks.
 
     These operations only need the task id; they were previously nested
     under /api/work-orders/{wo_pk}/tasks/{task_id}/... via TaskLifecycleMixin.
@@ -32,6 +35,77 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return Task.objects.get(pk=pk)
         except Task.DoesNotExist:
             raise NotFound()
+
+    # --- Material CRUD ---
+
+    @action(detail=True, methods=['get', 'post'], url_path='materials', url_name='materials')
+    def materials(self, request, pk=None):
+        from apps.api.tasks.serializers import MaterialSerializer, MaterialWriteSerializer
+        task = self.get_object()
+        if request.method == 'GET':
+            materials = Material.objects.filter(task=task)
+            serializer = MaterialSerializer(materials, many=True)
+            return Response(serializer.data)
+
+        serializer = MaterialWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            mat = InventoryService.create_wo_material(
+                task.pk, **serializer.validated_data
+            )
+        except NotFoundError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except ServiceError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            MaterialSerializer(mat).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['patch', 'delete'],
+            url_path='materials/(?P<mid>[0-9]+)', url_name='material-detail')
+    def material_detail(self, request, pk=None, mid=None):
+        from apps.api.tasks.serializers import MaterialSerializer, MaterialWriteSerializer
+        task = self.get_object()
+        try:
+            material = Material.objects.get(pk=mid, task=task)
+        except Material.DoesNotExist:
+            raise NotFound()
+
+        if request.method == 'DELETE':
+            try:
+                InventoryService.delete_wo_material(material.pk)
+            except NotFoundError as e:
+                return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'message': 'Material deleted.'})
+
+        serializer = MaterialWriteSerializer(material, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        try:
+            mat = InventoryService.update_wo_material(
+                material.pk, **serializer.validated_data
+            )
+        except NotFoundError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except ServiceError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(MaterialSerializer(mat).data)
+
+    # --- Subtask CRUD ---
+
+    @action(detail=True, methods=['get', 'post'], url_path='subtasks', url_name='subtasks')
+    def subtasks(self, request, pk=None):
+        from apps.api.work_orders.serializers import TaskSerializer
+        task = self.get_object()
+        if request.method == 'GET':
+            children = Task.objects.filter(parent_task=task).order_by('sort_order')
+            serializer = TaskSerializer(children, many=True)
+            return Response(serializer.data)
+
+        serializer = TaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(parent_task=task, work_order=task.work_order)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

@@ -1,7 +1,30 @@
 from rest_framework import serializers
 
 from apps.jobs.models import Task
+from apps.inventory.models import Material
 from apps.core.units import UnitsField
+
+
+class MaterialSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Material
+        fields = [
+            'material_id', 'description', 'quantity',
+            'unit_cost', 'sell_price', 'price_list_item',
+            'accounting_category',
+        ]
+        read_only_fields = fields
+
+
+class MaterialWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Material
+        fields = [
+            'material_id', 'description', 'quantity',
+            'unit_cost', 'sell_price', 'price_list_item',
+            'accounting_category',
+        ]
+        read_only_fields = ['material_id']
 
 
 class TaskDetailSerializer(serializers.ModelSerializer):
