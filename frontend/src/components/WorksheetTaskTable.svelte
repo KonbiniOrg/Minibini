@@ -103,7 +103,7 @@
   });
 
   function fmt(n) {
-    return n ? `$${Number(n).toFixed(2)}` : '\u2014';
+    return n ? `$${Number(n).toFixed(2)}` : '-';
   }
 
   // Available bundles for the "move to bundle" dropdown
@@ -142,10 +142,10 @@
       {:else if row.rowType === 'bundled-task'}
         <tr class="bundled-task-row">
           <td class="indent">{row.task.name}{#if row.task.description}<br><span class="dim">{row.task.description}</span>{/if}</td>
-          <td class="text-right">{row.task.units || '\u2014'}</td>
-          <td class="text-right">{row.task.est_qty ?? '\u2014'}</td>
+          <td class="text-right">{row.task.units || '-'}</td>
+          <td class="text-right">{row.task.est_qty ?? '-'}</td>
           <td class="text-right">{fmt(row.task.rate)}</td>
-          <td class="text-right">\u2014</td>
+          <td class="text-right">-</td>
           <td class="text-right">{fmt(taskTotal(row.task))}</td>
           {#if !readonly}
             <td class="actions-cell">
@@ -161,10 +161,10 @@
       {:else if row.rowType === 'task'}
         <tr class="task-row">
           <td>{row.task.name}{#if row.task.description}<br><span class="dim">{row.task.description}</span>{/if}</td>
-          <td class="text-right">{row.task.units || '\u2014'}</td>
-          <td class="text-right">{row.task.est_qty ?? '\u2014'}</td>
+          <td class="text-right">{row.task.units || '-'}</td>
+          <td class="text-right">{row.task.est_qty ?? '-'}</td>
           <td class="text-right">{fmt(row.task.rate)}</td>
-          <td class="text-right">\u2014</td>
+          <td class="text-right">-</td>
           <td class="text-right">{fmt(taskTotal(row.task))}</td>
           {#if !readonly}
             <td class="actions-cell">
@@ -189,8 +189,8 @@
           <td class={row.bundled ? 'indent-2' : 'indent'}>
             <span class="material-marker">&#9679;</span> {row.material.description || '(no description)'}
           </td>
-          <td class="text-right">\u2014</td>
-          <td class="text-right">{row.material.quantity ?? '\u2014'}</td>
+          <td class="text-right">-</td>
+          <td class="text-right">{row.material.quantity ?? '-'}</td>
           <td class="text-right">{fmt(row.material.unit_cost)}</td>
           <td class="text-right">{fmt(row.material.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(row.material))}</td>
