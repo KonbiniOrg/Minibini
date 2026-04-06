@@ -1,9 +1,16 @@
-from rest_framework.exceptions import MethodNotAllowed
+from rest_framework import status
+from rest_framework.exceptions import MethodNotAllowed, NotFound
 from rest_framework.mixins import RetrieveModelMixin, ListModelMixin, CreateModelMixin
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from apps.jobs.models import PlanTask
-from .serializers import PlanTaskDetailSerializer
+from apps.inventory.models import PlanMaterial
+from apps.inventory.services import InventoryService
+from apps.core.services import ServiceError, NotFoundError
+from apps.api.permissions import CanManageJobs
+from .serializers import PlanTaskDetailSerializer, PlanMaterialSerializer, PlanMaterialWriteSerializer
 
 
 class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
@@ -29,3 +36,61 @@ class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
 
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed('POST')
+
+    def get_permissions(self):
+        if self.action in ('materials', 'material_detail'):
+            if self.request.method == 'GET':
+                return [IsAuthenticated()]
+            return [IsAuthenticated(), CanManageJobs()]
+        return [IsAuthenticated()]
+
+    @action(detail=True, methods=['get', 'post'], url_path='materials', url_name='materials')
+    def materials(self, request, pk=None):
+        plan_task = self.get_object()
+        if request.method == 'GET':
+            materials = PlanMaterial.objects.filter(plan_task=plan_task)
+            serializer = PlanMaterialSerializer(materials, many=True)
+            return Response(serializer.data)
+
+        serializer = PlanMaterialWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            mat = InventoryService.create_plan_material(
+                plan_task.pk, **serializer.validated_data
+            )
+        except NotFoundError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except ServiceError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            PlanMaterialSerializer(mat).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['patch', 'delete'],
+            url_path='materials/(?P<mid>[0-9]+)', url_name='material-detail')
+    def material_detail(self, request, pk=None, mid=None):
+        plan_task = self.get_object()
+        try:
+            material = PlanMaterial.objects.get(pk=mid, plan_task=plan_task)
+        except PlanMaterial.DoesNotExist:
+            raise NotFound()
+
+        if request.method == 'DELETE':
+            try:
+                InventoryService.delete_plan_material(material.pk)
+            except NotFoundError as e:
+                return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'message': 'Material deleted.'})
+
+        serializer = PlanMaterialWriteSerializer(material, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        try:
+            mat = InventoryService.update_plan_material(
+                material.pk, **serializer.validated_data
+            )
+        except NotFoundError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except ServiceError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(PlanMaterialSerializer(mat).data)

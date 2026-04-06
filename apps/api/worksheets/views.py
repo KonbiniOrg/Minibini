@@ -4,7 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.estimates.models import EstWorksheet
 from apps.estimates.services import WorksheetService, EstimateGenerationService
-from apps.core.services import ServiceError
+from django.core.exceptions import ValidationError
+from apps.core.services import ServiceError, NotFoundError
 from apps.api.mixins import StatusTransitionMixin, PlanTaskBundleMixin
 from apps.api.permissions import CanManageJobs
 from .serializers import EstWorksheetSerializer, PlanTaskSerializer, PlanBundleSerializer
@@ -49,6 +50,67 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.M
             kwargs['template'] = template
         ws = WorksheetService.create_worksheet(job_pk, **kwargs)
         serializer.instance = ws
+
+    @action(detail=True, methods=['post'], url_path='reorder')
+    def reorder(self, request, pk=None):
+        worksheet = self.get_object()
+        item_type = request.data.get('item_type')
+        item_id = request.data.get('item_id')
+        direction = request.data.get('direction')
+        errors = {}
+        if item_type not in ('task', 'bundle'):
+            errors['item_type'] = ['Must be "task" or "bundle".']
+        if not item_id:
+            errors['item_id'] = ['This field is required.']
+        if direction not in ('up', 'down'):
+            errors['direction'] = ['Must be "up" or "down".']
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            WorksheetService.reorder_items(worksheet.pk, item_type, item_id, direction)
+        except (ServiceError, ValidationError) as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': 'Reordered.'})
+
+    @action(detail=True, methods=['post'], url_path='reorder-in-bundle')
+    def reorder_in_bundle(self, request, pk=None):
+        worksheet = self.get_object()
+        task_id = request.data.get('task_id')
+        direction = request.data.get('direction')
+        errors = {}
+        if not task_id:
+            errors['task_id'] = ['This field is required.']
+        if direction not in ('up', 'down'):
+            errors['direction'] = ['Must be "up" or "down".']
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            WorksheetService.reorder_in_bundle(worksheet.pk, task_id, direction)
+        except (ServiceError, ValidationError) as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': 'Reordered.'})
+
+    @action(detail=True, methods=['post'], url_path='add-from-template')
+    def add_from_template(self, request, pk=None):
+        worksheet = self.get_object()
+        task_template_id = request.data.get('task_template_id')
+        est_qty = request.data.get('est_qty', '1.00')
+        if not task_template_id:
+            return Response(
+                {'task_template_id': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            from decimal import Decimal
+            task = WorksheetService.add_task_from_template(
+                worksheet.pk, task_template_id, Decimal(str(est_qty))
+            )
+        except (ServiceError, NotFoundError) as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = PlanTaskSerializer(task)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='generate-estimate')
     def generate_estimate(self, request, pk=None):

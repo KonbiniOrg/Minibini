@@ -15,6 +15,17 @@ class PlanMaterialSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class PlanMaterialWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlanMaterial
+        fields = [
+            'plan_material_id', 'description', 'quantity',
+            'unit_cost', 'sell_price', 'price_list_item',
+            'accounting_category',
+        ]
+        read_only_fields = ['plan_material_id']
+
+
 class PlanTaskDetailSerializer(serializers.ModelSerializer):
     units = UnitsField()
     plan_materials = PlanMaterialSerializer(many=True, read_only=True)
