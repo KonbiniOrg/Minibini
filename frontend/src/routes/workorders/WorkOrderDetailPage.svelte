@@ -55,8 +55,8 @@
       enrichedTasks = [];
       return;
     }
-    // Fetch materials and subtasks for each top-level task in parallel
-    const tasks = workOrder.tasks || [];
+    // Only top-level tasks (subtasks are fetched and nested separately)
+    const tasks = (workOrder.tasks || []).filter(t => !t.parent_task);
     const enriched = await Promise.all(tasks.map(async (task) => {
       const [materials, subtasks] = await Promise.all([
         fetchMaterials(task.task_id),
