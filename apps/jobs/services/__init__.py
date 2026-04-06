@@ -428,9 +428,12 @@ class TaskLifecycleService:
                     f"Cannot cancel task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
+            was_blocked = task.status == Task.STATUS_BLOCKED
             BlepService._close_open(task=task)
             Task.objects.filter(pk=task.pk).update(status=Task.STATUS_CANCELLED)
             task.status = Task.STATUS_CANCELLED
+            if was_blocked:
+                TaskLifecycleService._check_wo_unblocked(task)
             TaskLifecycleService._check_wo_auto_complete(task)
             return task
 

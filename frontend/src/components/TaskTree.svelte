@@ -13,6 +13,7 @@
     onReorder = () => {},
     onTaskClick = () => {},
     onAssignTask = () => {},
+    onCancelTask = () => {},
   } = $props();
 
   function taskTotal(task) {
@@ -31,6 +32,7 @@
   const NON_DELETABLE = ['in_progress', 'complete'];
   function isTerminal(task) { return TERMINAL.includes(task.status); }
   function canDelete(task) { return !NON_DELETABLE.includes(task.status); }
+  function canCancel(task) { return ['pending', 'in_progress', 'blocked'].includes(task.status); }
 
   function taskWithMaterialsTotal(task) {
     let total = taskTotal(task);
@@ -92,6 +94,7 @@
             {#if !isTerminal(task)}
               <button type="button" onclick={() => onEditTask(task)}>edit</button>
               {#if canDelete(task)}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
+              {#if canCancel(task)}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
               <button type="button" onclick={() => onAddMaterial(task)}>+mat</button>
               <button type="button" onclick={() => onAddSubtask(task)}>+sub</button>
             {:else if canDelete(task)}
@@ -146,6 +149,7 @@
               {#if !isTerminal(sub)}
                 <button type="button" onclick={() => onEditTask(sub)}>edit</button>
                 {#if canDelete(sub)}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
+                {#if canCancel(sub)}<button type="button" onclick={() => onCancelTask(sub)}>cancel</button>{/if}
                 <button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>
               {:else if canDelete(sub)}
                 <button type="button" onclick={() => onDeleteTask(sub)}>del</button>

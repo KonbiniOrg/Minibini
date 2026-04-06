@@ -335,7 +335,18 @@ class WorkOrderTaskMixin:
                     {'detail': 'Cannot delete a task that has time entries. Cancel it instead.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            was_blocked = task.status == Task.STATUS_BLOCKED
+            wo = task.work_order
             task.delete()
+            if was_blocked:
+                from apps.jobs.models import WorkOrder
+                if wo.status == WorkOrder.STATUS_BLOCKED:
+                    still_blocked = Task.objects.filter(
+                        work_order=wo, status=Task.STATUS_BLOCKED,
+                    ).exists()
+                    if not still_blocked:
+                        from apps.jobs.services import WorkOrderService
+                        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
             return Response({'message': 'Task deleted.'})
 
         serializer = self.task_serializer_class(task, data=request.data, partial=True)

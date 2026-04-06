@@ -145,6 +145,16 @@
     }
   }
 
+  async function handleCancelTask(task) {
+    if (!confirm(`Cancel task "${task.name}"?`)) return;
+    try {
+      await api.post(`/api/tasks/${task.task_id}/cancel/`);
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not cancel task.');
+    }
+  }
+
   function handleTaskSaved() {
     taskModalOpen = false;
     taskModalTask = null;
@@ -281,6 +291,7 @@
     onReorder={handleReorder}
     onTaskClick={handleTaskClick}
     onAssignTask={(task) => { assignModalTask = task; assignModalOpen = true; }}
+    onCancelTask={handleCancelTask}
   />
 
   <!-- Modals -->
