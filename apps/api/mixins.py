@@ -324,7 +324,7 @@ class WorkOrderTaskMixin:
 
         if request.method == 'DELETE':
             from apps.jobs.models import Task, Blep
-            non_deletable = (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
+            non_deletable = (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE)
             if task.status in non_deletable:
                 return Response(
                     {'detail': f'Cannot delete a {task.status} task. Cancel it instead.'},

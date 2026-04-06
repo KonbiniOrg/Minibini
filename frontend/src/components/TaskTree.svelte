@@ -28,7 +28,7 @@
   }
 
   const TERMINAL = ['complete', 'cancelled'];
-  const NON_DELETABLE = ['in_progress', 'complete', 'cancelled'];
+  const NON_DELETABLE = ['in_progress', 'complete'];
   function isTerminal(task) { return TERMINAL.includes(task.status); }
   function canDelete(task) { return !NON_DELETABLE.includes(task.status); }
 
@@ -94,6 +94,8 @@
               {#if canDelete(task)}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
               <button type="button" onclick={() => onAddMaterial(task)}>+mat</button>
               <button type="button" onclick={() => onAddSubtask(task)}>+sub</button>
+            {:else if canDelete(task)}
+              <button type="button" onclick={() => onDeleteTask(task)}>del</button>
             {/if}
             <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
             <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === tasks.length - 1}>&#9660;</button>
@@ -145,6 +147,8 @@
                 <button type="button" onclick={() => onEditTask(sub)}>edit</button>
                 {#if canDelete(sub)}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
                 <button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>
+              {:else if canDelete(sub)}
+                <button type="button" onclick={() => onDeleteTask(sub)}>del</button>
               {/if}
             </td>
           {/if}
