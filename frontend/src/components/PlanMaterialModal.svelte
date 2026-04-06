@@ -81,7 +81,14 @@
       }
       onSaved();
     } catch (e) {
-      error = e.message || 'Could not save material.';
+      if (e.data && typeof e.data === 'object' && !e.data.detail) {
+        // DRF field-level validation errors: {field: [msgs]}
+        error = Object.entries(e.data)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+          .join('; ');
+      } else {
+        error = e.message || 'Could not save material.';
+      }
     } finally {
       busy = false;
     }

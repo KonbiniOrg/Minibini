@@ -44,7 +44,13 @@
       }
       onSaved();
     } catch (e) {
-      error = e.message || 'Could not save bundle.';
+      if (e.data && typeof e.data === 'object' && !e.data.detail) {
+        error = Object.entries(e.data)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+          .join('; ');
+      } else {
+        error = e.message || 'Could not save bundle.';
+      }
     } finally {
       busy = false;
     }

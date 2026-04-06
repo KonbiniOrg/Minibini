@@ -88,7 +88,13 @@
       }
       onSaved();
     } catch (e) {
-      error = e.message || 'Could not save task.';
+      if (e.data && typeof e.data === 'object' && !e.data.detail) {
+        error = Object.entries(e.data)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+          .join('; ');
+      } else {
+        error = e.message || 'Could not save task.';
+      }
     } finally {
       busy = false;
     }
