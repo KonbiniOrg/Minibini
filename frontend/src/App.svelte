@@ -21,6 +21,7 @@
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
+  import WorkOrderDetailPage from './routes/workorders/WorkOrderDetailPage.svelte';
 
   const routes = {
     '/': Home,
@@ -38,6 +39,7 @@
     '/jobs/:id': JobDetailPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
     '/worksheets/:id': WorksheetDetailPage,
+    '/work-orders/:id': WorkOrderDetailPage,
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
     '/profile': ProfilePage,
