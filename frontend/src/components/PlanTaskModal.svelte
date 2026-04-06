@@ -1,0 +1,186 @@
+<script>
+  import { api } from '../lib/api.js';
+  import UnitsSelect from './UnitsSelect.svelte';
+
+  let {
+    open = false,
+    mode = 'create-freeform', // 'create-freeform' | 'create-template' | 'edit'
+    task = null,
+    worksheetId = null,
+    templates = [],
+    categories = [],
+    onSaved = () => {},
+    onClose = () => {},
+  } = $props();
+
+  let createMode = $state('freeform'); // 'freeform' | 'template'
+  let name = $state('');
+  let description = $state('');
+  let units = $state('none');
+  let rate = $state('');
+  let estQty = $state('');
+  let accountingCategory = $state('');
+  let templateId = $state('');
+  let busy = $state(false);
+  let error = $state('');
+
+  $effect(() => {
+    if (open) {
+      if (mode === 'edit' && task) {
+        createMode = 'freeform';
+        name = task.name || '';
+        description = task.description || '';
+        units = task.units || 'none';
+        rate = task.rate ?? '';
+        estQty = task.est_qty ?? '';
+        accountingCategory = task.accounting_category ?? '';
+        templateId = '';
+      } else if (mode === 'create-template') {
+        createMode = 'template';
+        name = '';
+        description = '';
+        units = 'none';
+        rate = '';
+        estQty = '';
+        accountingCategory = '';
+        templateId = '';
+      } else {
+        createMode = 'freeform';
+        name = '';
+        description = '';
+        units = 'none';
+        rate = '';
+        estQty = '';
+        accountingCategory = '';
+        templateId = '';
+      }
+      error = '';
+    }
+  });
+
+  const isEdit = $derived(mode === 'edit');
+  const title = $derived(isEdit ? 'Edit Task' : 'Add Task');
+
+  async function save() {
+    busy = true;
+    error = '';
+    try {
+      if (isEdit && task) {
+        await api.patch(`/api/est-worksheets/${worksheetId}/tasks/${task.plan_task_id}/`, {
+          name, description, units,
+          rate: rate || null,
+          est_qty: estQty || null,
+          accounting_category: accountingCategory || null,
+        });
+      } else if (createMode === 'template') {
+        if (!templateId) { error = 'Please select a template.'; busy = false; return; }
+        await api.post(`/api/est-worksheets/${worksheetId}/add-from-template/`, {
+          task_template_id: Number(templateId),
+          est_qty: estQty || null,
+        });
+      } else {
+        await api.post(`/api/est-worksheets/${worksheetId}/tasks/`, {
+          name, description, units,
+          rate: rate || null,
+          est_qty: estQty || null,
+          accounting_category: accountingCategory || null,
+        });
+      }
+      onSaved();
+    } catch (e) {
+      error = e.message || 'Could not save task.';
+    } finally {
+      busy = false;
+    }
+  }
+</script>
+
+{#if open}
+  <div class="overlay">
+    <div class="modal">
+      <h3>{title}</h3>
+
+      {#if !isEdit}
+        <div class="mode-toggle">
+          <label>
+            <input type="radio" bind:group={createMode} value="freeform"> Freeform
+          </label>
+          <label>
+            <input type="radio" bind:group={createMode} value="template"> From Template
+          </label>
+        </div>
+      {/if}
+
+      {#if createMode === 'template' && !isEdit}
+        <p>
+          <label><strong>Template *</strong><br>
+            <select bind:value={templateId}>
+              <option value="">-- Select template --</option>
+              {#each templates as tmpl}
+                <option value={tmpl.task_template_id}>{tmpl.name}</option>
+              {/each}
+            </select>
+          </label>
+        </p>
+        <p>
+          <label><strong>Estimated Quantity</strong><br>
+            <input type="number" step="0.01" bind:value={estQty}>
+          </label>
+        </p>
+      {:else}
+        <p>
+          <label><strong>Name *</strong><br>
+            <input type="text" bind:value={name} style="width:100%;box-sizing:border-box;">
+          </label>
+        </p>
+        <p>
+          <label><strong>Description</strong><br>
+            <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
+          </label>
+        </p>
+        <p>
+          <label><strong>Units</strong><br>
+            <UnitsSelect bind:value={units} />
+          </label>
+        </p>
+        <p>
+          <label><strong>Rate</strong><br>
+            <input type="number" step="0.01" bind:value={rate}>
+          </label>
+        </p>
+        <p>
+          <label><strong>Estimated Quantity</strong><br>
+            <input type="number" step="0.01" bind:value={estQty}>
+          </label>
+        </p>
+        <p>
+          <label><strong>Accounting Category</strong><br>
+            <select bind:value={accountingCategory}>
+              <option value="">-- None --</option>
+              {#each categories as cat}
+                <option value={cat.id}>{cat.code} — {cat.name}</option>
+              {/each}
+            </select>
+          </label>
+        </p>
+      {/if}
+
+      <div class="buttons">
+        <button type="button" onclick={save} disabled={busy}>Save</button>
+        <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
+      </div>
+      {#if error}<p class="error">{error}</p>{/if}
+    </div>
+  </div>
+{/if}
+
+<style>
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center; z-index: 200;
+  }
+  .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
+  .mode-toggle { display: flex; gap: 16px; margin-bottom: 12px; }
+  .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .error { color: #a8071a; }
+</style>
