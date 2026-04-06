@@ -22,8 +22,7 @@ class TemplateBundleSerializer(serializers.ModelSerializer):
     class Meta:
         model = TemplateBundle
         fields = [
-            'id', 'name', 'description',
-            'accounting_category', 'sort_order',
+            'id', 'name', 'accounting_category', 'sort_order',
         ]
         read_only_fields = ['id']
 

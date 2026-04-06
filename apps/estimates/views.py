@@ -296,7 +296,6 @@ def work_order_template_detail(request, template_id):
 
         selected_ids = request.POST.getlist('selected_tasks')
         bundle_name = request.POST.get('bundle_name', '').strip()
-        bundle_description = request.POST.get('bundle_description', '').strip()
         accounting_category_id = request.POST.get('accounting_category')
 
         if not bundle_name:
@@ -311,7 +310,6 @@ def work_order_template_detail(request, template_id):
                     [int(i) for i in selected_ids],
                     bundle_name,
                     accounting_category,
-                    description=bundle_description,
                 )
                 messages.success(request, f'Bundle "{bundle_name}" updated.')
             except ValidationError as e:
@@ -366,7 +364,6 @@ def estworksheet_detail(request, worksheet_id):
 
         selected_ids = request.POST.getlist('selected_tasks')
         bundle_name = request.POST.get('bundle_name', '').strip()
-        bundle_description = request.POST.get('bundle_description', '').strip()
         accounting_category_id = request.POST.get('accounting_category')
 
         if not bundle_name:
@@ -381,7 +378,6 @@ def estworksheet_detail(request, worksheet_id):
                     [int(i) for i in selected_ids],
                     bundle_name,
                     accounting_category,
-                    description=bundle_description,
                 )
                 messages.success(request, f'Bundle "{bundle_name}" updated.')
             except ValidationError as e:

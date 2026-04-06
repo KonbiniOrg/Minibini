@@ -36,7 +36,7 @@ class PlanBundleSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlanBundle
         fields = [
-            'plan_bundle_id', 'name', 'description', 'accounting_category',
+            'plan_bundle_id', 'name', 'accounting_category',
             'sort_order', 'plan_tasks',
         ]
         read_only_fields = ['plan_bundle_id', 'sort_order']

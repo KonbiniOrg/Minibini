@@ -271,7 +271,6 @@ class EstWorksheet(AbstractWorkContainer):
             new_bundle = PlanBundle.objects.create(
                 est_worksheet=new_worksheet,
                 name=bundle.name,
-                description=bundle.description,
                 accounting_category=bundle.accounting_category,
                 sort_order=bundle.sort_order,
                 source_template_bundle=bundle.source_template_bundle,
@@ -349,7 +348,6 @@ class WorkOrderTemplate(models.Model):
                 plan_bundle = PlanBundle.objects.create(
                     est_worksheet=worksheet,
                     name=template_bundle.name,
-                    description=template_bundle.description,
                     accounting_category=template_bundle.accounting_category,
                     sort_order=template_bundle.sort_order,
                     source_template_bundle=template_bundle,
@@ -395,7 +393,6 @@ class TemplateBundle(models.Model):
         related_name='bundles'
     )
     name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
     accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT

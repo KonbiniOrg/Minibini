@@ -69,7 +69,6 @@ class TemplateBundleUITest(TestCase):
             'bundle_tasks': 'true',
             'selected_tasks': [self.assoc1.pk, self.assoc2.pk],
             'bundle_name': 'Test Bundle',
-            'bundle_description': 'A test bundle',
             'accounting_category': self.accounting_category.pk
         }, follow=True)
 
@@ -81,7 +80,6 @@ class TemplateBundleUITest(TestCase):
             name='Test Bundle'
         )
         self.assertEqual(bundle.accounting_category, self.accounting_category)
-        self.assertEqual(bundle.description, 'A test bundle')
 
         # Verify associations were updated
         self.assoc1.refresh_from_db()

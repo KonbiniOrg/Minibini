@@ -281,8 +281,7 @@ class WorkOrderTemplateService:
     # --- Bundling operations ---
 
     @staticmethod
-    def bundle_associations(template_pk, assoc_ids, bundle_name, accounting_category,
-                            description=''):
+    def bundle_associations(template_pk, assoc_ids, bundle_name, accounting_category):
         """Bundle associations on a template. Requires >= 2 associations."""
         from apps.core.services import BundlingService
         from apps.estimates.models import TemplateBundle
@@ -307,7 +306,6 @@ class WorkOrderTemplateService:
         bundle, _ = TemplateBundle.objects.get_or_create(
             work_order_template=tmpl, name=bundle_name,
             defaults={
-                'description': description,
                 'accounting_category': accounting_category,
                 'sort_order': next_sort,
             },
@@ -465,8 +463,7 @@ class WorksheetService:
         return task
 
     @staticmethod
-    def bundle_tasks(worksheet_pk, task_ids, bundle_name, accounting_category,
-                     description=''):
+    def bundle_tasks(worksheet_pk, task_ids, bundle_name, accounting_category):
         """Bundle PlanTasks on a draft worksheet. Requires >= 2 tasks."""
         from apps.jobs.models import PlanTask, PlanBundle
         from apps.core.services import BundlingService
@@ -492,7 +489,6 @@ class WorksheetService:
         bundle, _ = PlanBundle.objects.get_or_create(
             est_worksheet=ws, name=bundle_name,
             defaults={
-                'description': description,
                 'accounting_category': accounting_category,
                 'sort_order': next_sort,
             },

@@ -128,7 +128,6 @@
         <tr class="bundle-header-row">
           <td colspan="5">
             <strong>{row.bundle.name}</strong>
-            {#if row.bundle.description}<br><span class="dim">{row.bundle.description}</span>{/if}
           </td>
           <td class="text-right"><strong>{fmt(bundleTotal(row.bundle))}</strong></td>
           {#if !readonly}

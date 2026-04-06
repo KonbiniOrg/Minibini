@@ -312,7 +312,6 @@ class PlanBundle(models.Model):
         'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_bundles'
     )
     name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
     accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT

@@ -40,7 +40,6 @@ class WorksheetVersionBundlingTest(TestCase):
         bundle = PlanBundle.objects.create(
             est_worksheet=ws1, name="Prep Work",
             accounting_category=self.lit_labor, sort_order=1,
-            description="Preparation tasks"
         )
         PlanTask.objects.create(
             est_worksheet=ws1, name="Sand",
@@ -60,7 +59,6 @@ class WorksheetVersionBundlingTest(TestCase):
         self.assertEqual(len(new_bundles), 1)
         new_bundle = new_bundles[0]
         self.assertEqual(new_bundle.name, "Prep Work")
-        self.assertEqual(new_bundle.description, "Preparation tasks")
         self.assertEqual(new_bundle.accounting_category, self.lit_labor)
         self.assertEqual(new_bundle.sort_order, 1)
 
