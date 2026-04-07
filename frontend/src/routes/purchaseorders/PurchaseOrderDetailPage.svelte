@@ -4,6 +4,7 @@
   import { push } from 'svelte-spa-router';
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
+  import SendPODialog from '../../components/purchaseorders/SendPODialog.svelte';
   import HistoryPanel from '../../components/HistoryPanel.svelte';
 
   const { params = {} } = $props();
@@ -16,6 +17,7 @@
   let error = $state(null);
   let success = $state(null);
   let showAddLineItem = $state(false);
+  let showSendDialog = $state(false);
   let busy = $state(false);
 
   let canManageFinancials = $derived(
@@ -183,7 +185,16 @@
     onDeleteLineItem={handleDeleteLineItem}
     onEditLineItem={handleEditLineItem}
     onReorder={handleReorder}
+    onSend={() => { showSendDialog = true; }}
   />
+
+  {#if showSendDialog}
+    <SendPODialog
+      poId={po.po_id}
+      onSuccess={() => { showSendDialog = false; success = 'Purchase order sent.'; reload(); }}
+      onCancel={() => { showSendDialog = false; }}
+    />
+  {/if}
 
   {#if canManageFinancials && po.status === 'draft'}
     <p>

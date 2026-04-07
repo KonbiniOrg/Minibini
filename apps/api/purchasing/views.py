@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.purchasing.models import PurchaseOrder, Bill
-from apps.purchasing.services import PurchaseOrderService, BillService
+from apps.purchasing.services import PurchaseOrderService, PurchaseOrderEmailService, BillService
 from apps.core.services import ServiceError
 from apps.core.models import HistoryEntry
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
@@ -21,7 +21,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'history', 'notes'):
+        if self.action in ('list', 'retrieve', 'history', 'notes', 'send_defaults'):
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
             return [IsAuthenticated()]
@@ -76,6 +76,46 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             serializer = HistoryEntrySerializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = HistoryEntrySerializer(entries, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='send-defaults', url_name='send-defaults')
+    def send_defaults(self, request, pk=None):
+        """Get pre-populated email fields for sending a PO."""
+        po = self.get_object()
+        defaults = PurchaseOrderEmailService.get_email_defaults(po)
+        return Response(defaults)
+
+    @action(detail=True, methods=['post'], url_path='send', url_name='send')
+    def send(self, request, pk=None):
+        """Send a PO to the vendor via email with PDF attachment."""
+        po = self.get_object()
+        to = request.data.get('to', '').strip()
+        subject = request.data.get('subject', '').strip()
+        body = request.data.get('body', '').strip()
+
+        if not to:
+            return Response(
+                {'to': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not subject:
+            return Response(
+                {'subject': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            po = PurchaseOrderEmailService.send_po(
+                po, to=to, subject=subject, body=body,
+                user=request.user,
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(po)
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'], url_path='notes', url_name='notes')

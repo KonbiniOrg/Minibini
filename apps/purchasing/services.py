@@ -139,6 +139,113 @@ class PurchaseOrderService:
         return LineItemService.delete_line_item_with_renumber(li)
 
 
+class PurchaseOrderEmailService:
+    """Service for sending purchase orders to vendors via email."""
+
+    DEFAULT_SUBJECT = 'Purchase Order {po_number}'
+    DEFAULT_BODY = (
+        'Please find attached Purchase Order {po_number}.\n\n'
+        'If you have any questions, please contact us.\n\n'
+        'Thank you.'
+    )
+
+    @staticmethod
+    def get_email_defaults(po):
+        """Get the pre-populated email fields for a PO."""
+        from apps.core.models import Configuration
+
+        subject_template = PurchaseOrderEmailService.DEFAULT_SUBJECT
+        body_template = PurchaseOrderEmailService.DEFAULT_BODY
+
+        try:
+            subject_template = Configuration.objects.get(
+                key='po_email_subject_template'
+            ).value
+        except Configuration.DoesNotExist:
+            pass
+
+        try:
+            body_template = Configuration.objects.get(
+                key='po_email_body_template'
+            ).value
+        except Configuration.DoesNotExist:
+            pass
+
+        vendor_name = po.business.business_name if po.business else ''
+
+        replacements = {
+            'po_number': po.po_number,
+            'vendor_name': vendor_name,
+        }
+
+        subject = subject_template.format(**replacements)
+        body = body_template.format(**replacements)
+
+        to = ''
+        if po.contact and po.contact.email:
+            to = po.contact.email
+
+        return {'to': to, 'subject': subject, 'body': body}
+
+    @staticmethod
+    def send_po(po, to, subject, body, user=None):
+        """
+        Send a PO as a PDF attachment via email.
+        If the PO is in draft status, it is issued first.
+        Creates a HistoryEntry recording the send.
+        Returns the updated PO.
+        """
+        from apps.core.models import HistoryEntry
+        from apps.core.services import OutboundEmailService
+        from apps.purchasing.pdf import generate_purchase_order_pdf
+
+        if not to:
+            raise ValidationError('Recipient email address is required.')
+        if isinstance(to, str):
+            to = [addr.strip() for addr in to.split(',') if addr.strip()]
+            if not to:
+                raise ValidationError('Recipient email address is required.')
+
+        if po.status == PurchaseOrder.STATUS_DRAFT:
+            if not po.purchaseorderlineitem_set.exists():
+                raise ValidationError(
+                    'Cannot issue a PO with no line items.'
+                )
+            po.status = PurchaseOrder.STATUS_ISSUED
+            po.full_clean()
+            po.save()
+
+        if po.status not in (
+            PurchaseOrder.STATUS_ISSUED,
+            PurchaseOrder.STATUS_PARTLY_RECEIVED,
+        ):
+            raise ValidationError(
+                f'Cannot send a PO in status "{po.status}".'
+            )
+
+        pdf_bytes = generate_purchase_order_pdf(po)
+        filename = f'{po.po_number}.pdf'
+
+        to_list = to if isinstance(to, list) else [to]
+
+        OutboundEmailService.send_email(
+            to=to_list,
+            subject=subject,
+            body=body,
+            attachments=[(filename, pdf_bytes, 'application/pdf')],
+        )
+
+        HistoryEntry.objects.create(
+            entry_type='action',
+            object_type='purchaseorder',
+            object_id=po.pk,
+            user=user,
+            changes={'_action': f'PO emailed to {", ".join(to_list)}'},
+        )
+
+        return po
+
+
 class BillService:
     """Service for bill operations."""
 

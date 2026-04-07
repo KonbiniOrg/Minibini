@@ -11,6 +11,7 @@
     onDeleteLineItem = null,
     onReorder = null,
     onEditLineItem = null,
+    onSend = null,
   } = $props();
 
   let lineItems = $derived(
@@ -109,9 +110,13 @@
 {#if canManageFinancials}
   <div class="action-bar">
     {#if po.status === 'draft'}
-      <a href="#/purchase-orders/{po.po_id}/edit"><button disabled={busy}>Edit</button></a>
+      <button onclick={onSend} disabled={busy || !lineItems.length}>Issue & Send</button>
       <button onclick={onIssue} disabled={busy || !lineItems.length}>Mark as Issued</button>
+      <a href="#/purchase-orders/{po.po_id}/edit"><button disabled={busy}>Edit</button></a>
       <button onclick={onDelete} disabled={busy}>Delete</button>
+    {/if}
+    {#if po.status === 'issued' || po.status === 'partly_received'}
+      <button onclick={onSend} disabled={busy}>Resend</button>
     {/if}
     {#if po.status === 'issued'}
       <button onclick={onCancel} disabled={busy}>Cancel</button>
