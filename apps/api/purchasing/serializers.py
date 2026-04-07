@@ -33,15 +33,22 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
         source='purchaseorderlineitem_set', many=True, read_only=True
     )
     business_name = serializers.CharField(source='business.business_name', read_only=True)
+    contact_name = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseOrder
         fields = [
-            'po_id', 'business', 'business_name', 'contact', 'po_number', 'status',
+            'po_id', 'business', 'business_name', 'contact', 'contact_name',
+            'po_number', 'status',
             'created_date', 'requested_date', 'issued_date',
             'received_date', 'cancel_date', 'line_items',
         ]
         read_only_fields = ['po_id', 'po_number', 'created_date']
+
+    def get_contact_name(self, obj):
+        if obj.contact:
+            return f"{obj.contact.first_name} {obj.contact.last_name}"
+        return None
 
 
 class BillLineItemSerializer(serializers.ModelSerializer):

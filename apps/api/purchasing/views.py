@@ -1,12 +1,14 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.purchasing.services import PurchaseOrderService, BillService
 from apps.core.services import ServiceError
+from apps.core.models import HistoryEntry
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
 from apps.api.permissions import CanManageFinancials
+from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import (
     PurchaseOrderSerializer, POLineItemSerializer,
     BillSerializer, BillLineItemSerializer,
@@ -19,7 +21,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve'):
+        if self.action in ('list', 'retrieve', 'history', 'notes'):
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
             return [IsAuthenticated()]
@@ -36,6 +38,9 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         job = self.request.query_params.get('job')
         if job:
             qs = qs.filter(purchaseorderlineitem__job=job).distinct()
+        po_status = self.request.query_params.get('status')
+        if po_status:
+            qs = qs.filter(status=po_status)
         return qs
 
     line_item_serializer_class = POLineItemSerializer
@@ -59,6 +64,38 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     def perform_update(self, serializer):
         po = PurchaseOrderService.update_po(self.get_object().pk, **serializer.validated_data)
         serializer.instance = po
+
+    @action(detail=True, methods=['get'], url_path='history', url_name='history')
+    def history(self, request, pk=None):
+        po = self.get_object()
+        entries = HistoryEntry.objects.filter(
+            object_type='purchaseorder', object_id=po.pk
+        ).select_related('user')
+        page = self.paginate_queryset(entries)
+        if page is not None:
+            serializer = HistoryEntrySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = HistoryEntrySerializer(entries, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='notes', url_name='notes')
+    def notes(self, request, pk=None):
+        obj = self.get_object()
+        text = request.data.get('text', '').strip()
+        if not text:
+            return Response(
+                {'text': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        entry = HistoryEntry.objects.create(
+            entry_type='note',
+            object_type='purchaseorder',
+            object_id=obj.pk,
+            user=request.user,
+            text=text,
+        )
+        serializer = HistoryEntrySerializer(entry)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):

@@ -32,18 +32,17 @@ class StatusTransitionMixin:
 
         def make_action(svc, needs_reason):
             def action_fn(self, request, pk=None):
-                if needs_reason:
-                    reason = request.data.get('reason', '').strip()
-                    if not reason:
-                        return Response(
-                            {'reason': ['This field is required.']},
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
+                reason = request.data.get('reason', '').strip() if request.data else ''
+                if needs_reason and not reason:
+                    return Response(
+                        {'reason': ['This field is required.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
                 try:
                     kwargs = {}
                     if needs_reason:
-                        kwargs['reason'] = request.data['reason']
+                        kwargs['reason'] = reason
                     svc(pk, **kwargs)
                 except NotFoundError:
                     return Response(
@@ -58,9 +57,8 @@ class StatusTransitionMixin:
 
                 instance = self.get_object()
 
-                if needs_reason:
+                if reason:
                     from apps.core.history import get_history_context
-                    reason = request.data['reason']
                     obj_type = instance.__class__.__name__.lower()
                     attached = False
                     ctx = get_history_context()

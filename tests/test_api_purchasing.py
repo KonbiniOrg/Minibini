@@ -105,6 +105,193 @@ class PurchaseOrderAPITest(BaseTestCase):
             self.assertEqual(entry.user, self.user)
 
 
+    def _make_draft_po(self):
+        """Helper: create a draft PO with one line item."""
+        from apps.contacts.models import Business
+        business = Business.objects.first()
+        po = PurchaseOrder.objects.create(
+            business=business,
+            po_number='PO-TEST-DRAFT',
+        )
+        from apps.purchasing.models import PurchaseOrderLineItem
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=po,
+            description='Test widget',
+            qty=10,
+            price=25,
+        )
+        return po
+
+    # --- History endpoint ---
+
+    def test_history_returns_empty_for_new_po(self):
+        """History endpoint returns 200 with no entries for a fresh PO."""
+        po = self._make_draft_po()
+        response = self.client.get(f'/api/purchase-orders/{po.po_id}/history/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_history_returns_audit_entries_after_status_change(self):
+        """Issuing a PO creates an audit history entry."""
+        po = self._make_draft_po()
+        self.client.post(f'/api/purchase-orders/{po.po_id}/issue/', format='json')
+        response = self.client.get(f'/api/purchase-orders/{po.po_id}/history/')
+        self.assertEqual(response.status_code, 200)
+        results = response.data.get('results', response.data)
+        self.assertTrue(len(results) > 0)
+
+    def test_history_accessible_by_non_financial_user(self):
+        """Any authenticated user can view PO history."""
+        po = self._make_draft_po()
+        worker = User.objects.get(username='johnq')
+        self.client.force_authenticate(user=worker)
+        response = self.client.get(f'/api/purchase-orders/{po.po_id}/history/')
+        self.assertEqual(response.status_code, 200)
+
+    # --- Notes endpoint ---
+
+    def test_add_note_to_po(self):
+        """Adding a note creates a history entry of type 'note'."""
+        po = self._make_draft_po()
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/notes/',
+            {'text': 'Vendor confirmed delivery date'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['entry_type'], 'note')
+        self.assertEqual(response.data['text'], 'Vendor confirmed delivery date')
+        # Verify it appears in history
+        hist = self.client.get(f'/api/purchase-orders/{po.po_id}/history/')
+        results = hist.data.get('results', hist.data)
+        texts = [e['text'] for e in results]
+        self.assertIn('Vendor confirmed delivery date', texts)
+
+    def test_add_note_requires_text(self):
+        """Notes endpoint rejects empty text."""
+        po = self._make_draft_po()
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/notes/',
+            {'text': ''},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_add_note_accessible_by_non_financial_user(self):
+        """Any authenticated user can add notes to a PO."""
+        po = self._make_draft_po()
+        worker = User.objects.get(username='johnq')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/notes/',
+            {'text': 'Checked with warehouse'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+
+    # --- Status filter ---
+
+    def test_filter_by_status_draft(self):
+        """Filtering by status=draft returns only draft POs."""
+        po = self._make_draft_po()
+        response = self.client.get('/api/purchase-orders/?status=draft')
+        self.assertEqual(response.status_code, 200)
+        results = response.data['results']
+        self.assertTrue(len(results) > 0)
+        for r in results:
+            self.assertEqual(r['status'], 'draft')
+        po_ids = [r['po_id'] for r in results]
+        self.assertIn(po.po_id, po_ids)
+
+    def test_filter_by_status_issued(self):
+        """Filtering by status=issued excludes draft POs."""
+        po = self._make_draft_po()
+        response = self.client.get('/api/purchase-orders/?status=issued')
+        self.assertEqual(response.status_code, 200)
+        po_ids = [r['po_id'] for r in response.data['results']]
+        self.assertNotIn(po.po_id, po_ids)
+
+    def test_filter_by_nonexistent_status_returns_empty(self):
+        """Filtering by a bogus status returns no results."""
+        response = self.client.get('/api/purchase-orders/?status=nonexistent')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['results']), 0)
+
+    # --- Serializer: contact_name ---
+
+    def test_serializer_includes_contact_name(self):
+        """PO response includes contact_name when contact is set."""
+        from apps.contacts.models import Business, Contact
+        business = Business.objects.first()
+        contact = Contact.objects.filter(business=business).first()
+        if not contact:
+            contact = Contact.objects.create(
+                first_name='Test', last_name='Vendor',
+                email='test@vendor.com', business=business,
+            )
+        po = PurchaseOrder.objects.create(
+            business=business, contact=contact,
+            po_number='PO-TEST-CONTACT',
+        )
+        response = self.client.get(f'/api/purchase-orders/{po.po_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('contact_name', response.data)
+        self.assertIsNotNone(response.data['contact_name'])
+        self.assertIn(' ', response.data['contact_name'])  # "First Last"
+
+    def test_serializer_contact_name_null_when_no_contact(self):
+        """PO response has null contact_name when no contact."""
+        po = self._make_draft_po()  # no contact
+        response = self.client.get(f'/api/purchase-orders/{po.po_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data['contact_name'])
+
+    # --- Permission: non-financial user cannot create/edit ---
+
+    def test_issue_with_optional_note_saves_to_history(self):
+        """Issuing a PO with an optional reason saves it to history."""
+        po = self._make_draft_po()
+        self.client.post(f'/api/purchase-orders/{po.po_id}/issue/', {
+            'reason': 'Ordered by phone',
+        }, format='json')
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_ISSUED)
+        entry = HistoryEntry.objects.filter(
+            object_type='purchaseorder', object_id=po.pk,
+        ).order_by('-timestamp').first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.text, 'Ordered by phone')
+
+    def test_issue_without_note_still_works(self):
+        """Issuing a PO without a reason succeeds (reason is optional)."""
+        po = self._make_draft_po()
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/issue/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_ISSUED)
+
+    def test_non_financial_user_cannot_create_po(self):
+        """Users without can_manage_financials cannot create POs."""
+        from apps.contacts.models import Business
+        worker = User.objects.get(username='johnq')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post('/api/purchase-orders/', {
+            'business': Business.objects.first().pk,
+        }, format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_non_financial_user_cannot_issue_po(self):
+        """Users without can_manage_financials cannot issue POs."""
+        po = self._make_draft_po()
+        worker = User.objects.get(username='johnq')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/issue/', format='json'
+        )
+        self.assertEqual(response.status_code, 403)
+
+
 class BillAPITest(BaseTestCase):
 
     def setUp(self):
