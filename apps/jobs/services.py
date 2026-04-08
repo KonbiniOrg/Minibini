@@ -546,8 +546,11 @@ class TaskLifecycleService:
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
             BlepService._close_open(task=task)
-            Task.objects.filter(pk=task.pk).update(status=Task.STATUS_COMPLETE)
+            Task.objects.filter(pk=task.pk).update(
+                status=Task.STATUS_COMPLETE, blocked_reason='',
+            )
             task.status = Task.STATUS_COMPLETE
+            task.blocked_reason = ''
             TaskLifecycleService._check_wo_auto_complete(task)
             return task
 
@@ -564,7 +567,7 @@ class TaskLifecycleService:
             WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_COMPLETE)
 
     @staticmethod
-    def block_task(task_pk):
+    def block_task(task_pk, reason=''):
         """Transition task from pending/in_progress -> blocked.
         Returns conflict dict if open Bleps exist."""
         with transaction.atomic():
@@ -585,8 +588,11 @@ class TaskLifecycleService:
                         'started_at': b.start_time,
                     })
                 return {'conflict': 'active_workers', 'workers': workers}
-            Task.objects.filter(pk=task.pk).update(status=Task.STATUS_BLOCKED)
+            Task.objects.filter(pk=task.pk).update(
+                status=Task.STATUS_BLOCKED, blocked_reason=reason,
+            )
             task.status = Task.STATUS_BLOCKED
+            task.blocked_reason = reason
             TaskLifecycleService._check_wo_blocked(task)
             return task
 
@@ -620,8 +626,11 @@ class TaskLifecycleService:
                 raise ValidationError(
                     f"Cannot unblock task: status is '{task.status}', must be 'blocked'."
                 )
-            Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+            Task.objects.filter(pk=task.pk).update(
+                status=Task.STATUS_IN_PROGRESS, blocked_reason='',
+            )
             task.status = Task.STATUS_IN_PROGRESS
+            task.blocked_reason = ''
             TaskLifecycleService._check_wo_unblocked(task)
             return task
 
@@ -638,8 +647,11 @@ class TaskLifecycleService:
                 )
             was_blocked = task.status == Task.STATUS_BLOCKED
             BlepService._close_open(task=task)
-            Task.objects.filter(pk=task.pk).update(status=Task.STATUS_CANCELLED)
+            Task.objects.filter(pk=task.pk).update(
+                status=Task.STATUS_CANCELLED, blocked_reason='',
+            )
             task.status = Task.STATUS_CANCELLED
+            task.blocked_reason = ''
             if was_blocked:
                 TaskLifecycleService._check_wo_unblocked(task)
             TaskLifecycleService._check_wo_auto_complete(task)
@@ -1074,6 +1086,7 @@ class BoardService:
             'job_name': job.name,
             'job_due_date': job.due_date.isoformat() if job.due_date else None,
             'accent_color': color_map.get(job.job_id, '#94a3b8'),
+            'blocked_reason': task.blocked_reason,
             'assignee_id': task.assignee_id,
             'worker_queue': task.worker_queue,
         }

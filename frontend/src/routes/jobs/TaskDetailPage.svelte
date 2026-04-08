@@ -254,7 +254,7 @@
 
   <table border="1">
     <tbody>
-      <tr><td>Status</td><td>{task.status}</td></tr>
+      <tr><td>Status</td><td>{task.status}{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
       <tr><td>Description</td><td>{task.description || '-'}</td></tr>
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.units || ''}</td></tr>

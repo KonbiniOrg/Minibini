@@ -36,7 +36,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
         model = Task
         fields = [
             'task_id', 'name', 'description', 'status',
-            'units', 'rate', 'est_qty', 'accounting_category',
+            'blocked_reason', 'units', 'rate', 'est_qty', 'accounting_category',
             'parent_task', 'assignee', 'assignee_name',
             'worker_queue', 'work_order',
         ]

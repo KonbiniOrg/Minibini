@@ -83,7 +83,7 @@
           {#if task.description}<br><span class="dim">{task.description}</span>{/if}
         </td>
         {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task)}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
-        {#if showStatus}<td><span class="status-pill status-{task.status}">{task.status}</span></td>{/if}
+        {#if showStatus}<td><span class="status-pill status-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason">{task.blocked_reason}</span>{/if}</td>{/if}
         <td class="text-right">{task.units || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">-</td>
@@ -138,7 +138,7 @@
             {#if sub.description}<br><span class="dim indent">{sub.description}</span>{/if}
           </td>
           {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub)}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
-          {#if showStatus}<td><span class="status-pill status-{sub.status}">{sub.status}</span></td>{/if}
+          {#if showStatus}<td><span class="status-pill status-{sub.status}">{sub.status}</span>{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason">{sub.blocked_reason}</span>{/if}</td>{/if}
           <td class="text-right">{sub.units || '-'}</td>
           <td class="text-right">{sub.est_qty ?? '-'}</td>
           <td class="text-right">-</td>
@@ -217,6 +217,7 @@
   .status-complete { background: #d1fae5; color: #065f46; }
   .status-blocked { background: #fee2e2; color: #991b1b; }
   .status-cancelled { background: #f3f4f6; color: #9ca3af; }
+  .blocked-reason { font-size: 11px; color: #991b1b; }
 
   .actions-cell { white-space: nowrap; }
   .actions-cell button {

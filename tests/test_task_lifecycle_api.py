@@ -38,6 +38,18 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_BLOCKED)
 
+    def test_block_task_with_reason(self):
+        url = f'/api/tasks/{self.task.pk}/block/'
+        resp = self.client.post(url, {'reason': 'Waiting on parts'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, 'Waiting on parts')
+
+    def test_block_task_reason_in_response(self):
+        url = f'/api/tasks/{self.task.pk}/block/'
+        resp = self.client.post(url, {'reason': 'Waiting on parts'}, format='json')
+        self.assertEqual(resp.data['blocked_reason'], 'Waiting on parts')
+
     def test_unblock_task(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_BLOCKED)
         url = f'/api/tasks/{self.task.pk}/unblock/'

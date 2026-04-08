@@ -269,6 +269,7 @@ class Task(TaskBase):
     assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
     work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
+    blocked_reason = models.TextField(blank=True, default='')
     worker_queue = models.PositiveIntegerField(
         null=True, blank=True,
         help_text="Position in assignee's work queue on the board"

@@ -141,13 +141,17 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
     def block(self, request, pk=None):
         from apps.jobs.services import TaskLifecycleService
         task = self._get_task_or_404(pk)
+        reason = request.data.get('reason', '').strip() if request.data else ''
         try:
-            result = TaskLifecycleService.block_task(task.pk)
+            result = TaskLifecycleService.block_task(task.pk, reason=reason)
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         if isinstance(result, dict) and 'conflict' in result:
             return Response(result)
-        return Response({'status': Task.STATUS_BLOCKED})
+        return Response({
+            'status': Task.STATUS_BLOCKED,
+            'blocked_reason': reason,
+        })
 
     @action(detail=True, methods=['post'])
     def unblock(self, request, pk=None):

@@ -279,6 +279,14 @@ class CompleteTaskTest(BaseTestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
 
+    def test_complete_from_blocked_clears_reason(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            status=Task.STATUS_BLOCKED, blocked_reason='Waiting on parts'
+        )
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, '')
+
     def test_complete_last_task_auto_completes_wo(self):
         TaskLifecycleService.complete_task(self.task.pk)
         self.wo.refresh_from_db()
@@ -311,6 +319,16 @@ class BlockTaskTest(BaseTestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_BLOCKED)
 
+    def test_block_stores_reason(self):
+        TaskLifecycleService.block_task(self.task.pk, reason='Waiting on parts')
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, 'Waiting on parts')
+
+    def test_block_without_reason_stores_empty(self):
+        TaskLifecycleService.block_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, '')
+
     def test_block_from_in_progress(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.task.refresh_from_db()
@@ -342,6 +360,14 @@ class BlockTaskTest(BaseTestCase):
         TaskLifecycleService.unblock_task(self.task.pk)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+
+    def test_unblock_clears_blocked_reason(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            status=Task.STATUS_BLOCKED, blocked_reason='Waiting on parts'
+        )
+        TaskLifecycleService.unblock_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, '')
 
     def test_unblock_rejects_non_blocked(self):
         with self.assertRaises(ValidationError):
@@ -402,6 +428,14 @@ class CancelTaskTest(BaseTestCase):
         TaskLifecycleService.cancel_task(self.task.pk)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_CANCELLED)
+
+    def test_cancel_from_blocked_clears_reason(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            status=Task.STATUS_BLOCKED, blocked_reason='Waiting on parts'
+        )
+        TaskLifecycleService.cancel_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, '')
 
     def test_cancel_rejects_complete(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)
