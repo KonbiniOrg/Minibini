@@ -319,6 +319,144 @@ class CancelLineItemTest(POReceivingTestBase):
             self.assertEqual(li.qty_cancelled, li.qty)
 
 
+class ReverseReceiptTest(POReceivingTestBase):
+
+    def test_reverse_receipt_resets_qty(self):
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': li.pk, 'qty_received': 5}]},
+            format='json',
+        )
+        li.refresh_from_db()
+        self.assertEqual(li.qty_received, Decimal('5.00'))
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': li.pk, 'note': 'Entered in error'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        li.refresh_from_db()
+        self.assertEqual(li.qty_received, Decimal('0.00'))
+        self.assertIsNone(li.received_by)
+        self.assertIsNone(li.received_date)
+        self.assertEqual(li.receipt_note, '')
+
+    def test_reverse_receipt_updates_inventory(self):
+        po = self._make_issued_po(with_pli=True)
+        pli = PriceListItem.objects.get(code='TEST-PLI-RECV')
+        li = PurchaseOrderLineItem.objects.filter(
+            purchase_order=po, price_list_item=pli,
+        ).first()
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': li.pk, 'qty_received': 7}]},
+            format='json',
+        )
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('7.00'))
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': li.pk},
+            format='json',
+        )
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('0.00'))
+        adjustments = InventoryAdjustment.objects.filter(price_list_item=pli)
+        self.assertEqual(adjustments.count(), 2)
+        reversal = adjustments.order_by('-pk').first()
+        self.assertEqual(reversal.quantity_change, Decimal('-7.00'))
+        self.assertIn('Reversed', reversal.reason)
+
+    def test_reverse_receipt_clears_qty_cancelled(self):
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': li.pk, 'qty_received': 5}]},
+            format='json',
+        )
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': li.pk},
+            format='json',
+        )
+        li.refresh_from_db()
+        self.assertEqual(li.qty_cancelled, Decimal('5.00'))
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': li.pk},
+            format='json',
+        )
+        li.refresh_from_db()
+        self.assertEqual(li.qty_received, Decimal('0.00'))
+        self.assertEqual(li.qty_cancelled, Decimal('0.00'))
+
+    def test_reverse_receipt_creates_history(self):
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': li.pk, 'qty_received': 5}]},
+            format='json',
+        )
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': li.pk, 'note': 'Wrong item scanned'},
+            format='json',
+        )
+        entries = HistoryEntry.objects.filter(
+            object_type='purchaseorder', object_id=po.pk,
+            entry_type='action',
+        ).order_by('-pk')
+        reversal_entry = entries.first()
+        self.assertIn('reversed', reversal_entry.changes.get('_action', '').lower())
+        self.assertEqual(reversal_entry.text, 'Wrong item scanned')
+
+    def test_reverse_receipt_no_qty_received_rejected(self):
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': li.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_reverse_receipt_updates_po_status(self):
+        po = self._make_issued_po(num_items=1)
+        li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': li.pk, 'qty_received': 5}]},
+            format='json',
+        )
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_PARTLY_RECEIVED)
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': li.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_ISSUED)
+
+    def test_reverse_on_fully_received_po(self):
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(f'/api/purchase-orders/{po.po_id}/receive-all/')
+        po.refresh_from_db()
+        self.assertEqual(po.status, PurchaseOrder.STATUS_RECEIVED_IN_FULL)
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_PARTLY_RECEIVED)
+
+
 class POStatusAutoTransitionTest(POReceivingTestBase):
     """Comprehensive tests for PO status auto-transitions across multi-line scenarios."""
 

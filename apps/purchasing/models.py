@@ -62,7 +62,7 @@ class PurchaseOrder(models.Model):
         VALID_TRANSITIONS = {
             PurchaseOrder.STATUS_DRAFT: [PurchaseOrder.STATUS_ISSUED],
             PurchaseOrder.STATUS_ISSUED: [PurchaseOrder.STATUS_PARTLY_RECEIVED, PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED],
-            PurchaseOrder.STATUS_PARTLY_RECEIVED: [PurchaseOrder.STATUS_RECEIVED_IN_FULL],
+            PurchaseOrder.STATUS_PARTLY_RECEIVED: [PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_ISSUED],
             PurchaseOrder.STATUS_RECEIVED_IN_FULL: [PurchaseOrder.STATUS_PARTLY_RECEIVED, PurchaseOrder.STATUS_ISSUED],
             PurchaseOrder.STATUS_CANCELLED: [],  # Terminal state
         }

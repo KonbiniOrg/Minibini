@@ -335,6 +335,64 @@ class PurchaseOrderReceivingService:
         return po
 
     @staticmethod
+    def reverse_receipt(po, line_item_id, user, note=''):
+        """Reverse all received quantity on a line item (data correction)."""
+        from apps.core.models import HistoryEntry
+        from apps.inventory.models import InventoryAdjustment
+
+        if po.status not in (
+            PurchaseOrder.STATUS_ISSUED,
+            PurchaseOrder.STATUS_PARTLY_RECEIVED,
+            PurchaseOrder.STATUS_RECEIVED_IN_FULL,
+        ):
+            raise ValidationError(
+                f'Cannot reverse receipts on a PO in status "{po.status}".'
+            )
+
+        with transaction.atomic():
+            li = PurchaseOrderLineItem.objects.select_for_update().get(
+                pk=line_item_id, purchase_order=po,
+            )
+            if li.qty_received <= 0:
+                raise ValidationError(
+                    f'Line item #{li.line_number} has no received quantity to reverse.'
+                )
+
+            reversed_qty = li.qty_received
+
+            if li.price_list_item and li.price_list_item.is_inventoried:
+                li.price_list_item.qty_on_hand -= reversed_qty
+                li.price_list_item.save(update_fields=['qty_on_hand'])
+                InventoryAdjustment.objects.create(
+                    price_list_item=li.price_list_item,
+                    quantity_change=-reversed_qty,
+                    reason=f'Reversed receipt on {po.po_number}',
+                )
+
+            li.qty_received = Decimal('0.00')
+            li.qty_cancelled = Decimal('0.00')
+            li.received_by = None
+            li.received_date = None
+            li.receipt_note = ''
+            li.save(update_fields=[
+                'qty_received', 'qty_cancelled',
+                'received_by', 'received_date', 'receipt_note',
+            ])
+
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='purchaseorder',
+                object_id=po.pk,
+                user=user,
+                changes={'_action': f'Line #{li.line_number} receipt reversed ({reversed_qty}): {li.description}'},
+                text=note,
+            )
+
+            PurchaseOrderReceivingService._update_po_status(po)
+
+        return po
+
+    @staticmethod
     def _update_po_status(po):
         """Recalculate PO status based on line item receipt state."""
         all_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))

@@ -26,7 +26,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     def get_permissions(self):
         if self.action in (
             'list', 'retrieve', 'history', 'notes', 'send_defaults',
-            'receive', 'receive_all', 'receipts', 'cancel_line_item',
+            'receive', 'receive_all', 'receipts', 'cancel_line_item', 'reverse_receipt',
         ):
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
@@ -193,6 +193,29 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             )
         try:
             po = PurchaseOrderReceivingService.cancel_line_item(
+                po, line_item_id, request.user, note=note,
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = self.get_serializer(po)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='reverse-receipt', url_name='reverse-receipt')
+    def reverse_receipt(self, request, pk=None):
+        """Reverse all received quantity on a line item."""
+        po = self.get_object()
+        line_item_id = request.data.get('line_item_id')
+        note = request.data.get('note', '')
+        if not line_item_id:
+            return Response(
+                {'line_item_id': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            po = PurchaseOrderReceivingService.reverse_receipt(
                 po, line_item_id, request.user, note=note,
             )
         except Exception as e:
