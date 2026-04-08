@@ -44,7 +44,7 @@ Sets `qty_cancelled = qty - qty_received`, meaning "stop expecting the rest."
 
 ### Reverse Receipt
 
-Resets `qty_received` to 0, undoing all receiving on the line item. Full reversal only — if 5 of 5 received were wrong and 2 were fine, reverse all 5 then re-receive 2.
+Resets `qty_received` to 0, undoing all receiving on the line item. Full reversal only — if you received 5 but 3 were wrong, reverse all 5 then re-receive the 2 that were correct.
 
 **Preconditions:**
 - `qty_received > 0`
