@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, HistoryEntry
@@ -292,3 +293,35 @@ class SerializerReceivingFieldsTest(POReceivingTestBase):
         self.assertIn('cancelled', li)
         self.assertIn('receipt_note', li)
         self.assertIn('received_by_name', li)
+
+
+class POStatusTransitionTest(POReceivingTestBase):
+
+    def test_received_in_full_to_partly_received_allowed(self):
+        """PO can go back to partly_received after receipt reversal."""
+        po = self._make_issued_po()
+        po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
+        po.save()
+        po.status = PurchaseOrder.STATUS_RECEIVED_IN_FULL
+        po.save()
+        po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
+        po.full_clean()  # Should not raise
+
+    def test_received_in_full_to_issued_allowed(self):
+        """PO can go back to issued after all receipts reversed."""
+        po = self._make_issued_po()
+        po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
+        po.save()
+        po.status = PurchaseOrder.STATUS_RECEIVED_IN_FULL
+        po.save()
+        po.status = PurchaseOrder.STATUS_ISSUED
+        po.full_clean()  # Should not raise
+
+    def test_partly_received_to_cancelled_not_allowed(self):
+        """PO cannot go from partly_received to cancelled directly."""
+        po = self._make_issued_po()
+        po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
+        po.save()
+        po.status = PurchaseOrder.STATUS_CANCELLED
+        with self.assertRaises(ValidationError):
+            po.full_clean()
