@@ -141,10 +141,10 @@ class ReceiveItemsTest(POReceivingTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['status'], PurchaseOrder.STATUS_RECEIVED_IN_FULL)
 
-    def test_receive_cancelled_line_rejected(self):
+    def test_receive_done_line_rejected(self):
         po = self._make_issued_po()
         li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
-        li.cancelled = True
+        li.qty_cancelled = li.qty
         li.save()
         response = self.client.post(
             f'/api/purchase-orders/{po.po_id}/receive/',
@@ -213,7 +213,8 @@ class InventoryIntegrationTest(POReceivingTestBase):
 
 class CancelLineItemTest(POReceivingTestBase):
 
-    def test_cancel_line_item(self):
+    def test_cancel_unreceived_line_item(self):
+        """Cancel a line with 0 received — qty_cancelled should equal qty."""
         po = self._make_issued_po()
         li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
         response = self.client.post(
@@ -223,7 +224,25 @@ class CancelLineItemTest(POReceivingTestBase):
         )
         self.assertEqual(response.status_code, 200)
         li.refresh_from_db()
-        self.assertTrue(li.cancelled)
+        self.assertEqual(li.qty_cancelled, li.qty)
+
+    def test_cancel_partially_received_line_item(self):
+        """Cancel remaining on a partially received line."""
+        po = self._make_issued_po()
+        li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
+        li.qty_received = Decimal('3.00')
+        li.save()
+        po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
+        po.save()
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': li.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        li.refresh_from_db()
+        self.assertEqual(li.qty_cancelled, Decimal('7.00'))
+        self.assertEqual(li.qty_received + li.qty_cancelled, li.qty)
 
     def test_cancel_line_creates_history(self):
         po = self._make_issued_po()
@@ -241,26 +260,11 @@ class CancelLineItemTest(POReceivingTestBase):
         self.assertIn('cancelled', entry.changes.get('_action', '').lower())
         self.assertEqual(entry.text, 'Vendor out of stock')
 
-    def test_cancel_all_unreceived_lines_marks_received_if_others_done(self):
-        """If the only unreceived line is cancelled, PO becomes received_in_full."""
-        po = self._make_issued_po(num_items=2)
-        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
-        # Receive first item fully
-        items[0].qty_received = items[0].qty
-        items[0].save()
-        # Cancel second item
-        response = self.client.post(
-            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
-            {'line_item_id': items[1].pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_RECEIVED_IN_FULL)
-
-    def test_cancel_already_cancelled_rejected(self):
+    def test_cancel_already_done_line_rejected(self):
+        """Cannot cancel a line where qty_received + qty_cancelled == qty."""
         po = self._make_issued_po()
         li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
-        li.cancelled = True
+        li.qty_cancelled = li.qty
         li.save()
         response = self.client.post(
             f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
@@ -281,6 +285,164 @@ class CancelLineItemTest(POReceivingTestBase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_cancel_all_unreceived_lines_marks_received_if_others_done(self):
+        """If the only outstanding line is cancelled, PO becomes received_in_full."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        items[0].qty_received = items[0].qty
+        items[0].save()
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_RECEIVED_IN_FULL)
+
+    def test_cancel_all_lines_no_receipts_cancels_po(self):
+        """If all lines are fully cancelled with nothing received, PO auto-cancels via cancel_po."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_CANCELLED)
+        for li in PurchaseOrderLineItem.objects.filter(purchase_order=po):
+            self.assertEqual(li.qty_cancelled, li.qty)
+
+
+class POStatusAutoTransitionTest(POReceivingTestBase):
+    """Comprehensive tests for PO status auto-transitions across multi-line scenarios."""
+
+    def test_receive_one_cancel_other_gives_received_in_full(self):
+        """2 items: receive one fully, cancel the other → RECEIVED_IN_FULL."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': items[0].pk, 'qty_received': float(items[0].qty)}]},
+            format='json',
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_RECEIVED_IN_FULL)
+
+    def test_receive_one_cancel_other_then_reverse_gives_issued(self):
+        """2 items: receive one, cancel other → RECEIVED_IN_FULL. Reverse receipt → ISSUED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': items[0].pk, 'qty_received': float(items[0].qty)}]},
+            format='json',
+        )
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_ISSUED)
+
+    def test_partial_receive_cancel_other_gives_partly_received(self):
+        """2 items: receive one partially, cancel the other → PARTLY_RECEIVED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': items[0].pk, 'qty_received': 3}]},
+            format='json',
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_PARTLY_RECEIVED)
+
+    def test_partial_receive_cancel_other_then_reverse_gives_issued(self):
+        """2 items: partial receive one, cancel other → PARTLY_RECEIVED. Reverse → ISSUED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': items[0].pk, 'qty_received': 3}]},
+            format='json',
+        )
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_ISSUED)
+
+    def test_cancel_both_lines_cancels_po_with_line_items_set(self):
+        """2 items: cancel both → CANCELLED. All line items have qty_cancelled == qty."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_CANCELLED)
+        for li in PurchaseOrderLineItem.objects.filter(purchase_order=po):
+            self.assertEqual(li.qty_cancelled, li.qty)
+
+    def test_receive_all_then_reverse_one_gives_partly_received(self):
+        """Receive all → RECEIVED_IN_FULL. Reverse one → PARTLY_RECEIVED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(f'/api/purchase-orders/{po.po_id}/receive-all/')
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_PARTLY_RECEIVED)
+
+    def test_receive_all_then_reverse_all_gives_issued(self):
+        """Receive all → RECEIVED_IN_FULL. Reverse both → ISSUED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(f'/api/purchase-orders/{po.po_id}/receive-all/')
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_ISSUED)
+
 
 class SerializerReceivingFieldsTest(POReceivingTestBase):
 
@@ -290,7 +452,7 @@ class SerializerReceivingFieldsTest(POReceivingTestBase):
         li = response.data['line_items'][0]
         self.assertIn('qty_received', li)
         self.assertIn('received_date', li)
-        self.assertIn('cancelled', li)
+        self.assertIn('qty_cancelled', li)
         self.assertIn('receipt_note', li)
         self.assertIn('received_by_name', li)
 

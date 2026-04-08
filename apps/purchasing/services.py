@@ -47,7 +47,7 @@ class PurchaseOrderService:
 
     @staticmethod
     def cancel_po(pk):
-        """Cancel an issued PO."""
+        """Cancel an issued PO and mark all line items as cancelled."""
         try:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
@@ -56,9 +56,14 @@ class PurchaseOrderService:
             raise ValidationError(
                 f'Cannot cancel PO {po.po_number}. Only issued POs can be cancelled.'
             )
-        po.status = PurchaseOrder.STATUS_CANCELLED
-        po.full_clean()
-        po.save()
+        with transaction.atomic():
+            po.status = PurchaseOrder.STATUS_CANCELLED
+            po.full_clean()
+            po.save()
+            # Set qty_cancelled on all line items
+            for li in PurchaseOrderLineItem.objects.filter(purchase_order=po):
+                li.qty_cancelled = li.qty - li.qty_received
+                li.save(update_fields=['qty_cancelled'])
         return po
 
     @staticmethod
@@ -219,9 +224,9 @@ class PurchaseOrderReceivingService:
                     pk=item_data['line_item_id'],
                     purchase_order=po,
                 )
-                if li.cancelled:
+                if li.qty_received + li.qty_cancelled >= li.qty:
                     raise ValidationError(
-                        f'Line item #{li.line_number} is cancelled.'
+                        f'Line item #{li.line_number} has no outstanding quantity to receive.'
                     )
 
                 qty = Decimal(str(item_data['qty_received']))
@@ -275,12 +280,10 @@ class PurchaseOrderReceivingService:
         """
         Receive all remaining items on a PO at full quantity.
         """
-        line_items = PurchaseOrderLineItem.objects.filter(
-            purchase_order=po, cancelled=False,
-        )
+        line_items = PurchaseOrderLineItem.objects.filter(purchase_order=po)
         items = []
         for li in line_items:
-            remaining = li.qty - li.qty_received
+            remaining = li.qty - li.qty_received - li.qty_cancelled
             if remaining > 0:
                 items.append({
                     'line_item_id': li.pk,
@@ -294,7 +297,7 @@ class PurchaseOrderReceivingService:
 
     @staticmethod
     def cancel_line_item(po, line_item_id, user, note=''):
-        """Cancel a line item that won't be shipped."""
+        """Cancel remaining quantity on a line item."""
         from apps.core.models import HistoryEntry
 
         if po.status not in (
@@ -309,24 +312,21 @@ class PurchaseOrderReceivingService:
             li = PurchaseOrderLineItem.objects.select_for_update().get(
                 pk=line_item_id, purchase_order=po,
             )
-            if li.cancelled:
+            if li.qty_received + li.qty_cancelled >= li.qty:
                 raise ValidationError(
-                    f'Line item #{li.line_number} is already cancelled.'
-                )
-            if li.qty_received >= li.qty:
-                raise ValidationError(
-                    f'Line item #{li.line_number} is already fully received.'
+                    f'Line item #{li.line_number} has no outstanding quantity to cancel.'
                 )
 
-            li.cancelled = True
-            li.save(update_fields=['cancelled'])
+            qty_to_cancel = li.qty - li.qty_received - li.qty_cancelled
+            li.qty_cancelled = li.qty - li.qty_received
+            li.save(update_fields=['qty_cancelled'])
 
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='purchaseorder',
                 object_id=po.pk,
                 user=user,
-                changes={'_action': f'Line #{li.line_number} cancelled: {li.description}'},
+                changes={'_action': f'Line #{li.line_number} cancelled ({qty_to_cancel} remaining): {li.description}'},
                 text=note,
             )
 
@@ -337,23 +337,35 @@ class PurchaseOrderReceivingService:
     @staticmethod
     def _update_po_status(po):
         """Recalculate PO status based on line item receipt state."""
-        active_items = PurchaseOrderLineItem.objects.filter(
-            purchase_order=po, cancelled=False,
-        )
-        if not active_items.exists():
+        all_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        if not all_items:
             return
 
-        all_received = all(li.qty_received >= li.qty for li in active_items)
-        any_received = any(li.qty_received > 0 for li in active_items)
+        all_done = all(li.qty_received + li.qty_cancelled == li.qty for li in all_items)
+        any_received = any(li.qty_received > 0 for li in all_items)
 
-        if all_received:
-            po.status = PurchaseOrder.STATUS_RECEIVED_IN_FULL
-            po.full_clean()
-            po.save()
-        elif any_received and po.status != PurchaseOrder.STATUS_PARTLY_RECEIVED:
-            po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
-            po.full_clean()
-            po.save()
+        if all_done and any_received:
+            if po.status != PurchaseOrder.STATUS_RECEIVED_IN_FULL:
+                po.status = PurchaseOrder.STATUS_RECEIVED_IN_FULL
+                po.full_clean()
+                po.save()
+        elif all_done and not any_received:
+            # Everything cancelled, nothing received — delegate to cancel_po
+            # which handles status change AND sets qty_cancelled on all line items
+            if po.status != PurchaseOrder.STATUS_CANCELLED:
+                PurchaseOrderService.cancel_po(po.pk)
+                po.refresh_from_db()
+        elif any_received:
+            if po.status != PurchaseOrder.STATUS_PARTLY_RECEIVED:
+                po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
+                po.full_clean()
+                po.save()
+        else:
+            # Nothing received, not all done — back to issued
+            if po.status not in (PurchaseOrder.STATUS_ISSUED, PurchaseOrder.STATUS_DRAFT):
+                po.status = PurchaseOrder.STATUS_ISSUED
+                po.full_clean()
+                po.save()
 
 
 class PurchaseOrderEmailService:

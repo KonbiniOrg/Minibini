@@ -26,11 +26,11 @@ class POLineItemSerializer(serializers.ModelSerializer):
             'qty', 'units', 'description', 'price', 'job',
             'accounting_category', 'taxable_override', 'tax_rate_override',
             'qty_received', 'received_by', 'received_by_name',
-            'received_date', 'receipt_note', 'cancelled',
+            'received_date', 'receipt_note', 'qty_cancelled',
         ]
         read_only_fields = [
             'line_item_id', 'qty_received', 'received_by', 'received_by_name',
-            'received_date', 'receipt_note', 'cancelled',
+            'received_date', 'receipt_note', 'qty_cancelled',
         ]
 
     def get_received_by_name(self, obj):
