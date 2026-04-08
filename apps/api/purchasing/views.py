@@ -3,7 +3,10 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.purchasing.models import PurchaseOrder, Bill
-from apps.purchasing.services import PurchaseOrderService, PurchaseOrderEmailService, BillService
+from apps.purchasing.services import (
+    PurchaseOrderService, PurchaseOrderEmailService,
+    PurchaseOrderReceivingService, BillService,
+)
 from apps.core.services import ServiceError
 from apps.core.models import HistoryEntry
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
@@ -21,7 +24,10 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'history', 'notes', 'send_defaults'):
+        if self.action in (
+            'list', 'retrieve', 'history', 'notes', 'send_defaults',
+            'receive', 'receive_all', 'receipts', 'cancel_line_item',
+        ):
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
             return [IsAuthenticated()]
@@ -45,6 +51,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
 
     line_item_serializer_class = POLineItemSerializer
     line_item_parent_field = 'purchase_order'
+    line_item_service_class = PurchaseOrderService
 
     status_actions = {
         'issue': {
@@ -137,6 +144,65 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         serializer = HistoryEntrySerializer(entry)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['post'], url_path='receive', url_name='receive')
+    def receive(self, request, pk=None):
+        """Record receipt of specific line items."""
+        po = self.get_object()
+        items = request.data.get('items', [])
+        if not items:
+            return Response(
+                {'items': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            po = PurchaseOrderReceivingService.receive_items(
+                po, items, request.user,
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = self.get_serializer(po)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='receive-all', url_name='receive-all')
+    def receive_all(self, request, pk=None):
+        """Receive all remaining items at full quantity."""
+        po = self.get_object()
+        try:
+            po = PurchaseOrderReceivingService.receive_all(po, request.user)
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = self.get_serializer(po)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='cancel-line-item', url_name='cancel-line-item')
+    def cancel_line_item(self, request, pk=None):
+        """Cancel a line item that won't be shipped."""
+        po = self.get_object()
+        line_item_id = request.data.get('line_item_id')
+        note = request.data.get('note', '')
+        if not line_item_id:
+            return Response(
+                {'line_item_id': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            po = PurchaseOrderReceivingService.cancel_line_item(
+                po, line_item_id, request.user, note=note,
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = self.get_serializer(po)
+        return Response(serializer.data)
+
 
 class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
     queryset = Bill.objects.all().order_by('-created_date')
@@ -162,6 +228,7 @@ class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
 
     line_item_serializer_class = BillLineItemSerializer
     line_item_parent_field = 'bill'
+    line_item_service_class = BillService
 
     status_actions = {
         'cancel': {

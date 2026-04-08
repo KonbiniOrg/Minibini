@@ -130,10 +130,45 @@ class EstimateService:
             raise NotFoundError(f'Estimate {estimate_pk} not found')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft estimates.')
+        from apps.core.services import LineItemService
+        kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         li = EstimateLineItem(estimate=estimate, **kwargs)
         li.full_clean()
         li.save()
         return li
+
+    @staticmethod
+    def update_line_item(line_item_id, **kwargs):
+        """Update an estimate line item — validates draft status."""
+        try:
+            li = EstimateLineItem.objects.get(pk=line_item_id)
+        except EstimateLineItem.DoesNotExist:
+            raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
+        if li.estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Can only modify line items on draft estimates.')
+        from apps.core.services import LineItemService
+        kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
+        for field, value in kwargs.items():
+            setattr(li, field, value)
+        li.full_clean()
+        li.save()
+        return li
+
+    @staticmethod
+    def reorder_line_items(estimate_pk, item_ids):
+        """Reorder estimate line items by position list — validates draft status."""
+        try:
+            estimate = Estimate.objects.get(pk=estimate_pk)
+        except Estimate.DoesNotExist:
+            raise NotFoundError(f'Estimate {estimate_pk} not found')
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Can only modify line items on draft estimates.')
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            for position, item_id in enumerate(item_ids, start=1):
+                EstimateLineItem.objects.filter(
+                    pk=item_id, estimate=estimate,
+                ).update(line_number=position)
 
     @staticmethod
     def reorder_line_item(line_item_id, direction):

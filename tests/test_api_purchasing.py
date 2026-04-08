@@ -32,15 +32,14 @@ class PurchaseOrderAPITest(BaseTestCase):
         self.assertIn(response.status_code, [201, 400])
 
     def test_add_line_item(self):
-        po = PurchaseOrder.objects.first()
-        if po:
-            response = self.client.post(f'/api/purchase-orders/{po.pk}/line-items/', {
-                'qty': '5.00',
-                'units': 'ea',
-                'description': 'Widgets',
-                'price': '25.00',
-            }, format='json')
-            self.assertIn(response.status_code, [200, 201])
+        po = self._make_draft_po()
+        response = self.client.post(f'/api/purchase-orders/{po.pk}/line-items/', {
+            'qty': '5.00',
+            'units': 'ea',
+            'description': 'Widgets',
+            'price': '25.00',
+        }, format='json')
+        self.assertIn(response.status_code, [200, 201])
 
     def test_filter_purchase_orders_by_job(self):
         """POs can be filtered by job via line item linkage."""

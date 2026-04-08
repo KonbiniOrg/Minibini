@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
@@ -74,12 +75,22 @@ class PurchaseOrderService:
         po.delete()
 
     @staticmethod
+    def _validate_draft(po):
+        if po.status != PurchaseOrder.STATUS_DRAFT:
+            raise ValidationError(
+                'Can only modify line items on draft purchase orders.'
+            )
+
+    @staticmethod
     def add_line_item(po_id, **kwargs):
-        """Add a manual line item to a PO."""
+        """Add a manual line item to a draft PO."""
+        from apps.core.services import LineItemService
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
+        PurchaseOrderService._validate_draft(po)
+        kwargs = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, kwargs)
         li = PurchaseOrderLineItem(purchase_order=po, **kwargs)
         li.full_clean()
         li.save()
@@ -87,12 +98,13 @@ class PurchaseOrderService:
 
     @staticmethod
     def add_line_item_from_pli(po_id, price_list_item_id, qty):
-        """Add a line item from a PriceListItem."""
+        """Add a line item from a PriceListItem to a draft PO."""
         from apps.inventory.models import PriceListItem
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
+        PurchaseOrderService._validate_draft(po)
         try:
             pli = PriceListItem.objects.get(pk=price_list_item_id)
         except PriceListItem.DoesNotExist:
@@ -109,6 +121,37 @@ class PurchaseOrderService:
         li.full_clean()
         li.save()
         return li
+
+    @staticmethod
+    def update_line_item(line_item_id, **kwargs):
+        """Update a PO line item — validates draft status."""
+        from apps.core.services import LineItemService
+        try:
+            li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
+        except PurchaseOrderLineItem.DoesNotExist:
+            raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
+        PurchaseOrderService._validate_draft(li.purchase_order)
+        kwargs = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, kwargs)
+        for field, value in kwargs.items():
+            setattr(li, field, value)
+        li.full_clean()
+        li.save()
+        return li
+
+    @staticmethod
+    def reorder_line_items(po_id, item_ids):
+        """Reorder PO line items by position list — validates draft status."""
+        try:
+            po = PurchaseOrder.objects.get(pk=po_id)
+        except PurchaseOrder.DoesNotExist:
+            raise NotFoundError(f'PurchaseOrder {po_id} not found')
+        PurchaseOrderService._validate_draft(po)
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            for position, item_id in enumerate(item_ids, start=1):
+                PurchaseOrderLineItem.objects.filter(
+                    pk=item_id, purchase_order=po,
+                ).update(line_number=position)
 
     @staticmethod
     def reorder_line_item(line_item_id, direction):
@@ -137,6 +180,180 @@ class PurchaseOrderService:
                 'Cannot modify line items on a non-draft purchase order.'
             )
         return LineItemService.delete_line_item_with_renumber(li)
+
+
+class PurchaseOrderReceivingService:
+    """Service for receiving goods against purchase orders."""
+
+    @staticmethod
+    def receive_items(po, items, user):
+        """
+        Record receipt of items on a PO.
+
+        Args:
+            po: PurchaseOrder instance
+            items: list of dicts with {line_item_id, qty_received, note?}
+            user: User performing the receipt
+
+        Returns the updated PO.
+        """
+        from apps.core.models import HistoryEntry
+        from apps.inventory.models import InventoryAdjustment
+        from django.utils import timezone
+
+        if po.status not in (
+            PurchaseOrder.STATUS_ISSUED,
+            PurchaseOrder.STATUS_PARTLY_RECEIVED,
+        ):
+            raise ValidationError(
+                f'Cannot receive items on a PO in status "{po.status}".'
+            )
+
+        now = timezone.now()
+        history_lines = []
+        inventory_updates = []
+
+        with transaction.atomic():
+            for item_data in items:
+                li = PurchaseOrderLineItem.objects.select_for_update().get(
+                    pk=item_data['line_item_id'],
+                    purchase_order=po,
+                )
+                if li.cancelled:
+                    raise ValidationError(
+                        f'Line item #{li.line_number} is cancelled.'
+                    )
+
+                qty = Decimal(str(item_data['qty_received']))
+                if qty <= 0:
+                    continue
+
+                li.qty_received = li.qty_received + qty
+                li.received_by = user
+                li.received_date = now
+                if item_data.get('note'):
+                    li.receipt_note = item_data['note']
+                li.save()
+
+                history_lines.append(
+                    f'#{li.line_number} {li.description}: received {qty}'
+                    + (f' — {item_data["note"]}' if item_data.get('note') else '')
+                )
+
+                # Inventory adjustment for PLI-linked items
+                if li.price_list_item and li.price_list_item.is_inventoried:
+                    li.price_list_item.qty_on_hand += qty
+                    li.price_list_item.save(update_fields=['qty_on_hand'])
+                    InventoryAdjustment.objects.create(
+                        price_list_item=li.price_list_item,
+                        quantity_change=qty,
+                        reason=f'Received on {po.po_number}',
+                    )
+                    inventory_updates.append(li.price_list_item.code)
+
+            # Auto-transition PO status
+            PurchaseOrderReceivingService._update_po_status(po)
+
+            # History entry
+            if history_lines:
+                action_text = f'Items received by {user.get_full_name() or user.username}'
+                if inventory_updates:
+                    action_text += f'. Inventory updated: {", ".join(inventory_updates)}'
+                HistoryEntry.objects.create(
+                    entry_type='action',
+                    object_type='purchaseorder',
+                    object_id=po.pk,
+                    user=user,
+                    changes={'_action': action_text},
+                    text='\n'.join(history_lines),
+                )
+
+        return po
+
+    @staticmethod
+    def receive_all(po, user):
+        """
+        Receive all remaining items on a PO at full quantity.
+        """
+        line_items = PurchaseOrderLineItem.objects.filter(
+            purchase_order=po, cancelled=False,
+        )
+        items = []
+        for li in line_items:
+            remaining = li.qty - li.qty_received
+            if remaining > 0:
+                items.append({
+                    'line_item_id': li.pk,
+                    'qty_received': remaining,
+                })
+
+        if not items:
+            raise ValidationError('No items remaining to receive.')
+
+        return PurchaseOrderReceivingService.receive_items(po, items, user)
+
+    @staticmethod
+    def cancel_line_item(po, line_item_id, user, note=''):
+        """Cancel a line item that won't be shipped."""
+        from apps.core.models import HistoryEntry
+
+        if po.status not in (
+            PurchaseOrder.STATUS_ISSUED,
+            PurchaseOrder.STATUS_PARTLY_RECEIVED,
+        ):
+            raise ValidationError(
+                f'Cannot cancel line items on a PO in status "{po.status}".'
+            )
+
+        with transaction.atomic():
+            li = PurchaseOrderLineItem.objects.select_for_update().get(
+                pk=line_item_id, purchase_order=po,
+            )
+            if li.cancelled:
+                raise ValidationError(
+                    f'Line item #{li.line_number} is already cancelled.'
+                )
+            if li.qty_received >= li.qty:
+                raise ValidationError(
+                    f'Line item #{li.line_number} is already fully received.'
+                )
+
+            li.cancelled = True
+            li.save(update_fields=['cancelled'])
+
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='purchaseorder',
+                object_id=po.pk,
+                user=user,
+                changes={'_action': f'Line #{li.line_number} cancelled: {li.description}'},
+                text=note,
+            )
+
+            PurchaseOrderReceivingService._update_po_status(po)
+
+        return po
+
+    @staticmethod
+    def _update_po_status(po):
+        """Recalculate PO status based on line item receipt state."""
+        active_items = PurchaseOrderLineItem.objects.filter(
+            purchase_order=po, cancelled=False,
+        )
+        if not active_items.exists():
+            return
+
+        all_received = all(li.qty_received >= li.qty for li in active_items)
+        any_received = any(li.qty_received > 0 for li in active_items)
+
+        if all_received:
+            po.status = PurchaseOrder.STATUS_RECEIVED_IN_FULL
+            po.full_clean()
+            po.save()
+        elif any_received and po.status != PurchaseOrder.STATUS_PARTLY_RECEIVED:
+            po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
+            po.full_clean()
+            po.save()
 
 
 class PurchaseOrderEmailService:
@@ -323,12 +540,22 @@ class BillService:
         bill.delete()
 
     @staticmethod
+    def _validate_draft(bill):
+        if bill.status != Bill.STATUS_DRAFT:
+            raise ValidationError(
+                'Can only modify line items on draft bills.'
+            )
+
+    @staticmethod
     def add_line_item(bill_id, **kwargs):
-        """Add a manual line item to a bill."""
+        """Add a manual line item to a draft bill."""
         try:
             bill = Bill.objects.get(pk=bill_id)
         except Bill.DoesNotExist:
             raise NotFoundError(f'Bill {bill_id} not found')
+        BillService._validate_draft(bill)
+        from apps.core.services import LineItemService
+        kwargs = LineItemService.normalize_fk_kwargs(BillLineItem, kwargs)
         li = BillLineItem(bill=bill, **kwargs)
         li.full_clean()
         li.save()
@@ -336,12 +563,13 @@ class BillService:
 
     @staticmethod
     def add_line_item_from_pli(bill_id, price_list_item_id, qty):
-        """Add a line item from a PriceListItem."""
+        """Add a line item from a PriceListItem to a draft bill."""
         from apps.inventory.models import PriceListItem
         try:
             bill = Bill.objects.get(pk=bill_id)
         except Bill.DoesNotExist:
             raise NotFoundError(f'Bill {bill_id} not found')
+        BillService._validate_draft(bill)
         try:
             pli = PriceListItem.objects.get(pk=price_list_item_id)
         except PriceListItem.DoesNotExist:
@@ -358,6 +586,37 @@ class BillService:
         li.full_clean()
         li.save()
         return li
+
+    @staticmethod
+    def update_line_item(line_item_id, **kwargs):
+        """Update a bill line item — validates draft status."""
+        from apps.core.services import LineItemService
+        try:
+            li = BillLineItem.objects.get(pk=line_item_id)
+        except BillLineItem.DoesNotExist:
+            raise NotFoundError(f'BillLineItem {line_item_id} not found')
+        BillService._validate_draft(li.bill)
+        kwargs = LineItemService.normalize_fk_kwargs(BillLineItem, kwargs)
+        for field, value in kwargs.items():
+            setattr(li, field, value)
+        li.full_clean()
+        li.save()
+        return li
+
+    @staticmethod
+    def reorder_line_items(bill_id, item_ids):
+        """Reorder bill line items by position list — validates draft status."""
+        try:
+            bill = Bill.objects.get(pk=bill_id)
+        except Bill.DoesNotExist:
+            raise NotFoundError(f'Bill {bill_id} not found')
+        BillService._validate_draft(bill)
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            for position, item_id in enumerate(item_ids, start=1):
+                BillLineItem.objects.filter(
+                    pk=item_id, bill=bill,
+                ).update(line_number=position)
 
     @staticmethod
     def reorder_line_item(line_item_id, direction):

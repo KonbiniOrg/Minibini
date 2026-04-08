@@ -24,15 +24,18 @@ class InvoiceAPITest(BaseTestCase):
             self.assertIn('line_items', response.data)
 
     def test_add_line_item(self):
-        invoice = Invoice.objects.first()
-        if invoice:
-            response = self.client.post(f'/api/invoices/{invoice.pk}/line-items/', {
-                'qty': '1.00',
-                'units': 'hours',
-                'description': 'Consulting',
-                'price': '150.00',
-            }, format='json')
-            self.assertIn(response.status_code, [200, 201])
+        from apps.jobs.models import Job
+        job = Job.objects.first()
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-TEST-LI', status=Invoice.STATUS_DRAFT,
+        )
+        response = self.client.post(f'/api/invoices/{invoice.pk}/line-items/', {
+            'qty': '1.00',
+            'units': 'hours',
+            'description': 'Consulting',
+            'price': '150.00',
+        }, format='json')
+        self.assertIn(response.status_code, [200, 201])
 
     def test_cancel_invoice_requires_reason(self):
         invoice = Invoice.objects.first()

@@ -17,6 +17,7 @@ class BillSummarySerializer(serializers.ModelSerializer):
 
 class POLineItemSerializer(serializers.ModelSerializer):
     units = UnitsField()
+    received_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseOrderLineItem
@@ -24,8 +25,19 @@ class POLineItemSerializer(serializers.ModelSerializer):
             'line_item_id', 'line_number', 'task', 'price_list_item',
             'qty', 'units', 'description', 'price', 'job',
             'accounting_category', 'taxable_override', 'tax_rate_override',
+            'qty_received', 'received_by', 'received_by_name',
+            'received_date', 'receipt_note', 'cancelled',
         ]
-        read_only_fields = ['line_item_id']
+        read_only_fields = [
+            'line_item_id', 'qty_received', 'received_by', 'received_by_name',
+            'received_date', 'receipt_note', 'cancelled',
+        ]
+
+    def get_received_by_name(self, obj):
+        if obj.received_by:
+            return obj.received_by.get_full_name() or obj.received_by.username
+        return None
+
 
 
 class PurchaseOrderSerializer(serializers.ModelSerializer):

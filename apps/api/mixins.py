@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -98,9 +99,13 @@ class LineItemMixin:
     Subclasses declare:
         line_item_serializer_class = SomeLineItemSerializer
         line_item_parent_field = 'estimate'  # FK name on line item model
+        line_item_service_class = SomeService  # must have add_line_item, add_line_item_from_pli,
+                                               # update_line_item, delete_line_item,
+                                               # reorder_line_items
     """
     line_item_serializer_class = None
     line_item_parent_field = None
+    line_item_service_class = None
 
     @action(detail=True, methods=['get', 'post'], url_path='line-items', url_name='line-items')
     def line_items(self, request, pk=None):
@@ -110,9 +115,24 @@ class LineItemMixin:
             serializer = self.line_item_serializer_class(items, many=True)
             return Response(serializer.data)
 
-        serializer = self.line_item_serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(**{self.line_item_parent_field: parent})
+        service = self.line_item_service_class
+        data = request.data.copy()
+        pli_id = data.get('price_list_item')
+        has_manual_fields = data.get('description') or data.get('price')
+
+        try:
+            if pli_id and not has_manual_fields:
+                qty = data.get('qty', 0)
+                item = service.add_line_item_from_pli(parent.pk, pli_id, qty)
+            else:
+                item = service.add_line_item(parent.pk, **data)
+        except (ValidationError, NotFoundError) as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.line_item_serializer_class(item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['patch', 'delete'],
@@ -120,15 +140,26 @@ class LineItemMixin:
     def line_item_detail(self, request, pk=None, item_id=None):
         parent = self.get_object()
         item = self._get_line_item_or_404(parent, item_id)
+        service = self.line_item_service_class
 
         if request.method == 'DELETE':
-            from apps.core.services import LineItemService
-            LineItemService.delete_line_item_with_renumber(item)
+            try:
+                service.delete_line_item(item.pk)
+            except (ValidationError, Exception) as e:
+                return Response(
+                    {'detail': str(e)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             return Response({'message': 'Line item deleted.'})
 
-        serializer = self.line_item_serializer_class(item, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        try:
+            item = service.update_line_item(item.pk, **request.data)
+        except (ValidationError, NotFoundError) as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = self.line_item_serializer_class(item)
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'],
@@ -141,10 +172,15 @@ class LineItemMixin:
                 {'item_ids': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        items_qs = self._get_line_items_qs(parent)
-        for position, item_id in enumerate(item_ids, start=1):
-            items_qs.filter(pk=item_id).update(line_number=position)
-        items = items_qs.order_by('line_number')
+        service = self.line_item_service_class
+        try:
+            service.reorder_line_items(parent.pk, item_ids)
+        except (ValidationError, NotFoundError) as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        items = self._get_line_items_qs(parent)
         serializer = self.line_item_serializer_class(items, many=True)
         return Response(serializer.data)
 

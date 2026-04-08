@@ -12,6 +12,9 @@
     onReorder = null,
     onEditLineItem = null,
     onSend = null,
+    onReceiveAll = null,
+    onReceiveItems = null,
+    onCancelLineItem = null,
   } = $props();
 
   let lineItems = $derived(
@@ -24,6 +27,14 @@
 
   let editingId = $state(null);
   let editForm = $state({});
+
+  let canReceive = $derived(
+    po.status === 'issued' || po.status === 'partly_received'
+  );
+
+  let showReceived = $derived(
+    po.status === 'issued' || po.status === 'partly_received' || po.status === 'received_in_full'
+  );
 
   function formatDate(d) {
     if (!d) return '—';
@@ -72,9 +83,11 @@
     editForm = {};
   }
 
-  let isReceiving = $derived(
-    po.status === 'partly_received' || po.status === 'received_in_full'
-  );
+  function handleCancelLine(li) {
+    const note = prompt(`Cancel line #${li.line_number} "${li.description}"?\nOptional note:`);
+    if (note === null) return;
+    onCancelLineItem(li.line_item_id, note);
+  }
 </script>
 
 <h2>Purchase Order {po.po_number}</h2>
@@ -107,22 +120,24 @@
   <p><strong>Cancelled:</strong> {formatDate(po.cancel_date)}</p>
 {/if}
 
-{#if canManageFinancials}
-  <div class="action-bar">
-    {#if po.status === 'draft'}
-      <button onclick={onSend} disabled={busy || !lineItems.length}>Issue & Send</button>
-      <button onclick={onIssue} disabled={busy || !lineItems.length}>Mark as Issued</button>
-      <a href="#/purchase-orders/{po.po_id}/edit"><button disabled={busy}>Edit</button></a>
-      <button onclick={onDelete} disabled={busy}>Delete</button>
-    {/if}
-    {#if po.status === 'issued' || po.status === 'partly_received'}
-      <button onclick={onSend} disabled={busy}>Resend</button>
-    {/if}
-    {#if po.status === 'issued'}
-      <button onclick={onCancel} disabled={busy}>Cancel</button>
-    {/if}
-  </div>
-{/if}
+<div class="action-bar">
+  {#if canManageFinancials && po.status === 'draft'}
+    <button onclick={onSend} disabled={busy || !lineItems.length}>Issue & Send</button>
+    <button onclick={onIssue} disabled={busy || !lineItems.length}>Mark as Issued</button>
+    <a href="#/purchase-orders/{po.po_id}/edit"><button disabled={busy}>Edit</button></a>
+    <button onclick={onDelete} disabled={busy}>Delete</button>
+  {/if}
+  {#if canManageFinancials && (po.status === 'issued' || po.status === 'partly_received')}
+    <button onclick={onSend} disabled={busy}>Resend</button>
+  {/if}
+  {#if canReceive}
+    <button onclick={onReceiveAll} disabled={busy}>Receive All</button>
+    <button onclick={onReceiveItems} disabled={busy}>Receive Items</button>
+  {/if}
+  {#if canManageFinancials && po.status === 'issued'}
+    <button onclick={onCancel} disabled={busy}>Cancel PO</button>
+  {/if}
+</div>
 
 <h3>Line Items</h3>
 {#if lineItems.length === 0}
@@ -137,10 +152,14 @@
         <th>Units</th>
         <th class="text-right">Price</th>
         <th class="text-right">Total</th>
-        {#if isReceiving}
+        {#if showReceived}
           <th class="text-right">Received</th>
+          <th>Status</th>
         {/if}
         {#if canManageFinancials && po.status === 'draft'}
+          <th>Actions</th>
+        {/if}
+        {#if canReceive}
           <th>Actions</th>
         {/if}
       </tr>
@@ -161,22 +180,35 @@
             </td>
           </tr>
         {:else}
-          <tr>
+          <tr class:cancelled-row={li.cancelled}>
             <td>{li.line_number}</td>
             <td>{li.description}</td>
             <td class="text-right">{li.qty}</td>
             <td>{li.units || ''}</td>
             <td class="text-right">${Number(li.price).toFixed(2)}</td>
             <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
-            {#if isReceiving}
+            {#if showReceived}
               <td class="text-right">
-                {#if li.qty_received}
+                {#if li.cancelled}
+                  —
+                {:else if Number(li.qty_received) > 0}
                   {li.qty_received}
                   {#if li.received_date}
                     <br><small>{formatDate(li.received_date)}</small>
                   {/if}
                 {:else}
-                  —
+                  0
+                {/if}
+              </td>
+              <td>
+                {#if li.cancelled}
+                  <span class="line-status cancelled">Cancelled</span>
+                {:else if Number(li.qty_received) >= Number(li.qty)}
+                  <span class="line-status received">Received</span>
+                {:else if Number(li.qty_received) > 0}
+                  <span class="line-status partial">Partial</span>
+                {:else}
+                  <span class="line-status pending">Pending</span>
                 {/if}
               </td>
             {/if}
@@ -188,6 +220,13 @@
                 <button onclick={() => onDeleteLineItem(li)}>Delete</button>
               </td>
             {/if}
+            {#if canReceive}
+              <td>
+                {#if !li.cancelled && Number(li.qty_received) < Number(li.qty)}
+                  <button onclick={() => handleCancelLine(li)}>Cancel Line</button>
+                {/if}
+              </td>
+            {/if}
           </tr>
         {/if}
       {/each}
@@ -196,10 +235,10 @@
       <tr>
         <td colspan="5" class="text-right"><strong>Total</strong></td>
         <td class="text-right"><strong>${total.toFixed(2)}</strong></td>
-        {#if isReceiving}
-          <td></td>
+        {#if showReceived}
+          <td></td><td></td>
         {/if}
-        {#if canManageFinancials && po.status === 'draft'}
+        {#if (canManageFinancials && po.status === 'draft') || canReceive}
           <td></td>
         {/if}
       </tr>
@@ -219,7 +258,7 @@
   .status-partly_received { background: #fef3c7; color: #92400e; }
   .status-received_in_full { background: #d1fae5; color: #065f46; }
   .status-cancelled { background: #fee2e2; color: #991b1b; }
-  .action-bar { display: flex; gap: 8px; margin: 12px 0; }
+  .action-bar { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
   .action-bar button {
     padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;
     background: #fff; cursor: pointer; font-size: 13px;
@@ -227,4 +266,13 @@
   .action-bar button:hover { background: #f3f4f6; }
   .action-bar button:disabled { opacity: 0.5; cursor: default; }
   small { color: #666; }
+  .cancelled-row { opacity: 0.5; text-decoration: line-through; }
+  .line-status {
+    font-size: 11px; font-weight: 600; padding: 2px 8px;
+    border-radius: 8px; white-space: nowrap;
+  }
+  .line-status.received { background: #d1fae5; color: #065f46; }
+  .line-status.partial { background: #fef3c7; color: #92400e; }
+  .line-status.pending { background: #f3f4f6; color: #374151; }
+  .line-status.cancelled { background: #fee2e2; color: #991b1b; }
 </style>

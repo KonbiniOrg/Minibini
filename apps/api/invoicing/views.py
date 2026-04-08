@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.invoicing.models import Invoice
+from apps.invoicing.services import InvoiceService
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
 from apps.api.permissions import CanManageFinancials
 from .serializers import InvoiceSerializer, InvoiceLineItemSerializer
@@ -23,6 +24,7 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
     # Line item mixin config
     line_item_serializer_class = InvoiceLineItemSerializer
     line_item_parent_field = 'invoice'
+    line_item_service_class = InvoiceService
 
     status_actions = {
         'cancel': {

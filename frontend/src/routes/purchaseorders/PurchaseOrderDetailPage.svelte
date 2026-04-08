@@ -5,6 +5,7 @@
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
   import SendPODialog from '../../components/purchaseorders/SendPODialog.svelte';
+  import ReceiveItemsForm from '../../components/purchaseorders/ReceiveItemsForm.svelte';
   import HistoryPanel from '../../components/HistoryPanel.svelte';
 
   const { params = {} } = $props();
@@ -18,6 +19,7 @@
   let success = $state(null);
   let showAddLineItem = $state(false);
   let showSendDialog = $state(false);
+  let showReceiveForm = $state(false);
   let busy = $state(false);
 
   let canManageFinancials = $derived(
@@ -142,6 +144,56 @@
     }
   }
 
+  async function handleReceiveAll() {
+    if (!confirm('Receive all remaining items?')) return;
+    busy = true;
+    error = null;
+    success = null;
+    try {
+      await api.post(`/api/purchase-orders/${po.po_id}/receive-all/`);
+      success = 'All items received.';
+      await reload();
+    } catch (e) {
+      error = e.data?.detail || e.message;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function handleReceiveItems(items) {
+    busy = true;
+    error = null;
+    success = null;
+    try {
+      await api.post(`/api/purchase-orders/${po.po_id}/receive/`, { items });
+      showReceiveForm = false;
+      success = 'Items received.';
+      await reload();
+    } catch (e) {
+      error = e.data?.detail || e.message;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function handleCancelLineItem(lineItemId, note) {
+    busy = true;
+    error = null;
+    success = null;
+    try {
+      await api.post(`/api/purchase-orders/${po.po_id}/cancel-line-item/`, {
+        line_item_id: lineItemId,
+        note,
+      });
+      success = 'Line item cancelled.';
+      await reload();
+    } catch (e) {
+      error = e.data?.detail || e.message;
+    } finally {
+      busy = false;
+    }
+  }
+
   async function handleAddNote(text) {
     try {
       await api.post(`/api/purchase-orders/${params.id}/notes/`, { text });
@@ -186,6 +238,9 @@
     onEditLineItem={handleEditLineItem}
     onReorder={handleReorder}
     onSend={() => { showSendDialog = true; }}
+    onReceiveAll={handleReceiveAll}
+    onReceiveItems={() => { showReceiveForm = true; }}
+    onCancelLineItem={handleCancelLineItem}
   />
 
   {#if showSendDialog}
@@ -193,6 +248,14 @@
       poId={po.po_id}
       onSuccess={() => { showSendDialog = false; success = 'Purchase order sent.'; reload(); }}
       onCancel={() => { showSendDialog = false; }}
+    />
+  {/if}
+
+  {#if showReceiveForm}
+    <ReceiveItemsForm
+      lineItems={po.line_items || []}
+      onSubmit={handleReceiveItems}
+      onCancel={() => { showReceiveForm = false; }}
     />
   {/if}
 

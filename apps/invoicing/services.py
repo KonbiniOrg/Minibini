@@ -11,6 +11,85 @@ class InvoiceService:
     """Service for invoice operations."""
 
     @staticmethod
+    def _validate_draft(invoice):
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError(
+                'Can only modify line items on draft invoices.'
+            )
+
+    @staticmethod
+    def add_line_item(invoice_pk, **kwargs):
+        """Add a manual line item to a draft invoice."""
+        try:
+            invoice = Invoice.objects.get(pk=invoice_pk)
+        except Invoice.DoesNotExist:
+            raise NotFoundError(f'Invoice {invoice_pk} not found')
+        InvoiceService._validate_draft(invoice)
+        from apps.core.services import LineItemService
+        kwargs = LineItemService.normalize_fk_kwargs(InvoiceLineItem, kwargs)
+        li = InvoiceLineItem(invoice=invoice, **kwargs)
+        li.full_clean()
+        li.save()
+        return li
+
+    @staticmethod
+    def add_line_item_from_pli(invoice_pk, pli_pk, qty):
+        """Add a line item from a PriceListItem to a draft invoice."""
+        from apps.inventory.models import PriceListItem
+        try:
+            invoice = Invoice.objects.get(pk=invoice_pk)
+        except Invoice.DoesNotExist:
+            raise NotFoundError(f'Invoice {invoice_pk} not found')
+        InvoiceService._validate_draft(invoice)
+        try:
+            pli = PriceListItem.objects.get(pk=pli_pk)
+        except PriceListItem.DoesNotExist:
+            raise NotFoundError(f'PriceListItem {pli_pk} not found')
+        li = InvoiceLineItem(
+            invoice=invoice,
+            price_list_item=pli,
+            description=pli.description,
+            qty=qty,
+            units=pli.units,
+            price=pli.selling_price,
+            accounting_category=pli.accounting_category,
+        )
+        li.full_clean()
+        li.save()
+        return li
+
+    @staticmethod
+    def update_line_item(line_item_id, **kwargs):
+        """Update an invoice line item — validates draft status."""
+        try:
+            li = InvoiceLineItem.objects.get(pk=line_item_id)
+        except InvoiceLineItem.DoesNotExist:
+            raise NotFoundError(f'InvoiceLineItem {line_item_id} not found')
+        InvoiceService._validate_draft(li.invoice)
+        from apps.core.services import LineItemService
+        kwargs = LineItemService.normalize_fk_kwargs(InvoiceLineItem, kwargs)
+        for field, value in kwargs.items():
+            setattr(li, field, value)
+        li.full_clean()
+        li.save()
+        return li
+
+    @staticmethod
+    def reorder_line_items(invoice_pk, item_ids):
+        """Reorder invoice line items by position list — validates draft status."""
+        try:
+            invoice = Invoice.objects.get(pk=invoice_pk)
+        except Invoice.DoesNotExist:
+            raise NotFoundError(f'Invoice {invoice_pk} not found')
+        InvoiceService._validate_draft(invoice)
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            for position, item_id in enumerate(item_ids, start=1):
+                InvoiceLineItem.objects.filter(
+                    pk=item_id, invoice=invoice,
+                ).update(line_number=position)
+
+    @staticmethod
     def reorder_line_item(line_item_id, direction):
         """Reorder an invoice line item — validates draft status, delegates to LineItemService."""
         from apps.core.services import LineItemService
