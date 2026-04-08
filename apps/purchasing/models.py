@@ -370,7 +370,7 @@ class PurchaseOrderLineItem(BaseLineItem):
     )
     received_date = models.DateTimeField(null=True, blank=True)
     receipt_note = models.TextField(blank=True, default='')
-    cancelled = models.BooleanField(default=False)
+    qty_cancelled = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
     class Meta:
         db_table = 'po_li'
