@@ -58,6 +58,12 @@ Resets `qty_received` to 0, undoing all receiving on the line item. Full reversa
 - Creates HistoryEntry recording the reversal and the quantity reversed
 - Triggers `_update_po_status`
 
+### PO-Level Cancellation (`cancel_po`)
+
+`PurchaseOrderService.cancel_po` is updated to also set `qty_cancelled = qty - qty_received` on all line items when a PO is cancelled. This ensures line item data is consistent regardless of whether cancellation was triggered at the PO level or auto-triggered by cancelling all line items individually.
+
+**Preconditions:** PO status is ISSUED (unchanged — a PARTLY_RECEIVED PO cannot be cancelled because goods have already been received).
+
 ### PO Status Calculation (`_update_po_status`)
 
 Replaces the current logic that filters on `cancelled=False`.
@@ -68,8 +74,16 @@ Replaces the current logic that filters on `cancelled=False`.
 Status rules:
 - **RECEIVED_IN_FULL**: all items are done AND at least one has `qty_received > 0`
 - **PARTLY_RECEIVED**: any item has `qty_received > 0` AND not all items are done
-- **CANCELLED**: all items are done AND none have `qty_received > 0` (everything was cancelled, nothing received). Auto-sets `cancel_date`.
-- Otherwise: no status change (stays ISSUED)
+- **CANCELLED**: all items are done AND none have `qty_received > 0` — delegates to `cancel_po` which handles status change and sets `qty_cancelled` on all line items
+- **ISSUED**: nothing received, not all done (e.g., after receipt reversal)
+
+### PO Status Transitions
+
+Updated valid transitions:
+- `ISSUED → PARTLY_RECEIVED, RECEIVED_IN_FULL, CANCELLED` (unchanged)
+- `PARTLY_RECEIVED → RECEIVED_IN_FULL` (unchanged — no path to CANCELLED from here)
+- `RECEIVED_IN_FULL → PARTLY_RECEIVED, ISSUED` (new — for receipt reversal)
+- `CANCELLED → (terminal)` (unchanged)
 
 ## API Changes
 

@@ -53,9 +53,10 @@ git commit -m "feat: replace cancelled boolean with qty_cancelled on PO line ite
 ### Task 2: Expand PO status transitions
 
 The model's `clean()` method defines valid transitions. We need:
-- `PARTLY_RECEIVED → CANCELLED` (auto-cancel when all items fully cancelled, none received)
 - `RECEIVED_IN_FULL → PARTLY_RECEIVED` (receipt reversal brings PO back)
 - `RECEIVED_IN_FULL → ISSUED` (receipt reversal when ALL items reversed to 0)
+
+Note: `PARTLY_RECEIVED → CANCELLED` is NOT needed. If a PO is partly received, goods have been received — the PO can't be fully cancelled. The auto-cancel only fires when all items are cancelled with nothing received, meaning the PO is still in ISSUED status.
 
 **Files:**
 - Test: `tests/test_po_receiving.py`
@@ -67,14 +68,6 @@ Add to `tests/test_po_receiving.py`:
 
 ```python
 class POStatusTransitionTest(POReceivingTestBase):
-
-    def test_partly_received_to_cancelled_allowed(self):
-        """PO can transition from partly_received to cancelled (all items cancelled)."""
-        po = self._make_issued_po()
-        po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
-        po.save()
-        po.status = PurchaseOrder.STATUS_CANCELLED
-        po.full_clean()  # Should not raise
 
     def test_received_in_full_to_partly_received_allowed(self):
         """PO can go back to partly_received after receipt reversal."""
@@ -95,12 +88,21 @@ class POStatusTransitionTest(POReceivingTestBase):
         po.save()
         po.status = PurchaseOrder.STATUS_ISSUED
         po.full_clean()  # Should not raise
+
+    def test_partly_received_to_cancelled_not_allowed(self):
+        """PO cannot go from partly_received to cancelled directly."""
+        po = self._make_issued_po()
+        po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
+        po.save()
+        po.status = PurchaseOrder.STATUS_CANCELLED
+        with self.assertRaises(ValidationError):
+            po.full_clean()
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `python manage.py test tests.test_po_receiving.POStatusTransitionTest -v 2`
-Expected: FAIL — `ValidationError` on the disallowed transitions.
+Expected: FAIL — `ValidationError` on the `RECEIVED_IN_FULL` transitions (currently terminal); the `PARTLY_RECEIVED → CANCELLED` test should pass already (it's already disallowed).
 
 - [ ] **Step 3: Update the valid transitions**
 
@@ -110,7 +112,7 @@ In `apps/purchasing/models.py`, update the `VALID_TRANSITIONS` dict inside `Purc
 VALID_TRANSITIONS = {
     PurchaseOrder.STATUS_DRAFT: [PurchaseOrder.STATUS_ISSUED],
     PurchaseOrder.STATUS_ISSUED: [PurchaseOrder.STATUS_PARTLY_RECEIVED, PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED],
-    PurchaseOrder.STATUS_PARTLY_RECEIVED: [PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED],
+    PurchaseOrder.STATUS_PARTLY_RECEIVED: [PurchaseOrder.STATUS_RECEIVED_IN_FULL],
     PurchaseOrder.STATUS_RECEIVED_IN_FULL: [PurchaseOrder.STATUS_PARTLY_RECEIVED, PurchaseOrder.STATUS_ISSUED],
     PurchaseOrder.STATUS_CANCELLED: [],  # Terminal state
 }
@@ -130,16 +132,17 @@ Expected: All pass. (Some existing tests that reference `li.cancelled` will fail
 
 ```bash
 git add apps/purchasing/models.py tests/test_po_receiving.py
-git commit -m "feat: expand PO status transitions for cancellation and receipt reversal"
+git commit -m "feat: expand PO status transitions for receipt reversal"
 ```
 
 ---
 
-### Task 3: Refactor `cancel_line_item` to use `qty_cancelled`
+### Task 3: Refactor `cancel_line_item`, `cancel_po`, and `_update_po_status`
 
 **Files:**
 - Test: `tests/test_po_receiving.py` (update `CancelLineItemTest`)
-- Modify: `apps/purchasing/services.py:295-357`
+- Test: `tests/test_purchasing_services.py` (update `cancel_po` test)
+- Modify: `apps/purchasing/services.py` (PurchaseOrderService.cancel_po, PurchaseOrderReceivingService.cancel_line_item, _update_po_status)
 
 - [ ] **Step 1: Rewrite the cancel line item tests**
 
@@ -237,7 +240,7 @@ class CancelLineItemTest(POReceivingTestBase):
         self.assertEqual(response.data['status'], PurchaseOrder.STATUS_RECEIVED_IN_FULL)
 
     def test_cancel_all_lines_no_receipts_cancels_po(self):
-        """If all lines are fully cancelled with nothing received, PO auto-cancels."""
+        """If all lines are fully cancelled with nothing received, PO auto-cancels via cancel_po."""
         po = self._make_issued_po(num_items=2)
         items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
         # Cancel first item
@@ -246,7 +249,7 @@ class CancelLineItemTest(POReceivingTestBase):
             {'line_item_id': items[0].pk},
             format='json',
         )
-        # Cancel second item
+        # Cancel second item — should trigger auto-cancel of PO
         response = self.client.post(
             f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
             {'line_item_id': items[1].pk},
@@ -254,16 +257,179 @@ class CancelLineItemTest(POReceivingTestBase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['status'], PurchaseOrder.STATUS_CANCELLED)
+        # Verify cancel_po set qty_cancelled on ALL line items
+        for li in PurchaseOrderLineItem.objects.filter(purchase_order=po):
+            self.assertEqual(li.qty_cancelled, li.qty)
+
+
+class POStatusAutoTransitionTest(POReceivingTestBase):
+    """Comprehensive tests for PO status auto-transitions across multi-line scenarios."""
+
+    def test_receive_one_cancel_other_gives_received_in_full(self):
+        """2 items: receive one fully, cancel the other → RECEIVED_IN_FULL."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        # Receive first item fully
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': items[0].pk, 'qty_received': float(items[0].qty)}]},
+            format='json',
+        )
+        # Cancel second item
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_RECEIVED_IN_FULL)
+
+    def test_receive_one_cancel_other_then_reverse_gives_issued(self):
+        """2 items: receive one, cancel other → RECEIVED_IN_FULL. Reverse receipt → ISSUED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        # Receive first, cancel second
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': items[0].pk, 'qty_received': float(items[0].qty)}]},
+            format='json',
+        )
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        # Reverse the received item
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_ISSUED)
+
+    def test_partial_receive_cancel_other_gives_partly_received(self):
+        """2 items: receive one partially, cancel the other → PARTLY_RECEIVED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        # Partial receive first item
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': items[0].pk, 'qty_received': 3}]},
+            format='json',
+        )
+        # Cancel second item
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_PARTLY_RECEIVED)
+
+    def test_partial_receive_cancel_other_then_reverse_gives_issued(self):
+        """2 items: partial receive one, cancel other → PARTLY_RECEIVED. Reverse → ISSUED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        # Partial receive, cancel other
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/receive/',
+            {'items': [{'line_item_id': items[0].pk, 'qty_received': 3}]},
+            format='json',
+        )
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        # Reverse the partial receipt
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_ISSUED)
+
+    def test_cancel_both_lines_cancels_po_with_line_items_set(self):
+        """2 items: cancel both → CANCELLED. All line items have qty_cancelled == qty."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/cancel-line-item/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_CANCELLED)
+        for li in PurchaseOrderLineItem.objects.filter(purchase_order=po):
+            self.assertEqual(li.qty_cancelled, li.qty)
+
+    def test_receive_all_then_reverse_one_gives_partly_received(self):
+        """Receive all → RECEIVED_IN_FULL. Reverse one → PARTLY_RECEIVED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(f'/api/purchase-orders/{po.po_id}/receive-all/')
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_PARTLY_RECEIVED)
+
+    def test_receive_all_then_reverse_all_gives_issued(self):
+        """Receive all → RECEIVED_IN_FULL. Reverse both → ISSUED."""
+        po = self._make_issued_po(num_items=2)
+        items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+        self.client.post(f'/api/purchase-orders/{po.po_id}/receive-all/')
+        self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[0].pk},
+            format='json',
+        )
+        response = self.client.post(
+            f'/api/purchase-orders/{po.po_id}/reverse-receipt/',
+            {'line_item_id': items[1].pk},
+            format='json',
+        )
+        self.assertEqual(response.data['status'], PurchaseOrder.STATUS_ISSUED)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python manage.py test tests.test_po_receiving.CancelLineItemTest -v 2`
+Run: `python manage.py test tests.test_po_receiving.CancelLineItemTest tests.test_po_receiving.POStatusAutoTransitionTest -v 2`
 Expected: FAIL — `cancelled` field no longer exists, and service still uses old logic.
 
-- [ ] **Step 3: Rewrite `cancel_line_item` and `_update_po_status` in services.py**
+- [ ] **Step 3: Update `cancel_po` to also set `qty_cancelled` on all line items**
 
-In `apps/purchasing/services.py`, replace `cancel_line_item` and `_update_po_status`:
+In `apps/purchasing/services.py`, update `PurchaseOrderService.cancel_po`:
+
+```python
+@staticmethod
+def cancel_po(pk):
+    """Cancel an issued PO and mark all line items as cancelled."""
+    try:
+        po = PurchaseOrder.objects.get(pk=pk)
+    except PurchaseOrder.DoesNotExist:
+        raise NotFoundError(f'PurchaseOrder {pk} not found')
+    if po.status != PurchaseOrder.STATUS_ISSUED:
+        raise ValidationError(
+            f'Cannot cancel PO {po.po_number}. Only issued POs can be cancelled.'
+        )
+    with transaction.atomic():
+        po.status = PurchaseOrder.STATUS_CANCELLED
+        po.full_clean()
+        po.save()
+        # Set qty_cancelled on all line items
+        for li in PurchaseOrderLineItem.objects.filter(purchase_order=po):
+            li.qty_cancelled = li.qty - li.qty_received
+            li.save(update_fields=['qty_cancelled'])
+    return po
+```
+
+- [ ] **Step 4: Rewrite `cancel_line_item` and `_update_po_status`**
+
+In `apps/purchasing/services.py`, replace `cancel_line_item` and `_update_po_status` in `PurchaseOrderReceivingService`:
 
 ```python
 @staticmethod
@@ -321,11 +487,11 @@ def _update_po_status(po):
             po.full_clean()
             po.save()
     elif all_done and not any_received:
-        # Everything cancelled, nothing received — cancel the PO
+        # Everything cancelled, nothing received — delegate to cancel_po
+        # which handles status change AND sets qty_cancelled on all line items
         if po.status != PurchaseOrder.STATUS_CANCELLED:
-            po.status = PurchaseOrder.STATUS_CANCELLED
-            po.full_clean()
-            po.save()
+            PurchaseOrderService.cancel_po(po.pk)
+            po.refresh_from_db()
     elif any_received:
         if po.status != PurchaseOrder.STATUS_PARTLY_RECEIVED:
             po.status = PurchaseOrder.STATUS_PARTLY_RECEIVED
@@ -339,7 +505,7 @@ def _update_po_status(po):
             po.save()
 ```
 
-- [ ] **Step 4: Update `receive_items` to check `qty_cancelled` instead of `cancelled`**
+- [ ] **Step 5: Update `receive_items` to check `qty_cancelled` instead of `cancelled`**
 
 In `apps/purchasing/services.py`, in the `receive_items` method, replace the cancelled check (around line 222-225):
 
@@ -357,7 +523,7 @@ if li.qty_received + li.qty_cancelled >= li.qty:
     )
 ```
 
-- [ ] **Step 5: Update `receive_all` to use `qty_cancelled` instead of `cancelled=False`**
+- [ ] **Step 6: Update `receive_all` to use `qty_cancelled` instead of `cancelled=False`**
 
 In `apps/purchasing/services.py`, in the `receive_all` method, replace the queryset filter (around line 278-283):
 
@@ -379,12 +545,26 @@ for li in line_items:
     if remaining > 0:
 ```
 
-- [ ] **Step 6: Run cancel tests to verify they pass**
+- [ ] **Step 7: Run cancel and auto-transition tests to verify they pass**
 
-Run: `python manage.py test tests.test_po_receiving.CancelLineItemTest -v 2`
+Run: `python manage.py test tests.test_po_receiving.CancelLineItemTest tests.test_po_receiving.POStatusAutoTransitionTest -v 2`
 Expected: PASS
 
-- [ ] **Step 7: Update remaining receive tests that reference `cancelled`**
+- [ ] **Step 8: Update `cancel_po` test in test_purchasing_services.py**
+
+Update the existing `cancel_po` test to verify that line items get `qty_cancelled` set:
+
+```python
+def test_cancel_po(self):
+    po = self._create_issued_po()
+    cancelled = PurchaseOrderService.cancel_po(po.pk)
+    self.assertEqual(cancelled.status, PurchaseOrder.STATUS_CANCELLED)
+    # Verify all line items have qty_cancelled set
+    for li in PurchaseOrderLineItem.objects.filter(purchase_order=po):
+        self.assertEqual(li.qty_cancelled, li.qty)
+```
+
+- [ ] **Step 9: Update remaining receive tests that reference `cancelled`**
 
 In `tests/test_po_receiving.py`, update `test_receive_cancelled_line_rejected` in `ReceiveItemsTest`:
 
@@ -416,16 +596,16 @@ def test_line_items_include_receiving_fields(self):
     self.assertIn('received_by_name', li)
 ```
 
-- [ ] **Step 8: Run full receiving test suite**
+- [ ] **Step 10: Run full receiving test suite**
 
 Run: `python manage.py test tests.test_po_receiving -v 2`
 Expected: All pass.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add apps/purchasing/services.py tests/test_po_receiving.py
-git commit -m "feat: refactor cancel_line_item to use qty_cancelled, update status logic"
+git add apps/purchasing/services.py tests/test_po_receiving.py tests/test_purchasing_services.py
+git commit -m "feat: refactor cancel_line_item to use qty_cancelled, route auto-cancel through cancel_po"
 ```
 
 ---
