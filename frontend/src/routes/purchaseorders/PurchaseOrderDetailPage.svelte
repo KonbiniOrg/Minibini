@@ -194,6 +194,24 @@
     }
   }
 
+  async function handleReverseReceipt(lineItemId, note) {
+    busy = true;
+    error = null;
+    success = null;
+    try {
+      await api.post(`/api/purchase-orders/${po.po_id}/reverse-receipt/`, {
+        line_item_id: lineItemId,
+        note,
+      });
+      success = 'Receipt reversed.';
+      await reload();
+    } catch (e) {
+      error = e.data?.detail || e.message;
+    } finally {
+      busy = false;
+    }
+  }
+
   async function handleAddNote(text) {
     try {
       await api.post(`/api/purchase-orders/${params.id}/notes/`, { text });
@@ -241,6 +259,7 @@
     onReceiveAll={handleReceiveAll}
     onReceiveItems={() => { showReceiveForm = true; }}
     onCancelLineItem={handleCancelLineItem}
+    onReverseReceipt={handleReverseReceipt}
   />
 
   {#if showSendDialog}

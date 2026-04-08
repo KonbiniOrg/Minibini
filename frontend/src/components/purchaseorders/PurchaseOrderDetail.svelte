@@ -15,6 +15,7 @@
     onReceiveAll = null,
     onReceiveItems = null,
     onCancelLineItem = null,
+    onReverseReceipt = null,
   } = $props();
 
   let lineItems = $derived(
@@ -87,6 +88,12 @@
     const note = prompt(`Cancel line #${li.line_number} "${li.description}"?\nOptional note:`);
     if (note === null) return;
     onCancelLineItem(li.line_item_id, note);
+  }
+
+  function handleReverseLine(li) {
+    const note = prompt(`Reverse receipt for line #${li.line_number} "${li.description}"?\nThis will undo all received quantity.\nOptional note:`);
+    if (note === null) return;
+    onReverseReceipt(li.line_item_id, note);
   }
 </script>
 
@@ -180,7 +187,7 @@
             </td>
           </tr>
         {:else}
-          <tr class:cancelled-row={li.cancelled}>
+          <tr class:cancelled-row={Number(li.qty_cancelled) >= Number(li.qty)}>
             <td>{li.line_number}</td>
             <td>{li.description}</td>
             <td class="text-right">{li.qty}</td>
@@ -189,10 +196,13 @@
             <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
             {#if showReceived}
               <td class="text-right">
-                {#if li.cancelled}
+                {#if Number(li.qty_cancelled) >= Number(li.qty)}
                   —
                 {:else if Number(li.qty_received) > 0}
                   {li.qty_received}
+                  {#if Number(li.qty_cancelled) > 0}
+                    <br><small>({li.qty_cancelled} cancelled)</small>
+                  {/if}
                   {#if li.received_date}
                     <br><small>{formatDate(li.received_date)}</small>
                   {/if}
@@ -201,9 +211,9 @@
                 {/if}
               </td>
               <td>
-                {#if li.cancelled}
+                {#if Number(li.qty_received) + Number(li.qty_cancelled) >= Number(li.qty) && Number(li.qty_cancelled) >= Number(li.qty)}
                   <span class="line-status cancelled">Cancelled</span>
-                {:else if Number(li.qty_received) >= Number(li.qty)}
+                {:else if Number(li.qty_received) + Number(li.qty_cancelled) >= Number(li.qty)}
                   <span class="line-status received">Received</span>
                 {:else if Number(li.qty_received) > 0}
                   <span class="line-status partial">Partial</span>
@@ -220,10 +230,13 @@
                 <button onclick={() => onDeleteLineItem(li)}>Delete</button>
               </td>
             {/if}
-            {#if canReceive}
+            {#if showReceived}
               <td>
-                {#if !li.cancelled && Number(li.qty_received) < Number(li.qty)}
+                {#if Number(li.qty_received) + Number(li.qty_cancelled) < Number(li.qty) && canReceive}
                   <button onclick={() => handleCancelLine(li)}>Cancel Line</button>
+                {/if}
+                {#if Number(li.qty_received) > 0}
+                  <button onclick={() => handleReverseLine(li)}>Reverse Receipt</button>
                 {/if}
               </td>
             {/if}

@@ -7,7 +7,7 @@
 
   // Only show lines that still need receiving
   let receivableItems = $derived(
-    lineItems.filter(li => !li.cancelled && Number(li.qty_received) < Number(li.qty))
+    lineItems.filter(li => Number(li.qty_received) + Number(li.qty_cancelled) < Number(li.qty))
   );
 
   let entries = $state([]);
