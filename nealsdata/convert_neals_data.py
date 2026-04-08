@@ -1222,8 +1222,9 @@ class NealsDataConverter:
             # PO Line Item
             po_item_pk = self.get_next_pk('purchasing.purchaseorderlineitem')
 
-            qty = self._parse_decimal(item_row.get('Quantity', 1))
-            price = self._parse_decimal(item_row.get('Net Value', 0))
+            qty = self._parse_decimal(item_row.get('Quantity', 1)) or Decimal('1')
+            net_value = abs(self._parse_decimal(item_row.get('Net Value', 0)))
+            price = net_value / qty
 
             self.add_fixture('purchasing.purchaseorderlineitem', po_item_pk, {
                 'purchase_order': po_pk,
@@ -2187,8 +2188,9 @@ class NealsDataConverter:
 
             ln = 1
             for item in bill_line_items:
-                qty = self._parse_decimal(item.get('Quantity', 1))
-                price = self._parse_decimal(item.get('Net Value', 0))
+                qty = self._parse_decimal(item.get('Quantity', 1)) or Decimal('1')
+                net_value = abs(self._parse_decimal(item.get('Net Value', 0)))
+                price = net_value / qty
 
                 po_li_pk = self.get_next_pk('purchasing.purchaseorderlineitem')
                 self.add_fixture('purchasing.purchaseorderlineitem', po_li_pk, {
