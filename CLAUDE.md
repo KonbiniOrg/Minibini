@@ -252,6 +252,8 @@ with transaction.atomic():
 
 **Types:** Pass correct types to model fields (don't wrap numbers in `str()`).
 
+**`__init__.py` files:** Keep `__init__.py` files empty (or limited to re-exports). Do not put service classes, models, or other substantial code in `__init__.py`. Use dedicated modules instead (e.g., `services.py`, not `services/__init__.py`).
+
 **Field renames:** After migration renames, grep entire codebase for old field name. Python silently allows setting arbitrary attributes on model instances.
 
 **Permissions:** Always check permissions in views:
