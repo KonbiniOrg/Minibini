@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.jobs.models import Blep, Task
-from apps.jobs.services.blep_service import BlepService, BlepPermissionError
+from apps.jobs.services import BlepService, BlepPermissionError
 from apps.api.bleps.serializers import BlepSerializer
 
 

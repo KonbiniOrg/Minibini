@@ -32,13 +32,13 @@ class PipelineSubStatusTest(FixtureTestCase):
         )
 
     def test_needs_scoping_when_no_worksheet(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job()
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'needs-scoping')
 
     def test_estimating_when_worksheet_in_draft(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job()
         estimate = Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
@@ -48,7 +48,7 @@ class PipelineSubStatusTest(FixtureTestCase):
         self.assertEqual(result, 'estimating')
 
     def test_estimate_ready_when_worksheet_final_estimate_draft(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job()
         estimate = Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
@@ -60,7 +60,7 @@ class PipelineSubStatusTest(FixtureTestCase):
         self.assertEqual(result, 'estimate-ready')
 
     def test_awaiting_response_when_estimate_open(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job(status='submitted')
         Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='open'
@@ -87,26 +87,26 @@ class ApprovedSubStatusTest(FixtureTestCase):
         )
 
     def test_needs_work_order_when_none_exists(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         result = BoardService.compute_sub_status(self.job)
         self.assertEqual(result, 'needs-work-order')
 
     def test_work_ready_when_wo_exists_no_tasks_started(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         wo = WorkOrder.objects.create(job=self.job)
         Task.objects.create(name='Task 1', work_order=wo, status='pending')
         result = BoardService.compute_sub_status(self.job)
         self.assertEqual(result, 'work-ready')
 
     def test_in_progress_when_tasks_in_progress(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         wo = WorkOrder.objects.create(job=self.job)
         Task.objects.create(name='Task 1', work_order=wo, status='in_progress')
         result = BoardService.compute_sub_status(self.job)
         self.assertEqual(result, 'in-progress')
 
     def test_blocked_takes_priority_over_in_progress(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         wo = WorkOrder.objects.create(job=self.job)
         Task.objects.create(name='Task 1', work_order=wo, status='in_progress')
         Task.objects.create(name='Task 2', work_order=wo, status='blocked')
@@ -114,7 +114,7 @@ class ApprovedSubStatusTest(FixtureTestCase):
         self.assertEqual(result, 'blocked')
 
     def test_invoice_prepped_when_wo_complete(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice
         wo = WorkOrder.objects.create(job=self.job, status='complete')
         Invoice.objects.create(job=self.job, invoice_number='INV-TEST-001', status='draft')
@@ -122,7 +122,7 @@ class ApprovedSubStatusTest(FixtureTestCase):
         self.assertEqual(result, 'invoice-prepped')
 
     def test_invoice_sent_when_invoice_open(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice
         wo = WorkOrder.objects.create(job=self.job, status='complete')
         Invoice.objects.create(job=self.job, invoice_number='INV-TEST-001', status='open')
@@ -145,7 +145,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         )
 
     def test_get_board_data_returns_all_sections(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         data = BoardService.get_board_data()
         self.assertIn('pipeline', data)
         self.assertIn('approved', data)
@@ -155,7 +155,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertIn('unassigned', data['approved'])
 
     def test_pipeline_contains_draft_and_submitted_jobs(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         Job.objects.create(
             job_number='JOB-DRAFT-001', name='Draft Job',
             status='draft', contact=self.contact,
@@ -170,7 +170,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertIn('submitted', statuses)
 
     def test_approved_jobs_in_approved_section(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         Job.objects.create(
             job_number='JOB-APP-001', name='Approved Job',
             status='approved', contact=self.contact,
@@ -180,7 +180,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertEqual(data['approved']['jobs'][0]['name'], 'Approved Job')
 
     def test_closed_excludes_old_jobs(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         old_job = Job.objects.create(
             job_number='JOB-OLD-001', name='Old Completed',
             status='completed', contact=self.contact,
@@ -201,7 +201,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertNotIn('Old Completed', names)
 
     def test_worker_tasks_grouped_by_assignee(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = Job.objects.create(
             job_number='JOB-APP-001', name='Job',
             status='approved', contact=self.contact,
@@ -221,7 +221,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertEqual(len(data['approved']['unassigned']), 1)
 
     def test_available_workers_excludes_assigned(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         other_worker = User.objects.create_user(
             username='worker2', password='testpass', first_name='Sarah', last_name='Kim'
         )
@@ -242,7 +242,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertIn(other_worker.pk, available_ids)
 
     def test_jobs_include_sub_status(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         Job.objects.create(
             job_number='JOB-DRAFT-001', name='Draft Job',
             status='draft', contact=self.contact,
@@ -273,7 +273,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         )
 
     def test_get_pipeline_data_returns_draft_and_submitted(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         self._make_job(status='draft')
         self._make_job(status='submitted')
         self._make_job(status='approved')
@@ -284,7 +284,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertNotIn('approved', statuses)
 
     def test_get_approved_data_excludes_completed_work_order(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job(status='approved')
         WorkOrder.objects.create(job=job, status='complete')
         data = BoardService.get_approved_data()
@@ -292,7 +292,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertNotIn(job.job_id, job_ids)
 
     def test_get_approved_data_excludes_invoice_sent(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice
         job = self._make_job(status='approved')
         WorkOrder.objects.create(job=job, status='complete')
@@ -304,7 +304,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertNotIn(job.job_id, job_ids)
 
     def test_get_unpaid_data_returns_invoice_sent_jobs(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice
         job = self._make_job(status='approved')
         WorkOrder.objects.create(job=job, status='complete')
@@ -318,7 +318,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertEqual(match['sub_status'], 'invoice-sent')
 
     def test_get_unpaid_data_returns_needs_invoice_jobs(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job(status='approved')
         WorkOrder.objects.create(job=job, status='complete')
         # No invoice at all
@@ -329,7 +329,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertEqual(match['sub_status'], 'needs-invoice')
 
     def test_get_unpaid_data_returns_invoice_prepped_jobs(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice
         job = self._make_job(status='approved')
         WorkOrder.objects.create(job=job, status='complete')
@@ -343,14 +343,14 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertEqual(match['sub_status'], 'invoice-prepped')
 
     def test_get_closed_data_returns_terminal_jobs(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job(status='completed', completed_date=timezone.now())
         data = BoardService.get_closed_data()
         job_ids = [j['job_id'] for j in data['jobs']]
         self.assertIn(job.job_id, job_ids)
 
     def test_get_unpaid_data_returns_dict_with_jobs(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice
         job = self._make_job(status='approved')
         WorkOrder.objects.create(job=job, status='complete')
@@ -362,7 +362,7 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertIn('jobs', data)
 
     def test_get_closed_data_respects_retention(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         old_job = self._make_job(status='completed')
         Job.objects.filter(pk=old_job.pk).update(
             completed_date=timezone.now() - timedelta(days=30)
@@ -394,7 +394,7 @@ class PipelineDocDataTest(FixtureTestCase):
         )
 
     def test_pipeline_job_with_no_docs_has_empty_arrays(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job()
         result = BoardService.get_pipeline_data()
         job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
@@ -402,7 +402,7 @@ class PipelineDocDataTest(FixtureTestCase):
         self.assertEqual(job_data['estimates'], [])
 
     def test_pipeline_job_includes_worksheet_with_total(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job()
         estimate = Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
@@ -420,7 +420,7 @@ class PipelineDocDataTest(FixtureTestCase):
         self.assertIsNotNone(job_data['worksheets'][0]['created_date'])
 
     def test_pipeline_job_includes_estimate_with_total(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job()
         estimate = Estimate.objects.create(
             job=job, estimate_number='EST-TEST-002', status='open'
@@ -455,7 +455,7 @@ class ClosedDataTest(FixtureTestCase):
         )
 
     def test_closed_job_includes_start_date(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         job = self._make_job()
         result = BoardService.get_closed_data()
         job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
@@ -463,7 +463,7 @@ class ClosedDataTest(FixtureTestCase):
         self.assertIsNotNone(job_data['start_date'])
 
     def test_closed_job_includes_profitability(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice, InvoiceLineItem
         job = self._make_job()
         inv = Invoice.objects.create(job=job, invoice_number='INV-TEST-010', status='paid')
@@ -492,7 +492,7 @@ class UnpaidDataTest(FixtureTestCase):
         )
 
     def test_unpaid_job_includes_invoices(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice, InvoiceLineItem
         job = self._make_job()
         inv = Invoice.objects.create(job=job, invoice_number='INV-TEST-001', status='open', sent_date=timezone.now())
@@ -504,7 +504,7 @@ class UnpaidDataTest(FixtureTestCase):
         self.assertEqual(job_data['invoices'][0]['total'], Decimal('500.00'))
 
     def test_unpaid_job_includes_profitability(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice, InvoiceLineItem
         job = self._make_job()
         inv = Invoice.objects.create(job=job, invoice_number='INV-TEST-002', status='open')
@@ -517,7 +517,7 @@ class UnpaidDataTest(FixtureTestCase):
         self.assertEqual(job_data['billed'], Decimal('1000.00'))
 
     def test_profitability_includes_labor_from_bleps(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.jobs.models import Blep
         from apps.invoicing.models import Invoice, InvoiceLineItem
         worker = User.objects.create_user(username='worker', password='test')
@@ -534,7 +534,7 @@ class UnpaidDataTest(FixtureTestCase):
         self.assertGreaterEqual(job_data['spent'], Decimal('50.00'))
 
     def test_unpaid_job_includes_qbo_payment_info(self):
-        from apps.jobs.services.board_service import BoardService
+        from apps.jobs.services import BoardService
         from apps.invoicing.models import Invoice, InvoiceLineItem
         job = self._make_job()
         inv = Invoice.objects.create(job=job, invoice_number='INV-TEST-003', status='partly-paid', qbo_amount_paid=Decimal('200.00'))

@@ -4,7 +4,7 @@ from datetime import timedelta
 from tests.base import BaseTestCase
 from apps.core.models import User
 from apps.jobs.models import Job, WorkOrder, Task, Blep
-from apps.jobs.services.blep_service import BlepService
+from apps.jobs.services import BlepService
 
 
 class BlepServicePrimitivesTest(BaseTestCase):
@@ -64,7 +64,7 @@ class BlepServicePrimitivesTest(BaseTestCase):
 
 
 from django.core.exceptions import ValidationError
-from apps.jobs.services.blep_service import BlepPermissionError
+from apps.jobs.services import BlepPermissionError
 
 
 class CreateHistoricalTest(BaseTestCase):

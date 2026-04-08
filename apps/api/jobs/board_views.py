@@ -4,7 +4,7 @@ from rest_framework.response import Response
 
 from apps.api.permissions import CanManageJobs
 from apps.jobs.models import Task
-from apps.jobs.services.board_service import BoardService
+from apps.jobs.services import BoardService
 
 
 @api_view(['GET'])
