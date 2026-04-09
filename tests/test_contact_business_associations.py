@@ -5,7 +5,7 @@ from apps.purchasing.models import PurchaseOrder, Bill, BillLineItem, PurchaseOr
 from apps.inventory.models import PriceListItem
 from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
-from apps.core.models import Configuration
+from apps.core.models import Configuration, AccountingCategory
 
 
 class PurchaseOrderContactBusinessTest(TestCase):
@@ -213,20 +213,23 @@ class BillFromPurchaseOrderTest(TestCase):
         self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
 
-        # Create price list items for line items
+        # Create accounting category and price list items for line items
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.price_list_item1 = PriceListItem.objects.create(
             code="PLI-001",
             description="Test Item 1",
             units="ea",
             purchase_price=10.00,
-            selling_price=15.00
+            selling_price=15.00,
+            accounting_category=self.category,
         )
         self.price_list_item2 = PriceListItem.objects.create(
             code="PLI-002",
             description="Test Item 2",
             units="kg",
             purchase_price=20.00,
-            selling_price=30.00
+            selling_price=30.00,
+            accounting_category=self.category,
         )
 
         # Add line items to PO

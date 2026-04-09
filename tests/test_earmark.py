@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.db import IntegrityError
 from apps.contacts.models import Contact, Business
+from apps.core.models import AccountingCategory
 from apps.jobs.models import Job
 from apps.inventory.models import PriceListItem
 from apps.inventory.models import Earmark, InventoryAdjustment
@@ -32,6 +33,7 @@ class EarmarkModelTest(TestCase):
             job_number='J-EAR-002', contact=self.contact, description='Job B',
         )
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -40,6 +42,7 @@ class EarmarkModelTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
         self.screws = PriceListItem.objects.create(
             code='SCR.100',
@@ -49,6 +52,7 @@ class EarmarkModelTest(TestCase):
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
     def test_create_earmark(self):
@@ -144,6 +148,7 @@ class InventoryItemAvailabilityTest(TestCase):
             job_number='J-AVL-002', contact=self.contact, description='Job B',
         )
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -152,6 +157,7 @@ class InventoryItemAvailabilityTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
     def test_no_earmarks_all_available(self):
@@ -183,6 +189,7 @@ class InventoryAdjustmentModelTest(TestCase):
     """Tests for the InventoryAdjustment model."""
 
     def setUp(self):
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -191,6 +198,7 @@ class InventoryAdjustmentModelTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
     def test_create_adjustment(self):

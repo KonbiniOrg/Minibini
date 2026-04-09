@@ -6,7 +6,7 @@ from apps.contacts.models import Contact, Business
 from apps.invoicing.models import Invoice
 from apps.inventory.models import PriceListItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill
-from apps.core.models import User
+from apps.core.models import AccountingCategory, User
 from decimal import Decimal
 
 
@@ -121,12 +121,14 @@ class SearchViewTests(TestCase):
         )
 
         # Create price list items
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.price_item1 = PriceListItem.objects.create(
             code='WOOD-001',
             description='Oak plank 2x4x8',
             units='pcs',
             purchase_price=Decimal('15.00'),
-            selling_price=Decimal('25.00')
+            selling_price=Decimal('25.00'),
+            accounting_category=self.category
         )
 
         self.price_item2 = PriceListItem.objects.create(
@@ -134,7 +136,8 @@ class SearchViewTests(TestCase):
             description='Wood screws box of 100',
             units='ea',
             purchase_price=Decimal('8.00'),
-            selling_price=Decimal('12.00')
+            selling_price=Decimal('12.00'),
+            accounting_category=self.category
         )
 
         # Create purchase orders

@@ -7,6 +7,7 @@ from apps.jobs.models import Job, WorkOrder, Task, PlanTask
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate, TaskTemplate
 from apps.jobs.services import TaskService
 from apps.contacts.models import Contact
+from apps.core.models import AccountingCategory
 from apps.inventory.models import PriceListItem
 
 User = get_user_model()
@@ -212,6 +213,7 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
     """Test edge cases and error conditions for task generation"""
 
     def setUp(self):
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.contact = Contact.objects.create(
             first_name='Edge Case Contact',
             last_name='',
@@ -260,7 +262,8 @@ class LineItemTaskGenerationEdgeCasesTest(TestCase):
             code='LONG001',
             description='This is a very long description that should be truncated when creating a task name because it exceeds the reasonable length for display',
             units='ea',
-            selling_price=Decimal('10.00')
+            selling_price=Decimal('10.00'),
+            accounting_category=self.category
         )
 
         line_item = EstimateLineItem.objects.create(

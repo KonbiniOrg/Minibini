@@ -7,14 +7,14 @@ from apps.jobs.models import Job, Task, WorkOrder
 from apps.estimates.models import Estimate
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.contacts.models import Contact, Business
-from apps.core.models import Configuration
+from apps.core.models import AccountingCategory, Configuration
 
 
 
 class PriceListItemModelTest(TestCase):
     def setUp(self):
-        pass
-        
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+
     def test_price_list_item_creation(self):
         item = PriceListItem.objects.create(
             code="ITEM001",
@@ -24,7 +24,8 @@ class PriceListItemModelTest(TestCase):
             selling_price=Decimal('15.75'),
             qty_on_hand=Decimal('100.00'),
             qty_sold=Decimal('25.00'),
-            qty_wasted=Decimal('2.00')
+            qty_wasted=Decimal('2.00'),
+            accounting_category=self.category
         )
         self.assertEqual(item.code, "ITEM001")
         self.assertEqual(item.units, "ea")
@@ -38,13 +39,15 @@ class PriceListItemModelTest(TestCase):
     def test_price_list_item_str_method(self):
         item = PriceListItem.objects.create(
             code="TEST123",
-            description="This is a very long description that should be truncated in the string representation"
+            description="This is a very long description that should be truncated in the string representation",
+            accounting_category=self.category
         )
         self.assertEqual(str(item), "TEST123 - This is a very long description that should be tru")
         
     def test_price_list_item_defaults(self):
         item = PriceListItem.objects.create(
-            code="DEFAULT001"
+            code="DEFAULT001",
+            accounting_category=self.category
         )
         self.assertEqual(item.purchase_price, Decimal('0.00'))
         self.assertEqual(item.selling_price, Decimal('0.00'))
@@ -113,6 +116,7 @@ class InvoiceLineItemModelTest(TestCase):
         Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
         Configuration.objects.create(key='bill_counter', value='0')
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
         self.business = Business.objects.create(business_name="Test Business", default_contact=self.default_contact)
         self.contact = Contact.objects.create(
@@ -150,7 +154,8 @@ class InvoiceLineItemModelTest(TestCase):
             vendor_invoice_number="VIN001"
         )
         self.price_list_item = PriceListItem.objects.create(
-            code="ITEM001"
+            code="ITEM001",
+            accounting_category=self.category
         )
         
     def test_invoice_line_item_creation(self):

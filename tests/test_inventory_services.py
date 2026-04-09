@@ -1,6 +1,7 @@
 """Tests for inventory app service methods (service-mediated saves)."""
 from decimal import Decimal
 from django.test import TestCase
+from apps.core.models import AccountingCategory
 from apps.inventory.models import PriceListItem
 from apps.inventory.services import InventoryService
 from apps.core.services import NotFoundError
@@ -9,11 +10,15 @@ from apps.core.services import NotFoundError
 class InventoryServiceTest(TestCase):
     """Tests for InventoryService create/update methods."""
 
+    def setUp(self):
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+
     def test_create_item(self):
         """Create a new PriceListItem via service."""
         pli = InventoryService.create_item(
             code='MAT-001', description='Steel plate', units='sheets',
             purchase_price=Decimal('50.00'), selling_price=Decimal('75.00'),
+            accounting_category=self.category,
         )
         self.assertEqual(pli.code, 'MAT-001')
         self.assertEqual(pli.description, 'Steel plate')
@@ -24,7 +29,7 @@ class InventoryServiceTest(TestCase):
 
     def test_create_item_with_defaults(self):
         """Create with minimal args — defaults should apply."""
-        pli = InventoryService.create_item(code='MAT-002', description='Bolts')
+        pli = InventoryService.create_item(code='MAT-002', description='Bolts', accounting_category=self.category)
         self.assertEqual(pli.purchase_price, Decimal('0.00'))
         self.assertEqual(pli.selling_price, Decimal('0.00'))
         self.assertEqual(pli.qty_on_hand, Decimal('0.00'))
@@ -36,6 +41,7 @@ class InventoryServiceTest(TestCase):
         pli = InventoryService.create_item(
             code='INV-001', description='Lumber', units='bd ft',
             is_inventoried=True, qty_on_hand=Decimal('100.00'),
+            accounting_category=self.category,
         )
         self.assertTrue(pli.is_inventoried)
         self.assertEqual(pli.qty_on_hand, Decimal('100.00'))
@@ -44,6 +50,7 @@ class InventoryServiceTest(TestCase):
         """Update an existing PriceListItem by PK."""
         pli = PriceListItem.objects.create(
             code='MAT-001', description='Steel', units='sheets',
+            accounting_category=self.category,
         )
         updated = InventoryService.update_item(
             pli.pk, description='Stainless steel', selling_price=Decimal('80.00'),
@@ -54,7 +61,7 @@ class InventoryServiceTest(TestCase):
 
     def test_update_item_persists(self):
         """Update should be persisted to database."""
-        pli = PriceListItem.objects.create(code='MAT-001', description='Steel')
+        pli = PriceListItem.objects.create(code='MAT-001', description='Steel', accounting_category=self.category)
         InventoryService.update_item(pli.pk, description='Aluminum')
         refreshed = PriceListItem.objects.get(pk=pli.pk)
         self.assertEqual(refreshed.description, 'Aluminum')

@@ -4,6 +4,7 @@ Tests for QOH Automatic Updates via InventoryService.
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
+from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, PlanTask, Task, WorkOrder
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial, Material
@@ -28,6 +29,7 @@ class ReceivePOLineItemTest(TestCase):
         self.contact.business = self.business
         self.contact.save()
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -36,6 +38,7 @@ class ReceivePOLineItemTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
         self.job = Job.objects.create(
@@ -107,6 +110,7 @@ class ReceivePOLineItemTest(TestCase):
         """Receiving a PO line item with non-inventoried PLI does nothing."""
         non_inv = PriceListItem.objects.create(
             code='NONINV', description='Not tracked', is_inventoried=False,
+            accounting_category=self.category,
         )
         li = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po,
@@ -161,6 +165,7 @@ class ConsumeMaterialTest(TestCase):
             sort_order=1,
         )
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -169,6 +174,7 @@ class ConsumeMaterialTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
     def test_consume_decreases_qoh(self):
@@ -274,6 +280,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             sort_order=1,
         )
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -283,6 +290,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
     def test_actual_less_than_estimated_returns_excess(self):
@@ -348,6 +356,7 @@ class ManualAdjustmentTest(TestCase):
     """Tests for InventoryService.manual_adjustment()."""
 
     def setUp(self):
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -356,6 +365,7 @@ class ManualAdjustmentTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
     def test_negative_adjustment_decreases_qoh(self):

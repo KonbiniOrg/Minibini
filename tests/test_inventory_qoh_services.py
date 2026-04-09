@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.contacts.models import Contact, Business
+from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, InventoryAdjustment, PriceListItem, Material
 from apps.inventory.services import InventoryService
 from apps.jobs.models import Job, Task, WorkOrder
@@ -21,9 +22,11 @@ class ReceivePOLineItemTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-001', contact=self.contact)
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = PriceListItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_inventoried=True, qty_on_hand=Decimal('10.00'))
+            is_inventoried=True, qty_on_hand=Decimal('10.00'),
+            accounting_category=self.category)
 
         self.po = PurchaseOrder.objects.create(
             business=self.business, po_number='PO-001', status=PurchaseOrder.STATUS_ISSUED)
@@ -83,7 +86,8 @@ class ReceivePOLineItemTest(TestCase):
         """Non-inventoried items are silently skipped."""
         non_inv_pli = PriceListItem.objects.create(
             code='PLI-NI', description='Service',
-            is_inventoried=False, qty_on_hand=Decimal('0.00'))
+            is_inventoried=False, qty_on_hand=Decimal('0.00'),
+            accounting_category=self.category)
 
         po_li = PurchaseOrderLineItem.objects.create(
             purchase_order=self.po, description='Service',
@@ -114,10 +118,11 @@ class ConsumeMaterialTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-001', contact=self.contact)
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = PriceListItem.objects.create(
             code='PLI-001', description='Steel plate',
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
-            qty_sold=Decimal('0.00'))
+            qty_sold=Decimal('0.00'), accounting_category=self.category)
 
         self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
@@ -205,7 +210,8 @@ class ConsumeMaterialTest(TestCase):
     def test_skips_non_inventoried_items(self):
         """Non-inventoried items are silently skipped."""
         non_inv = PriceListItem.objects.create(
-            code='PLI-NI', description='Service', is_inventoried=False)
+            code='PLI-NI', description='Service', is_inventoried=False,
+            accounting_category=self.category)
 
         material = Material(
             task=self.task, price_list_item=non_inv,
@@ -260,10 +266,11 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-001', contact=self.contact)
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = PriceListItem.objects.create(
             code='PLI-001', description='Steel plate',
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
-            qty_sold=Decimal('5.00'))
+            qty_sold=Decimal('5.00'), accounting_category=self.category)
 
         self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
@@ -309,7 +316,8 @@ class CompleteTaskAdjustmentTest(TestCase):
         """Non-inventoried items are silently skipped."""
         non_inv = PriceListItem.objects.create(
             code='PLI-NI', description='Service', is_inventoried=False,
-            qty_on_hand=Decimal('0.00'), qty_sold=Decimal('0.00'))
+            qty_on_hand=Decimal('0.00'), qty_sold=Decimal('0.00'),
+            accounting_category=self.category)
 
         material = Material(
             task=self.task, price_list_item=non_inv,
@@ -339,10 +347,11 @@ class ManualAdjustmentTest(TestCase):
     """Tests for InventoryService.manual_adjustment."""
 
     def setUp(self):
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = PriceListItem.objects.create(
             code='PLI-001', description='Steel plate',
             is_inventoried=True, qty_on_hand=Decimal('50.00'),
-            qty_wasted=Decimal('0.00'))
+            qty_wasted=Decimal('0.00'), accounting_category=self.category)
 
     def test_positive_adjustment_increases_qoh(self):
         """Positive adjustment increases QOH."""

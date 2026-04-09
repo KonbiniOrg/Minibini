@@ -30,8 +30,8 @@ class JobsTestBase(TestCase):
         )
         self.contact.business = self.business
         self.contact.save()
-        self.lit = AccountingCategory.objects.create(
-            code='SVC', name='Service', taxable=True,
+        self.lit, _ = AccountingCategory.objects.get_or_create(
+            code='SVC', defaults={'name': 'Service', 'taxable': True},
         )
 
 
@@ -257,7 +257,8 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
         """Catalog line item task gets PLI code in name and falls back to PLI fields."""
         pli = PriceListItem.objects.create(
             code='STL-001', description='Steel plate',
-            units='sheets', selling_price=Decimal('75.00'))
+            units='sheets', selling_price=Decimal('75.00'),
+            accounting_category=self.lit)
 
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Steel plate',
@@ -457,7 +458,8 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
             sort_order=1)
         pli = PriceListItem.objects.create(
             code='STL-001', description='Steel plate',
-            purchase_price=Decimal('50.00'))
+            purchase_price=Decimal('50.00'),
+            accounting_category=self.lit)
         PlanMaterial(
             plan_task=ws_task, price_list_item=pli,
             description='Steel plate', quantity=Decimal('5.00'),
@@ -516,7 +518,8 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
             est_worksheet=self.worksheet, name='Cut', sort_order=1)
         pli = PriceListItem.objects.create(
             code='LINK-001', description='Linked item',
-            purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'))
+            purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
+            accounting_category=self.lit)
         PlanMaterial.objects.create(
             plan_task=plan_task, price_list_item=pli,
             description='Linked', quantity=Decimal('2.00'))

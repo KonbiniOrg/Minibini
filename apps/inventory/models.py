@@ -50,8 +50,6 @@ class PriceListItem(models.Model):
         'core.AccountingCategory',
         on_delete=models.PROTECT,
         related_name='price_list_items',
-        null=True,  # Nullable initially for migration; will be made required after data migration
-        blank=True
     )
 
     @property

@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 
+from apps.core.models import AccountingCategory
 from apps.inventory.models import PriceListItem
 from apps.inventory.forms import PriceListItemForm
 from apps.estimates.forms import PriceListLineItemForm
@@ -19,31 +20,36 @@ class PriceListItemArchiveListViewTest(TestCase):
     def setUp(self):
         self.client = Client()
         self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         # Create active items
         self.active_item1 = PriceListItem.objects.create(
             code='ACTIVE001',
             description='Active Item 1',
             selling_price=Decimal('10.00'),
-            is_active=True
+            is_active=True,
+            accounting_category=self.category
         )
         self.active_item2 = PriceListItem.objects.create(
             code='ACTIVE002',
             description='Active Item 2',
             selling_price=Decimal('20.00'),
-            is_active=True
+            is_active=True,
+            accounting_category=self.category
         )
         # Create archived items
         self.archived_item1 = PriceListItem.objects.create(
             code='ARCHIVED001',
             description='Archived Item 1',
             selling_price=Decimal('30.00'),
-            is_active=False
+            is_active=False,
+            accounting_category=self.category
         )
         self.archived_item2 = PriceListItem.objects.create(
             code='ARCHIVED002',
             description='Archived Item 2',
             selling_price=Decimal('40.00'),
-            is_active=False
+            is_active=False,
+            accounting_category=self.category
         )
 
     def test_list_view_defaults_to_active_only(self):
@@ -114,6 +120,9 @@ class PriceListItemArchiveListViewTest(TestCase):
 class PriceListItemFormArchiveTest(TestCase):
     """Tests for PriceListItemForm archive field handling."""
 
+    def setUp(self):
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+
     def test_create_form_does_not_have_is_active_field(self):
         """Test that create form does not include is_active field."""
         form = PriceListItemForm()
@@ -124,7 +133,8 @@ class PriceListItemFormArchiveTest(TestCase):
         item = PriceListItem.objects.create(
             code='TEST001',
             description='Test Item',
-            selling_price=Decimal('10.00')
+            selling_price=Decimal('10.00'),
+            accounting_category=self.category
         )
         form = PriceListItemForm(instance=item)
         self.assertIn('is_active', form.fields)
@@ -144,6 +154,7 @@ class PriceListItemFormArchiveTest(TestCase):
             'qty_on_hand': '0.00',
             'qty_sold': '0.00',
             'qty_wasted': '0.00',
+            'accounting_category': self.category.pk,
         })
         self.assertTrue(form.is_valid(), form.errors)
         item = form.save()
@@ -155,7 +166,8 @@ class PriceListItemFormArchiveTest(TestCase):
             code='TEST001',
             description='Test Item',
             selling_price=Decimal('10.00'),
-            is_active=True
+            is_active=True,
+            accounting_category=self.category
         )
 
         form = PriceListItemForm(
@@ -169,6 +181,7 @@ class PriceListItemFormArchiveTest(TestCase):
                 'qty_sold': '0.00',
                 'qty_wasted': '0.00',
                 'is_active': False,  # Unchecking the box
+                'accounting_category': self.category.pk,
             },
             instance=item
         )
@@ -182,7 +195,8 @@ class PriceListItemFormArchiveTest(TestCase):
             code='TEST001',
             description='Test Item',
             selling_price=Decimal('10.00'),
-            is_active=False
+            is_active=False,
+            accounting_category=self.category
         )
 
         form = PriceListItemForm(
@@ -196,6 +210,7 @@ class PriceListItemFormArchiveTest(TestCase):
                 'qty_sold': '0.00',
                 'qty_wasted': '0.00',
                 'is_active': True,  # Checking the box
+                'accounting_category': self.category.pk,
             },
             instance=item
         )
@@ -210,6 +225,7 @@ class PriceListItemFormArchiveViewTest(TestCase):
     def setUp(self):
         self.client = Client()
         self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
 
     def test_edit_view_shows_archived_warning(self):
         """Test that edit view shows warning for archived items."""
@@ -217,7 +233,8 @@ class PriceListItemFormArchiveViewTest(TestCase):
             code='ARCHIVED001',
             description='Archived Item',
             selling_price=Decimal('10.00'),
-            is_active=False
+            is_active=False,
+            accounting_category=self.category
         )
 
         response = self.client.get(
@@ -232,7 +249,8 @@ class PriceListItemFormArchiveViewTest(TestCase):
             code='ACTIVE001',
             description='Active Item',
             selling_price=Decimal('10.00'),
-            is_active=True
+            is_active=True,
+            accounting_category=self.category
         )
 
         response = self.client.get(
@@ -246,17 +264,20 @@ class PriceListItemSelectionFormFilterTest(TestCase):
     """Tests for filtering archived items from selection forms."""
 
     def setUp(self):
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.active_item = PriceListItem.objects.create(
             code='ACTIVE001',
             description='Active Item',
             selling_price=Decimal('10.00'),
-            is_active=True
+            is_active=True,
+            accounting_category=self.category
         )
         self.archived_item = PriceListItem.objects.create(
             code='ARCHIVED001',
             description='Archived Item',
             selling_price=Decimal('20.00'),
-            is_active=False
+            is_active=False,
+            accounting_category=self.category
         )
 
     def test_price_list_line_item_form_filters_archived(self):
@@ -303,17 +324,20 @@ class ArchivedPriceListItemDisplayTest(TestCase):
         )
 
         # Create active and archived price list items
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.active_item = PriceListItem.objects.create(
             code='ACTIVE001',
             description='Active Item',
             selling_price=Decimal('10.00'),
-            is_active=True
+            is_active=True,
+            accounting_category=self.category
         )
         self.archived_item = PriceListItem.objects.create(
             code='ARCHIVED001',
             description='Archived Item',
             selling_price=Decimal('20.00'),
-            is_active=False
+            is_active=False,
+            accounting_category=self.category
         )
 
         # Create estimate with line items
@@ -385,6 +409,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
     def setUp(self):
         self.client = Client()
         self.client.force_login(get_user_model().objects.create_superuser(username=f'admin_{id(self)}', password='testpass'))
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
 
     def test_create_archive_restore_workflow(self):
         """Test full workflow: create item, archive it, restore it."""
@@ -400,6 +425,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
                 'qty_on_hand': '100.00',
                 'qty_sold': '0.00',
                 'qty_wasted': '0.00',
+                'accounting_category': self.category.pk,
             }
         )
         self.assertRedirects(response, reverse('inventory:price_list_item_list'))
@@ -419,6 +445,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
                 'qty_on_hand': '100.00',
                 'qty_sold': '0.00',
                 'qty_wasted': '0.00',
+                'accounting_category': self.category.pk,
                 # is_active not included = False (unchecked checkbox)
             }
         )
@@ -449,6 +476,7 @@ class PriceListItemArchiveIntegrationTest(TestCase):
                 'qty_on_hand': '100.00',
                 'qty_sold': '0.00',
                 'qty_wasted': '0.00',
+                'accounting_category': self.category.pk,
                 'is_active': 'on',  # Checkbox checked
             }
         )
@@ -468,7 +496,8 @@ class PriceListItemArchiveIntegrationTest(TestCase):
             code='NOTSELECTABLE',
             description='Not Selectable Item',
             selling_price=Decimal('10.00'),
-            is_active=False
+            is_active=False,
+            accounting_category=self.category
         )
 
         # Create estimate to add line items to

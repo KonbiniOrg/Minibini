@@ -6,7 +6,7 @@ from django.contrib.auth.models import Group
 from decimal import Decimal
 from datetime import timedelta
 from apps.contacts.models import Contact, Business, PaymentTerms
-from apps.core.models import User, Configuration
+from apps.core.models import User, Configuration, AccountingCategory
 from apps.jobs.models import Job, WorkOrder, Task, Blep
 from apps.estimates.models import Estimate, TaskTemplate
 from apps.invoicing.models import Invoice, InvoiceLineItem
@@ -42,6 +42,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             postal_code="12345",
             business=self.business
         )
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
 
     def test_complete_job_workflow(self):
         job = Job.objects.create(
@@ -101,7 +102,8 @@ class ComprehensiveModelIntegrationTest(TestCase):
             code="ITEM001",
             description="Test item",
             purchase_price=Decimal('10.00'),
-            selling_price=Decimal('15.00')
+            selling_price=Decimal('15.00'),
+            accounting_category=self.category,
         )
 
         # Test creating both estimate and invoice line items
@@ -156,7 +158,8 @@ class ComprehensiveModelIntegrationTest(TestCase):
         # Create price list item for testing
         price_item = PriceListItem.objects.create(
             code="TEST001",
-            selling_price=Decimal('25.00')
+            selling_price=Decimal('25.00'),
+            accounting_category=self.category,
         )
 
         po_line_item = PurchaseOrderLineItem.objects.create(
@@ -289,7 +292,8 @@ class ComprehensiveModelIntegrationTest(TestCase):
             code="BOLT001",
             purchase_price=Decimal('1.50'),
             selling_price=Decimal('2.25'),
-            qty_on_hand=Decimal('100.00')
+            qty_on_hand=Decimal('100.00'),
+            accounting_category=self.category,
         )
 
         # Create an invoice for testing
@@ -392,9 +396,11 @@ class LineItemValidationTest(TestCase):
         )
 
         # Create price list item
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.price_list_item = PriceListItem.objects.create(
             code="TEST001",
-            selling_price=Decimal('25.00')
+            selling_price=Decimal('25.00'),
+            accounting_category=self.category,
         )
 
     def test_estimate_line_item_validation_both_null_allowed(self):

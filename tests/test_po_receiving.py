@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User, HistoryEntry
+from apps.core.models import AccountingCategory, User, HistoryEntry
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Business, Contact
 from apps.inventory.models import PriceListItem, InventoryAdjustment
@@ -15,6 +15,7 @@ class POReceivingTestBase(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
 
     def _make_issued_po(self, num_items=2, with_pli=False):
         business = Business.objects.first()
@@ -31,6 +32,7 @@ class POReceivingTestBase(BaseTestCase):
                 purchase_price=Decimal('10.00'),
                 qty_on_hand=Decimal('0.00'),
                 is_inventoried=True,
+                accounting_category=self.category,
             )
         for i in range(num_items):
             PurchaseOrderLineItem.objects.create(

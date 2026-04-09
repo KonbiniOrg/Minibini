@@ -32,6 +32,9 @@ class MaterialCRUDTest(TestCase):
             rate=100,
             est_qty=1,
         )
+        self.category = AccountingCategory.objects.create(
+            name='General', code='GEN',
+        )
         self.material = Material.objects.create(
             task=self.task,
             description='Granite slab',
@@ -83,6 +86,7 @@ class MaterialCRUDTest(TestCase):
         pli = PriceListItem.objects.create(
             code='EPOXY-01', description='Epoxy 2-part', units='tube',
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
+            accounting_category=self.category,
         )
         response = self.client.post(
             f'/api/tasks/{self.task.pk}/materials/',

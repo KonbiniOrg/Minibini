@@ -6,6 +6,7 @@ from apps.estimates.models import EstimateLineItem
 from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate
+from apps.core.models import AccountingCategory
 from .base import FixtureTestCase
 
 
@@ -41,12 +42,14 @@ class PriceListItemModelFixtureTest(FixtureTestCase):
         
     def test_create_new_price_list_item(self):
         """Test creating a new price list item"""
+        category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         new_item = PriceListItem.objects.create(
             code="WOOD001",
             units="bd ft",
             description="Oak lumber 1x6",
             purchase_price=Decimal('3.50'),
-            selling_price=Decimal('5.25')
+            selling_price=Decimal('5.25'),
+            accounting_category=category
         )
         self.assertEqual(new_item.code, "WOOD001")
         self.assertEqual(PriceListItem.objects.count(), 3)  # 2 from fixture + 1 new

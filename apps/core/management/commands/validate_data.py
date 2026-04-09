@@ -389,7 +389,7 @@ class Command(BaseCommand):
             if not pli.accounting_category_id:
                 self.errors.append(
                     f'PLI {pli.code}: missing accounting_category '
-                    f'(will produce tax-exempt line items on documents)'
+                    f'(should not be possible — field is required)'
                 )
             if pli.purchase_price < 0:
                 self.errors.append(f'PLI {pli.code}: negative purchase_price {pli.purchase_price}')

@@ -320,6 +320,7 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - Tests in `/tests/` directory using Django TestCase
 - Fixtures in `/fixtures/` (JSON format)
 - Base test classes: `BaseTestCase`, `FixtureTestCase` in `tests/base.py`
+- **NEVER run `python manage.py test` from multiple subagents in parallel.** They all share one MySQL database and will deadlock fighting over test database creation/destruction. Only one agent at a time may run tests.
 
 ## Development Features
 

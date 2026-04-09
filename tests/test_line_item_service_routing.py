@@ -8,7 +8,7 @@ These tests verify that:
 from decimal import Decimal
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import AccountingCategory, User
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Business
 from apps.inventory.models import PriceListItem
@@ -132,12 +132,14 @@ class POLineItemPLIPopulationTest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         self.business = Business.objects.first()
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = PriceListItem.objects.create(
             code='TEST-PLI-LI',
             description='Widget from catalog',
             units='ea',
             purchase_price=Decimal('42.50'),
             selling_price=Decimal('85.00'),
+            accounting_category=self.category,
         )
 
     def test_create_from_pli_populates_fields(self):

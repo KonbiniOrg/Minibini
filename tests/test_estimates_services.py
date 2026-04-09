@@ -30,8 +30,8 @@ class EstimatesTestBase(TestCase):
         )
         self.contact.business = self.business
         self.contact.save()
-        self.lit = AccountingCategory.objects.create(
-            code='SVC', name='Service', taxable=True,
+        self.lit, _ = AccountingCategory.objects.get_or_create(
+            code='SVC', defaults={'name': 'Service', 'taxable': True},
         )
         from apps.jobs.services import JobService
         self.job = JobService.create_job(name='Test Job', contact=self.contact)

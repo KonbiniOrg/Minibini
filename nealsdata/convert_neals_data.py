@@ -161,14 +161,12 @@ class NealsDataConverter:
         self,
         excel_path: str,
         output_path: str = "neals_data.json",
-        base_fixture_path: str = "fixtures/job_data/01_base.json",
         interactive: bool = True,
         dry_run: bool = False,
         verbose: bool = False
     ):
         self.excel_path = excel_path
         self.output_path = output_path
-        self.base_fixture_path = base_fixture_path
         self.interactive = interactive
         self.dry_run = dry_run
         self.verbose = verbose
@@ -179,9 +177,6 @@ class NealsDataConverter:
         # Data structures
         self.fixture_data = []
         self.pk_counters = {}  # Track next PK for each model
-
-        # Load base fixtures first
-        self._load_base_fixtures()
 
         # Lookup mappings
         self.business_map = {}  # org_name -> business_pk
@@ -218,49 +213,6 @@ class NealsDataConverter:
             "pk": pk,
             "fields": fields
         })
-
-    def _load_base_fixtures(self):
-        """Load existing base fixtures and initialize PK counters."""
-        import os
-
-        if not os.path.exists(self.base_fixture_path):
-            if self.verbose:
-                print(f"Base fixture file not found: {self.base_fixture_path}")
-                print("Starting with empty fixture set")
-            return
-
-        if self.verbose:
-            print(f"Loading base fixtures from: {self.base_fixture_path}")
-
-        with open(self.base_fixture_path, 'r') as f:
-            base_fixtures = json.load(f)
-
-        # Add base fixtures to our fixture data
-        self.fixture_data.extend(base_fixtures)
-
-        # Calculate max PK for each model type to initialize counters
-        max_pks = {}
-        for fixture in base_fixtures:
-            model = fixture['model']
-            pk = fixture['pk']
-
-            # Only track numeric PKs (some models like Configuration use string PKs)
-            if isinstance(pk, int):
-                if model not in max_pks:
-                    max_pks[model] = pk
-                else:
-                    max_pks[model] = max(max_pks[model], pk)
-
-        # Initialize PK counters to start after existing data
-        for model, max_pk in max_pks.items():
-            self.pk_counters[model] = max_pk + 1
-
-        if self.verbose:
-            print(f"  Loaded {len(base_fixtures)} base fixtures")
-            print(f"  Initialized PK counters for {len(max_pks)} models:")
-            for model, next_pk in sorted(self.pk_counters.items()):
-                print(f"    {model}: starting at PK {next_pk}")
-            print()
 
     def convert(self):
         """Main conversion process."""
@@ -552,6 +504,7 @@ class NealsDataConverter:
     def _build_all_objects(self):
         """Build all Django objects in dependency order."""
         self._build_users()
+        self._build_accounting_categories()
         self._build_businesses()
         self._build_contacts()
         self._build_jobs_and_workorders()
@@ -609,6 +562,69 @@ class NealsDataConverter:
 
         if self.verbose:
             print(f"    Created {len(self.worker_user_pks)} worker users (PKs: {self.worker_user_pks})")
+
+    def _build_accounting_categories(self):
+        """Create the four standard AccountingCategory objects."""
+        if self.verbose:
+            print("  Building accounting categories...")
+
+        categories = [
+            {'code': 'SVC', 'name': 'Service', 'taxable': False,
+             'default_description': 'Professional services and labor'},
+            {'code': 'MTL', 'name': 'Material', 'taxable': True,
+             'default_description': 'Raw materials'},
+            {'code': 'PRD', 'name': 'Product', 'taxable': True,
+             'default_description': 'Finished products'},
+            {'code': 'DLV', 'name': 'Delivery', 'taxable': False,
+             'default_description': 'Shipping and delivery'},
+        ]
+
+        self.accounting_category_map = {}  # code -> pk
+        for cat in categories:
+            pk = self.get_next_pk('core.accountingcategory')
+            self.add_fixture('core.accountingcategory', pk, {
+                'code': cat['code'],
+                'name': cat['name'],
+                'taxable': cat['taxable'],
+                'default_description': cat['default_description'],
+                'is_active': True,
+                'qbo_item_id': '',
+                'qbo_expense_account_id': '',
+            })
+            self.accounting_category_map[cat['code']] = pk
+
+        if self.verbose:
+            print(f"    Created {len(categories)} accounting categories")
+
+    def _classify_price_list_item(self, code: str, item_type: str) -> str:
+        """Classify a price list item into an accounting category code.
+
+        Returns one of: 'SVC', 'MTL', 'PRD', 'DLV'.
+        """
+        code_upper = (code or '').upper().strip()
+
+        # Delivery items
+        if code_upper.startswith('7 DELIVERY'):
+            return 'DLV'
+
+        # Hourly/service items
+        if item_type == 'Hours':
+            return 'SVC'
+
+        # Service prefixes: boilerplate (1), setup (2), customer-provided (4), minimum (8)
+        if code_upper.startswith(('1 ', '2 ', '4 ', '8 ')):
+            return 'SVC'
+
+        # Assembled products and kits
+        product_prefixes = (
+            'R1S-', 'R1T-', 'HIVE-', 'M67-', 'IR-', 'GLAMP', 'GLPVAN',
+            'BAU', 'PM-', 'ARZABE', 'EDGE1', 'WESTERNDRILL', 'WESTERNLF',
+        )
+        if code_upper.startswith(product_prefixes):
+            return 'PRD'
+
+        # Everything else is raw material (sheet goods, etc.)
+        return 'MTL'
 
     def _build_businesses(self):
         """Create Business objects from Contacts sheet."""
@@ -1814,15 +1830,22 @@ class NealsDataConverter:
         if self.verbose:
             print("  Building price list items...")
 
+        category_counts = {}
         for item in self.filtered_price_list:
             pk = self.get_next_pk('inventory.pricelistitem')
 
             qty = self._parse_decimal(item.get('Quantity', 1))
             price = self._parse_decimal(item.get('Price', 0))
 
+            code = item.get('Code', '') or ''
+            item_type = item.get('Type', '') or ''
+            cat_code = self._classify_price_list_item(code, item_type)
+            cat_pk = self.accounting_category_map[cat_code]
+            category_counts[cat_code] = category_counts.get(cat_code, 0) + 1
+
             self.add_fixture('inventory.pricelistitem', pk, {
-                'code': item.get('Code', '') or '',
-                'units': item.get('Type', '') or '',
+                'code': code,
+                'units': item_type,
                 'description': item.get('Description', '') or '',
                 'purchase_price': str(price),
                 'selling_price': str(price),
@@ -1830,10 +1853,13 @@ class NealsDataConverter:
                 'qty_sold': '0',
                 'qty_wasted': '0',
                 'is_active': True,
+                'accounting_category': cat_pk,
             })
 
         if self.verbose:
             print(f"    Created {len(self.filtered_price_list)} price list items")
+            for cat_code, count in sorted(category_counts.items()):
+                print(f"      {cat_code}: {count}")
 
     def _resolve_or_create_contact_for_estimate(self, estimate: Dict) -> Tuple[Optional[int], Optional[int]]:
         """Resolve or create contact + business for an implicit job from estimate data.
@@ -2957,12 +2983,6 @@ Examples:
     )
 
     parser.add_argument(
-        '--base-fixture',
-        default='fixtures/job_data/01_base.json',
-        help='Base fixture file to load first (default: fixtures/job_data/01_base.json)'
-    )
-
-    parser.add_argument(
         '--non-interactive',
         action='store_true',
         help='Skip interactive prompts, auto-map all contact mismatches'
@@ -2991,7 +3011,6 @@ Examples:
     converter = NealsDataConverter(
         excel_path=args.excel_file,
         output_path=args.output,
-        base_fixture_path=args.base_fixture,
         interactive=not args.non_interactive,
         dry_run=args.dry_run,
         verbose=args.verbose

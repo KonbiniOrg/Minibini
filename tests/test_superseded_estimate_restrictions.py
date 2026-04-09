@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact
+from apps.core.models import AccountingCategory
 from apps.inventory.models import PriceListItem
 from decimal import Decimal
 
@@ -63,12 +64,14 @@ class SupersededEstimateRestrictionTests(TestCase):
         )
 
         # Create a price list item for testing line items
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.price_list_item = PriceListItem.objects.create(
             code='TEST001',
             description='Test Item',
             units='ea',
             purchase_price=Decimal('10.00'),
-            selling_price=Decimal('20.00')
+            selling_price=Decimal('20.00'),
+            accounting_category=self.category
         )
 
     def test_cannot_add_line_item_to_superseded_estimate(self):

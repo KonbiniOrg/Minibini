@@ -7,7 +7,7 @@ from django.urls import reverse
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
 from apps.inventory.models import PriceListItem
-from apps.core.models import Configuration
+from apps.core.models import AccountingCategory, Configuration
 
 
 class PurchaseOrderCreationTests(TestCase):
@@ -160,13 +160,15 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
         )
 
         # Create price list items
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.price_list_item = PriceListItem.objects.create(
             code='WIDGET001',
             units='ea',
             description='Widget Type A',
             purchase_price=Decimal('25.00'),
             selling_price=Decimal('50.00'),
-            qty_on_hand=Decimal('100.00')
+            qty_on_hand=Decimal('100.00'),
+            accounting_category=self.category
         )
 
         self.price_list_item2 = PriceListItem.objects.create(
@@ -175,7 +177,8 @@ class PurchaseOrderLineItemAdditionTests(TestCase):
             description='Gadget Type B',
             purchase_price=Decimal('15.50'),
             selling_price=Decimal('30.00'),
-            qty_on_hand=Decimal('50.00')
+            qty_on_hand=Decimal('50.00'),
+            accounting_category=self.category
         )
 
     def test_get_add_line_item_page(self):

@@ -1,5 +1,6 @@
 # tests/test_units_model_defaults.py
 from tests.base import BaseTestCase
+from apps.core.models import AccountingCategory
 from apps.jobs.models import Task, Job
 from apps.estimates.models import TaskTemplate
 from apps.inventory.models import PriceListItem
@@ -21,7 +22,8 @@ class UnitsDefaultTest(BaseTestCase):
         self.assertEqual(tt.units, 'none')
 
     def test_price_list_item_defaults_to_none(self):
-        pli = PriceListItem.objects.create(code='TEST-UNIT-PLI')
+        category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+        pli = PriceListItem.objects.create(code='TEST-UNIT-PLI', accounting_category=category)
         self.assertEqual(pli.units, 'none')
 
     def test_line_item_defaults_to_none(self):

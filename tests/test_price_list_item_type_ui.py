@@ -106,8 +106,8 @@ class PriceListItemTypeUITest(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.accounting_category, self.service_type)
 
-    def test_create_without_accounting_category_allowed(self):
-        """Test that accounting_category is optional (for now)."""
+    def test_create_without_accounting_category_rejected(self):
+        """Test that accounting_category is required."""
         response = self.client.post(reverse('inventory:price_list_item_add'), {
             'code': 'NO-TYPE-001',
             'units': 'ea',
@@ -119,8 +119,7 @@ class PriceListItemTypeUITest(TestCase):
             'qty_wasted': '0',
             # No accounting_category field
         })
-        # Should redirect to list on success
-        self.assertEqual(response.status_code, 302)
-        item = PriceListItem.objects.filter(code='NO-TYPE-001').first()
-        self.assertIsNotNone(item)
-        self.assertIsNone(item.accounting_category)
+        # Should NOT redirect - form should show error
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'This field is required')
+        self.assertFalse(PriceListItem.objects.filter(code='NO-TYPE-001').exists())
