@@ -79,6 +79,7 @@
     <div
       class="job-chip"
       class:focused={focusedJobIds.includes(job.job_id)}
+      class:blocked={job.sub_status === 'blocked'}
       class:dimmed={focusedJobIds.length > 0 && !focusedJobIds.includes(job.job_id)}
       onclick={() => handleChipClick(job.job_id)}
       onmouseenter={(e) => scheduleShow(job.job_id, e.currentTarget)}
@@ -121,6 +122,15 @@
   }
   .chip-border { width: 8px; flex-shrink: 0; border-radius: 6px 0 0 6px; }
   .chip-body { flex: 1; min-width: 0; padding: 5px 10px; }
+  .job-chip.blocked .chip-body {
+    background: repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 4px,
+      rgba(220, 38, 38, 0.08) 4px,
+      rgba(220, 38, 38, 0.08) 8px
+    );
+  }
   .job-chip.dimmed { opacity: 0.35; }
   .job-chip.focused { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
   .chip-number { font-size: 10px; color: #999; font-family: 'SF Mono', 'Fira Code', monospace; }

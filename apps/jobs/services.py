@@ -778,11 +778,10 @@ class BoardService:
         # Build job_id -> accent_color map for tasks
         color_map = {j['job_id']: j['accent_color'] for j in approved_list}
 
-        # Get all incomplete tasks from approved jobs' open work orders
+        # Get all active tasks from approved jobs' work orders
         approved_job_ids = [j['job_id'] for j in approved_list]
         tasks = Task.objects.filter(
             work_order__job_id__in=approved_job_ids,
-            work_order__status='incomplete',
         ).exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         ).select_related(
@@ -887,7 +886,6 @@ class BoardService:
 
         tasks = Task.objects.filter(
             work_order__job_id__in=approved_job_ids,
-            work_order__status='incomplete',
         ).exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         ).select_related(
