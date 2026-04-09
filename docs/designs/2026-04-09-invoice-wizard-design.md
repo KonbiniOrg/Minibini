@@ -5,7 +5,7 @@
 
 ## Problem
 
-Invoices in Minibini are generated from job actuals — bleps (time entries) and materials. The straightforward path produces a 1:1 mapping: each blep becomes a labor line item, each material becomes a material line item. That works for shops with simple billing, but some customers want their invoices presented differently — labor and materials grouped under task names, multiple tasks rolled into one line item, separate line items for materials vs. labor on the same task, manual line items mixed in, and so on.
+Invoices in Minibini are generated from job actuals — bleps (time entries) and materials. The straightforward path produces a 1:1 mapping: each Task's bleps become a labor line item, each material becomes a material line item. That works for shops with simple billing, but some customers want their invoices presented differently — labor and materials grouped under task names, multiple tasks rolled into one line item, separate line items for materials vs. labor on the same task, manual line items mixed in, and so on.
 
 The wizard exists so the user can take the same source data and re-aggregate it into the line items the customer wants to see, with the ability to name and price them freely.
 
@@ -115,7 +115,7 @@ A new `InvoiceWizardService` in `apps/invoicing/services.py` is the orchestratio
 | `get_source_pool(invoice)` | Returns the tree: all work orders for the job → non-cancelled tasks → atoms. (`WorkOrder` has no cancelled status, so all work orders are included.) Filters out incomplete bleps (no `end_time`). Annotates each atom with state and computed amount. |
 | `add_atoms_to_new_line_item(invoice, atoms)` | Atomically creates an `InvoiceLineItem` plus N `InvoiceLineItemSource` rows. Defaults described below. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows. Recomputes price subject to the in-sync rule. |
-| `remove_atoms_from_line_item(line_item, source_ids)` | Deletes the matching source rows. Recomputes price subject to the in-sync rule. Deletes the line item if it becomes empty *and* was in sync (preserves it as a manual line item if it was overridden). |
+| `remove_atoms_from_line_item(line_item, source_ids)` | Deletes the matching source rows. Recomputes price subject to the in-sync rule. If the removal empties the source list, the line item is deleted regardless of override state. |
 | `discard_draft(invoice)` | Hard-deletes the draft invoice. Cascade kills line items and source rows; all atoms become available again. |
 
 Manual line item creation (`+ Manual` button), updates (rename, qty, units, manual price edits), reordering, and deletion go through the existing `InvoiceService` methods. The wizard service does not duplicate them.
@@ -158,9 +158,7 @@ A user "resets" an override by typing the matching number into the price field. 
 
 - Removes only the matching source rows. Other atoms stay on the line item.
 - Recomputes price subject to the in-sync rule above.
-- **If the removal empties the source list:**
-  - If the line item was *in sync* before the removal → delete the line item. (The clobber-style recompute would have set price to 0; an empty zero-price line item is not useful.)
-  - If the line item was *overridden* before the removal → preserve it as a manual line item. The user's override survives. The line item now has no sources but a non-zero `price`.
+- **If the removal empties the source list, the line item is deleted** — regardless of whether the price was overridden. A user who wants to keep an override after stripping all atoms must instead create a new manual line item.
 
 ### Source pool snapshot per session
 
@@ -330,8 +328,8 @@ Per the project's TDD discipline, every layer gets tests written first.
 - `add_atoms_to_line_item` recomputes price when in sync.
 - `add_atoms_to_line_item` preserves price when overridden.
 - `remove_atoms_from_line_item` removes a partial subset and recomputes when in sync.
-- `remove_atoms_from_line_item` preserves the override price.
-- Empty-source-list rule: deleted when in sync, kept when overridden.
+- `remove_atoms_from_line_item` preserves the override price on a partial removal.
+- Empty-source-list rule: line item is deleted when the last atom is removed, even if the price was overridden.
 - `discard_draft` cascades and frees atoms.
 - Wizard mutations against a non-draft invoice raise `ValidationError`.
 - Concurrent claim raises a clean `ClaimConflict` with atom IDs, no partial state.
