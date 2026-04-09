@@ -695,9 +695,11 @@ class EstimateGenerationService:
         if line_items:
             EstimateLineItem.objects.bulk_create(line_items)
 
-        # Link worksheet to estimate
+        # Link worksheet to estimate and finalize
         worksheet.estimate = estimate
         worksheet.save()
+        if worksheet.status == EstWorksheet.STATUS_DRAFT:
+            WorksheetService.finalize(worksheet.pk)
 
         return estimate
 
