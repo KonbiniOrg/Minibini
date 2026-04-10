@@ -23,6 +23,11 @@ class OpenForJobTest(TestCase):
         self.approved_job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.draft_job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0002')
         self.rejected_job = Job.objects.create(contact=self.contact, status=Job.STATUS_REJECTED, job_number='JOB-2026-0003')
+        self.completed_job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0004'
+        )
+        self.completed_job.status = Job.STATUS_COMPLETED
+        self.completed_job.save()
 
     def test_creates_draft_when_none_exists(self):
         invoice = InvoiceWizardService.open_for_job(self.approved_job)
@@ -44,6 +49,11 @@ class OpenForJobTest(TestCase):
     def test_refuses_draft_job(self):
         with self.assertRaises(ValidationError):
             InvoiceWizardService.open_for_job(self.draft_job)
+
+    def test_allows_completed_job(self):
+        invoice = InvoiceWizardService.open_for_job(self.completed_job)
+        self.assertEqual(invoice.status, Invoice.STATUS_DRAFT)
+        self.assertEqual(invoice.job, self.completed_job)
 
     def test_refuses_rejected_job(self):
         with self.assertRaises(ValidationError):
