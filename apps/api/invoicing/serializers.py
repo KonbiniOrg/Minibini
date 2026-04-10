@@ -3,9 +3,33 @@ from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.core.units import UnitsField
 
 
+class InvoiceLineItemSourceSerializer(serializers.Serializer):
+    """Serializer for InvoiceLineItemSource that resolves the atom for display."""
+    source_id = serializers.IntegerField(read_only=True)
+    source_type = serializers.CharField(read_only=True)
+    source_pk = serializers.IntegerField(read_only=True)
+    description = serializers.SerializerMethodField()
+    computed_amount = serializers.SerializerMethodField()
+
+    def get_description(self, obj):
+        instance = obj.resolve()
+        from apps.jobs.models import Blep
+        if isinstance(instance, Blep):
+            elapsed = instance.end_time - instance.start_time
+            hours = elapsed.total_seconds() / 3600
+            return f'Labor {hours:.2f}h'
+        return instance.description
+
+    def get_computed_amount(self, obj):
+        from apps.invoicing.services import InvoiceWizardService
+        instance = obj.resolve()
+        return str(InvoiceWizardService._atom_computed_amount(instance))
+
+
 class InvoiceLineItemSerializer(serializers.ModelSerializer):
     accounting_category_name = serializers.SerializerMethodField()
     units = UnitsField()
+    sources = InvoiceLineItemSourceSerializer(many=True, read_only=True)
 
     class Meta:
         model = InvoiceLineItem
@@ -14,6 +38,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
             'qty', 'units', 'description', 'price',
             'accounting_category', 'accounting_category_name',
             'taxable_override', 'tax_rate_override',
+            'sources',
         ]
         read_only_fields = ['line_item_id']
 
