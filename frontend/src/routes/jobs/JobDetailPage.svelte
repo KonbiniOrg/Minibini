@@ -17,6 +17,9 @@
   let loading = $state(true);
   let loadError = $state(null);
   let error = $state(null);
+  let draftInvoice = $derived(
+    (invoices?.results || []).find(inv => inv.status === 'draft') || null
+  );
 
   async function loadJob() {
     loading = true;
@@ -45,6 +48,15 @@
       loadError = e.message;
     } finally {
       loading = false;
+    }
+  }
+
+  async function startWizard() {
+    try {
+      const { invoice_id } = await api.post(`/api/jobs/${job.job_id}/start-invoice-wizard/`);
+      push(`/invoices/${invoice_id}/wizard`);
+    } catch (e) {
+      error = e.message || 'Failed to start wizard';
     }
   }
 
@@ -90,6 +102,14 @@
     onAddNote={handleAddNote}
     onStatusChange={loadJob}
   />
+
+  {#if job.status === 'approved' || job.status === 'completed'}
+    <p>
+      <button onclick={startWizard}>
+        {draftInvoice ? `Continue draft (${draftInvoice.invoice_number})` : 'Build invoice'}
+      </button>
+    </p>
+  {/if}
 
   <p><a href="#/jobs">Back to list</a></p>
 {/if}

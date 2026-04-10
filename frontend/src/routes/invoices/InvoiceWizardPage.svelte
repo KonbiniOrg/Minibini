@@ -1,6 +1,9 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
+  import WizardSourcePool from '../../components/invoices/WizardSourcePool.svelte';
+  import WizardLineItemCard from '../../components/invoices/WizardLineItemCard.svelte';
+  import WizardFooter from '../../components/invoices/WizardFooter.svelte';
 
   const { params = {} } = $props();
 
@@ -8,8 +11,13 @@
   let lineItems = $state([]);
   let sourcePool = $state(null);
   let selectedAtoms = $state([]);
+  let selectedLineItemId = $state(null);
   let loading = $state(true);
   let error = $state(null);
+
+  function selectLineItem(id) {
+    selectedLineItemId = id;
+  }
 
   // Initial load — fetches everything once, including source pool.
   async function loadAll() {
@@ -91,11 +99,26 @@
   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
     <div>
       <h3>Source pool</h3>
-      <p><em>(WizardSourcePool component goes here)</em></p>
+      <WizardSourcePool {sourcePool} bind:selectedAtoms />
     </div>
     <div>
       <h3>Line items</h3>
-      <p><em>(WizardLineItemCard list goes here)</em></p>
+      {#each lineItems as lineItem}
+        <WizardLineItemCard
+          {lineItem}
+          invoiceId={invoice.invoice_id}
+          selected={selectedLineItemId === lineItem.line_item_id}
+          onselect={selectLineItem}
+          onchange={reloadLineItems}
+        />
+      {/each}
     </div>
   </div>
+
+  <WizardFooter
+    invoiceId={invoice.invoice_id}
+    {selectedAtoms}
+    {selectedLineItemId}
+    onchange={reloadLineItems}
+  />
 {/if}
