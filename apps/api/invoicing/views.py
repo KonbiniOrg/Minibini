@@ -43,6 +43,15 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
     def perform_create(self, serializer):
         serializer.save()
 
+    @action(detail=True, methods=['get'], url_path='source-pool')
+    def source_pool(self, request, pk=None):
+        """Return the source pool tree for the wizard."""
+        from apps.invoicing.services import InvoiceWizardService
+        invoice = self.get_object()
+        pool = InvoiceWizardService.get_source_pool(invoice)
+        # Decimals need to be serialized as strings
+        return Response(_serialize_pool(pool))
+
     @action(detail=True, methods=['post'], url_path='send-to-qbo')
     def send_to_qbo(self, request, pk=None):
         """Push this invoice to QBO, attach PDF, and send to customer."""
@@ -70,3 +79,32 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             return Response({'error': str(e)}, status=400)
         except Exception as e:
             return Response({'error': str(e)}, status=500)
+
+
+def _serialize_pool(pool):
+    """Convert Decimal values in the pool structure to strings for JSON."""
+    from decimal import Decimal
+    def _s(value):
+        if isinstance(value, Decimal):
+            return str(value)
+        return value
+    return {
+        'work_orders': [
+            {
+                'work_order_id': wo['work_order_id'],
+                'tasks': [
+                    {
+                        'task_id': t['task_id'],
+                        'name': t['name'],
+                        'has_billable_atoms': t['has_billable_atoms'],
+                        'atoms': [
+                            {k: _s(v) for k, v in atom.items()}
+                            for atom in t['atoms']
+                        ],
+                    }
+                    for t in wo['tasks']
+                ],
+            }
+            for wo in pool['work_orders']
+        ],
+    }
