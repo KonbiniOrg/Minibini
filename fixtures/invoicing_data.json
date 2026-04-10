@@ -113,7 +113,6 @@
         "pk": 1,
         "fields": {
             "invoice": 1,
-            "task": null,
             "price_list_item": 1,
             "line_number": 1,
             "qty": "50.00",
@@ -127,7 +126,6 @@
         "pk": 2,
         "fields": {
             "invoice": 1,
-            "task": 2,
             "price_list_item": null,
             "line_number": 2,
             "qty": "8.00",

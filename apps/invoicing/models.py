@@ -130,12 +130,16 @@ class InvoiceLineItem(BaseLineItem):
     """Line item for invoices - inherits shared functionality from BaseLineItem."""
 
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
-    task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
         db_table = 'invoice_li'
         verbose_name = "Invoice Line Item"
         verbose_name_plural = "Invoice Line Items"
+
+    @property
+    def task(self):
+        """InvoiceLineItem no longer has a direct task FK. Kept as None for BaseLineItem.clean() compatibility."""
+        return None
 
     def get_parent_field_name(self):
         """Get the name of the parent field for this line item type."""
