@@ -52,9 +52,7 @@
                 <td>{% if item.accounting_category %}{% if item.accounting_category.taxable %}Yes{% else %}No{% endif %}{% else %}—{% endif %}</td>
                 <td>{{ item.description|default:"No description" }}</td>
                 <td>
-                    {% if item.task %}
-                        Task: {{ item.task.name }}
-                    {% elif item.price_list_item %}
+                    {% if item.price_list_item %}
                         {{ item.price_list_item.code }} - {{ item.price_list_item.description|truncatewords:5 }}{% if not item.price_list_item.is_active %} <strong>(Archived)</strong>{% endif %}
                     {% else %}
                         No source

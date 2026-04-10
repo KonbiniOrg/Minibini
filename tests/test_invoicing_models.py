@@ -1,5 +1,4 @@
 from django.test import TestCase
-from django.core.exceptions import ValidationError
 from decimal import Decimal
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import PriceListItem
