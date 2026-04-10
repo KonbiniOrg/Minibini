@@ -350,3 +350,59 @@ class RemoveAtomsEndpointTest(TestCase):
         data = response.json()
         self.assertTrue(data['line_item_deleted'])
         self.assertIsNone(data.get('line_item'))
+
+
+class StartInvoiceWizardEndpointTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@example.com', mobile_number='555-0000',
+        )
+        self.user = User.objects.create_user(username='test', password='pw')
+        self.user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_financials')
+        )
+        self.client = APIClient()
+        self.client.login(username='test', password='pw')
+
+        self.approved_job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.draft_job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0002')
+
+    def test_creates_draft_and_returns_id(self):
+        response = self.client.post(
+            f'/api/jobs/{self.approved_job.pk}/start-invoice-wizard/',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn('invoice_id', data)
+        invoice = Invoice.objects.get(pk=data['invoice_id'])
+        self.assertEqual(invoice.status, Invoice.STATUS_DRAFT)
+        self.assertEqual(invoice.job, self.approved_job)
+
+    def test_returns_existing_draft(self):
+        Invoice.objects.create(job=self.approved_job, status=Invoice.STATUS_DRAFT)
+        response = self.client.post(
+            f'/api/jobs/{self.approved_job.pk}/start-invoice-wizard/',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Invoice.objects.filter(job=self.approved_job).count(), 1)
+
+    def test_refuses_pre_approval_job(self):
+        response = self.client.post(
+            f'/api/jobs/{self.draft_job.pk}/start-invoice-wizard/',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_requires_can_manage_financials(self):
+        user2 = User.objects.create_user(username='noperm', password='pw')
+        client2 = APIClient()
+        client2.login(username='noperm', password='pw')
+        response = client2.post(
+            f'/api/jobs/{self.approved_job.pk}/start-invoice-wizard/',
+        )
+        self.assertEqual(response.status_code, 403)

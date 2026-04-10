@@ -20,6 +20,9 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('list', 'retrieve', 'history', 'notes'):
             return [IsAuthenticated()]
+        if self.action == 'start_invoice_wizard':
+            from apps.api.permissions import CanManageFinancials
+            return [IsAuthenticated(), CanManageFinancials()]
         return [IsAuthenticated(), CanManageJobs()]
 
     def get_queryset(self):
@@ -49,6 +52,18 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     def perform_update(self, serializer):
         job = JobService.update_job(self.get_object().pk, **serializer.validated_data)
         serializer.instance = job
+
+    @action(detail=True, methods=['post'], url_path='start-invoice-wizard')
+    def start_invoice_wizard(self, request, pk=None):
+        """Get or create the draft invoice for this job and return its id."""
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.services import InvoiceWizardService
+        job = self.get_object()
+        try:
+            invoice = InvoiceWizardService.open_for_job(job)
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
+        return Response({'invoice_id': invoice.pk})
 
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
     def history(self, request, pk=None):
