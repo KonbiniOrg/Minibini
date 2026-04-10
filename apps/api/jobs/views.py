@@ -22,7 +22,7 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
             return [IsAuthenticated()]
         if self.action == 'start_invoice_wizard':
             from apps.api.permissions import CanManageFinancials
-            return [IsAuthenticated(), CanManageFinancials()]
+            return [IsAuthenticated(), (CanManageJobs | CanManageFinancials)()]
         return [IsAuthenticated(), CanManageJobs()]
 
     def get_queryset(self):

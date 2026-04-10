@@ -17,9 +17,6 @@
   let loading = $state(true);
   let loadError = $state(null);
   let error = $state(null);
-  let draftInvoice = $derived(
-    (invoices?.results || []).find(inv => inv.status === 'draft') || null
-  );
 
   async function loadJob() {
     loading = true;
@@ -101,15 +98,8 @@
     {emails}
     onAddNote={handleAddNote}
     onStatusChange={loadJob}
+    onStartWizard={startWizard}
   />
-
-  {#if job.status === 'approved' || job.status === 'completed'}
-    <p>
-      <button onclick={startWizard}>
-        {draftInvoice ? `Continue draft (${draftInvoice.invoice_number})` : 'Build invoice'}
-      </button>
-    </p>
-  {/if}
 
   <p><a href="#/jobs">Back to list</a></p>
 {/if}

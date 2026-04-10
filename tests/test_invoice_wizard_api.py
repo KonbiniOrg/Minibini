@@ -406,3 +406,16 @@ class StartInvoiceWizardEndpointTest(TestCase):
             f'/api/jobs/{self.approved_job.pk}/start-invoice-wizard/',
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_can_manage_jobs_user_can_start_wizard(self):
+        # Either can_manage_jobs OR can_manage_financials grants access
+        user3 = User.objects.create_user(username='jobsonly', password='pw')
+        user3.user_permissions.add(
+            Permission.objects.get(codename='can_manage_jobs')
+        )
+        client3 = APIClient()
+        client3.login(username='jobsonly', password='pw')
+        response = client3.post(
+            f'/api/jobs/{self.approved_job.pk}/start-invoice-wizard/',
+        )
+        self.assertEqual(response.status_code, 200)
