@@ -102,6 +102,39 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         serializer = InvoiceLineItemSerializer(line_item)
         return Response(serializer.data, status=200)
 
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/remove-atoms',
+    )
+    def remove_atoms(self, request, pk=None, line_item_pk=None):
+        """Remove atoms from an existing line item."""
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.invoicing.services import InvoiceWizardService
+
+        invoice = self.get_object()
+        try:
+            line_item = InvoiceLineItem.objects.get(pk=line_item_pk, invoice=invoice)
+        except InvoiceLineItem.DoesNotExist:
+            return Response({'error': 'Line item not found'}, status=404)
+
+        source_ids = request.data.get('source_ids', [])
+        try:
+            result = InvoiceWizardService.remove_atoms_from_line_item(
+                line_item, source_ids,
+            )
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
+
+        if result['line_item_deleted']:
+            return Response({'line_item_deleted': True, 'line_item': None})
+
+        line_item.refresh_from_db()
+        return Response({
+            'line_item_deleted': False,
+            'line_item': InvoiceLineItemSerializer(line_item).data,
+        })
+
     @action(detail=True, methods=['post'], url_path='send-to-qbo')
     def send_to_qbo(self, request, pk=None):
         """Push this invoice to QBO, attach PDF, and send to customer."""
