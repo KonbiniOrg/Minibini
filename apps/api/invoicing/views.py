@@ -71,6 +71,37 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         serializer = InvoiceLineItemSerializer(line_item)
         return Response(serializer.data, status=201)
 
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/add-atoms',
+    )
+    def add_atoms(self, request, pk=None, line_item_pk=None):
+        """Append atoms to an existing line item."""
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.invoicing.services import InvoiceWizardService, ClaimConflict
+
+        invoice = self.get_object()
+        try:
+            line_item = InvoiceLineItem.objects.get(pk=line_item_pk, invoice=invoice)
+        except InvoiceLineItem.DoesNotExist:
+            return Response({'error': 'Line item not found'}, status=404)
+
+        atoms = request.data.get('atoms', [])
+        try:
+            InvoiceWizardService.add_atoms_to_line_item(line_item, atoms)
+        except ClaimConflict as e:
+            return Response(
+                {'error': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
+                status=409,
+            )
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
+
+        line_item.refresh_from_db()
+        serializer = InvoiceLineItemSerializer(line_item)
+        return Response(serializer.data, status=200)
+
     @action(detail=True, methods=['post'], url_path='send-to-qbo')
     def send_to_qbo(self, request, pk=None):
         """Push this invoice to QBO, attach PDF, and send to customer."""
