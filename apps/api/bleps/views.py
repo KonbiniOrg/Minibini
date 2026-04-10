@@ -86,10 +86,21 @@ class BlepViewSet(viewsets.ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         blep = self.get_object()
-        allowed = {'start_time', 'end_time'}
+        allowed = {'start_time', 'end_time', 'user'}
         fields = {}
         for k, v in request.data.items():
             if k not in allowed:
+                continue
+            if k == 'user':
+                # Resolve user id to User instance for BlepService.update
+                from apps.core.models import User
+                try:
+                    fields['user'] = User.objects.get(pk=v)
+                except User.DoesNotExist:
+                    return Response(
+                        {'user': ['User not found.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 continue
             if isinstance(v, str):
                 parsed = parse_datetime(v)
