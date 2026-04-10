@@ -360,6 +360,57 @@ class InvoiceWizardService:
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
 
     @staticmethod
+    def _sum_sources(line_item):
+        """Sum the computed amounts of all source atoms on a line item."""
+        total = Decimal('0.00')
+        for src in line_item.sources.all():
+            instance = src.resolve()
+            total += InvoiceWizardService._atom_computed_amount(instance)
+        return total
+
+    @staticmethod
+    def add_atoms_to_line_item(line_item, atoms):
+        """Append N atoms as sources to an existing line item.
+
+        Recomputes the line item's price if it was in sync before the operation;
+        preserves an overridden price otherwise.
+        """
+        from django.db import transaction, IntegrityError
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        InvoiceWizardService._validate_draft(line_item.invoice)
+
+        old_sum = InvoiceWizardService._sum_sources(line_item)
+        was_in_sync = (line_item.price == old_sum)
+
+        instances = [InvoiceWizardService._resolve_atom(a) for a in atoms]
+
+        try:
+            with transaction.atomic():
+                for atom_ref, instance in zip(atoms, instances):
+                    InvoiceLineItemSource.objects.create(
+                        invoice_line_item=line_item,
+                        source_type=InvoiceWizardService._atom_source_type(instance),
+                        source_pk=instance.pk,
+                    )
+                if was_in_sync:
+                    line_item.price = InvoiceWizardService._sum_sources(line_item)
+                    line_item.save()
+        except IntegrityError:
+            existing = set(
+                InvoiceLineItemSource.objects
+                .filter(source_type__in=[a['type'] for a in atoms])
+                .values_list('source_type', 'source_pk')
+            )
+            conflicts = [
+                a for a in atoms
+                if (a['type'], a['id']) in existing
+            ]
+            raise ClaimConflict(atom_ids=conflicts)
+
+        return line_item
+
+    @staticmethod
     def add_atoms_to_new_line_item(invoice, atoms):
         """Create a new InvoiceLineItem on `invoice` with the given atoms as sources.
 

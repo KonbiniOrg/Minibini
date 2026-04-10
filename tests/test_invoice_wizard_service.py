@@ -375,3 +375,79 @@ class AddAtomsToNewLineItemTest(TestCase):
         atoms = [{'type': 'blep', 'id': self.blep1.pk}]
         with self.assertRaises(ValidationError):
             InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+
+
+class AddAtomsToExistingLineItemTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@example.com', mobile_number='555-0000',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.wo = WorkOrder.objects.create(job=self.job)
+        self.task = Task.objects.create(
+            work_order=self.wo, name='Labor',
+            rate=Decimal('25.00'), accounting_category=self.category,
+        )
+        start = timezone.now() - timezone.timedelta(hours=4)
+        self.blep1 = Blep.objects.create(
+            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+        )
+        self.blep2 = Blep.objects.create(
+            task=self.task,
+            start_time=start + timezone.timedelta(hours=3),
+            end_time=start + timezone.timedelta(hours=4),
+        )
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+
+        # Start with one atom on the line item
+        self.line_item = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice,
+            [{'type': 'blep', 'id': self.blep1.pk}],
+        )
+        # price is $50 at this point
+
+    def test_appends_sources(self):
+        InvoiceWizardService.add_atoms_to_line_item(
+            self.line_item,
+            [{'type': 'blep', 'id': self.blep2.pk}],
+        )
+        self.line_item.refresh_from_db()
+        self.assertEqual(self.line_item.sources.count(), 2)
+
+    def test_recomputes_price_when_in_sync(self):
+        # Line item is in sync: price $50, single atom totaling $50
+        InvoiceWizardService.add_atoms_to_line_item(
+            self.line_item,
+            [{'type': 'blep', 'id': self.blep2.pk}],  # another $25
+        )
+        self.line_item.refresh_from_db()
+        self.assertEqual(self.line_item.price, Decimal('75.00'))
+
+    def test_preserves_price_when_overridden(self):
+        # Override the price
+        self.line_item.price = Decimal('100.00')
+        self.line_item.save()
+
+        InvoiceWizardService.add_atoms_to_line_item(
+            self.line_item,
+            [{'type': 'blep', 'id': self.blep2.pk}],
+        )
+        self.line_item.refresh_from_db()
+        # Price is unchanged (not $75, not $100 + $25, just $100)
+        self.assertEqual(self.line_item.price, Decimal('100.00'))
+
+    def test_refuses_mutation_on_non_draft_invoice(self):
+        self.invoice.status = Invoice.STATUS_OPEN
+        self.invoice.save()
+        with self.assertRaises(ValidationError):
+            InvoiceWizardService.add_atoms_to_line_item(
+                self.line_item,
+                [{'type': 'blep', 'id': self.blep2.pk}],
+            )
