@@ -52,6 +52,25 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         # Decimals need to be serialized as strings
         return Response(_serialize_pool(pool))
 
+    @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
+    def line_items_from_atoms(self, request, pk=None):
+        """Create a new line item from a list of atoms."""
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.services import InvoiceWizardService, ClaimConflict
+        invoice = self.get_object()
+        atoms = request.data.get('atoms', [])
+        try:
+            line_item = InvoiceWizardService.add_atoms_to_new_line_item(invoice, atoms)
+        except ClaimConflict as e:
+            return Response(
+                {'error': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
+                status=409,
+            )
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
+        serializer = InvoiceLineItemSerializer(line_item)
+        return Response(serializer.data, status=201)
+
     @action(detail=True, methods=['post'], url_path='send-to-qbo')
     def send_to_qbo(self, request, pk=None):
         """Push this invoice to QBO, attach PDF, and send to customer."""

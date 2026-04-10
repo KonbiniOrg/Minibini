@@ -125,3 +125,82 @@ class SourcePoolEndpointTest(TestCase):
         client2.login(username='noperm', password='pw')
         response = client2.get(f'/api/invoices/{self.invoice.pk}/source-pool/')
         self.assertEqual(response.status_code, 403)
+
+
+class LineItemsFromAtomsEndpointTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@example.com', mobile_number='555-0000',
+        )
+        self.user = User.objects.create_user(username='test', password='pw')
+        self.user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_financials')
+        )
+        self.client = APIClient()
+        self.client.login(username='test', password='pw')
+
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.wo = WorkOrder.objects.create(job=self.job)
+        self.task = Task.objects.create(
+            work_order=self.wo, name='Labor',
+            rate=Decimal('25.00'), accounting_category=self.category,
+        )
+        start = timezone.now() - timezone.timedelta(hours=2)
+        self.blep = Blep.objects.create(
+            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+        )
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+
+    def test_creates_line_item_with_sources(self):
+        response = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
+            {'atoms': [{'type': 'blep', 'id': self.blep.pk}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data['price'], '50.00')
+        self.assertEqual(len(data['sources']), 1)
+
+    def test_returns_409_on_claim_conflict(self):
+        # Pre-claim the blep
+        prior_li = InvoiceLineItem.objects.create(
+            invoice=self.invoice, description='Prior', qty=Decimal('1'),
+            price=Decimal('50.00'), accounting_category=self.category,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=prior_li,
+            source_type=InvoiceLineItemSource.SOURCE_BLEP,
+            source_pk=self.blep.pk,
+        )
+        response = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
+            {'atoms': [{'type': 'blep', 'id': self.blep.pk}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 409)
+        data = response.json()
+        self.assertEqual(data['error'], 'atoms_already_claimed')
+        self.assertIn({'type': 'blep', 'id': self.blep.pk}, data['atom_ids'])
+
+    def test_returns_400_on_non_draft_invoice(self):
+        # Need a line item to transition out of draft
+        InvoiceLineItem.objects.create(
+            invoice=self.invoice, description='Item', qty=Decimal('1'),
+            price=Decimal('10.00'), accounting_category=self.category,
+        )
+        self.invoice.status = Invoice.STATUS_OPEN
+        self.invoice.save()
+        response = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
+            {'atoms': [{'type': 'blep', 'id': self.blep.pk}]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
