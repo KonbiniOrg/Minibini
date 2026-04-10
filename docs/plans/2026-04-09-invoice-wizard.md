@@ -103,7 +103,7 @@ class InvoiceLineItemSourceTest(TestCase):
         self.contact.business = self.business
         self.contact.save()
 
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.workorder = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.workorder,
@@ -267,7 +267,7 @@ class UniqueDraftInvoicePerJobTest(TestCase):
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
         )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
 
     def test_second_draft_for_same_job_raises(self):
         Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
@@ -466,9 +466,9 @@ class OpenForJobTest(TestCase):
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
         )
-        self.approved_job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
-        self.draft_job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT)
-        self.rejected_job = Job.objects.create(contact=self.contact, status=Job.STATUS_REJECTED)
+        self.approved_job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.draft_job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0002')
+        self.rejected_job = Job.objects.create(contact=self.contact, status=Job.STATUS_REJECTED, job_number='JOB-2026-0003')
 
     def test_creates_draft_when_none_exists(self):
         invoice = InvoiceWizardService.open_for_job(self.approved_job)
@@ -631,7 +631,7 @@ class GetSourcePoolTest(TestCase):
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
         )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
 
         self.task_billable = Task.objects.create(
@@ -955,7 +955,7 @@ class AddAtomsToNewLineItemTest(TestCase):
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
         )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.wo, name='Labor',
@@ -1241,7 +1241,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
         )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.wo, name='Labor',
@@ -1405,7 +1405,7 @@ class RemoveAtomsFromLineItemTest(TestCase):
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
         )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.wo, name='Labor',
@@ -1594,7 +1594,7 @@ class DiscardDraftTest(TestCase):
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
         )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.wo, name='Labor',
@@ -1715,7 +1715,7 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.client = APIClient()
         self.client.login(username='test', password='pw')
 
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.wo, name='Labor',
@@ -1849,7 +1849,7 @@ class SourcePoolEndpointTest(TestCase):
         self.client = APIClient()
         self.client.login(username='test', password='pw')
 
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.wo, name='Labor',
@@ -1996,7 +1996,7 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.client = APIClient()
         self.client.login(username='test', password='pw')
 
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.wo, name='Labor',
@@ -2125,7 +2125,7 @@ class AddAtomsEndpointTest(TestCase):
         self.client = APIClient()
         self.client.login(username='test', password='pw')
 
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.wo, name='Labor',
@@ -2263,7 +2263,7 @@ class RemoveAtomsEndpointTest(TestCase):
         self.client = APIClient()
         self.client.login(username='test', password='pw')
 
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
             work_order=self.wo, name='Labor',
@@ -2406,8 +2406,8 @@ class StartInvoiceWizardEndpointTest(TestCase):
         self.client = APIClient()
         self.client.login(username='test', password='pw')
 
-        self.approved_job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED)
-        self.draft_job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT)
+        self.approved_job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.draft_job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0002')
 
     def test_creates_draft_and_returns_id(self):
         response = self.client.post(
