@@ -143,3 +143,43 @@ class InvoiceLineItem(BaseLineItem):
 
     def __str__(self):
         return f"Invoice Line Item {self.pk} for {self.invoice.invoice_number}"
+
+
+class InvoiceLineItemSource(models.Model):
+    """Polymorphic join between an InvoiceLineItem and its source atom (Blep or Material).
+
+    The unique_together on (source_type, source_pk) enforces whole-atom claim at the
+    database level: an atom can be referenced by at most one line item.
+    """
+    SOURCE_BLEP = 'blep'
+    SOURCE_MATERIAL = 'material'
+    SOURCE_TYPE_CHOICES = [
+        (SOURCE_BLEP, 'Blep'),
+        (SOURCE_MATERIAL, 'Material'),
+    ]
+
+    source_id = models.AutoField(primary_key=True)
+    invoice_line_item = models.ForeignKey(
+        InvoiceLineItem,
+        on_delete=models.CASCADE,
+        related_name='sources',
+    )
+    source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES)
+    source_pk = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = 'invoice_line_item_sources'
+        unique_together = [('source_type', 'source_pk')]
+
+    def resolve(self):
+        """Return the concrete atom instance (Blep or Material) referenced by this source."""
+        if self.source_type == self.SOURCE_BLEP:
+            from apps.jobs.models import Blep
+            return Blep.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_MATERIAL:
+            from apps.inventory.models import Material
+            return Material.objects.get(pk=self.source_pk)
+        raise ValueError(f'Unknown source_type: {self.source_type}')
+
+    def __str__(self):
+        return f'Source {self.source_id}: {self.source_type}:{self.source_pk} → LineItem {self.invoice_line_item_id}'
