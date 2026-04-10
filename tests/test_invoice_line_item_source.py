@@ -157,3 +157,28 @@ class UniqueDraftInvoicePerJobTest(TestCase):
         Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         Invoice.objects.create(job=self.job, status=Invoice.STATUS_OPEN)
         self.assertEqual(Invoice.objects.filter(job=self.job).count(), 2)
+
+    def test_new_draft_allowed_after_old_draft_moves_to_open(self):
+        # Create first draft, add a line item so we can transition it
+        inv1 = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        category = AccountingCategory.objects.create(name='Labor', is_active=True)
+        InvoiceLineItem.objects.create(
+            invoice=inv1,
+            description='x',
+            qty=Decimal('1'),
+            price=Decimal('1'),
+            accounting_category=category,
+        )
+        # Move the first draft to open
+        inv1.status = Invoice.STATUS_OPEN
+        inv1.save()
+        # A new draft for the same job should succeed
+        inv2 = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        self.assertEqual(
+            Invoice.objects.filter(job=self.job, status=Invoice.STATUS_DRAFT).count(),
+            1,
+        )
+        self.assertEqual(
+            Invoice.objects.filter(job=self.job, status=Invoice.STATUS_OPEN).count(),
+            1,
+        )
