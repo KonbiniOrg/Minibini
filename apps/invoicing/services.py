@@ -304,3 +304,111 @@ class InvoiceWizardService:
             })
 
         return {'work_orders': wo_list}
+
+    @staticmethod
+    def _validate_draft(invoice):
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError('Wizard can only modify draft invoices.')
+
+    @staticmethod
+    def _resolve_atom(atom_ref):
+        """Given {'type': 'blep'|'material', 'id': N}, return the concrete instance."""
+        from apps.jobs.models import Blep
+        from apps.inventory.models import Material
+        if atom_ref['type'] == 'blep':
+            return Blep.objects.get(pk=atom_ref['id'])
+        if atom_ref['type'] == 'material':
+            return Material.objects.get(pk=atom_ref['id'])
+        raise ValueError(f"Unknown atom type: {atom_ref['type']}")
+
+    @staticmethod
+    def _atom_computed_amount(atom_instance):
+        """Compute the billable amount for an atom."""
+        from apps.jobs.models import Blep
+        from apps.inventory.models import Material
+        if isinstance(atom_instance, Blep):
+            if not atom_instance.end_time:
+                return Decimal('0.00')
+            elapsed = atom_instance.end_time - atom_instance.start_time
+            hours = Decimal(str(elapsed.total_seconds())) / Decimal('3600')
+            rate = atom_instance.task.rate or Decimal('0.00')
+            return (hours * rate).quantize(Decimal('0.01'))
+        if isinstance(atom_instance, Material):
+            return (atom_instance.quantity * atom_instance.sell_price).quantize(Decimal('0.01'))
+        raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
+
+    @staticmethod
+    def _atom_category(atom_instance):
+        """Return the accounting_category of an atom (via its task for bleps, direct for materials)."""
+        from apps.jobs.models import Blep
+        from apps.inventory.models import Material
+        if isinstance(atom_instance, Blep):
+            return atom_instance.task.accounting_category
+        if isinstance(atom_instance, Material):
+            return atom_instance.accounting_category
+        return None
+
+    @staticmethod
+    def _atom_source_type(atom_instance):
+        from apps.jobs.models import Blep
+        from apps.inventory.models import Material
+        from apps.invoicing.models import InvoiceLineItemSource
+        if isinstance(atom_instance, Blep):
+            return InvoiceLineItemSource.SOURCE_BLEP
+        if isinstance(atom_instance, Material):
+            return InvoiceLineItemSource.SOURCE_MATERIAL
+        raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
+
+    @staticmethod
+    def add_atoms_to_new_line_item(invoice, atoms):
+        """Create a new InvoiceLineItem on `invoice` with the given atoms as sources.
+
+        atoms: list of {'type': 'blep'|'material', 'id': N} dicts.
+        """
+        from django.db import transaction, IntegrityError
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        InvoiceWizardService._validate_draft(invoice)
+
+        # Resolve all atoms up front; fail fast if any are invalid
+        instances = [InvoiceWizardService._resolve_atom(a) for a in atoms]
+
+        # Compute defaults
+        total_price = sum(
+            (InvoiceWizardService._atom_computed_amount(i) for i in instances),
+            Decimal('0.00'),
+        )
+        categories = {InvoiceWizardService._atom_category(i) for i in instances}
+        # Uniform category -> use it; mixed -> leave null
+        category = categories.pop() if len(categories) == 1 else None
+
+        try:
+            with transaction.atomic():
+                line_item = InvoiceLineItem.objects.create(
+                    invoice=invoice,
+                    description='',
+                    qty=Decimal('1'),
+                    units='each',
+                    price=total_price,
+                    accounting_category=category,
+                )
+                for atom_ref, instance in zip(atoms, instances):
+                    InvoiceLineItemSource.objects.create(
+                        invoice_line_item=line_item,
+                        source_type=InvoiceWizardService._atom_source_type(instance),
+                        source_pk=instance.pk,
+                    )
+        except IntegrityError:
+            # Re-query to find which atoms are already claimed
+            existing = set(
+                InvoiceLineItemSource.objects
+                .filter(source_type__in=[a['type'] for a in atoms])
+                .values_list('source_type', 'source_pk')
+            )
+            conflicts = [
+                a for a in atoms
+                if (a['type'], a['id']) in existing
+            ]
+            raise ClaimConflict(atom_ids=conflicts)
+
+        return line_item

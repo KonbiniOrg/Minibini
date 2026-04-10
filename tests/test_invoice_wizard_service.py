@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-from apps.invoicing.services import InvoiceWizardService
+from apps.invoicing.services import InvoiceWizardService, ClaimConflict
 from apps.jobs.models import Job, WorkOrder, Task, Blep
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
@@ -227,3 +227,151 @@ class GetSourcePoolTest(TestCase):
         self.assertEqual(len(materials), 1)
         self.assertEqual(materials[0]['atom_id'], self.material.pk)
         self.assertEqual(materials[0]['computed_amount'], Decimal('25.00'))
+
+
+class AddAtomsToNewLineItemTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        self.cat_labor = AccountingCategory.objects.create(code='LBR', name='Labor', is_active=True)
+        self.cat_materials = AccountingCategory.objects.create(code='MAT', name='Materials', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@example.com', mobile_number='555-0000',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.wo = WorkOrder.objects.create(job=self.job)
+        self.task = Task.objects.create(
+            work_order=self.wo, name='Labor',
+            rate=Decimal('25.00'), accounting_category=self.cat_labor,
+        )
+        start = timezone.now() - timezone.timedelta(hours=2)
+        self.blep1 = Blep.objects.create(
+            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+        )
+        self.blep2 = Blep.objects.create(
+            task=self.task,
+            start_time=start + timezone.timedelta(hours=3),
+            end_time=start + timezone.timedelta(hours=4),
+        )
+        self.pli = PriceListItem.objects.create(
+            code='PLY', description='Plywood',
+            selling_price=Decimal('25.00'),
+            accounting_category=self.cat_materials,
+        )
+        self.material = Material.objects.create(
+            task=self.task, description='Plywood',
+            quantity=Decimal('1.00'), sell_price=Decimal('25.00'),
+            price_list_item=self.pli, accounting_category=self.cat_materials,
+        )
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+
+    def test_creates_line_item_and_sources(self):
+        atoms = [
+            {'type': 'blep', 'id': self.blep1.pk},
+            {'type': 'blep', 'id': self.blep2.pk},
+        ]
+        line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(line_item.sources.count(), 2)
+        self.assertEqual(line_item.invoice, self.invoice)
+
+    def test_default_price_is_sum_of_atoms(self):
+        atoms = [
+            {'type': 'blep', 'id': self.blep1.pk},  # 2h * $25 = $50
+            {'type': 'blep', 'id': self.blep2.pk},  # 1h * $25 = $25
+        ]
+        line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(line_item.price, Decimal('75.00'))
+
+    def test_default_qty_and_units(self):
+        atoms = [{'type': 'blep', 'id': self.blep1.pk}]
+        line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(line_item.qty, Decimal('1'))
+        self.assertEqual(line_item.units, 'each')
+
+    def test_default_description_is_blank(self):
+        atoms = [{'type': 'blep', 'id': self.blep1.pk}]
+        line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(line_item.description, '')
+
+    def test_category_set_when_all_atoms_share_one(self):
+        atoms = [
+            {'type': 'blep', 'id': self.blep1.pk},
+            {'type': 'blep', 'id': self.blep2.pk},
+        ]
+        line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(line_item.accounting_category, self.cat_labor)
+
+    def test_category_null_when_atoms_mixed(self):
+        atoms = [
+            {'type': 'blep', 'id': self.blep1.pk},       # labor
+            {'type': 'material', 'id': self.material.pk}, # materials
+        ]
+        line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertIsNone(line_item.accounting_category)
+
+    def test_concurrent_claim_raises_claim_conflict(self):
+        # Pre-claim blep1 via another line item
+        prior_li = InvoiceLineItem.objects.create(
+            invoice=self.invoice,
+            description='Prior',
+            qty=Decimal('1'),
+            price=Decimal('50.00'),
+            accounting_category=self.cat_labor,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=prior_li,
+            source_type=InvoiceLineItemSource.SOURCE_BLEP,
+            source_pk=self.blep1.pk,
+        )
+        atoms = [{'type': 'blep', 'id': self.blep1.pk}]
+        with self.assertRaises(ClaimConflict) as ctx:
+            InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertIn(
+            {'type': 'blep', 'id': self.blep1.pk},
+            ctx.exception.atom_ids,
+        )
+
+    def test_concurrent_claim_rolls_back_fully(self):
+        # If any atom conflicts, the whole operation is rolled back -- no new line item.
+        prior_li = InvoiceLineItem.objects.create(
+            invoice=self.invoice,
+            description='Prior',
+            qty=Decimal('1'),
+            price=Decimal('50.00'),
+            accounting_category=self.cat_labor,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=prior_li,
+            source_type=InvoiceLineItemSource.SOURCE_BLEP,
+            source_pk=self.blep1.pk,
+        )
+        initial_count = InvoiceLineItem.objects.filter(invoice=self.invoice).count()
+        atoms = [
+            {'type': 'blep', 'id': self.blep1.pk},  # conflict
+            {'type': 'blep', 'id': self.blep2.pk},  # would be fine
+        ]
+        try:
+            InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        except ClaimConflict:
+            pass
+        self.assertEqual(
+            InvoiceLineItem.objects.filter(invoice=self.invoice).count(),
+            initial_count,
+        )
+
+    def test_refuses_mutation_on_non_draft_invoice(self):
+        # Need a line item to allow status change from draft
+        InvoiceLineItem.objects.create(
+            invoice=self.invoice, description='Filler',
+            qty=Decimal('1'), price=Decimal('10.00'),
+            accounting_category=self.cat_labor,
+        )
+        self.invoice.status = Invoice.STATUS_OPEN
+        self.invoice.save()
+        atoms = [{'type': 'blep', 'id': self.blep1.pk}]
+        with self.assertRaises(ValidationError):
+            InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
