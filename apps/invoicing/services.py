@@ -411,6 +411,37 @@ class InvoiceWizardService:
         return line_item
 
     @staticmethod
+    def remove_atoms_from_line_item(line_item, source_ids):
+        """Remove a subset of source rows from a line item.
+
+        - Recomputes price if the line item was in sync before.
+        - Preserves price if it was overridden.
+        - Deletes the line item if all sources are removed, regardless of override.
+
+        Returns: {'line_item_deleted': bool}
+        """
+        from django.db import transaction
+
+        InvoiceWizardService._validate_draft(line_item.invoice)
+
+        old_sum = InvoiceWizardService._sum_sources(line_item)
+        was_in_sync = (line_item.price == old_sum)
+
+        with transaction.atomic():
+            line_item.sources.filter(source_id__in=source_ids).delete()
+            remaining = line_item.sources.count()
+
+            if remaining == 0:
+                line_item.delete()
+                return {'line_item_deleted': True}
+
+            if was_in_sync:
+                line_item.price = InvoiceWizardService._sum_sources(line_item)
+                line_item.save()
+
+        return {'line_item_deleted': False}
+
+    @staticmethod
     def add_atoms_to_new_line_item(invoice, atoms):
         """Create a new InvoiceLineItem on `invoice` with the given atoms as sources.
 
