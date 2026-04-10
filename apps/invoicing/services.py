@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 
 from apps.invoicing.models import Invoice, InvoiceLineItem
+from apps.jobs.models import Job
 from apps.core.services import NotFoundError, TaxCalculationService
 
 
@@ -155,3 +156,42 @@ class InvoiceGroupingService:
             result.append(data)
 
         return sorted(result, key=lambda g: g['category_name'])
+
+
+class ClaimConflict(Exception):
+    """Raised when the wizard tries to claim an atom already claimed elsewhere."""
+
+    def __init__(self, atom_ids):
+        self.atom_ids = atom_ids
+        super().__init__(f'Atoms already claimed: {atom_ids}')
+
+
+class InvoiceWizardService:
+    """Orchestration layer for the invoice wizard.
+
+    Composes on top of InvoiceService rather than replacing it. The wizard service
+    handles the atom-based flows; manual line item CRUD continues to use InvoiceService.
+    """
+
+    # Job statuses that allow invoicing
+    BILLABLE_JOB_STATUSES = {Job.STATUS_APPROVED, Job.STATUS_COMPLETED}
+
+    @staticmethod
+    def open_for_job(job):
+        """Return the job's draft Invoice, creating one if none exists.
+
+        Raises ValidationError if the job is in a status that doesn't allow invoicing.
+        """
+        if job.status not in InvoiceWizardService.BILLABLE_JOB_STATUSES:
+            raise ValidationError(
+                f'Cannot start invoice wizard for job in status "{job.status}". '
+                f'Job must be approved or completed.'
+            )
+
+        existing = Invoice.objects.filter(
+            job=job, status=Invoice.STATUS_DRAFT
+        ).first()
+        if existing:
+            return existing
+
+        return Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
