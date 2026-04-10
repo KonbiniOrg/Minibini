@@ -195,3 +195,112 @@ class InvoiceWizardService:
             return existing
 
         return Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
+
+    @staticmethod
+    def get_source_pool(invoice):
+        """Walk the job's work orders -> tasks -> atoms and return the source pool tree.
+
+        Atoms are annotated with state: 'available', 'claimed_by_current', or 'claimed_by_other'.
+        """
+        from apps.jobs.models import WorkOrder, Task, Blep
+        from apps.inventory.models import Material
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        job = invoice.job
+
+        # Build the claim lookup: (source_type, source_pk) -> state info
+        # Only non-cancelled invoices create claims
+        claimed_sources = (
+            InvoiceLineItemSource.objects
+            .filter(invoice_line_item__invoice__job=job)
+            .exclude(invoice_line_item__invoice__status=Invoice.STATUS_CANCELLED)
+            .select_related('invoice_line_item', 'invoice_line_item__invoice')
+        )
+        claims = {}
+        for src in claimed_sources:
+            li = src.invoice_line_item
+            inv = li.invoice
+            key = (src.source_type, src.source_pk)
+            if inv.pk == invoice.pk:
+                claims[key] = {
+                    'state': 'claimed_by_current',
+                    'claiming_line_item_id': li.pk,
+                    'claiming_invoice_id': None,
+                    'claiming_invoice_number': None,
+                }
+            else:
+                claims[key] = {
+                    'state': 'claimed_by_other',
+                    'claiming_line_item_id': None,
+                    'claiming_invoice_id': inv.pk,
+                    'claiming_invoice_number': inv.invoice_number,
+                }
+
+        default_state = {
+            'state': 'available',
+            'claiming_line_item_id': None,
+            'claiming_invoice_id': None,
+            'claiming_invoice_number': None,
+        }
+
+        work_orders = WorkOrder.objects.filter(job=job).order_by('pk')
+        wo_list = []
+        for wo in work_orders:
+            tasks = (
+                Task.objects.filter(work_order=wo)
+                .exclude(status=Task.STATUS_CANCELLED)
+                .order_by('sort_order', 'pk')
+            )
+            task_list = []
+            for task in tasks:
+                atoms = []
+
+                # Blep atoms - exclude incomplete bleps (no end_time)
+                bleps = (
+                    Blep.objects.filter(task=task)
+                    .exclude(end_time__isnull=True)
+                    .order_by('start_time', 'pk')
+                )
+                for blep in bleps:
+                    elapsed = blep.end_time - blep.start_time
+                    hours = Decimal(str(elapsed.total_seconds())) / Decimal('3600')
+                    amount = (hours * (task.rate or Decimal('0.00'))).quantize(Decimal('0.01'))
+                    key = (InvoiceLineItemSource.SOURCE_BLEP, blep.pk)
+                    state_info = claims.get(key, default_state)
+                    atoms.append({
+                        'atom_type': 'blep',
+                        'atom_id': blep.pk,
+                        'description': f'Labor {hours:.2f}h',
+                        'sub_info': f"{blep.start_time.strftime('%m/%d')} \u00b7 {blep.user.username if blep.user else '\u2014'}",
+                        'computed_amount': amount,
+                        **state_info,
+                    })
+
+                # Material atoms
+                materials = Material.objects.filter(task=task).order_by('pk')
+                for mat in materials:
+                    amount = (mat.quantity * mat.sell_price).quantize(Decimal('0.01'))
+                    key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
+                    state_info = claims.get(key, default_state)
+                    atoms.append({
+                        'atom_type': 'material',
+                        'atom_id': mat.pk,
+                        'description': mat.description,
+                        'sub_info': '',
+                        'computed_amount': amount,
+                        **state_info,
+                    })
+
+                task_list.append({
+                    'task_id': task.pk,
+                    'name': task.name,
+                    'has_billable_atoms': len(atoms) > 0,
+                    'atoms': atoms,
+                })
+
+            wo_list.append({
+                'work_order_id': wo.pk,
+                'tasks': task_list,
+            })
+
+        return {'work_orders': wo_list}

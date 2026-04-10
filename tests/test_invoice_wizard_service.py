@@ -3,11 +3,12 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
-from apps.invoicing.models import Invoice
+from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.invoicing.services import InvoiceWizardService
-from apps.jobs.models import Job
+from apps.jobs.models import Job, WorkOrder, Task, Blep
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
+from apps.inventory.models import Material, PriceListItem
 
 
 class OpenForJobTest(TestCase):
@@ -58,3 +59,171 @@ class OpenForJobTest(TestCase):
     def test_refuses_rejected_job(self):
         with self.assertRaises(ValidationError):
             InvoiceWizardService.open_for_job(self.rejected_job)
+
+
+class GetSourcePoolTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@example.com', mobile_number='555-0000',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.wo = WorkOrder.objects.create(job=self.job)
+
+        self.task_billable = Task.objects.create(
+            work_order=self.wo, name='Site demo',
+            rate=Decimal('25.00'), accounting_category=self.category,
+        )
+        self.task_empty = Task.objects.create(
+            work_order=self.wo, name='Inspection',
+            rate=Decimal('50.00'), accounting_category=self.category,
+        )
+        self.task_cancelled = Task.objects.create(
+            work_order=self.wo, name='Cancelled work',
+            rate=Decimal('25.00'), accounting_category=self.category,
+        )
+        self.task_cancelled.status = Task.STATUS_CANCELLED
+        self.task_cancelled.save()
+
+        # Complete blep (billable)
+        self.blep_complete = Blep.objects.create(
+            task=self.task_billable,
+            start_time=timezone.now() - timezone.timedelta(hours=2),
+            end_time=timezone.now(),
+        )
+        # Incomplete blep (should be filtered out)
+        self.blep_incomplete = Blep.objects.create(
+            task=self.task_billable,
+            start_time=timezone.now(),
+            end_time=None,
+        )
+
+        self.pli = PriceListItem.objects.create(
+            code='PLYWOOD', description='Plywood 4x8',
+            selling_price=Decimal('25.00'),
+            accounting_category=self.category,
+        )
+        self.material = Material.objects.create(
+            task=self.task_billable,
+            description='Plywood 4x8',
+            quantity=Decimal('1.00'),
+            sell_price=Decimal('25.00'),
+            price_list_item=self.pli,
+            accounting_category=self.category,
+        )
+
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+
+    def test_tree_includes_work_orders_and_tasks(self):
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        self.assertEqual(len(pool['work_orders']), 1)
+        task_names = [t['name'] for t in pool['work_orders'][0]['tasks']]
+        self.assertIn('Site demo', task_names)
+        self.assertIn('Inspection', task_names)
+        self.assertNotIn('Cancelled work', task_names)
+
+    def test_incomplete_bleps_are_excluded(self):
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        site_demo = next(
+            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+        )
+        blep_atoms = [a for a in site_demo['atoms'] if a['atom_type'] == 'blep']
+        self.assertEqual(len(blep_atoms), 1)
+        self.assertEqual(blep_atoms[0]['atom_id'], self.blep_complete.pk)
+
+    def test_empty_task_has_flag_set(self):
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        inspection = next(
+            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Inspection'
+        )
+        self.assertFalse(inspection['has_billable_atoms'])
+        self.assertEqual(inspection['atoms'], [])
+
+    def test_atom_state_available(self):
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        site_demo = next(
+            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+        )
+        for atom in site_demo['atoms']:
+            self.assertEqual(atom['state'], 'available')
+
+    def test_atom_state_claimed_by_current(self):
+        line_item = InvoiceLineItem.objects.create(
+            invoice=self.invoice,
+            description='Test',
+            qty=Decimal('1'),
+            price=Decimal('50.00'),
+            accounting_category=self.category,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=line_item,
+            source_type=InvoiceLineItemSource.SOURCE_BLEP,
+            source_pk=self.blep_complete.pk,
+        )
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        site_demo = next(
+            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+        )
+        claimed = next(a for a in site_demo['atoms'] if a['atom_id'] == self.blep_complete.pk)
+        self.assertEqual(claimed['state'], 'claimed_by_current')
+        self.assertEqual(claimed['claiming_line_item_id'], line_item.pk)
+
+    def test_atom_state_claimed_by_other_invoice(self):
+        other_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_OPEN)
+        other_li = InvoiceLineItem.objects.create(
+            invoice=other_invoice,
+            description='Prior',
+            qty=Decimal('1'),
+            price=Decimal('50.00'),
+            accounting_category=self.category,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=other_li,
+            source_type=InvoiceLineItemSource.SOURCE_BLEP,
+            source_pk=self.blep_complete.pk,
+        )
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        site_demo = next(
+            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+        )
+        claimed = next(a for a in site_demo['atoms'] if a['atom_id'] == self.blep_complete.pk)
+        self.assertEqual(claimed['state'], 'claimed_by_other')
+        self.assertEqual(claimed['claiming_invoice_id'], other_invoice.pk)
+        self.assertEqual(claimed['claiming_invoice_number'], other_invoice.invoice_number)
+
+    def test_atoms_on_cancelled_invoice_are_available(self):
+        other_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_CANCELLED)
+        other_li = InvoiceLineItem.objects.create(
+            invoice=other_invoice,
+            description='Prior',
+            qty=Decimal('1'),
+            price=Decimal('50.00'),
+            accounting_category=self.category,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=other_li,
+            source_type=InvoiceLineItemSource.SOURCE_BLEP,
+            source_pk=self.blep_complete.pk,
+        )
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        site_demo = next(
+            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+        )
+        claimed_blep = next(a for a in site_demo['atoms'] if a['atom_id'] == self.blep_complete.pk)
+        self.assertEqual(claimed_blep['state'], 'available')
+
+    def test_material_atoms_included(self):
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        site_demo = next(
+            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+        )
+        materials = [a for a in site_demo['atoms'] if a['atom_type'] == 'material']
+        self.assertEqual(len(materials), 1)
+        self.assertEqual(materials[0]['atom_id'], self.material.pk)
+        self.assertEqual(materials[0]['computed_amount'], Decimal('25.00'))
