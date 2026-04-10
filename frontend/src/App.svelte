@@ -17,6 +17,7 @@
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
+  import InvoiceWizardPage from './routes/invoices/InvoiceWizardPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
@@ -47,6 +48,7 @@
     '/purchase-orders/new': PurchaseOrderFormPage,
     '/purchase-orders/:id/edit': PurchaseOrderFormPage,
     '/purchase-orders/:id': PurchaseOrderDetailPage,
+    '/invoices/:id/wizard': InvoiceWizardPage,
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
     '/profile': ProfilePage,
