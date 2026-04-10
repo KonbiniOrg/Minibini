@@ -73,6 +73,28 @@ class InvoiceLineItemSourceTest(TestCase):
         resolved = source.resolve()
         self.assertEqual(resolved, self.blep)
 
+    def test_resolve_returns_material_instance(self):
+        pli = PriceListItem.objects.create(
+            code='MAT-001',
+            description='Test Material',
+            purchase_price=Decimal('5.00'),
+            selling_price=Decimal('10.00'),
+            accounting_category=self.category,
+        )
+        material = Material.objects.create(
+            task=self.task,
+            quantity=Decimal('3.00'),
+            sell_price=Decimal('10.00'),
+            price_list_item=pli,
+        )
+        source = InvoiceLineItemSource.objects.create(
+            invoice_line_item=self.line_item,
+            source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
+            source_pk=material.pk,
+        )
+        resolved = source.resolve()
+        self.assertEqual(resolved, material)
+
     def test_unique_atom_constraint_prevents_double_claim(self):
         InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,
