@@ -54,6 +54,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     )
     default_send_to = serializers.SerializerMethodField()
     job_number = serializers.SerializerMethodField()
+    job_description = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -61,7 +62,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'invoice_id', 'job', 'invoice_number', 'status',
             'created_date', 'sent_date', 'closed_date',
             'qbo_id', 'qbo_payment_status', 'qbo_amount_paid',
-            'line_items', 'default_send_to', 'job_number',
+            'line_items', 'default_send_to', 'job_number', 'job_description',
         ]
         read_only_fields = [
             'invoice_id', 'invoice_number', 'created_date',
@@ -80,3 +81,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if obj.job:
             return obj.job.job_number
         return None
+
+    def get_job_description(self, obj):
+        """Return the job description for display."""
+        if obj.job:
+            return obj.job.description
+        return ''

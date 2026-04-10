@@ -4,47 +4,8 @@
 
   let {
     invoiceId,
-    selectedAtoms = [],
-    selectedLineItemId = null,
     onchange,
   } = $props();
-
-  const canAddToSelected = $derived(
-    selectedAtoms.length > 0 && selectedLineItemId !== null
-  );
-  const canCreateNew = $derived(selectedAtoms.length > 0);
-
-  async function createNewLineItem() {
-    try {
-      await api.post(
-        `/api/invoices/${invoiceId}/line-items-from-atoms/`,
-        {atoms: selectedAtoms},
-      );
-      onchange?.();
-    } catch (e) {
-      if (e.status === 409) {
-        alert('Some atoms were claimed by another invoice. Reopen the wizard to refresh.');
-      } else {
-        alert(e.message || 'Failed to create line item');
-      }
-    }
-  }
-
-  async function addToSelected() {
-    try {
-      await api.post(
-        `/api/invoices/${invoiceId}/line-items/${selectedLineItemId}/add-atoms/`,
-        {atoms: selectedAtoms},
-      );
-      onchange?.();
-    } catch (e) {
-      if (e.status === 409) {
-        alert('Some atoms were claimed by another invoice. Reopen the wizard to refresh.');
-      } else {
-        alert(e.message || 'Failed to add atoms');
-      }
-    }
-  }
 
   async function addManual() {
     try {
@@ -79,12 +40,6 @@
   <button onclick={discardDraft} style="color: #a00;">Discard draft</button>
   <div style="display: flex; gap: 6px;">
     <button onclick={addManual}>+ Manual</button>
-    <button onclick={addToSelected} disabled={!canAddToSelected}>
-      → Add to #{selectedLineItemId || '?'}
-    </button>
-    <button onclick={createNewLineItem} disabled={!canCreateNew}>
-      → New line item from selected
-    </button>
     <button onclick={done}>Done</button>
   </div>
 </div>

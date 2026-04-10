@@ -452,6 +452,34 @@ class AddAtomsToExistingLineItemTest(TestCase):
                 [{'type': 'blep', 'id': self.blep2.pk}],
             )
 
+    def test_recomputes_per_unit_price_when_in_sync_with_qty_gt_1(self):
+        # Set qty=2, price=$25 — in sync because qty*price ($50) == sum ($50)
+        self.line_item.qty = Decimal('2')
+        self.line_item.price = Decimal('25.00')
+        self.line_item.save()
+
+        InvoiceWizardService.add_atoms_to_line_item(
+            self.line_item,
+            [{'type': 'blep', 'id': self.blep2.pk}],  # adds $25 → new sum $75
+        )
+        self.line_item.refresh_from_db()
+        # qty stays 2, price = 75/2 = 37.50
+        self.assertEqual(self.line_item.qty, Decimal('2'))
+        self.assertEqual(self.line_item.price, Decimal('37.50'))
+
+    def test_preserves_price_when_overridden_with_qty_gt_1(self):
+        # Set qty=2, price=$40 — overridden (qty*price=$80, sum=$50)
+        self.line_item.qty = Decimal('2')
+        self.line_item.price = Decimal('40.00')
+        self.line_item.save()
+
+        InvoiceWizardService.add_atoms_to_line_item(
+            self.line_item,
+            [{'type': 'blep', 'id': self.blep2.pk}],
+        )
+        self.line_item.refresh_from_db()
+        self.assertEqual(self.line_item.price, Decimal('40.00'))
+
 
 class RemoveAtomsFromLineItemTest(TestCase):
     def setUp(self):
@@ -573,6 +601,38 @@ class RemoveAtomsFromLineItemTest(TestCase):
             InvoiceWizardService.remove_atoms_from_line_item(
                 self.line_item, source_ids,
             )
+
+    def test_recomputes_per_unit_price_when_in_sync_with_qty_gt_1(self):
+        # qty=3, sum=$112.50 → in-sync per-unit price = $37.50
+        self.line_item.qty = Decimal('3')
+        self.line_item.price = Decimal('37.50')
+        self.line_item.save()
+
+        source_ids = list(
+            self.line_item.sources
+            .filter(source_pk=self.blep1.pk)  # remove the $50 atom
+            .values_list('source_id', flat=True)
+        )
+        InvoiceWizardService.remove_atoms_from_line_item(self.line_item, source_ids)
+        self.line_item.refresh_from_db()
+        # New sum = $62.50, qty = 3 → 62.50/3 = 20.8333... → quantize to $20.83
+        self.assertEqual(self.line_item.qty, Decimal('3'))
+        self.assertEqual(self.line_item.price, Decimal('20.83'))
+
+    def test_preserves_price_when_overridden_with_qty_gt_1(self):
+        # qty=2, price=$100 (overridden — qty*price=$200, sum=$112.50)
+        self.line_item.qty = Decimal('2')
+        self.line_item.price = Decimal('100.00')
+        self.line_item.save()
+
+        source_ids = list(
+            self.line_item.sources
+            .filter(source_pk=self.blep1.pk)
+            .values_list('source_id', flat=True)
+        )
+        InvoiceWizardService.remove_atoms_from_line_item(self.line_item, source_ids)
+        self.line_item.refresh_from_db()
+        self.assertEqual(self.line_item.price, Decimal('100.00'))
 
 
 class DiscardDraftTest(TestCase):

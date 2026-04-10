@@ -225,6 +225,7 @@ class InvoiceWizardService:
                 claims[key] = {
                     'state': 'claimed_by_current',
                     'claiming_line_item_id': li.pk,
+                    'claiming_line_number': li.line_number,
                     'claiming_invoice_id': None,
                     'claiming_invoice_number': None,
                 }
@@ -232,6 +233,7 @@ class InvoiceWizardService:
                 claims[key] = {
                     'state': 'claimed_by_other',
                     'claiming_line_item_id': None,
+                    'claiming_line_number': None,
                     'claiming_invoice_id': inv.pk,
                     'claiming_invoice_number': inv.invoice_number,
                 }
@@ -239,6 +241,7 @@ class InvoiceWizardService:
         default_state = {
             'state': 'available',
             'claiming_line_item_id': None,
+            'claiming_line_number': None,
             'claiming_invoice_id': None,
             'claiming_invoice_number': None,
         }
@@ -369,6 +372,20 @@ class InvoiceWizardService:
         return total
 
     @staticmethod
+    def _expected_per_unit(sum_value, qty):
+        """The per-unit price the wizard would compute right now: round(sum/qty, 2)."""
+        if not qty:
+            return Decimal('0.00')
+        return (sum_value / qty).quantize(Decimal('0.01'))
+
+    @staticmethod
+    def _is_in_sync(line_item, sum_value):
+        """In sync iff price == round(sum / qty, 2). Rounding-safe."""
+        if not line_item.qty:
+            return False
+        return line_item.price == InvoiceWizardService._expected_per_unit(sum_value, line_item.qty)
+
+    @staticmethod
     def add_atoms_to_line_item(line_item, atoms):
         """Append N atoms as sources to an existing line item.
 
@@ -381,7 +398,7 @@ class InvoiceWizardService:
         InvoiceWizardService._validate_draft(line_item.invoice)
 
         old_sum = InvoiceWizardService._sum_sources(line_item)
-        was_in_sync = (line_item.price == old_sum)
+        was_in_sync = InvoiceWizardService._is_in_sync(line_item, old_sum)
 
         instances = [InvoiceWizardService._resolve_atom(a) for a in atoms]
 
@@ -394,7 +411,8 @@ class InvoiceWizardService:
                         source_pk=instance.pk,
                     )
                 if was_in_sync:
-                    line_item.price = InvoiceWizardService._sum_sources(line_item)
+                    new_sum = InvoiceWizardService._sum_sources(line_item)
+                    line_item.price = InvoiceWizardService._expected_per_unit(new_sum, line_item.qty)
                     line_item.save()
         except IntegrityError:
             existing = set(
@@ -425,7 +443,7 @@ class InvoiceWizardService:
         InvoiceWizardService._validate_draft(line_item.invoice)
 
         old_sum = InvoiceWizardService._sum_sources(line_item)
-        was_in_sync = (line_item.price == old_sum)
+        was_in_sync = InvoiceWizardService._is_in_sync(line_item, old_sum)
 
         with transaction.atomic():
             line_item.sources.filter(source_id__in=source_ids).delete()
@@ -436,7 +454,8 @@ class InvoiceWizardService:
                 return {'line_item_deleted': True}
 
             if was_in_sync:
-                line_item.price = InvoiceWizardService._sum_sources(line_item)
+                new_sum = InvoiceWizardService._sum_sources(line_item)
+                line_item.price = InvoiceWizardService._expected_per_unit(new_sum, line_item.qty)
                 line_item.save()
 
         return {'line_item_deleted': False}

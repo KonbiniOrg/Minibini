@@ -20,13 +20,12 @@
   <p>No source data.</p>
 {:else}
   {#each sourcePool.work_orders as wo}
-    <div><strong>&#9662; WO #{wo.work_order_id}</strong></div>
     {#each wo.tasks as task}
-      <div style="margin-left: 14px;">
+      <div>
         {#if !task.has_billable_atoms}
-          <em style="color: #999;">&#9662; {task.name} (no billable items)</em>
+          <em style="color: #999;">{task.name} (no billable items)</em>
         {:else}
-          <strong>&#9662; {task.name}</strong>
+          <strong>{task.name}</strong>
           {#each task.atoms as atom}
             <div style="margin-left: 16px;">
               {#if atom.state === 'available'}
@@ -44,7 +43,7 @@
                 <span style="color: #777;">
                   <input type="checkbox" checked disabled>
                   <em>{atom.description} &mdash; ${atom.computed_amount}</em>
-                  <small>&rarr; #{atom.claiming_line_item_id}</small>
+                  <small>&rarr; line {atom.claiming_line_number}</small>
                 </span>
               {:else if atom.state === 'claimed_by_other'}
                 <span style="color: #999;">
