@@ -573,3 +573,60 @@ class RemoveAtomsFromLineItemTest(TestCase):
             InvoiceWizardService.remove_atoms_from_line_item(
                 self.line_item, source_ids,
             )
+
+
+class DiscardDraftTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@example.com', mobile_number='555-0000',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.wo = WorkOrder.objects.create(job=self.job)
+        self.task = Task.objects.create(
+            work_order=self.wo, name='Labor',
+            rate=Decimal('25.00'), accounting_category=self.category,
+        )
+        start = timezone.now() - timezone.timedelta(hours=2)
+        self.blep = Blep.objects.create(
+            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+        )
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        self.line_item = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'blep', 'id': self.blep.pk}],
+        )
+
+    def test_deletes_draft_invoice(self):
+        invoice_pk = self.invoice.pk
+        InvoiceWizardService.discard_draft(self.invoice)
+        self.assertFalse(Invoice.objects.filter(pk=invoice_pk).exists())
+
+    def test_cascades_to_line_items_and_sources(self):
+        line_item_pk = self.line_item.pk
+        InvoiceWizardService.discard_draft(self.invoice)
+        self.assertFalse(InvoiceLineItem.objects.filter(pk=line_item_pk).exists())
+        self.assertFalse(
+            InvoiceLineItemSource.objects.filter(invoice_line_item_id=line_item_pk).exists()
+        )
+
+    def test_atoms_become_available_again(self):
+        InvoiceWizardService.discard_draft(self.invoice)
+        # Create a fresh draft and check the source pool
+        fresh_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        pool = InvoiceWizardService.get_source_pool(fresh_invoice)
+        tasks = pool['work_orders'][0]['tasks']
+        labor_task = next(t for t in tasks if t['name'] == 'Labor')
+        blep_atom = next(a for a in labor_task['atoms'] if a['atom_id'] == self.blep.pk)
+        self.assertEqual(blep_atom['state'], 'available')
+
+    def test_refuses_non_draft_invoice(self):
+        self.invoice.status = Invoice.STATUS_OPEN
+        self.invoice.save()
+        with self.assertRaises(ValidationError):
+            InvoiceWizardService.discard_draft(self.invoice)

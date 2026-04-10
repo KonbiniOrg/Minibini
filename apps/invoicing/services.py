@@ -494,3 +494,9 @@ class InvoiceWizardService:
             raise ClaimConflict(atom_ids=conflicts)
 
         return line_item
+
+    @staticmethod
+    def discard_draft(invoice):
+        """Hard-delete a draft invoice. Cascades to line items and source rows."""
+        InvoiceWizardService._validate_draft(invoice)
+        invoice.delete()
