@@ -125,3 +125,35 @@ class InvoiceLineItemSourceTest(TestCase):
         self.assertFalse(
             InvoiceLineItemSource.objects.filter(pk=source.pk).exists()
         )
+
+
+class UniqueDraftInvoicePerJobTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@example.com', mobile_number='555-0000',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+
+    def test_second_draft_for_same_job_raises(self):
+        Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        with self.assertRaises(IntegrityError):
+            Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+
+    def test_multiple_non_draft_invoices_allowed(self):
+        # Two open invoices for the same job is fine
+        Invoice.objects.create(job=self.job, status=Invoice.STATUS_OPEN)
+        Invoice.objects.create(job=self.job, status=Invoice.STATUS_OPEN)
+        self.assertEqual(
+            Invoice.objects.filter(job=self.job, status=Invoice.STATUS_OPEN).count(),
+            2,
+        )
+
+    def test_draft_plus_non_draft_allowed(self):
+        Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        Invoice.objects.create(job=self.job, status=Invoice.STATUS_OPEN)
+        self.assertEqual(Invoice.objects.filter(job=self.job).count(), 2)
