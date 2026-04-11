@@ -7,8 +7,8 @@ from apps.core.models import Configuration
 
 
 DEFAULT_UNITS = [
-    "none", "hours", "ea", "sq ft", "ft", "yd", "m",
-    "sheets", "pcs", "lbs", "kg", "gal", "qt", "L", "bd ft", "ln ft",
+    "none", "ea", "hours", "min", "sheets", "sq ft", "ft", "yd", "m",
+    "lbs", "kg", "gal", "qt", "L", "bd ft", "ln ft",
 ]
 
 
