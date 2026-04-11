@@ -1,5 +1,6 @@
 <script>
   import { api } from '../lib/api.js';
+  import { fieldErrors } from '../lib/formErrors.js';
   import { user } from '../stores/auth.js';
   import { viewMode, toggleViewMode } from '../stores/viewMode.js';
 
@@ -78,11 +79,6 @@
     }
   }
 
-  function fieldErrors(errors, field) {
-    const v = errors[field];
-    if (!v) return [];
-    return Array.isArray(v) ? v : [v];
-  }
 </script>
 
 <h2>Profile</h2>
