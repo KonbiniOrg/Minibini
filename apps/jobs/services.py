@@ -98,6 +98,15 @@ class BlepService:
             qs = qs.filter(task=task)
         return qs.update(end_time=now)
 
+    @staticmethod
+    def close_user_open_bleps(user, now=None):
+        """Close all open bleps for the given user.
+
+        Public wrapper around _close_open — used by UserAdminService when
+        deactivating a user. Returns the number of bleps that were closed.
+        """
+        return BlepService._close_open(user=user, now=now)
+
     # ─────────────────────────── public API ───────────────────────────
 
     @staticmethod

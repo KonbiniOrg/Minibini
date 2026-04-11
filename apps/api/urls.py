@@ -86,6 +86,7 @@ urlpatterns = [
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),
     path('qbo/', include('apps.qbo.urls')),
+    path('users/', include('apps.api.users.urls')),
     path('jobs/board/pipeline/', pipeline_view, name='board-pipeline'),
     path('jobs/board/approved/', approved_view, name='board-approved'),
     path('jobs/board/unpaid/', unpaid_view, name='board-unpaid'),
