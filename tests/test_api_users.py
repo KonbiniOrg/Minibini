@@ -724,3 +724,27 @@ class UserPermissionsTest(BaseTestCase):
         self.assertFalse(
             self.admin2.user_permissions.filter(codename='can_manage_config').exists()
         )
+
+
+class AssigneeExclusionRegressionTest(BaseTestCase):
+    """Guard: deactivated users must not appear in assignee dropdowns.
+
+    These tests protect existing behavior — not new code. If they fail,
+    someone removed an is_active filter and needs to put it back.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.caller = User.objects.get(username='johnq')
+        self.deactivated = User.objects.get(username='manager1')
+        self.deactivated.is_active = False
+        self.deactivated.save()
+
+    def test_auth_users_list_excludes_deactivated(self):
+        self.client.force_authenticate(user=self.caller)
+        response = self.client.get('/api/auth/users/')
+        self.assertEqual(response.status_code, 200)
+        usernames = [u['username'] for u in response.data]
+        self.assertNotIn('manager1', usernames)
+        self.assertIn('johnq', usernames)
