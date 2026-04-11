@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.core.models import User
 
 
 class LoginSerializer(serializers.Serializer):
@@ -21,3 +22,12 @@ class UserSerializer(serializers.Serializer):
             for perm in obj.get_all_permissions()
             if perm.startswith('core.can_')
         )
+
+
+class MeUpdateSerializer(serializers.ModelSerializer):
+    """Self-service profile update. Deliberately omits username, password,
+    and all privilege flags — see docs/designs/2026-04-10-user-self-service-design.md
+    """
+    class Meta:
+        model = User
+        fields = ['email', 'first_name', 'last_name']
