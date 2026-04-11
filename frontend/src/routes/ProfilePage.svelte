@@ -40,7 +40,7 @@
       if (err.data && typeof err.data === 'object') {
         profileErrors = err.data;
       } else {
-        profileErrors = { non_field: ['Could not save. Please try again.'] };
+        profileErrors = { non_field_errors: ['Could not save. Please try again.'] };
       }
     } finally {
       profileSaving = false;
@@ -102,7 +102,7 @@
       <p>{msg}</p>
     {/each}
 
-    {#each fieldErrors(profileErrors, 'non_field') as msg}
+    {#each fieldErrors(profileErrors, 'non_field_errors') as msg}
       <p>{msg}</p>
     {/each}
 
