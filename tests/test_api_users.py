@@ -154,3 +154,124 @@ class UserListRetrieveTest(BaseTestCase):
         self.client.force_authenticate(user=self.admin)
         response = self.client.get(f'/api/users/{self.admin.pk}/')
         self.assertIn('can_manage_config', response.data['permissions'])
+
+
+class UserCreateTest(BaseTestCase):
+    """Tests for POST /api/users/."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        ct = ContentType.objects.get(app_label='core', model='user')
+        self.manage_config_perm = Permission.objects.get(
+            codename='can_manage_config', content_type=ct
+        )
+        self.admin = User.objects.get(username='johnq')
+        self.admin.user_permissions.add(self.manage_config_perm)
+        self.client.force_authenticate(user=self.admin)
+
+    def _body(self, **overrides):
+        body = {
+            'username': 'newbie',
+            'email': 'newbie@example.com',
+            'first_name': 'New',
+            'last_name': 'Bie',
+            'password': 'StrongPass!123',
+            'password_confirm': 'StrongPass!123',
+        }
+        body.update(overrides)
+        return body
+
+    def test_create_user_happy_path(self):
+        response = self.client.post('/api/users/', self._body(), format='json')
+        self.assertEqual(response.status_code, 201)
+        created = User.objects.get(username='newbie')
+        self.assertEqual(created.email, 'newbie@example.com')
+        self.assertEqual(created.first_name, 'New')
+        self.assertEqual(created.last_name, 'Bie')
+
+    def test_create_user_response_uses_detail_shape(self):
+        response = self.client.post('/api/users/', self._body(), format='json')
+        self.assertEqual(response.status_code, 201)
+        # Detail shape: includes permissions + date_joined
+        self.assertIn('permissions', response.data)
+        self.assertIn('date_joined', response.data)
+        # Password NEVER in response
+        self.assertNotIn('password', response.data)
+        self.assertNotIn('password_confirm', response.data)
+
+    def test_create_user_hashes_password(self):
+        self.client.post('/api/users/', self._body(), format='json')
+        created = User.objects.get(username='newbie')
+        self.assertTrue(created.check_password('StrongPass!123'))
+        self.assertNotEqual(created.password, 'StrongPass!123')
+
+    def test_create_user_sets_is_active_true_by_default(self):
+        self.client.post('/api/users/', self._body(), format='json')
+        created = User.objects.get(username='newbie')
+        self.assertTrue(created.is_active)
+
+    def test_create_user_duplicate_username_returns_400(self):
+        response = self.client.post('/api/users/', self._body(username='johnq'), format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('username', response.data)
+
+    def test_create_user_invalid_email_returns_400(self):
+        response = self.client.post('/api/users/', self._body(email='not-an-email'), format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('email', response.data)
+
+    def test_create_user_password_too_short_returns_400(self):
+        response = self.client.post(
+            '/api/users/',
+            self._body(password='abc', password_confirm='abc'),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('password', response.data)
+
+    def test_create_user_password_common_returns_400(self):
+        response = self.client.post(
+            '/api/users/',
+            self._body(password='password', password_confirm='password'),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('password', response.data)
+
+    def test_create_user_password_mismatch_returns_400(self):
+        response = self.client.post(
+            '/api/users/',
+            self._body(password_confirm='Different!123'),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('password_confirm', response.data)
+
+    def test_create_user_ignores_is_staff_in_body(self):
+        body = self._body()
+        body['is_staff'] = True
+        body['is_superuser'] = True
+        body['is_active'] = False
+        response = self.client.post('/api/users/', body, format='json')
+        self.assertEqual(response.status_code, 201)
+        created = User.objects.get(username='newbie')
+        self.assertFalse(created.is_staff)
+        self.assertFalse(created.is_superuser)
+        self.assertTrue(created.is_active)
+
+    def test_create_user_missing_required_field_returns_400(self):
+        body = self._body()
+        del body['first_name']
+        response = self.client.post('/api/users/', body, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('first_name', response.data)
+
+    def test_create_user_as_non_admin_returns_403(self):
+        manager = User.objects.get(username='manager1')
+        manager.user_permissions.remove(self.manage_config_perm)
+        manager.is_superuser = False
+        manager.save()
+        self.client.force_authenticate(user=manager)
+        response = self.client.post('/api/users/', self._body(), format='json')
+        self.assertEqual(response.status_code, 403)
