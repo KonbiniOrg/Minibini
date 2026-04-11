@@ -499,3 +499,104 @@ class UserActivateDeactivateTest(BaseTestCase):
         closed_blep.refresh_from_db()
         # Bleps are not reopened
         self.assertEqual(closed_blep.end_time, original_end)
+
+
+class UserResetPasswordTest(BaseTestCase):
+    """Tests for POST /api/users/:id/reset-password/."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        ct = ContentType.objects.get(app_label='core', model='user')
+        self.manage_config_perm = Permission.objects.get(
+            codename='can_manage_config', content_type=ct
+        )
+        self.admin = User.objects.get(username='johnq')
+        self.admin.user_permissions.add(self.manage_config_perm)
+        self.target = User.objects.get(username='manager1')
+        self.target.set_password('OldPass!99')
+        self.target.save()
+        self.client.force_authenticate(user=self.admin)
+
+    def _body(self, **overrides):
+        body = {'password': 'NewPass!88', 'password_confirm': 'NewPass!88'}
+        body.update(overrides)
+        return body
+
+    def test_reset_password_happy_path(self):
+        response = self.client.post(
+            f'/api/users/{self.target.pk}/reset-password/',
+            self._body(),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.check_password('NewPass!88'))
+        self.assertFalse(self.target.check_password('OldPass!99'))
+
+    def test_reset_password_mismatch_returns_400(self):
+        response = self.client.post(
+            f'/api/users/{self.target.pk}/reset-password/',
+            self._body(password_confirm='Different!88'),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('password_confirm', response.data)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.check_password('OldPass!99'))
+
+    def test_reset_password_too_short_returns_400(self):
+        response = self.client.post(
+            f'/api/users/{self.target.pk}/reset-password/',
+            self._body(password='abc', password_confirm='abc'),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('password', response.data)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.check_password('OldPass!99'))
+
+    def test_reset_password_common_returns_400(self):
+        response = self.client.post(
+            f'/api/users/{self.target.pk}/reset-password/',
+            self._body(password='password', password_confirm='password'),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_reset_password_invalidates_target_session(self):
+        target_client = APIClient()
+        target_client.login(username='manager1', password='OldPass!99')
+        # Confirm target is initially authenticated
+        me = target_client.get('/api/auth/me/')
+        self.assertEqual(me.status_code, 200)
+        # Admin resets via separate client
+        self.client.post(
+            f'/api/users/{self.target.pk}/reset-password/',
+            self._body(),
+            format='json',
+        )
+        # Target's session should be invalid
+        me_after = target_client.get('/api/auth/me/')
+        self.assertEqual(me_after.status_code, 403)
+
+    def test_reset_password_self_is_allowed(self):
+        # Admin resets their own password
+        self.client.post(
+            f'/api/users/{self.admin.pk}/reset-password/',
+            self._body(),
+            format='json',
+        )
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.check_password('NewPass!88'))
+
+    def test_reset_password_missing_field_returns_400(self):
+        body = self._body()
+        del body['password']
+        response = self.client.post(
+            f'/api/users/{self.target.pk}/reset-password/',
+            body,
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('password', response.data)

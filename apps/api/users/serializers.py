@@ -88,3 +88,33 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['username', 'email', 'first_name', 'last_name']
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    """Input shape for POST /api/users/:id/reset-password/.
+
+    Pure Serializer (not ModelSerializer) — it's a pure input validator
+    that calls set_password in save(), not a model-backed CRUD serializer.
+    """
+    password = serializers.CharField(write_only=True, required=True)
+    password_confirm = serializers.CharField(write_only=True, required=True)
+
+    def validate_password(self, value):
+        try:
+            django_validate_password(value, user=None)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
+
+    def validate(self, attrs):
+        if attrs.get('password') != attrs.get('password_confirm'):
+            raise serializers.ValidationError(
+                {'password_confirm': ['Passwords do not match.']}
+            )
+        return attrs
+
+    def save(self, **kwargs):
+        target = self.context['target']
+        target.set_password(self.validated_data['password'])
+        target.save(update_fields=['password'])
+        return target

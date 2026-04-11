@@ -10,6 +10,7 @@ from .serializers import (
     UserDetailSerializer,
     UserCreateSerializer,
     UserUpdateSerializer,
+    PasswordResetSerializer,
 )
 from .services import UserAdminService
 
@@ -66,3 +67,13 @@ class UserViewSet(viewsets.ModelViewSet):
         target = self.get_object()
         UserAdminService.activate_user(request.user, target)
         return Response(UserDetailSerializer(target).data)
+
+    @action(detail=True, methods=['post'], url_path='reset-password')
+    def reset_password(self, request, pk=None):
+        target = self.get_object()
+        serializer = PasswordResetSerializer(
+            data=request.data, context={'target': target}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({'detail': 'Password reset.'})
