@@ -27,6 +27,7 @@
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
   import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
   import UserListPage from './routes/users/UserListPage.svelte';
+  import UserCreatePage from './routes/users/UserCreatePage.svelte';
 
   const routes = {
     '/': Home,
@@ -53,6 +54,7 @@
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
     '/users': UserListPage,
+    '/users/new': UserCreatePage,
     '/profile': ProfilePage,
   };
 
