@@ -1,5 +1,4 @@
 from django.test import TestCase
-from django.core.exceptions import ValidationError
 from decimal import Decimal
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import PriceListItem
@@ -161,7 +160,6 @@ class InvoiceLineItemModelTest(TestCase):
     def test_invoice_line_item_creation(self):
         line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
-            task=self.task,
             price_list_item=None,
             line_number=1,
             qty=Decimal('5.00'),
@@ -170,23 +168,22 @@ class InvoiceLineItemModelTest(TestCase):
             price=Decimal('50.00')
         )
         self.assertEqual(line_item.invoice, self.invoice)
-        self.assertEqual(line_item.task, self.task)
         self.assertIsNone(line_item.price_list_item)
         self.assertEqual(line_item.line_number, 1)
         self.assertEqual(line_item.qty, Decimal('5.00'))
         self.assertEqual(line_item.units, "hours")
         self.assertEqual(line_item.description, "Test line item")
         self.assertEqual(line_item.price, Decimal('50.00'))
-        
+
     def test_invoice_line_item_str_method(self):
-        line_item = InvoiceLineItem.objects.create(invoice=self.invoice, task=self.task)
+        line_item = InvoiceLineItem.objects.create(invoice=self.invoice)
         self.assertEqual(str(line_item), f"Invoice Line Item {line_item.line_item_id} for {self.invoice.invoice_number}")
-        
+
     def test_invoice_line_item_defaults(self):
-        line_item = InvoiceLineItem.objects.create(invoice=self.invoice, task=self.task)
+        line_item = InvoiceLineItem.objects.create(invoice=self.invoice)
         self.assertEqual(line_item.qty, Decimal('0.00'))
         self.assertEqual(line_item.price, Decimal('0.00'))
-        
+
     def test_invoice_line_item_optional_relationships(self):
         line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
@@ -197,24 +194,11 @@ class InvoiceLineItemModelTest(TestCase):
         self.assertEqual(line_item.invoice, self.invoice)
         self.assertIsNone(line_item.task)
         self.assertEqual(line_item.price_list_item, self.price_list_item)
-        
-    def test_invoice_line_item_validation_both_task_and_price_item(self):
-        """Test that validation prevents having both task and price_list_item"""
-        line_item = InvoiceLineItem(
-            invoice=self.invoice,
-            task=self.task,
-            price_list_item=self.price_list_item,
-            description="Invalid line item with both"
-        )
-        with self.assertRaises(ValidationError) as context:
-            line_item.full_clean()
-        self.assertIn("cannot have both task and price_list_item", str(context.exception))
-        
+
     def test_invoice_line_item_validation_both_null_allowed(self):
-        """Test that validation allows both task and price_list_item to be null"""
+        """Test that validation allows price_list_item to be null (task FK was dropped)."""
         line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
-            task=None,
             price_list_item=None,
             description="Line item with neither task nor price item"
         )
@@ -222,24 +206,11 @@ class InvoiceLineItemModelTest(TestCase):
         line_item.full_clean()
         self.assertIsNone(line_item.task)
         self.assertIsNone(line_item.price_list_item)
-        
-    def test_invoice_line_item_validation_task_only(self):
-        """Test that line item with only task is valid"""
-        line_item = InvoiceLineItem.objects.create(
-            invoice=self.invoice,
-            task=self.task,
-            price_list_item=None,
-            description="Task-only line item"
-        )
-        line_item.full_clean()  # Should not raise
-        self.assertEqual(line_item.task, self.task)
-        self.assertIsNone(line_item.price_list_item)
-        
+
     def test_invoice_line_item_validation_price_item_only(self):
         """Test that line item with only price_list_item is valid"""
         line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
-            task=None,
             price_list_item=self.price_list_item,
             description="Price item only line item"
         )

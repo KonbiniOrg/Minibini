@@ -3,17 +3,42 @@ from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.core.units import UnitsField
 
 
+class InvoiceLineItemSourceSerializer(serializers.Serializer):
+    """Serializer for InvoiceLineItemSource that resolves the atom for display."""
+    source_id = serializers.IntegerField(read_only=True)
+    source_type = serializers.CharField(read_only=True)
+    source_pk = serializers.IntegerField(read_only=True)
+    description = serializers.SerializerMethodField()
+    computed_amount = serializers.SerializerMethodField()
+
+    def get_description(self, obj):
+        instance = obj.resolve()
+        from apps.jobs.models import Blep
+        if isinstance(instance, Blep):
+            elapsed = instance.end_time - instance.start_time
+            hours = elapsed.total_seconds() / 3600
+            return f'Labor {hours:.2f}h'
+        return instance.description
+
+    def get_computed_amount(self, obj):
+        from apps.invoicing.services import InvoiceWizardService
+        instance = obj.resolve()
+        return str(InvoiceWizardService._atom_computed_amount(instance))
+
+
 class InvoiceLineItemSerializer(serializers.ModelSerializer):
     accounting_category_name = serializers.SerializerMethodField()
     units = UnitsField()
+    sources = InvoiceLineItemSourceSerializer(many=True, read_only=True)
 
     class Meta:
         model = InvoiceLineItem
         fields = [
-            'line_item_id', 'line_number', 'task', 'price_list_item',
+            'line_item_id', 'line_number', 'price_list_item',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'accounting_category_name',
             'taxable_override', 'tax_rate_override',
+            'sources',
         ]
         read_only_fields = ['line_item_id']
 
@@ -29,6 +54,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     )
     default_send_to = serializers.SerializerMethodField()
     job_number = serializers.SerializerMethodField()
+    job_description = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -36,7 +62,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'invoice_id', 'job', 'invoice_number', 'status',
             'created_date', 'sent_date', 'closed_date',
             'qbo_id', 'qbo_payment_status', 'qbo_amount_paid',
-            'line_items', 'default_send_to', 'job_number',
+            'line_items', 'default_send_to', 'job_number', 'job_description',
         ]
         read_only_fields = [
             'invoice_id', 'invoice_number', 'created_date',
@@ -55,3 +81,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if obj.job:
             return obj.job.job_number
         return None
+
+    def get_job_description(self, obj):
+        """Return the job description for display."""
+        if obj.job:
+            return obj.job.description
+        return ''

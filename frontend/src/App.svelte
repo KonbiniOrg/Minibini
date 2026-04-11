@@ -17,6 +17,7 @@
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
+  import InvoiceWizardPage from './routes/invoices/InvoiceWizardPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
@@ -25,6 +26,9 @@
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
   import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
+  import UserListPage from './routes/users/UserListPage.svelte';
+  import UserCreatePage from './routes/users/UserCreatePage.svelte';
+  import UserDetailPage from './routes/users/UserDetailPage.svelte';
 
   const routes = {
     '/': Home,
@@ -47,8 +51,12 @@
     '/purchase-orders/new': PurchaseOrderFormPage,
     '/purchase-orders/:id/edit': PurchaseOrderFormPage,
     '/purchase-orders/:id': PurchaseOrderDetailPage,
+    '/invoices/:id/wizard': InvoiceWizardPage,
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
+    '/users': UserListPage,
+    '/users/new': UserCreatePage,
+    '/users/:id': UserDetailPage,
     '/profile': ProfilePage,
   };
 

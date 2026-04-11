@@ -98,6 +98,15 @@ class BlepService:
             qs = qs.filter(task=task)
         return qs.update(end_time=now)
 
+    @staticmethod
+    def close_user_open_bleps(user, now=None):
+        """Close all open bleps for the given user.
+
+        Public wrapper around _close_open — used by UserAdminService when
+        deactivating a user. Returns the number of bleps that were closed.
+        """
+        return BlepService._close_open(user=user, now=now)
+
     # ─────────────────────────── public API ───────────────────────────
 
     @staticmethod
@@ -149,6 +158,14 @@ class BlepService:
                 )
 
         allowed_fields = {'start_time', 'end_time'}
+        # Reassigning a blep to a different user requires can_manage_time
+        if 'user' in fields:
+            if not _has_manage_time(actor):
+                raise ValidationError(
+                    "Reassigning a time entry to another user requires can_manage_time."
+                )
+            allowed_fields.add('user')
+
         unknown = set(fields) - allowed_fields
         if unknown:
             raise ValidationError(
@@ -160,9 +177,11 @@ class BlepService:
         if new_end is not None and new_start is not None and new_end < new_start:
             raise ValidationError("end_time must be >= start_time.")
 
+        # Use the target user for overlap check (new user if reassigning, else current)
+        check_user = fields.get('user', blep.user)
         effective_end = new_end if new_end is not None else timezone.now()
         if _existing_overlaps(
-            blep.user, new_start, effective_end, exclude_blep_id=blep.blep_id,
+            check_user, new_start, effective_end, exclude_blep_id=blep.blep_id,
         ):
             raise ValidationError(
                 "This time entry would overlap an existing entry for the user."

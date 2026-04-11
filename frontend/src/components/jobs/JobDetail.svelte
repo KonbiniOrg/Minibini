@@ -16,11 +16,15 @@
     history = null,
     onAddNote = null,
     onStatusChange = null,
+    onStartWizard = null,
   } = $props();
 
   // Permission check
   let canManageJobs = $derived(
     $user?.permissions?.includes('can_manage_jobs') ?? false
+  );
+  let canManageFinancials = $derived(
+    $user?.permissions?.includes('can_manage_financials') ?? false
   );
 
   // Valid status transitions (mirrors Job model)
@@ -78,6 +82,11 @@
   let wo = $derived(workOrders?.results?.[0] || null);
   let invList = $derived(invoices?.results || []);
   let poList = $derived(purchaseOrders?.results || []);
+  let draftInvoice = $derived(invList.find(inv => inv.status === 'draft') || null);
+  let canBuildInvoice = $derived(
+    (canManageJobs || canManageFinancials) &&
+    (job.status === 'approved' || job.status === 'completed')
+  );
 </script>
 
 <div class="job-header">
@@ -273,7 +282,12 @@
     <p class="empty-msg">No invoices created for this job yet.</p>
   {/if}
   <div class="accordion-actions">
-    {#if canManageJobs && wo}
+    {#if canBuildInvoice}
+      <button onclick={() => onStartWizard?.()}>
+        {draftInvoice ? `Continue draft (${draftInvoice.invoice_number})` : 'Build invoice'}
+      </button>
+    {/if}
+    {#if (canManageJobs || canManageFinancials) && wo}
       <a href="#/jobs/{job.job_id}/create-invoice">Create Invoice</a>
     {/if}
   </div>

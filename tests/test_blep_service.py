@@ -201,6 +201,28 @@ class UpdateBlepTest(BaseTestCase):
                 end_time=blep.end_time + timedelta(minutes=5),
             )
 
+    def test_update_user_as_manager(self):
+        blep = self._blep(self.user)
+        updated = BlepService.update(blep, self.manager, user=self.other)
+        self.assertEqual(updated.user, self.other)
+
+    def test_update_user_without_manage_time_rejected(self):
+        blep = self._blep(self.user)
+        with self.assertRaises(ValidationError):
+            BlepService.update(blep, self.user, user=self.other)
+
+    def test_update_user_checks_overlap_for_new_user(self):
+        now = timezone.now()
+        # other already has a blep in this window
+        Blep.objects.create(
+            task=self.task, user=self.other,
+            start_time=now - timedelta(hours=2),
+            end_time=now - timedelta(hours=1),
+        )
+        blep = self._blep(self.user)  # same time window
+        with self.assertRaises(ValidationError):
+            BlepService.update(blep, self.manager, user=self.other)
+
     def test_update_rejects_overlap(self):
         now = timezone.now()
         Blep.objects.create(

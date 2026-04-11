@@ -1,9 +1,14 @@
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from .serializers import LoginSerializer, UserSerializer
+from .serializers import (
+    LoginSerializer,
+    UserSerializer,
+    MeUpdateSerializer,
+    PasswordChangeSerializer,
+)
 
 
 @api_view(['POST'])
@@ -33,10 +38,28 @@ def logout_view(request):
     return Response({'detail': 'Logged out.'})
 
 
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def me_view(request):
+    if request.method == 'PATCH':
+        serializer = MeUpdateSerializer(
+            request.user, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
     return Response(UserSerializer(request.user).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password_view(request):
+    serializer = PasswordChangeSerializer(
+        data=request.data, context={'request': request}
+    )
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    update_session_auth_hash(request, request.user)
+    return Response({'detail': 'Password changed.'})
 
 
 @api_view(['GET'])
