@@ -118,3 +118,23 @@ class PasswordResetSerializer(serializers.Serializer):
         target.set_password(self.validated_data['password'])
         target.save(update_fields=['password'])
         return target
+
+
+# Derive the known atom codenames from the User model's declared permissions.
+_KNOWN_ATOMS = {codename for codename, _name in User._meta.permissions}
+
+
+class PermissionsUpdateSerializer(serializers.Serializer):
+    """Input shape for PUT /api/users/:id/permissions/."""
+    permissions = serializers.ListField(
+        child=serializers.CharField(),
+        allow_empty=True,
+    )
+
+    def validate_permissions(self, value):
+        unknown = [c for c in value if c not in _KNOWN_ATOMS]
+        if unknown:
+            raise serializers.ValidationError(
+                f'Unknown permission codename(s): {", ".join(sorted(unknown))}'
+            )
+        return value

@@ -600,3 +600,127 @@ class UserResetPasswordTest(BaseTestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn('password', response.data)
+
+
+class UserPermissionsTest(BaseTestCase):
+    """Tests for PUT /api/users/:id/permissions/."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        ct = ContentType.objects.get(app_label='core', model='user')
+        self.manage_config_perm = Permission.objects.get(
+            codename='can_manage_config', content_type=ct
+        )
+        self.manage_jobs_perm = Permission.objects.get(
+            codename='can_manage_jobs', content_type=ct
+        )
+        # Two admins so D3 has room
+        self.admin1 = User.objects.get(username='johnq')
+        self.admin1.user_permissions.add(self.manage_config_perm)
+        self.admin2 = User.objects.get(username='manager1')
+        self.admin2.is_superuser = False
+        self.admin2.user_permissions.add(self.manage_config_perm)
+        self.admin2.save()
+        self.target = User.objects.get(username='admin')
+        self.target.is_superuser = False
+        self.target.save()
+        self.client.force_authenticate(user=self.admin1)
+
+    def test_set_permissions_replaces_m2m(self):
+        response = self.client.put(
+            f'/api/users/{self.target.pk}/permissions/',
+            {'permissions': ['can_manage_jobs', 'can_approve_expenses']},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        codenames = set(
+            self.target.user_permissions.values_list('codename', flat=True)
+        )
+        self.assertEqual(codenames, {'can_manage_jobs', 'can_approve_expenses'})
+
+    def test_set_permissions_empty_list_clears_all_atoms(self):
+        self.target.user_permissions.add(self.manage_jobs_perm)
+        response = self.client.put(
+            f'/api/users/{self.target.pk}/permissions/',
+            {'permissions': []},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.user_permissions.count(), 0)
+
+    def test_set_permissions_unknown_codename_returns_400(self):
+        response = self.client.put(
+            f'/api/users/{self.target.pk}/permissions/',
+            {'permissions': ['can_hack_everything']},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('permissions', response.data)
+
+    def test_set_permissions_response_uses_detail_shape(self):
+        response = self.client.put(
+            f'/api/users/{self.target.pk}/permissions/',
+            {'permissions': ['can_manage_jobs']},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('permissions', response.data)
+        self.assertIn('date_joined', response.data)
+        self.assertEqual(response.data['permissions'], ['can_manage_jobs'])
+
+    def test_set_permissions_remove_own_can_manage_config_returns_400(self):
+        # admin1 tries to remove their own can_manage_config
+        response = self.client.put(
+            f'/api/users/{self.admin1.pk}/permissions/',
+            {'permissions': ['can_manage_jobs']},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.admin1.refresh_from_db()
+        self.assertTrue(
+            self.admin1.user_permissions.filter(codename='can_manage_config').exists()
+        )
+
+    def test_set_permissions_remove_last_admin_can_manage_config_returns_400(self):
+        """D3: a superuser actor cannot strip can_manage_config from the
+        only user who has it. D2 (self-demote) would also fire if the
+        actor were the target, so we use a separate is_superuser actor.
+        """
+        # Strip admin2's can_manage_config so admin1 is the only holder.
+        self.admin2.user_permissions.remove(self.manage_config_perm)
+        # Create a superuser who can call the endpoint via is_superuser
+        # bypass (they don't need can_manage_config themselves).
+        other = User.objects.create_superuser(
+            username='supe', email='supe@example.com', password='SuperPass!99',
+            first_name='Supe', last_name='Rman',
+        )
+        self.client.force_authenticate(user=other)
+        # admin1 is the only user with can_manage_config
+        response = self.client.put(
+            f'/api/users/{self.admin1.pk}/permissions/',
+            {'permissions': []},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.admin1.refresh_from_db()
+        self.assertTrue(
+            self.admin1.user_permissions.filter(codename='can_manage_config').exists()
+        )
+
+    def test_set_permissions_remove_non_last_admin_succeeds(self):
+        # Both admin1 and admin2 have can_manage_config. Remove from admin2.
+        # admin1 still has it, so D3 should NOT fire.
+        # But admin1 is acting; admin2 is target. D2 only fires if actor==target.
+        response = self.client.put(
+            f'/api/users/{self.admin2.pk}/permissions/',
+            {'permissions': ['can_manage_jobs']},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.admin2.refresh_from_db()
+        self.assertFalse(
+            self.admin2.user_permissions.filter(codename='can_manage_config').exists()
+        )

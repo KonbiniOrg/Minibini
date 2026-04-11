@@ -11,6 +11,7 @@ from .serializers import (
     UserCreateSerializer,
     UserUpdateSerializer,
     PasswordResetSerializer,
+    PermissionsUpdateSerializer,
 )
 from .services import UserAdminService
 
@@ -77,3 +78,14 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({'detail': 'Password reset.'})
+
+    @action(detail=True, methods=['put'], url_path='permissions')
+    def permissions(self, request, pk=None):
+        target = self.get_object()
+        serializer = PermissionsUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        UserAdminService.set_permissions(
+            request.user, target, serializer.validated_data['permissions']
+        )
+        target.refresh_from_db()
+        return Response(UserDetailSerializer(target).data)
