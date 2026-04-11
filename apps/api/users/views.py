@@ -2,6 +2,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from apps.core.models import User
 from apps.api.permissions import CanManageConfig
+from .serializers import UserListSerializer, UserDetailSerializer
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -9,15 +10,12 @@ class UserViewSet(viewsets.ModelViewSet):
 
     queryset = User.objects.all().order_by('-is_active', 'username')
     lookup_field = 'pk'
-    pagination_class = None  # small lists, no pagination needed
+    pagination_class = None
 
     def get_permissions(self):
         return [IsAuthenticated(), CanManageConfig()]
 
     def get_serializer_class(self):
-        # Populated in later tasks
-        from rest_framework import serializers
-
-        class _Placeholder(serializers.Serializer):
-            pass
-        return _Placeholder
+        if self.action == 'retrieve':
+            return UserDetailSerializer
+        return UserListSerializer
