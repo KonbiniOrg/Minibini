@@ -2,6 +2,22 @@
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
 
+  // Short labels for the permission column — keep the table narrow.
+  const ATOM_SHORT_LABELS = {
+    can_manage_jobs: 'jobs',
+    can_manage_financials: 'financials',
+    can_manage_time: 'time',
+    can_approve_expenses: 'expenses',
+    can_manage_config: 'config',
+  };
+
+  function formatPermissions(codenames) {
+    if (!codenames || codenames.length === 0) return '';
+    return codenames
+      .map((c) => ATOM_SHORT_LABELS[c] || c)
+      .join(', ');
+  }
+
   let users = $state([]);
   let loading = $state(true);
   let loadError = $state('');
@@ -38,6 +54,7 @@
         <th>Username</th>
         <th>Name</th>
         <th>Email</th>
+        <th>Permissions</th>
         <th>Status</th>
         <th>Actions</th>
       </tr>
@@ -51,6 +68,7 @@
             {#if user.is_superuser} <em>(superuser)</em>{/if}
           </td>
           <td>{user.email}</td>
+          <td>{formatPermissions(user.permissions)}</td>
           <td>
             {#if user.is_active}
               Active

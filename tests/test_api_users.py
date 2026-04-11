@@ -137,8 +137,17 @@ class UserListRetrieveTest(BaseTestCase):
         self.client.force_authenticate(user=self.admin)
         response = self.client.get('/api/users/')
         row = next(u for u in response.data if u['username'] == 'johnq')
-        expected_keys = {'id', 'username', 'first_name', 'last_name', 'email', 'is_active', 'is_superuser'}
+        expected_keys = {
+            'id', 'username', 'first_name', 'last_name', 'email',
+            'is_active', 'is_superuser', 'permissions',
+        }
         self.assertEqual(set(row.keys()), expected_keys)
+
+    def test_list_includes_permission_codenames(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/users/')
+        row = next(u for u in response.data if u['username'] == 'johnq')
+        self.assertIn('can_manage_config', row['permissions'])
 
     def test_retrieve_returns_detail_fields(self):
         self.client.force_authenticate(user=self.admin)
