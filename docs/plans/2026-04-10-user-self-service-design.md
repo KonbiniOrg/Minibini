@@ -28,6 +28,52 @@ We deliberately do **not** use Django's built-in auth views or forms — they ta
 - `django.contrib.auth.password_validation.validate_password(password, user)` — run the configured `AUTH_PASSWORD_VALIDATORS`
 - `django.contrib.auth.update_session_auth_hash(request, user)` — keep the current session valid after a password change
 
+## Django built-ins: what we use and what we don't
+
+Context for future work on the `User` model and related features. Captured here because it came up while brainstorming this feature.
+
+### Auth framework (`django.contrib.auth`) — heavily used
+
+- `AbstractUser` as the base for our `User` model (`apps/core/models.py`), with `AUTH_USER_MODEL = 'core.User'`
+- `authenticate()` / `login()` / `logout()` in `apps/api/auth/views.py`
+- `@login_required` / `@permission_required` decorators in HTML views
+- `Group` and `Permission` models — our atom permissions are rows in `auth_permission` with codenames `can_manage_jobs`, etc.; the default Worker/Admin/Bookkeeper/Manager/Owner groups in `auth_group`
+- `ModelBackend` permission resolution — this is where the `is_superuser` → `has_perm() == True` bypass lives
+- Password hashing (`set_password`, `check_password`), `AUTH_PASSWORD_VALIDATORS`
+- Session-based authentication via `django.contrib.sessions`
+
+### Django admin (`django.contrib.admin`) — stopgap use only
+
+- Installed in `INSTALLED_APPS` and mounted at `/admin/` (`minibini/urls.py`)
+- `LOGIN_URL = '/admin/login/'` in `settings.py` is a stale interim bridge — predates the SPA login page. Anyone who hits a Django-side `@login_required` view while logged out lands on the admin login form, not the SPA login. **Should be fixed separately** (not part of this feature).
+- Registered ModelAdmins:
+  - `apps/core/admin.py` — `AccountingCategory` only (not `User`, not `Configuration`, not `HistoryEntry`)
+  - `apps/qbo/admin.py` — `QBOConnection` (with `access_token`/`refresh_token` readonly), `QBOSyncLog`
+  - `apps/estimates/admin.py` — empty file (`startapp` leftover, harmless)
+- None of the core business models (Job, WorkOrder, Estimate, Invoice, Contact, Business, etc.) are registered
+- **The admin's role in this project is stopgap UI for low-frequency, developer-adjacent configuration** — not a user-facing interface. Workers, managers, and owners live in the SPA.
+- **`User` is not registered with the admin.** The only ways to edit a user today are `./manage.py createsuperuser`, `./manage.py changepassword`, or direct shell/SQL. This feature is the first user-editing UI in the project.
+
+### Django flags on `AbstractUser` and how they interact with our atoms
+
+| Flag | Django behavior | Used in our code? | Interacts with atoms? |
+|---|---|---|---|
+| `is_active` | `False` → cannot authenticate at all | Read in `apps/api/auth/views.py:47` (assignee dropdown filter). Otherwise dormant. | Indirectly — inactive users never get as far as an atom check. Correct primitive for "deactivate user". |
+| `is_staff` | `True` → can log into `/admin/` | Set in dev seed data and test fixtures; never read by production code. | No. Orthogonal. |
+| `is_superuser` | `True` → `user.has_perm(anything)` returns `True` unconditionally (Django built-in, not our code) | Set in tests as a permission-bypass shortcut. Set for `dev_user` in seed data. Never read directly. | **Yes — silently bypasses every atom check.** This creates two independent paths to "full access": (1) membership in the Owner group (atom-based), or (2) `is_superuser=True` (framework bypass). Removing a user from the Owner group does nothing if they are also a superuser. |
+
+### Implications for this feature and the owner-side feature
+
+- **Self-service (this feature):** None of these flags should be editable via `/api/auth/me/`. The serializer excludes them by listing only `email`, `first_name`, `last_name`. Test #6 explicitly verifies that sending `is_staff`, `is_superuser`, or `is_active` in the PATCH body does not change those flags.
+- **Owner-side user management (next session):** `is_active` is the right primitive for "deactivate user" and should be exposed. `is_staff` should probably stay dev-only — the business UI should cover everything a non-developer owner needs, so there's no reason to grant a user Django admin access. `is_superuser` should not be exposed through the UI at all; if a new superuser is needed, `createsuperuser` on the command line is the right tool. The owner UI should, at most, surface `is_superuser` read-only with a note that the atom system does not apply to that user.
+
+### Other Django built-ins we use
+
+- `django.contrib.sessions` — required for session auth; used by DRF's `SessionAuthentication`
+- `django.contrib.messages` — used by HTML function-based views; not used by SPA paths
+- `django.contrib.contenttypes` — required by `auth` for the permission system
+- `django.contrib.staticfiles` — standard static file handling
+
 ## Backend
 
 ### Endpoints
@@ -162,7 +208,7 @@ TDD. New file: `tests/test_api_auth_me.py`. Django `TestCase` + DRF `APIClient` 
 3. Partial update (only `first_name`) → 200, other fields unchanged
 4. Invalid email → 400 with `email` error
 5. `username` in body → 200, username unchanged (silently ignored)
-6. `is_staff=true` in body → 200, `is_staff` unchanged (privilege-escalation guard)
+6. Privilege-escalation guard: sending `is_staff=true`, `is_superuser=true`, and `is_active=false` in the PATCH body → 200; all three flags unchanged in the DB. Single test covering all three flags.
 
 ### Password change — `POST /api/auth/me/password/`
 
