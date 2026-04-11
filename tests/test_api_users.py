@@ -275,3 +275,104 @@ class UserCreateTest(BaseTestCase):
         self.client.force_authenticate(user=manager)
         response = self.client.post('/api/users/', self._body(), format='json')
         self.assertEqual(response.status_code, 403)
+
+
+class UserUpdateTest(BaseTestCase):
+    """Tests for PATCH /api/users/:id/ and DELETE /api/users/:id/."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        ct = ContentType.objects.get(app_label='core', model='user')
+        self.manage_config_perm = Permission.objects.get(
+            codename='can_manage_config', content_type=ct
+        )
+        self.admin = User.objects.get(username='johnq')
+        self.admin.user_permissions.add(self.manage_config_perm)
+        self.client.force_authenticate(user=self.admin)
+        self.target = User.objects.get(username='manager1')
+
+    def test_patch_updates_allowed_fields(self):
+        response = self.client.patch(
+            f'/api/users/{self.target.pk}/',
+            {
+                'email': 'newmanager@example.com',
+                'first_name': 'NewFirst',
+                'last_name': 'NewLast',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.email, 'newmanager@example.com')
+        self.assertEqual(self.target.first_name, 'NewFirst')
+        self.assertEqual(self.target.last_name, 'NewLast')
+
+    def test_patch_admin_can_edit_username(self):
+        response = self.client.patch(
+            f'/api/users/{self.target.pk}/',
+            {'username': 'managerX'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.username, 'managerX')
+
+    def test_patch_response_uses_detail_shape(self):
+        response = self.client.patch(
+            f'/api/users/{self.target.pk}/',
+            {'first_name': 'Renamed'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('permissions', response.data)
+        self.assertIn('date_joined', response.data)
+
+    def test_patch_ignores_password(self):
+        original_pw = self.target.password
+        response = self.client.patch(
+            f'/api/users/{self.target.pk}/',
+            {'password': 'TryingToHack!1'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.password, original_pw)
+
+    def test_patch_ignores_is_active(self):
+        self.assertTrue(self.target.is_active)
+        response = self.client.patch(
+            f'/api/users/{self.target.pk}/',
+            {'is_active': False},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_active)
+
+    def test_patch_ignores_is_superuser(self):
+        self.assertFalse(self.target.is_superuser)
+        response = self.client.patch(
+            f'/api/users/{self.target.pk}/',
+            {'is_superuser': True},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_superuser)
+
+    def test_patch_ignores_user_permissions(self):
+        self.assertEqual(self.target.user_permissions.count(), 0)
+        response = self.client.patch(
+            f'/api/users/{self.target.pk}/',
+            {'user_permissions': [self.manage_config_perm.pk]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.user_permissions.count(), 0)
+
+    def test_delete_returns_405(self):
+        response = self.client.delete(f'/api/users/{self.target.pk}/')
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(User.objects.filter(pk=self.target.pk).exists())

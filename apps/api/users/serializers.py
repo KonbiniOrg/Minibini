@@ -77,3 +77,14 @@ class UserCreateSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password')
         user = User.objects.create_user(password=password, **validated_data)
         return user
+
+
+class UserUpdateSerializer(serializers.ModelSerializer):
+    """Input shape for PATCH /api/users/:id/. Profile fields only.
+
+    Fields allowlist is the privilege-escalation guard — password, flags,
+    groups, and permissions are handled via dedicated endpoints.
+    """
+    class Meta:
+        model = User
+        fields = ['username', 'email', 'first_name', 'last_name']
