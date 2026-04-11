@@ -376,3 +376,126 @@ class UserUpdateTest(BaseTestCase):
         response = self.client.delete(f'/api/users/{self.target.pk}/')
         self.assertEqual(response.status_code, 405)
         self.assertTrue(User.objects.filter(pk=self.target.pk).exists())
+
+
+from django.contrib.sessions.models import Session
+
+
+class UserActivateDeactivateTest(BaseTestCase):
+    """Tests for POST /api/users/:id/activate/ and /deactivate/."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        ct = ContentType.objects.get(app_label='core', model='user')
+        self.manage_config_perm = Permission.objects.get(
+            codename='can_manage_config', content_type=ct
+        )
+        # Two admins so "last admin" checks have room to breathe
+        self.admin1 = User.objects.get(username='johnq')
+        self.admin1.user_permissions.add(self.manage_config_perm)
+        self.admin2 = User.objects.get(username='manager1')
+        self.admin2.is_superuser = False
+        self.admin2.user_permissions.add(self.manage_config_perm)
+        self.admin2.save()
+        # A non-admin target
+        self.target = User.objects.get(username='admin')
+        self.target.is_superuser = False
+        self.target.save()
+        self.client.force_authenticate(user=self.admin1)
+
+    def test_deactivate_sets_is_active_false(self):
+        response = self.client.post(f'/api/users/{self.target.pk}/deactivate/')
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_active)
+        self.assertFalse(response.data['is_active'])
+
+    def test_deactivate_closes_open_bleps(self):
+        task = Task.objects.first()
+        open_blep = Blep.objects.create(
+            user=self.target, task=task,
+            start_time=timezone.now(), end_time=None,
+        )
+        self.client.post(f'/api/users/{self.target.pk}/deactivate/')
+        open_blep.refresh_from_db()
+        self.assertIsNotNone(open_blep.end_time)
+
+    def test_deactivate_does_not_touch_already_closed_bleps(self):
+        task = Task.objects.first()
+        earlier = timezone.now() - timedelta(hours=2)
+        closed_blep = Blep.objects.create(
+            user=self.target, task=task,
+            start_time=earlier,
+            end_time=earlier + timedelta(hours=1),
+        )
+        original_end = closed_blep.end_time
+        self.client.post(f'/api/users/{self.target.pk}/deactivate/')
+        closed_blep.refresh_from_db()
+        self.assertEqual(closed_blep.end_time, original_end)
+
+    def test_deactivate_kills_target_session(self):
+        # Log the target in with a real session
+        self.target.set_password('TargetPass!99')
+        self.target.save()
+        target_client = APIClient()
+        target_client.login(username=self.target.username, password='TargetPass!99')
+        # Target confirms they're authenticated
+        me = target_client.get('/api/auth/me/')
+        self.assertEqual(me.status_code, 200)
+        # Admin deactivates target via a separate client
+        self.client.post(f'/api/users/{self.target.pk}/deactivate/')
+        # Target's existing session should be gone
+        me_after = target_client.get('/api/auth/me/')
+        self.assertEqual(me_after.status_code, 403)
+
+    def test_deactivate_self_returns_400(self):
+        response = self.client.post(f'/api/users/{self.admin1.pk}/deactivate/')
+        self.assertEqual(response.status_code, 400)
+        self.admin1.refresh_from_db()
+        self.assertTrue(self.admin1.is_active)
+
+    def test_deactivate_last_admin_returns_400(self):
+        """D3: can't deactivate the only user with can_manage_config.
+
+        Setup: admin2 is the only user with can_manage_config (strip it
+        from admin1). admin1 becomes a superuser so they can still call
+        the admin endpoint (is_superuser bypasses the CanManageConfig
+        permission class). Then admin1 tries to deactivate admin2 — the
+        last permission-holder — and D3 must fire.
+        """
+        self.admin1.user_permissions.remove(self.manage_config_perm)
+        self.admin1.is_superuser = True
+        self.admin1.save()
+        # admin2 already has can_manage_config from setUp; confirm it.
+        self.assertTrue(
+            self.admin2.user_permissions.filter(codename='can_manage_config').exists()
+        )
+        self.client.force_authenticate(user=self.admin1)
+        response = self.client.post(f'/api/users/{self.admin2.pk}/deactivate/')
+        self.assertEqual(response.status_code, 400)
+        self.admin2.refresh_from_db()
+        self.assertTrue(self.admin2.is_active)
+
+    def test_activate_sets_is_active_true(self):
+        self.target.is_active = False
+        self.target.save()
+        response = self.client.post(f'/api/users/{self.target.pk}/activate/')
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_active)
+
+    def test_activate_has_no_side_effects(self):
+        self.target.is_active = False
+        self.target.save()
+        task = Task.objects.first()
+        closed_blep = Blep.objects.create(
+            user=self.target, task=task,
+            start_time=timezone.now() - timedelta(hours=2),
+            end_time=timezone.now() - timedelta(hours=1),
+        )
+        original_end = closed_blep.end_time
+        self.client.post(f'/api/users/{self.target.pk}/activate/')
+        closed_blep.refresh_from_db()
+        # Bleps are not reopened
+        self.assertEqual(closed_blep.end_time, original_end)

@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status
+from rest_framework.decorators import action
 from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -10,6 +11,7 @@ from .serializers import (
     UserCreateSerializer,
     UserUpdateSerializer,
 )
+from .services import UserAdminService
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -52,3 +54,15 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         raise MethodNotAllowed('DELETE', detail='Users cannot be hard-deleted. Use deactivate instead.')
+
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        target = self.get_object()
+        UserAdminService.deactivate_user(request.user, target)
+        return Response(UserDetailSerializer(target).data)
+
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        target = self.get_object()
+        UserAdminService.activate_user(request.user, target)
+        return Response(UserDetailSerializer(target).data)
