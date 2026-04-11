@@ -204,6 +204,8 @@ class PasswordChangeAPITest(BaseTestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn('current_password', response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.old_password))
 
     def test_password_change_keeps_session_alive(self):
         """After a successful change the same client should still be
