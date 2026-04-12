@@ -618,6 +618,32 @@ class QBOAccountsService:
         return results
 
 
+class QBOExpenseSyncService:
+    """Pushes Minibini expenses and reimbursement batches to QBO.
+    Follows the pattern of QBOBillSyncService."""
+
+    @staticmethod
+    def get_payment_accounts():
+        """
+        Return Bank, Credit Card, and Other Current Asset accounts from QBO.
+        Used by the Settings page to populate the payment-account config JSON.
+        """
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        from quickbooks.objects.account import Account
+        results = []
+        for account_type in ('Bank', 'Credit Card', 'Other Current Asset'):
+            for a in Account.filter(AccountType=account_type, Active=True, qb=client):
+                results.append({
+                    'qbo_account_id': str(a.Id),
+                    'display_name': a.Name,
+                    'account_type': account_type,
+                })
+        return results
+
+
 class QBOPaymentPollingService:
     """Polls QBO for payment status updates on synced invoices."""
 
