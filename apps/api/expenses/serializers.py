@@ -2,9 +2,20 @@ from rest_framework import serializers
 from apps.expenses.models import Expense
 
 
+class NewMaterialSerializer(serializers.Serializer):
+    """Inline new-material descriptor — created atomically with the expense."""
+    work_order_id = serializers.IntegerField()
+    description = serializers.CharField(required=False, allow_blank=True, default='')
+    quantity = serializers.IntegerField(required=False, default=1)
+    price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, default=None,
+    )
+
+
 class ExpenseSerializer(serializers.ModelSerializer):
     entered_by_name = serializers.SerializerMethodField()
     purchased_by_name = serializers.SerializerMethodField()
+    new_material = NewMaterialSerializer(required=False, write_only=True)
 
     class Meta:
         model = Expense
@@ -18,6 +29,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'status', 'qbo_id', 'qbo_sync_error',
             'reimbursement',
             'created_at', 'updated_at',
+            'new_material',
         ]
         read_only_fields = [
             'id', 'entered_by', 'entered_by_name', 'purchased_by_name',

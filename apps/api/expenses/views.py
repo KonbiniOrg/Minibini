@@ -46,10 +46,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         data = serializer.validated_data.copy()
         purchased_by = data.pop('purchased_by', None)
+        new_material = data.pop('new_material', None)
         try:
             expense = ExpenseService.submit(
                 entered_by=self.request.user,
                 purchased_by=purchased_by,
+                new_material=new_material,
                 **data,
             )
         except DjangoValidationError as e:

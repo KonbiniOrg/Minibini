@@ -76,21 +76,6 @@
     saving = true;
 
     try {
-      let materialId = material;
-      // Inline-create a new material if one was queued
-      if (newMaterial) {
-        const created = await api.post(
-          `/api/work-orders/${newMaterial.work_order_id}/materials/`,
-          {
-            description: newMaterial.description,
-            quantity: 1,
-            price: newMaterial.price || '',
-            _use_materials_bucket: true,
-          }
-        );
-        materialId = created.id || created.material_id;
-      }
-
       const payload = {
         amount,
         purchased_on,
@@ -100,8 +85,19 @@
         payment_account_id: payment_method === 'company' ? payment_account_id : '',
         reference_number,
         purchased_by: payment_method === 'personal' ? purchased_by : (purchased_by || null),
-        material: materialId,
+        material: material,
       };
+
+      // If the user queued a new material, include it in the expense payload.
+      // The backend creates both atomically.
+      if (newMaterial) {
+        payload.material = null;
+        payload.new_material = {
+          work_order_id: newMaterial.work_order_id,
+          description: newMaterial.description || description,
+          price: amount,
+        };
+      }
 
       let saved;
       if (isEdit) {
