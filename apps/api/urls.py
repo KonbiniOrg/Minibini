@@ -85,6 +85,7 @@ urlpatterns = [
     path('settings/', settings_view, name='api-settings'),
     path('shifts/', include('apps.api.time_tracking.urls')),
     path('expenses/', include('apps.api.expenses.urls')),
+    path('reimbursements/', include('apps.api.reimbursements.urls')),
     path('qbo/', include('apps.qbo.urls')),
     path('users/', include('apps.api.users.urls')),
     path('jobs/board/pipeline/', pipeline_view, name='board-pipeline'),
