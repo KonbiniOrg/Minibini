@@ -24,22 +24,28 @@
   let newMatPliId = $state(null);
   let newMatWorkOrderId = $state(null); // the WO on selected job; auto-picked or chosen
 
+  function jobDisplayLabel(j) {
+    let label = j.job_number || '';
+    if (j.name) label += ` — ${j.name}`;
+    if (j.contact_name) label += ` (${j.contact_name})`;
+    return label.trim();
+  }
+
   async function searchJobs(e) {
     jobQuery = e.target.value;
     if (jobQuery.length < 2) {
       jobResults = [];
       return;
     }
-    // /api/jobs/?search=... (existing endpoint supports search)
     const data = await api.get('/api/jobs/?search=' + encodeURIComponent(jobQuery));
     jobResults = (data.results || data).filter(j =>
-      !['complete', 'rejected'].includes(j.status)
+      !['completed', 'rejected', 'cancelled'].includes(j.status)
     );
   }
 
   async function pickJob(job) {
     selectedJob = job;
-    jobQuery = `${job.job_number || ''} — ${job.contact_name || ''}`.trim();
+    jobQuery = jobDisplayLabel(job);
     jobResults = [];
     materialId = null;
     newMaterial = null;
@@ -139,7 +145,7 @@
     <ul>
       {#each jobResults as j (j.job_id || j.id)}
         <li><button type="button" onclick={() => pickJob(j)}>
-          {j.job_number || j.id} — {j.contact_name || ''}
+          {jobDisplayLabel(j)}
         </button></li>
       {/each}
     </ul>
