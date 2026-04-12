@@ -70,6 +70,20 @@ class Expense(models.Model):
         db_table = 'expenses'
         ordering = ['-purchased_on', '-created_at']
 
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.payment_method == self.PAYMENT_METHOD_PERSONAL:
+            if not self.purchased_by_id:
+                errors['purchased_by'] = 'Required for personal (reimbursement) expenses.'
+            if self.payment_account_id:
+                errors['payment_account_id'] = 'Not allowed for personal expenses.'
+        elif self.payment_method == self.PAYMENT_METHOD_COMPANY:
+            if not self.payment_account_id:
+                errors['payment_account_id'] = 'Required for company-paid expenses.'
+        if errors:
+            raise ValidationError(errors)
+
     def __str__(self):
         return f"Expense {self.pk}: ${self.amount} ({self.status})"
 
