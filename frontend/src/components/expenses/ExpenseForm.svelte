@@ -185,7 +185,7 @@
     {#each fieldErr('purchased_by') as msg}<p><em>{msg}</em></p>{/each}
   {/if}
 
-  <MaterialPicker bind:materialId={material} bind:newMaterial={newMaterial} />
+  <MaterialPicker bind:materialId={material} bind:newMaterial={newMaterial} defaultDescription={description} />
 
   {#each fieldErr('non_field_errors') as msg}<p><em>{msg}</em></p>{/each}
 

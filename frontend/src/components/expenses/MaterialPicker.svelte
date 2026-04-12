@@ -6,6 +6,8 @@
     materialId = $bindable(null),
     // Bound to parent — if the user inline-creates, these describe the new material
     newMaterial = $bindable(null),
+    // Pre-fill for new material description (from expense description)
+    defaultDescription = '',
   } = $props();
 
   let jobQuery = $state('');
@@ -99,6 +101,9 @@
   function startAddNew() {
     showAddNew = true;
     materialId = null;
+    if (!newMatDesc && defaultDescription) {
+      newMatDesc = defaultDescription;
+    }
   }
 
   function confirmNewMaterial() {
