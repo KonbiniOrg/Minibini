@@ -1,7 +1,13 @@
+from decimal import Decimal
+from datetime import date
 from unittest.mock import patch, MagicMock
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.core.exceptions import ValidationError  # noqa: F401
+from apps.core.models import Configuration, AccountingCategory
+from apps.expenses.models import Expense
+from apps.qbo.models import QBOSyncLog
 from apps.qbo.services import QBOExpenseSyncService
 
 User = get_user_model()
@@ -93,3 +99,250 @@ class PaymentAccountsEndpointTest(TestCase):
         r = self.client_http.get('/api/qbo/payment-accounts/')
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.json(), {'error': 'No active QBO connection'})
+
+
+class PushExpenseTest(TestCase):
+    """Push a company-paid Expense as a QBO Purchase with one line."""
+
+    def setUp(self):
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': (
+                '[{"qbo_account_id": "42", "display_name": "BoA Checking", "account_type": "Bank"},'
+                ' {"qbo_account_id": "57", "display_name": "Amex Business", "account_type": "Credit Card"},'
+                ' {"qbo_account_id": "89", "display_name": "Petty Cash", "account_type": "Other Current Asset"}]'
+            )},
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Shop Supplies', qbo_expense_account_id='500',
+        )
+        self.user = User.objects.create_user(username='worker', password='testpass')
+
+    def _expense(self, **overrides):
+        defaults = dict(
+            entered_by=self.user,
+            amount=Decimal('218.45'),
+            purchased_on=date(2026, 4, 9),
+            description='Sherwin-Williams paint',
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+        )
+        defaults.update(overrides)
+        return Expense.objects.create(**defaults)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_expense_stores_qbo_id(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_purchase = MagicMock()
+        mock_purchase.Id = '9001'
+        mock_purchase.save = MagicMock(return_value=mock_purchase)
+
+        exp = self._expense()
+        with patch.object(
+            QBOExpenseSyncService, '_build_qbo_purchase_for_expense',
+            return_value=mock_purchase,
+        ):
+            result = QBOExpenseSyncService.push_expense(exp)
+
+        exp.refresh_from_db()
+        self.assertEqual(exp.qbo_id, '9001')
+        self.assertEqual(result, '9001')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_expense_skips_if_already_synced(self, mock_get_client):
+        exp = self._expense(qbo_id='9001')
+        result = QBOExpenseSyncService.push_expense(exp)
+        self.assertEqual(result, '9001')
+        mock_get_client.assert_not_called()
+
+    def test_push_expense_requires_connection(self):
+        exp = self._expense()
+        with self.assertRaises(ValueError):
+            QBOExpenseSyncService.push_expense(exp)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_expense_logs_success(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_purchase = MagicMock()
+        mock_purchase.Id = '9001'
+        mock_purchase.save = MagicMock(return_value=mock_purchase)
+        exp = self._expense()
+        with patch.object(
+            QBOExpenseSyncService, '_build_qbo_purchase_for_expense',
+            return_value=mock_purchase,
+        ):
+            QBOExpenseSyncService.push_expense(exp)
+        log = QBOSyncLog.objects.get(entity_type='expense', entity_id=exp.pk)
+        self.assertEqual(log.status, 'success')
+        self.assertEqual(log.qbo_entity_id, '9001')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_expense_logs_failure_and_raises(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_purchase = MagicMock()
+        mock_purchase.save = MagicMock(side_effect=RuntimeError('boom'))
+        exp = self._expense()
+        with patch.object(
+            QBOExpenseSyncService, '_build_qbo_purchase_for_expense',
+            return_value=mock_purchase,
+        ), self.assertRaises(RuntimeError):
+            QBOExpenseSyncService.push_expense(exp)
+        log = QBOSyncLog.objects.get(entity_type='expense', entity_id=exp.pk)
+        self.assertEqual(log.status, 'failed')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_build_qbo_purchase_credit_card_payment_type(self, mock_get_client):
+        exp = self._expense(payment_account_id='57')  # Amex = Credit Card
+        purchase = QBOExpenseSyncService._build_qbo_purchase_for_expense(exp)
+        self.assertEqual(purchase.PaymentType, 'CreditCard')
+        self.assertEqual(purchase.AccountRef.value, '57')
+        self.assertEqual(len(purchase.Line), 1)
+        self.assertEqual(float(purchase.Line[0].Amount), 218.45)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_build_qbo_purchase_bank_with_reference_is_check(self, mock_get_client):
+        exp = self._expense(
+            payment_account_id='42',  # BoA = Bank
+            reference_number='1234',
+        )
+        purchase = QBOExpenseSyncService._build_qbo_purchase_for_expense(exp)
+        self.assertEqual(purchase.PaymentType, 'Check')
+        self.assertEqual(purchase.DocNumber, '1234')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_build_qbo_purchase_bank_without_reference_has_no_payment_type(self, mock_get_client):
+        exp = self._expense(payment_account_id='42', reference_number='')
+        purchase = QBOExpenseSyncService._build_qbo_purchase_for_expense(exp)
+        # PaymentType left unset — QBO defaults to Cash for electronic transfers
+        self.assertFalse(getattr(purchase, 'PaymentType', None))
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_build_qbo_purchase_oca_has_no_payment_type(self, mock_get_client):
+        exp = self._expense(payment_account_id='89')  # Petty Cash = OCA
+        purchase = QBOExpenseSyncService._build_qbo_purchase_for_expense(exp)
+        self.assertFalse(getattr(purchase, 'PaymentType', None))
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_build_qbo_purchase_private_note_tags_origin(self, mock_get_client):
+        exp = self._expense()
+        purchase = QBOExpenseSyncService._build_qbo_purchase_for_expense(exp)
+        self.assertIn('Minibini expense', purchase.PrivateNote)
+        self.assertIn(str(exp.pk), purchase.PrivateNote)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_build_qbo_purchase_line_uses_accounting_category_account(self, mock_get_client):
+        exp = self._expense()
+        purchase = QBOExpenseSyncService._build_qbo_purchase_for_expense(exp)
+        line = purchase.Line[0]
+        self.assertEqual(line.AccountBasedExpenseLineDetail.AccountRef.value, '500')
+
+
+class UpdateExpenseTest(TestCase):
+    """Update an already-synced expense — sparse update of QBO Purchase."""
+
+    def setUp(self):
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': (
+                '[{"qbo_account_id": "57", "display_name": "Amex", "account_type": "Credit Card"}]'
+            )},
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Supplies', qbo_expense_account_id='500',
+        )
+        self.user = User.objects.create_user(username='worker', password='testpass')
+        self.exp = Expense.objects.create(
+            entered_by=self.user,
+            amount=Decimal('100.00'),
+            purchased_on=date(2026, 4, 9),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            qbo_id='9001',
+        )
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_update_expense_fetches_and_saves(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        existing = MagicMock()
+        existing.Id = '9001'
+        existing.Line = []
+        existing.save = MagicMock(return_value=existing)
+
+        with patch('quickbooks.objects.purchase.Purchase.get', return_value=existing) as mock_get:
+            QBOExpenseSyncService.update_expense(self.exp)
+
+        mock_get.assert_called_once_with('9001', qb=mock_client)
+        existing.save.assert_called_once()
+
+    def test_update_expense_raises_without_qbo_id(self):
+        self.exp.qbo_id = ''
+        self.exp.save(update_fields=['qbo_id'])
+        with self.assertRaises(ValueError):
+            QBOExpenseSyncService.update_expense(self.exp)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_update_expense_logs_success(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        existing = MagicMock()
+        existing.Id = '9001'
+        existing.save = MagicMock(return_value=existing)
+        with patch('quickbooks.objects.purchase.Purchase.get', return_value=existing):
+            QBOExpenseSyncService.update_expense(self.exp)
+        log = QBOSyncLog.objects.get(entity_type='expense', action='update')
+        self.assertEqual(log.status, 'success')
+
+
+class VoidExpenseTest(TestCase):
+    def setUp(self):
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': (
+                '[{"qbo_account_id": "57", "display_name": "Amex", "account_type": "Credit Card"}]'
+            )},
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Supplies', qbo_expense_account_id='500',
+        )
+        self.user = User.objects.create_user(username='worker', password='testpass')
+        self.exp = Expense.objects.create(
+            entered_by=self.user,
+            amount=Decimal('100.00'),
+            purchased_on=date(2026, 4, 9),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            qbo_id='9001',
+        )
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_void_expense_deletes_qbo_purchase(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        existing = MagicMock()
+        existing.delete = MagicMock()
+        with patch('quickbooks.objects.purchase.Purchase.get', return_value=existing):
+            QBOExpenseSyncService.void_expense(self.exp)
+        existing.delete.assert_called_once()
+
+    def test_void_expense_noop_without_qbo_id(self):
+        self.exp.qbo_id = ''
+        self.exp.save(update_fields=['qbo_id'])
+        QBOExpenseSyncService.void_expense(self.exp)  # no exception
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_void_expense_logs_failure_but_does_not_raise(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        existing = MagicMock()
+        existing.delete = MagicMock(side_effect=RuntimeError('qbo down'))
+        with patch('quickbooks.objects.purchase.Purchase.get', return_value=existing):
+            QBOExpenseSyncService.void_expense(self.exp)  # must not raise
+        log = QBOSyncLog.objects.get(entity_type='expense', action='delete')
+        self.assertEqual(log.status, 'failed')

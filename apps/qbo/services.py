@@ -1,8 +1,10 @@
 import datetime
+import json
 from decimal import Decimal
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from apps.core.models import Configuration
 from apps.qbo.models import QBOConnection, QBOSyncLog
 
 
@@ -642,6 +644,220 @@ class QBOExpenseSyncService:
                     'account_type': account_type,
                 })
         return results
+
+    # ---- config helpers ----
+
+    @staticmethod
+    def _load_payment_accounts():
+        """Load the payment account config JSON from Configuration."""
+        try:
+            raw = Configuration.objects.get(key='qbo_payment_accounts').value
+        except Configuration.DoesNotExist:
+            return []
+        if not raw:
+            return []
+        return json.loads(raw)
+
+    @staticmethod
+    def _lookup_account(payment_account_id):
+        """Return the dict for a given qbo_account_id, or raise ValueError."""
+        for a in QBOExpenseSyncService._load_payment_accounts():
+            if a['qbo_account_id'] == payment_account_id:
+                return a
+        raise ValueError(
+            f"payment_account_id={payment_account_id!r} not in configured payment accounts"
+        )
+
+    @staticmethod
+    def _derive_payment_type(account_type, reference_number):
+        """Map an account type + reference number to a QBO PaymentType (or None)."""
+        if account_type == 'Credit Card':
+            return 'CreditCard'
+        if account_type == 'Bank' and reference_number:
+            return 'Check'
+        return None
+
+    # ---- line builder ----
+
+    @staticmethod
+    def _build_expense_line(expense):
+        from quickbooks.objects.detailline import (
+            AccountBasedExpenseLine, AccountBasedExpenseLineDetail,
+        )
+        from quickbooks.objects.base import Ref
+
+        line = AccountBasedExpenseLine()
+        line.Amount = float(expense.amount)
+        line.Description = expense.description or f"Expense #{expense.pk}"
+
+        detail = AccountBasedExpenseLineDetail()
+        if expense.accounting_category and expense.accounting_category.qbo_expense_account_id:
+            detail.AccountRef = Ref()
+            detail.AccountRef.value = expense.accounting_category.qbo_expense_account_id
+        line.AccountBasedExpenseLineDetail = detail
+        return line
+
+    # ---- purchase builder ----
+
+    @staticmethod
+    def _build_qbo_purchase_for_expense(expense):
+        from quickbooks.objects.purchase import Purchase
+        from quickbooks.objects.base import Ref
+
+        account = QBOExpenseSyncService._lookup_account(expense.payment_account_id)
+
+        purchase = Purchase()
+        purchase.AccountRef = Ref()
+        purchase.AccountRef.value = account['qbo_account_id']
+
+        payment_type = QBOExpenseSyncService._derive_payment_type(
+            account['account_type'], expense.reference_number,
+        )
+        if payment_type:
+            purchase.PaymentType = payment_type
+        if expense.reference_number:
+            purchase.DocNumber = expense.reference_number
+
+        purchase.TxnDate = expense.purchased_on.isoformat()
+        purchase.PrivateNote = (
+            f"Minibini expense #{expense.pk} — entered by {expense.entered_by.username}"
+        )
+
+        purchase.Line = [QBOExpenseSyncService._build_expense_line(expense)]
+        return purchase
+
+    # ---- push / update / void ----
+
+    @staticmethod
+    def push_expense(expense):
+        """Create a QBO Purchase for a company-paid expense. Returns qbo_id."""
+        if expense.qbo_id:
+            return expense.qbo_id
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        qbo_purchase = QBOExpenseSyncService._build_qbo_purchase_for_expense(expense)
+
+        try:
+            qbo_purchase.save(qb=client)
+            qbo_id = str(qbo_purchase.Id)
+            expense.qbo_id = qbo_id
+            expense.save(update_fields=['qbo_id'])
+            QBOService.log_sync(
+                entity_type='expense',
+                entity_id=expense.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=qbo_id,
+                action='create',
+                status='success',
+            )
+            return qbo_id
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='expense',
+                entity_id=expense.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id='',
+                action='create',
+                status='failed',
+                error_message=str(e),
+            )
+            raise
+
+    @staticmethod
+    def update_expense(expense):
+        """Re-sync a modified company-paid expense to its existing QBO Purchase."""
+        if not expense.qbo_id:
+            raise ValueError('Expense has no qbo_id — use push_expense instead')
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        from quickbooks.objects.purchase import Purchase
+        from quickbooks.objects.base import Ref
+
+        existing = Purchase.get(expense.qbo_id, qb=client)
+
+        account = QBOExpenseSyncService._lookup_account(expense.payment_account_id)
+        existing.AccountRef = Ref()
+        existing.AccountRef.value = account['qbo_account_id']
+
+        payment_type = QBOExpenseSyncService._derive_payment_type(
+            account['account_type'], expense.reference_number,
+        )
+        if payment_type:
+            existing.PaymentType = payment_type
+        existing.DocNumber = expense.reference_number or ''
+        existing.TxnDate = expense.purchased_on.isoformat()
+        existing.Line = [QBOExpenseSyncService._build_expense_line(expense)]
+
+        try:
+            existing.save(qb=client)
+            QBOService.log_sync(
+                entity_type='expense',
+                entity_id=expense.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=expense.qbo_id,
+                action='update',
+                status='success',
+            )
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='expense',
+                entity_id=expense.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=expense.qbo_id,
+                action='update',
+                status='failed',
+                error_message=str(e),
+            )
+            raise
+
+    @staticmethod
+    def void_expense(expense):
+        """Delete the QBO Purchase for this expense. Logs but doesn't raise on failure."""
+        if not expense.qbo_id:
+            return
+
+        client = QBOService.get_client()
+        if not client:
+            QBOService.log_sync(
+                entity_type='expense',
+                entity_id=expense.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=expense.qbo_id,
+                action='delete',
+                status='failed',
+                error_message='No active QBO connection',
+            )
+            return
+
+        from quickbooks.objects.purchase import Purchase
+        try:
+            existing = Purchase.get(expense.qbo_id, qb=client)
+            existing.delete(qb=client)
+            QBOService.log_sync(
+                entity_type='expense',
+                entity_id=expense.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=expense.qbo_id,
+                action='delete',
+                status='success',
+            )
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='expense',
+                entity_id=expense.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=expense.qbo_id,
+                action='delete',
+                status='failed',
+                error_message=str(e),
+            )
+            # Intentionally do NOT raise — caller still deletes locally.
 
 
 class QBOPaymentPollingService:
