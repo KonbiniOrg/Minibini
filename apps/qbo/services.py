@@ -859,6 +859,172 @@ class QBOExpenseSyncService:
             )
             # Intentionally do NOT raise — caller still deletes locally.
 
+    # ---- reimbursement batch push / update / void ----
+
+    @staticmethod
+    def _build_qbo_purchase_for_reimbursement(batch):
+        from quickbooks.objects.purchase import Purchase
+        from quickbooks.objects.base import Ref
+
+        account = QBOExpenseSyncService._lookup_account(batch.payment_account_id)
+
+        purchase = Purchase()
+        purchase.AccountRef = Ref()
+        purchase.AccountRef.value = account['qbo_account_id']
+
+        payment_type = QBOExpenseSyncService._derive_payment_type(
+            account['account_type'], batch.reference_number,
+        )
+        if payment_type:
+            purchase.PaymentType = payment_type
+        if batch.reference_number:
+            purchase.DocNumber = batch.reference_number
+
+        purchase.TxnDate = batch.paid_on.isoformat()
+        purchase.PrivateNote = (
+            f"Reimbursement to {batch.purchased_by.username} — Minibini batch #{batch.pk}"
+        )
+
+        purchase.Line = [
+            QBOExpenseSyncService._build_expense_line(e)
+            for e in batch.expenses.all().order_by('pk')
+        ]
+        return purchase
+
+    @staticmethod
+    def push_reimbursement(batch):
+        """Create a QBO Purchase for a reimbursement batch. Returns qbo_id."""
+        if batch.qbo_id:
+            return batch.qbo_id
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        qbo_purchase = QBOExpenseSyncService._build_qbo_purchase_for_reimbursement(batch)
+
+        try:
+            qbo_purchase.save(qb=client)
+            qbo_id = str(qbo_purchase.Id)
+            batch.qbo_id = qbo_id
+            batch.save(update_fields=['qbo_id'])
+            QBOService.log_sync(
+                entity_type='reimbursement',
+                entity_id=batch.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=qbo_id,
+                action='create',
+                status='success',
+            )
+            return qbo_id
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='reimbursement',
+                entity_id=batch.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id='',
+                action='create',
+                status='failed',
+                error_message=str(e),
+            )
+            raise
+
+    @staticmethod
+    def update_reimbursement(batch):
+        """Re-sync a batch's QBO Purchase (after an expense edit or batch note change)."""
+        if not batch.qbo_id:
+            raise ValueError('Reimbursement has no qbo_id — use push_reimbursement instead')
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+
+        from quickbooks.objects.purchase import Purchase
+        from quickbooks.objects.base import Ref
+
+        existing = Purchase.get(batch.qbo_id, qb=client)
+
+        account = QBOExpenseSyncService._lookup_account(batch.payment_account_id)
+        existing.AccountRef = Ref()
+        existing.AccountRef.value = account['qbo_account_id']
+
+        payment_type = QBOExpenseSyncService._derive_payment_type(
+            account['account_type'], batch.reference_number,
+        )
+        if payment_type:
+            existing.PaymentType = payment_type
+        existing.DocNumber = batch.reference_number or ''
+        existing.TxnDate = batch.paid_on.isoformat()
+        existing.Line = [
+            QBOExpenseSyncService._build_expense_line(e)
+            for e in batch.expenses.all().order_by('pk')
+        ]
+
+        try:
+            existing.save(qb=client)
+            QBOService.log_sync(
+                entity_type='reimbursement',
+                entity_id=batch.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=batch.qbo_id,
+                action='update',
+                status='success',
+            )
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='reimbursement',
+                entity_id=batch.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=batch.qbo_id,
+                action='update',
+                status='failed',
+                error_message=str(e),
+            )
+            raise
+
+    @staticmethod
+    def void_reimbursement(batch):
+        """Delete the QBO Purchase for this batch. Logs but doesn't raise on failure."""
+        if not batch.qbo_id:
+            return
+
+        client = QBOService.get_client()
+        if not client:
+            QBOService.log_sync(
+                entity_type='reimbursement',
+                entity_id=batch.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=batch.qbo_id,
+                action='delete',
+                status='failed',
+                error_message='No active QBO connection',
+            )
+            return
+
+        from quickbooks.objects.purchase import Purchase
+        try:
+            existing = Purchase.get(batch.qbo_id, qb=client)
+            existing.delete(qb=client)
+            QBOService.log_sync(
+                entity_type='reimbursement',
+                entity_id=batch.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=batch.qbo_id,
+                action='delete',
+                status='success',
+            )
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='reimbursement',
+                entity_id=batch.pk,
+                qbo_entity_type='Purchase',
+                qbo_entity_id=batch.qbo_id,
+                action='delete',
+                status='failed',
+                error_message=str(e),
+            )
+            # Intentionally do NOT raise — caller still deletes locally.
+
 
 class QBOPaymentPollingService:
     """Polls QBO for payment status updates on synced invoices."""

@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError  # noqa: F401
 from apps.core.models import Configuration, AccountingCategory
-from apps.expenses.models import Expense
+from apps.expenses.models import Expense, Reimbursement
 from apps.qbo.models import QBOSyncLog
 from apps.qbo.services import QBOExpenseSyncService
 
@@ -346,3 +346,181 @@ class VoidExpenseTest(TestCase):
             QBOExpenseSyncService.void_expense(self.exp)  # must not raise
         log = QBOSyncLog.objects.get(entity_type='expense', action='delete')
         self.assertEqual(log.status, 'failed')
+
+
+class PushReimbursementTest(TestCase):
+    """Push a reimbursement batch as a QBO Purchase with N lines."""
+
+    def setUp(self):
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': (
+                '[{"qbo_account_id": "42", "display_name": "BoA Checking", "account_type": "Bank"}]'
+            )},
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Shop Supplies', qbo_expense_account_id='500',
+        )
+        self.worker = User.objects.create_user(username='worker', password='testpass')
+        self.admin = User.objects.create_user(username='admin', password='testpass')
+
+        self.batch = Reimbursement.objects.create(
+            purchased_by=self.worker,
+            paid_on=date(2026, 4, 11),
+            payment_account_id='42',
+            reference_number='1234',
+            created_by=self.admin,
+        )
+        for amt in ('47.50', '62.00', '28.75'):
+            Expense.objects.create(
+                entered_by=self.worker,
+                purchased_by=self.worker,
+                amount=Decimal(amt),
+                purchased_on=date(2026, 4, 5),
+                accounting_category=self.cat,
+                payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+                status=Expense.STATUS_REIMBURSED,
+                reimbursement=self.batch,
+            )
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_reimbursement_stores_qbo_id(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_purchase = MagicMock()
+        mock_purchase.Id = '9100'
+        mock_purchase.save = MagicMock(return_value=mock_purchase)
+
+        with patch.object(
+            QBOExpenseSyncService, '_build_qbo_purchase_for_reimbursement',
+            return_value=mock_purchase,
+        ):
+            result = QBOExpenseSyncService.push_reimbursement(self.batch)
+
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.qbo_id, '9100')
+        self.assertEqual(result, '9100')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_reimbursement_skips_if_already_synced(self, mock_get_client):
+        self.batch.qbo_id = '9100'
+        self.batch.save(update_fields=['qbo_id'])
+        result = QBOExpenseSyncService.push_reimbursement(self.batch)
+        self.assertEqual(result, '9100')
+        mock_get_client.assert_not_called()
+
+    def test_push_reimbursement_requires_connection(self):
+        with self.assertRaises(ValueError):
+            QBOExpenseSyncService.push_reimbursement(self.batch)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_build_qbo_purchase_has_n_lines_one_per_expense(self, mock_get_client):
+        purchase = QBOExpenseSyncService._build_qbo_purchase_for_reimbursement(self.batch)
+        self.assertEqual(len(purchase.Line), 3)
+        amounts = sorted(float(l.Amount) for l in purchase.Line)
+        self.assertEqual(amounts, [28.75, 47.50, 62.00])
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_build_qbo_purchase_uses_batch_payment_account_and_ref(self, mock_get_client):
+        purchase = QBOExpenseSyncService._build_qbo_purchase_for_reimbursement(self.batch)
+        self.assertEqual(purchase.AccountRef.value, '42')
+        # Bank + reference# → Check
+        self.assertEqual(purchase.PaymentType, 'Check')
+        self.assertEqual(purchase.DocNumber, '1234')
+        self.assertEqual(purchase.TxnDate, '2026-04-11')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_build_qbo_purchase_private_note_tags_origin_and_user(self, mock_get_client):
+        purchase = QBOExpenseSyncService._build_qbo_purchase_for_reimbursement(self.batch)
+        self.assertIn('Reimbursement', purchase.PrivateNote)
+        self.assertIn('worker', purchase.PrivateNote)
+        self.assertIn(str(self.batch.pk), purchase.PrivateNote)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_push_reimbursement_logs_success(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        mock_purchase = MagicMock()
+        mock_purchase.Id = '9100'
+        mock_purchase.save = MagicMock(return_value=mock_purchase)
+        with patch.object(
+            QBOExpenseSyncService, '_build_qbo_purchase_for_reimbursement',
+            return_value=mock_purchase,
+        ):
+            QBOExpenseSyncService.push_reimbursement(self.batch)
+        log = QBOSyncLog.objects.get(entity_type='reimbursement', entity_id=self.batch.pk)
+        self.assertEqual(log.status, 'success')
+
+
+class UpdateReimbursementTest(TestCase):
+    def setUp(self):
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': (
+                '[{"qbo_account_id": "42", "display_name": "BoA Checking", "account_type": "Bank"}]'
+            )},
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Supplies', qbo_expense_account_id='500',
+        )
+        self.worker = User.objects.create_user(username='worker', password='testpass')
+        self.admin = User.objects.create_user(username='admin', password='testpass')
+        self.batch = Reimbursement.objects.create(
+            purchased_by=self.worker,
+            paid_on=date(2026, 4, 11),
+            payment_account_id='42',
+            created_by=self.admin,
+            qbo_id='9100',
+        )
+        Expense.objects.create(
+            entered_by=self.worker, purchased_by=self.worker,
+            amount=Decimal('50.00'), purchased_on=date(2026, 4, 5),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_REIMBURSED,
+            reimbursement=self.batch,
+        )
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_update_reimbursement_fetches_and_saves(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        existing = MagicMock()
+        existing.Id = '9100'
+        existing.Line = []
+        existing.save = MagicMock(return_value=existing)
+        with patch('quickbooks.objects.purchase.Purchase.get', return_value=existing):
+            QBOExpenseSyncService.update_reimbursement(self.batch)
+        existing.save.assert_called_once()
+        self.assertEqual(len(existing.Line), 1)
+
+    def test_update_reimbursement_raises_without_qbo_id(self):
+        self.batch.qbo_id = ''
+        self.batch.save(update_fields=['qbo_id'])
+        with self.assertRaises(ValueError):
+            QBOExpenseSyncService.update_reimbursement(self.batch)
+
+
+class VoidReimbursementTest(TestCase):
+    def setUp(self):
+        self.worker = User.objects.create_user(username='worker', password='testpass')
+        self.admin = User.objects.create_user(username='admin', password='testpass')
+        self.batch = Reimbursement.objects.create(
+            purchased_by=self.worker,
+            paid_on=date(2026, 4, 11),
+            payment_account_id='42',
+            created_by=self.admin,
+            qbo_id='9100',
+        )
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_void_reimbursement_deletes_qbo_purchase(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        existing = MagicMock()
+        existing.delete = MagicMock()
+        with patch('quickbooks.objects.purchase.Purchase.get', return_value=existing):
+            QBOExpenseSyncService.void_reimbursement(self.batch)
+        existing.delete.assert_called_once()
+
+    def test_void_reimbursement_noop_without_qbo_id(self):
+        self.batch.qbo_id = ''
+        self.batch.save(update_fields=['qbo_id'])
+        QBOExpenseSyncService.void_reimbursement(self.batch)  # no exception
