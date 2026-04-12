@@ -658,3 +658,71 @@ The job-costing path is inherently lossy for QBO-first entries. The only real fi
 - [QBO Query operations](https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api/data-queries)
 - [Intuit blog — Stay in sync with CDC](https://blogs.intuit.com/2023/08/24/building-smarter-with-intuit-stay-in-sync-with-cdc/)
 - [Intuit blog — Webhook best practices](https://blogs.intuit.com/2023/04/18/best-practices-for-using-webhooks-with-quickbooks-online/)
+
+---
+
+## Manual verification checklist
+
+### As a Worker (no special permissions)
+
+**Home card (/#/)**
+- [ ] "My Expenses" card visible on home page
+- [ ] Click "+ New expense" — form appears inline
+- [ ] Payment dropdown defaults to "Personal (reimbursement)" and shows all configured payment accounts
+- [ ] Submit a personal expense — appears in the list with status "submitted"
+- [ ] Submit a company-paid expense (pick one of the payment accounts) — appears with status "synced" (or "sync failed" if no QBO connection)
+- [ ] "Purchased by" dropdown appears when "Personal" is selected, hidden for company accounts
+- [ ] "Reference / check number" field appears when a company account is selected
+- [ ] Sidebar does NOT show "Expenses" link
+
+**Material picker (on the expense form)**
+- [ ] Type a job number or customer name — autocomplete results appear
+- [ ] Pick a job — flat material list loads from all WOs on that job
+- [ ] Filter materials by typing in the filter box
+- [ ] Click an existing material — it gets selected (highlighted)
+- [ ] Click "+ Add new material" — inline form expands with description/qty/unit
+- [ ] Fill in the new material form, click "Use this new material" — message shows "New material queued"
+- [ ] Submit the expense — material gets created on the WO's "Materials" bucket task
+
+### As a Bookkeeper (`can_manage_financials` only)
+
+**Global expenses list (/#/expenses)**
+- [ ] "Expenses" link appears in sidebar under Admin
+- [ ] Outstanding reimbursements summary card at top — shows users with submitted personal expenses, click-through links
+- [ ] Filters work: status, payment method, date range
+- [ ] "+ New expense" button opens the form
+- [ ] Edit button on a row — form pre-fills with existing values
+- [ ] Reject button on a submitted personal expense — status flips to "rejected"
+- [ ] Delete button — expense removed (QBO Purchase voided if it was synced)
+- [ ] Retry button on a sync-failed expense — re-attempts the push
+- [ ] Username links navigate to `/#/reimbursements/:user_id`
+
+**Reimbursement page (/#/reimbursements/:user_id)**
+- [ ] Shows outstanding reimbursable expenses for that user
+- [ ] Check individual boxes — running total updates
+- [ ] "Select all" checkbox works
+- [ ] Click "Reimburse selected" — inline form expands (paid on, payment account, reference, notes)
+- [ ] Fill in check number, click "Confirm reimbursement" — expenses move to "Past reimbursements"
+- [ ] Past reimbursements table shows the batch with QBO sync status
+- [ ] If sync failed — "Retry push" button appears and works
+- [ ] "Show rejected expenses" toggle — reveals/hides rejected items
+- [ ] Sidebar does NOT show "Users" or "Settings" (those are `can_manage_config`)
+
+### As an Owner (all permissions)
+
+**Everything the Bookkeeper can do, plus:**
+- [ ] `/#/users/:worker_id` — "Expenses" section appears at the bottom of the user detail page
+- [ ] The Expenses section shows the same reimbursement panel as `/#/reimbursements/:id`
+- [ ] Can create a reimbursement batch from the user detail page
+- [ ] Settings page (/#/settings) — "Payment accounts" section visible
+- [ ] "Refresh from QBO" button pulls accounts (requires live QBO connection)
+- [ ] Can check/uncheck accounts, edit display names, save
+
+### Edge cases
+
+- [ ] Submit a personal expense without selecting "Purchased by" — should get a validation error
+- [ ] Submit a company expense without selecting a payment account — should get a validation error
+- [ ] Try to reject a company-paid expense — should fail (only personal can be rejected)
+- [ ] Create two expenses for the same user, reimburse only one — the other stays outstanding
+- [ ] Edit a reimbursed expense (change the amount) — should re-sync to QBO
+- [ ] Submit an expense linked to an existing material — verify no duplicate material or task created on the work order
