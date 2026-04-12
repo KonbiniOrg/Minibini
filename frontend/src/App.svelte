@@ -29,6 +29,7 @@
   import UserListPage from './routes/users/UserListPage.svelte';
   import UserCreatePage from './routes/users/UserCreatePage.svelte';
   import UserDetailPage from './routes/users/UserDetailPage.svelte';
+  import ExpenseListPage from './routes/expenses/ExpenseListPage.svelte';
 
   const routes = {
     '/': Home,
@@ -57,6 +58,7 @@
     '/users': UserListPage,
     '/users/new': UserCreatePage,
     '/users/:id': UserDetailPage,
+    '/expenses': ExpenseListPage,
     '/profile': ProfilePage,
   };
 
