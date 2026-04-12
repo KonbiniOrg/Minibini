@@ -7,6 +7,10 @@ from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError  # noqa: F401
 from apps.core.models import Configuration, AccountingCategory
 from apps.expenses.models import Expense, Reimbursement
+from apps.contacts.models import Contact, Business
+from apps.jobs.models import Job, WorkOrder, Task
+from apps.inventory.models import Material
+from apps.expenses.services import ExpenseService
 from apps.qbo.models import QBOSyncLog
 from apps.qbo.services import QBOExpenseSyncService
 
@@ -524,3 +528,159 @@ class VoidReimbursementTest(TestCase):
         self.batch.qbo_id = ''
         self.batch.save(update_fields=['qbo_id'])
         QBOExpenseSyncService.void_reimbursement(self.batch)  # no exception
+
+
+class SFMOMAIntegrationTest(TestCase):
+    """End-to-end scenarios for the SFMOMA paint use case."""
+
+    def setUp(self):
+        Configuration.objects.update_or_create(
+            key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'},
+        )
+        Configuration.objects.update_or_create(
+            key='job_counter', defaults={'value': '0'},
+        )
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': (
+                '[{"qbo_account_id": "57", "display_name": "Amex", "account_type": "Credit Card"}]'
+            )},
+        )
+        self.user = User.objects.create_user(username='admin', password='testpass')
+        self.cat = AccountingCategory.objects.create(
+            code='MAT', name='Materials', qbo_expense_account_id='500',
+        )
+        contact = Contact.objects.create(
+            first_name='SFMOMA', last_name='Admin',
+            email='admin@sfmoma.org', mobile_number='555-0100',
+        )
+        self.business = Business.objects.create(
+            business_name='SFMOMA', default_contact=contact,
+        )
+        contact.business = self.business
+        contact.save()
+        self.job = Job.objects.create(contact=contact, job_number='JOB-2026-0042')
+        self.wo = WorkOrder.objects.create(job=self.job)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
+    def test_new_material_creates_bucket_task_once_per_workorder(self, mock_push):
+        """First new-material expense on a WO creates the 'Materials' bucket;
+        a second new-material expense reuses the same bucket."""
+        mock_push.return_value = '9001'
+
+        # First expense — creates task + material
+        task1 = ExpenseService.find_or_create_materials_task(work_order=self.wo)
+        mat1 = Material.objects.create(
+            task=task1, description='Acrylic paint 1gal', quantity=2,
+        )
+        exp1 = ExpenseService.submit(
+            entered_by=self.user,
+            amount=Decimal('218.45'),
+            purchased_on=date(2026, 4, 9),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            material=mat1,
+        )
+
+        # Second expense with a new material — should reuse the bucket task
+        task2 = ExpenseService.find_or_create_materials_task(work_order=self.wo)
+        mat2 = Material.objects.create(
+            task=task2, description='Roller brushes', quantity=3,
+        )
+        exp2 = ExpenseService.submit(
+            entered_by=self.user,
+            amount=Decimal('28.50'),
+            purchased_on=date(2026, 4, 10),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            material=mat2,
+        )
+
+        # Assert: exactly one 'Materials' task on the WO
+        bucket_tasks = Task.objects.filter(work_order=self.wo, name='Materials')
+        self.assertEqual(bucket_tasks.count(), 1)
+        self.assertEqual(task1.pk, task2.pk)
+        self.assertEqual(bucket_tasks.first().materials.count(), 2)
+
+        # Assert: task is in completed state
+        self.assertEqual(bucket_tasks.first().status, Task.STATUS_COMPLETE)
+
+        # Both expenses pushed to QBO
+        self.assertEqual(mock_push.call_count, 2)
+        self.assertEqual(exp1.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp2.status, Expense.STATUS_SYNCED)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
+    def test_existing_material_is_reused_not_duplicated(self, mock_push):
+        """Expense linked to a pre-existing Material does not duplicate it."""
+        mock_push.return_value = '9001'
+
+        # Simulate an estimate-side material: real task with a real material
+        existing_task = Task.objects.create(
+            work_order=self.wo,
+            name='Paint main gallery',
+        )
+        existing_material = Material.objects.create(
+            task=existing_task, description='Acrylic paint 1gal',
+            quantity=2,
+        )
+
+        # Submit an expense linked to the existing material
+        exp = ExpenseService.submit(
+            entered_by=self.user,
+            amount=Decimal('218.45'),
+            purchased_on=date(2026, 4, 9),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            material=existing_material,
+        )
+
+        # Assert: no new task created (especially no "Materials" bucket)
+        tasks_on_wo = Task.objects.filter(work_order=self.wo)
+        self.assertEqual(tasks_on_wo.count(), 1)
+        self.assertEqual(tasks_on_wo.first(), existing_task)
+        self.assertFalse(
+            Task.objects.filter(work_order=self.wo, name='Materials').exists()
+        )
+
+        # Assert: no new material created
+        self.assertEqual(existing_task.materials.count(), 1)
+        self.assertEqual(existing_task.materials.first(), existing_material)
+
+        existing_material.refresh_from_db()
+        self.assertEqual(existing_material.quantity, 2)  # qty unchanged
+        self.assertEqual(exp.material, existing_material)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_full_company_paid_push_happy_path(self, mock_get_client):
+        """The SFMOMA paint story: Dana buys paint on company card, expense pushes."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_purchase = MagicMock()
+        mock_purchase.Id = '9001'
+        mock_purchase.save = MagicMock(return_value=mock_purchase)
+
+        with patch.object(
+            QBOExpenseSyncService, '_build_qbo_purchase_for_expense',
+            wraps=QBOExpenseSyncService._build_qbo_purchase_for_expense,
+        ) as wrap_build, patch(
+            'quickbooks.objects.purchase.Purchase',
+            return_value=mock_purchase,
+        ):
+            exp = ExpenseService.submit(
+                entered_by=self.user,
+                amount=Decimal('218.45'),
+                purchased_on=date(2026, 4, 9),
+                description='Sherwin-Williams paint',
+                accounting_category=self.cat,
+                payment_method=Expense.PAYMENT_METHOD_COMPANY,
+                payment_account_id='57',
+            )
+
+        exp.refresh_from_db()
+        self.assertEqual(exp.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp.qbo_id, '9001')
+        wrap_build.assert_called_once()
