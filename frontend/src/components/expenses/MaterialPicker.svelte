@@ -6,8 +6,9 @@
     materialId = $bindable(null),
     // Bound to parent — if the user inline-creates, these describe the new material
     newMaterial = $bindable(null),
-    // Pre-fill for new material description (from expense description)
+    // Auto-populated from the expense form — used when creating a new material
     defaultDescription = '',
+    defaultAmount = '',
   } = $props();
 
   let jobQuery = $state('');
@@ -15,15 +16,9 @@
   let selectedJob = $state(null);
   let materials = $state([]);        // flattened across all WOs of selected job
   let materialFilter = $state('');
-  let showAddNew = $state(false);
   let loadingMaterials = $state(false);
   let materialsError = $state('');
 
-  // New-material inline form state
-  let newMatQty = $state('1');
-  let newMatUnit = $state('ea');
-  let newMatDesc = $state('');
-  let newMatPliId = $state(null);
   let newMatWorkOrderId = $state(null); // the WO on selected job; auto-picked or chosen
 
   function jobDisplayLabel(j) {
@@ -98,27 +93,17 @@
     showAddNew = false;
   }
 
-  function startAddNew() {
-    showAddNew = true;
+  function addNewMaterial() {
     materialId = null;
-    if (!newMatDesc && defaultDescription) {
-      newMatDesc = defaultDescription;
-    }
-  }
-
-  function confirmNewMaterial() {
     newMaterial = {
       work_order_id: newMatWorkOrderId,
-      description: newMatDesc,
-      quantity: newMatQty,
-      unit: newMatUnit,
-      price_list_item: newMatPliId,
+      description: defaultDescription || '',
+      quantity: 1,
+      price: defaultAmount || '',
     };
-    showAddNew = false;
   }
 
-  function cancelNewMaterial() {
-    showAddNew = false;
+  function clearNewMaterial() {
     newMaterial = null;
   }
 
@@ -182,10 +167,10 @@
             {#if m.quantity} — qty {m.quantity}{/if}
           </div>
         {/each}
-        {#if !showAddNew}
+        {#if !newMaterial}
           <div
             style="padding: 4px; color: #1a66ff; cursor: pointer"
-            onclick={startAddNew}
+            onclick={addNewMaterial}
           >
             + Add new material
           </div>
@@ -193,31 +178,11 @@
       </div>
     {/if}
 
-    {#if showAddNew}
-      <div style="border: 2px dashed #d4a017; padding: 10px; background: #fffef0; margin-top: 8px">
-        <strong>New material on this job</strong>
-        <p>
-          <label for="nmd">Description *</label><br>
-          <input id="nmd" type="text" bind:value={newMatDesc} required>
-        </p>
-        <p>
-          <label for="nmq">Quantity *</label>
-          <input id="nmq" type="number" min="0" step="0.01" bind:value={newMatQty} style="width: 70px">
-          <label for="nmu">Unit</label>
-          <input id="nmu" type="text" bind:value={newMatUnit} style="width: 60px">
-        </p>
-        <p>
-          <button type="button" onclick={confirmNewMaterial}>Use this new material</button>
-          <button type="button" onclick={cancelNewMaterial}>Cancel</button>
-        </p>
-        <em style="font-size: 11px">
-          Will attach to this WorkOrder's auto-created "Materials" task.
-        </em>
-      </div>
-    {/if}
-
     {#if newMaterial}
-      <p><em>New material queued: {newMaterial.description} (qty {newMaterial.quantity})</em></p>
+      <p>
+        <em>New material: {newMaterial.description || '(no description)'}</em>
+        — <button type="button" onclick={clearNewMaterial} style="font-size: 12px">remove</button>
+      </p>
     {/if}
   {/if}
 </fieldset>

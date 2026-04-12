@@ -83,9 +83,8 @@
           `/api/work-orders/${newMaterial.work_order_id}/materials/`,
           {
             description: newMaterial.description,
-            quantity: newMaterial.quantity,
-            units: newMaterial.unit,
-            // Service side (Task 14) will route this to the Materials bucket task.
+            quantity: 1,
+            price: newMaterial.price || '',
             _use_materials_bucket: true,
           }
         );
@@ -185,7 +184,7 @@
     {#each fieldErr('purchased_by') as msg}<p><em>{msg}</em></p>{/each}
   {/if}
 
-  <MaterialPicker bind:materialId={material} bind:newMaterial={newMaterial} defaultDescription={description} />
+  <MaterialPicker bind:materialId={material} bind:newMaterial={newMaterial} defaultDescription={description} defaultAmount={amount} />
 
   {#each fieldErr('non_field_errors') as msg}<p><em>{msg}</em></p>{/each}
 
