@@ -10,7 +10,6 @@
     { codename: 'can_manage_jobs', label: 'Can manage jobs' },
     { codename: 'can_manage_financials', label: 'Can manage financials' },
     { codename: 'can_manage_time', label: 'Can manage time entries' },
-    { codename: 'can_approve_expenses', label: 'Can approve expenses' },
     { codename: 'can_manage_config', label: 'Can manage configuration (user admin)' },
   ];
 

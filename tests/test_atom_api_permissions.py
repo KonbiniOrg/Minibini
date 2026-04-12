@@ -28,7 +28,7 @@ class AtomPermissionTestBase(BaseTestCase):
         atoms = [
             'can_manage_jobs',
             'can_manage_financials', 'can_manage_time',
-            'can_approve_expenses', 'can_manage_config',
+            'can_manage_config',
         ]
         for atom in atoms:
             user = User.objects.create_user(
@@ -506,12 +506,5 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
 class TestCanManageTimeAPI(AtomPermissionTestBase):
     """can_manage_time — no endpoints yet.
     When time-tracking endpoints are added, add tests here.
-    """
-    pass
-
-
-class TestCanApproveExpensesAPI(AtomPermissionTestBase):
-    """can_approve_expenses — no endpoints yet.
-    When expense endpoints are added, add tests here.
     """
     pass

@@ -639,7 +639,7 @@ class UserPermissionsTest(BaseTestCase):
     def test_set_permissions_replaces_m2m(self):
         response = self.client.put(
             f'/api/users/{self.target.pk}/permissions/',
-            {'permissions': ['can_manage_jobs', 'can_approve_expenses']},
+            {'permissions': ['can_manage_jobs', 'can_manage_time']},
             format='json',
         )
         self.assertEqual(response.status_code, 200)
@@ -647,7 +647,7 @@ class UserPermissionsTest(BaseTestCase):
         codenames = set(
             self.target.user_permissions.values_list('codename', flat=True)
         )
-        self.assertEqual(codenames, {'can_manage_jobs', 'can_approve_expenses'})
+        self.assertEqual(codenames, {'can_manage_jobs', 'can_manage_time'})
 
     def test_set_permissions_empty_list_clears_all_atoms(self):
         self.target.user_permissions.add(self.manage_jobs_perm)

@@ -7,7 +7,6 @@
     can_manage_jobs: 'jobs',
     can_manage_financials: 'financials',
     can_manage_time: 'time',
-    can_approve_expenses: 'expenses',
     can_manage_config: 'config',
   };
 
