@@ -197,3 +197,77 @@ class ExpenseDeleteTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn('message', r.json())
         self.assertFalse(Expense.objects.filter(pk=exp.pk).exists())
+
+
+class MaterialsBucketFlagTest(TestCase):
+    """Creating a material with _use_materials_bucket=true routes via
+    ExpenseService.find_or_create_materials_task."""
+
+    def setUp(self):
+        _seed_payment_accounts()
+        Configuration.objects.update_or_create(
+            key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'},
+        )
+        Configuration.objects.update_or_create(
+            key='job_counter', defaults={'value': '0'},
+        )
+        from apps.contacts.models import Contact, Business
+        from apps.jobs.models import Job, WorkOrder
+        self.client_http = Client()
+        self.admin = User.objects.create_user(username='admin', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core',
+        )
+        self.admin.user_permissions.add(perm)
+        self.admin = User.objects.get(pk=self.admin.pk)
+        self.client_http.force_login(self.admin)
+
+        contact = Contact.objects.create(
+            first_name='A', last_name='B', email='a@b.com', mobile_number='555',
+        )
+        business = Business.objects.create(
+            business_name='Acme', default_contact=contact,
+        )
+        contact.business = business
+        contact.save()
+        self.job = Job.objects.create(contact=contact, job_number='JOB-2026-0099')
+        self.wo = WorkOrder.objects.create(job=self.job)
+
+    def test_create_material_with_bucket_flag_creates_bucket_task(self):
+        from apps.jobs.models import Task
+        payload = {
+            'description': 'Touch-up paint',
+            'quantity': '1',
+            '_use_materials_bucket': True,
+        }
+        r = self.client_http.post(
+            f'/api/work-orders/{self.wo.pk}/materials/',
+            payload, content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        bucket = Task.objects.get(work_order=self.wo, name='Materials')
+        self.assertEqual(bucket.status, Task.STATUS_COMPLETE)
+        self.assertEqual(bucket.materials.count(), 1)
+
+    def test_second_create_reuses_bucket_task(self):
+        from apps.jobs.models import Task
+        for _ in range(2):
+            self.client_http.post(
+                f'/api/work-orders/{self.wo.pk}/materials/',
+                {'description': 'test', 'quantity': '1', '_use_materials_bucket': True},
+                content_type='application/json',
+            )
+        self.assertEqual(Task.objects.filter(work_order=self.wo, name='Materials').count(), 1)
+
+    def test_create_material_without_bucket_flag_requires_task(self):
+        """Without the bucket flag, creating a material at WO level should fail
+        because no task is specified."""
+        payload = {
+            'description': 'Some material',
+            'quantity': '1',
+        }
+        r = self.client_http.post(
+            f'/api/work-orders/{self.wo.pk}/materials/',
+            payload, content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 400)
