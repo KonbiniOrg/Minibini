@@ -158,6 +158,8 @@
         <th>Date</th>
         <th>Who (purchased by)</th>
         <th>Description</th>
+        <th>Job</th>
+        <th>Task</th>
         <th>Category</th>
         <th style="text-align: right">Amount</th>
         <th>Paid</th>
@@ -177,7 +179,15 @@
             {/if}
           </td>
           <td>{e.description || '—'}</td>
-          <td>{e.accounting_category}</td>
+          <td>
+            {#if e.job_id}
+              <a href="/jobs/{e.job_id}" use:link>{e.job_number}{e.job_name ? ' — ' + e.job_name : ''}</a>
+            {:else}
+              —
+            {/if}
+          </td>
+          <td>{e.task_name || '—'}</td>
+          <td>{e.accounting_category_name || '—'}</td>
           <td style="text-align: right">${e.amount}</td>
           <td>{e.payment_method}</td>
           <td>

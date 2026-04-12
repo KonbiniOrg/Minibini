@@ -19,11 +19,15 @@ class ExpenseService:
                 from apps.inventory.models import Material
                 wo = WorkOrder.objects.get(pk=new_material['work_order_id'])
                 task = ExpenseService.find_or_create_materials_task(work_order=wo)
+                qty = new_material.get('quantity') or 1
+                price = new_material.get('price')
+                if price is None:
+                    price = amount
                 material = Material.objects.create(
                     task=task,
                     description=new_material.get('description', description),
-                    quantity=new_material.get('quantity', 1),
-                    price=new_material.get('price', amount),
+                    quantity=qty,
+                    unit_cost=price,
                 )
 
             expense = Expense(

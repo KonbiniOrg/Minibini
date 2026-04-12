@@ -15,6 +15,13 @@ class NewMaterialSerializer(serializers.Serializer):
 class ExpenseSerializer(serializers.ModelSerializer):
     entered_by_name = serializers.SerializerMethodField()
     purchased_by_name = serializers.SerializerMethodField()
+    task_name = serializers.SerializerMethodField()
+    job_id = serializers.SerializerMethodField()
+    job_number = serializers.SerializerMethodField()
+    job_name = serializers.SerializerMethodField()
+    accounting_category_name = serializers.CharField(
+        source='accounting_category.name', read_only=True, default=None,
+    )
     new_material = NewMaterialSerializer(required=False, write_only=True)
 
     class Meta:
@@ -23,9 +30,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'id', 'entered_by', 'entered_by_name',
             'purchased_by', 'purchased_by_name',
             'amount', 'purchased_on', 'description',
-            'accounting_category',
+            'accounting_category', 'accounting_category_name',
             'payment_method', 'payment_account_id', 'reference_number',
-            'material',
+            'material', 'task_name', 'job_id', 'job_number', 'job_name',
             'status', 'qbo_id', 'qbo_sync_error',
             'reimbursement',
             'created_at', 'updated_at',
@@ -33,6 +40,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id', 'entered_by', 'entered_by_name', 'purchased_by_name',
+            'task_name', 'job_id', 'job_number', 'job_name',
+            'accounting_category_name',
             'status', 'qbo_id', 'qbo_sync_error', 'reimbursement',
             'created_at', 'updated_at',
         ]
@@ -54,3 +63,23 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     def get_purchased_by_name(self, obj):
         return self._name(obj.purchased_by)
+
+    def _job(self, obj):
+        if obj.material_id and obj.material.task.work_order_id:
+            return obj.material.task.work_order.job
+        return None
+
+    def get_task_name(self, obj):
+        return obj.material.task.name if obj.material_id else None
+
+    def get_job_id(self, obj):
+        job = self._job(obj)
+        return job.job_id if job else None
+
+    def get_job_number(self, obj):
+        job = self._job(obj)
+        return job.job_number if job else None
+
+    def get_job_name(self, obj):
+        job = self._job(obj)
+        return job.name if job else None

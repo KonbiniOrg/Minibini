@@ -15,7 +15,6 @@
   let jobResults = $state([]);
   let selectedJob = $state(null);
   let materials = $state([]);        // flattened across all WOs of selected job
-  let materialFilter = $state('');
   let loadingMaterials = $state(false);
   let materialsError = $state('');
 
@@ -60,22 +59,31 @@
       // Set WO id immediately so "+ Add new material" works even if detail fetches fail
       newMatWorkOrderId = list.length > 0 ? (list[0].work_order_id || list[0].id) : null;
 
-      // Flatten materials across all WOs. Each WO has tasks, each task has materials.
+      // Flatten materials across all WOs. Task materials aren't embedded in the WO
+      // detail serializer, so fetch them per-task via /api/tasks/{id}/materials/.
       const flat = [];
       for (const wo of list) {
         const woId = wo.work_order_id || wo.id;
         try {
           const detail = await api.get(`/api/work-orders/${woId}/`);
           for (const t of (detail.tasks || [])) {
-            for (const m of (t.materials || [])) {
-              flat.push({
-                id: m.material_id || m.id,
-                description: m.description,
-                task_name: t.name || t.description || `Task #${t.task_id || t.id}`,
-                quantity: m.quantity,
-                unit: m.units,
-                work_order_id: woId,
-              });
+            const taskId = t.task_id || t.id;
+            const taskName = t.name || t.description || `Task #${taskId}`;
+            try {
+              const mats = await api.get(`/api/tasks/${taskId}/materials/`);
+              const matList = mats.results || mats;
+              for (const m of matList) {
+                flat.push({
+                  id: m.material_id || m.id,
+                  description: m.description,
+                  task_name: taskName,
+                  quantity: m.quantity,
+                  unit: m.units,
+                  work_order_id: woId,
+                });
+              }
+            } catch (e) {
+              console.warn(`Could not fetch materials for task ${taskId}:`, e.message);
             }
           }
         } catch (e) {
@@ -109,14 +117,6 @@
     newMaterial = null;
   }
 
-  let filteredMaterials = $derived(
-    materialFilter
-      ? materials.filter(m =>
-          (m.description || '').toLowerCase().includes(materialFilter.toLowerCase())
-          || (m.task_name || '').toLowerCase().includes(materialFilter.toLowerCase())
-        )
-      : materials
-  );
 </script>
 
 <fieldset>
@@ -144,15 +144,7 @@
   {/if}
 
   {#if selectedJob}
-    <p>
-      <label for="mp-filter">Material on this job</label><br>
-      <input
-        id="mp-filter"
-        type="text"
-        bind:value={materialFilter}
-        placeholder="Filter materials..."
-      >
-    </p>
+    <p><strong>Material on this job</strong></p>
 
     {#if loadingMaterials}
       <p><em>Loading materials...</em></p>
@@ -160,7 +152,7 @@
       <p><em>{materialsError}</em></p>
     {:else}
       <div style="border: 1px solid #999; padding: 6px; max-height: 180px; overflow-y: auto">
-        {#each filteredMaterials as m (m.id)}
+        {#each materials as m (m.id)}
           <div
             style="padding: 4px; border-bottom: 1px solid #ddd; cursor: pointer; background: {materialId === m.id ? '#e8f0fe' : 'transparent'}"
             onclick={() => pickMaterial(m)}

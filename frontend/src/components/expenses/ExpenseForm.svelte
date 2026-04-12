@@ -10,6 +10,9 @@
     // Called after a successful save/create. Parent decides what to do next.
     onSaved = (exp) => {},
     onCancel = () => {},
+    // When true, force purchased_by to the logged-in user and hide the picker.
+    // Used by the Home-card "My Expenses" surface.
+    lockPurchasedByToSelf = false,
   } = $props();
 
   let isEdit = $derived(!!expense);
@@ -168,7 +171,7 @@
     </p>
   {/if}
 
-  {#if payment_method === 'personal'}
+  {#if payment_method === 'personal' && !lockPurchasedByToSelf}
     <p>
       <label for="ef-purchby"><strong>Purchased by *</strong></label><br>
       <select id="ef-purchby" bind:value={purchased_by}>
