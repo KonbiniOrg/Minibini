@@ -1,8 +1,12 @@
+import logging
+
 from django.db import transaction
 from django.core.exceptions import ValidationError
 
 from apps.expenses.models import Expense
 from apps.jobs.models import Task
+
+logger = logging.getLogger(__name__)
 
 
 class ExpenseService:
@@ -59,6 +63,7 @@ class ExpenseService:
             expense.qbo_sync_error = ''
             expense.save(update_fields=['status', 'qbo_sync_error'])
         except Exception as e:
+            logger.exception('QBO expense push failed for expense %s', expense.pk)
             expense.status = Expense.STATUS_SYNC_FAILED
             expense.qbo_sync_error = str(e)
             expense.save(update_fields=['status', 'qbo_sync_error'])
@@ -94,6 +99,7 @@ class ExpenseService:
                 expense.qbo_sync_error = ''
                 expense.save(update_fields=['status', 'qbo_sync_error'])
         except Exception as e:
+            logger.exception('QBO resync failed for expense %s', expense.pk)
             if expense.reimbursement_id:
                 batch = expense.reimbursement
                 from apps.expenses.models import Reimbursement
@@ -207,6 +213,7 @@ class ReimbursementService:
             batch.qbo_sync_error = ''
             batch.save(update_fields=['status', 'qbo_sync_error'])
         except Exception as e:
+            logger.exception('QBO reimbursement push failed for batch %s', batch.pk)
             batch.status = Reimbursement.STATUS_SYNC_FAILED
             batch.qbo_sync_error = str(e)
             batch.save(update_fields=['status', 'qbo_sync_error'])
@@ -227,6 +234,7 @@ class ReimbursementService:
             batch.qbo_sync_error = ''
             batch.save(update_fields=['status', 'qbo_sync_error'])
         except Exception as e:
+            logger.exception('QBO reimbursement retry failed for batch %s', batch.pk)
             batch.qbo_sync_error = str(e)
             batch.save(update_fields=['qbo_sync_error'])
         return batch

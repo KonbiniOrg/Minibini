@@ -38,6 +38,7 @@
 
   // Dropdown sources
   let categories = $state([]);
+  let linkedCategories = $derived(categories.filter(c => c.qbo_expense_account_id));
   let paymentAccounts = $state([]);
   let workers = $state([]);
 
@@ -145,12 +146,16 @@
 
   <p>
     <label for="ef-cat"><strong>Category *</strong></label><br>
-    <select id="ef-cat" bind:value={accounting_category} required>
-      <option value="">-- select --</option>
-      {#each categories as c (c.id)}
-        <option value={c.id}>{c.name}</option>
-      {/each}
-    </select>
+    {#if linkedCategories.length === 0}
+      <em>No QuickBooks accounts linked — go to <a href="#/settings">Settings</a> and link them.</em>
+    {:else}
+      <select id="ef-cat" bind:value={accounting_category} required>
+        <option value="">-- select --</option>
+        {#each linkedCategories as c (c.id)}
+          <option value={c.id}>{c.name}</option>
+        {/each}
+      </select>
+    {/if}
   </p>
   {#each fieldErr('accounting_category') as msg}<p><em>{msg}</em></p>{/each}
 
