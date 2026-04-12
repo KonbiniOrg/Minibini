@@ -30,6 +30,7 @@
   import UserCreatePage from './routes/users/UserCreatePage.svelte';
   import UserDetailPage from './routes/users/UserDetailPage.svelte';
   import ExpenseListPage from './routes/expenses/ExpenseListPage.svelte';
+  import ReimbursementDetailPage from './routes/reimbursements/ReimbursementDetailPage.svelte';
 
   const routes = {
     '/': Home,
@@ -59,6 +60,7 @@
     '/users/new': UserCreatePage,
     '/users/:id': UserDetailPage,
     '/expenses': ExpenseListPage,
+    '/reimbursements/:id': ReimbursementDetailPage,
     '/profile': ProfilePage,
   };
 
