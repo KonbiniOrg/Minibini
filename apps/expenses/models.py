@@ -124,5 +124,12 @@ class Reimbursement(models.Model):
         db_table = 'reimbursements'
         ordering = ['-paid_on', '-created_at']
 
+    @property
+    def total(self):
+        return sum(
+            (e.amount for e in self.expenses.all()),
+            Decimal('0'),
+        )
+
     def __str__(self):
         return f"Reimbursement {self.pk}: {self.purchased_by.username} on {self.paid_on}"
