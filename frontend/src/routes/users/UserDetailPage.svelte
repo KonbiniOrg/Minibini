@@ -3,6 +3,7 @@
   import { api } from '../../lib/api.js';
   import { user as currentUser } from '../../stores/auth.js';
   import { fieldErrors } from '../../lib/formErrors.js';
+  import UserReimbursementPanel from '../../components/expenses/UserReimbursementPanel.svelte';
 
   const { params = {} } = $props();
 
@@ -299,4 +300,7 @@
   </p>
   {#each fieldErrors(statusErrors, 'non_field_errors') as msg}<p>{msg}</p>{/each}
   {#if statusMessage}<p>{statusMessage}</p>{/if}
+
+  <h3>Expenses</h3>
+  <UserReimbursementPanel {user} />
 {/if}
