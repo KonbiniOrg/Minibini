@@ -159,15 +159,17 @@
   </p>
   {#each fieldErr('accounting_category') as msg}<p><em>{msg}</em></p>{/each}
 
-  <p>
-    <label for="ef-pm"><strong>Paid by *</strong></label><br>
-    <select id="ef-pm" value={paidByValue} onchange={handlePaidByChange}>
-      <option value="personal">Personal (reimbursement)</option>
-      {#each paymentAccounts as a (a.qbo_account_id)}
-        <option value="company:{a.qbo_account_id}">{a.display_name}</option>
-      {/each}
-    </select>
-  </p>
+  {#if !lockPurchasedByToSelf}
+    <p>
+      <label for="ef-pm"><strong>Paid by *</strong></label><br>
+      <select id="ef-pm" value={paidByValue} onchange={handlePaidByChange}>
+        <option value="personal">Personal (reimbursement)</option>
+        {#each paymentAccounts as a (a.qbo_account_id)}
+          <option value="company:{a.qbo_account_id}">{a.display_name}</option>
+        {/each}
+      </select>
+    </p>
+  {/if}
 
   {#if payment_method === 'company'}
     <p>

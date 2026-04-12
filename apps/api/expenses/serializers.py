@@ -22,6 +22,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
     accounting_category_name = serializers.CharField(
         source='accounting_category.name', read_only=True, default=None,
     )
+    reimbursement_paid_on = serializers.DateField(
+        source='reimbursement.paid_on', read_only=True, default=None,
+    )
     new_material = NewMaterialSerializer(required=False, write_only=True)
 
     class Meta:
@@ -34,7 +37,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'payment_method', 'payment_account_id', 'reference_number',
             'material', 'task_name', 'job_id', 'job_number', 'job_name',
             'status', 'qbo_id', 'qbo_sync_error',
-            'reimbursement',
+            'reimbursement', 'reimbursement_paid_on',
             'created_at', 'updated_at',
             'new_material',
         ]

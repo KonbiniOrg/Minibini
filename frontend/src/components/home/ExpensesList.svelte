@@ -16,7 +16,7 @@
     loadError = '';
     try {
       // Home card always scopes to the logged-in user, regardless of permissions.
-      const data = await api.get(`/api/expenses/?purchased_by=${uid}&page_size=5`);
+      const data = await api.get(`/api/expenses/?purchased_by=${uid}&payment_method=personal&page_size=5`);
       expenses = data.results || data;
     } catch (err) {
       loadError = err.message || 'Could not load expenses.';
@@ -77,6 +77,7 @@
           <th>Task</th>
           <th style="text-align: right">Amount</th>
           <th>Status</th>
+          <th>Reimbursed</th>
         </tr>
       </thead>
       <tbody>
@@ -94,6 +95,7 @@
             <td>{e.task_name || '—'}</td>
             <td style="text-align: right">${e.amount}</td>
             <td><em>{statusLabel(e.status)}</em></td>
+            <td>{e.reimbursement_paid_on || '—'}</td>
           </tr>
         {/each}
       </tbody>

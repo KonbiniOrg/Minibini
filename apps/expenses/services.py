@@ -167,30 +167,30 @@ class ReimbursementService:
         if not expense_ids:
             raise ValidationError({'expense_ids': 'At least one expense is required.'})
 
-        expenses = list(
-            Expense.objects.select_for_update().filter(pk__in=expense_ids)
-        )
-        if len(expenses) != len(set(expense_ids)):
-            raise ValidationError({'expense_ids': 'One or more expenses not found.'})
-
-        for e in expenses:
-            if e.purchased_by_id != purchased_by.pk:
-                raise ValidationError({
-                    'expense_ids':
-                    f'Expense #{e.pk} belongs to a different user.',
-                })
-            if e.payment_method != Expense.PAYMENT_METHOD_PERSONAL:
-                raise ValidationError({
-                    'expense_ids':
-                    f'Expense #{e.pk} is not a personal expense.',
-                })
-            if e.status != Expense.STATUS_SUBMITTED:
-                raise ValidationError({
-                    'expense_ids':
-                    f'Expense #{e.pk} is not in submitted status.',
-                })
-
         with transaction.atomic():
+            expenses = list(
+                Expense.objects.select_for_update().filter(pk__in=expense_ids)
+            )
+            if len(expenses) != len(set(expense_ids)):
+                raise ValidationError({'expense_ids': 'One or more expenses not found.'})
+
+            for e in expenses:
+                if e.purchased_by_id != purchased_by.pk:
+                    raise ValidationError({
+                        'expense_ids':
+                        f'Expense #{e.pk} belongs to a different user.',
+                    })
+                if e.payment_method != Expense.PAYMENT_METHOD_PERSONAL:
+                    raise ValidationError({
+                        'expense_ids':
+                        f'Expense #{e.pk} is not a personal expense.',
+                    })
+                if e.status != Expense.STATUS_SUBMITTED:
+                    raise ValidationError({
+                        'expense_ids':
+                        f'Expense #{e.pk} is not in submitted status.',
+                    })
+
             batch = Reimbursement.objects.create(
                 purchased_by=purchased_by,
                 paid_on=paid_on,
