@@ -46,7 +46,6 @@
     jobResults = [];
     materialId = null;
     newMaterial = null;
-    showAddNew = false;
     await loadMaterials(job.job_id || job.id);
   }
 
@@ -58,28 +57,32 @@
       const wos = await api.get(`/api/work-orders/?job=${jobId}`);
       const list = wos.results || wos;
 
+      // Set WO id immediately so "+ Add new material" works even if detail fetches fail
+      newMatWorkOrderId = list.length > 0 ? (list[0].work_order_id || list[0].id) : null;
+
       // Flatten materials across all WOs. Each WO has tasks, each task has materials.
       const flat = [];
       for (const wo of list) {
-        const detail = await api.get(`/api/work-orders/${wo.work_order_id || wo.id}/`);
-        for (const t of (detail.tasks || [])) {
-          for (const m of (t.materials || [])) {
-            flat.push({
-              id: m.material_id || m.id,
-              description: m.description,
-              task_name: t.description || `Task #${t.task_id || t.id}`,
-              quantity: m.quantity,
-              unit: m.units,
-              work_order_id: wo.work_order_id || wo.id,
-            });
+        const woId = wo.work_order_id || wo.id;
+        try {
+          const detail = await api.get(`/api/work-orders/${woId}/`);
+          for (const t of (detail.tasks || [])) {
+            for (const m of (t.materials || [])) {
+              flat.push({
+                id: m.material_id || m.id,
+                description: m.description,
+                task_name: t.name || t.description || `Task #${t.task_id || t.id}`,
+                quantity: m.quantity,
+                unit: m.units,
+                work_order_id: woId,
+              });
+            }
           }
+        } catch (e) {
+          console.warn(`Could not fetch WO ${woId} details:`, e.message);
         }
       }
       materials = flat;
-      // Default new-material parent WO to the first WO on the job
-      if (list.length > 0) {
-        newMatWorkOrderId = list[0].work_order_id || list[0].id;
-      }
     } catch (err) {
       materialsError = err.message || 'Could not load materials.';
     } finally {
@@ -90,7 +93,6 @@
   function pickMaterial(m) {
     materialId = m.id;
     newMaterial = null;
-    showAddNew = false;
   }
 
   function addNewMaterial() {
