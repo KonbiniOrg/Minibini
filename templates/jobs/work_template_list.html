@@ -18,11 +18,11 @@
     </tr>
     {% for template in templates %}
     <tr>
-        <td><a href="{% url 'estimates:work_order_template_detail' template.template_id %}">{{ template.template_name }}</a></td>
+        <td><a href="{% url 'estimates:work_template_detail' template.template_id %}">{{ template.template_name }}</a></td>
         <td>{{ template.description|truncatewords:10 }}</td>
         <td>{{ template.created_date|date:"Y-m-d" }}</td>
         <td>
-            <a href="{% url 'estimates:work_order_template_detail' template.template_id %}">View</a>
+            <a href="{% url 'estimates:work_template_detail' template.template_id %}">View</a>
         </td>
     </tr>
     {% empty %}
@@ -32,6 +32,6 @@
     {% endfor %}
 </table>
 
-<p><a href="{% url 'estimates:add_work_order_template' %}">Add New WorkOrder Template</a></p>
+<p><a href="{% url 'estimates:add_work_template' %}">Add New Work Template</a></p>
 
 {% endblock %}

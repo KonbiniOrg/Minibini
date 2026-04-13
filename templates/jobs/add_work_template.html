@@ -1,13 +1,13 @@
 {% extends 'base.html' %}
 
-{% block title %}Add Work Order Template - Minibini{% endblock %}
+{% block title %}Add Work Template - Minibini{% endblock %}
 
 {% block navigation %}
 {% include 'includes/settings_navigation.html' %}
 {% endblock %}
 
 {% block content %}
-<h2>Add Work Order Template</h2>
+<h2>Add Work Template</h2>
 
 <form method="post">
     {% csrf_token %}
@@ -16,7 +16,7 @@
     </table>
     <br>
     <button type="submit" name="save">Save Template</button>
-    <a href="{% url 'estimates:work_order_template_list' %}">Cancel</a>
+    <a href="{% url 'estimates:work_template_list' %}">Cancel</a>
 </form>
 
 {% endblock %}
