@@ -68,8 +68,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return self._name(obj.purchased_by)
 
     def _job(self, obj):
-        if obj.material_id and obj.material.task.work_order_id:
-            return obj.material.task.work_order.job
+        if obj.material_id and obj.material.task.job_id:
+            return obj.material.task.job
         return None
 
     def get_task_name(self, obj):

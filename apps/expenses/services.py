@@ -19,10 +19,15 @@ class ExpenseService:
         with transaction.atomic():
             # If new_material info is provided, create the material atomically
             if new_material and not material:
-                from apps.jobs.models import WorkOrder
+                from apps.jobs.models import Job
                 from apps.inventory.models import Material
-                wo = WorkOrder.objects.get(pk=new_material['work_order_id'])
-                task = ExpenseService.find_or_create_materials_task(work_order=wo)
+                # Accept either 'job_id' (new) or 'work_order_id' (legacy key
+                # from callers that haven't been updated yet — e.g., the
+                # frontend expense form). Post-WorkOrder-removal, both point
+                # at the Job.
+                job_id = new_material.get('job_id') or new_material.get('work_order_id')
+                job = Job.objects.get(pk=job_id)
+                task = ExpenseService.find_or_create_materials_task(job=job)
                 qty = new_material.get('quantity') or 1
                 price = new_material.get('price')
                 if price is None:
@@ -141,14 +146,14 @@ class ExpenseService:
         return expense
 
     @staticmethod
-    def find_or_create_materials_task(*, work_order):
+    def find_or_create_materials_task(*, job):
         existing = Task.objects.filter(
-            work_order=work_order, name='Materials',
+            job=job, name='Materials',
         ).first()
         if existing:
             return existing
         return Task.objects.create(
-            work_order=work_order,
+            job=job,
             name='Materials',
             status=Task.STATUS_COMPLETE,
         )
