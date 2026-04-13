@@ -267,19 +267,19 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):
         job = self.get_object()
-        task_template_id = request.data.get('template_id')
+        task_template_id = request.data.get('task_template_id')
         est_qty_raw = request.data.get('est_qty')
 
         if not task_template_id:
             return Response(
-                {'template_id': ['This field is required.']},
+                {'task_template_id': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
             template = TaskTemplate.objects.get(pk=task_template_id)
         except TaskTemplate.DoesNotExist:
             return Response(
-                {'template_id': ['Task template not found.']},
+                {'task_template_id': ['Task template not found.']},
                 status=status.HTTP_404_NOT_FOUND,
             )
         try:

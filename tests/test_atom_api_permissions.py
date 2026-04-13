@@ -134,7 +134,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         ('post', '/api/jobs/1/notes/', {'text': 'test note'}),
         ('post', '/api/contacts/1/notes/', {'text': 'test note'}),
         ('post', '/api/businesses/1/notes/', {'text': 'test note'}),
-        ('post', '/api/jobs/1/add-from-template/', {'template_id': 1}),
+        ('post', '/api/jobs/1/add-from-template/', {'task_template_id': 1}),
     ]
 
     def test_bare_user_can_list(self):

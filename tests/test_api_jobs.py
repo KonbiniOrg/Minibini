@@ -606,7 +606,7 @@ class JobAddFromTemplateTest(TestCase):
     def test_add_from_template_success(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'template_id': self.template.pk, 'est_qty': '100.00'},
+            {'task_template_id': self.template.pk, 'est_qty': '100.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
@@ -616,7 +616,7 @@ class JobAddFromTemplateTest(TestCase):
     def test_add_from_template_default_qty(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'template_id': self.template.pk},
+            {'task_template_id': self.template.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
@@ -628,11 +628,12 @@ class JobAddFromTemplateTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 400)
+        self.assertIn('task_template_id', response.data)
 
     def test_add_from_template_not_found(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'template_id': 99999},
+            {'task_template_id': 99999},
             format='json',
         )
         self.assertEqual(response.status_code, 404)
@@ -641,7 +642,7 @@ class JobAddFromTemplateTest(TestCase):
         self.client.force_authenticate(user=None)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'template_id': self.template.pk},
+            {'task_template_id': self.template.pk},
             format='json',
         )
         self.assertIn(response.status_code, [401, 403])
