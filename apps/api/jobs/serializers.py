@@ -36,7 +36,11 @@ class JobSerializer(serializers.ModelSerializer):
 
     def get_tasks(self, obj):
         from apps.api.tasks.serializers import TaskSerializer
-        tasks = obj.tasks.all().order_by('sort_order')
+        # Use .all() so prefetch_related cache is hit when configured.
+        # The viewset prefetches tasks already ordered by sort_order.
+        tasks = obj.tasks.all()
+        if not hasattr(obj, '_prefetched_objects_cache') or 'tasks' not in obj._prefetched_objects_cache:
+            tasks = tasks.order_by('sort_order')
         return TaskSerializer(tasks, many=True).data
 
     def get_template(self, obj):

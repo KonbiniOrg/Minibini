@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core.exceptions import ValidationError
 from django.db.models import Q
+from django.db.models import Prefetch
 from apps.jobs.models import Job, Task
 from apps.jobs.services import JobService, TaskService
 from apps.core.models import HistoryEntry
@@ -18,7 +19,13 @@ from .serializers import JobSerializer
 
 
 class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
-    queryset = Job.objects.select_related('contact').all().order_by('-created_date')
+    queryset = Job.objects.select_related('contact', 'template') \
+        .prefetch_related(
+            Prefetch('tasks', queryset=Task.objects.select_related('assignee').order_by('sort_order')),
+            'template__templatetaskassociation_set__task_template',
+            'template__bundles',
+        ) \
+        .all().order_by('-created_date')
     serializer_class = JobSerializer
     lookup_field = 'pk'
     task_serializer_class = TaskSerializer

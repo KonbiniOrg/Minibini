@@ -263,6 +263,55 @@ class JobSerializerNestingTest(TestCase):
         self.assertEqual(job.template_id, self.template.pk)
 
 
+class JobListQueryCountTest(TestCase):
+    """GET /api/jobs/ should not fire N+1 queries for tasks/template."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = _make_admin('jobqc_admin')
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='Q', last_name='C')
+        self.template = WorkTemplate.objects.create(
+            template_name='QC Template', is_active=True,
+        )
+
+    def _make_jobs(self, count):
+        existing = Job.objects.count()
+        for i in range(existing, existing + count):
+            job = Job.objects.create(
+                job_number=f'QC-{i:03d}',
+                name=f'QC Job {i}',
+                contact=self.contact,
+                template=self.template,
+            )
+            Task.objects.create(job=job, name=f'Task A {i}')
+            Task.objects.create(job=job, name=f'Task B {i}')
+
+    def _list_query_count(self):
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get('/api/jobs/')
+        self.assertEqual(response.status_code, 200)
+        return len(ctx.captured_queries), len(response.data['results'])
+
+    def test_list_query_count_does_not_scale_with_jobs(self):
+        # Measure with 2 jobs.
+        self._make_jobs(2)
+        q2, n2 = self._list_query_count()
+        self.assertEqual(n2, 2)
+
+        # Add 3 more jobs (total 5) and measure again.
+        self._make_jobs(3)
+        q5, n5 = self._list_query_count()
+        self.assertEqual(n5, 5)
+
+        self.assertEqual(
+            q2, q5,
+            f'Query count grew with jobs: 2 jobs -> {q2}, 5 jobs -> {q5}',
+        )
+
+
 class JobWorkCompleteTest(TestCase):
     """Phase C2: POST /api/jobs/{id}/work-complete/."""
 
