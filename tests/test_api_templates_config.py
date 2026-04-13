@@ -12,15 +12,19 @@ class WorkTemplateAPITest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
 
-    def test_list_wo_templates(self):
-        response = self.client.get('/api/work-order-templates/')
+    def test_list_work_templates(self):
+        response = self.client.get('/api/work-templates/')
         self.assertEqual(response.status_code, 200)
 
-    def test_retrieve_wo_template(self):
+    def test_retrieve_work_template(self):
         template = WorkTemplate.objects.first()
         if template:
-            response = self.client.get(f'/api/work-order-templates/{template.pk}/')
+            response = self.client.get(f'/api/work-templates/{template.pk}/')
             self.assertEqual(response.status_code, 200)
+
+    def test_old_work_order_templates_route_gone(self):
+        response = self.client.get('/api/work-order-templates/')
+        self.assertEqual(response.status_code, 404)
 
 
 class TaskTemplateAPITest(BaseTestCase):

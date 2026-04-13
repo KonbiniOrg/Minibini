@@ -46,7 +46,7 @@ def api_root(request):
         'search': '/api/search/',
         'plan-tasks': '/api/plan-tasks/',
         'emails': '/api/emails/',
-        'work-order-templates': '/api/work-order-templates/',
+        'work-templates': '/api/work-templates/',
         'task-templates': '/api/task-templates/',
         'settings': '/api/settings/',
         'accounting-categories': '/api/accounting-categories/',
@@ -69,7 +69,7 @@ router.register(r'price-list-items', PriceListItemViewSet, basename='price-list-
 router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'plan-tasks', PlanTaskViewSet, basename='plan-task')
 router.register(r'bleps', BlepViewSet, basename='blep')
-router.register(r'work-order-templates', WorkTemplateViewSet, basename='work-order-template')
+router.register(r'work-templates', WorkTemplateViewSet, basename='work-template')
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
 

@@ -450,9 +450,9 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
     ]
 
     TEMPLATE_WRITE_ENDPOINTS = [
-        ('post', '/api/work-order-templates/', {'template_name': 'Test'}),
-        ('patch', '/api/work-order-templates/1/', {'template_name': 'Updated'}),
-        ('delete', '/api/work-order-templates/1/', None),
+        ('post', '/api/work-templates/', {'template_name': 'Test'}),
+        ('patch', '/api/work-templates/1/', {'template_name': 'Updated'}),
+        ('delete', '/api/work-templates/1/', None),
         ('post', '/api/task-templates/', {'template_name': 'Test'}),
         ('patch', '/api/task-templates/1/', {'template_name': 'Updated'}),
         ('delete', '/api/task-templates/1/', None),
@@ -491,7 +491,7 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
     def test_wrong_atom_manage_jobs_denied_template_writes(self):
         user = self.users['can_manage_jobs']
         sample = [
-            ('post', '/api/work-order-templates/', {'template_name': 'Test'}),
+            ('post', '/api/work-templates/', {'template_name': 'Test'}),
             ('post', '/api/task-templates/', {'template_name': 'Test'}),
             ('post', '/api/accounting-categories/', {'name': 'Test'}),
         ]
