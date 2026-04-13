@@ -13,7 +13,7 @@ from .serializers import JobSerializer
 
 
 class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
-    queryset = Job.objects.all().order_by('-created_date')
+    queryset = Job.objects.select_related('contact').all().order_by('-created_date')
     serializer_class = JobSerializer
     lookup_field = 'pk'
 
@@ -30,6 +30,15 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
         contact = self.request.query_params.get('contact')
         if contact:
             qs = qs.filter(contact_id=contact)
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(job_number__icontains=search)
+                | Q(name__icontains=search)
+                | Q(contact__first_name__icontains=search)
+                | Q(contact__last_name__icontains=search)
+                | Q(contact__business__business_name__icontains=search)
+            )
         return qs
 
     status_actions = {

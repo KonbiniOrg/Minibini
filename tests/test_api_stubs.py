@@ -22,10 +22,4 @@ class StubEndpointTest(BaseTestCase):
             response = self.client.post(url, {}, format='json')
             self.assertEqual(response.status_code, 501, f'{url} should return 501')
 
-    def test_expense_stubs(self):
-        endpoints = [
-            '/api/expenses/',
-        ]
-        for url in endpoints:
-            response = self.client.post(url, {}, format='json')
-            self.assertEqual(response.status_code, 501, f'{url} should return 501')
+    # test_expense_stubs removed — /api/expenses/ now has a real viewset

@@ -587,3 +587,143 @@ tests/test_retire_can_approve_expenses.py       # PermissionsUpdateSerializer re
 9. **Bulk CSV import from CC statement.**
 10. **Richer permission gating** allowing Bookkeepers (no `can_manage_config`) to see the User page Expenses tab directly. Current v1 accepts the Owner-only path on `/users/:id` + global reimbursement route for others.
 11. **Spending dashboards / rollups** by category, job, month.
+12. **QBO → Minibini reverse sync** — see appendix below.
+13. **Reassign job/task on a locked expense** — once an expense has been reimbursed (or otherwise locked from editing), it may still have been booked against the wrong job/task, or against no job at all. Need a narrow reassignment action that changes only the `material` link (and therefore the derived job/task) without unlocking amount, date, or category. Should re-push to QBO so the Purchase/Bill line reflects the corrected class/customer ref.
+
+---
+
+## Appendix: Research — pulling Minibini-external expenses out of QBO
+
+**Not in scope for this feature.** Captured here as research so future work doesn't have to rediscover it. The use case: bookkeeper enters an expense directly in QBO during periodic reconciliation (skipping Minibini); we want Minibini to notice and surface it.
+
+### QBO mechanisms for reading Purchase data
+
+**1. Direct query by `MetaData.LastUpdatedTime`** — the simplest path:
+
+```sql
+SELECT * FROM Purchase
+WHERE MetaData.LastUpdatedTime > '2026-04-01T00:00:00-08:00'
+ORDER BY MetaData.LastUpdatedTime
+```
+
+Works for every entity with metadata. Supports `STARTPOSITION` / `MAXRESULTS` pagination. Caller tracks the last-sync timestamp locally.
+
+**2. Change Data Capture (CDC)** — purpose-built for this:
+
+```
+GET /v3/company/<realmId>/cdc?entities=Purchase,Bill&changedSince=<ISO8601>
+```
+
+- Multi-entity in one call (Purchase + Bill + Vendor + Customer → single request).
+- **30-day max look-back.** `changedSince` must be within the last 30 days; longer gaps require a full resync via direct query.
+- **Max 1000 objects per response.** Pagination needed for high-volume shops.
+- **Full payloads**, not just diffs. Easy to reconcile locally.
+- **Includes deletes** with tombstone markers so Minibini can mirror them.
+
+**3. Webhooks** — real-time push. Supports Create/Update/Delete/Merge/Void events on "most entities" (Account, Bill, Customer, Invoice, Item, Payment, Vendor explicitly listed). **Whether `Purchase` specifically gets webhook events is not clearly documented** — Intuit's own docs are JS-rendered and resist scraping. Would need sandbox verification or a forum question. Downsides regardless: requires a publicly-accessible HTTPS endpoint (Minibini dev environment isn't), must respond within 3 seconds with 200, adds a webhook-verifier-token auth surface.
+
+**Recommendation:** CDC-based polling, not webhooks. Hourly or daily poll via a management command following the existing `QBOPaymentPollingService` pattern (`apps/qbo/services.py:621`). Matches bookkeeper work cadence, avoids webhook infrastructure.
+
+### Inherent lossiness
+
+The bigger problem is that QBO doesn't carry Minibini-specific metadata. A Purchase entered directly in QBO has:
+
+- ✅ Amount, date, category (reverse-lookup via account ID)
+- ✅ Payment account (reverse-lookup via the `qbo_payment_accounts` config)
+- ✅ Description, reference number, QBO vendor ref
+- ❌ **No `purchased_by` user** — QBO has no concept of "which Minibini user made this purchase"
+- ❌ **No Material/Task/WorkOrder link** — unless Minibini starts pushing job linkage via QBO Class or Customer fields (explicitly deferred)
+- ❌ **No distinction between company-paid and reimbursement batch** — both look like the same `Purchase` entity in QBO
+
+### Distinguishing Minibini-originated vs. external
+
+Easy because of the `PrivateNote` tag this design already plans to write on every push: `"Minibini expense #N — ..."` or `"Reimbursement to <username> — Minibini batch #N"`. On pull, any `Purchase` whose `PrivateNote` doesn't start with `"Minibini"` is external. Plus Minibini's own `qbo_id` → Expense/Reimbursement lookup gives a direct reverse index for known ones.
+
+### Sketch of the future import flow
+
+1. New management command polls CDC for `Purchase` entities since last sync, persists the new last-sync timestamp in `Configuration`.
+2. For each returned `Purchase`:
+   - If `qbo_id` matches a local record → update the local record in place (reverse re-sync).
+   - Else if `PrivateNote` starts with `"Minibini"` → log an anomaly (we pushed it but lost the local link — probably a DB restore or migration bug).
+   - Else → create a local `Expense` stub: `status=synced`, `qbo_id` populated, `entered_by` set to a synthetic system user, `purchased_by=null`, `material=null`. Amount/date/description/reference/payment account all come from the QBO payload. Accounting category via reverse lookup from the line's `AccountRef`.
+3. Surface imported stubs in the `/#/expenses` global list with a visual "Imported from QBO" badge and a prompt to link each one to a Material for job costing.
+
+### Limits to plan around
+
+The job-costing path is inherently lossy for QBO-first entries. The only real fix is a shop policy: bookkeepers enter job-bound expenses through Minibini, non-job overhead through QBO directly. Minibini can enforce this by refusing to attribute imported stubs to jobs automatically — the admin has to do the linking by hand in the global list.
+
+### Sources consulted
+
+- [QBO Change Data Capture](https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api/change-data-capture)
+- [QBO Webhooks](https://developer.intuit.com/app/developer/qbo/docs/develop/webhooks)
+- [QBO Query operations](https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api/data-queries)
+- [Intuit blog — Stay in sync with CDC](https://blogs.intuit.com/2023/08/24/building-smarter-with-intuit-stay-in-sync-with-cdc/)
+- [Intuit blog — Webhook best practices](https://blogs.intuit.com/2023/04/18/best-practices-for-using-webhooks-with-quickbooks-online/)
+
+---
+
+## Manual verification checklist
+
+### As a Worker (no special permissions)
+
+**Home card (/#/)**
+- [ ] "My Expenses" card visible on home page
+- [ ] Click "+ New expense" — form appears inline
+- [ ] Payment dropdown defaults to "Personal (reimbursement)" and shows all configured payment accounts
+- [ ] Submit a personal expense — appears in the list with status "submitted"
+- [ ] Submit a company-paid expense (pick one of the payment accounts) — appears with status "synced" (or "sync failed" if no QBO connection)
+- [ ] "Purchased by" dropdown appears when "Personal" is selected, hidden for company accounts
+- [ ] "Reference / check number" field appears when a company account is selected
+- [ ] Sidebar does NOT show "Expenses" link
+
+**Material picker (on the expense form)**
+- [ ] Type a job number or customer name — autocomplete results appear
+- [ ] Pick a job — flat material list loads from all WOs on that job
+- [ ] Filter materials by typing in the filter box
+- [ ] Click an existing material — it gets selected (highlighted)
+- [ ] Click "+ Add new material" — inline form expands with description/qty/unit
+- [ ] Fill in the new material form, click "Use this new material" — message shows "New material queued"
+- [ ] Submit the expense — material gets created on the WO's "Materials" bucket task
+
+### As a Bookkeeper (`can_manage_financials` only)
+
+**Global expenses list (/#/expenses)**
+- [ ] "Expenses" link appears in sidebar under Admin
+- [ ] Outstanding reimbursements summary card at top — shows users with submitted personal expenses, click-through links
+- [ ] Filters work: status, payment method, date range
+- [ ] "+ New expense" button opens the form
+- [ ] Edit button on a row — form pre-fills with existing values
+- [ ] Reject button on a submitted personal expense — status flips to "rejected"
+- [ ] Delete button — expense removed (QBO Purchase voided if it was synced)
+- [ ] Retry button on a sync-failed expense — re-attempts the push
+- [ ] Username links navigate to `/#/reimbursements/:user_id`
+
+**Reimbursement page (/#/reimbursements/:user_id)**
+- [ ] Shows outstanding reimbursable expenses for that user
+- [ ] Check individual boxes — running total updates
+- [ ] "Select all" checkbox works
+- [ ] Click "Reimburse selected" — inline form expands (paid on, payment account, reference, notes)
+- [ ] Fill in check number, click "Confirm reimbursement" — expenses move to "Past reimbursements"
+- [ ] Past reimbursements table shows the batch with QBO sync status
+- [ ] If sync failed — "Retry push" button appears and works
+- [ ] "Show rejected expenses" toggle — reveals/hides rejected items
+- [ ] Sidebar does NOT show "Users" or "Settings" (those are `can_manage_config`)
+
+### As an Owner (all permissions)
+
+**Everything the Bookkeeper can do, plus:**
+- [ ] `/#/users/:worker_id` — "Expenses" section appears at the bottom of the user detail page
+- [ ] The Expenses section shows the same reimbursement panel as `/#/reimbursements/:id`
+- [ ] Can create a reimbursement batch from the user detail page
+- [ ] Settings page (/#/settings) — "Payment accounts" section visible
+- [ ] "Refresh from QBO" button pulls accounts (requires live QBO connection)
+- [ ] Can check/uncheck accounts, edit display names, save
+
+### Edge cases
+
+- [ ] Submit a personal expense without selecting "Purchased by" — should get a validation error
+- [ ] Submit a company expense without selecting a payment account — should get a validation error
+- [ ] Try to reject a company-paid expense — should fail (only personal can be rejected)
+- [ ] Create two expenses for the same user, reimburse only one — the other stays outstanding
+- [ ] Edit a reimbursed expense (change the amount) — should re-sync to QBO
+- [ ] Submit an expense linked to an existing material — verify no duplicate material or task created on the work order

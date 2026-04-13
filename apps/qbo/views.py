@@ -16,7 +16,7 @@ from intuitlib.enums import Scopes
 
 from apps.api.permissions import CanManageConfig
 from apps.qbo.models import QBOConnection
-from apps.qbo.services import QBOAccountsService
+from apps.qbo.services import QBOAccountsService, QBOExpenseSyncService
 
 
 # --- OAuth browser-redirect endpoints (not DRF) ---
@@ -123,5 +123,16 @@ def qbo_accounts(request):
             'income_items': items,
             'expense_accounts': expense,
         })
+    except ValueError as e:
+        return Response({'error': str(e)}, status=400)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, CanManageConfig])
+def qbo_payment_accounts(request):
+    """Return Bank, Credit Card, and Other Current Asset accounts from QBO."""
+    try:
+        accounts = QBOExpenseSyncService.get_payment_accounts()
+        return Response({'payment_accounts': accounts})
     except ValueError as e:
         return Response({'error': str(e)}, status=400)

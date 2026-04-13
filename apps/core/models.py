@@ -24,7 +24,6 @@ class User(AbstractUser):
             ('can_manage_jobs', 'Can manage jobs, estimates, worksheets, work orders, tasks, contacts'),
             ('can_manage_financials', 'Can manage invoices, POs, bills, price list'),
             ('can_manage_time', "Can edit/delete anyone's time entries"),
-            ('can_approve_expenses', 'Can approve/reject expenses over threshold'),
             ('can_manage_config', 'Can manage settings, templates, user admin'),
         ]
 

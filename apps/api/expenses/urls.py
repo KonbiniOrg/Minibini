@@ -1,6 +1,7 @@
-from django.urls import path
-from apps.api.stubs import stub_501
+from rest_framework.routers import DefaultRouter
+from .views import ExpenseViewSet
 
-urlpatterns = [
-    path('', stub_501('POST /api/expenses/'), name='expense-list'),
-]
+router = DefaultRouter()
+router.register(r'', ExpenseViewSet, basename='expense')
+
+urlpatterns = router.urls

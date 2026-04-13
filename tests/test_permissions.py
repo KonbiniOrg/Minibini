@@ -12,7 +12,6 @@ class PermissionAtomsTest(BaseTestCase):
         'can_manage_jobs',
         'can_manage_financials',
         'can_manage_time',
-        'can_approve_expenses',
         'can_manage_config',
     ]
 
@@ -40,7 +39,7 @@ class PermissionAtomsTest(BaseTestCase):
 
 from apps.api.permissions import (
     atom_permission, CanManageJobs,
-    CanManageFinancials, CanManageTime, CanApproveExpenses, CanManageConfig,
+    CanManageFinancials, CanManageTime, CanManageConfig,
 )
 
 
@@ -86,12 +85,12 @@ class AtomPermissionFactoryTest(BaseTestCase):
         self.assertTrue(CanManageConfig().has_permission(request, None))
 
     def test_all_constants_are_defined(self):
-        """All 5 permission class constants are importable and functional."""
+        """All 4 permission class constants are importable and functional."""
         classes = [
             CanManageJobs, CanManageFinancials,
-            CanManageTime, CanApproveExpenses, CanManageConfig,
+            CanManageTime, CanManageConfig,
         ]
-        self.assertEqual(len(classes), 5)
+        self.assertEqual(len(classes), 4)
         for cls in classes:
             self.assertTrue(hasattr(cls, 'has_permission'))
 
