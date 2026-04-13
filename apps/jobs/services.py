@@ -694,7 +694,7 @@ class BoardService:
     @staticmethod
     def get_board_data():
         """Assemble all data for the job board view."""
-        from apps.jobs.models import Job, WorkOrder, Task
+        from apps.jobs.models import Job, Task
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
@@ -728,14 +728,14 @@ class BoardService:
         # Build job_id -> accent_color map for tasks
         color_map = {j['job_id']: j['accent_color'] for j in approved_list}
 
-        # Get all active tasks from approved jobs' work orders
+        # Get all active tasks on approved jobs
         approved_job_ids = [j['job_id'] for j in approved_list]
         tasks = Task.objects.filter(
-            work_order__job_id__in=approved_job_ids,
+            job_id__in=approved_job_ids,
         ).exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         ).select_related(
-            'work_order__job', 'assignee'
+            'job', 'assignee'
         ).order_by('worker_queue', 'pk')
 
         # Group by assignee
@@ -795,7 +795,7 @@ class BoardService:
     @staticmethod
     def get_approved_data():
         """Return approved jobs where work is still active (not unpaid)."""
-        from apps.jobs.models import Job, WorkOrder, Task
+        from apps.jobs.models import Job, Task
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
@@ -821,25 +821,25 @@ class BoardService:
         # Task counts per job (for progress bar in popup)
         from django.db.models import Count, Q as DjQ
         stats = Task.objects.filter(
-            work_order__job_id__in=approved_job_ids
+            job_id__in=approved_job_ids
         ).exclude(status=Task.STATUS_CANCELLED).values(
-            'work_order__job_id'
+            'job_id'
         ).annotate(
             total=Count('task_id'),
             completed=Count('task_id', filter=DjQ(status=Task.STATUS_COMPLETE)),
         )
-        stats_by_job = {s['work_order__job_id']: s for s in stats}
+        stats_by_job = {s['job_id']: s for s in stats}
         for j in approved_list:
             s = stats_by_job.get(j['job_id'], {'total': 0, 'completed': 0})
             j['task_total'] = s['total']
             j['task_completed'] = s['completed']
 
         tasks = Task.objects.filter(
-            work_order__job_id__in=approved_job_ids,
+            job_id__in=approved_job_ids,
         ).exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         ).select_related(
-            'work_order__job', 'assignee'
+            'job', 'assignee'
         ).order_by('worker_queue', 'pk')
 
         worker_map = {}
@@ -987,7 +987,7 @@ class BoardService:
         # field exists. Using half the billing rate as a temporary proxy.
         labor_cost = Decimal('0.00')
         bleps = Blep.objects.filter(
-            task__work_order__job=job,
+            task__job=job,
             start_time__isnull=False,
             end_time__isnull=False,
         ).select_related('task')
@@ -1025,7 +1025,7 @@ class BoardService:
 
     @staticmethod
     def _serialize_task(task, color_map):
-        job = task.work_order.job
+        job = task.job
         return {
             'task_id': task.task_id,
             'name': task.name,
@@ -1088,30 +1088,22 @@ class BoardService:
 
     @staticmethod
     def _approved_sub_status(job):
-        """Sub-status for Approved jobs."""
+        """Sub-status for Approved jobs.
+
+        Post-WorkOrder-removal: tasks live directly on the job. The
+        previous "needs-work-order" sub-status (no WO existed yet) is
+        now "needs-tasks" (no task has been created yet).
+        """
         invoices = job.invoice_set.all()
         sent_invoice = invoices.filter(status='open').first()
         if sent_invoice:
             return 'invoice-sent'
 
-        work_orders = job.workorder_set.all()
-        if not work_orders.exists():
-            return 'needs-work-order'
+        all_tasks = job.tasks.all()
+        if not all_tasks.exists():
+            return 'needs-tasks'
 
-        active_wo = work_orders.filter(status='incomplete').order_by('-pk').first()
-        if not active_wo:
-            active_wo = work_orders.order_by('-pk').first()
-
-        if active_wo.status == 'complete':
-            # Check for non-cancelled, non-superseded invoices
-            has_invoice = invoices.exclude(
-                status__in=['cancelled', 'superseded']
-            ).exists()
-            if has_invoice:
-                return 'invoice-prepped'
-            return 'needs-invoice'
-
-        tasks = active_wo.tasks.exclude(
+        tasks = all_tasks.exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         )
         if tasks.filter(status=Task.STATUS_BLOCKED).exists():
