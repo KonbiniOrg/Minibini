@@ -244,6 +244,8 @@ class JobService:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        if job.status == new_status:
+            return job
         old_status = job.status
         job.status = new_status
         job.full_clean()
