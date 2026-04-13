@@ -70,7 +70,7 @@ class InventoryService:
         pli.refresh_from_db()
 
         # Reduce or clear earmark
-        job = material.task.work_order.job
+        job = material.task.job
         if job:
             try:
                 earmark = Earmark.objects.get(
@@ -218,16 +218,16 @@ class InventoryService:
 
     @staticmethod
     def get_earmark_preview(job):
-        """Get preview of inventoried items needed for a job's work order materials.
+        """Get preview of inventoried items needed for a job's task materials.
 
-        Aggregates by price_list_item across all Materials on all WorkOrders
+        Aggregates by price_list_item across all Materials on all Tasks
         for this job. Returns list of dicts with price_list_item, needed_qty,
         available_qty, shortfall.
         """
         from apps.inventory.models import Material
 
         materials = Material.objects.filter(
-            task__work_order__job=job,
+            task__job=job,
             price_list_item__is_inventoried=True,
         ).values('price_list_item').annotate(
             total_qty=Sum('quantity'),
@@ -248,18 +248,17 @@ class InventoryService:
         return preview
 
     @staticmethod
-    def create_earmarks_for_work_order(work_order):
-        """Create earmarks from a WorkOrder's Materials.
+    def create_earmarks_for_job(job):
+        """Create earmarks from a Job's task materials.
 
-        Aggregates inventoried Materials by PLI across all Tasks on the WO,
+        Aggregates inventoried Materials by PLI across all Tasks on the job,
         then upserts Earmark records for the job. Called as a hook after
-        each WO creation path.
+        each job-population path (estimate, template, worksheet copy).
         """
         from apps.inventory.models import Material
 
-        job = work_order.job
         materials = Material.objects.filter(
-            task__work_order=work_order,
+            task__job=job,
             price_list_item__is_inventoried=True,
         ).values('price_list_item').annotate(
             total_qty=Sum('quantity'),
@@ -275,10 +274,10 @@ class InventoryService:
             }
             for entry in materials
         ]
-        InventoryService.create_earmarks_for_job(job, earmark_data)
+        InventoryService._upsert_earmarks(job, earmark_data)
 
     @staticmethod
-    def create_earmarks_for_job(job, earmark_data):
+    def _upsert_earmarks(job, earmark_data):
         """Create or update earmarks from user-confirmed data.
         earmark_data: list of dicts with price_list_item_id and quantity."""
         for entry in earmark_data:
@@ -299,7 +298,7 @@ class InventoryService:
     def release_earmarks_for_job(job):
         """Delete all remaining earmarks for a job.
 
-        Called when a WorkOrder is completed — any un-consumed earmark
+        Called when a Job enters work_complete — any un-consumed earmark
         balance is released back to general inventory availability.
         """
         Earmark.objects.filter(job=job).delete()
