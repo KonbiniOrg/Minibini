@@ -343,9 +343,9 @@ class TaskService:
     """Service class for Task creation workflows."""
 
     @staticmethod
-    def create_from_line_item(line_item, work_order):
+    def create_from_line_item(line_item, job):
         """
-        Generate appropriate Task(s) for a LineItem in a WorkOrder.
+        Generate appropriate Task(s) for a LineItem on a Job.
 
         Dispatches to the right strategy based on line item source:
         - Worksheet task: copies the source task with all fields
@@ -356,15 +356,15 @@ class TaskService:
             List[Task]: Tasks created for this LineItem
         """
         if line_item.task:
-            return TaskService._copy_worksheet_tasks(line_item, work_order)
+            return TaskService._copy_worksheet_tasks(line_item, job)
         elif line_item.price_list_item:
-            return TaskService._create_task_from_catalog_item(line_item, work_order)
+            return TaskService._create_task_from_catalog_item(line_item, job)
         else:
-            return TaskService._create_generic_task(line_item, work_order)
+            return TaskService._create_generic_task(line_item, job)
 
     @staticmethod
-    def _copy_worksheet_tasks(line_item, work_order):
-        """Copy the PlanTask that contributed to this EstimateLineItem into a Task on the WO.
+    def _copy_worksheet_tasks(line_item, job):
+        """Copy the PlanTask that contributed to this EstimateLineItem into a Task on the Job.
 
         Note: after the spec 2026-04-05 model split, this function copies exactly one
         PlanTask to one Task. The prior "multi-task with parent relationships" logic was
@@ -372,7 +372,7 @@ class TaskService:
         """
         plan_task = line_item.task  # now a PlanTask FK
         new_task = Task.objects.create(
-            work_order=work_order,
+            job=job,
             name=plan_task.name,
             description=plan_task.description,
             units=plan_task.units,
@@ -384,14 +384,14 @@ class TaskService:
         return [new_task]
 
     @staticmethod
-    def _create_task_from_catalog_item(line_item, work_order):
+    def _create_task_from_catalog_item(line_item, job):
         """Create a task from PriceListItem data."""
         task_name = f"{line_item.price_list_item.code} - {line_item.price_list_item.description[:50]}"
         if len(line_item.price_list_item.description) > 50:
             task_name += "..."
 
         task = Task.objects.create(
-            work_order=work_order,
+            job=job,
             name=task_name,
             units=line_item.units if line_item.units not in ('', 'none') else line_item.price_list_item.units,
             rate=line_item.price or line_item.price_list_item.selling_price,
@@ -402,7 +402,7 @@ class TaskService:
         return [task]
 
     @staticmethod
-    def _create_generic_task(line_item, work_order):
+    def _create_generic_task(line_item, job):
         """Create a generic task from manual LineItem data."""
         if line_item.description:
             task_name = line_item.description[:255]
@@ -412,7 +412,7 @@ class TaskService:
             task_name = f"Line Item {line_item.pk}"
 
         task = Task.objects.create(
-            work_order=work_order,
+            job=job,
             name=task_name,
             units=line_item.units,
             rate=line_item.price,
@@ -423,7 +423,7 @@ class TaskService:
         return [task]
 
     @staticmethod
-    def create_from_template(template, work_order, assignee=None):
+    def create_from_template(template, job, assignee=None):
         """
         Create Task from TaskTemplate.
         """
@@ -431,7 +431,7 @@ class TaskService:
             raise ValidationError(f"Template {template.template_name} is not active.")
 
         task = Task.objects.create(
-            work_order=work_order,
+            job=job,
             accounting_category=template.accounting_category,
             name=template.template_name,
             assignee=assignee
@@ -439,10 +439,10 @@ class TaskService:
         return task
 
     @staticmethod
-    def create_direct(work_order, name, **kwargs):
+    def create_direct(job, name, **kwargs):
         """Create Task directly."""
         return Task.objects.create(
-            work_order=work_order,
+            job=job,
             name=name,
             **kwargs
         )
@@ -467,8 +467,6 @@ class TaskService:
         Rules:
         - In-progress and complete tasks cannot be deleted (cancel instead).
         - Tasks with bleps (time entries) cannot be deleted (cancel instead).
-        - If the deleted task was the last blocked task on its WO, the WO
-          is auto-unblocked back to incomplete.
         """
         try:
             task = Task.objects.get(pk=task_pk)
@@ -485,16 +483,7 @@ class TaskService:
                 "Cannot delete a task that has time entries. Cancel it instead."
             )
 
-        was_blocked = task.status == Task.STATUS_BLOCKED
-        wo = task.work_order
         task.delete()
-
-        if was_blocked and wo.status == WorkOrder.STATUS_BLOCKED:
-            still_blocked = Task.objects.filter(
-                work_order=wo, status=Task.STATUS_BLOCKED,
-            ).exists()
-            if not still_blocked:
-                WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
 
     @staticmethod
     def reorder_tasks(task_id, direction):
@@ -506,8 +495,7 @@ class TaskService:
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_id} not found')
 
-        # Post-split: Task is always work-order side.
-        items_qs = Task.objects.filter(work_order=task.work_order)
+        items_qs = Task.objects.filter(job=task.job)
 
         BundlingService.reorder_container_items(
             items_qs, 'task', task_id, direction,
