@@ -182,9 +182,6 @@
                                 - Contact: {{ item.contact }}
                                 {% if item.purchase_order %} - PO: {{ item.purchase_order.po_number }}{% endif %}
 
-                            {% elif category_name == "work_orders" %}
-                                <strong><a href="{% url 'jobs:work_order_detail' item.work_order_id %}">Work Order {{ item.work_order_id }}</a></strong>
-                                - {{ item.status }} - Job: {{ item.job.job_number }}
                             {% endif %}
                         </div>
                     </div>
@@ -282,24 +279,15 @@
                 </ul>
 
             {% else %}
-                <!-- Flat list categories (work_orders, est_worksheets) -->
+                <!-- Flat list categories (est_worksheets) -->
                 <h3 style="margin-top: 0;">
-                    {% if category_name == "work_orders" %}Work Orders
-                    {% elif category_name == "est_worksheets" %}Worksheets
+                    {% if category_name == "est_worksheets" %}Worksheets
                     {% else %}{{ category_name|title }}
                     {% endif %}
                     ({{ category_data|length }})
                 </h3>
                 <ul style="margin-bottom: 20px;">
-                {% if category_name == "work_orders" %}
-                    {% for wo in category_data %}
-                    <li>
-                        <a href="{% url 'jobs:work_order_detail' wo.work_order_id %}">Work Order {{ wo.work_order_id }}</a>
-                        - {{ wo.status }} - Job: {{ wo.job.job_number }}
-                    </li>
-                    {% endfor %}
-
-                {% elif category_name == "est_worksheets" %}
+                {% if category_name == "est_worksheets" %}
                     {% for worksheet in category_data %}
                     <li>
                         <a href="{% url 'estimates:estworksheet_detail' worksheet.est_worksheet_id %}">Worksheet {{ worksheet.est_worksheet_id }}</a>
