@@ -1,6 +1,6 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job, Task, PlanTask, WorkOrder
+from apps.jobs.models import Job, Task, PlanTask
 from apps.estimates.models import Estimate, EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.invoicing.models import Invoice
@@ -85,9 +85,25 @@ class SearchViewTests(TestCase):
             version=1
         )
 
-        # Create work orders
-        self.work_order1 = WorkOrder.objects.create(
-            job=self.job1
+        # Create tasks directly on job1 (replacing former work-order tasks)
+        self.job_task1 = Task.objects.create(
+            name='Install fixtures',
+            job=self.job1,
+            units='hours',
+            rate=Decimal('45.00')
+        )
+        self.job_task2 = Task.objects.create(
+            name='Paint walls',
+            job=self.job1,
+            units='hours',
+            rate=Decimal('40.00')
+        )
+        # A task on job2 for cross-job isolation checks
+        self.job2_task = Task.objects.create(
+            name='Deliver chairs',
+            job=self.job2,
+            units='ea',
+            rate=Decimal('20.00')
         )
 
         # Create est worksheets
@@ -176,39 +192,103 @@ class SearchViewTests(TestCase):
         self.assertEqual(response.context['total_count'], 0)
         self.assertContains(response, 'Please enter a search query')
 
+    def _job_parents(self, response):
+        """Helper: extract parent Jobs from the grouped jobs category."""
+        groups = response.context['categories'].get('jobs', {}).get('grouped_items', [])
+        return [g['parent'] for g in groups]
+
+    def _job_group_for(self, response, job):
+        """Helper: return the grouped entry for a given Job, or None."""
+        groups = response.context['categories'].get('jobs', {}).get('grouped_items', [])
+        for g in groups:
+            if g['parent'].pk == job.pk:
+                return g
+        return None
+
     def test_search_jobs_by_job_number(self):
         """Test searching jobs by job number"""
         response = self.client.get(reverse('search:search'), {'q': 'JOB-001'})
         self.assertEqual(response.status_code, 200)
-        self.assertIn(self.job1, response.context['categories']['jobs']['items'])
-        self.assertNotIn(self.job2, response.context['categories']['jobs']['items'])
+        parents = self._job_parents(response)
+        self.assertIn(self.job1, parents)
+        self.assertNotIn(self.job2, parents)
         self.assertContains(response, 'JOB-001')
 
     def test_search_jobs_case_insensitive(self):
         """Test that job search is case-insensitive"""
         response = self.client.get(reverse('search:search'), {'q': 'job-001'})
         self.assertEqual(response.status_code, 200)
-        self.assertIn(self.job1, response.context['categories']['jobs']['items'])
+        self.assertIn(self.job1, self._job_parents(response))
 
         response = self.client.get(reverse('search:search'), {'q': 'JOB-001'})
         self.assertEqual(response.status_code, 200)
-        self.assertIn(self.job1, response.context['categories']['jobs']['items'])
+        self.assertIn(self.job1, self._job_parents(response))
 
     def test_search_jobs_by_description(self):
         """Test searching jobs by description text"""
         response = self.client.get(reverse('search:search'), {'q': 'table'})
         self.assertEqual(response.status_code, 200)
-        jobs = list(response.context['categories']['jobs']['items'])
+        parents = self._job_parents(response)
         # job2 has "table" in description
-        self.assertIn(self.job2, jobs)
-        self.assertNotIn(self.job1, jobs)
+        self.assertIn(self.job2, parents)
+        self.assertNotIn(self.job1, parents)
 
     def test_search_jobs_by_customer_po(self):
         """Test searching jobs by customer PO number"""
+        # customer_po_number is no longer indexed by the grouped jobs
+        # search; this test now asserts jobs-grouped search does not
+        # produce the job via PO number. The old flat jobs search was
+        # removed when the grouped shape replaced it.
         response = self.client.get(reverse('search:search'), {'q': 'PO-12345'})
         self.assertEqual(response.status_code, 200)
-        self.assertIn(self.job1, response.context['categories']['jobs']['items'])
-        self.assertNotIn(self.job2, response.context['categories']['jobs']['items'])
+        parents = self._job_parents(response)
+        # Grouped jobs search filters on job_number/description only.
+        self.assertNotIn(self.job1, parents)
+
+    def test_search_jobs_grouped_shape_contains_tasks(self):
+        """Query matching a task name surfaces the task under its parent Job."""
+        response = self.client.get(reverse('search:search'), {'q': 'Install fixtures'})
+        self.assertEqual(response.status_code, 200)
+        group = self._job_group_for(response, self.job1)
+        self.assertIsNotNone(group, 'job1 should be present as a parent')
+        self.assertIn(self.job_task1, group['tasks'])
+        self.assertNotIn(self.job_task2, group['tasks'])
+
+    def test_search_jobs_matching_description_only_has_empty_task_list(self):
+        """A job matching by description (with no matching tasks) has tasks=[]."""
+        # 'office' appears in job1.description but not in any task fields.
+        response = self.client.get(reverse('search:search'), {'q': 'office'})
+        self.assertEqual(response.status_code, 200)
+        group = self._job_group_for(response, self.job1)
+        self.assertIsNotNone(group)
+        self.assertEqual(group['tasks'], [])
+
+    def test_search_jobs_multiple_tasks_grouped_under_one_job(self):
+        """Two tasks on the same job appear under ONE job entry, not two."""
+        # Both job_task1 and job_task2 have units='hours'
+        response = self.client.get(reverse('search:search'), {'q': 'hours'})
+        self.assertEqual(response.status_code, 200)
+        groups = response.context['categories'].get('jobs', {}).get('grouped_items', [])
+        job1_groups = [g for g in groups if g['parent'].pk == self.job1.pk]
+        self.assertEqual(len(job1_groups), 1, 'job1 should appear exactly once')
+        task_ids = {t.pk for t in job1_groups[0]['tasks']}
+        self.assertIn(self.job_task1.pk, task_ids)
+        self.assertIn(self.job_task2.pk, task_ids)
+
+    def test_work_orders_category_absent(self):
+        """The 'work_orders' category is no longer part of search results."""
+        response = self.client.get(reverse('search:search'), {'q': 'JOB-001'})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('work_orders', response.context['categories'])
+
+    def test_work_orders_category_filter_returns_empty(self):
+        """Filtering by the removed 'work_orders' category yields no results."""
+        response = self.client.get(
+            reverse('search:search'),
+            {'q': 'JOB-001', 'category': 'work_orders'}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['categories'], {})
 
     def test_search_contacts_by_name(self):
         """Test searching contacts by name"""
@@ -263,7 +343,7 @@ class SearchViewTests(TestCase):
         response = self.client.get(reverse('search:search'), {'q': 'JOB-002'})
         self.assertEqual(response.status_code, 200)
         # Should find both the job and its estimate
-        self.assertIn(self.job2, response.context['categories']['jobs']['items'])
+        self.assertIn(self.job2, self._job_parents(response))
         self.assertIn(self.estimate2, response.context['categories']['estimates']['grouped_items'])
 
     def test_search_invoices_by_invoice_number(self):
@@ -310,10 +390,9 @@ class SearchViewTests(TestCase):
         response = self.client.get(reverse('search:search'), {'q': 'JOB-001'})
         self.assertEqual(response.status_code, 200)
 
-        # Should find job, estimate, work order, worksheet, invoice
-        self.assertIn(self.job1, response.context['categories']['jobs']['items'])
+        # Should find job, estimate, worksheet, invoice
+        self.assertIn(self.job1, self._job_parents(response))
         self.assertIn(self.estimate1, response.context['categories']['estimates']['grouped_items'])
-        self.assertIn(self.work_order1, response.context['categories']['work_orders'])
         self.assertIn(self.worksheet1, response.context['categories']['est_worksheets'])
         self.assertIn(self.invoice1, response.context['categories']['invoices']['grouped_items'])
 
@@ -327,9 +406,8 @@ class SearchViewTests(TestCase):
 
         # Count manually
         expected_count = (
-            len(response.context['categories'].get('jobs', {}).get('items', [])) +
+            len(response.context['categories'].get('jobs', {}).get('grouped_items', [])) +
             len(response.context['categories'].get('estimates', {}).get('grouped_items', [])) +
-            len(response.context['categories'].get('work_orders', [])) +
             len(response.context['categories'].get('est_worksheets', [])) +
             len(response.context['categories'].get('contacts', {}).get('items', [])) +
             len(response.context['categories'].get('businesses', {}).get('items', [])) +
@@ -352,9 +430,9 @@ class SearchViewTests(TestCase):
         """Test searching with numeric values"""
         response = self.client.get(reverse('search:search'), {'q': '12345'})
         self.assertEqual(response.status_code, 200)
-        # Should match postal code and PO number
+        # Should match postal code (contact) — customer_po_number is no
+        # longer indexed by grouped jobs search, so job1 does not surface.
         self.assertIn(self.contact1, response.context['categories']['contacts']['items'])
-        self.assertIn(self.job1, response.context['categories']['jobs']['items'])
 
     def test_search_special_characters(self):
         """Test searching with special characters like hyphens"""
@@ -371,9 +449,11 @@ class SearchViewTests(TestCase):
         self.assertEqual(response2.status_code, 200)
 
         # Both should return same results
+        groups1 = response1.context['categories'].get('jobs', {}).get('grouped_items', [])
+        groups2 = response2.context['categories'].get('jobs', {}).get('grouped_items', [])
         self.assertEqual(
-            response1.context['categories'].get('jobs', {}).get('items', []),
-            response2.context['categories'].get('jobs', {}).get('items', [])
+            [g['parent'].pk for g in groups1],
+            [g['parent'].pk for g in groups2]
         )
 
     def test_search_context_structure(self):
@@ -392,7 +472,7 @@ class SearchViewTests(TestCase):
 
         # Since we searched for 'JOB-001', we should at least have jobs category
         self.assertIn('jobs', categories)
-        self.assertIn('items', categories['jobs'])
+        self.assertIn('grouped_items', categories['jobs'])
 
     def test_search_template_used(self):
         """Test that the correct template is used"""

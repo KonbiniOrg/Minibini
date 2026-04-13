@@ -20,7 +20,6 @@ class SearchService:
     CATEGORY_INVOICES = 4
     CATEGORY_JOBS = 5
     CATEGORY_ESTIMATES = 6
-    CATEGORY_WORK_ORDERS = 7
     CATEGORY_EST_WORKSHEETS = 8
     CATEGORY_BILLS = 9
     CATEGORY_PURCHASE_ORDERS = 10
@@ -33,7 +32,6 @@ class SearchService:
         CATEGORY_INVOICES: 'invoices',
         CATEGORY_JOBS: 'jobs',
         CATEGORY_ESTIMATES: 'estimates',
-        CATEGORY_WORK_ORDERS: 'work_orders',
         CATEGORY_EST_WORKSHEETS: 'est_worksheets',
         CATEGORY_BILLS: 'bills',
         CATEGORY_PURCHASE_ORDERS: 'purchase_orders',
@@ -50,7 +48,6 @@ class SearchService:
         CATEGORY_INVOICES: 'Invoices',
         CATEGORY_JOBS: 'Jobs',
         CATEGORY_ESTIMATES: 'Estimates',
-        CATEGORY_WORK_ORDERS: 'Work Orders',
         CATEGORY_EST_WORKSHEETS: 'Est Worksheets',
         CATEGORY_BILLS: 'Bills',
         CATEGORY_PURCHASE_ORDERS: 'Purchase Orders',
@@ -59,7 +56,7 @@ class SearchService:
     # Legacy support: List of category keys (for backward compatibility)
     AVAILABLE_CATEGORIES = [
         'businesses', 'price_list_items', 'contacts', 'invoices', 'jobs',
-        'estimates', 'work_orders', 'est_worksheets', 'bills', 'purchase_orders'
+        'estimates', 'est_worksheets', 'bills', 'purchase_orders'
     ]
 
     @classmethod
@@ -273,12 +270,12 @@ class SearchService:
         return list(estimate_dict.values()) if estimate_dict else []
 
     @staticmethod
-    def search_work_orders_with_tasks(query):
-        """Search for work orders and their tasks, returning grouped results"""
-        work_orders = WorkOrder.objects.filter(
-            Q(job__job_number__icontains=query) |
-            Q(job__description__icontains=query)
-        ).select_related('job').prefetch_related('tasks')
+    def search_jobs_with_tasks(query):
+        """Search for jobs and their matching tasks, returning grouped results."""
+        jobs = Job.objects.filter(
+            Q(job_number__icontains=query) |
+            Q(description__icontains=query)
+        ).prefetch_related('tasks')
 
         tasks = Task.objects.annotate(
             rate_text=Cast('rate', CharField())
@@ -286,28 +283,19 @@ class SearchService:
             Q(name__icontains=query) |
             Q(units__icontains=query) |
             Q(rate_text__icontains=query) |
-            Q(work_order__job__job_number__icontains=query)
-        ).select_related('assignee', 'work_order', 'work_order__job')
+            Q(job__job_number__icontains=query)
+        ).select_related('assignee', 'job')
 
-        # Build a dict of work orders with their matching tasks
-        wo_dict = {}
-        for wo in work_orders:
-            wo_dict[wo.work_order_id] = {
-                'parent': wo,
-                'tasks': []
-            }
+        job_dict = {}
+        for job in jobs:
+            job_dict[job.pk] = {'parent': job, 'tasks': []}
 
         for task in tasks:
-            if task.work_order:
-                wo_id = task.work_order.work_order_id
-                if wo_id not in wo_dict:
-                    wo_dict[wo_id] = {
-                        'parent': task.work_order,
-                        'tasks': []
-                    }
-                wo_dict[wo_id]['tasks'].append(task)
+            if task.job_id not in job_dict:
+                job_dict[task.job_id] = {'parent': task.job, 'tasks': []}
+            job_dict[task.job_id]['tasks'].append(task)
 
-        return list(wo_dict.values()) if wo_dict else []
+        return list(job_dict.values())
 
     @staticmethod
     def search_bills_with_line_items(query):
@@ -444,12 +432,11 @@ class SearchService:
                 'grouped_items': parents_with_line_items
             }
 
-        # JOBS
-        jobs = cls.search_jobs(query)
-        if jobs.exists():
+        # JOBS (with tasks grouped by parent)
+        job_groups = cls.search_jobs_with_tasks(query)
+        if job_groups:
             categories['jobs'] = {
-                'items': list(jobs),
-                'subcategories': {}
+                'grouped_items': job_groups
             }
 
         # ESTIMATES (with line items grouped by parent)
@@ -464,12 +451,6 @@ class SearchService:
             categories['estimates'] = {
                 'grouped_items': parents_with_line_items
             }
-
-        # WORK ORDERS (with tasks grouped by parent)
-        wo_groups = cls.search_work_orders_with_tasks(query)
-        if wo_groups:
-            # Extract parent work orders for flat list
-            categories['work_orders'] = [group['parent'] for group in wo_groups]
 
         # EST WORKSHEETS
         est_worksheets = cls.search_est_worksheets(query)
@@ -558,7 +539,7 @@ class SearchService:
         filtered_categories = {}
 
         for category_name, category_data in categories.items():
-            # Handle flat lists (work_orders, est_worksheets)
+            # Handle flat lists (est_worksheets)
             if isinstance(category_data, list):
                 if date_from or date_to:
                     filtered_items = []
@@ -573,12 +554,18 @@ class SearchService:
 
             # Handle dict structures
             elif isinstance(category_data, dict):
-                # Categories with grouped_items (estimates, invoices)
+                # Categories with grouped_items (jobs, estimates, invoices)
                 if 'grouped_items' in category_data:
                     if date_from or date_to:
                         filtered_items = []
                         for item in category_data['grouped_items']:
-                            item_date = getattr(item, 'created_date', None)
+                            # jobs use a dict {'parent': Job, 'tasks': [...]};
+                            # estimates/invoices use Model instances with
+                            # attached matching_line_items.
+                            if isinstance(item, dict) and 'parent' in item:
+                                item_date = getattr(item['parent'], 'created_date', None)
+                            else:
+                                item_date = getattr(item, 'created_date', None)
                             if cls.apply_date_filter(item_date, date_from, date_to):
                                 filtered_items.append(item)
                         if filtered_items:
@@ -612,7 +599,7 @@ class SearchService:
         """Calculate total count of search results"""
         total = 0
         for category_name, category_data in categories.items():
-            # Handle flat lists (work_orders, est_worksheets)
+            # Handle flat lists (est_worksheets)
             if isinstance(category_data, list):
                 total += len(category_data)
             # Handle dict structures
@@ -646,7 +633,6 @@ class SearchService:
             'estimates': 'Estimate',
             'bills': 'Bill',
             'purchase_orders': 'PurchaseOrder',
-            'work_orders': 'WorkOrder',
             'est_worksheets': 'EstWorksheet',
         }
 
@@ -672,12 +658,17 @@ class SearchService:
                 elif 'items' in category_data:
                     items_list = category_data['items']
 
-            # Handle flat lists (work_orders, est_worksheets)
+            # Handle flat lists (est_worksheets)
             elif isinstance(category_data, list):
                 items_list = category_data
 
             if items_list:
-                result_ids[model_name] = [item.pk for item in items_list]
+                # Jobs use a grouped shape where each entry is
+                # {'parent': Job, 'tasks': [...]}; unwrap to parents.
+                if items_list and isinstance(items_list[0], dict) and 'parent' in items_list[0]:
+                    result_ids[model_name] = [entry['parent'].pk for entry in items_list]
+                else:
+                    result_ids[model_name] = [item.pk for item in items_list]
 
         return result_ids
 
@@ -724,22 +715,37 @@ class SearchService:
                     'subcategories': {}
                 }
 
-        # JOBS
+        # JOBS (grouped shape: parent + matching tasks)
         if 'Job' in result_ids and result_ids['Job']:
             jobs = Job.objects.filter(
                 pk__in=result_ids['Job']
             ).filter(
                 Q(job_number__icontains=within_query) |
-                Q(customer_po_number__icontains=within_query) |
-                Q(description__icontains=within_query) |
-                Q(contact__first_name__icontains=within_query) |
-                Q(contact__middle_initial__icontains=within_query) |
-                Q(contact__last_name__icontains=within_query)
-            ).select_related('contact')
-            if jobs.exists():
+                Q(description__icontains=within_query)
+            ).prefetch_related('tasks')
+
+            tasks = Task.objects.annotate(
+                rate_text=Cast('rate', CharField())
+            ).filter(
+                job_id__in=result_ids['Job']
+            ).filter(
+                Q(name__icontains=within_query) |
+                Q(units__icontains=within_query) |
+                Q(rate_text__icontains=within_query) |
+                Q(job__job_number__icontains=within_query)
+            ).select_related('assignee', 'job')
+
+            job_dict = {}
+            for job in jobs:
+                job_dict[job.pk] = {'parent': job, 'tasks': []}
+            for task in tasks:
+                if task.job_id not in job_dict:
+                    job_dict[task.job_id] = {'parent': task.job, 'tasks': []}
+                job_dict[task.job_id]['tasks'].append(task)
+
+            if job_dict:
                 categories['jobs'] = {
-                    'items': list(jobs),
-                    'subcategories': {}
+                    'grouped_items': list(job_dict.values())
                 }
 
         # PRICE LIST ITEMS
@@ -792,18 +798,6 @@ class SearchService:
                     'grouped_items': list(estimates),
                     'items': list(estimates)
                 }
-
-        # WORK ORDERS
-        if 'WorkOrder' in result_ids and result_ids['WorkOrder']:
-            work_orders = WorkOrder.objects.filter(
-                pk__in=result_ids['WorkOrder']
-            ).filter(
-                Q(job__job_number__icontains=within_query) |
-                Q(job__description__icontains=within_query)
-            ).select_related('job')
-
-            if work_orders.exists():
-                categories['work_orders'] = list(work_orders)
 
         # EST WORKSHEETS
         if 'EstWorksheet' in result_ids and result_ids['EstWorksheet']:
