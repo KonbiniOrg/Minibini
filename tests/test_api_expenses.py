@@ -119,6 +119,75 @@ class ExpenseCreateTest(TestCase):
         mock_push.assert_called_once()
 
 
+class ExpenseCreateWithNewMaterialTest(TestCase):
+    def setUp(self):
+        from apps.contacts.models import Contact, Business
+        from apps.jobs.models import Job
+        Configuration.objects.update_or_create(
+            key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'},
+        )
+        Configuration.objects.update_or_create(
+            key='job_counter', defaults={'value': '0'},
+        )
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Supplies', qbo_expense_account_id='500',
+        )
+        self.user = User.objects.create_user(username='u', password='testpass')
+        self.client_http.force_login(self.user)
+        self.contact = Contact.objects.create(
+            first_name='A', last_name='B', email='a@b.com', mobile_number='555-0000',
+        )
+        self.business = Business.objects.create(
+            business_name='Acme', default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
+        self.job = Job.objects.create(
+            job_number='JOB-2026-NM01', contact=self.contact,
+        )
+
+    def test_create_personal_with_new_material_job_id(self):
+        payload = {
+            'amount': '25.00',
+            'purchased_on': '2026-04-05',
+            'accounting_category': self.cat.pk,
+            'payment_method': 'personal',
+            'purchased_by': self.user.pk,
+            'new_material': {
+                'job_id': self.job.pk,
+                'description': 'Bolts',
+                'quantity': 5,
+                'price': '25.00',
+            },
+        }
+        r = self.client_http.post(
+            '/api/expenses/', payload, content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        exp = Expense.objects.get()
+        self.assertIsNotNone(exp.material)
+        self.assertEqual(exp.material.task.job_id, self.job.pk)
+
+    def test_create_rejects_work_order_id_without_job_id(self):
+        """Legacy work_order_id key no longer accepted."""
+        payload = {
+            'amount': '25.00',
+            'purchased_on': '2026-04-05',
+            'accounting_category': self.cat.pk,
+            'payment_method': 'personal',
+            'purchased_by': self.user.pk,
+            'new_material': {
+                'work_order_id': self.job.pk,
+                'description': 'Bolts',
+            },
+        }
+        r = self.client_http.post(
+            '/api/expenses/', payload, content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 400)
+
+
 class ExpenseRejectRetryTest(TestCase):
     def setUp(self):
         self.client_http = Client()

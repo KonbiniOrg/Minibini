@@ -21,11 +21,7 @@ class ExpenseService:
             if new_material and not material:
                 from apps.jobs.models import Job
                 from apps.inventory.models import Material
-                # Accept either 'job_id' (new) or 'work_order_id' (legacy key
-                # from callers that haven't been updated yet — e.g., the
-                # frontend expense form). Post-WorkOrder-removal, both point
-                # at the Job.
-                job_id = new_material.get('job_id') or new_material.get('work_order_id')
+                job_id = new_material['job_id']
                 job = Job.objects.get(pk=job_id)
                 task = ExpenseService.find_or_create_materials_task(job=job)
                 qty = new_material.get('quantity') or 1
