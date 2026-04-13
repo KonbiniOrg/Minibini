@@ -304,34 +304,18 @@
         }
     },
     {
-        "model": "jobs.workorder",
-        "pk": 1,
-        "fields": {
-            "job": 1,
-            "status": "incomplete"
-        }
-    },
-    {
-        "model": "jobs.workorder",
-        "pk": 2,
-        "fields": {
-            "job": 2,
-            "status": "complete"
-        }
-    },
-    {
         "model": "jobs.task",
         "pk": 1,
         "fields": {
             "assignee": 2,
-            "work_order": 1,
             "name": "Kitchen demolition",
             "units": "hours",
             "rate": "75.00",
             "est_qty": "8.00",
             "description": "",
             "sort_order": null,
-            "accounting_category": null
+            "accounting_category": null,
+            "job": 1
         }
     },
     {
@@ -339,14 +323,14 @@
         "pk": 2,
         "fields": {
             "assignee": 2,
-            "work_order": 1,
             "name": "Electrical rough-in",
             "units": "ln ft",
             "rate": "12.50",
             "est_qty": "150.00",
             "description": "",
             "sort_order": null,
-            "accounting_category": null
+            "accounting_category": null,
+            "job": 1
         }
     },
     {
