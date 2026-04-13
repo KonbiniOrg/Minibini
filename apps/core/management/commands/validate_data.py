@@ -25,7 +25,7 @@ Per-model field checks:
                    W  open: missing sent_date
                    W  accepted/rejected/superseded/expired: missing closed_date
   EstWorksheet     E  valid status value
-  Task             E  must belong to exactly one container (WorkOrder xor EstWorksheet)
+  Task             E  must belong to a Job
                    E  mapping_strategy='bundle' requires bundle; bundle requires strategy='bundle'
   PlanBundle       E  must belong to an EstWorksheet
   Material         E  must have description or price_list_item
@@ -231,10 +231,10 @@ class Command(BaseCommand):
 
     def check_tasks(self):
         from apps.jobs.models import Task, PlanTask
-        # Work-order tasks: Task is now WO-only after the 2026-04-05 split
-        for t in Task.objects.select_related('work_order').all():
-            if not t.work_order_id:
-                self.errors.append(f'Task {t.pk} ({t.name}): not attached to a WorkOrder')
+        # Tasks now belong directly to a Job (post-WorkOrder-removal).
+        for t in Task.objects.select_related('job').all():
+            if not t.job_id:
+                self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
         # Plan tasks: PlanTask is worksheet-only
         for t in PlanTask.objects.select_related('est_worksheet', 'bundle').all():
             if not t.est_worksheet_id:
