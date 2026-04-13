@@ -112,7 +112,7 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
 
     @action(detail=True, methods=['get', 'post'], url_path='subtasks', url_name='subtasks')
     def subtasks(self, request, pk=None):
-        from apps.api.work_orders.serializers import TaskSerializer
+        from apps.api.tasks.serializers import TaskSerializer
         task = self.get_object()
         if request.method == 'GET':
             children = Task.objects.filter(parent_task=task).order_by('sort_order')
@@ -124,7 +124,7 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return err
         serializer = TaskSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(parent_task=task, work_order=task.work_order)
+        serializer.save(parent_task=task, job=task.job)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])

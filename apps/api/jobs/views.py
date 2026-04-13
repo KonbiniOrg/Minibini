@@ -78,12 +78,10 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     def history(self, request, pk=None):
         job = self.get_object()
         from apps.estimates.models import Estimate, EstWorksheet
-        from apps.jobs.models import WorkOrder
         from apps.invoicing.models import Invoice
 
         estimate_ids = list(Estimate.objects.filter(job=job).values_list('pk', flat=True))
         worksheet_ids = list(EstWorksheet.objects.filter(job=job).values_list('pk', flat=True))
-        wo_ids = list(WorkOrder.objects.filter(job=job).values_list('pk', flat=True))
         invoice_ids = list(Invoice.objects.filter(job=job).values_list('pk', flat=True))
 
         q = Q(object_type='job', object_id=job.pk)
@@ -91,8 +89,6 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
             q |= Q(object_type='estimate', object_id__in=estimate_ids)
         if worksheet_ids:
             q |= Q(object_type='estworksheet', object_id__in=worksheet_ids)
-        if wo_ids:
-            q |= Q(object_type='workorder', object_id__in=wo_ids)
         if invoice_ids:
             q |= Q(object_type='invoice', object_id__in=invoice_ids)
 

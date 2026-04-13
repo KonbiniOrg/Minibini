@@ -5,6 +5,24 @@ from apps.core.models import User, HistoryEntry
 from apps.jobs.models import Job
 
 
+class WorkOrderRoutesGoneTest(BaseTestCase):
+    """Phase C1: /api/work-orders/ routes are gone."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+
+    def test_work_orders_list_is_404(self):
+        response = self.client.get('/api/work-orders/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_work_orders_detail_is_404(self):
+        response = self.client.get('/api/work-orders/1/')
+        self.assertEqual(response.status_code, 404)
+
+
 class JobAPITest(BaseTestCase):
 
     def setUp(self):
