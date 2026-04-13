@@ -1,17 +1,17 @@
-"""Tests for WorkOrderTemplate edit and delete functionality."""
+"""Tests for WorkTemplate edit and delete functionality."""
 from django.test import TestCase, Client
 from django.urls import reverse
 
-from apps.estimates.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.core.models import AccountingCategory
 
 
-class WorkOrderTemplateEditViewTest(TestCase):
-    """Tests for editing WorkOrderTemplate."""
+class WorkTemplateEditViewTest(TestCase):
+    """Tests for editing WorkTemplate."""
 
     def setUp(self):
         self.client = Client()
-        self.template = WorkOrderTemplate.objects.create(
+        self.template = WorkTemplate.objects.create(
             template_name='Original Name',
             description='Original description'
         )
@@ -63,12 +63,12 @@ class WorkOrderTemplateEditViewTest(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
-class WorkOrderTemplateDeleteViewTest(TestCase):
-    """Tests for deleting WorkOrderTemplate."""
+class WorkTemplateDeleteViewTest(TestCase):
+    """Tests for deleting WorkTemplate."""
 
     def setUp(self):
         self.client = Client()
-        self.template = WorkOrderTemplate.objects.create(
+        self.template = WorkTemplate.objects.create(
             template_name='Template to Delete',
             description='This will be deleted'
         )
@@ -82,7 +82,7 @@ class WorkOrderTemplateDeleteViewTest(TestCase):
         self.assertRedirects(response, reverse('estimates:work_order_template_list'))
 
         # Verify template is deleted
-        self.assertFalse(WorkOrderTemplate.objects.filter(template_id=template_id).exists())
+        self.assertFalse(WorkTemplate.objects.filter(template_id=template_id).exists())
 
     def test_delete_view_shows_success_message(self):
         """Test that success message is shown after delete."""
@@ -153,12 +153,12 @@ class WorkOrderTemplateDeleteViewTest(TestCase):
         self.assertEqual(response.status_code, 405)
 
 
-class WorkOrderTemplateDetailEditDeleteLinksTest(TestCase):
+class WorkTemplateDetailEditDeleteLinksTest(TestCase):
     """Tests for Edit and Delete links on detail page."""
 
     def setUp(self):
         self.client = Client()
-        self.template = WorkOrderTemplate.objects.create(
+        self.template = WorkTemplate.objects.create(
             template_name='Test Template',
             description='Test description'
         )

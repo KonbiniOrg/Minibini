@@ -4,20 +4,20 @@ from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.estimates.models import WorkOrderTemplate, TaskTemplate
-from apps.estimates.services import WorkOrderTemplateService
+from apps.estimates.models import WorkTemplate, TaskTemplate
+from apps.estimates.services import WorkTemplateService
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
 from apps.api.permissions import CanManageConfig
 from .serializers import (
-    WorkOrderTemplateSerializer, TaskTemplateSerializer,
+    WorkTemplateSerializer, TaskTemplateSerializer,
     ConfigurationSerializer, AccountingCategorySerializer,
 )
 
 
-class WorkOrderTemplateViewSet(viewsets.ModelViewSet):
-    queryset = WorkOrderTemplate.objects.all().order_by('template_name')
-    serializer_class = WorkOrderTemplateSerializer
+class WorkTemplateViewSet(viewsets.ModelViewSet):
+    queryset = WorkTemplate.objects.all().order_by('template_name')
+    serializer_class = WorkTemplateSerializer
     lookup_field = 'pk'
 
     def get_permissions(self):
@@ -26,14 +26,14 @@ class WorkOrderTemplateViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated(), CanManageConfig()]
 
     def perform_create(self, serializer):
-        template = WorkOrderTemplateService.create_template(**serializer.validated_data)
+        template = WorkTemplateService.create_template(**serializer.validated_data)
         serializer.instance = template
 
     def perform_update(self, serializer):
-        WorkOrderTemplateService.update_template(self.get_object().pk, **serializer.validated_data)
+        WorkTemplateService.update_template(self.get_object().pk, **serializer.validated_data)
 
     def perform_destroy(self, instance):
-        WorkOrderTemplateService.delete_template(instance.pk)
+        WorkTemplateService.delete_template(instance.pk)
 
 
 class TaskTemplateViewSet(viewsets.ModelViewSet):
@@ -47,16 +47,16 @@ class TaskTemplateViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated(), CanManageConfig()]
 
     def perform_create(self, serializer):
-        template = WorkOrderTemplateService.create_task_template(**serializer.validated_data)
+        template = WorkTemplateService.create_task_template(**serializer.validated_data)
         serializer.instance = template
 
     def perform_update(self, serializer):
-        WorkOrderTemplateService.update_task_template(
+        WorkTemplateService.update_task_template(
             self.get_object().pk, **serializer.validated_data
         )
 
     def perform_destroy(self, instance):
-        WorkOrderTemplateService.delete_task_template(instance.pk)
+        WorkTemplateService.delete_task_template(instance.pk)
 
 
 class AccountingCategoryViewSet(viewsets.ModelViewSet):

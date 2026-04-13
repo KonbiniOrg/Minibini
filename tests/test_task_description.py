@@ -10,7 +10,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from apps.jobs.models import Job, PlanTask
-from apps.estimates.models import EstWorksheet, TaskTemplate, WorkOrderTemplate
+from apps.estimates.models import EstWorksheet, TaskTemplate, WorkTemplate
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from decimal import Decimal

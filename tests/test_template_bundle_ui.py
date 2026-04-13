@@ -1,7 +1,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.estimates.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.core.models import AccountingCategory
 
 User = get_user_model()
@@ -25,7 +25,7 @@ class TemplateBundleUITest(TestCase):
         )
 
         # Create work order template
-        self.wo_template = WorkOrderTemplate.objects.create(
+        self.wo_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
         )
 

@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from datetime import timedelta
 from decimal import Decimal
 from apps.jobs.models import Job, WorkOrder, Task, Blep
-from apps.estimates.models import Estimate, WorkOrderTemplate, TaskTemplate
+from apps.estimates.models import Estimate, WorkTemplate, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import User
 
@@ -352,9 +352,9 @@ class BlepModelTest(TestCase):
         blep = Blep.objects.create(task=self.task)
         self.assertEqual(str(blep), f"Blep {blep.pk} for Task {self.task.pk}")
 
-class WorkOrderTemplateModelTest(TestCase):
+class WorkTemplateModelTest(TestCase):
     def test_work_order_template_creation(self):
-        template = WorkOrderTemplate.objects.create(
+        template = WorkTemplate.objects.create(
             template_name="Standard Installation",
             description="Standard installation workflow template",
             is_active=True
@@ -365,20 +365,20 @@ class WorkOrderTemplateModelTest(TestCase):
         self.assertIsNotNone(template.created_date)
 
     def test_work_order_template_str_method(self):
-        template = WorkOrderTemplate.objects.create(
+        template = WorkTemplate.objects.create(
             template_name="Maintenance Template"
         )
         self.assertEqual(str(template), "Maintenance Template")
 
     def test_work_order_template_defaults(self):
-        template = WorkOrderTemplate.objects.create(
+        template = WorkTemplate.objects.create(
             template_name="Basic Template"
         )
         self.assertTrue(template.is_active)  # Default should be True
         self.assertEqual(template.description, "")  # CharField blank=True defaults to empty
 
     def test_work_order_template_inactive(self):
-        template = WorkOrderTemplate.objects.create(
+        template = WorkTemplate.objects.create(
             template_name="Inactive Template",
             is_active=False
         )
@@ -397,7 +397,7 @@ class TaskTemplateModelTest(TestCase):
             work_order=self.work_order,
             name="Test Task",
         )
-        self.work_order_template = WorkOrderTemplate.objects.create(
+        self.work_order_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
         )
 
@@ -471,14 +471,14 @@ class TaskTemplateModelTest(TestCase):
         self.assertEqual(estimated_cost, Decimal('3050.00'))
 
     def test_task_template_without_work_order_template(self):
-        """Test TaskTemplate can exist without WorkOrderTemplate."""
+        """Test TaskTemplate can exist without WorkTemplate."""
         template = TaskTemplate.objects.create(
             template_name="Standalone Template"
         )
         self.assertEqual(template.work_order_templates.count(), 0)
 
     def test_template_task_association_sort_order(self):
-        """Test that TaskTemplates added to WorkOrderTemplate maintain sort order."""
+        """Test that TaskTemplates added to WorkTemplate maintain sort order."""
         from apps.estimates.models import TemplateTaskAssociation
 
         # Create multiple task templates

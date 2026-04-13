@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.test import TestCase
 from apps.jobs.models import PlanTask, PlanBundle, WorkOrder, Job
-from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 
@@ -21,7 +21,7 @@ class TaskGenerationBundlingTest(TestCase):
 
     def test_direct_tasks_get_direct_mapping(self):
         """Tasks generated from direct associations get mapping_strategy='direct'."""
-        wot = WorkOrderTemplate.objects.create(template_name="Simple Job")
+        wot = WorkTemplate.objects.create(template_name="Simple Job")
         tt = TaskTemplate.objects.create(
             template_name="Sand", rate=50, accounting_category=self.lit_labor
         )
@@ -39,7 +39,7 @@ class TaskGenerationBundlingTest(TestCase):
 
     def test_excluded_tasks_get_exclude_mapping(self):
         """Tasks generated from excluded associations get mapping_strategy='exclude'."""
-        wot = WorkOrderTemplate.objects.create(template_name="With Excluded")
+        wot = WorkTemplate.objects.create(template_name="With Excluded")
         tt = TaskTemplate.objects.create(
             template_name="Internal Check", rate=0, accounting_category=self.lit_labor
         )
@@ -57,7 +57,7 @@ class TaskGenerationBundlingTest(TestCase):
 
     def test_bundled_tasks_create_task_bundle(self):
         """Generating from a template with a TemplateBundle creates a PlanBundle on the worksheet."""
-        wot = WorkOrderTemplate.objects.create(template_name="Bundle Job")
+        wot = WorkTemplate.objects.create(template_name="Bundle Job")
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name="Prep Work",
             accounting_category=self.lit_labor, sort_order=1
@@ -98,7 +98,7 @@ class TaskGenerationBundlingTest(TestCase):
 
     def test_multiple_bundles_created_separately(self):
         """Each TemplateBundle becomes its own PlanBundle."""
-        wot = WorkOrderTemplate.objects.create(template_name="Multi Bundle")
+        wot = WorkTemplate.objects.create(template_name="Multi Bundle")
         bundle_a = TemplateBundle.objects.create(
             work_order_template=wot, name="Prep",
             accounting_category=self.lit_labor, sort_order=1
@@ -141,7 +141,7 @@ class TaskGenerationBundlingTest(TestCase):
 
     def test_mixed_direct_and_bundled(self):
         """Generation handles a mix of direct, bundled, and excluded tasks."""
-        wot = WorkOrderTemplate.objects.create(template_name="Mixed Job")
+        wot = WorkTemplate.objects.create(template_name="Mixed Job")
         bundle = TemplateBundle.objects.create(
             work_order_template=wot, name="Prep",
             accounting_category=self.lit_labor, sort_order=1

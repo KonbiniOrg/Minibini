@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
 from apps.jobs.models import PlanTask, PlanBundle, Job
-from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact, Business
 from apps.core.models import User, AccountingCategory
 
@@ -35,7 +35,7 @@ class WorksheetCreateFromTemplateTest(TestCase):
         )
 
         # Set up a template with a bundle
-        self.wot = WorkOrderTemplate.objects.create(template_name='Floor Refinish')
+        self.wot = WorkTemplate.objects.create(template_name='Floor Refinish')
         self.template_bundle = TemplateBundle.objects.create(
             work_order_template=self.wot, name='Prep Work',
             accounting_category=self.lit_labor, sort_order=1

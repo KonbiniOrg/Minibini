@@ -2,7 +2,7 @@
 from decimal import Decimal
 from django.test import TestCase
 from apps.jobs.models import PlanTask, PlanBundle, Job
-from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 
@@ -56,7 +56,7 @@ class WithinBundleDisplayOrderTest(TestCase):
         """_build_container_items_from_associations should sort within-bundle items by sort_order."""
         from apps.estimates.views import _build_container_items_from_associations
 
-        wot = WorkOrderTemplate.objects.create(template_name='Test')
+        wot = WorkTemplate.objects.create(template_name='Test')
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name='Bundle',
             accounting_category=self.lit, sort_order=1

@@ -1,10 +1,10 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, Configuration, AccountingCategory
-from apps.estimates.models import WorkOrderTemplate, TaskTemplate
+from apps.estimates.models import WorkTemplate, TaskTemplate
 
 
-class WorkOrderTemplateAPITest(BaseTestCase):
+class WorkTemplateAPITest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
@@ -17,7 +17,7 @@ class WorkOrderTemplateAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_retrieve_wo_template(self):
-        template = WorkOrderTemplate.objects.first()
+        template = WorkTemplate.objects.first()
         if template:
             response = self.client.get(f'/api/work-order-templates/{template.pk}/')
             self.assertEqual(response.status_code, 200)

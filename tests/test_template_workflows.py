@@ -9,7 +9,7 @@ from decimal import Decimal
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 from apps.jobs.models import Job, WorkOrder, Task
-from apps.estimates.models import Estimate, EstimateLineItem, WorkOrderTemplate, TaskTemplate
+from apps.estimates.models import Estimate, EstimateLineItem, WorkTemplate, TaskTemplate
 from apps.jobs.services import WorkOrderService, TaskService
 from apps.estimates.services import EstimateService
 from apps.core.models import User
@@ -99,7 +99,7 @@ class WorkOrderCreationWorkflowTest(TestCase):
     
     def test_work_order_from_active_template(self):
         """Test WorkOrder creation from active template."""
-        template = WorkOrderTemplate.objects.create(
+        template = WorkTemplate.objects.create(
             template_name="Test Template",
             description="Test description",
             is_active=True
@@ -113,7 +113,7 @@ class WorkOrderCreationWorkflowTest(TestCase):
     
     def test_work_order_from_inactive_template_rejected(self):
         """Test WorkOrder creation from inactive template is rejected."""
-        template = WorkOrderTemplate.objects.create(
+        template = WorkTemplate.objects.create(
             template_name="Inactive Template",
             is_active=False
         )
@@ -252,8 +252,8 @@ class TaskCreationWorkflowTest(TestCase):
         )
         
         # Create association with quantity
-        from apps.estimates.models import TemplateTaskAssociation, WorkOrderTemplate
-        work_order_template = WorkOrderTemplate.objects.create(template_name="Test WO Template")
+        from apps.estimates.models import TemplateTaskAssociation, WorkTemplate
+        work_order_template = WorkTemplate.objects.create(template_name="Test WO Template")
         association = TemplateTaskAssociation.objects.create(
             work_order_template=work_order_template,
             task_template=template,
@@ -289,8 +289,8 @@ class TemplateIntegrationTest(TestCase):
 
     def test_full_template_workflow(self):
         """Test complete workflow: Template -> WorkOrder -> Tasks."""
-        # Create WorkOrderTemplate with TaskTemplates
-        work_order_template = WorkOrderTemplate.objects.create(
+        # Create WorkTemplate with TaskTemplates
+        work_order_template = WorkTemplate.objects.create(
             template_name="Complete Job Template",
             description="Template for complete job workflow",
             is_active=True

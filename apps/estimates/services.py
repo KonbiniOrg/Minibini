@@ -10,7 +10,7 @@ from django.db import transaction
 
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet,
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.core.services import NumberGenerationService, NotFoundError
 from apps.inventory.models import PriceListItem
@@ -224,26 +224,26 @@ class EstimateService:
         return li
 
 
-class WorkOrderTemplateService:
-    """Service for WorkOrderTemplate and TaskTemplate CRUD."""
+class WorkTemplateService:
+    """Service for WorkTemplate and TaskTemplate CRUD."""
 
-    # --- WorkOrderTemplate ---
+    # --- WorkTemplate ---
 
     @staticmethod
     def create_template(**kwargs):
-        """Create a new WorkOrderTemplate."""
-        tmpl = WorkOrderTemplate(**kwargs)
+        """Create a new WorkTemplate."""
+        tmpl = WorkTemplate(**kwargs)
         tmpl.full_clean()
         tmpl.save()
         return tmpl
 
     @staticmethod
     def update_template(pk, **kwargs):
-        """Update an existing WorkOrderTemplate by PK."""
+        """Update an existing WorkTemplate by PK."""
         try:
-            tmpl = WorkOrderTemplate.objects.get(pk=pk)
-        except WorkOrderTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkOrderTemplate {pk} not found')
+            tmpl = WorkTemplate.objects.get(pk=pk)
+        except WorkTemplate.DoesNotExist:
+            raise NotFoundError(f'WorkTemplate {pk} not found')
         for field, value in kwargs.items():
             setattr(tmpl, field, value)
         tmpl.full_clean()
@@ -252,11 +252,11 @@ class WorkOrderTemplateService:
 
     @staticmethod
     def delete_template(pk):
-        """Delete a WorkOrderTemplate by PK."""
+        """Delete a WorkTemplate by PK."""
         try:
-            tmpl = WorkOrderTemplate.objects.get(pk=pk)
-        except WorkOrderTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkOrderTemplate {pk} not found')
+            tmpl = WorkTemplate.objects.get(pk=pk)
+        except WorkTemplate.DoesNotExist:
+            raise NotFoundError(f'WorkTemplate {pk} not found')
         tmpl.delete()
 
     # --- TaskTemplate ---
@@ -284,7 +284,7 @@ class WorkOrderTemplateService:
 
     @staticmethod
     def delete_task_template(pk):
-        """Delete a TaskTemplate if not used in any WorkOrderTemplate."""
+        """Delete a TaskTemplate if not used in any WorkTemplate."""
         try:
             tt = TaskTemplate.objects.get(pk=pk)
         except TaskTemplate.DoesNotExist:
@@ -302,9 +302,9 @@ class WorkOrderTemplateService:
     def delete_association(template_pk, assoc_pk):
         """Delete an unbundled association from a template."""
         try:
-            tmpl = WorkOrderTemplate.objects.get(pk=template_pk)
-        except WorkOrderTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkOrderTemplate {template_pk} not found')
+            tmpl = WorkTemplate.objects.get(pk=template_pk)
+        except WorkTemplate.DoesNotExist:
+            raise NotFoundError(f'WorkTemplate {template_pk} not found')
         try:
             assoc = TemplateTaskAssociation.objects.get(
                 pk=assoc_pk, work_order_template=tmpl,
@@ -323,9 +323,9 @@ class WorkOrderTemplateService:
         from django.db import models as db_models
 
         try:
-            tmpl = WorkOrderTemplate.objects.get(pk=template_pk)
-        except WorkOrderTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkOrderTemplate {template_pk} not found')
+            tmpl = WorkTemplate.objects.get(pk=template_pk)
+        except WorkTemplate.DoesNotExist:
+            raise NotFoundError(f'WorkTemplate {template_pk} not found')
         if len(assoc_ids) < 2:
             raise ValidationError('Please select at least 2 tasks to bundle.')
 
@@ -366,9 +366,9 @@ class WorkOrderTemplateService:
         from apps.estimates.models import TemplateBundle
 
         try:
-            tmpl = WorkOrderTemplate.objects.get(pk=template_pk)
-        except WorkOrderTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkOrderTemplate {template_pk} not found')
+            tmpl = WorkTemplate.objects.get(pk=template_pk)
+        except WorkTemplate.DoesNotExist:
+            raise NotFoundError(f'WorkTemplate {template_pk} not found')
         try:
             assoc = TemplateTaskAssociation.objects.get(
                 pk=assoc_pk, work_order_template=tmpl,
@@ -397,9 +397,9 @@ class WorkOrderTemplateService:
         from apps.core.services import BundlingService
 
         try:
-            tmpl = WorkOrderTemplate.objects.get(pk=template_pk)
-        except WorkOrderTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkOrderTemplate {template_pk} not found')
+            tmpl = WorkTemplate.objects.get(pk=template_pk)
+        except WorkTemplate.DoesNotExist:
+            raise NotFoundError(f'WorkTemplate {template_pk} not found')
 
         items_qs = TemplateTaskAssociation.objects.filter(
             work_order_template=tmpl,
@@ -414,9 +414,9 @@ class WorkOrderTemplateService:
         from apps.core.services import BundlingService
 
         try:
-            tmpl = WorkOrderTemplate.objects.get(pk=template_pk)
-        except WorkOrderTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkOrderTemplate {template_pk} not found')
+            tmpl = WorkTemplate.objects.get(pk=template_pk)
+        except WorkTemplate.DoesNotExist:
+            raise NotFoundError(f'WorkTemplate {template_pk} not found')
         try:
             assoc = TemplateTaskAssociation.objects.get(
                 pk=assoc_pk, work_order_template=tmpl,

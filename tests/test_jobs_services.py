@@ -6,7 +6,7 @@ from apps.jobs.models import Job, WorkOrder, Task, PlanTask, PlanBundle
 from apps.jobs.services import JobService, WorkOrderService, TaskService
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet,
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, PlanMaterial, PriceListItem
 from apps.inventory.services import InventoryService
@@ -309,7 +309,7 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.template = WorkOrderTemplate.objects.create(
+        self.template = WorkTemplate.objects.create(
             template_name='Standard Build')
         self.task_tmpl_1 = TaskTemplate.objects.create(
             template_name='Cut', units='hours', rate=Decimal('50.00'),
@@ -374,7 +374,7 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
 
     def test_template_with_no_associations(self):
         """Template with no task associations creates empty work order."""
-        empty_template = WorkOrderTemplate.objects.create(
+        empty_template = WorkTemplate.objects.create(
             template_name='Empty Template')
 
         wo = WorkOrderService.create_from_template(empty_template, self.job)
@@ -397,7 +397,7 @@ class WorkOrderServiceCreateDirectTest(JobsTestBase):
 
     def test_accepts_kwargs(self):
         """Passes extra kwargs through to WorkOrder.create."""
-        template = WorkOrderTemplate.objects.create(
+        template = WorkTemplate.objects.create(
             template_name='Test Template')
         wo = WorkOrderService.create_direct(self.job, template=template)
         self.assertEqual(wo.template, template)

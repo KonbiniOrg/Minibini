@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from django.core.exceptions import ValidationError
 from apps.jobs.models import WorkOrder, Task
 from apps.jobs.services import WorkOrderService
-from apps.estimates.models import WorkOrderTemplate, Estimate, EstWorksheet, TaskTemplate
+from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
 from apps.api.mixins import StatusTransitionMixin, WorkOrderTaskMixin
 from apps.api.permissions import CanManageJobs, CanManageFinancials
 from .serializers import WorkOrderSerializer, TaskSerializer
@@ -135,8 +135,8 @@ class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.Model
         except Job.DoesNotExist:
             return Response({'job': ['Job not found.']}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            template = WorkOrderTemplate.objects.get(pk=template_pk)
-        except WorkOrderTemplate.DoesNotExist:
+            template = WorkTemplate.objects.get(pk=template_pk)
+        except WorkTemplate.DoesNotExist:
             return Response(
                 {'template': ['Template not found.']},
                 status=status.HTTP_400_BAD_REQUEST,

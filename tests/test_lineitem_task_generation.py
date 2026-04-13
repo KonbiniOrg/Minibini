@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from decimal import Decimal
 
 from apps.jobs.models import Job, WorkOrder, Task, PlanTask
-from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate, TaskTemplate
+from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, WorkTemplate, TaskTemplate
 from apps.jobs.services import TaskService
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory

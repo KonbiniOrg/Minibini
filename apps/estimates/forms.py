@@ -1,15 +1,15 @@
 from django import forms
 from apps.estimates.models import (
-    WorkOrderTemplate, TaskTemplate,
+    WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem
 )
 from apps.core.models import AccountingCategory
 from apps.core.units import UnitsFieldMixin
 
 
-class WorkOrderTemplateForm(forms.ModelForm):
+class WorkTemplateForm(forms.ModelForm):
     class Meta:
-        model = WorkOrderTemplate
+        model = WorkTemplate
         fields = ['template_name', 'description']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 4}),

@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.db.models import ProtectedError
 
 from apps.jobs.models import PlanBundle, Job, PlanTask, WorkOrder
-from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
+from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.estimates.services import EstimateGenerationService
 from apps.jobs.services import TaskService
 from apps.core.models import AccountingCategory, Configuration, User
@@ -81,7 +81,7 @@ class GenerateTaskCopiesAccountingCategoryTests(TestCase):
 
     def test_generate_tasks_for_worksheet_copies_accounting_category(self):
         """Full template generation copies accounting_category to each task."""
-        wot = WorkOrderTemplate.objects.create(template_name="Cabinet")
+        wot = WorkTemplate.objects.create(template_name="Cabinet")
         tt = TaskTemplate.objects.create(
             template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit
         )

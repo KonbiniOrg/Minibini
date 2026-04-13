@@ -4,7 +4,7 @@ from apps.core.models import User
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, WorkOrder, Task, PlanTask, PlanBundle
 from apps.estimates.models import (
-    Estimate, EstWorksheet, WorkOrderTemplate, TaskTemplate,
+    Estimate, EstWorksheet, WorkTemplate, TaskTemplate,
     TemplateTaskAssociation,
 )
 from apps.inventory.models import PlanMaterial
@@ -26,7 +26,7 @@ class CreateFromTemplateTest(TestCase):
         self.client.force_authenticate(user=self.user)
         self.contact = Contact.objects.create(first_name='Test', last_name='Contact')
         self.job = Job.objects.create(job_number='WO-T-001', name='Template Job', contact=self.contact)
-        self.template = WorkOrderTemplate.objects.create(
+        self.template = WorkTemplate.objects.create(
             template_name='Kitchen Install', is_active=True,
         )
         from apps.core.models import AccountingCategory
@@ -284,7 +284,7 @@ class WorkflowWarningTemplateTest(TestCase):
         self.client.force_authenticate(user=self.user)
         self.contact = Contact.objects.create(first_name='Test', last_name='WarnTpl')
         self.job = Job.objects.create(job_number='WRN-T-001', name='Warning Template Job', contact=self.contact)
-        self.template = WorkOrderTemplate.objects.create(
+        self.template = WorkTemplate.objects.create(
             template_name='Quick Template', is_active=True,
         )
 

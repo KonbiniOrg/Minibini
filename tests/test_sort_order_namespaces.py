@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import PlanTask, PlanBundle, Job
-from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact
 from apps.core.models import User, AccountingCategory
 
@@ -283,7 +283,7 @@ class GenerateTaskSortOrderTest(TestCase):
 
     def test_generated_bundled_tasks_get_association_sort_order(self):
         """Bundled tasks should get the association's sort_order (within-bundle position)."""
-        wot = WorkOrderTemplate.objects.create(template_name='Test Template')
+        wot = WorkTemplate.objects.create(template_name='Test Template')
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name='Prep',
             accounting_category=self.lit_labor, sort_order=1
@@ -316,7 +316,7 @@ class GenerateTaskSortOrderTest(TestCase):
 
     def test_generated_unbundled_tasks_get_association_sort_order(self):
         """Unbundled tasks should get the association's sort_order (container-level position)."""
-        wot = WorkOrderTemplate.objects.create(template_name='Test Template')
+        wot = WorkTemplate.objects.create(template_name='Test Template')
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name='Prep',
             accounting_category=self.lit_labor, sort_order=5
@@ -370,7 +370,7 @@ class TemplateUnbundleSortOrderTest(TestCase):
 
     def test_template_unbundle_bumps_items_at_insertion_point(self):
         """Unbundling a template assoc should bump existing items at bundle.sort_order + 1."""
-        wot = WorkOrderTemplate.objects.create(template_name='Test')
+        wot = WorkTemplate.objects.create(template_name='Test')
         template_bundle = TemplateBundle.objects.create(
             work_order_template=wot, name='Bundle',
             accounting_category=self.lit, sort_order=5

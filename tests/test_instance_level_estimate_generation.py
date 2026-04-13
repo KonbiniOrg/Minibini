@@ -145,9 +145,9 @@ class InstanceLevelEstimateGenerationTest(TestCase):
     def test_instance_mapping_overrides_template(self):
         """If a task has a template but instance-level mapping_strategy='exclude',
         the instance-level config wins."""
-        from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation
+        from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation
 
-        wot = WorkOrderTemplate.objects.create(template_name="Job Template")
+        wot = WorkTemplate.objects.create(template_name="Job Template")
         tt = TaskTemplate.objects.create(
             template_name="Sand", rate=50, accounting_category=self.lit_labor
         )

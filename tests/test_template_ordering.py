@@ -1,5 +1,5 @@
 """
-Tests for WorkOrderTemplate bundling and ordering functionality.
+Tests for WorkTemplate bundling and ordering functionality.
 
 Covers:
 A. Remove/Unbundle behavior
@@ -13,7 +13,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
-from apps.estimates.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.core.models import AccountingCategory
 
 User = get_user_model()
@@ -38,7 +38,7 @@ class TemplateOrderingTestBase(TestCase):
             code="MAT", defaults={"name": "Material"}
         )
 
-        self.wo_template = WorkOrderTemplate.objects.create(
+        self.wo_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
         )
 
@@ -792,8 +792,8 @@ class EdgeCaseTests(TemplateOrderingTestBase):
     """Edge case tests for template ordering."""
 
     def test_same_bundle_name_different_templates_no_cross_contamination(self):
-        """F22: Same bundle name on different WorkOrderTemplates doesn't cross-contaminate."""
-        wo_template_2 = WorkOrderTemplate.objects.create(
+        """F22: Same bundle name on different WorkTemplates doesn't cross-contaminate."""
+        wo_template_2 = WorkTemplate.objects.create(
             template_name="Second WO Template"
         )
         task_a = TaskTemplate.objects.create(

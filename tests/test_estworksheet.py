@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, WorkOrder, Task, PlanTask
-from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem, WorkOrderTemplate, TaskTemplate
+from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem, WorkTemplate, TaskTemplate
 from apps.core.models import User
 
 
@@ -61,7 +61,7 @@ class EstWorksheetModelTest(TestCase):
         
     def test_estworksheet_with_template(self):
         """Test creating EstWorksheet from template."""
-        template = WorkOrderTemplate.objects.create(
+        template = WorkTemplate.objects.create(
             template_name="Test Template",
             description="Test description"
         )

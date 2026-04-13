@@ -183,7 +183,7 @@ class AccountingCategory(models.Model):
 class AbstractWorkContainer(models.Model):
     """Abstract base class for WorkOrder and EstWorksheet containing common fields."""
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
-    template = models.ForeignKey('estimates.WorkOrderTemplate', on_delete=models.SET_NULL, null=True, blank=True)
+    template = models.ForeignKey('estimates.WorkTemplate', on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         abstract = True

@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from apps.jobs.models import Job, WorkOrder, Task, Blep
 from apps.estimates.models import (
-    Estimate, WorkOrderTemplate, TaskTemplate,
+    Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
 )
 from apps.inventory.models import PriceListItem
@@ -271,7 +271,7 @@ class WorkOrderService:
     @staticmethod
     def create_from_template(template, job):
         """
-        Create WorkOrder from WorkOrderTemplate.
+        Create WorkOrder from WorkTemplate.
         Created WorkOrder starts in 'incomplete' status.
         """
         if not template.is_active:

@@ -10,7 +10,7 @@ from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, WorkOrder, Task, PlanTask
 from apps.estimates.models import (
-    Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate,
+    Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
     TaskTemplate, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
@@ -134,7 +134,7 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         )
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.create(name='Labor')
-        self.template = WorkOrderTemplate.objects.create(
+        self.template = WorkTemplate.objects.create(
             template_name='Quick', is_active=True,
         )
         tt = TaskTemplate.objects.create(

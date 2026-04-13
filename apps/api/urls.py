@@ -22,7 +22,7 @@ from apps.api.jobs.board_views import (
 from apps.api.home.views import current_blep_view, home_view
 from apps.api.stubs import stub_501
 from apps.api.templates_config.views import (
-    WorkOrderTemplateViewSet, TaskTemplateViewSet,
+    WorkTemplateViewSet, TaskTemplateViewSet,
     AccountingCategoryViewSet, settings_view, units_view,
 )
 
@@ -72,7 +72,7 @@ router.register(r'price-list-items', PriceListItemViewSet, basename='price-list-
 router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'plan-tasks', PlanTaskViewSet, basename='plan-task')
 router.register(r'bleps', BlepViewSet, basename='blep')
-router.register(r'work-order-templates', WorkOrderTemplateViewSet, basename='work-order-template')
+router.register(r'work-order-templates', WorkTemplateViewSet, basename='work-order-template')
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
 
