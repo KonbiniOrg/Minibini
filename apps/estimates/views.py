@@ -907,12 +907,11 @@ def work_order_create_from_estimate(request, estimate_id):
             job = estimate.job
 
             if worksheet:
-                # Link the worksheet's template to the job for traceability
-                if worksheet.template:
-                    job.template = worksheet.template
-                    job.save(update_fields=['template'])
-                # Copy worksheet tasks and materials directly onto the job
-                JobService.copy_from_worksheet(job.pk, worksheet.pk)
+                # Copy worksheet tasks and materials onto the job, linking
+                # the worksheet's template for traceability.
+                JobService.copy_from_worksheet(
+                    job.pk, worksheet.pk, template=worksheet.template
+                )
             else:
                 # No worksheet — generate tasks from estimate line items
                 line_items = estimate.estimatelineitem_set.all().order_by('line_number', 'pk')

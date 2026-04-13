@@ -296,8 +296,11 @@ class JobService:
         return job
 
     @staticmethod
-    def copy_from_worksheet(job_pk, worksheet_pk):
-        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a job."""
+    def copy_from_worksheet(job_pk, worksheet_pk, template=None):
+        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a job.
+
+        If `template` is provided, link it onto the job (for traceability).
+        """
         from apps.estimates.models import EstWorksheet
         from apps.jobs.models import PlanTask
         from apps.inventory.models import Material
@@ -310,6 +313,10 @@ class JobService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
+
+        if template is not None:
+            job.template = template
+            job.save(update_fields=['template'])
 
         for plan_task in PlanTask.objects.filter(
             est_worksheet=ws
