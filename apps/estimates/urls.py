@@ -12,7 +12,6 @@ urlpatterns = [
     path('<int:estimate_id>/delete-line-item/<int:line_item_id>/', views.estimate_delete_line_item, name='estimate_delete_line_item'),
     path('<int:estimate_id>/reorder-line-item/<int:line_item_id>/<str:direction>/', views.estimate_reorder_line_item, name='estimate_reorder_line_item'),
     path('<int:estimate_id>/revise/', views.estimate_revise, name='estimate_revise'),
-    path('<int:estimate_id>/create-work-order/', views.work_order_create_from_estimate, name='work_order_create_from_estimate'),
     path('create-for-job/<int:job_id>/', views.estimate_create_for_job, name='estimate_create_for_job'),
     path('worksheets/', views.estworksheet_list, name='estworksheet_list'),
     path('worksheets/<int:worksheet_id>/', views.estworksheet_detail, name='estworksheet_detail'),

@@ -25,9 +25,7 @@
     <tr>
         <td>Container</td>
         <td>
-            {% if task.work_order %}
-                <a href="{% url 'jobs:work_order_detail' task.work_order.pk %}">Work Order (v{{ task.work_order.version|default:"1" }})</a>
-            {% elif task.est_worksheet %}
+            {% if task.est_worksheet %}
                 <a href="{% url 'estimates:estworksheet_detail' task.est_worksheet.pk %}">Estimate Worksheet (v{{ task.est_worksheet.version }})</a>
             {% else %}
                 None
@@ -37,10 +35,10 @@
     <tr>
         <td>Associated Job</td>
         <td>
-            {% if task.work_order %}
-                <a href="{% url 'jobs:detail' task.work_order.job.pk %}">{{ task.work_order.job.job_number }} - {{ task.work_order.job.description|truncatechars:50 }}</a>
-            {% elif task.est_worksheet %}
+            {% if task.est_worksheet %}
                 <a href="{% url 'jobs:detail' task.est_worksheet.job.pk %}">{{ task.est_worksheet.job.job_number }} - {{ task.est_worksheet.job.description|truncatechars:50 }}</a>
+            {% elif task.job %}
+                <a href="{% url 'jobs:detail' task.job.pk %}">{{ task.job.job_number }} - {{ task.job.description|truncatechars:50 }}</a>
             {% else %}
                 No job assigned
             {% endif %}
@@ -189,7 +187,7 @@
 <p><a href="{% url 'jobs:material_add' task.pk %}">Add Material</a></p>
 {% endif %}
 
-{% if task.work_order %}
+{% if not is_plan %}
 <h3>Work Sessions</h3>
 {% if bleps %}
 <table border="1">
@@ -219,10 +217,8 @@
     {% endif %}
     {% if task.est_worksheet %}
         <a href="{% url 'estimates:estworksheet_detail' task.est_worksheet.pk %}">Back to Worksheet</a>
-    {% elif task.work_order %}
-        <a href="{% url 'jobs:work_order_detail' task.work_order.pk %}">Back to Work Order</a>
-    {% else %}
-        <a href="{% url 'jobs:task_list' %}">Back to Tasks List</a>
+    {% elif task.job %}
+        <a href="{% url 'jobs:detail' task.job.pk %}">Back to Job</a>
     {% endif %}
 </p>
 {% endblock %}

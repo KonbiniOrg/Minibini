@@ -23,51 +23,6 @@ from apps.purchasing.models import PurchaseOrder
 from apps.invoicing.models import Invoice
 
 
-def _build_task_hierarchy(tasks):
-    """Build a hierarchical task structure with level indicators, preserving sort_order."""
-    task_dict = {task.task_id: task for task in tasks}
-    root_tasks = []
-
-    # Find root tasks (no parent) and maintain sort_order
-    for task in tasks:
-        if not task.parent_task:
-            root_tasks.append(task)
-
-    # Sort root tasks by sort_order to ensure proper order
-    root_tasks.sort(key=lambda t: t.sort_order if t.sort_order is not None else float('inf'))
-
-    # Recursive function to get task with its children and level
-    def get_task_with_children(task, level=0):
-        result = {'task': task, 'level': level}
-        children = []
-        for potential_child in tasks:
-            if potential_child.parent_task_id == task.task_id:
-                children.append(potential_child)
-
-        # Sort children by sort_order to ensure proper order
-        children.sort(key=lambda t: t.sort_order if t.sort_order is not None else float('inf'))
-
-        # Recursively build the tree for each child
-        result['children'] = [get_task_with_children(child, level + 1) for child in children]
-        return result
-
-    # Build the tree
-    tree = []
-    for root_task in root_tasks:
-        tree.append(get_task_with_children(root_task))
-
-    # Flatten the tree for template display
-    def flatten_tree(tree_nodes):
-        flat_list = []
-        for node in tree_nodes:
-            flat_list.append({'task': node['task'], 'level': node['level']})
-            if node['children']:
-                flat_list.extend(flatten_tree(node['children']))
-        return flat_list
-
-    return flatten_tree(tree)
-
-
 @login_required
 def job_list(request):
     from apps.contacts.models import Contact, Business
@@ -177,19 +132,11 @@ def job_detail(request, job_id):
         current_estimate_line_items = EstimateLineItem.objects.filter(estimate=current_estimate).order_by('line_item_id')
         current_estimate_total = sum(item.total_amount for item in current_estimate_line_items)
 
-    work_orders = WorkOrder.objects.filter(job=job).order_by('-work_order_id')
     worksheets = EstWorksheet.objects.filter(job=job).order_by('-created_date')
     from apps.purchasing.models import PurchaseOrderLineItem
     po_ids = PurchaseOrderLineItem.objects.filter(job=job).values_list('purchase_order_id', flat=True).distinct()
     purchase_orders = PurchaseOrder.objects.filter(po_id__in=po_ids).order_by('-po_id')
     invoices = Invoice.objects.filter(job=job).order_by('-invoice_id')
-
-    # Get current work order (most recent non-complete)
-    current_work_order = work_orders.exclude(status=WorkOrder.STATUS_COMPLETE).first()
-    current_work_order_tasks = []
-    if current_work_order:
-        all_tasks = Task.objects.filter(work_order=current_work_order).order_by('sort_order', 'task_id')
-        current_work_order_tasks = _build_task_hierarchy(all_tasks)
 
     return render(request, 'jobs/job_detail.html', {
         'job': job,
@@ -197,7 +144,6 @@ def job_detail(request, job_id):
         'current_estimate_line_items': current_estimate_line_items,
         'current_estimate_total': current_estimate_total,
         'superseded_estimates': superseded_estimates,
-        'work_orders': work_orders,
         'worksheets': worksheets,
         'purchase_orders': purchase_orders,
         'invoices': invoices
@@ -273,17 +219,6 @@ def job_edit(request, job_id):
         'job': job
     })
 
-
-@login_required
-def task_list(request):
-    # Only show incomplete tasks with WorkOrders (not EstWorksheets)
-    tasks = Task.objects.filter(
-        work_order__isnull=False,
-        est_worksheet__isnull=True
-    ).exclude(
-        work_order__status=WorkOrder.STATUS_COMPLETE
-    ).select_related('work_order', 'work_order__job', 'assignee').order_by('-task_id')
-    return render(request, 'jobs/task_list.html', {'tasks': tasks})
 
 @login_required
 def task_detail(request, task_id):
