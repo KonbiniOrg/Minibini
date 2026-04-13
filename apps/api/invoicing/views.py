@@ -172,22 +172,16 @@ def _serialize_pool(pool):
             return str(value)
         return value
     return {
-        'work_orders': [
+        'tasks': [
             {
-                'work_order_id': wo['work_order_id'],
-                'tasks': [
-                    {
-                        'task_id': t['task_id'],
-                        'name': t['name'],
-                        'has_billable_atoms': t['has_billable_atoms'],
-                        'atoms': [
-                            {k: _s(v) for k, v in atom.items()}
-                            for atom in t['atoms']
-                        ],
-                    }
-                    for t in wo['tasks']
+                'task_id': t['task_id'],
+                'name': t['name'],
+                'has_billable_atoms': t['has_billable_atoms'],
+                'atoms': [
+                    {k: _s(v) for k, v in atom.items()}
+                    for atom in t['atoms']
                 ],
             }
-            for wo in pool['work_orders']
+            for t in pool['tasks']
         ],
     }

@@ -99,21 +99,19 @@
         });
       }
     }
-    for (const wo of sourcePool.work_orders) {
-      for (const task of wo.tasks) {
-        for (const atom of task.atoms) {
-          if (atom.state === 'claimed_by_other') continue;
-          const key = `${atom.atom_type}:${atom.atom_id}`;
-          if (claimMap.has(key)) {
-            const claim = claimMap.get(key);
-            atom.state = 'claimed_by_current';
-            atom.claiming_line_item_id = claim.line_item_id;
-            atom.claiming_line_number = claim.line_number;
-          } else {
-            atom.state = 'available';
-            atom.claiming_line_item_id = null;
-            atom.claiming_line_number = null;
-          }
+    for (const task of sourcePool.tasks) {
+      for (const atom of task.atoms) {
+        if (atom.state === 'claimed_by_other') continue;
+        const key = `${atom.atom_type}:${atom.atom_id}`;
+        if (claimMap.has(key)) {
+          const claim = claimMap.get(key);
+          atom.state = 'claimed_by_current';
+          atom.claiming_line_item_id = claim.line_item_id;
+          atom.claiming_line_number = claim.line_number;
+        } else {
+          atom.state = 'available';
+          atom.claiming_line_item_id = null;
+          atom.claiming_line_number = null;
         }
       }
     }

@@ -198,11 +198,11 @@ class InvoiceWizardService:
 
     @staticmethod
     def get_source_pool(invoice):
-        """Walk the job's work orders -> tasks -> atoms and return the source pool tree.
+        """Walk the job's tasks -> atoms and return the source pool tree.
 
         Atoms are annotated with state: 'available', 'claimed_by_current', or 'claimed_by_other'.
         """
-        from apps.jobs.models import WorkOrder, Task, Blep
+        from apps.jobs.models import Task, Blep
         from apps.inventory.models import Material
         from apps.invoicing.models import InvoiceLineItemSource
 
@@ -246,67 +246,59 @@ class InvoiceWizardService:
             'claiming_invoice_number': None,
         }
 
-        work_orders = WorkOrder.objects.filter(job=job).order_by('pk')
-        wo_list = []
-        for wo in work_orders:
-            tasks = (
-                Task.objects.filter(work_order=wo)
-                .exclude(status=Task.STATUS_CANCELLED)
-                .order_by('sort_order', 'pk')
+        tasks = (
+            Task.objects.filter(job=job)
+            .exclude(status=Task.STATUS_CANCELLED)
+            .order_by('sort_order', 'pk')
+        )
+        task_list = []
+        for task in tasks:
+            atoms = []
+
+            # Blep atoms - exclude incomplete bleps (no end_time)
+            bleps = (
+                Blep.objects.filter(task=task)
+                .exclude(end_time__isnull=True)
+                .order_by('start_time', 'pk')
             )
-            task_list = []
-            for task in tasks:
-                atoms = []
-
-                # Blep atoms - exclude incomplete bleps (no end_time)
-                bleps = (
-                    Blep.objects.filter(task=task)
-                    .exclude(end_time__isnull=True)
-                    .order_by('start_time', 'pk')
-                )
-                for blep in bleps:
-                    elapsed = blep.end_time - blep.start_time
-                    hours = Decimal(str(elapsed.total_seconds())) / Decimal('3600')
-                    amount = (hours * (task.rate or Decimal('0.00'))).quantize(Decimal('0.01'))
-                    key = (InvoiceLineItemSource.SOURCE_BLEP, blep.pk)
-                    state_info = claims.get(key, default_state)
-                    atoms.append({
-                        'atom_type': 'blep',
-                        'atom_id': blep.pk,
-                        'description': f'Labor {hours:.2f}h',
-                        'sub_info': f"{blep.start_time.strftime('%m/%d')} \u00b7 {blep.user.username if blep.user else '\u2014'}",
-                        'computed_amount': amount,
-                        **state_info,
-                    })
-
-                # Material atoms
-                materials = Material.objects.filter(task=task).order_by('pk')
-                for mat in materials:
-                    amount = (mat.quantity * mat.sell_price).quantize(Decimal('0.01'))
-                    key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
-                    state_info = claims.get(key, default_state)
-                    atoms.append({
-                        'atom_type': 'material',
-                        'atom_id': mat.pk,
-                        'description': mat.description,
-                        'sub_info': '',
-                        'computed_amount': amount,
-                        **state_info,
-                    })
-
-                task_list.append({
-                    'task_id': task.pk,
-                    'name': task.name,
-                    'has_billable_atoms': len(atoms) > 0,
-                    'atoms': atoms,
+            for blep in bleps:
+                elapsed = blep.end_time - blep.start_time
+                hours = Decimal(str(elapsed.total_seconds())) / Decimal('3600')
+                amount = (hours * (task.rate or Decimal('0.00'))).quantize(Decimal('0.01'))
+                key = (InvoiceLineItemSource.SOURCE_BLEP, blep.pk)
+                state_info = claims.get(key, default_state)
+                atoms.append({
+                    'atom_type': 'blep',
+                    'atom_id': blep.pk,
+                    'description': f'Labor {hours:.2f}h',
+                    'sub_info': f"{blep.start_time.strftime('%m/%d')} \u00b7 {blep.user.username if blep.user else '\u2014'}",
+                    'computed_amount': amount,
+                    **state_info,
                 })
 
-            wo_list.append({
-                'work_order_id': wo.pk,
-                'tasks': task_list,
+            # Material atoms
+            materials = Material.objects.filter(task=task).order_by('pk')
+            for mat in materials:
+                amount = (mat.quantity * mat.sell_price).quantize(Decimal('0.01'))
+                key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
+                state_info = claims.get(key, default_state)
+                atoms.append({
+                    'atom_type': 'material',
+                    'atom_id': mat.pk,
+                    'description': mat.description,
+                    'sub_info': '',
+                    'computed_amount': amount,
+                    **state_info,
+                })
+
+            task_list.append({
+                'task_id': task.pk,
+                'name': task.name,
+                'has_billable_atoms': len(atoms) > 0,
+                'atoms': atoms,
             })
 
-        return {'work_orders': wo_list}
+        return {'tasks': task_list}
 
     @staticmethod
     def _validate_draft(invoice):
