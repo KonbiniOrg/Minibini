@@ -97,7 +97,7 @@
       if (newMaterial) {
         payload.material = null;
         payload.new_material = {
-          work_order_id: newMaterial.work_order_id,
+          job_id: newMaterial.job_id,
           description: newMaterial.description || description,
           price: amount,
         };

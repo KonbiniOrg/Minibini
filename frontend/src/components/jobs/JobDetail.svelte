@@ -9,7 +9,6 @@
     contact = null,
     estimates = null,
     worksheets = null,
-    workOrders = null,
     invoices = null,
     purchaseOrders = null,
     emails = null,
@@ -57,7 +56,7 @@
     if (job.status === 'completed') {
       if (invoices?.results?.length > 0) return 'invoices';
     }
-    if (workOrders?.results?.length > 0) return 'workorder';
+    if ((job.tasks || []).length > 0) return 'tasks';
     if (estimates?.results?.length > 0) return 'estimates';
     if (worksheets?.results?.length > 0) return 'worksheets';
     return 'worksheets';
@@ -78,8 +77,9 @@
     return ws.reduce((best, w) => (w.version > best.version ? w : best), ws[0]);
   });
 
-  // Work order, invoice list, PO list
-  let wo = $derived(workOrders?.results?.[0] || null);
+  // Job tasks (top-level), invoice list, PO list
+  let jobTasks = $derived((job.tasks || []).filter(t => !t.parent_task));
+  let hasTasks = $derived(jobTasks.length > 0);
   let invList = $derived(invoices?.results || []);
   let poList = $derived(purchaseOrders?.results || []);
   let draftInvoice = $derived(invList.find(inv => inv.status === 'draft') || null);
@@ -217,8 +217,8 @@
     {#if canManageJobs && currentEstimate && (currentEstimate.status === 'open' || currentEstimate.status === 'accepted')}
       <a href="#/estimates/{currentEstimate.estimate_id}/revise">Revise Estimate</a>
     {/if}
-    {#if canManageJobs && currentEstimate?.status === 'accepted' && !wo}
-      <a href="#/estimates/{currentEstimate.estimate_id}/create-work-order">Create Work Order</a>
+    {#if canManageJobs && currentEstimate?.status === 'accepted' && !hasTasks}
+      <a href="#/jobs/{job.job_id}/populate-from-estimate">Populate tasks from estimate</a>
     {/if}
     {#if canManageJobs && !currentEstimate}
       <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
@@ -227,17 +227,17 @@
 </Accordion>
 
 <Accordion
-  title="Work Order"
-  meta={wo ? `${wo.template_name ? wo.template_name + ' · ' : ''}${wo.status}` : 'None'}
-  open={defaultOpen === 'workorder'}
+  title="Tasks"
+  meta={hasTasks ? `${jobTasks.length} task${jobTasks.length === 1 ? '' : 's'}${job.template?.name ? ' · ' + job.template.name : ''}` : 'None'}
+  open={defaultOpen === 'tasks'}
   headerBg="#b45309"
   borderColor="#fbbf24"
 >
-  {#if wo?.tasks?.length > 0}
+  {#if hasTasks}
     <table class="wo-table">
       <thead><tr><th>Task</th><th>Assigned</th><th class="text-center">Status</th></tr></thead>
       <tbody>
-        {#each wo.tasks as task}
+        {#each jobTasks as task}
           <tr class:row-active={task.status === 'in_progress'}>
             <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a></td>
             <td class="assigned">{task.assignee_name || '—'}</td>
@@ -247,13 +247,11 @@
       </tbody>
     </table>
   {:else}
-    <p class="empty-msg">No work orders yet.</p>
+    <p class="empty-msg">No tasks yet.</p>
   {/if}
-  {#if wo}
-    <div class="accordion-actions">
-      <a href="#/work-orders/{wo.work_order_id}">View Full Work Order</a>
-    </div>
-  {/if}
+  <div class="accordion-actions">
+    <a href="#/jobs/{job.job_id}/tasklist">View task list &rarr;</a>
+  </div>
 </Accordion>
 
 <Accordion
@@ -287,7 +285,7 @@
         {draftInvoice ? `Continue draft (${draftInvoice.invoice_number})` : 'Build invoice'}
       </button>
     {/if}
-    {#if (canManageJobs || canManageFinancials) && wo}
+    {#if (canManageJobs || canManageFinancials) && hasTasks}
       <a href="#/jobs/{job.job_id}/create-invoice">Create Invoice</a>
     {/if}
   </div>

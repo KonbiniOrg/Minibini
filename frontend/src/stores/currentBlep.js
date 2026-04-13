@@ -3,7 +3,7 @@ import { api } from '../lib/api.js';
 
 // Holds the user's currently-open Blep, or null if not clocked in.
 // Shape matches GET /api/bleps/current/:
-//   { id, start_time, task, job, work_order } | null
+//   { id, start_time, task, job } | null
 export const currentBlep = writable(null);
 
 export async function refreshCurrentBlep() {
