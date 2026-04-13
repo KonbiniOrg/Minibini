@@ -161,18 +161,6 @@ class SearchService:
         ).select_related('business')
 
     @staticmethod
-    def search_jobs(query):
-        """Search for jobs matching the query"""
-        return Job.objects.filter(
-            Q(job_number__icontains=query) |
-            Q(customer_po_number__icontains=query) |
-            Q(description__icontains=query) |
-            Q(contact__first_name__icontains=query) |
-            Q(contact__middle_initial__icontains=query) |
-            Q(contact__last_name__icontains=query)
-        ).select_related('contact')
-
-    @staticmethod
     def search_price_list_items(query):
         """Search for price list items matching the query"""
         return PriceListItem.objects.annotate(
@@ -274,8 +262,12 @@ class SearchService:
         """Search for jobs and their matching tasks, returning grouped results."""
         jobs = Job.objects.filter(
             Q(job_number__icontains=query) |
-            Q(description__icontains=query)
-        ).prefetch_related('tasks')
+            Q(description__icontains=query) |
+            Q(customer_po_number__icontains=query) |
+            Q(contact__first_name__icontains=query) |
+            Q(contact__middle_initial__icontains=query) |
+            Q(contact__last_name__icontains=query)
+        ).select_related('contact').prefetch_related('tasks')
 
         tasks = Task.objects.annotate(
             rate_text=Cast('rate', CharField())
@@ -721,8 +713,12 @@ class SearchService:
                 pk__in=result_ids['Job']
             ).filter(
                 Q(job_number__icontains=within_query) |
-                Q(description__icontains=within_query)
-            ).prefetch_related('tasks')
+                Q(description__icontains=within_query) |
+                Q(customer_po_number__icontains=within_query) |
+                Q(contact__first_name__icontains=within_query) |
+                Q(contact__middle_initial__icontains=within_query) |
+                Q(contact__last_name__icontains=within_query)
+            ).select_related('contact').prefetch_related('tasks')
 
             tasks = Task.objects.annotate(
                 rate_text=Cast('rate', CharField())

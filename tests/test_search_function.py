@@ -235,15 +235,45 @@ class SearchViewTests(TestCase):
 
     def test_search_jobs_by_customer_po(self):
         """Test searching jobs by customer PO number"""
-        # customer_po_number is no longer indexed by the grouped jobs
-        # search; this test now asserts jobs-grouped search does not
-        # produce the job via PO number. The old flat jobs search was
-        # removed when the grouped shape replaced it.
         response = self.client.get(reverse('search:search'), {'q': 'PO-12345'})
         self.assertEqual(response.status_code, 200)
         parents = self._job_parents(response)
-        # Grouped jobs search filters on job_number/description only.
-        self.assertNotIn(self.job1, parents)
+        self.assertIn(self.job1, parents)
+        self.assertNotIn(self.job2, parents)
+
+    def test_search_jobs_by_customer_po_number(self):
+        """A job with a unique customer_po_number surfaces via grouped jobs search."""
+        job = Job.objects.create(
+            job_number='JOB-PO-X',
+            contact=self.contact1,
+            customer_po_number='PO-9999',
+            description='unrelated description'
+        )
+        # Full token
+        response = self.client.get(reverse('search:search'), {'q': 'PO-9999'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(job, self._job_parents(response))
+        # Partial substring
+        response = self.client.get(reverse('search:search'), {'q': '9999'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(job, self._job_parents(response))
+
+    def test_search_jobs_by_contact_last_name(self):
+        """A job whose contact has a distinctive last_name surfaces via grouped jobs search."""
+        contact = Contact.objects.create(
+            first_name='Alice',
+            last_name='Smithson',
+            email='alice.smithson@example.com'
+        )
+        job = Job.objects.create(
+            job_number='JOB-7777',
+            contact=contact,
+            description='unrelated description'
+        )
+        # Case-insensitive partial match on last_name
+        response = self.client.get(reverse('search:search'), {'q': 'smith'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(job, self._job_parents(response))
 
     def test_search_jobs_grouped_shape_contains_tasks(self):
         """Query matching a task name surfaces the task under its parent Job."""
@@ -430,9 +460,9 @@ class SearchViewTests(TestCase):
         """Test searching with numeric values"""
         response = self.client.get(reverse('search:search'), {'q': '12345'})
         self.assertEqual(response.status_code, 200)
-        # Should match postal code (contact) — customer_po_number is no
-        # longer indexed by grouped jobs search, so job1 does not surface.
+        # Should match postal code (contact) and customer_po_number (job).
         self.assertIn(self.contact1, response.context['categories']['contacts']['items'])
+        self.assertIn(self.job1, self._job_parents(response))
 
     def test_search_special_characters(self):
         """Test searching with special characters like hyphens"""
