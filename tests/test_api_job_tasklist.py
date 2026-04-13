@@ -1,12 +1,16 @@
-"""Tests for work order UI API endpoints: Material CRUD, subtasks, reorder, add-from-template."""
+"""Tests for Task-related API endpoints under the new Job-centric model:
+Material CRUD, subtasks, terminal task guards.
+
+Reorder and add-from-template are tested in test_api_jobs.py against
+/api/jobs/{id}/reorder-tasks/ and /api/jobs/{id}/add-from-template/.
+"""
 
 from decimal import Decimal
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import User, AccountingCategory
-from apps.jobs.models import Job, Task, WorkOrder
+from apps.jobs.models import Job, Task
 from apps.contacts.models import Contact
-from apps.estimates.models import TaskTemplate
 from apps.inventory.models import Material, PriceListItem
 
 
@@ -24,9 +28,8 @@ class MaterialCRUDTest(TestCase):
         self.job = Job.objects.create(
             job_number='MAT-001', name='Material Job', contact=self.contact,
         )
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo,
+            job=self.job,
             name='Install countertop',
             units='each',
             rate=100,
@@ -50,7 +53,6 @@ class MaterialCRUDTest(TestCase):
         self.assertEqual(response.data[0]['description'], 'Granite slab')
 
     def test_list_materials_any_authenticated_user(self):
-        """Any authenticated user can list materials (no special permission needed)."""
         viewer = User.objects.create_user(username='viewer', password='testpass')
         self.client.force_authenticate(user=viewer)
         response = self.client.get(f'/api/tasks/{self.task.pk}/materials/')
@@ -72,7 +74,6 @@ class MaterialCRUDTest(TestCase):
         self.assertEqual(Material.objects.filter(task=self.task).count(), 2)
 
     def test_create_material_any_authenticated_user(self):
-        """Any authenticated user can create materials (workers record actuals)."""
         worker = User.objects.create_user(username='worker', password='testpass')
         self.client.force_authenticate(user=worker)
         response = self.client.post(
@@ -144,7 +145,7 @@ class MaterialCRUDTest(TestCase):
     def test_material_wrong_task(self):
         """Material on a different task should not be accessible."""
         task2 = Task.objects.create(
-            work_order=self.wo, name='Other task', units='each', rate=50, est_qty=1,
+            job=self.job, name='Other task', units='each', rate=50, est_qty=1,
         )
         response = self.client.patch(
             f'/api/tasks/{task2.pk}/materials/{self.material.pk}/',
@@ -168,9 +169,8 @@ class SubtaskCRUDTest(TestCase):
         self.job = Job.objects.create(
             job_number='SUB-001', name='Subtask Job', contact=self.contact,
         )
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.parent_task = Task.objects.create(
-            work_order=self.wo,
+            job=self.job,
             name='Parent task',
             units='each',
             rate=100,
@@ -184,7 +184,7 @@ class SubtaskCRUDTest(TestCase):
 
     def test_list_subtasks(self):
         Task.objects.create(
-            work_order=self.wo,
+            job=self.job,
             parent_task=self.parent_task,
             name='Child task',
             units='hr',
@@ -204,10 +204,10 @@ class SubtaskCRUDTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['name'], 'New subtask')
-        # Verify parent_task and work_order are auto-set
+        # Verify parent_task and job are auto-set
         child = Task.objects.get(pk=response.data['task_id'])
         self.assertEqual(child.parent_task_id, self.parent_task.pk)
-        self.assertEqual(child.work_order_id, self.wo.pk)
+        self.assertEqual(child.job_id, self.job.pk)
 
     def test_create_subtask_any_authenticated_user(self):
         worker = User.objects.create_user(username='subworker', password='testpass')
@@ -229,193 +229,6 @@ class SubtaskCRUDTest(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
-class ReorderTasksTest(TestCase):
-    """Tests for POST /api/work-orders/{id}/reorder/."""
-
-    def setUp(self):
-        self.client = APIClient()
-        self.user = User.objects.create_user(
-            username='reorduser', password='testpass',
-        )
-        self.client.force_authenticate(user=self.user)
-
-        self.contact = Contact.objects.create(first_name='Reord', last_name='Test')
-        self.job = Job.objects.create(
-            job_number='REORD-001', name='Reorder Job', contact=self.contact,
-        )
-        self.wo = WorkOrder.objects.create(job=self.job)
-        self.task_a = Task.objects.create(
-            work_order=self.wo, name='Task A', units='each', rate=10, est_qty=1, sort_order=0,
-        )
-        self.task_b = Task.objects.create(
-            work_order=self.wo, name='Task B', units='each', rate=20, est_qty=1, sort_order=1,
-        )
-        self.task_c = Task.objects.create(
-            work_order=self.wo, name='Task C', units='each', rate=30, est_qty=1, sort_order=2,
-        )
-
-    def test_reorder_down(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/reorder/',
-            {'task_id': self.task_a.pk, 'direction': 'down'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-        self.task_a.refresh_from_db()
-        self.task_b.refresh_from_db()
-        self.assertEqual(self.task_a.sort_order, 1)
-        self.assertEqual(self.task_b.sort_order, 0)
-
-    def test_reorder_up(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/reorder/',
-            {'task_id': self.task_c.pk, 'direction': 'up'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-        self.task_c.refresh_from_db()
-        self.task_b.refresh_from_db()
-        self.assertEqual(self.task_c.sort_order, 1)
-        self.assertEqual(self.task_b.sort_order, 2)
-
-    def test_reorder_up_at_top(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/reorder/',
-            {'task_id': self.task_a.pk, 'direction': 'up'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('Already at top', response.data['detail'])
-
-    def test_reorder_down_at_bottom(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/reorder/',
-            {'task_id': self.task_c.pk, 'direction': 'down'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('Already at bottom', response.data['detail'])
-
-    def test_reorder_invalid_direction(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/reorder/',
-            {'task_id': self.task_a.pk, 'direction': 'left'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_reorder_missing_task_id(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/reorder/',
-            {'direction': 'up'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_reorder_task_not_on_wo(self):
-        other_wo = WorkOrder.objects.create(job=self.job)
-        other_task = Task.objects.create(
-            work_order=other_wo, name='Other', units='each', rate=10, est_qty=1, sort_order=0,
-        )
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/reorder/',
-            {'task_id': other_task.pk, 'direction': 'up'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 404)
-
-    def test_reorder_any_authenticated_user(self):
-        worker = User.objects.create_user(username='reordworker', password='testpass')
-        self.client.force_authenticate(user=worker)
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/reorder/',
-            {'task_id': self.task_b.pk, 'direction': 'up'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-
-
-class AddFromTemplateTest(TestCase):
-    """Tests for POST /api/work-orders/{id}/add-from-template/."""
-
-    def setUp(self):
-        self.client = APIClient()
-        self.user = User.objects.create_user(
-            username='tmpluser', password='testpass',
-        )
-        self.client.force_authenticate(user=self.user)
-
-        self.contact = Contact.objects.create(first_name='Tmpl', last_name='Test')
-        self.job = Job.objects.create(
-            job_number='TMPL-001', name='Template Job', contact=self.contact,
-        )
-        self.wo = WorkOrder.objects.create(job=self.job)
-        self.template = TaskTemplate.objects.create(
-            template_name='Paint room',
-            description='Paint all walls',
-            units='sqft',
-            rate=Decimal('2.50'),
-        )
-
-    def test_add_from_template_success(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/add-from-template/',
-            {'task_template_id': self.template.pk, 'est_qty': '100.00'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['name'], 'Paint room')
-        self.assertEqual(response.data['units'], 'sqft')
-        self.assertEqual(response.data['rate'], '2.50')
-        self.assertEqual(response.data['est_qty'], '100.00')
-        # Verify task was created on the WO
-        self.assertEqual(Task.objects.filter(work_order=self.wo).count(), 1)
-
-    def test_add_from_template_default_qty(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/add-from-template/',
-            {'task_template_id': self.template.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['est_qty'], '1.00')
-
-    def test_add_from_template_missing_template(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/add-from-template/',
-            {'task_template_id': 99999, 'est_qty': '1.00'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 404)
-
-    def test_add_from_template_missing_template_id(self):
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/add-from-template/',
-            {'est_qty': '1.00'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_add_from_template_any_authenticated_user(self):
-        worker = User.objects.create_user(username='tmplworker', password='testpass')
-        self.client.force_authenticate(user=worker)
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/add-from-template/',
-            {'task_template_id': self.template.pk, 'est_qty': '5.00'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 201)
-
-    def test_add_from_template_unauthenticated(self):
-        self.client.force_authenticate(user=None)
-        response = self.client.post(
-            f'/api/work-orders/{self.wo.pk}/add-from-template/',
-            {'task_template_id': self.template.pk, 'est_qty': '1.00'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 403)
-
-
 class TerminalTaskGuardTest(TestCase):
     """Completed and cancelled tasks reject material/subtask mutations."""
 
@@ -427,11 +240,10 @@ class TerminalTaskGuardTest(TestCase):
         self.job = Job.objects.create(
             job_number='TERM-001', name='Terminal Job', contact=self.contact,
         )
-        self.wo = WorkOrder.objects.create(job=self.job)
 
     def _make_task(self, task_status):
         return Task.objects.create(
-            work_order=self.wo, name='A task', units='each',
+            job=self.job, name='A task', units='each',
             rate=10, est_qty=1, status=task_status,
         )
 
