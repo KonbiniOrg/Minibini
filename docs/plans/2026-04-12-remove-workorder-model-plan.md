@@ -4,7 +4,9 @@
 
 **Goal:** Eliminate the `WorkOrder` model. `Task` belongs directly to `Job`. Rename `WorkOrderTemplate` → `WorkTemplate`. Add `Job.STATUS_WORK_COMPLETE`. Preserve the task-list UI as `#/jobs/[id]/tasklist`.
 
-**Architecture:** Big-bang refactor on a single branch. Phase A reshapes models and ships one migration. Phases B–F update services, API, search, frontend, and Django templates. Phase G rewrites tests and fixtures. Phase H updates `CLAUDE.md`.
+**Architecture:** Big-bang refactor on a single branch. Phase A reshapes models and ships one migration. Phases B–F update services, API, search, frontend, and Django templates. Phase H updates `CLAUDE.md`.
+
+**Test discipline (TDD per phase):** Every phase ends with test updates covering that phase's code paths before moving to the next phase. For phases C–F, write/rewrite tests BEFORE the implementation within the phase; run them failing, then implement. Phase A and B were executed before this discipline was established, so they get retroactive test tasks (A7, B6). The previous "Phase G — rewrite all tests at the end" structure is retired; Phase G is now housekeeping only (rename mechanical test files, drop obsolete ones, update fixtures, full-suite green).
 
 **Tech Stack:** Django 5.2+, DRF, MySQL, Svelte 5 SPA, Vite. Tests via Django `TestCase`.
 
@@ -366,6 +368,65 @@ git commit -m "refactor: remove WorkOrder model, Task belongs to Job directly
 
 Pause and tell the user:
 > "Phase A models and migration are ready. Please run `python manage.py migrate` on your dev DB and confirm success before I continue with services."
+
+---
+
+### Task A7: Retroactive tests for Phase A (model layer)
+
+Phase A executed before TDD discipline was established. Bring the model-layer tests up to date now, against the current (post-A) codebase.
+
+**Files to touch (all under `tests/`):**
+- `test_jobs_models.py` — covers Job, Task, (old: WorkOrder)
+- `test_jobs_models_with_fixtures.py` — fixture-backed model tests
+- `test_comprehensive_models.py` — cross-model assertions that may reference WorkOrder or `task.work_order`
+
+**Scope of Phase A's model-layer changes:**
+- `Task.work_order` → `Task.job`
+- `WorkOrder` model deleted
+- `Job` gains `STATUS_WORK_COMPLETE` and extends `AbstractWorkContainer`
+- `WorkOrderTemplate` → `WorkTemplate`; `work_order_template` FK → `work_template`
+- `EstWorksheet.job` declared directly
+- Migration `jobs/0012` with backfill
+
+- [ ] **Step 1: Run each candidate test file and record failures**
+
+For each test file listed, run it individually and capture failures:
+```bash
+python manage.py test tests.test_jobs_models tests.test_jobs_models_with_fixtures tests.test_comprehensive_models -v 2 2>&1 | tail -80
+```
+
+- [ ] **Step 2: Rewrite each failing test to exercise the new model shape**
+
+Apply these mechanical swaps everywhere they appear:
+- `Task.objects.create(work_order=wo, ...)` → `Task.objects.create(job=job, ...)`
+- `task.work_order` → `task.job`
+- `WorkOrder.objects.create(...)` → delete (no direct WorkOrder; just create Job with tasks)
+- `WorkOrderTemplate` → `WorkTemplate`
+- `work_order_template=` → `work_template=`
+
+Add NEW tests for:
+- `Job.STATUS_WORK_COMPLETE` is a valid choice
+- Transition `APPROVED → WORK_COMPLETE` is allowed; `WORK_COMPLETE → COMPLETED` is allowed; `WORK_COMPLETE → WORK_COMPLETE` is NOT (or is now a no-op via the short-circuit in `JobService.update_status` — test that the service short-circuit works)
+- `Job` has the `template` FK (nullable)
+- `EstWorksheet.job` is an FK to Job (non-nullable)
+- `Task.job` is required (creating a Task without `job` raises)
+
+Delete tests that asserted WorkOrder-specific behavior with no Job equivalent (e.g., "WorkOrder status machine incomplete→blocked→complete").
+
+- [ ] **Step 3: Run the suite until green**
+
+```bash
+python manage.py test tests.test_jobs_models tests.test_jobs_models_with_fixtures tests.test_comprehensive_models -v 2
+```
+
+Until all three pass, iterate on the tests (not the implementation — Phase A is frozen; if a test reveals a real model defect, STOP and escalate).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tests/
+git commit -m "test: update model-layer tests for Task-on-Job refactor"
+```
 
 ---
 
@@ -752,9 +813,93 @@ git commit -m "refactor: BoardService queries tasks via job FK"
 
 ---
 
+### Task B6: Retroactive tests for Phase B (service layer)
+
+Phase B executed before TDD discipline. Update service-layer tests now.
+
+**Files to touch:**
+- `tests/test_jobs_services.py` — WorkOrderService / JobService / TaskService coverage
+- `tests/test_task_lifecycle.py` — rollup logic, block/unblock, complete/cancel
+- `tests/test_earmark_release.py` — earmark release on status change
+- `tests/test_earmark_flow.py`, `tests/test_auto_earmark.py` — earmark creation paths
+- `tests/test_board_service.py` — BoardService queries, sub-statuses, unpaid column
+- `tests/test_estimates_services.py` — any WorkOrderService references
+- `tests/test_bundling_services.py`, `tests/test_blep_service.py`, `tests/test_expense_service.py` — any task-reorder / task-blep / expense paths
+
+**Scope of Phase B's service-layer changes:**
+- `WorkOrderService` deleted; methods moved to `JobService.populate_from_estimate / populate_from_template / copy_from_worksheet / update_status`
+- `TaskService` params: `work_order` → `job`; `delete_task` simplified
+- `TaskLifecycleService._check_wo_*` removed; `_check_job_work_complete` added (only fires when `job.status == APPROVED`)
+- `InventoryService.create_earmarks_for_work_order` → `create_earmarks_for_job`; internal `_upsert_earmarks` helper
+- `BoardService` — unpaid column queries `status=WORK_COMPLETE` exclusively; new `_work_complete_sub_status`; `'needs-work-order'` → `'needs-tasks'`
+- `JobService.update_status` short-circuits no-op transitions and releases earmarks on entry to `WORK_COMPLETE`
+
+- [ ] **Step 1: Run candidate test files**
+
+```bash
+python manage.py test \
+  tests.test_jobs_services \
+  tests.test_task_lifecycle \
+  tests.test_earmark_release \
+  tests.test_earmark_flow \
+  tests.test_auto_earmark \
+  tests.test_board_service \
+  tests.test_estimates_services \
+  tests.test_bundling_services \
+  tests.test_blep_service \
+  tests.test_expense_service \
+  -v 2 2>&1 | tail -120
+```
+
+Record failures.
+
+- [ ] **Step 2: Rewrite tests to match new service API**
+
+Apply mechanical swaps:
+- `WorkOrderService.create_from_estimate(est)` → `JobService.populate_from_estimate(job, est)` (signature: takes job now)
+- `WorkOrderService.create_from_template(tpl, job)` → `JobService.populate_from_template(job, tpl)` (arg order flip)
+- `WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)` → `JobService.copy_from_worksheet(job.pk, ws.pk, template=ws.template)` (3-arg version now)
+- `WorkOrderService.update_status(wo.pk, 'complete')` → `JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)`
+- `InventoryService.create_earmarks_for_work_order(wo)` → `InventoryService.create_earmarks_for_job(job)`
+- `task.work_order` → `task.job`
+- Assertions about "WO blocked because task blocked" → DELETE those tests (block rollup is gone per spec)
+
+Add NEW tests:
+- Completing all tasks on an `approved` Job auto-advances Job to `work_complete` (only when Job is approved; NOT when Job is in other states)
+- Blocking a task does NOT change Job status (regression guard against accidentally re-adding bubble-up)
+- Transitioning Job `approved → work_complete` releases remaining earmarks for that job
+- Transitioning Job `work_complete → work_complete` (no-op via short-circuit) does NOT release earmarks a second time
+- `BoardService.get_unpaid_data` returns only `status=work_complete` jobs and assigns each a sub-status from `invoice-sent` / `invoice-prepped` / `needs-invoice` based on invoice state
+- `BoardService._approved_sub_status` returns `'needs-tasks'` when a Job has no tasks (replacing the old `'needs-work-order'`)
+
+- [ ] **Step 3: Iterate to green**
+
+Run until passing. If a test exposes a real service defect, STOP and escalate.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tests/
+git commit -m "test: update service-layer tests for WorkOrder removal"
+```
+
+---
+
 ## Phase C — API
 
 Collapse `/api/work-orders/` routes into `/api/jobs/` sub-routes.
+
+**Test-first discipline:** Before writing viewset/serializer code in each task below, write or rewrite the corresponding tests to describe the desired endpoint contract. Run them failing. Then implement. Test files in scope for Phase C:
+- `tests/test_api_jobs.py` — existing job endpoint tests; extend with new actions (`work-complete`, `populate-from-*`, `copy-from-worksheet`, `reorder-tasks`, task sub-resource).
+- `tests/test_api_work_orders.py` — DELETE after migrating any unique coverage to `test_api_jobs.py`.
+- `tests/test_api_wo_creation.py` → rename `tests/test_api_job_population.py` and rewrite.
+- `tests/test_api_workorder_ui.py` → rename `tests/test_api_job_tasklist.py` and rewrite to assert `GET /api/jobs/{id}/` response shape (nested tasks, template).
+- `tests/test_workorder_from_estimate.py` → rename `tests/test_job_from_estimate.py`.
+- `tests/test_work_order_template_edit_delete.py` → rename `tests/test_work_template_edit_delete.py`; swap `/api/work-order-templates/` → `/api/work-templates/`.
+- `tests/test_atom_api_permissions.py` — verify permission classes on new Job-scoped actions.
+- `tests/test_api_bleps.py`, `tests/test_task_lifecycle_api.py`, `tests/test_api_expenses.py` — update any `/api/work-orders/` calls to job-scoped equivalents.
+
+Within each Task C1/C2/C3, the step list should be: (1) write/rewrite the failing tests for this sub-scope, (2) run them to confirm failure reason, (3) implement the endpoint/serializer/mixin changes, (4) run tests to green, (5) commit (tests + impl together per sub-scope).
 
 ### Task C1: Delete `apps/api/work_orders/` directory
 
@@ -942,6 +1087,8 @@ git commit -m "refactor: rename /api/work-order-templates/ to /api/work-template
 
 ## Phase D — Search
 
+**Test-first:** Write/rewrite `tests/test_search_function.py` to describe the new grouped shape under Job BEFORE editing `apps/search/services.py`. Assertions should cover: a query matching a job number surfaces the Job with empty/populated `tasks`; a query matching a task name surfaces the parent Job with that task in its `tasks` list; `'work_orders'` category is absent from results; `'jobs'` category uses the grouped shape.
+
 ### Task D1: Rename search method and retarget at Job
 
 **Files:**
@@ -1035,6 +1182,8 @@ git commit -m "refactor: search groups tasks under parent Job, drop WorkOrder ca
 ---
 
 ## Phase E — Frontend
+
+**Test-first:** Frontend changes are harder to test automatically; the primary test strategy is the API-level tests already written in Phase C (they assert the `GET /api/jobs/{id}/` shape the frontend consumes). For the frontend itself, smoke-test each route manually after changes (covered in Phase I). Do NOT skip Phase I's smoke test — it IS the test for Phase E.
 
 ### Task E1: Move WorkOrderDetailPage to JobTaskListPage
 
@@ -1233,9 +1382,11 @@ git commit -m "refactor: rename work order template HTML files to work template"
 
 ---
 
-## Phase G — Tests and Fixtures
+## Phase G — Test housekeeping & fixtures
 
-### Task G1: Delete or rewrite WorkOrder-specific test files
+By this point, tests have been updated per-phase (A7, B6, and tests-first within C/D). Phase G is now only: (1) the residual mechanical file renames that didn't fit cleanly into a prior phase, (2) fixture updates, (3) full-suite green confirmation. The previous "rewrite everything at the end" version of this phase is retired.
+
+### Task G1: Residual test file renames (if any remain)
 
 **Files:**
 - Delete: `tests/test_api_work_orders.py`
