@@ -588,6 +588,7 @@ tests/test_retire_can_approve_expenses.py       # PermissionsUpdateSerializer re
 10. **Richer permission gating** allowing Bookkeepers (no `can_manage_config`) to see the User page Expenses tab directly. Current v1 accepts the Owner-only path on `/users/:id` + global reimbursement route for others.
 11. **Spending dashboards / rollups** by category, job, month.
 12. **QBO → Minibini reverse sync** — see appendix below.
+13. **Reassign job/task on a locked expense** — once an expense has been reimbursed (or otherwise locked from editing), it may still have been booked against the wrong job/task, or against no job at all. Need a narrow reassignment action that changes only the `material` link (and therefore the derived job/task) without unlocking amount, date, or category. Should re-push to QBO so the Purchase/Bill line reflects the corrected class/customer ref.
 
 ---
 
