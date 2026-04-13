@@ -523,20 +523,24 @@ class TaskLifecycleService:
             )
             task.status = Task.STATUS_COMPLETE
             task.blocked_reason = ''
-            TaskLifecycleService._check_wo_auto_complete(task)
+            TaskLifecycleService._check_job_work_complete(task)
             return task
 
     @staticmethod
-    def _check_wo_auto_complete(task):
-        """Auto-complete WO if all its tasks are complete or cancelled."""
-        # Post-split: task is always a Task (work-order side); no container check needed.
-        wo = task.work_order
+    def _check_job_work_complete(task):
+        """Auto-advance Job to work_complete if all its tasks are terminal.
+
+        Only fires when the Job is currently in APPROVED status.
+        """
+        job = task.job
+        if job.status != Job.STATUS_APPROVED:
+            return
         terminal = {Task.STATUS_COMPLETE, Task.STATUS_CANCELLED}
         all_terminal = not Task.objects.filter(
-            work_order=wo
+            job=job
         ).exclude(status__in=terminal).exists()
         if all_terminal:
-            WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_COMPLETE)
+            JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
 
     @staticmethod
     def block_task(task_pk, reason=''):
@@ -565,29 +569,7 @@ class TaskLifecycleService:
             )
             task.status = Task.STATUS_BLOCKED
             task.blocked_reason = reason
-            TaskLifecycleService._check_wo_blocked(task)
             return task
-
-    @staticmethod
-    def _check_wo_blocked(task):
-        """Block WorkOrder if a task on it is blocked."""
-        # Post-split: task is always a Task (work-order side); no container check needed.
-        wo = task.work_order
-        if wo.status in (WorkOrder.STATUS_BLOCKED, WorkOrder.STATUS_COMPLETE):
-            return
-        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_BLOCKED)
-
-    @staticmethod
-    def _check_wo_unblocked(task):
-        """Unblock WorkOrder if no other tasks on it are blocked."""
-        wo = task.work_order
-        if wo.status != WorkOrder.STATUS_BLOCKED:
-            return
-        still_blocked = Task.objects.filter(
-            work_order=wo, status=Task.STATUS_BLOCKED,
-        ).exclude(pk=task.pk).exists()
-        if not still_blocked:
-            WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
 
     @staticmethod
     def unblock_task(task_pk):
@@ -603,7 +585,6 @@ class TaskLifecycleService:
             )
             task.status = Task.STATUS_IN_PROGRESS
             task.blocked_reason = ''
-            TaskLifecycleService._check_wo_unblocked(task)
             return task
 
     @staticmethod
@@ -617,16 +598,13 @@ class TaskLifecycleService:
                     f"Cannot cancel task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
-            was_blocked = task.status == Task.STATUS_BLOCKED
             BlepService._close_open(task=task)
             Task.objects.filter(pk=task.pk).update(
                 status=Task.STATUS_CANCELLED, blocked_reason='',
             )
             task.status = Task.STATUS_CANCELLED
             task.blocked_reason = ''
-            if was_blocked:
-                TaskLifecycleService._check_wo_unblocked(task)
-            TaskLifecycleService._check_wo_auto_complete(task)
+            TaskLifecycleService._check_job_work_complete(task)
             return task
 
     @staticmethod
