@@ -280,7 +280,7 @@ class JobService:
             raise ValidationError(f"Template {template.template_name} is not active.")
 
         job.template = template
-        job.save()
+        job.save(update_fields=['template'])
 
         from apps.estimates.models import TemplateTaskAssociation
         associations = TemplateTaskAssociation.objects.filter(
