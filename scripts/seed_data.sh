@@ -210,12 +210,12 @@ info "9 task templates created"
 # Step 2d: Work Order Templates + Associations
 # ─────────────────────────────────────────────
 log "Creating Work Order Templates..."
-WOT_TABLE=$(post "/api/work-order-templates/" '{"template_name":"Table","description":"Template for building a custom table"}' | jval "template_id")
-WOT_SIGN=$(post "/api/work-order-templates/" '{"template_name":"SIGN","description":"Template for a custom sign, installed"}' | jval "template_id")
+WOT_TABLE=$(post "/api/work-templates/" '{"template_name":"Table","description":"Template for building a custom table"}' | jval "template_id")
+WOT_SIGN=$(post "/api/work-templates/" '{"template_name":"SIGN","description":"Template for a custom sign, installed"}' | jval "template_id")
 info "2 work order templates created"
 
 # TODO: Replace these HTML form POSTs with API calls once an association
-# endpoint is added to the work-order-templates API.
+# endpoint is added to the work-templates API.
 log "Associating task templates (via HTML views)..."
 
 # Table: CAD(10h) → CUT(125min) → ASSEMBLE(3h) → FINISH(12h)
