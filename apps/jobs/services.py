@@ -1,5 +1,5 @@
 """
-Service classes for handling complex creation workflows between Jobs, WorkOrders, and Tasks.
+Service classes for handling complex creation workflows between Jobs and Tasks.
 """
 
 from datetime import timedelta
@@ -117,7 +117,7 @@ class BlepService:
         - target_user: user the blep belongs to (defaults to actor)
         - Creating for another user requires can_manage_time
         - Creating older than 24h requires can_manage_time
-        - Task must belong to a WorkOrder
+        - Task must belong to a Job
         - end_time must be >= start_time
         - Must not overlap another blep for target_user
         """
@@ -209,11 +209,11 @@ class BlepService:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# JobService, WorkOrderService, TaskService, TaskLifecycleService
+# JobService, TaskService, TaskLifecycleService
 # ═══════════════════════════════════════════════════════════════════
 
 class JobService:
-    """Service for Job CRUD operations."""
+    """Service for Job CRUD operations and workflows."""
 
     @staticmethod
     def create_job(**kwargs):
@@ -237,110 +237,75 @@ class JobService:
         job.save()
         return job
 
+    @staticmethod
+    def update_status(pk, new_status):
+        """Update job status; triggers earmark release on entry to work_complete."""
+        try:
+            job = Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {pk} not found')
+        old_status = job.status
+        job.status = new_status
+        job.full_clean()
+        job.save()
 
-class WorkOrderService:
-    """Service class for WorkOrder creation workflows."""
+        if new_status == Job.STATUS_WORK_COMPLETE and old_status != Job.STATUS_WORK_COMPLETE:
+            from apps.inventory.services import InventoryService
+            InventoryService.release_earmarks_for_job(job)
+
+        return job
 
     @staticmethod
-    def create_from_estimate(estimate):
-        """
-        Create WorkOrder from Estimate.
-        Only Open and Accepted Estimates can create WorkOrders.
-        Created WorkOrder starts in 'incomplete' status.
+    def populate_from_estimate(job, estimate):
+        """Populate a Job's tasks from an Estimate's line items.
+
+        Only OPEN and ACCEPTED estimates are allowed.
         """
         if estimate.status not in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED]:
             raise ValidationError(
-                f"Only Open and Accepted estimates can create WorkOrders. "
+                f"Only Open and Accepted estimates can populate jobs. "
                 f"Estimate {estimate.estimate_number} is {estimate.status}."
             )
-
-        work_order = WorkOrder.objects.create(
-            job=estimate.job,
-            status=WorkOrder.STATUS_INCOMPLETE
-        )
-
-        # Convert LineItems to Tasks
         for line_item in estimate.estimatelineitem_set.all():
-            TaskService.create_from_line_item(line_item, work_order)
+            TaskService.create_from_line_item(line_item, job)
 
         from apps.inventory.services import InventoryService
-        InventoryService.create_earmarks_for_work_order(work_order)
-
-        return work_order
+        InventoryService.create_earmarks_for_job(job)
+        return job
 
     @staticmethod
-    def create_from_template(template, job):
-        """
-        Create WorkOrder from WorkTemplate.
-        Created WorkOrder starts in 'incomplete' status.
-        """
+    def populate_from_template(job, template):
+        """Populate a Job from a WorkTemplate's task associations."""
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
 
-        work_order = WorkOrder.objects.create(
-            job=job,
-            template=template,
-        )
+        job.template = template
+        job.save()
 
-        # Generate Tasks from TaskTemplate associations
         from apps.estimates.models import TemplateTaskAssociation
         associations = TemplateTaskAssociation.objects.filter(
             work_template=template,
-            task_template__is_active=True
+            task_template__is_active=True,
         ).order_by('sort_order', 'task_template__template_name')
 
         for association in associations:
-            association.task_template.generate_task(work_order, association.est_qty)
+            association.task_template.generate_task(job, association.est_qty)
 
         from apps.inventory.services import InventoryService
-        InventoryService.create_earmarks_for_work_order(work_order)
-
-        return work_order
-
-    @staticmethod
-    def create_direct(job, **kwargs):
-        """Create WorkOrder directly. Starts in 'incomplete' status."""
-        return WorkOrder.objects.create(
-            job=job,
-            **kwargs
-        )
+        InventoryService.create_earmarks_for_job(job)
+        return job
 
     @staticmethod
-    def update_status(pk, new_status):
-        """Update work order status."""
-        try:
-            wo = WorkOrder.objects.get(pk=pk)
-        except WorkOrder.DoesNotExist:
-            raise NotFoundError(f'WorkOrder {pk} not found')
-        wo.status = new_status
-        wo.full_clean()
-        wo.save()
-
-        # Release remaining earmarks when WO completes
-        if new_status == WorkOrder.STATUS_COMPLETE:
-            from apps.inventory.services import InventoryService
-            InventoryService.release_earmarks_for_job(wo.job)
-
-        return wo
-
-    @staticmethod
-    def copy_from_worksheet(work_order_pk, worksheet_pk):
-        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a work order.
-
-        Per spec 2026-04-05-task-split-and-worksheet-to-workorder.md:
-        - No bundle copy (RealBundle does not exist).
-        - No parent_task copy (hierarchy emerges during work).
-        - No mapping_strategy copy (irrelevant on work order).
-        - PlanMaterials become Materials with price_list_item preserved.
-        """
+    def copy_from_worksheet(job_pk, worksheet_pk):
+        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a job."""
         from apps.estimates.models import EstWorksheet
         from apps.jobs.models import PlanTask
         from apps.inventory.models import Material
 
         try:
-            wo = WorkOrder.objects.get(pk=work_order_pk)
-        except WorkOrder.DoesNotExist:
-            raise NotFoundError(f'WorkOrder {work_order_pk} not found')
+            job = Job.objects.get(pk=job_pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {job_pk} not found')
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
@@ -350,7 +315,7 @@ class WorkOrderService:
             est_worksheet=ws
         ).prefetch_related('plan_materials'):
             new_task = Task.objects.create(
-                work_order=wo,
+                job=job,
                 name=plan_task.name,
                 description=plan_task.description,
                 units=plan_task.units,
@@ -371,7 +336,7 @@ class WorkOrderService:
                 )
 
         from apps.inventory.services import InventoryService
-        InventoryService.create_earmarks_for_work_order(wo)
+        InventoryService.create_earmarks_for_job(job)
 
 
 class TaskService:

@@ -5,7 +5,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core.exceptions import ValidationError
 from apps.jobs.models import Task
-from apps.jobs.services import WorkOrderService
+# TEMP Phase B: WorkOrderService deleted; this entire module is removed in Phase C.
+# Methods referencing WorkOrderService will NameError if invoked, which is acceptable
+# because the viewset's routes are effectively dead (queryset = Task.objects.none()).
+WorkOrderService = None
 from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
 from apps.api.mixins import StatusTransitionMixin, WorkOrderTaskMixin
 from apps.api.permissions import CanManageJobs, CanManageFinancials
