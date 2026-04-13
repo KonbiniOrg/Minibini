@@ -901,28 +901,29 @@ def work_order_create_from_estimate(request, estimate_id):
         return redirect('estimates:estimate_detail', estimate_id=estimate_id)
 
     if request.method == 'POST':
-        from apps.jobs.services import WorkOrderService
+        from apps.jobs.services import JobService, TaskService
         with transaction.atomic():
             worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
-
-            # Create the WorkOrder
-            work_order = WorkOrderService.create_direct(
-                estimate.job,
-                template=worksheet.template if worksheet else None,
-            )
+            job = estimate.job
 
             if worksheet:
-                # Copy worksheet tasks, bundles, and materials directly
-                WorkOrderService.copy_from_worksheet(work_order.pk, worksheet.pk)
+                # Link the worksheet's template to the job for traceability
+                if worksheet.template:
+                    job.template = worksheet.template
+                    job.save(update_fields=['template'])
+                # Copy worksheet tasks and materials directly onto the job
+                JobService.copy_from_worksheet(job.pk, worksheet.pk)
             else:
                 # No worksheet — generate tasks from estimate line items
-                from apps.jobs.services import TaskService
                 line_items = estimate.estimatelineitem_set.all().order_by('line_number', 'pk')
                 for line_item in line_items:
-                    TaskService.create_from_line_item(line_item, work_order)
+                    TaskService.create_from_line_item(line_item, job)
 
-            messages.success(request, f'Work Order {work_order.work_order_id} created successfully from Estimate {estimate.estimate_number}.')
-            return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
+            messages.success(
+                request,
+                f'Tasks created on Job {job.job_number} from Estimate {estimate.estimate_number}.',
+            )
+            return redirect('jobs:job_detail', job_id=job.pk)
 
     # GET request - show confirmation page
     worksheet = EstWorksheet.objects.filter(estimate=estimate).first()

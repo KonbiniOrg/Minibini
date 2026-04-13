@@ -315,7 +315,7 @@ class EstWorksheet(AbstractWorkContainer):
 
 
 class WorkTemplate(models.Model):
-    """Template for creating WorkOrders/EstWorksheets with product structure"""
+    """Template for populating Jobs and EstWorksheets with product structure"""
 
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
@@ -482,13 +482,13 @@ class TaskTemplate(models.Model):
                        assignee=None, mapping_strategy='direct', bundle=None, sort_order=None):
         """Generate a PlanTask or Task from this template with specified quantity and mapping config.
 
-        The return type depends on the container: EstWorksheet -> PlanTask, WorkOrder -> Task.
+        The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
         """
-        from apps.jobs.models import WorkOrder, Task, PlanTask
+        from apps.jobs.models import Job, Task, PlanTask
 
-        if isinstance(container, WorkOrder):
+        if isinstance(container, Job):
             return Task.objects.create(
-                work_order=container,
+                job=container,
                 name=self.template_name,
                 description=self.description,
                 units=self.units,
