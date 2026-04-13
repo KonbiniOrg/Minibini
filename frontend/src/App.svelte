@@ -22,7 +22,7 @@
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
-  import WorkOrderDetailPage from './routes/workorders/WorkOrderDetailPage.svelte';
+  import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
   import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
@@ -46,9 +46,9 @@
     '/jobs': JobListPage,
     '/jobs/board': JobBoardPage,
     '/jobs/:id': JobDetailPage,
+    '/jobs/:id/tasklist': JobTaskListPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
     '/worksheets/:id': WorksheetDetailPage,
-    '/work-orders/:id': WorkOrderDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
     '/purchase-orders/new': PurchaseOrderFormPage,
     '/purchase-orders/:id/edit': PurchaseOrderFormPage,

@@ -10,7 +10,7 @@
 
   let { params = {} } = $props();
 
-  let workOrder = $state(null);
+  let job = $state(null);
   let enrichedTasks = $state([]);
   let templates = $state([]);
   let categories = $state([]);
@@ -35,32 +35,31 @@
 
   // Status action state
   let statusBusy = $state(false);
-  let reasonText = $state('');
 
   const canManageJobs = $derived(
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
 
-  async function loadWorkOrder() {
+  async function loadJob() {
     loading = true;
     error = '';
     try {
-      workOrder = await api.get(`/api/work-orders/${params.id}/`);
+      job = await api.get(`/api/jobs/${params.id}/`);
       await enrichTasks();
     } catch (e) {
-      error = e.message || 'Could not load work order.';
+      error = e.message || 'Could not load job.';
     } finally {
       loading = false;
     }
   }
 
   async function enrichTasks() {
-    if (!workOrder || !workOrder.tasks) {
+    if (!job || !job.tasks) {
       enrichedTasks = [];
       return;
     }
     // Only top-level tasks (subtasks are fetched and nested separately)
-    const tasks = (workOrder.tasks || []).filter(t => !t.parent_task);
+    const tasks = (job.tasks || []).filter(t => !t.parent_task);
     const enriched = await Promise.all(tasks.map(async (task) => {
       const [materials, subtasks] = await Promise.all([
         fetchMaterials(task.task_id),
@@ -111,12 +110,12 @@
   }
 
   async function reload() {
-    await loadWorkOrder();
+    await loadJob();
   }
 
   $effect(() => {
     if (params.id) {
-      loadWorkOrder();
+      loadJob();
       loadTemplates();
       loadCategories();
     }
@@ -138,7 +137,7 @@
   async function handleDeleteTask(task) {
     if (!confirm(`Delete task "${task.name}"?`)) return;
     try {
-      await api.delete(`/api/work-orders/${workOrder.work_order_id}/tasks/${task.task_id}/`);
+      await api.delete(`/api/jobs/${job.job_id}/tasks/${task.task_id}/`);
       await reload();
     } catch (e) {
       alert(e.message || 'Could not delete task.');
@@ -208,7 +207,7 @@
   // Reorder handler
   async function handleReorder(taskId, direction) {
     try {
-      await api.post(`/api/work-orders/${workOrder.work_order_id}/reorder/`, {
+      await api.post(`/api/jobs/${job.job_id}/reorder-tasks/`, {
         task_id: taskId,
         direction,
       });
@@ -220,23 +219,20 @@
 
   // Task click -> navigate to task detail
   function handleTaskClick(task) {
-    if (workOrder && workOrder.job) {
-      window.location.hash = `/jobs/${workOrder.job}/tasks/${task.task_id}`;
+    if (job) {
+      window.location.hash = `/jobs/${job.job_id}/tasks/${task.task_id}`;
     }
   }
 
-  // Status transitions
-  async function handleStatusAction(actionName) {
-    const reason = prompt('Reason (optional):');
-    if (reason === null) return; // cancelled
+  // Mark all work complete
+  async function handleWorkComplete() {
+    if (!confirm('Mark all work complete on this job?')) return;
     statusBusy = true;
     try {
-      await api.post(`/api/work-orders/${workOrder.work_order_id}/${actionName}/`, {
-        reason: reason || undefined,
-      });
+      await api.post(`/api/jobs/${job.job_id}/work-complete/`, {});
       await reload();
     } catch (e) {
-      alert(e.message || `Could not ${actionName} work order.`);
+      alert(e.message || 'Could not mark work complete.');
     } finally {
       statusBusy = false;
     }
@@ -247,31 +243,23 @@
   <p>Loading...</p>
 {:else if error}
   <p class="error">{error}</p>
-{:else if workOrder}
-  <h2>Work Order #{workOrder.work_order_id}</h2>
+{:else if job}
+  <h2>Tasks for Job {job.job_number}</h2>
 
   <p>
-    <a href={`/jobs/${workOrder.job}`} use:link>&laquo; Back to Job</a>
+    <a href={`/jobs/${job.job_id}`} use:link>&laquo; Back to Job</a>
   </p>
 
   <div class="status-line">
-    <span class="status-badge status-{workOrder.status}">{workOrder.status}</span>
-    {#if workOrder.template_name}
-      <span class="meta">Template: {workOrder.template_name}</span>
+    <span class="status-badge status-{job.status}">{job.status}</span>
+    {#if job.template?.name}
+      <span class="meta">Template: {job.template.name}</span>
     {/if}
   </div>
 
   {#if canManageJobs}
     <div class="action-bar">
-      {#if workOrder.status === 'incomplete' || workOrder.status === 'blocked'}
-        <button type="button" onclick={() => handleStatusAction('complete')} disabled={statusBusy}>Complete</button>
-      {/if}
-      {#if workOrder.status === 'incomplete'}
-        <button type="button" onclick={() => handleStatusAction('block')} disabled={statusBusy}>Block</button>
-      {/if}
-      {#if workOrder.status === 'complete' || workOrder.status === 'blocked'}
-        <button type="button" onclick={() => handleStatusAction('reopen')} disabled={statusBusy}>Unblock</button>
-      {/if}
+      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
     </div>
   {/if}
 
@@ -299,7 +287,7 @@
     open={taskModalOpen}
     mode={taskModalMode}
     task={taskModalTask}
-    workOrderId={workOrder.work_order_id}
+    jobId={job.job_id}
     {templates}
     {categories}
     onSaved={handleTaskSaved}
@@ -338,9 +326,13 @@
     padding: 4px 12px; border-radius: 12px; font-size: 13px;
     font-weight: 600; text-transform: capitalize;
   }
-  .status-incomplete { background: #f3f4f6; color: #374151; }
-  .status-complete { background: #d1fae5; color: #065f46; }
-  .status-blocked { background: #fee2e2; color: #991b1b; }
+  .status-draft { background: #f3f4f6; color: #374151; }
+  .status-submitted { background: #dbeafe; color: #1e40af; }
+  .status-approved { background: #dcfce7; color: #166534; }
+  .status-work_complete { background: #ccfbf1; color: #115e59; }
+  .status-completed { background: #dbeafe; color: #1e40af; }
+  .status-rejected { background: #fee2e2; color: #991b1b; }
+  .status-cancelled { background: #fef3c7; color: #92400e; }
   .meta { color: #888; font-size: 13px; }
   .action-bar { display: flex; gap: 8px; margin-bottom: 16px; }
   .action-bar button {
