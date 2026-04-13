@@ -38,7 +38,7 @@ class EstWorksheetCRUDTests(TestCase):
         )
 
         # Create WorkTemplate for the from-template tests
-        self.work_order_template = WorkTemplate.objects.create(
+        self.work_template = WorkTemplate.objects.create(
             template_name='Test Work Order Template',
             description='Test template for work orders'
         )

@@ -37,7 +37,7 @@ class CreateFromTemplateTest(TestCase):
             accounting_category=cat,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template,
+            work_template=self.template,
             task_template=self.task_template,
             est_qty=2,
             sort_order=1,

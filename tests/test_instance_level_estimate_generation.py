@@ -153,7 +153,7 @@ class InstanceLevelEstimateGenerationTest(TestCase):
         )
         # Template says 'direct'
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt,
+            work_template=wot, task_template=tt,
             est_qty=1, mapping_strategy='direct'
         )
 

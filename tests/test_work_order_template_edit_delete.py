@@ -19,7 +19,7 @@ class WorkTemplateEditViewTest(TestCase):
     def test_edit_view_get_returns_form(self):
         """Test that GET request returns form with current values."""
         response = self.client.get(
-            reverse('estimates:work_order_template_edit', args=[self.template.template_id])
+            reverse('estimates:work_template_edit', args=[self.template.template_id])
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Original Name')
@@ -28,7 +28,7 @@ class WorkTemplateEditViewTest(TestCase):
     def test_edit_view_post_updates_template(self):
         """Test that POST request updates the template."""
         response = self.client.post(
-            reverse('estimates:work_order_template_edit', args=[self.template.template_id]),
+            reverse('estimates:work_template_edit', args=[self.template.template_id]),
             {
                 'template_name': 'Updated Name',
                 'description': 'Updated description',
@@ -36,7 +36,7 @@ class WorkTemplateEditViewTest(TestCase):
         )
         self.assertRedirects(
             response,
-            reverse('estimates:work_order_template_detail', args=[self.template.template_id])
+            reverse('estimates:work_template_detail', args=[self.template.template_id])
         )
 
         self.template.refresh_from_db()
@@ -46,7 +46,7 @@ class WorkTemplateEditViewTest(TestCase):
     def test_edit_view_shows_success_message(self):
         """Test that success message is shown after edit."""
         response = self.client.post(
-            reverse('estimates:work_order_template_edit', args=[self.template.template_id]),
+            reverse('estimates:work_template_edit', args=[self.template.template_id]),
             {
                 'template_name': 'Updated Name',
                 'description': 'Updated description',
@@ -58,7 +58,7 @@ class WorkTemplateEditViewTest(TestCase):
     def test_edit_view_404_for_nonexistent_template(self):
         """Test that 404 is returned for nonexistent template."""
         response = self.client.get(
-            reverse('estimates:work_order_template_edit', args=[99999])
+            reverse('estimates:work_template_edit', args=[99999])
         )
         self.assertEqual(response.status_code, 404)
 
@@ -77,9 +77,9 @@ class WorkTemplateDeleteViewTest(TestCase):
         """Test that POST request deletes the template."""
         template_id = self.template.template_id
         response = self.client.post(
-            reverse('estimates:work_order_template_delete', args=[template_id])
+            reverse('estimates:work_template_delete', args=[template_id])
         )
-        self.assertRedirects(response, reverse('estimates:work_order_template_list'))
+        self.assertRedirects(response, reverse('estimates:work_template_list'))
 
         # Verify template is deleted
         self.assertFalse(WorkTemplate.objects.filter(template_id=template_id).exists())
@@ -87,7 +87,7 @@ class WorkTemplateDeleteViewTest(TestCase):
     def test_delete_view_shows_success_message(self):
         """Test that success message is shown after delete."""
         response = self.client.post(
-            reverse('estimates:work_order_template_delete', args=[self.template.template_id]),
+            reverse('estimates:work_template_delete', args=[self.template.template_id]),
             follow=True
         )
         self.assertContains(response, 'deleted successfully')
@@ -95,7 +95,7 @@ class WorkTemplateDeleteViewTest(TestCase):
     def test_delete_view_404_for_nonexistent_template(self):
         """Test that 404 is returned for nonexistent template."""
         response = self.client.post(
-            reverse('estimates:work_order_template_delete', args=[99999])
+            reverse('estimates:work_template_delete', args=[99999])
         )
         self.assertEqual(response.status_code, 404)
 
@@ -107,7 +107,7 @@ class WorkTemplateDeleteViewTest(TestCase):
             description='Test task description'
         )
         association = TemplateTaskAssociation.objects.create(
-            work_order_template=self.template,
+            work_template=self.template,
             task_template=task_template,
             est_qty=1
         )
@@ -115,7 +115,7 @@ class WorkTemplateDeleteViewTest(TestCase):
 
         # Delete the work order template
         self.client.post(
-            reverse('estimates:work_order_template_delete', args=[self.template.template_id])
+            reverse('estimates:work_template_delete', args=[self.template.template_id])
         )
 
         # Verify association is deleted but task template remains
@@ -130,7 +130,7 @@ class WorkTemplateDeleteViewTest(TestCase):
             name='Test Type'
         )
         bundle = TemplateBundle.objects.create(
-            work_order_template=self.template,
+            work_template=self.template,
             name='Test Bundle',
             accounting_category=accounting_category
         )
@@ -138,7 +138,7 @@ class WorkTemplateDeleteViewTest(TestCase):
 
         # Delete the work order template
         self.client.post(
-            reverse('estimates:work_order_template_delete', args=[self.template.template_id])
+            reverse('estimates:work_template_delete', args=[self.template.template_id])
         )
 
         # Verify bundle is deleted
@@ -147,7 +147,7 @@ class WorkTemplateDeleteViewTest(TestCase):
     def test_delete_view_get_not_allowed(self):
         """Test that GET request is not allowed for delete."""
         response = self.client.get(
-            reverse('estimates:work_order_template_delete', args=[self.template.template_id])
+            reverse('estimates:work_template_delete', args=[self.template.template_id])
         )
         # Should return 405 Method Not Allowed
         self.assertEqual(response.status_code, 405)
@@ -166,17 +166,17 @@ class WorkTemplateDetailEditDeleteLinksTest(TestCase):
     def test_detail_page_has_edit_link(self):
         """Test that detail page shows Edit link."""
         response = self.client.get(
-            reverse('estimates:work_order_template_detail', args=[self.template.template_id])
+            reverse('estimates:work_template_detail', args=[self.template.template_id])
         )
         self.assertEqual(response.status_code, 200)
-        edit_url = reverse('estimates:work_order_template_edit', args=[self.template.template_id])
+        edit_url = reverse('estimates:work_template_edit', args=[self.template.template_id])
         self.assertContains(response, f'href="{edit_url}"')
 
     def test_detail_page_has_delete_button(self):
         """Test that detail page shows Delete button."""
         response = self.client.get(
-            reverse('estimates:work_order_template_detail', args=[self.template.template_id])
+            reverse('estimates:work_template_detail', args=[self.template.template_id])
         )
         self.assertEqual(response.status_code, 200)
-        delete_url = reverse('estimates:work_order_template_delete', args=[self.template.template_id])
+        delete_url = reverse('estimates:work_template_delete', args=[self.template.template_id])
         self.assertContains(response, delete_url)

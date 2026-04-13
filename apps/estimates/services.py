@@ -307,7 +307,7 @@ class WorkTemplateService:
             raise NotFoundError(f'WorkTemplate {template_pk} not found')
         try:
             assoc = TemplateTaskAssociation.objects.get(
-                pk=assoc_pk, work_order_template=tmpl,
+                pk=assoc_pk, work_template=tmpl,
             )
         except TemplateTaskAssociation.DoesNotExist:
             raise NotFoundError(f'TemplateTaskAssociation {assoc_pk} not found')
@@ -331,15 +331,15 @@ class WorkTemplateService:
 
         # Calculate next sort_order at container level
         max_assoc = TemplateTaskAssociation.objects.filter(
-            work_order_template=tmpl, bundle__isnull=True,
+            work_template=tmpl, bundle__isnull=True,
         ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
         max_bundle = TemplateBundle.objects.filter(
-            work_order_template=tmpl,
+            work_template=tmpl,
         ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
         next_sort = max(max_assoc, max_bundle) + 1
 
         bundle, _ = TemplateBundle.objects.get_or_create(
-            work_order_template=tmpl, name=bundle_name,
+            work_template=tmpl, name=bundle_name,
             defaults={
                 'accounting_category': accounting_category,
                 'sort_order': next_sort,
@@ -347,12 +347,12 @@ class WorkTemplateService:
         )
 
         selected = TemplateTaskAssociation.objects.filter(
-            pk__in=assoc_ids, work_order_template=tmpl,
+            pk__in=assoc_ids, work_template=tmpl,
         ).order_by('sort_order', 'pk')
         BundlingService.bundle_items(selected, bundle)
 
         # Auto-dissolve other bundles that lost members
-        all_bundles = TemplateBundle.objects.filter(work_order_template=tmpl)
+        all_bundles = TemplateBundle.objects.filter(work_template=tmpl)
         BundlingService.auto_dissolve_bundles(
             all_bundles, TemplateTaskAssociation, exclude_pk=bundle.pk,
         )
@@ -371,7 +371,7 @@ class WorkTemplateService:
             raise NotFoundError(f'WorkTemplate {template_pk} not found')
         try:
             assoc = TemplateTaskAssociation.objects.get(
-                pk=assoc_pk, work_order_template=tmpl,
+                pk=assoc_pk, work_template=tmpl,
             )
         except TemplateTaskAssociation.DoesNotExist:
             raise NotFoundError(f'TemplateTaskAssociation {assoc_pk} not found')
@@ -379,15 +379,15 @@ class WorkTemplateService:
             return
 
         container_items_qs = TemplateTaskAssociation.objects.filter(
-            work_order_template=tmpl, bundle__isnull=True,
+            work_template=tmpl, bundle__isnull=True,
         )
         container_bundles_qs = TemplateBundle.objects.filter(
-            work_order_template=tmpl,
+            work_template=tmpl,
         )
         BundlingService.unbundle_item(assoc, container_items_qs, container_bundles_qs)
 
         BundlingService.auto_dissolve_bundles(
-            TemplateBundle.objects.filter(work_order_template=tmpl),
+            TemplateBundle.objects.filter(work_template=tmpl),
             TemplateTaskAssociation,
         )
 
@@ -402,7 +402,7 @@ class WorkTemplateService:
             raise NotFoundError(f'WorkTemplate {template_pk} not found')
 
         items_qs = TemplateTaskAssociation.objects.filter(
-            work_order_template=tmpl,
+            work_template=tmpl,
         )
         BundlingService.reorder_container_items(
             items_qs, item_type, item_id, direction,
@@ -419,7 +419,7 @@ class WorkTemplateService:
             raise NotFoundError(f'WorkTemplate {template_pk} not found')
         try:
             assoc = TemplateTaskAssociation.objects.get(
-                pk=assoc_pk, work_order_template=tmpl,
+                pk=assoc_pk, work_template=tmpl,
                 mapping_strategy='bundle', bundle__isnull=False,
             )
         except TemplateTaskAssociation.DoesNotExist:

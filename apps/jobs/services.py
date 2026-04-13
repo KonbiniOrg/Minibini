@@ -285,7 +285,7 @@ class WorkOrderService:
         # Generate Tasks from TaskTemplate associations
         from apps.estimates.models import TemplateTaskAssociation
         associations = TemplateTaskAssociation.objects.filter(
-            work_order_template=template,
+            work_template=template,
             task_template__is_active=True
         ).order_by('sort_order', 'task_template__template_name')
 

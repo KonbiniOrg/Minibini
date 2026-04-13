@@ -353,7 +353,7 @@ class BlepModelTest(TestCase):
         self.assertEqual(str(blep), f"Blep {blep.pk} for Task {self.task.pk}")
 
 class WorkTemplateModelTest(TestCase):
-    def test_work_order_template_creation(self):
+    def test_work_template_creation(self):
         template = WorkTemplate.objects.create(
             template_name="Standard Installation",
             description="Standard installation workflow template",
@@ -364,20 +364,20 @@ class WorkTemplateModelTest(TestCase):
         self.assertTrue(template.is_active)
         self.assertIsNotNone(template.created_date)
 
-    def test_work_order_template_str_method(self):
+    def test_work_template_str_method(self):
         template = WorkTemplate.objects.create(
             template_name="Maintenance Template"
         )
         self.assertEqual(str(template), "Maintenance Template")
 
-    def test_work_order_template_defaults(self):
+    def test_work_template_defaults(self):
         template = WorkTemplate.objects.create(
             template_name="Basic Template"
         )
         self.assertTrue(template.is_active)  # Default should be True
         self.assertEqual(template.description, "")  # CharField blank=True defaults to empty
 
-    def test_work_order_template_inactive(self):
+    def test_work_template_inactive(self):
         template = WorkTemplate.objects.create(
             template_name="Inactive Template",
             is_active=False
@@ -397,7 +397,7 @@ class TaskTemplateModelTest(TestCase):
             work_order=self.work_order,
             name="Test Task",
         )
-        self.work_order_template = WorkTemplate.objects.create(
+        self.work_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
         )
 
@@ -413,7 +413,7 @@ class TaskTemplateModelTest(TestCase):
         # Create association with quantity
         from apps.estimates.models import TemplateTaskAssociation
         association = TemplateTaskAssociation.objects.create(
-            work_order_template=self.work_order_template,
+            work_template=self.work_template,
             task_template=template,
             est_qty=Decimal('12.00')
         )
@@ -422,7 +422,7 @@ class TaskTemplateModelTest(TestCase):
         self.assertEqual(template.description, "Standard electrical installation task")
         self.assertEqual(template.units, "ea")
         self.assertEqual(template.rate, Decimal('45.00'))
-        self.assertIn(self.work_order_template, template.work_order_templates.all())
+        self.assertIn(self.work_template, template.work_templates.all())
         self.assertEqual(association.est_qty, Decimal('12.00'))
         self.assertTrue(template.is_active)
         self.assertIsNotNone(template.created_date)
@@ -441,7 +441,7 @@ class TaskTemplateModelTest(TestCase):
         self.assertEqual(template.description, "")
         self.assertEqual(template.units, "none")
         self.assertIsNone(template.rate)
-        self.assertEqual(template.work_order_templates.count(), 0)
+        self.assertEqual(template.work_templates.count(), 0)
 
     def test_task_template_new_fields_optional(self):
         """Test that new pricing fields are optional."""
@@ -462,7 +462,7 @@ class TaskTemplateModelTest(TestCase):
         # Create association with quantity
         from apps.estimates.models import TemplateTaskAssociation
         association = TemplateTaskAssociation.objects.create(
-            work_order_template=self.work_order_template,
+            work_template=self.work_template,
             task_template=template,
             est_qty=Decimal('200.00')
         )
@@ -470,12 +470,12 @@ class TaskTemplateModelTest(TestCase):
         estimated_cost = template.rate * association.est_qty if template.rate and association.est_qty else Decimal('0.00')
         self.assertEqual(estimated_cost, Decimal('3050.00'))
 
-    def test_task_template_without_work_order_template(self):
+    def test_task_template_without_work_template(self):
         """Test TaskTemplate can exist without WorkTemplate."""
         template = TaskTemplate.objects.create(
             template_name="Standalone Template"
         )
-        self.assertEqual(template.work_order_templates.count(), 0)
+        self.assertEqual(template.work_templates.count(), 0)
 
     def test_template_task_association_sort_order(self):
         """Test that TaskTemplates added to WorkTemplate maintain sort order."""
@@ -494,19 +494,19 @@ class TaskTemplateModelTest(TestCase):
 
         # Add them to the work order template with specific sort orders
         association1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.work_order_template,
+            work_template=self.work_template,
             task_template=task_template1,
             est_qty=Decimal('1.00'),
             sort_order=1
         )
         association2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.work_order_template,
+            work_template=self.work_template,
             task_template=task_template2,
             est_qty=Decimal('2.00'),
             sort_order=2
         )
         association3 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.work_order_template,
+            work_template=self.work_template,
             task_template=task_template3,
             est_qty=Decimal('3.00'),
             sort_order=3
@@ -514,7 +514,7 @@ class TaskTemplateModelTest(TestCase):
 
         # Query associations ordered by sort_order
         ordered_associations = TemplateTaskAssociation.objects.filter(
-            work_order_template=self.work_order_template
+            work_template=self.work_template
         ).order_by('sort_order')
 
         # Verify the order is maintained
@@ -544,12 +544,12 @@ class TaskTemplateModelTest(TestCase):
         for i, task_template in enumerate(task_templates):
             # Get the next sort_order value (as done in the view)
             max_sort_order = TemplateTaskAssociation.objects.filter(
-                work_order_template=self.work_order_template
+                work_template=self.work_template
             ).aggregate(db_models.Max('sort_order'))['sort_order__max']
             next_sort_order = (max_sort_order or 0) + 1
 
             TemplateTaskAssociation.objects.create(
-                work_order_template=self.work_order_template,
+                work_template=self.work_template,
                 task_template=task_template,
                 est_qty=Decimal('1.00'),
                 sort_order=next_sort_order
@@ -557,7 +557,7 @@ class TaskTemplateModelTest(TestCase):
 
         # Verify all tasks have incrementing sort_order values
         associations = TemplateTaskAssociation.objects.filter(
-            work_order_template=self.work_order_template
+            work_template=self.work_template
         ).order_by('sort_order')
 
         self.assertEqual(associations.count(), 5)

@@ -26,7 +26,7 @@ class TaskGenerationBundlingTest(TestCase):
             template_name="Sand", rate=50, accounting_category=self.lit_labor
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt,
+            work_template=wot, task_template=tt,
             est_qty=2, mapping_strategy='direct'
         )
 
@@ -44,7 +44,7 @@ class TaskGenerationBundlingTest(TestCase):
             template_name="Internal Check", rate=0, accounting_category=self.lit_labor
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt,
+            work_template=wot, task_template=tt,
             est_qty=1, mapping_strategy='exclude'
         )
 
@@ -59,7 +59,7 @@ class TaskGenerationBundlingTest(TestCase):
         """Generating from a template with a TemplateBundle creates a PlanBundle on the worksheet."""
         wot = WorkTemplate.objects.create(template_name="Bundle Job")
         template_bundle = TemplateBundle.objects.create(
-            work_order_template=wot, name="Prep Work",
+            work_template=wot, name="Prep Work",
             accounting_category=self.lit_labor, sort_order=1
         )
 
@@ -70,11 +70,11 @@ class TaskGenerationBundlingTest(TestCase):
             template_name="Clean", rate=25, accounting_category=self.lit_labor
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt1,
+            work_template=wot, task_template=tt1,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt2,
+            work_template=wot, task_template=tt2,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle
         )
 
@@ -100,11 +100,11 @@ class TaskGenerationBundlingTest(TestCase):
         """Each TemplateBundle becomes its own PlanBundle."""
         wot = WorkTemplate.objects.create(template_name="Multi Bundle")
         bundle_a = TemplateBundle.objects.create(
-            work_order_template=wot, name="Prep",
+            work_template=wot, name="Prep",
             accounting_category=self.lit_labor, sort_order=1
         )
         bundle_b = TemplateBundle.objects.create(
-            work_order_template=wot, name="Materials",
+            work_template=wot, name="Materials",
             accounting_category=self.lit_material, sort_order=2
         )
 
@@ -115,11 +115,11 @@ class TaskGenerationBundlingTest(TestCase):
             template_name="Buy Stain", rate=30, accounting_category=self.lit_material
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt1,
+            work_template=wot, task_template=tt1,
             est_qty=1, mapping_strategy='bundle', bundle=bundle_a
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt2,
+            work_template=wot, task_template=tt2,
             est_qty=1, mapping_strategy='bundle', bundle=bundle_b
         )
 
@@ -143,7 +143,7 @@ class TaskGenerationBundlingTest(TestCase):
         """Generation handles a mix of direct, bundled, and excluded tasks."""
         wot = WorkTemplate.objects.create(template_name="Mixed Job")
         bundle = TemplateBundle.objects.create(
-            work_order_template=wot, name="Prep",
+            work_template=wot, name="Prep",
             accounting_category=self.lit_labor, sort_order=1
         )
 
@@ -161,19 +161,19 @@ class TaskGenerationBundlingTest(TestCase):
         )
 
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt_sand,
+            work_template=wot, task_template=tt_sand,
             est_qty=1, mapping_strategy='bundle', bundle=bundle
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt_clean,
+            work_template=wot, task_template=tt_clean,
             est_qty=1, mapping_strategy='bundle', bundle=bundle
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt_finish,
+            work_template=wot, task_template=tt_finish,
             est_qty=2, mapping_strategy='direct'
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt_qc,
+            work_template=wot, task_template=tt_qc,
             est_qty=1, mapping_strategy='exclude'
         )
 

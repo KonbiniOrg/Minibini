@@ -253,9 +253,9 @@ class TaskCreationWorkflowTest(TestCase):
         
         # Create association with quantity
         from apps.estimates.models import TemplateTaskAssociation, WorkTemplate
-        work_order_template = WorkTemplate.objects.create(template_name="Test WO Template")
+        work_template = WorkTemplate.objects.create(template_name="Test WO Template")
         association = TemplateTaskAssociation.objects.create(
-            work_order_template=work_order_template,
+            work_template=work_template,
             task_template=template,
             est_qty=Decimal('150.00')
         )
@@ -290,7 +290,7 @@ class TemplateIntegrationTest(TestCase):
     def test_full_template_workflow(self):
         """Test complete workflow: Template -> WorkOrder -> Tasks."""
         # Create WorkTemplate with TaskTemplates
-        work_order_template = WorkTemplate.objects.create(
+        work_template = WorkTemplate.objects.create(
             template_name="Complete Job Template",
             description="Template for complete job workflow",
             is_active=True
@@ -309,23 +309,23 @@ class TemplateIntegrationTest(TestCase):
         # Create associations with quantities
         from apps.estimates.models import TemplateTaskAssociation
         TemplateTaskAssociation.objects.create(
-            work_order_template=work_order_template,
+            work_template=work_template,
             task_template=task_template1,
             est_qty=Decimal('1.00')
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=work_order_template,
+            work_template=work_template,
             task_template=task_template2,
             est_qty=Decimal('1.00')
         )
         
         # Generate WorkOrder from template
-        work_order = WorkOrderService.create_from_template(work_order_template, self.job)
+        work_order = WorkOrderService.create_from_template(work_template, self.job)
         
         # Verify WorkOrder
         self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
         self.assertEqual(work_order.job, self.job)
-        self.assertEqual(work_order.template, work_order_template)
+        self.assertEqual(work_order.template, work_template)
         
         # Verify Tasks were created
         tasks = work_order.tasks.all()

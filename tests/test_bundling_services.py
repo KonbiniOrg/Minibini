@@ -522,10 +522,10 @@ class TemplateServiceBundleTest(BundlingTestBase):
             template_name='TT2', accounting_category=self.lit,
         )
         self.a1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.tmpl, task_template=self.tt1, sort_order=1,
+            work_template=self.tmpl, task_template=self.tt1, sort_order=1,
         )
         self.a2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.tmpl, task_template=self.tt2, sort_order=2,
+            work_template=self.tmpl, task_template=self.tt2, sort_order=2,
         )
 
     def test_bundle_associations(self):
@@ -568,19 +568,19 @@ class TemplateServiceUnbundleTest(BundlingTestBase):
             template_name='TT3', accounting_category=self.lit,
         )
         self.bundle = TemplateBundle.objects.create(
-            work_order_template=self.tmpl, name='Bundle',
+            work_template=self.tmpl, name='Bundle',
             accounting_category=self.lit, sort_order=5,
         )
         self.a1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.tmpl, task_template=self.tt1,
+            work_template=self.tmpl, task_template=self.tt1,
             sort_order=1, mapping_strategy='bundle', bundle=self.bundle,
         )
         self.a2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.tmpl, task_template=self.tt2,
+            work_template=self.tmpl, task_template=self.tt2,
             sort_order=2, mapping_strategy='bundle', bundle=self.bundle,
         )
         self.a3 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.tmpl, task_template=self.tt3,
+            work_template=self.tmpl, task_template=self.tt3,
             sort_order=3, mapping_strategy='bundle', bundle=self.bundle,
         )
 
@@ -615,10 +615,10 @@ class TemplateServiceReorderTest(BundlingTestBase):
             template_name='TT2', accounting_category=self.lit,
         )
         self.a1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.tmpl, task_template=self.tt1, sort_order=1,
+            work_template=self.tmpl, task_template=self.tt1, sort_order=1,
         )
         self.a2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.tmpl, task_template=self.tt2, sort_order=2,
+            work_template=self.tmpl, task_template=self.tt2, sort_order=2,
         )
 
     def test_reorder_items(self):
@@ -634,7 +634,7 @@ class TemplateServiceReorderTest(BundlingTestBase):
     def test_reorder_in_bundle(self):
         """Reorder associations within a bundle."""
         bundle = TemplateBundle.objects.create(
-            work_order_template=self.tmpl, name='B',
+            work_template=self.tmpl, name='B',
             accounting_category=self.lit, sort_order=10,
         )
         self.a1.mapping_strategy = 'bundle'

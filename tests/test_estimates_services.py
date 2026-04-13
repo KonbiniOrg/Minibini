@@ -144,7 +144,7 @@ class TaskTemplateServiceDeleteTest(EstimatesTestBase):
             template_name='Used', accounting_category=self.lit,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wo_tmpl, task_template=tt,
+            work_template=wo_tmpl, task_template=tt,
         )
         with self.assertRaises(ValidationError):
             WorkTemplateService.delete_task_template(tt.pk)
@@ -450,7 +450,7 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
             template_name='Task', accounting_category=self.lit,
         )
         assoc = TemplateTaskAssociation.objects.create(
-            work_order_template=tmpl, task_template=tt,
+            work_template=tmpl, task_template=tt,
             mapping_strategy='direct', sort_order=1,
         )
         pk = assoc.pk
@@ -471,7 +471,7 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
             template_name='Task', accounting_category=self.lit,
         )
         assoc = TemplateTaskAssociation.objects.create(
-            work_order_template=tmpl1, task_template=tt,
+            work_template=tmpl1, task_template=tt,
             mapping_strategy='direct', sort_order=1,
         )
         with self.assertRaises(NotFoundError):

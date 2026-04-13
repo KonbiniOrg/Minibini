@@ -285,7 +285,7 @@ class GenerateTaskSortOrderTest(TestCase):
         """Bundled tasks should get the association's sort_order (within-bundle position)."""
         wot = WorkTemplate.objects.create(template_name='Test Template')
         template_bundle = TemplateBundle.objects.create(
-            work_order_template=wot, name='Prep',
+            work_template=wot, name='Prep',
             accounting_category=self.lit_labor, sort_order=1
         )
         tt1 = TaskTemplate.objects.create(
@@ -296,12 +296,12 @@ class GenerateTaskSortOrderTest(TestCase):
         )
         # Use non-sequential sort_orders (5, 10) to distinguish from auto-generated (1, 2)
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt1,
+            work_template=wot, task_template=tt1,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle,
             sort_order=5
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt2,
+            work_template=wot, task_template=tt2,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle,
             sort_order=10
         )
@@ -318,7 +318,7 @@ class GenerateTaskSortOrderTest(TestCase):
         """Unbundled tasks should get the association's sort_order (container-level position)."""
         wot = WorkTemplate.objects.create(template_name='Test Template')
         template_bundle = TemplateBundle.objects.create(
-            work_order_template=wot, name='Prep',
+            work_template=wot, name='Prep',
             accounting_category=self.lit_labor, sort_order=5
         )
         tt_direct = TaskTemplate.objects.create(
@@ -329,11 +329,11 @@ class GenerateTaskSortOrderTest(TestCase):
         )
         # Direct task at sort_order 3 (not 1, to avoid coincidental match with auto-gen)
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt_direct,
+            work_template=wot, task_template=tt_direct,
             est_qty=2, mapping_strategy='direct', sort_order=3
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt_bundled,
+            work_template=wot, task_template=tt_bundled,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle,
             sort_order=1
         )
@@ -342,7 +342,7 @@ class GenerateTaskSortOrderTest(TestCase):
             template_name='Overhead', rate=0, accounting_category=self.lit_labor
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt_excl,
+            work_template=wot, task_template=tt_excl,
             est_qty=1, mapping_strategy='exclude', sort_order=7
         )
 
@@ -372,7 +372,7 @@ class TemplateUnbundleSortOrderTest(TestCase):
         """Unbundling a template assoc should bump existing items at bundle.sort_order + 1."""
         wot = WorkTemplate.objects.create(template_name='Test')
         template_bundle = TemplateBundle.objects.create(
-            work_order_template=wot, name='Bundle',
+            work_template=wot, name='Bundle',
             accounting_category=self.lit, sort_order=5
         )
         tt1 = TaskTemplate.objects.create(
@@ -386,22 +386,22 @@ class TemplateUnbundleSortOrderTest(TestCase):
         )
         # Two bundled associations
         a1 = TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt1,
+            work_template=wot, task_template=tt1,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle,
             sort_order=1
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt2,
+            work_template=wot, task_template=tt2,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle,
             sort_order=2
         )
         # Unbundled association right after the bundle (collision point)
         a3 = TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt3,
+            work_template=wot, task_template=tt3,
             est_qty=1, mapping_strategy='direct', sort_order=6
         )
 
-        url = reverse('estimates:work_order_template_detail', args=[wot.template_id])
+        url = reverse('estimates:work_template_detail', args=[wot.template_id])
         self.client.post(url, {'remove_task': tt1.template_id})
 
         a1.refresh_from_db()

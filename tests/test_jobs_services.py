@@ -318,10 +318,10 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
             template_name='Weld', units='hours', rate=Decimal('60.00'),
             accounting_category=self.lit)
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template, task_template=self.task_tmpl_1,
+            work_template=self.template, task_template=self.task_tmpl_1,
             est_qty=Decimal('2.00'), sort_order=1)
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template, task_template=self.task_tmpl_2,
+            work_template=self.template, task_template=self.task_tmpl_2,
             est_qty=Decimal('3.00'), sort_order=2)
 
     def test_creates_work_order(self):

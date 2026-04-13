@@ -139,13 +139,13 @@ class EstWorksheetCreateFromJobTest(TestCase):
 
         # Associate tasks with the template
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template,
+            work_template=self.template,
             task_template=task_template1,
             est_qty=2.0,
             sort_order=1
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template,
+            work_template=self.template,
             task_template=task_template2,
             est_qty=5.0,
             sort_order=2

@@ -42,19 +42,19 @@ class TemplateBundleUITest(TestCase):
 
         # Create associations
         self.assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1,
             sort_order=1
         )
         self.assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=2,
             sort_order=2
         )
         self.assoc3 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=3,
             sort_order=3
@@ -62,7 +62,7 @@ class TemplateBundleUITest(TestCase):
 
     def test_bundle_creation_success(self):
         """Test successfully creating a bundle from selected tasks"""
-        url = reverse('estimates:work_order_template_detail',
+        url = reverse('estimates:work_template_detail',
                       kwargs={'template_id': self.wo_template.template_id})
 
         response = self.client.post(url, {
@@ -76,7 +76,7 @@ class TemplateBundleUITest(TestCase):
 
         # Verify bundle was created
         bundle = TemplateBundle.objects.get(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name='Test Bundle'
         )
         self.assertEqual(bundle.accounting_category, self.accounting_category)
@@ -96,7 +96,7 @@ class TemplateBundleUITest(TestCase):
 
     def test_bundle_creation_requires_two_tasks(self):
         """Test that bundling requires at least 2 tasks"""
-        url = reverse('estimates:work_order_template_detail',
+        url = reverse('estimates:work_template_detail',
                       kwargs={'template_id': self.wo_template.template_id})
 
         response = self.client.post(url, {
@@ -115,7 +115,7 @@ class TemplateBundleUITest(TestCase):
 
     def test_bundle_creation_requires_name(self):
         """Test that bundle name is required"""
-        url = reverse('estimates:work_order_template_detail',
+        url = reverse('estimates:work_template_detail',
                       kwargs={'template_id': self.wo_template.template_id})
 
         response = self.client.post(url, {
@@ -131,7 +131,7 @@ class TemplateBundleUITest(TestCase):
 
     def test_bundle_creation_requires_accounting_category(self):
         """Test that line item type is required"""
-        url = reverse('estimates:work_order_template_detail',
+        url = reverse('estimates:work_template_detail',
                       kwargs={'template_id': self.wo_template.template_id})
 
         response = self.client.post(url, {
@@ -149,7 +149,7 @@ class TemplateBundleUITest(TestCase):
         """Test that bundled tasks appear grouped in the UI"""
         # Create a bundle first
         bundle = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Existing Bundle",
             accounting_category=self.accounting_category
         )
@@ -160,7 +160,7 @@ class TemplateBundleUITest(TestCase):
         self.assoc2.bundle = bundle
         self.assoc2.save()
 
-        url = reverse('estimates:work_order_template_detail',
+        url = reverse('estimates:work_template_detail',
                       kwargs={'template_id': self.wo_template.template_id})
         response = self.client.get(url)
 

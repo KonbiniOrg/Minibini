@@ -79,12 +79,12 @@ class TaskTemplateEditViewTest(TestCase):
     def test_edit_view_hides_delete_button_when_used(self):
         """Test that edit page hides Delete button when template is used."""
         # Associate with a WorkTemplate
-        work_order_template = WorkTemplate.objects.create(
+        work_template = WorkTemplate.objects.create(
             template_name='Test WOT',
             description='Test'
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=work_order_template,
+            work_template=work_template,
             task_template=self.template,
             est_qty=1
         )
@@ -96,7 +96,7 @@ class TaskTemplateEditViewTest(TestCase):
         delete_url = reverse('estimates:task_template_delete', args=[self.template.template_id])
         self.assertNotContains(response, delete_url)
 
-    def test_edit_view_shows_work_order_templates_using_this(self):
+    def test_edit_view_shows_work_templates_using_this(self):
         """Test that edit page shows list of WorkTemplates using this TaskTemplate."""
         # Associate with WorkTemplates
         wot1 = WorkTemplate.objects.create(
@@ -108,12 +108,12 @@ class TaskTemplateEditViewTest(TestCase):
             description='Test'
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot1,
+            work_template=wot1,
             task_template=self.template,
             est_qty=1
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot2,
+            work_template=wot2,
             task_template=self.template,
             est_qty=2
         )
@@ -175,12 +175,12 @@ class TaskTemplateDeleteViewTest(TestCase):
     def test_delete_view_blocks_deletion_when_used(self):
         """Test that deletion is blocked when template is used in WorkTemplates."""
         # Associate with a WorkTemplate
-        work_order_template = WorkTemplate.objects.create(
+        work_template = WorkTemplate.objects.create(
             template_name='Test WOT',
             description='Test'
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=work_order_template,
+            work_template=work_template,
             task_template=self.template,
             est_qty=1
         )

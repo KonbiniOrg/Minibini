@@ -356,7 +356,7 @@ class WorkTemplate(models.Model):
 
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
-                work_order_template=self,
+                work_template=self,
                 task_template__is_active=True
             ).select_related('bundle').order_by('sort_order', 'task_template__template_name')
 
@@ -387,7 +387,7 @@ class TemplateBundle(models.Model):
     TemplateTaskAssociations point to a bundle to indicate they should be
     combined into a single line item on the estimate.
     """
-    work_order_template = models.ForeignKey(
+    work_template = models.ForeignKey(
         WorkTemplate,
         on_delete=models.CASCADE,
         related_name='bundles'
@@ -401,16 +401,16 @@ class TemplateBundle(models.Model):
 
     class Meta:
         db_table = 'template_bundles'
-        unique_together = ['work_order_template', 'name']
+        unique_together = ['work_template', 'name']
         ordering = ['sort_order', 'name']
 
     def __str__(self):
-        return f"{self.work_order_template.template_name} - {self.name}"
+        return f"{self.work_template.template_name} - {self.name}"
 
 
 class TemplateTaskAssociation(models.Model):
     """Association between WorkTemplate and TaskTemplate with mapping configuration."""
-    work_order_template = models.ForeignKey(WorkTemplate, on_delete=models.CASCADE)
+    work_template = models.ForeignKey(WorkTemplate, on_delete=models.CASCADE)
     task_template = models.ForeignKey('TaskTemplate', on_delete=models.CASCADE)
 
     # Quantity and ordering
@@ -434,16 +434,16 @@ class TemplateTaskAssociation(models.Model):
 
     class Meta:
         db_table = 'template_task_assoc'
-        unique_together = ['work_order_template', 'task_template']
+        unique_together = ['work_template', 'task_template']
         ordering = ['sort_order']
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        if self.bundle and self.bundle.work_order_template != self.work_order_template:
+        if self.bundle and self.bundle.work_template != self.work_template:
             raise ValidationError("Bundle must belong to the same WorkTemplate")
 
     def __str__(self):
-        return f"{self.work_order_template.template_name} -> {self.task_template.template_name}"
+        return f"{self.work_template.template_name} -> {self.task_template.template_name}"
 
 
 class TaskTemplate(models.Model):
@@ -465,7 +465,7 @@ class TaskTemplate(models.Model):
     )
 
     # Relationships
-    work_order_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='task_templates')
+    work_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='task_templates')
 
     created_date = models.DateTimeField(auto_now_add=True)
     # is_active no longer used but kept in case we change our minds later and to avoid a migration

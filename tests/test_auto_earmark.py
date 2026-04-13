@@ -142,7 +142,7 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
             units='each', rate=100, accounting_category=cat,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template,
+            work_template=self.template,
             task_template=tt, est_qty=1, sort_order=1,
         )
 

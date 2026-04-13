@@ -86,7 +86,7 @@ class GenerateTaskCopiesAccountingCategoryTests(TestCase):
             template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt,
+            work_template=wot, task_template=tt,
             est_qty=Decimal("2.00"), mapping_strategy='direct'
         )
         tasks = wot.generate_tasks_for_worksheet(self.worksheet)

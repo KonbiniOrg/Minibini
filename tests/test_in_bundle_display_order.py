@@ -58,7 +58,7 @@ class WithinBundleDisplayOrderTest(TestCase):
 
         wot = WorkTemplate.objects.create(template_name='Test')
         template_bundle = TemplateBundle.objects.create(
-            work_order_template=wot, name='Bundle',
+            work_template=wot, name='Bundle',
             accounting_category=self.lit, sort_order=1
         )
         tt1 = TaskTemplate.objects.create(
@@ -72,23 +72,23 @@ class WithinBundleDisplayOrderTest(TestCase):
         )
         # Create associations with sort_order opposite to PK order
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt1,
+            work_template=wot, task_template=tt1,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle,
             sort_order=3
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt2,
+            work_template=wot, task_template=tt2,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle,
             sort_order=1
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt3,
+            work_template=wot, task_template=tt3,
             est_qty=1, mapping_strategy='bundle', bundle=template_bundle,
             sort_order=2
         )
 
         associations = TemplateTaskAssociation.objects.filter(
-            work_order_template=wot
+            work_template=wot
         ).select_related('task_template', 'bundle')
         container_items = _build_container_items_from_associations(associations)
 
