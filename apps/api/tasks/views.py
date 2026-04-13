@@ -15,8 +15,8 @@ from apps.core.services import NotFoundError, ServiceError
 class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
     """Flat task endpoints — lifecycle actions, materials, subtasks.
 
-    These operations only need the task id; they were previously nested
-    under /api/work-orders/{wo_pk}/tasks/{task_id}/... via TaskLifecycleMixin.
+    These operations only need the task id; they live at
+    /api/tasks/{task_id}/... (tasks are job-scoped via Task.job).
 
     Any authenticated user can drive task lifecycle (start, complete,
     block, unblock, cancel) and their own time tracking (start-work,
