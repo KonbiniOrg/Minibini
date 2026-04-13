@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from django.db.models import Q, F, CharField, DecimalField
 from django.db.models.functions import Cast, Concat
-from apps.jobs.models import Job, Task, WorkOrder
+from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
 from apps.contacts.models import Contact, Business
 from apps.invoicing.models import Invoice, InvoiceLineItem

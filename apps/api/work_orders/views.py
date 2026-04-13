@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core.exceptions import ValidationError
-from apps.jobs.models import WorkOrder, Task
+from apps.jobs.models import Task
 from apps.jobs.services import WorkOrderService
 from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
 from apps.api.mixins import StatusTransitionMixin, WorkOrderTaskMixin
@@ -12,8 +12,9 @@ from apps.api.permissions import CanManageJobs, CanManageFinancials
 from .serializers import WorkOrderSerializer, TaskSerializer
 
 
+# TEMP Phase A: WorkOrder removed; whole viewset to be removed in Phase C
 class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.ModelViewSet):
-    queryset = WorkOrder.objects.all().order_by('-pk')
+    queryset = Task.objects.none()  # TEMP Phase A placeholder
     serializer_class = WorkOrderSerializer
     lookup_field = 'pk'
 

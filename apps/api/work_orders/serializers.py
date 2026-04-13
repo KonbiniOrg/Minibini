@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.jobs.models import WorkOrder, Task
+from apps.jobs.models import Task
 from apps.core.units import UnitsField
 
 
@@ -23,14 +23,16 @@ class TaskSerializer(serializers.ModelSerializer):
         return None
 
 
-class WorkOrderSerializer(serializers.ModelSerializer):
-    tasks = TaskSerializer(many=True, read_only=True)
-    template_name = serializers.CharField(source='template.name', read_only=True, default=None)
-
-    class Meta:
-        model = WorkOrder
-        fields = [
-            'work_order_id', 'job', 'template', 'template_name', 'status',
-            'tasks',
-        ]
-        read_only_fields = ['work_order_id']
+# TEMP Phase A: WorkOrder removed; restore/remove in Phase C
+# class WorkOrderSerializer(serializers.ModelSerializer):
+#     tasks = TaskSerializer(many=True, read_only=True)
+#     template_name = serializers.CharField(source='template.name', read_only=True, default=None)
+#
+#     class Meta:
+#         model = WorkOrder
+#         fields = [
+#             'work_order_id', 'job', 'template', 'template_name', 'status',
+#             'tasks',
+#         ]
+#         read_only_fields = ['work_order_id']
+WorkOrderSerializer = None  # TEMP Phase A placeholder

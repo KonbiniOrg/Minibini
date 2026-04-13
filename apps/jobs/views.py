@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
 from django.core.exceptions import ValidationError
-from .models import Job, Task, PlanTask, WorkOrder, Blep
+from .models import Job, Task, PlanTask, Blep
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.inventory.models import PlanMaterial
 from apps.core.services import TaxCalculationService, NotFoundError

@@ -11,7 +11,7 @@ from .models import (
     TaskTemplate, TemplateTaskAssociation, TemplateBundle
 )
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, WorkOrder, PlanTask, PlanBundle
+from apps.jobs.models import Job, PlanTask, PlanBundle
 from apps.core.services import TaxCalculationService, NotFoundError
 from .services import (
     EstimateService, WorkTemplateService, WorksheetService,

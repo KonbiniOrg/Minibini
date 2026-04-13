@@ -228,6 +228,7 @@ class EstWorksheet(AbstractWorkContainer):
     ]
 
     est_worksheet_id = models.AutoField(primary_key=True)
+    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
     estimate = models.ForeignKey(Estimate, on_delete=models.SET_NULL, null=True, blank=True, related_name='worksheets')
     status = models.CharField(max_length=20, choices=EST_WORKSHEET_STATUS_CHOICES, default=STATUS_DRAFT)
     version = models.IntegerField(default=1)
