@@ -873,18 +873,15 @@ class BoardService:
 
     @staticmethod
     def get_unpaid_data():
-        """Return approved jobs where work is done (unpaid sub-statuses)."""
+        """Return work_complete jobs (work done, invoicing/payment outstanding)."""
         from apps.jobs.models import Job
-        approved_jobs = Job.objects.filter(
-            status='approved'
+        unpaid_jobs = Job.objects.filter(
+            status=Job.STATUS_WORK_COMPLETE
         ).select_related('contact').order_by('due_date')
 
-        unpaid_list = []
-        for job in approved_jobs:
-            sub_status = BoardService.compute_sub_status(job)
-            if sub_status in BoardService.UNPAID_SUB_STATUSES:
-                unpaid_list.append(BoardService._serialize_unpaid_job(job))
-
+        unpaid_list = [
+            BoardService._serialize_unpaid_job(job) for job in unpaid_jobs
+        ]
         return {'jobs': unpaid_list}
 
     @staticmethod
@@ -1057,8 +1054,10 @@ class BoardService:
         """Derive the sub-status of a job based on related object states."""
         if job.status in ('draft', 'submitted'):
             return BoardService._pipeline_sub_status(job)
-        elif job.status == 'approved':
+        elif job.status == Job.STATUS_APPROVED:
             return BoardService._approved_sub_status(job)
+        elif job.status == Job.STATUS_WORK_COMPLETE:
+            return BoardService._work_complete_sub_status(job)
         return None
 
     @staticmethod
@@ -1092,13 +1091,10 @@ class BoardService:
 
         Post-WorkOrder-removal: tasks live directly on the job. The
         previous "needs-work-order" sub-status (no WO existed yet) is
-        now "needs-tasks" (no task has been created yet).
+        now "needs-tasks" (no task has been created yet). Approved jobs
+        with all tasks terminal are auto-advanced to work_complete, so
+        invoice-related sub-statuses live on _work_complete_sub_status.
         """
-        invoices = job.invoice_set.all()
-        sent_invoice = invoices.filter(status='open').first()
-        if sent_invoice:
-            return 'invoice-sent'
-
         all_tasks = job.tasks.all()
         if not all_tasks.exists():
             return 'needs-tasks'
@@ -1112,3 +1108,16 @@ class BoardService:
             return 'in-progress'
 
         return 'work-ready'
+
+    @staticmethod
+    def _work_complete_sub_status(job):
+        """Sub-status for work_complete jobs: invoice lifecycle."""
+        from apps.invoicing.models import Invoice
+        invoices = job.invoice_set.exclude(
+            status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]
+        )
+        if invoices.filter(status=Invoice.STATUS_OPEN).exists():
+            return 'invoice-sent'
+        if invoices.filter(status=Invoice.STATUS_DRAFT).exists():
+            return 'invoice-prepped'
+        return 'needs-invoice'
