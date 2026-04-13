@@ -4,23 +4,26 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from tests.base import BaseTestCase
-from apps.jobs.models import Job, Task, WorkOrder, Blep
+from apps.jobs.models import Job, Task, Blep
 from apps.jobs.services import TaskLifecycleService
 from apps.core.models import User
+
+
+def _approve_job(job):
+    """Walk a fixture job to APPROVED status."""
+    for step in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+        if job.status != step:
+            job.status = step
+            job.save()
 
 
 class TaskStatusFieldTest(BaseTestCase):
     def setUp(self):
         super().setUp()
-        from apps.jobs.models import Job
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
 
     def test_task_default_status_is_pending(self):
-        task = Task.objects.create(
-            name='Test Task',
-            work_order=self.wo,
-        )
+        task = Task.objects.create(name='Test Task', job=self.job)
         self.assertEqual(task.status, Task.STATUS_PENDING)
 
     def test_task_status_choices(self):
@@ -37,16 +40,10 @@ class TaskStatusFieldTest(BaseTestCase):
 class TaskTransitionValidationTest(BaseTestCase):
     def setUp(self):
         super().setUp()
-        from apps.jobs.models import Job
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
 
     def _create_task_with_status(self, status):
-        """Create a task and set its status bypassing clean()."""
-        task = Task.objects.create(
-            name='Test Task',
-            work_order=self.wo,
-        )
+        task = Task.objects.create(name='Test Task', job=self.job)
         if status != Task.STATUS_PENDING:
             Task.objects.filter(pk=task.pk).update(status=status)
             task.refresh_from_db()
@@ -56,7 +53,7 @@ class TaskTransitionValidationTest(BaseTestCase):
     def test_pending_to_in_progress(self):
         task = self._create_task_with_status(Task.STATUS_PENDING)
         task.status = Task.STATUS_IN_PROGRESS
-        task.full_clean()  # should not raise
+        task.full_clean()
 
     def test_pending_to_blocked(self):
         task = self._create_task_with_status(Task.STATUS_PENDING)
@@ -101,7 +98,7 @@ class TaskTransitionValidationTest(BaseTestCase):
     def test_blocked_to_complete(self):
         task = self._create_task_with_status(Task.STATUS_BLOCKED)
         task.status = Task.STATUS_COMPLETE
-        task.full_clean()  # should not raise
+        task.full_clean()
 
     # Invalid transitions
     def test_complete_to_in_progress_raises(self):
@@ -127,66 +124,17 @@ class TaskTransitionValidationTest(BaseTestCase):
 
     def test_new_task_no_transition_validation(self):
         """New task (no pk) should not trigger transition validation."""
-        task = Task(
-            name='New Task',
-            work_order=self.wo,
-            status=Task.STATUS_IN_PROGRESS,
-        )
-        task.full_clean()  # should not raise
-
-
-class WorkOrderStatusTest(BaseTestCase):
-    """Test WorkOrder status: no draft state, transition validation."""
-
-    def setUp(self):
-        super().setUp()
-        from apps.jobs.models import Job
-        self.job = Job.objects.first()
-
-    def _make_wo(self, status=WorkOrder.STATUS_INCOMPLETE):
-        wo = WorkOrder.objects.create(job=self.job)
-        if status != WorkOrder.STATUS_INCOMPLETE:
-            WorkOrder.objects.filter(pk=wo.pk).update(status=status)
-            wo.refresh_from_db()
-        return wo
-
-    def test_new_wo_starts_incomplete(self):
-        wo = WorkOrder.objects.create(job=self.job)
-        self.assertEqual(wo.status, WorkOrder.STATUS_INCOMPLETE)
-
-    def test_draft_not_in_choices(self):
-        values = {c[0] for c in WorkOrder.WORK_ORDER_STATUS_CHOICES}
-        self.assertNotIn('draft', values)
-
-    def test_incomplete_to_complete(self):
-        wo = self._make_wo(WorkOrder.STATUS_INCOMPLETE)
-        wo.status = WorkOrder.STATUS_COMPLETE
-        wo.full_clean()  # Should not raise
-
-    def test_incomplete_to_blocked(self):
-        wo = self._make_wo(WorkOrder.STATUS_INCOMPLETE)
-        wo.status = WorkOrder.STATUS_BLOCKED
-        wo.full_clean()  # Should not raise
-
-    def test_blocked_to_incomplete(self):
-        wo = self._make_wo(WorkOrder.STATUS_BLOCKED)
-        wo.status = WorkOrder.STATUS_INCOMPLETE
-        wo.full_clean()  # Should not raise
-
-    def test_complete_is_terminal(self):
-        wo = self._make_wo(WorkOrder.STATUS_COMPLETE)
-        wo.status = WorkOrder.STATUS_INCOMPLETE
-        with self.assertRaises(ValidationError):
-            wo.full_clean()
+        task = Task(name='New Task', job=self.job, status=Task.STATUS_IN_PROGRESS)
+        task.full_clean()
 
 
 class StartWorkOnPendingTaskTest(BaseTestCase):
     """start_work on a pending task promotes it and consumes materials."""
+
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        self.task = Task.objects.create(name='Test Task', job=self.job)
         self.user = User.objects.get(username='admin')
 
     def test_start_work_promotes_pending_to_in_progress(self):
@@ -207,11 +155,8 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         with self.assertRaises(ValidationError):
             TaskLifecycleService.start_work(self.task.pk, self.user)
 
-    # Obsolete post-split: Task is WO-only by type, so constructing a
-    # worksheet Task is no longer possible. (test_start_work_rejects_worksheet_task)
-
     def test_start_work_closes_users_other_open_blep(self):
-        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
+        other_task = Task.objects.create(name='Other Task', job=self.job)
         Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_IN_PROGRESS)
         old_blep = Blep.objects.create(
             task=other_task, user=self.user, start_time=timezone.now()
@@ -246,8 +191,7 @@ class CompleteTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        self.task = Task.objects.create(name='Test Task', job=self.job)
         self.user = User.objects.get(username='admin')
 
     def test_complete_from_in_progress(self):
@@ -287,31 +231,100 @@ class CompleteTaskTest(BaseTestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.blocked_reason, '')
 
-    def test_complete_last_task_auto_completes_wo(self):
-        TaskLifecycleService.complete_task(self.task.pk)
-        self.wo.refresh_from_db()
-        self.assertEqual(self.wo.status, WorkOrder.STATUS_COMPLETE)
 
-    def test_complete_task_does_not_auto_complete_wo_if_others_remain(self):
-        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
-        TaskLifecycleService.complete_task(self.task.pk)
-        self.wo.refresh_from_db()
-        self.assertEqual(self.wo.status, WorkOrder.STATUS_INCOMPLETE)
+class JobAutoWorkCompleteTest(BaseTestCase):
+    """Auto-advance of Job -> work_complete when all tasks reach terminal states."""
 
-    def test_complete_with_cancelled_siblings_auto_completes_wo(self):
-        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
-        Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_CANCELLED)
+    def setUp(self):
+        super().setUp()
+        fixture_job = Job.objects.first()
+        self.job = Job.objects.create(
+            job_number='J-AUTO-001',
+            contact=fixture_job.contact,
+        )
+        _approve_job(self.job)
+        self.task = Task.objects.create(name='Test Task', job=self.job)
+        self.user = User.objects.get(username='admin')
+
+    def test_complete_last_task_on_approved_job_advances_to_work_complete(self):
         TaskLifecycleService.complete_task(self.task.pk)
-        self.wo.refresh_from_db()
-        self.assertEqual(self.wo.status, WorkOrder.STATUS_COMPLETE)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
+
+    def test_complete_with_others_remaining_does_not_advance(self):
+        Task.objects.create(name='Other Task', job=self.job)
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_APPROVED)
+
+    def test_complete_with_cancelled_siblings_advances(self):
+        other = Task.objects.create(name='Other Task', job=self.job)
+        Task.objects.filter(pk=other.pk).update(status=Task.STATUS_CANCELLED)
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
+
+    def test_cancel_last_pending_task_on_approved_job_advances(self):
+        """Cancelling the last pending task auto-advances to work_complete."""
+        TaskLifecycleService.cancel_task(self.task.pk)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
+
+    def test_no_auto_advance_when_job_not_approved(self):
+        """Completing the last task on a DRAFT job does NOT change job status."""
+        job2 = Job.objects.create(
+            job_number='J-AUTO-DRAFT', contact=self.job.contact,
+        )
+        self.assertEqual(job2.status, Job.STATUS_DRAFT)
+        task = Task.objects.create(name='DraftTask', job=job2)
+        TaskLifecycleService.complete_task(task.pk)
+        job2.refresh_from_db()
+        self.assertEqual(job2.status, Job.STATUS_DRAFT)
+
+    def test_no_auto_advance_when_job_already_work_complete(self):
+        """A job already in work_complete does not get mutated by task completion."""
+        # Walk the job to work_complete first.
+        self.job.status = Job.STATUS_WORK_COMPLETE
+        self.job.save()
+        # Create another task somehow (bypass the expectation by updating status
+        # directly). Then complete it: the _check_job_work_complete guard only
+        # fires when job.status == APPROVED, so this is a no-op.
+        other = Task.objects.create(name='Extra', job=self.job)
+        with patch(
+            'apps.jobs.services.JobService.update_status'
+        ) as mock_update:
+            TaskLifecycleService.complete_task(other.pk)
+        mock_update.assert_not_called()
+
+
+class BlockNoRollupRegressionTest(BaseTestCase):
+    """Blocking/unblocking a task must NOT bubble up to Job status."""
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        _approve_job(self.job)
+        self.task = Task.objects.create(name='Task', job=self.job)
+
+    def test_block_task_does_not_change_job_status(self):
+        original = self.job.status
+        TaskLifecycleService.block_task(self.task.pk)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, original)
+
+    def test_unblock_task_does_not_change_job_status(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_BLOCKED)
+        original = self.job.status
+        TaskLifecycleService.unblock_task(self.task.pk)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, original)
 
 
 class BlockTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        self.task = Task.objects.create(name='Test Task', job=self.job)
         self.user = User.objects.get(username='admin')
 
     def test_block_from_pending(self):
@@ -374,35 +387,11 @@ class BlockTaskTest(BaseTestCase):
             TaskLifecycleService.unblock_task(self.task.pk)
 
 
-class TaskBlockedWorkOrderBlockedTest(BaseTestCase):
-    def setUp(self):
-        super().setUp()
-        self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
-
-    def test_workorder_blocked_when_task_blocked(self):
-        TaskLifecycleService.block_task(self.task.pk)
-        self.wo.refresh_from_db()
-        self.assertEqual(self.wo.status, WorkOrder.STATUS_BLOCKED)
-
-    def test_workorder_stays_blocked_if_already_blocked(self):
-        WorkOrder.objects.filter(pk=self.wo.pk).update(status=WorkOrder.STATUS_BLOCKED)
-        task2 = Task.objects.create(name='Task 2', work_order=self.wo)
-        TaskLifecycleService.block_task(task2.pk)
-        self.wo.refresh_from_db()
-        self.assertEqual(self.wo.status, WorkOrder.STATUS_BLOCKED)
-
-    # Obsolete post-split: Task is WO-only (no status on PlanTask).
-    # (test_worksheet_task_block_does_not_affect_workorder)
-
-
 class CancelTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        self.task = Task.objects.create(name='Test Task', job=self.job)
         self.user = User.objects.get(username='admin')
 
     def test_cancel_from_pending(self):
@@ -443,20 +432,12 @@ class CancelTaskTest(BaseTestCase):
         with self.assertRaises(ValidationError):
             TaskLifecycleService.cancel_task(self.task.pk)
 
-    def test_cancel_last_non_terminal_triggers_wo_auto_complete(self):
-        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
-        Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_COMPLETE)
-        TaskLifecycleService.cancel_task(self.task.pk)
-        self.wo.refresh_from_db()
-        self.assertEqual(self.wo.status, WorkOrder.STATUS_COMPLETE)
-
 
 class StartStopWorkTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='Test Task', work_order=self.wo)
+        self.task = Task.objects.create(name='Test Task', job=self.job)
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.task.refresh_from_db()
         self.user = User.objects.get(username='admin')
@@ -470,14 +451,13 @@ class StartStopWorkTest(BaseTestCase):
         self.assertEqual(blep.user, self.user)
 
     def test_start_work_rejects_non_startable_status(self):
-        # pending and in_progress are both startable; anything else must reject.
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)
         self.task.refresh_from_db()
         with self.assertRaises(ValidationError):
             TaskLifecycleService.start_work(self.task.pk, self.user)
 
     def test_start_work_closes_users_other_blep(self):
-        other_task = Task.objects.create(name='Other Task', work_order=self.wo)
+        other_task = Task.objects.create(name='Other Task', job=self.job)
         Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_IN_PROGRESS)
         old_blep = Blep.objects.create(
             task=other_task, user=self.user, start_time=timezone.now()
@@ -502,7 +482,6 @@ class StartStopWorkTest(BaseTestCase):
         )
         result = TaskLifecycleService.start_work(self.task.pk, self.user, action='join')
         self.assertIn('blep', result)
-        # Both bleps should be open
         open_bleps = Blep.objects.filter(task=self.task, end_time__isnull=True)
         self.assertEqual(open_bleps.count(), 2)
 
@@ -516,7 +495,6 @@ class StartStopWorkTest(BaseTestCase):
         self.assertIsNotNone(other_blep.end_time)
 
     def test_start_work_join_does_not_change_assignee(self):
-        """Joining an in-progress task should not overwrite the existing assignee."""
         self.task.assignee = self.worker2
         self.task.save()
         Blep.objects.create(

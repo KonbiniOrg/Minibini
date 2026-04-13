@@ -1,20 +1,20 @@
 """
-Tests for automatic earmarking when a WorkOrder is created.
+Tests for automatic earmarking when a Job is populated with tasks.
 
-After Plan 3, earmarks are created at WO creation time (not on
-estimate acceptance). The trigger is inside WorkOrderService's
-creation methods, which call InventoryService.create_earmarks_for_work_order().
+Earmarks are created at job-population time (not on estimate acceptance).
+The trigger is inside JobService's population methods, which call
+InventoryService.create_earmarks_for_job().
 """
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, WorkOrder, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
     TaskTemplate, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
-from apps.jobs.services import WorkOrderService
+from apps.jobs.services import JobService
 
 
 class EarmarkOnCopyFromWorksheetTest(TestCase):
@@ -66,8 +66,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
             sell_price=Decimal('12.00'),
         )
 
-        wo = WorkOrderService.create_direct(self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, self.worksheet.pk)
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 2)
         self.assertEqual(
@@ -95,8 +94,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
             sell_price=Decimal('90.00'),
         )
 
-        wo = WorkOrderService.create_direct(self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, self.worksheet.pk)
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
         earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('8.00'))
@@ -109,14 +107,12 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
             sell_price=Decimal('20.00'),
         )
 
-        wo = WorkOrderService.create_direct(self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, self.worksheet.pk)
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
     def test_no_earmarks_when_no_materials(self):
-        wo = WorkOrderService.create_direct(self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, self.worksheet.pk)
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
@@ -148,7 +144,7 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
 
     def test_no_earmarks_from_template_with_no_materials(self):
         """Template -> WO has no materials, so no earmarks."""
-        wo = WorkOrderService.create_from_template(self.template, self.job)
+        JobService.populate_from_template(self.job, self.template)
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
 
@@ -176,7 +172,7 @@ class EarmarkOnCreateFromEstimateTest(TestCase):
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()
 
-        wo = WorkOrderService.create_from_estimate(self.estimate)
+        JobService.populate_from_estimate(self.job, self.estimate)
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
 

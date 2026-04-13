@@ -7,8 +7,8 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Job, Task, PlanTask, PlanBundle, WorkOrder
-from apps.jobs.services import WorkOrderService
+from apps.jobs.models import Job, Task, PlanTask, PlanBundle
+from apps.jobs.services import JobService
 from apps.inventory.models import Material, PlanMaterial
 from apps.core.services import NotFoundError
 from apps.core.models import AccountingCategory
@@ -503,10 +503,10 @@ class WorksheetServiceFinalizeTest(EstimatesTestBase):
             WorksheetService.finalize(99999)
 
 
-# --- WorkOrderService.copy_from_worksheet ---
+# --- JobService.copy_from_worksheet ---
 
-class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
-    """Tests for WorkOrderService.copy_from_worksheet."""
+class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
+    """Tests for JobService.copy_from_worksheet."""
 
     def test_copy_tasks(self):
         from apps.estimates.services import WorksheetService
@@ -514,9 +514,8 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
         PlanTask.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
         PlanTask.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
 
-        wo = WorkOrder.objects.create(job=self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
-        self.assertEqual(Task.objects.filter(work_order=wo).count(), 2)
+        JobService.copy_from_worksheet(self.job.pk, ws.pk)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 2)
 
     def test_copy_bundles_drops_bundle_info(self):
         """PlanBundles on the worksheet are NOT copied; bundled PlanTasks become flat Tasks."""
@@ -531,10 +530,8 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
             mapping_strategy='bundle', bundle=bundle,
         )
 
-        wo = WorkOrder.objects.create(job=self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
-        # Task is copied flat; no bundle info survives
-        tasks = Task.objects.filter(work_order=wo)
+        JobService.copy_from_worksheet(self.job.pk, ws.pk)
+        tasks = Task.objects.filter(job=self.job)
         self.assertEqual(tasks.count(), 1)
         self.assertEqual(tasks.first().name, 'Bundled')
 
@@ -546,8 +543,16 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
             plan_task=task, description='Steel', quantity=Decimal('5.00'),
         )
 
-        wo = WorkOrder.objects.create(job=self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
-        wo_task = Task.objects.get(work_order=wo)
-        self.assertEqual(wo_task.materials.count(), 1)
-        self.assertEqual(wo_task.materials.first().description, 'Steel')
+        JobService.copy_from_worksheet(self.job.pk, ws.pk)
+        job_task = Task.objects.get(job=self.job)
+        self.assertEqual(job_task.materials.count(), 1)
+        self.assertEqual(job_task.materials.first().description, 'Steel')
+
+    def test_copy_with_template_sets_template(self):
+        """Template arg should be linked onto the job."""
+        from apps.estimates.services import WorksheetService, WorkTemplateService
+        tmpl = WorkTemplateService.create_template(template_name='Tmpl')
+        ws = WorksheetService.create_worksheet(self.job.pk, template=tmpl)
+        JobService.copy_from_worksheet(self.job.pk, ws.pk, template=tmpl)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.template, tmpl)

@@ -6,13 +6,13 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, WorkOrder, Task
+from apps.jobs.models import Job, Task
 from apps.inventory.models import Material, PriceListItem, Earmark
 from apps.inventory.services import InventoryService
 
 
 class EarmarkPreviewTest(TestCase):
-    """Tests for InventoryService.get_earmark_preview() — queries WO-side Materials."""
+    """Tests for InventoryService.get_earmark_preview() — queries Job-side Materials."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -29,7 +29,6 @@ class EarmarkPreviewTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-EMK-001', contact=self.contact, description='Earmark Job',
         )
-        self.work_order = WorkOrder.objects.create(job=self.job)
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
@@ -54,12 +53,12 @@ class EarmarkPreviewTest(TestCase):
         )
 
         self.task_a = Task.objects.create(
-            work_order=self.work_order,
+            job=self.job,
             name='Build cabinets',
             sort_order=1,
         )
         self.task_b = Task.objects.create(
-            work_order=self.work_order,
+            job=self.job,
             name='Install trim',
             sort_order=2,
         )
@@ -155,8 +154,8 @@ class EarmarkPreviewTest(TestCase):
         self.assertEqual(len(preview), 0)
 
 
-class CreateEarmarksForJobTest(TestCase):
-    """Tests for InventoryService.create_earmarks_for_job()."""
+class UpsertEarmarksTest(TestCase):
+    """Tests for InventoryService._upsert_earmarks() (internal upsert helper)."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -202,7 +201,7 @@ class CreateEarmarksForJobTest(TestCase):
             {'price_list_item_id': self.plywood.pk, 'quantity': Decimal('8.00')},
             {'price_list_item_id': self.screws.pk, 'quantity': Decimal('2.00')},
         ]
-        InventoryService.create_earmarks_for_job(self.job, earmark_data)
+        InventoryService._upsert_earmarks(self.job, earmark_data)
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 2)
         plywood_earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
         self.assertEqual(plywood_earmark.quantity, Decimal('8.00'))
@@ -215,7 +214,7 @@ class CreateEarmarksForJobTest(TestCase):
         earmark_data = [
             {'price_list_item_id': self.plywood.pk, 'quantity': Decimal('8.00')},
         ]
-        InventoryService.create_earmarks_for_job(self.job, earmark_data)
+        InventoryService._upsert_earmarks(self.job, earmark_data)
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 1)
         earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('8.00'))
@@ -225,5 +224,5 @@ class CreateEarmarksForJobTest(TestCase):
         earmark_data = [
             {'price_list_item_id': self.plywood.pk, 'quantity': Decimal('0.00')},
         ]
-        InventoryService.create_earmarks_for_job(self.job, earmark_data)
+        InventoryService._upsert_earmarks(self.job, earmark_data)
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)

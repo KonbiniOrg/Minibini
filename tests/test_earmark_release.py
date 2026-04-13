@@ -1,16 +1,17 @@
 """
-Tests for earmark release when a WorkOrder is completed.
+Tests for earmark release when a Job transitions into work_complete.
 """
 from decimal import Decimal
+from unittest.mock import patch
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, WorkOrder, Task
-from apps.jobs.services import WorkOrderService
-from apps.inventory.models import Material, PriceListItem, Earmark
+from apps.jobs.models import Job
+from apps.jobs.services import JobService
+from apps.inventory.models import PriceListItem, Earmark
 
 
-class EarmarkReleaseOnWOCompleteTest(TestCase):
+class EarmarkReleaseOnWorkCompleteTest(TestCase):
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -19,8 +20,12 @@ class EarmarkReleaseOnWOCompleteTest(TestCase):
         )
         self.job = Job.objects.create(
             job_number='J-REL-001', contact=self.contact,
+            status=Job.STATUS_APPROVED,
         )
-        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+        self.category = AccountingCategory.objects.get_or_create(
+            code='SVC',
+            defaults={'name': 'Service', 'taxable': False},
+        )[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.REL', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
@@ -28,41 +33,37 @@ class EarmarkReleaseOnWOCompleteTest(TestCase):
             is_inventoried=True, accounting_category=self.category,
         )
 
-    def test_earmarks_released_on_wo_complete(self):
-        """Remaining earmarks for the job are deleted when WO is completed."""
-        wo = WorkOrder.objects.create(job=self.job)
+    def test_earmarks_released_on_job_work_complete(self):
+        """Remaining earmarks for the job are deleted when job enters work_complete."""
         Earmark.objects.create(
             price_list_item=self.plywood, job=self.job,
             quantity=Decimal('3.00'),
         )
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 1)
 
-        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_COMPLETE)
+        JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
     def test_partial_earmark_released_on_complete(self):
         """Even partially consumed earmarks are cleaned up."""
-        wo = WorkOrder.objects.create(job=self.job)
         Earmark.objects.create(
             price_list_item=self.plywood, job=self.job,
             quantity=Decimal('1.50'),
         )
 
-        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_COMPLETE)
+        JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
     def test_no_error_when_no_earmarks_on_complete(self):
-        """Completing a WO with no earmarks doesn't error."""
-        wo = WorkOrder.objects.create(job=self.job)
-
-        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_COMPLETE)
+        """Transitioning with no earmarks doesn't error."""
+        JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
     def test_other_job_earmarks_untouched(self):
-        """Completing one job's WO doesn't affect another job's earmarks."""
+        """Completing one job doesn't affect another job's earmarks."""
         other_job = Job.objects.create(
             job_number='J-REL-002', contact=self.contact,
         )
@@ -70,25 +71,56 @@ class EarmarkReleaseOnWOCompleteTest(TestCase):
             price_list_item=self.plywood, job=other_job,
             quantity=Decimal('5.00'),
         )
-        wo = WorkOrder.objects.create(job=self.job)
         Earmark.objects.create(
             price_list_item=self.plywood, job=self.job,
             quantity=Decimal('3.00'),
         )
 
-        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_COMPLETE)
+        JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
         self.assertEqual(Earmark.objects.filter(job=other_job).count(), 1)
 
-    def test_blocking_wo_does_not_release_earmarks(self):
-        """Blocking a WO does NOT release earmarks — only completion does."""
-        wo = WorkOrder.objects.create(job=self.job)
-        Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job,
-            quantity=Decimal('3.00'),
+
+class EarmarkReleaseTransitionTest(TestCase):
+    """Regression tests for the release_earmarks_for_job hook firing."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='Contact',
+            email='test2@example.com', work_number='555-0200',
+        )
+        self.job = Job.objects.create(
+            job_number='J-REL-T-001', contact=self.contact,
+            status=Job.STATUS_APPROVED,
         )
 
-        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_BLOCKED)
+    def test_release_called_on_approved_to_work_complete(self):
+        """Transitioning APPROVED -> WORK_COMPLETE releases earmarks exactly once."""
+        with patch(
+            'apps.inventory.services.InventoryService.release_earmarks_for_job'
+        ) as mock_release:
+            JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
+        self.assertEqual(mock_release.call_count, 1)
 
-        self.assertEqual(Earmark.objects.filter(job=self.job).count(), 1)
+    def test_noop_transition_does_not_release(self):
+        """Transitioning WORK_COMPLETE -> WORK_COMPLETE is a no-op and doesn't release."""
+        self.job.status = Job.STATUS_WORK_COMPLETE
+        self.job.save(update_fields=['status'])
+
+        with patch(
+            'apps.inventory.services.InventoryService.release_earmarks_for_job'
+        ) as mock_release:
+            JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
+        mock_release.assert_not_called()
+
+    def test_work_complete_to_completed_does_not_release_again(self):
+        """Transitioning WORK_COMPLETE -> COMPLETED does not re-release earmarks."""
+        self.job.status = Job.STATUS_WORK_COMPLETE
+        self.job.save(update_fields=['status'])
+
+        with patch(
+            'apps.inventory.services.InventoryService.release_earmarks_for_job'
+        ) as mock_release:
+            JobService.update_status(self.job.pk, Job.STATUS_COMPLETED)
+        mock_release.assert_not_called()
