@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Minibini is a Django-based job shop management system for handling jobs, estimates, work orders, invoicing, and purchasing. Pre-production state, rapidly evolving.
+Minibini is a Django-based job shop management system for handling jobs, estimates, tasks, invoicing, and purchasing. Pre-production state, rapidly evolving.
 
 **Tech Stack:** Django 5.2+, Django REST Framework, MySQL, Python 3.12, Svelte 5 SPA (Vite)
 
@@ -46,7 +46,7 @@ Minibini/
 ├── apps/
 │   ├── api/        # REST API (DRF viewsets, serializers, permissions, mixins)
 │   ├── core/       # User, Configuration, BaseLineItem, AccountingCategory, HistoryEntry, Email
-│   ├── jobs/       # Job, WorkOrder, Task, TaskBundle, Blep
+│   ├── jobs/       # Job, Task, PlanTask, PlanBundle, Blep
 │   ├── estimates/  # Estimate, EstWorksheet, EstimateLineItem, Templates
 │   ├── contacts/   # Contact, Business, PaymentTerms
 │   ├── invoicing/  # Invoice, InvoiceLineItem
@@ -70,9 +70,9 @@ Minibini/
 - Service classes in `apps/*/services.py` contain business logic — viewsets are thin wrappers
 - Signals in `apps/jobs/signals.py` handle status change side effects
 - Abstract `BaseLineItem` shared by all line item types
-- Template system: `WorkOrderTemplate` → `TaskTemplate` → `TemplateTaskAssociation` → `TemplateBundle`
+- Template system: `WorkTemplate` → `TaskTemplate` → `TemplateTaskAssociation` → `TemplateBundle`
 
-**Workflow:** Job → EstWorksheet (from template) → Estimate → WorkOrder → Invoice
+**Workflow:** Job → EstWorksheet (from template) → Estimate → Tasks on Job → Invoice
 
 ## Key Models
 
@@ -81,23 +81,23 @@ Minibini/
 - **Configuration** - Key-value store for system settings (document numbering sequences/counters, email settings). **Never add fields** - all settings are key-value pairs
 - **HistoryEntry** - Audit log and notes linked to any entity (jobs, contacts, businesses)
 - **AccountingCategory** - Categorizes line items (e.g., labor, materials)
-- **AbstractWorkContainer** (Abstract) - Base for EstWorksheet and WorkOrder
+- **AbstractWorkContainer** (Abstract) - Base for Job and EstWorksheet; holds `template` FK and a `populate_from_template` method stub
 - **BaseLineItem** (Abstract) - Shared fields for all line items: task, price_list_item, line_number, qty, units, description, price_currency. Validates items can't have both task AND price_list_item
 - **EmailRecord** - Permanent record linking emails to jobs (message_id only, email server is source of truth)
 - **TempEmail** - Temporary cache of email metadata from IMAP (OneToOne with EmailRecord, cleaned up after retention period)
 
 ### Jobs (`apps.jobs`)
-- **Job** - Central entity. Status: draft → approved/rejected → needs_attention/blocked → complete
-- **WorkOrder** - Actual work (extends AbstractWorkContainer). Status: draft → incomplete/blocked → complete
-- **Task** - Work items belonging to either EstWorksheet OR WorkOrder (not both). Hierarchical with parent_task
-- **TaskBundle** - Groups related tasks together
+- **Job** - Central entity (extends AbstractWorkContainer). Status: draft → submitted → approved → work_complete → completed (terminal). Also rejected, cancelled (terminals). 'work_complete' means work is done; 'completed' means fully closed (invoiced/paid).
+- **Task** - Work items belonging directly to a Job (FK `Task.job`). Hierarchical with parent_task
+- **PlanTask** - Task template nodes used in worksheet planning
+- **PlanBundle** - Groups related tasks together
 - **Blep** - Time tracking (start/end times for task work)
 
 ### Estimates (`apps.estimates`)
 - **Estimate** - Quotes with versioning. Status: draft → open → accepted/rejected/superseded
-- **EstWorksheet** - Working document for estimates (extends AbstractWorkContainer). Status: draft → final → superseded
+- **EstWorksheet** - Working document for estimates (extends AbstractWorkContainer, declares its own `job` FK). Status: draft → final → superseded
 - **EstimateLineItem** - Line items for estimates (inherits BaseLineItem)
-- **Template System** - WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+- **Template System** - WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 
 ### Contacts (`apps.contacts`)
 - **Contact** - Individual person with multiple phone numbers, address, linked to Business
@@ -150,7 +150,7 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 
 ### Django HTML Views
 - `/` - Home | `/admin/` - Django admin | `/settings/` - Settings
-- `/jobs/` - Jobs (list, create, detail, work orders)
+- `/jobs/` - Jobs (list, create, detail)
 - `/estimates/` - Estimates, worksheets, templates, task-templates
 - `/contacts/` - Contacts (add, confirm-create-business)
 - `/core/` - Core (inbox, email detail, create-job-from-email)
@@ -160,13 +160,14 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 ### REST API (`/api/`)
 - `/api/auth/` - Login, logout, me (session-based auth)
 - `/api/jobs/`, `/api/contacts/`, `/api/businesses/`, `/api/payment-terms/`
-- `/api/estimates/`, `/api/est-worksheets/`, `/api/work-orders/`
+- `/api/jobs/{id}/` sub-routes: `tasks/`, `tasks/{tid}/`, `work-complete/`, `populate-from-template/`, `populate-from-estimate/`, `copy-from-worksheet/`, `reorder-tasks/`, `add-from-template/`
+- `/api/estimates/`, `/api/est-worksheets/`
 - `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
-- `/api/price-list-items/`, `/api/work-order-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
+- `/api/price-list-items/`, `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
 - `/api/emails/`, `/api/search/`, `/api/settings/`
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). Currently implements: home, contacts, businesses, jobs. Other entities still use Django HTML views.
+Hash-based routing (`#/path`). Currently implements: home, contacts, businesses, jobs, job task list (`#/jobs/:id/tasklist`). Other entities still use Django HTML views.
 
 ## Frontend (Svelte SPA)
 
@@ -260,7 +261,7 @@ with transaction.atomic():
 - API viewsets: override `get_permissions()` returning `[IsAuthenticated(), CanXxx()]`
 - API function views: `@permission_classes([IsAuthenticated, CanXxx])`
 - HTML views: `@login_required` + `@permission_required('core.can_xxx', raise_exception=True)`
-- Notes (HistoryEntry) and WO task creation are `IsAuthenticated` only
+- Notes (HistoryEntry) and adding tasks to a Job are `IsAuthenticated` only
 - Email viewing requires `CanManageJobs`
 
 See `docs/designs/2026-03-24-permission-atom-redesign.md` for atoms, group mappings, and view-to-permission mapping.
@@ -271,12 +272,12 @@ See `docs/designs/2026-03-24-permission-atom-redesign.md` for atoms, group mappi
 
 | Permission | Covers |
 |---|---|
-| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, work orders, tasks, bundles, contacts, businesses; email-to-job actions (link, unlink, create-job-from-email) |
+| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, bundles, contacts, businesses; email-to-job actions (link, unlink, create-job-from-email) |
 | `can_manage_financials` | Full CRUD on invoices, POs, bills, price list items |
 | `can_manage_time` | Edit/delete anyone's time entries (shifts + bleps) |
 | `can_manage_config` | Settings, templates, accounting categories, user admin |
 
-**`IsAuthenticated` (no atom):** Read access to jobs, work orders, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, bills, emails. Write access to notes on jobs/contacts/businesses and adding tasks to work orders.
+**`IsAuthenticated` (no atom):** Read access to jobs, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, bills, emails. Write access to notes on jobs/contacts/businesses and adding tasks to jobs.
 
 **Implicit:** All authenticated users can track own time and submit own expenses.
 
@@ -295,7 +296,7 @@ Groups are defined in fixture data, not migrations. Shops customize to suit thei
 ## Business Workflows
 
 ### Job Creation Flow
-Job → EstWorksheet (optionally from template) → Tasks → Estimate → WorkOrder → Time tracking (Bleps) → Invoice
+Job → EstWorksheet (optionally from template) → Estimate → Tasks on Job → Time tracking (Bleps) → Job advances to `work_complete` when all tasks complete → Invoice
 
 ### Email-to-Job Workflow
 1. Fetch emails from IMAP → EmailRecord + TempEmail
