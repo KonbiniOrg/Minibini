@@ -48,7 +48,6 @@ class FullURLTreeTest(BaseTestCase):
             ('POST', '/api/shifts/clock-out/'),
             ('GET', '/api/time-tracking/status/'),
             ('GET', '/api/time-tracking/active/'),
-            ('POST', '/api/expenses/'),
             ('POST', '/api/emails/send/'),
         ]
         for method, url in stubs:

@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, WorkOrder, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem, WorkTemplate, TaskTemplate
 from apps.core.models import User
 
@@ -302,19 +302,14 @@ class TaskWorkContainerTest(TestCase):
         )
         self.user = User.objects.create_user(username="testuser")
 
-    def test_task_with_workorder(self):
-        """Test creating Task on a WorkOrder."""
-        work_order = WorkOrder.objects.create(
-            job=self.job,
-            status=WorkOrder.STATUS_INCOMPLETE,
-        )
-
+    def test_task_with_job(self):
+        """Test creating Task directly on a Job (post-WorkOrder-removal)."""
         task = Task.objects.create(
-            work_order=work_order,
-            name="WorkOrder Task"
+            job=self.job,
+            name="Job Task"
         )
 
-        self.assertEqual(task.work_order, work_order)
+        self.assertEqual(task.job, self.job)
 
     def test_plan_task_with_estworksheet(self):
         """Test creating PlanTask on an EstWorksheet."""

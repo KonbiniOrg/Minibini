@@ -73,12 +73,14 @@ class JobStateTransitionTest(TestCase):
         self.assertEqual(job.status, Job.STATUS_REJECTED)
 
     def test_approved_to_completed(self):
-        """Test Approved > Completed transition."""
+        """Test Approved > Work Complete > Completed transition."""
         job = Job.objects.create(
             job_number="JOB005",
             contact=self.contact,
             status=Job.STATUS_APPROVED
         )
+        job.status = Job.STATUS_WORK_COMPLETE
+        job.save()
         job.status = Job.STATUS_COMPLETED
         job.save()
         job.refresh_from_db()
@@ -148,7 +150,7 @@ class JobStateTransitionTest(TestCase):
             contact=self.contact,
             status=Job.STATUS_REJECTED
         )
-        for status in [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
+        for status in [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
             job.status = status
             with self.assertRaises(ValidationError):
                 job.save()
@@ -239,6 +241,10 @@ class JobStateTransitionTest(TestCase):
         job.status = Job.STATUS_APPROVED
         job.save()
         self.assertEqual(job.status, Job.STATUS_APPROVED)
+
+        job.status = Job.STATUS_WORK_COMPLETE
+        job.save()
+        self.assertEqual(job.status, Job.STATUS_WORK_COMPLETE)
 
         job.status = Job.STATUS_COMPLETED
         job.save()
@@ -370,6 +376,9 @@ class JobStateTransitionTest(TestCase):
         )
         self.assertIsNone(job.completed_date)
 
+        job.status = Job.STATUS_WORK_COMPLETE
+        job.save()
+
         before_transition = timezone.now()
         job.status = Job.STATUS_COMPLETED
         job.save()
@@ -406,6 +415,8 @@ class JobStateTransitionTest(TestCase):
             contact=self.contact,
             status=Job.STATUS_APPROVED
         )
+        job.status = Job.STATUS_WORK_COMPLETE
+        job.save()
         job.status = Job.STATUS_COMPLETED
         job.save()
         job.refresh_from_db()

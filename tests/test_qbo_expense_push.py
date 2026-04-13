@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError  # noqa: F401
 from apps.core.models import Configuration, AccountingCategory
 from apps.expenses.models import Expense, Reimbursement
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, WorkOrder, Task
+from apps.jobs.models import Job, Task
 from apps.inventory.models import Material
 from apps.expenses.services import ExpenseService
 from apps.qbo.models import QBOSyncLog
@@ -560,16 +560,15 @@ class SFMOMAIntegrationTest(TestCase):
         contact.business = self.business
         contact.save()
         self.job = Job.objects.create(contact=contact, job_number='JOB-2026-0042')
-        self.wo = WorkOrder.objects.create(job=self.job)
 
     @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
-    def test_new_material_creates_bucket_task_once_per_workorder(self, mock_push):
-        """First new-material expense on a WO creates the 'Materials' bucket;
+    def test_new_material_creates_bucket_task_once_per_job(self, mock_push):
+        """First new-material expense on a Job creates the 'Materials' bucket;
         a second new-material expense reuses the same bucket."""
         mock_push.return_value = '9001'
 
         # First expense — creates task + material
-        task1 = ExpenseService.find_or_create_materials_task(work_order=self.wo)
+        task1 = ExpenseService.find_or_create_materials_task(job=self.job)
         mat1 = Material.objects.create(
             task=task1, description='Acrylic paint 1gal', quantity=2,
         )
@@ -584,7 +583,7 @@ class SFMOMAIntegrationTest(TestCase):
         )
 
         # Second expense with a new material — should reuse the bucket task
-        task2 = ExpenseService.find_or_create_materials_task(work_order=self.wo)
+        task2 = ExpenseService.find_or_create_materials_task(job=self.job)
         mat2 = Material.objects.create(
             task=task2, description='Roller brushes', quantity=3,
         )
@@ -598,8 +597,8 @@ class SFMOMAIntegrationTest(TestCase):
             material=mat2,
         )
 
-        # Assert: exactly one 'Materials' task on the WO
-        bucket_tasks = Task.objects.filter(work_order=self.wo, name='Materials')
+        # Assert: exactly one 'Materials' task on the Job
+        bucket_tasks = Task.objects.filter(job=self.job, name='Materials')
         self.assertEqual(bucket_tasks.count(), 1)
         self.assertEqual(task1.pk, task2.pk)
         self.assertEqual(bucket_tasks.first().materials.count(), 2)
@@ -619,7 +618,7 @@ class SFMOMAIntegrationTest(TestCase):
 
         # Simulate an estimate-side material: real task with a real material
         existing_task = Task.objects.create(
-            work_order=self.wo,
+            job=self.job,
             name='Paint main gallery',
         )
         existing_material = Material.objects.create(
@@ -639,11 +638,11 @@ class SFMOMAIntegrationTest(TestCase):
         )
 
         # Assert: no new task created (especially no "Materials" bucket)
-        tasks_on_wo = Task.objects.filter(work_order=self.wo)
-        self.assertEqual(tasks_on_wo.count(), 1)
-        self.assertEqual(tasks_on_wo.first(), existing_task)
+        tasks_on_job = Task.objects.filter(job=self.job)
+        self.assertEqual(tasks_on_job.count(), 1)
+        self.assertEqual(tasks_on_job.first(), existing_task)
         self.assertFalse(
-            Task.objects.filter(work_order=self.wo, name='Materials').exists()
+            Task.objects.filter(job=self.job, name='Materials').exists()
         )
 
         # Assert: no new material created

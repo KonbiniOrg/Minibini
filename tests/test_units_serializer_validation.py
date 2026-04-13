@@ -18,11 +18,8 @@ class TaskSerializerUnitsValidationTest(BaseTestCase):
         job = Job.objects.first()
         if not job:
             self.skipTest('No job in fixture')
-        wo = job.workorder_set.first()
-        if not wo:
-            self.skipTest('No work order in fixture')
         response = self.client.post(
-            f'/api/work-orders/{wo.pk}/tasks/',
+            f'/api/jobs/{job.pk}/tasks/',
             {'name': 'Test Task', 'units': 'hours'},
             format='json',
         )
@@ -32,11 +29,8 @@ class TaskSerializerUnitsValidationTest(BaseTestCase):
         job = Job.objects.first()
         if not job:
             self.skipTest('No job in fixture')
-        wo = job.workorder_set.first()
-        if not wo:
-            self.skipTest('No work order in fixture')
         response = self.client.post(
-            f'/api/work-orders/{wo.pk}/tasks/',
+            f'/api/jobs/{job.pk}/tasks/',
             {'name': 'Test Task', 'units': 'invalid_xyz'},
             format='json',
         )

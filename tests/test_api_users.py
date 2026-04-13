@@ -3,7 +3,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.jobs.models import Task, Blep, Job, WorkOrder
+from apps.jobs.models import Task, Blep, Job
 from apps.jobs.services import BlepService
 
 

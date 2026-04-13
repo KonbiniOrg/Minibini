@@ -1,13 +1,13 @@
 from django.test import TestCase
 from django.urls import reverse
-from apps.jobs.models import Task, PlanTask, WorkOrder, Job
+from apps.jobs.models import Task, PlanTask, Job
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import User
 
 
 class TaskReorderingTestCase(TestCase):
-    """Test reordering of tasks within EstWorksheets and WorkOrders"""
+    """Test reordering of tasks within EstWorksheets."""
 
     def setUp(self):
         """Set up test data"""
@@ -74,30 +74,24 @@ class TaskReorderingTestCase(TestCase):
             units='hours'
         )
 
-        # Create a work order
-        self.work_order = WorkOrder.objects.create(
-            job=self.job,
-            status=WorkOrder.STATUS_INCOMPLETE
-        )
-
-        # Create tasks for the work order
+        # Create tasks directly on the job (post-WorkOrder-removal)
         self.wo_task1 = Task.objects.create(
             name='WO Task 1',
-            work_order=self.work_order,
+            job=self.job,
             est_qty=1.0,
             rate=50.00,
             units='hours'
         )
         self.wo_task2 = Task.objects.create(
             name='WO Task 2',
-            work_order=self.work_order,
+            job=self.job,
             est_qty=2.0,
             rate=75.00,
             units='hours'
         )
         self.wo_task3 = Task.objects.create(
             name='WO Task 3',
-            work_order=self.work_order,
+            job=self.job,
             est_qty=3.0,
             rate=100.00,
             units='hours'
@@ -112,8 +106,8 @@ class TaskReorderingTestCase(TestCase):
         self.assertEqual(self.task2.sort_order, 2)
         self.assertEqual(self.task3.sort_order, 3)
 
-    def test_work_order_tasks_have_sort_orders(self):
-        """Test that work order tasks are automatically assigned line numbers"""
+    def test_job_tasks_have_sort_orders(self):
+        """Test that job tasks are automatically assigned line numbers"""
         self.assertIsNotNone(self.wo_task1.sort_order)
         self.assertIsNotNone(self.wo_task2.sort_order)
         self.assertIsNotNone(self.wo_task3.sort_order)
@@ -219,42 +213,6 @@ class TaskReorderingTestCase(TestCase):
         # Task 1 should still have original sort_order
         self.assertEqual(self.task1.sort_order, 1)
 
-    def test_reorder_work_order_task_down(self):
-        """Test moving a work order task down"""
-        url = reverse('jobs:task_reorder_work_order', kwargs={
-            'work_order_id': self.work_order.work_order_id,
-            'task_id': self.wo_task1.task_id,
-            'direction': 'down'
-        })
-        response = self.client.post(url)
-
-        # Should redirect back to work order detail
-        self.assertEqual(response.status_code, 302)
-
-        # Refresh tasks from database
-        self.wo_task1.refresh_from_db()
-        self.wo_task2.refresh_from_db()
-
-        # WO Task 1 should now have sort_order 2, WO Task 2 should have sort_order 1
-        self.assertEqual(self.wo_task1.sort_order, 2)
-        self.assertEqual(self.wo_task2.sort_order, 1)
-
-    def test_reorder_work_order_task_up(self):
-        """Test moving a work order task up"""
-        url = reverse('jobs:task_reorder_work_order', kwargs={
-            'work_order_id': self.work_order.work_order_id,
-            'task_id': self.wo_task3.task_id,
-            'direction': 'up'
-        })
-        response = self.client.post(url)
-
-        # Should redirect back to work order detail
-        self.assertEqual(response.status_code, 302)
-
-        # Refresh tasks from database
-        self.wo_task2.refresh_from_db()
-        self.wo_task3.refresh_from_db()
-
-        # WO Task 3 should now have sort_order 2, WO Task 2 should have sort_order 3
-        self.assertEqual(self.wo_task3.sort_order, 2)
-        self.assertEqual(self.wo_task2.sort_order, 3)
+    # Note: HTML-level reorder for work-order tasks was removed with
+    # WorkOrder removal. Task reordering on the job is exercised via the
+    # REST API (/api/tasks/reorder/) in tests/test_board_api.py.

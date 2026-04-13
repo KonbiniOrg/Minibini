@@ -1,5 +1,8 @@
 """
 Tests for template-based creation workflows and status-based validation.
+
+After WorkOrder removal, WorkOrderService is gone; Tasks are created directly
+against a Job. These tests cover the surviving Task/Template workflows.
 """
 
 from django.test import TestCase
@@ -8,184 +11,67 @@ from decimal import Decimal
 
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
-from apps.jobs.models import Job, WorkOrder, Task
+from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate, EstimateLineItem, WorkTemplate, TaskTemplate
-from apps.jobs.services import WorkOrderService, TaskService
+from apps.jobs.services import TaskService
 from apps.estimates.services import EstimateService
 from apps.core.models import User
 
 
-class WorkOrderCreationWorkflowTest(TestCase):
-    """Test WorkOrder creation workflows and status validations."""
-    
-    def setUp(self):
-        # Create Configuration for number generation
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
-        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
-        Configuration.objects.create(key='estimate_counter', value='0')
-        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        Configuration.objects.create(key='po_counter', value='0')
-
-        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
-        self.job = Job.objects.create(
-            job_number="JOB001",
-            contact=self.contact,
-            description="Test job"
-        )
-        self.user = User.objects.create_user(username="testuser")
-
-    def test_direct_work_order_creation(self):
-        """Test direct WorkOrder creation starts in incomplete status."""
-        work_order = WorkOrderService.create_direct(self.job)
-
-        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
-        self.assertEqual(work_order.job, self.job)
-        self.assertIsNone(work_order.template)
-    
-    def test_work_order_from_open_estimate(self):
-        """Test WorkOrder creation from Open estimate."""
-        estimate = Estimate.objects.create(
-            job=self.job,
-            estimate_number="EST001",
-            status=Estimate.STATUS_OPEN
-        )
-        
-        work_order = WorkOrderService.create_from_estimate(estimate)
-        
-        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
-        self.assertEqual(work_order.job, self.job)
-    
-    def test_work_order_from_accepted_estimate(self):
-        """Test WorkOrder creation from Accepted estimate."""
-        estimate = Estimate.objects.create(
-            job=self.job,
-            estimate_number="EST001",
-            status=Estimate.STATUS_ACCEPTED
-        )
-        
-        work_order = WorkOrderService.create_from_estimate(estimate)
-        
-        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
-        self.assertEqual(work_order.job, self.job)
-    
-    def test_work_order_from_draft_estimate_rejected(self):
-        """Test WorkOrder creation from Draft estimate is rejected."""
-        estimate = Estimate.objects.create(
-            job=self.job,
-            estimate_number="EST001",
-            status=Job.STATUS_DRAFT
-        )
-        
-        with self.assertRaises(ValidationError) as context:
-            WorkOrderService.create_from_estimate(estimate)
-        
-        self.assertIn("Only Open and Accepted estimates", str(context.exception))
-    
-    def test_work_order_from_rejected_estimate_rejected(self):
-        """Test WorkOrder creation from Rejected estimate is rejected."""
-        estimate = Estimate.objects.create(
-            job=self.job,
-            estimate_number="EST001",
-            status=Job.STATUS_REJECTED
-        )
-        
-        with self.assertRaises(ValidationError) as context:
-            WorkOrderService.create_from_estimate(estimate)
-        
-        self.assertIn("Only Open and Accepted estimates", str(context.exception))
-    
-    def test_work_order_from_active_template(self):
-        """Test WorkOrder creation from active template."""
-        template = WorkTemplate.objects.create(
-            template_name="Test Template",
-            description="Test description",
-            is_active=True
-        )
-        
-        work_order = WorkOrderService.create_from_template(template, self.job)
-        
-        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
-        self.assertEqual(work_order.job, self.job)
-        self.assertEqual(work_order.template, template)
-    
-    def test_work_order_from_inactive_template_rejected(self):
-        """Test WorkOrder creation from inactive template is rejected."""
-        template = WorkTemplate.objects.create(
-            template_name="Inactive Template",
-            is_active=False
-        )
-        
-        with self.assertRaises(ValidationError) as context:
-            WorkOrderService.create_from_template(template, self.job)
-        
-        self.assertIn("is not active", str(context.exception))
+def _seed_numbering():
+    Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+    Configuration.objects.create(key='job_counter', value='0')
+    Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+    Configuration.objects.create(key='estimate_counter', value='0')
+    Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+    Configuration.objects.create(key='invoice_counter', value='0')
+    Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
+    Configuration.objects.create(key='po_counter', value='0')
 
 
 class EstimateCreationWorkflowTest(TestCase):
     """Test Estimate creation workflows and status validations."""
-    
-    def setUp(self):
-        # Create Configuration for number generation
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
-        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
-        Configuration.objects.create(key='estimate_counter', value='0')
-        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        Configuration.objects.create(key='po_counter', value='0')
 
+    def setUp(self):
+        _seed_numbering()
         self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
             description="Test job"
         )
-    
+
     def test_direct_estimate_creation(self):
         """Test direct Estimate creation starts in draft status."""
         estimate = EstimateService.create_direct(self.job)
 
         self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
         self.assertEqual(estimate.job, self.job)
-        # Estimate number is auto-generated
         self.assertTrue(estimate.estimate_number.startswith('EST-'))
-    
-class TaskCreationWorkflowTest(TestCase):
-    """Test Task creation workflows."""
-    
-    def setUp(self):
-        # Create Configuration for number generation
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
-        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
-        Configuration.objects.create(key='estimate_counter', value='0')
-        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        Configuration.objects.create(key='po_counter', value='0')
 
+
+class TaskCreationWorkflowTest(TestCase):
+    """Test Task creation workflows against a Job."""
+
+    def setUp(self):
+        _seed_numbering()
         self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
             job_number="JOB001",
             contact=self.contact,
             description="Test job"
         )
-        self.work_order = WorkOrder.objects.create(job=self.job)
         self.user = User.objects.create_user(username="testuser")
 
     def test_direct_task_creation(self):
-        """Test direct Task creation."""
+        """Test direct Task creation on a Job."""
         task = TaskService.create_direct(
-            work_order=self.work_order,
+            job=self.job,
             name="Test Task",
-            assignee=self.user
+            assignee=self.user,
         )
-        
-        self.assertEqual(task.work_order, self.work_order)
+
+        self.assertEqual(task.job, self.job)
         self.assertEqual(task.name, "Test Task")
         self.assertEqual(task.assignee, self.user)
 
@@ -195,25 +81,25 @@ class TaskCreationWorkflowTest(TestCase):
             template_name="Test Task Template",
             is_active=True
         )
-        
-        task = TaskService.create_from_template(template, self.work_order, self.user)
-        
-        self.assertEqual(task.work_order, self.work_order)
+
+        task = TaskService.create_from_template(template, self.job, self.user)
+
+        self.assertEqual(task.job, self.job)
         self.assertEqual(task.name, template.template_name)
         self.assertEqual(task.assignee, self.user)
-    
+
     def test_task_from_inactive_template_rejected(self):
         """Test Task creation from inactive template is rejected."""
         template = TaskTemplate.objects.create(
             template_name="Inactive Template",
             is_active=False
         )
-        
+
         with self.assertRaises(ValidationError) as context:
-            TaskService.create_from_template(template, self.work_order)
-        
+            TaskService.create_from_template(template, self.job)
+
         self.assertIn("is not active", str(context.exception))
-    
+
     def test_task_template_new_fields(self):
         """Test TaskTemplate with new units and rate fields."""
         template = TaskTemplate.objects.create(
@@ -223,25 +109,23 @@ class TaskCreationWorkflowTest(TestCase):
             description="Standard labor template with pricing",
             is_active=True
         )
-        
+
         self.assertEqual(template.units, "hours")
         self.assertEqual(template.rate, Decimal('85.00'))
-        
-        # Test that tasks created from template inherit the field values
-        task = TaskService.create_from_template(template, self.work_order, self.user)
-        # Note: Based on current service implementation, we'd need to check if
-        # the service copies these values. For now, just test template creation.
-        
+
+        # Sanity check: can create task from this template
+        TaskService.create_from_template(template, self.job, self.user)
+
     def test_task_template_new_fields_optional(self):
         """Test TaskTemplate new fields are optional."""
         template = TaskTemplate.objects.create(
             template_name="Simple Template",
             is_active=True
         )
-        
-        self.assertEqual(template.units, "none")  # CharField defaults to 'none'
-        self.assertIsNone(template.rate)  # DecimalField null=True
-    
+
+        self.assertEqual(template.units, "none")
+        self.assertIsNone(template.rate)
+
     def test_task_template_calculation_example(self):
         """Test using TaskTemplate fields with association for calculations."""
         template = TaskTemplate.objects.create(
@@ -250,8 +134,7 @@ class TaskCreationWorkflowTest(TestCase):
             rate=Decimal('12.75'),
             is_active=True
         )
-        
-        # Create association with quantity
+
         from apps.estimates.models import TemplateTaskAssociation, WorkTemplate
         work_template = WorkTemplate.objects.create(template_name="Test WO Template")
         association = TemplateTaskAssociation.objects.create(
@@ -259,143 +142,6 @@ class TaskCreationWorkflowTest(TestCase):
             task_template=template,
             est_qty=Decimal('150.00')
         )
-        
-        # Example calculation that could be used in business logic
+
         estimated_cost = template.rate * association.est_qty if template.rate and association.est_qty else Decimal('0.00')
         self.assertEqual(estimated_cost, Decimal('1912.50'))
-
-
-class TemplateIntegrationTest(TestCase):
-    """Test full template workflow integration."""
-    
-    def setUp(self):
-        # Create Configuration for number generation
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
-        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
-        Configuration.objects.create(key='estimate_counter', value='0')
-        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        Configuration.objects.create(key='po_counter', value='0')
-
-        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
-        self.job = Job.objects.create(
-            job_number="JOB001",
-            contact=self.contact,
-            description="Test job"
-        )
-        self.user = User.objects.create_user(username="testuser")
-
-    def test_full_template_workflow(self):
-        """Test complete workflow: Template -> WorkOrder -> Tasks."""
-        # Create WorkTemplate with TaskTemplates
-        work_template = WorkTemplate.objects.create(
-            template_name="Complete Job Template",
-            description="Template for complete job workflow",
-            is_active=True
-        )
-        
-        task_template1 = TaskTemplate.objects.create(
-            template_name="Preparation Task",
-            is_active=True
-        )
-
-        task_template2 = TaskTemplate.objects.create(
-            template_name="Execution Task",
-            is_active=True
-        )
-        
-        # Create associations with quantities
-        from apps.estimates.models import TemplateTaskAssociation
-        TemplateTaskAssociation.objects.create(
-            work_template=work_template,
-            task_template=task_template1,
-            est_qty=Decimal('1.00')
-        )
-        TemplateTaskAssociation.objects.create(
-            work_template=work_template,
-            task_template=task_template2,
-            est_qty=Decimal('1.00')
-        )
-        
-        # Generate WorkOrder from template
-        work_order = WorkOrderService.create_from_template(work_template, self.job)
-        
-        # Verify WorkOrder
-        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
-        self.assertEqual(work_order.job, self.job)
-        self.assertEqual(work_order.template, work_template)
-        
-        # Verify Tasks were created
-        tasks = work_order.tasks.all()
-        self.assertEqual(tasks.count(), 2)
-        
-        task_names = [task.name for task in tasks]
-        self.assertIn("Preparation Task", task_names)
-        self.assertIn("Execution Task", task_names)
-        
-        # Verify task names match template names
-        for task in tasks:
-            self.assertIn(task.name, [task_template1.template_name, task_template2.template_name])
-
-
-class StatusTransitionPreventionTest(TestCase):
-    """Test that status transitions prevent circular creation."""
-    
-    def setUp(self):
-        # Create Configuration for number generation
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
-        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
-        Configuration.objects.create(key='estimate_counter', value='0')
-        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
-        Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        Configuration.objects.create(key='po_counter', value='0')
-
-        self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
-        self.job = Job.objects.create(
-            job_number="JOB001",
-            contact=self.contact,
-            description="Test job"
-        )
-    
-    def test_circular_creation_prevention(self):
-        """Test that circular creation is prevented by status rules."""
-        # Create draft estimate
-        estimate = Estimate.objects.create(
-            job=self.job,
-            estimate_number="EST001",
-            status=Job.STATUS_DRAFT
-        )
-        
-        # Draft estimate cannot create WorkOrder
-        with self.assertRaises(ValidationError):
-            WorkOrderService.create_from_estimate(estimate)
-        
-        # Change estimate to open
-        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
-        estimate.status = Estimate.STATUS_OPEN
-        estimate.save()
-
-        # Open estimate can create WorkOrder (incomplete status)
-        work_order = WorkOrderService.create_from_estimate(estimate)
-        self.assertEqual(work_order.status, WorkOrder.STATUS_INCOMPLETE)
-    
-    def test_estimate_never_returns_to_draft(self):
-        """Test business rule: Estimate never goes back to draft once moved to open."""
-        estimate = Estimate.objects.create(
-            job=self.job,
-            estimate_number="EST001",
-            status=Job.STATUS_DRAFT
-        )
-        
-        # Move to open
-        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
-        estimate.status = Estimate.STATUS_OPEN
-        estimate.save()
-
-        # This business rule would be enforced in model validation or admin interface
-        # For now, we document that this should not happen
-        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)

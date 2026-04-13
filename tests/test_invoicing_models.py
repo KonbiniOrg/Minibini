@@ -2,7 +2,7 @@ from django.test import TestCase
 from decimal import Decimal
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import PriceListItem
-from apps.jobs.models import Job, Task, WorkOrder
+from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.contacts.models import Contact, Business
@@ -137,9 +137,8 @@ class InvoiceLineItemModelTest(TestCase):
             job=self.job,
             estimate_number="EST001"
         )
-        self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.work_order,
+            job=self.job,
             name="Test Task",
         )
         self.purchase_order = PurchaseOrder.objects.create(

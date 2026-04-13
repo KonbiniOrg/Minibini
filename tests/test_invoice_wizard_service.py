@@ -27,6 +27,8 @@ class OpenForJobTest(TestCase):
         self.completed_job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0004'
         )
+        self.completed_job.status = Job.STATUS_WORK_COMPLETE
+        self.completed_job.save()
         self.completed_job.status = Job.STATUS_COMPLETED
         self.completed_job.save()
 
@@ -119,7 +121,7 @@ class GetSourcePoolTest(TestCase):
 
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
-    def test_tree_includes_work_orders_and_tasks(self):
+    def test_tree_includes_tasks(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         self.assertIn('tasks', pool)
         task_names = [t['name'] for t in pool['tasks']]
