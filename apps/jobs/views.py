@@ -16,7 +16,7 @@ from .services import JobService, TaskService
 from apps.inventory.services import InventoryService
 from .forms import (
     JobCreateForm, JobEditForm,
-    TaskEditForm, WorkOrderStatusForm,
+    TaskEditForm,
     MaterialForm
 )
 from apps.purchasing.models import PurchaseOrder
@@ -327,84 +327,6 @@ def task_edit(request, task_id):
         'form': form,
         'task': task,
     })
-
-
-@login_required
-def work_order_list(request):
-    work_orders = WorkOrder.objects.all().order_by('-work_order_id')
-    return render(request, 'jobs/work_order_list.html', {'work_orders': work_orders})
-
-@login_required
-def work_order_detail(request, work_order_id):
-    work_order = get_object_or_404(WorkOrder, work_order_id=work_order_id)
-
-    # Handle status update POST request
-    if request.method == 'POST' and 'update_status' in request.POST:
-        if work_order.status != WorkOrder.STATUS_COMPLETE:
-            form = WorkOrderStatusForm(request.POST, current_status=work_order.status)
-            if form.is_valid():
-                new_status = form.cleaned_data['status']
-                if new_status != work_order.status:
-                    WorkOrderService.update_status(work_order.pk, new_status)
-                    messages.success(request, f'Work Order status updated to {new_status.title()}')
-            return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
-        else:
-            messages.error(request, 'Cannot update the status of a completed work order.')
-            return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
-
-    # Get all tasks for this work order with blep summaries
-    all_tasks = Task.objects.filter(work_order=work_order).order_by('sort_order', 'task_id')
-    tasks_with_levels = _build_task_hierarchy(all_tasks)
-
-    # Calculate blep summary for each task
-    bleps_by_task = {}
-    for blep in Blep.objects.filter(task__work_order=work_order).select_related('user'):
-        bleps_by_task.setdefault(blep.task_id, []).append(blep)
-
-    for item in tasks_with_levels:
-        task_bleps = bleps_by_task.get(item['task'].task_id, [])
-        if not task_bleps:
-            item['blep_summary'] = "-"
-        else:
-            from datetime import timedelta
-            total = timedelta()
-            for b in task_bleps:
-                if b.elapsed:
-                    total += b.elapsed
-            total_seconds = int(total.total_seconds())
-            hours, remainder = divmod(total_seconds, 3600)
-            minutes, _ = divmod(remainder, 60)
-            count = len(task_bleps)
-            active = any(b.end_time is None for b in task_bleps)
-            time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-            parts = [time_str, f"({count} session{'s' if count != 1 else ''})"]
-            if active:
-                parts.append("ACTIVE")
-            item['blep_summary'] = " ".join(parts)
-
-    # Create status form for display (unless completed)
-    status_form = WorkOrderStatusForm(current_status=work_order.status) if work_order.status != WorkOrder.STATUS_COMPLETE else None
-
-    return render(request, 'jobs/work_order_detail.html', {
-        'work_order': work_order,
-        'tasks': tasks_with_levels,
-        'status_form': status_form,
-        'show_reorder': True,
-        'reorder_url_name': 'jobs:task_reorder_work_order',
-        'container_id': work_order.work_order_id
-    })
-
-
-@login_required
-@permission_required('core.can_manage_jobs', raise_exception=True)
-@require_POST
-def task_reorder_work_order(request, work_order_id, task_id, direction):
-    """Reorder tasks within a WorkOrder by swapping sort_order."""
-    try:
-        TaskService.reorder_tasks(task_id, direction)
-    except (ValidationError, NotFoundError) as e:
-        messages.error(request, str(e.message if hasattr(e, 'message') else e))
-    return redirect('jobs:work_order_detail', work_order_id=work_order_id)
 
 
 @login_required

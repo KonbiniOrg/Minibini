@@ -175,35 +175,6 @@ class TaskFromTemplateForm(forms.Form):
     )
 
 
-class WorkOrderStatusForm(forms.Form):
-    """Form for changing WorkOrder status"""
-    VALID_TRANSITIONS = {
-        'draft': ['incomplete', 'blocked'],
-        'incomplete': ['blocked', 'complete'],
-        'blocked': ['incomplete', 'complete'],
-        'complete': []
-    }
-
-    status = forms.ChoiceField(choices=[], required=True)
-
-    def __init__(self, *args, **kwargs):
-        current_status = kwargs.pop('current_status', 'draft')
-        super().__init__(*args, **kwargs)
-
-        # Set valid status choices based on current status
-        valid_statuses = self.VALID_TRANSITIONS.get(current_status, [])
-        choices = [(current_status, f'{current_status.title()} (current)')]
-        choices.extend([(s, s.title()) for s in valid_statuses])
-
-        self.fields['status'].choices = choices
-        self.fields['status'].initial = current_status
-
-    def clean_status(self):
-        status = self.cleaned_data['status']
-        # Additional validation if needed
-        return status
-
-
 class MaterialForm(forms.ModelForm):
     """Form for adding/editing a PlanMaterial on a PlanTask (worksheet-side)."""
     description = forms.CharField(max_length=255, required=False)
