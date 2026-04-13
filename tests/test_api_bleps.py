@@ -32,6 +32,14 @@ class BlepListAndRetrieveTest(BaseTestCase):
         self.assertEqual(resp.data['blep_id'], self.blep.blep_id)
         self.assertEqual(resp.data['task'], self.task.pk)
 
+    def test_retrieve_blep_includes_job_info(self):
+        """Serializer exposes job_id, job_number, job_name via task.job."""
+        resp = self.client.get(f'/api/bleps/{self.blep.blep_id}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['job_id'], self.job.pk)
+        self.assertEqual(resp.data['job_number'], self.job.job_number)
+        self.assertEqual(resp.data['job_name'], self.job.name)
+
     def test_list_requires_auth(self):
         self.client.force_authenticate(user=None)
         resp = self.client.get('/api/bleps/')
