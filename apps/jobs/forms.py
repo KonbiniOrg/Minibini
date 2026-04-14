@@ -116,7 +116,7 @@ class JobEditForm(forms.ModelForm):
                 # Draft: Can edit everything except job_number and completed_date
                 pass  # All fields already available
 
-            elif current_status in ['submitted', 'approved']:
+            elif current_status in ['submitted', 'approved', 'work_complete']:
                 # Can't change contact or created_date
                 self.fields['contact'].disabled = True
                 self.fields['contact'].help_text = 'Contact cannot be changed in this status'

@@ -43,7 +43,7 @@ def job_list(request):
     # (allows explicitly clearing all statuses via empty submission)
     using_default_statuses = False
     if not status_filters and not request.GET:
-        status_filters = [Job.STATUS_DRAFT, Job.STATUS_APPROVED]
+        status_filters = [Job.STATUS_DRAFT, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE]
         using_default_statuses = True
 
     # Track if any filters are applied (beyond defaults)
@@ -76,15 +76,16 @@ def job_list(request):
     if business_filter:
         jobs = jobs.filter(contact__business_id=business_filter)
 
-    # Custom status ordering: Draft (0) → Approved (1) → Completed (2) → Rejected (3) → Cancelled (4)
+    # Custom status ordering: Draft → Submitted → Approved → WorkComplete → Completed → Rejected → Cancelled
     status_order = Case(
         When(status=Job.STATUS_DRAFT, then=Value(0)),
-        When(status=Job.STATUS_APPROVED, then=Value(1)),
-        When(status=Job.STATUS_SUBMITTED, then=Value(2)),
-        When(status=Job.STATUS_COMPLETED, then=Value(3)),
-        When(status=Job.STATUS_REJECTED, then=Value(4)),
-        When(status=Job.STATUS_CANCELLED, then=Value(5)),
-        default=Value(6),
+        When(status=Job.STATUS_SUBMITTED, then=Value(1)),
+        When(status=Job.STATUS_APPROVED, then=Value(2)),
+        When(status=Job.STATUS_WORK_COMPLETE, then=Value(3)),
+        When(status=Job.STATUS_COMPLETED, then=Value(4)),
+        When(status=Job.STATUS_REJECTED, then=Value(5)),
+        When(status=Job.STATUS_CANCELLED, then=Value(6)),
+        default=Value(7),
         output_field=IntegerField(),
     )
 

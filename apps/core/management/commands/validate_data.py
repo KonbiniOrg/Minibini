@@ -185,7 +185,7 @@ class Command(BaseCommand):
             if j.status not in valid_statuses:
                 self.errors.append(f'Job {j.job_number}: invalid status "{j.status}"')
             # Approved and beyond should have start_date (set on approval)
-            if j.status in (Job.STATUS_APPROVED, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED) and not j.start_date:
+            if j.status in (Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED) and not j.start_date:
                 self.warnings.append(f'Job {j.job_number}: status is {j.status} but no start_date')
             # Terminal states should have completed_date
             if j.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED) and not j.completed_date:
@@ -517,10 +517,10 @@ class Command(BaseCommand):
                     self.errors.append(
                         f'Job {job.job_number}: status is "approved" but has no accepted estimate'
                     )
-            elif job.status == Job.STATUS_COMPLETED:
+            elif job.status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED):
                 if accepted_count == 0:
                     self.warnings.append(
-                        f'Job {job.job_number}: status is "completed" but has no accepted estimate'
+                        f'Job {job.job_number}: status is "{job.status}" but has no accepted estimate'
                     )
             elif job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED):
                 if accepted_count > 0:
@@ -538,7 +538,7 @@ class Command(BaseCommand):
                     )
 
             # Completed/cancelled jobs should not have unresolved estimates
-            if job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
+            if job.status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
                 unresolved = Estimate.objects.filter(
                     job=job, status__in=(Estimate.STATUS_DRAFT, Estimate.STATUS_OPEN)
                 )
@@ -690,7 +690,7 @@ class Command(BaseCommand):
         from apps.inventory.models import Earmark
 
         for em in Earmark.objects.select_related('job', 'price_list_item').all():
-            if em.job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_REJECTED):
+            if em.job.status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_REJECTED):
                 self.warnings.append(
                     f'Earmark {em.pk}: {em.price_list_item.code} earmarked for '
                     f'job {em.job.job_number} which is "{em.job.status}"'
