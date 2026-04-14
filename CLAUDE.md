@@ -65,7 +65,7 @@ Minibini/
 ```
 
 **Key Patterns:**
-- HTML views: function-based views only (no CBVs)
+- HTML views: function-based views only (no CBVs); deprecated and will be removed
 - API views: DRF ModelViewSets with reusable mixins (StatusTransitionMixin, LineItemMixin, TaskBundleMixin, TaskLifecycleMixin)
 - Service classes in `apps/*/services.py` contain business logic — viewsets are thin wrappers
 - Signals in `apps/jobs/signals.py` handle status change side effects
@@ -167,7 +167,7 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 - `/api/emails/`, `/api/search/`, `/api/settings/`
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). Currently implements: home, contacts, businesses, jobs, job task list (`#/jobs/:id/tasklist`). Other entities still use Django HTML views.
+Hash-based routing (`#/path`). Currently implements: home, contacts, businesses, jobs, job task list (`#/jobs/:id/tasklist`), some configuration. Other entities still use Django HTML views for the moment.
 
 ## Frontend (Svelte SPA)
 
