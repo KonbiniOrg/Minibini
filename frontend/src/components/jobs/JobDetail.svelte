@@ -53,7 +53,7 @@
 
   // Determine which accordion opens by default
   let defaultOpen = $derived.by(() => {
-    if (job.status === 'completed') {
+    if (job.status === 'work_complete' || job.status === 'completed') {
       if (invoices?.results?.length > 0) return 'invoices';
     }
     if ((job.tasks || []).length > 0) return 'tasks';
@@ -85,7 +85,7 @@
   let draftInvoice = $derived(invList.find(inv => inv.status === 'draft') || null);
   let canBuildInvoice = $derived(
     (canManageJobs || canManageFinancials) &&
-    (job.status === 'approved' || job.status === 'completed')
+    (job.status === 'approved' || job.status === 'work_complete' || job.status === 'completed')
   );
 </script>
 
