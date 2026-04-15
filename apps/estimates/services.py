@@ -691,6 +691,10 @@ class EstimateGenerationService:
                 mat_li = self._create_material_line_item(plan_material, estimate)
                 line_items.append(mat_li)
 
+        # Task-less plan materials (attached to worksheet but no plan_task)
+        for pm in worksheet.plan_materials.filter(plan_task__isnull=True):
+            line_items.append(self._create_material_line_item(pm, estimate))
+
         # Bulk create all line items
         if line_items:
             EstimateLineItem.objects.bulk_create(line_items)

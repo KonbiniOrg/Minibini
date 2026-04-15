@@ -305,3 +305,39 @@ class EstimateGenerationMaterialsTest(TestCase):
         ).first()
         # Should get some type (first active), not None
         self.assertIsNotNone(material_li.accounting_category)
+
+
+class TasklessPlanMaterialLineItemTest(TestCase):
+    def setUp(self):
+        Configuration.objects.get_or_create(
+            key='estimate_number_sequence',
+            defaults={'value': 'EST-{year}-{counter:05d}'}
+        )
+        Configuration.objects.get_or_create(
+            key='estimate_counter',
+            defaults={'value': '0'}
+        )
+
+    def test_taskless_plan_material_becomes_own_line_item(self):
+        cat = AccountingCategory.objects.create(name='c', code='TPM1')
+        pli = PriceListItem.objects.create(
+            code='P-TPM', accounting_category=cat, is_inventoried=False,
+        )
+        contact = Contact.objects.create(first_name='Test', last_name='TPM')
+        job = Job.objects.create(job_number='JOB-EG-TPM1', contact=contact)
+        ws = EstWorksheet.objects.create(job=job)
+        PlanMaterial.objects.create(
+            plan_task=None, est_worksheet=ws,
+            description='loose', quantity=Decimal('2'),
+            unit_cost=Decimal('1'), sell_price=Decimal('3'),
+            price_list_item=pli,
+        )
+        # Need at least one PlanTask to satisfy the "no tasks" guard
+        PlanTask.objects.create(
+            est_worksheet=ws, name='dummy',
+            est_qty=Decimal('1'), rate=Decimal('0'),
+            mapping_strategy='direct',
+        )
+        est = EstimateGenerationService().generate_estimate_from_worksheet(ws)
+        loose = est.estimatelineitem_set.filter(description='loose')
+        self.assertEqual(loose.count(), 1)
