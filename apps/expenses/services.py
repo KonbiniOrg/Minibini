@@ -143,7 +143,7 @@ class ExpenseService:
         with transaction.atomic():
             for m in materials:
                 InventoryService._mutate_earmark(
-                    m.price_list_item, m.job, -m.effective_qty,
+                    m.price_list_item, m.job, -m.quantity,
                 )
                 InventoryService.reverse_ad_hoc_purchase(m)
                 m.delete()

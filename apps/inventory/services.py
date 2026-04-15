@@ -132,12 +132,13 @@ class InventoryService:
     @staticmethod
     def reverse_ad_hoc_purchase(material):
         """Decrease QOH to reverse a previously received ad-hoc purchase.
-        QOH-only — earmark is managed separately."""
+        Reverses the full original purchase quantity (quantity + restocked_qty)."""
         from django.db.models import F
         pli = material.price_list_item
         if not pli or not pli.is_inventoried:
             return
-        pli.qty_on_hand = F('qty_on_hand') - material.quantity
+        total = material.quantity + material.restocked_qty
+        pli.qty_on_hand = F('qty_on_hand') - total
         pli.save(update_fields=['qty_on_hand'])
         pli.refresh_from_db()
 

@@ -56,12 +56,16 @@ class AdHocPurchaseTest(TestCase):
     def test_reverse_ad_hoc_purchase_drops_qoh(self):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('5'), price_list_item=self.pli,
         )
-        InventoryService.receive_ad_hoc_purchase(m)
+        # Simulate a prior partial restock directly: quantity=5, restocked_qty=2.
+        # Invariant: quantity + restocked_qty == original purchase (7).
+        m.restocked_qty = Decimal('2')
+        m.save(update_fields=['restocked_qty'])
+        # PLI QOH starts at 10 per setUp. reverse should drop by full 7.
         InventoryService.reverse_ad_hoc_purchase(m)
         self.pli.refresh_from_db()
-        self.assertEqual(self.pli.qty_on_hand, Decimal('10'))
+        self.assertEqual(self.pli.qty_on_hand, Decimal('3'))
 
     def test_receive_ad_hoc_purchase_non_inventoried_is_noop(self):
         """receive_ad_hoc_purchase on a non-inventoried PLI does nothing."""
@@ -198,15 +202,41 @@ class ExpenseRejectCascadeTest(TestCase):
             ExpenseService.reject(expense=exp, actor=self.user)
 
     def test_reject_after_full_restock_expense_bound_survives_until_reject(self):
-        exp = self._submit(qty=Decimal('2'))
+        exp = self._submit(qty=Decimal('5'))
+        MaterialService.restock(exp.material, Decimal('5'))
+        exp.material.refresh_from_db()
+        # After full restock on expense-bound: Material still exists,
+        # quantity=0, restocked_qty=5 (invariant: quantity+restocked_qty == 5).
+        self.assertTrue(Material.objects.filter(pk=exp.material.pk).exists())
+        self.assertEqual(exp.material.quantity, Decimal('0'))
+        self.assertEqual(exp.material.restocked_qty, Decimal('5'))
+
+    def test_reject_expense_with_partial_restock(self):
+        # Submit: quantity=5, earmark=5, QOH=15 (10 start + 5).
+        exp = self._submit(qty=Decimal('5'))
+        self.pli.refresh_from_db()
+        self.assertEqual(self.pli.qty_on_hand, Decimal('15'))
+        earmark = Earmark.objects.get(price_list_item=self.pli, job=self.job)
+        self.assertEqual(earmark.quantity, Decimal('5'))
+
+        # Partial restock of 2: quantity=3, restocked_qty=2, earmark=3, QOH=15.
         MaterialService.restock(exp.material, Decimal('2'))
         exp.material.refresh_from_db()
-        self.assertTrue(Material.objects.filter(pk=exp.material.pk).exists())
-        self.assertEqual(exp.material.effective_qty, Decimal('0'))
+        self.assertEqual(exp.material.quantity, Decimal('3'))
+        self.assertEqual(exp.material.restocked_qty, Decimal('2'))
+        earmark.refresh_from_db()
+        self.assertEqual(earmark.quantity, Decimal('3'))
+        self.pli.refresh_from_db()
+        self.assertEqual(self.pli.qty_on_hand, Decimal('15'))
+
+        # Reject: Material deleted, earmark gone (deducted by quantity=3 -> 0),
+        # QOH reversed by full original purchase (5) -> back to 10.
         ExpenseService.reject(expense=exp, actor=self.user)
         self.assertFalse(Material.objects.filter(pk=exp.material.pk).exists())
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('10'))
+        self.assertFalse(Earmark.objects.filter(
+            price_list_item=self.pli, job=self.job).exists())
 
 
 class ExpenseRejectNonInventoriedTest(TestCase):
