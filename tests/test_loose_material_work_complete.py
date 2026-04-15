@@ -1,6 +1,6 @@
 """
 Tests for the work_complete gate that blocks the Job transition when
-task-less inventoried materials are still pending (net effective qty > 0).
+task-less inventoried materials are still pending (quantity > 0).
 """
 from decimal import Decimal
 from django.test import TestCase
@@ -44,7 +44,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
 
     def test_fully_restocked_expense_bound_does_not_block(self):
-        """A task-less material with full restock (eff qty == 0) does not block."""
+        """A task-less material with full restock (quantity == 0) does not block."""
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='restocked mat',
             quantity=Decimal('2'), price_list_item=self.pli,

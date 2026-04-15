@@ -240,19 +240,15 @@ class JobService:
     @staticmethod
     def _loose_pending_inventoried_materials(job):
         """Return task-less inventoried Materials on this job that still have
-        a positive effective quantity (quantity - restocked_qty > 0) and are
-        in the PENDING consumption state."""
-        from django.db.models import F
+        a positive outstanding quantity committed to the job and are in the
+        PENDING consumption state."""
         from apps.inventory.models import Material
-        return (
-            Material.objects.filter(
-                job=job,
-                task__isnull=True,
-                price_list_item__is_inventoried=True,
-                consumption_state=Material.CONSUMPTION_STATE_PENDING,
-            )
-            .annotate(eff=F('quantity') - F('restocked_qty'))
-            .filter(eff__gt=0)
+        return Material.objects.filter(
+            job=job,
+            task__isnull=True,
+            price_list_item__is_inventoried=True,
+            consumption_state=Material.CONSUMPTION_STATE_PENDING,
+            quantity__gt=0,
         )
 
     @staticmethod
