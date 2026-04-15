@@ -60,3 +60,29 @@ class GenerateMaterialsForWorksheetTest(TestCase):
             PlanMaterial.objects.filter(est_worksheet=ws, plan_task__isnull=True).count(),
             3,
         )
+
+
+class GenerateMaterialsForJobTest(TestCase):
+    def test_populate_from_template_creates_taskless_materials_with_earmarks(self):
+        from apps.jobs.services import JobService
+        from apps.inventory.models import Material, Earmark, PriceListItem
+        from apps.core.models import AccountingCategory
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='Test', last_name='User')
+        cat = AccountingCategory.objects.create(name='c', code='GJ1')
+        pli = PriceListItem.objects.create(
+            code='I-GJ', accounting_category=cat, is_inventoried=True,
+        )
+        wt = WorkTemplate.objects.create(
+            template_name='t-gj', base_price=Decimal('0'), is_active=True,
+        )
+        TemplateMaterial.objects.create(
+            work_template=wt, description='x',
+            quantity=Decimal('4'), price_list_item=pli,
+        )
+        job = Job.objects.create(job_number='JOB-GJ-1', contact=contact)
+        JobService.populate_from_template(job, wt)
+        mats = Material.objects.filter(job=job, task__isnull=True)
+        self.assertEqual(mats.count(), 1)
+        e = Earmark.objects.get(price_list_item=pli, job=job)
+        self.assertEqual(e.quantity, Decimal('4'))

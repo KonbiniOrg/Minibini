@@ -395,6 +395,20 @@ class WorkTemplate(models.Model):
                     accounting_category=tm.accounting_category,
                 )
 
+    def generate_materials_for_job(self, job, quantity=1):
+        from apps.inventory.services import MaterialService
+        for tm in self.materials.all():
+            for _ in range(quantity):
+                MaterialService.create_on_job(
+                    job=job, task=None,
+                    description=tm.description,
+                    quantity=tm.quantity,
+                    unit_cost=tm.unit_cost,
+                    sell_price=tm.sell_price,
+                    price_list_item=tm.price_list_item,
+                    accounting_category=tm.accounting_category,
+                )
+
 
 class TemplateBundle(models.Model):
     """

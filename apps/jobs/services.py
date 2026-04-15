@@ -293,6 +293,8 @@ class JobService:
         for association in associations:
             association.task_template.generate_task(job, association.est_qty)
 
+        template.generate_materials_for_job(job, quantity=1)
+
         from apps.inventory.services import InventoryService
         InventoryService.create_earmarks_for_job(job)
         return job
