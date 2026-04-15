@@ -144,3 +144,66 @@ class ExpenseSubmitPathTest(TestCase):
             },
         )
         self.assertFalse(Task.objects.filter(job=self.job, name='Materials').exists())
+
+
+class ExpenseRejectCascadeTest(TestCase):
+    def setUp(self):
+        contact = Contact.objects.create(
+            first_name='Reject', last_name='User',
+            email='rjtest@example.com', work_number='555-0300',
+        )
+        business = Business.objects.create(
+            business_name='Reject Test Business',
+            default_contact=contact,
+        )
+        contact.business = business
+        contact.save()
+
+        self.cat = AccountingCategory.objects.create(name='c', code='RJCAT1')
+        self.user = User.objects.create(username='rj_user')
+        self.job = Job.objects.create(job_number='JOB-RJ-1', contact=contact)
+        self.pli = PriceListItem.objects.create(
+            code='I-RJ', accounting_category=self.cat, is_inventoried=True,
+            qty_on_hand=Decimal('10'),
+        )
+
+    def _submit(self, qty=Decimal('3')):
+        return ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            amount=Decimal('10'), purchased_on='2026-04-14',
+            accounting_category=self.cat,
+            new_material={
+                'job_id': self.job.pk, 'description': 'x',
+                'quantity': qty, 'price': Decimal('10'),
+                'price_list_item_id': self.pli.pk,
+            },
+        )
+
+    def test_reject_pending_reverses_earmark_qoh_and_deletes_material(self):
+        exp = self._submit()
+        mid = exp.material.pk
+        ExpenseService.reject(expense=exp, actor=self.user)
+        self.assertFalse(Material.objects.filter(pk=mid).exists())
+        self.pli.refresh_from_db()
+        self.assertEqual(self.pli.qty_on_hand, Decimal('10'))
+        self.assertFalse(Earmark.objects.filter(
+            price_list_item=self.pli, job=self.job).exists())
+
+    def test_reject_forbidden_when_material_consumed(self):
+        from django.core.exceptions import ValidationError
+        exp = self._submit()
+        MaterialService.consume(exp.material)
+        with self.assertRaises(ValidationError):
+            ExpenseService.reject(expense=exp, actor=self.user)
+
+    def test_reject_after_full_restock_expense_bound_survives_until_reject(self):
+        exp = self._submit(qty=Decimal('2'))
+        MaterialService.restock(exp.material, Decimal('2'))
+        exp.material.refresh_from_db()
+        self.assertTrue(Material.objects.filter(pk=exp.material.pk).exists())
+        self.assertEqual(exp.material.effective_qty, Decimal('0'))
+        ExpenseService.reject(expense=exp, actor=self.user)
+        self.assertFalse(Material.objects.filter(pk=exp.material.pk).exists())
+        self.pli.refresh_from_db()
+        self.assertEqual(self.pli.qty_on_hand, Decimal('10'))

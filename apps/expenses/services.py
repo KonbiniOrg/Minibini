@@ -126,14 +126,29 @@ class ExpenseService:
 
     @staticmethod
     def reject(*, expense, actor):
+        from apps.inventory.models import Material
+        from apps.inventory.services import InventoryService
         if expense.payment_method != Expense.PAYMENT_METHOD_PERSONAL:
             raise ValidationError('Only personal expenses can be rejected.')
         if expense.status not in (Expense.STATUS_SUBMITTED,):
             raise ValidationError(
                 f'Cannot reject an expense in status {expense.status!r}.'
             )
-        expense.status = Expense.STATUS_REJECTED
-        expense.save(update_fields=['status'])
+        materials = list(Material.objects.filter(expenses=expense))
+        for m in materials:
+            if m.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
+                raise ValidationError(
+                    'Cannot reject expense with consumed materials; adjust inventory manually.'
+                )
+        with transaction.atomic():
+            for m in materials:
+                InventoryService._mutate_earmark(
+                    m.price_list_item, m.job, -m.effective_qty,
+                )
+                InventoryService.reverse_ad_hoc_purchase(m)
+                m.delete()
+            expense.status = Expense.STATUS_REJECTED
+            expense.save(update_fields=['status'])
         return expense
 
     @staticmethod
