@@ -114,6 +114,30 @@ class InventoryService:
             reason=reason,
         )
 
+    @staticmethod
+    def receive_ad_hoc_purchase(material):
+        """Increase QOH for an ad-hoc (job-level, no PO) purchase material.
+        QOH-only — earmark was already created by MaterialService.create_on_job."""
+        from django.db.models import F
+        pli = material.price_list_item
+        if not pli or not pli.is_inventoried:
+            return
+        pli.qty_on_hand = F('qty_on_hand') + material.quantity
+        pli.save(update_fields=['qty_on_hand'])
+        pli.refresh_from_db()
+
+    @staticmethod
+    def reverse_ad_hoc_purchase(material):
+        """Decrease QOH to reverse a previously received ad-hoc purchase.
+        QOH-only — earmark is managed separately."""
+        from django.db.models import F
+        pli = material.price_list_item
+        if not pli or not pli.is_inventoried:
+            return
+        pli.qty_on_hand = F('qty_on_hand') - material.quantity
+        pli.save(update_fields=['qty_on_hand'])
+        pli.refresh_from_db()
+
     # --- PlanMaterial CRUD (worksheet-side) ---
 
     @staticmethod
