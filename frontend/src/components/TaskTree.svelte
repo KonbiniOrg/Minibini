@@ -1,6 +1,7 @@
 <script>
   let {
     tasks = [],
+    jobMaterials = [],
     readonly = false,
     showStatus = true,
     showAssignee = true,
@@ -52,6 +53,9 @@
       for (const sub of (t.subtasks || [])) {
         total += taskWithMaterialsTotal(sub);
       }
+    }
+    for (const m of (jobMaterials || [])) {
+      total += materialTotal(m);
     }
     return total;
   });
@@ -212,6 +216,38 @@
         {/each}
       {/each}
     {/each}
+    {#if jobMaterials && jobMaterials.length}
+      <tr class="job-materials-header">
+        <td colspan={colCount}><strong>Materials (no task)</strong></td>
+      </tr>
+      {#each jobMaterials as mat}
+        <tr class="material-row">
+          <td class="indent">
+            <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+          </td>
+          {#if showAssignee}<td></td>{/if}
+          {#if showStatus}<td></td>{/if}
+          <td class="text-right">-</td>
+          <td class="text-right">{mat.quantity ?? '-'}</td>
+          <td class="text-right">{fmt(mat.unit_cost)}</td>
+          <td class="text-right">{fmt(mat.sell_price)}</td>
+          <td class="text-right">{fmt(materialTotal(mat))}</td>
+          {#if !readonly}
+            <td class="actions-cell">
+              {#if isMaterialPending(mat)}
+                <button type="button" onclick={() => onConsumeMaterial(mat, null)}>consume</button>
+                <button type="button" onclick={() => onRestockMaterial(mat, null)}>restock</button>
+                {#if !mat.is_expense_bound}
+                  <button type="button" onclick={() => onDrawMoreMaterial(mat, null)}>draw more</button>
+                {/if}
+                <button type="button" onclick={() => onEditMaterial(mat, null)}>edit desc</button>
+              {/if}
+            </td>
+            <td class="actions-cell"></td>
+          {/if}
+        </tr>
+      {/each}
+    {/if}
   </tbody>
   <tfoot>
     <tr class="grand-total-row">
@@ -236,6 +272,7 @@
   .subtask-row { background: #f0f9ff; }
   .material-row { background: #fefce8; }
   .grand-total-row { background: #ecfdf5; border-top: 2px solid #99f6e4; }
+  .job-materials-header td { background: #fef9c3; padding-top: 8px; }
 
   .status-pill {
     padding: 2px 8px; border-radius: 10px; font-size: 12px;

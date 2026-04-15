@@ -12,6 +12,7 @@
 
   let job = $state(null);
   let enrichedTasks = $state([]);
+  let jobMaterials = $state([]);
   let templates = $state([]);
   let categories = $state([]);
   let loading = $state(true);
@@ -26,6 +27,7 @@
   let materialModalMode = $state('create');
   let materialModalMaterial = $state(null);
   let materialModalTaskId = $state(null);
+  let materialModalJobId = $state(null);
 
   let subtaskModalOpen = $state(false);
   let subtaskModalParentTaskId = $state(null);
@@ -45,6 +47,7 @@
     error = '';
     try {
       job = await api.get(`/api/jobs/${params.id}/`);
+      jobMaterials = (job.materials || []).filter(m => !m.task);
       await enrichTasks();
     } catch (e) {
       error = e.message || 'Could not load job.';
@@ -164,6 +167,15 @@
   function openAddMaterial(task) {
     materialModalMaterial = null;
     materialModalTaskId = task.task_id;
+    materialModalJobId = null;
+    materialModalMode = 'create';
+    materialModalOpen = true;
+  }
+
+  function openAddJobMaterial() {
+    materialModalMaterial = null;
+    materialModalTaskId = null;
+    materialModalJobId = job.job_id;
     materialModalMode = 'create';
     materialModalOpen = true;
   }
@@ -229,6 +241,7 @@
     materialModalOpen = false;
     materialModalMaterial = null;
     materialModalTaskId = null;
+    materialModalJobId = null;
     reload();
   }
 
@@ -305,10 +318,12 @@
 
   <div class="action-bar">
     <button type="button" onclick={openAddTask}>Add Task</button>
+    <button type="button" onclick={openAddJobMaterial}>Add Material</button>
   </div>
 
   <TaskTree
     tasks={enrichedTasks}
+    {jobMaterials}
     readonly={false}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
@@ -342,6 +357,7 @@
     mode={materialModalMode}
     material={materialModalMaterial}
     taskId={materialModalTaskId}
+    jobId={materialModalJobId}
     {categories}
     onSaved={handleMaterialSaved}
     onClose={() => { materialModalOpen = false; }}

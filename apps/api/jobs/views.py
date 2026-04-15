@@ -22,6 +22,7 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     queryset = Job.objects.select_related('contact', 'template') \
         .prefetch_related(
             Prefetch('tasks', queryset=Task.objects.select_related('assignee').order_by('sort_order')),
+            'materials',
             'template__templatetaskassociation_set__task_template',
             'template__bundles',
         ) \
