@@ -380,6 +380,21 @@ class WorkTemplate(models.Model):
 
         return generated_tasks
 
+    def generate_materials_for_worksheet(self, worksheet, quantity=1):
+        from apps.inventory.models import PlanMaterial
+        for tm in self.materials.all():
+            for _ in range(quantity):
+                PlanMaterial.objects.create(
+                    est_worksheet=worksheet,
+                    plan_task=None,
+                    description=tm.description,
+                    quantity=tm.quantity,
+                    unit_cost=tm.unit_cost,
+                    sell_price=tm.sell_price,
+                    price_list_item=tm.price_list_item,
+                    accounting_category=tm.accounting_category,
+                )
+
 
 class TemplateBundle(models.Model):
     """

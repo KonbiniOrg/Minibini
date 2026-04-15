@@ -135,7 +135,8 @@ class PlanMaterial(MaterialBase):
     """Planning material on a Worksheet; optionally attached to a PlanTask. No inventory side effects."""
     plan_material_id = models.AutoField(primary_key=True)
     plan_task = models.ForeignKey(
-        'jobs.PlanTask', on_delete=models.CASCADE, related_name='plan_materials'
+        'jobs.PlanTask', on_delete=models.CASCADE, related_name='plan_materials',
+        null=True, blank=True,
     )
     est_worksheet = models.ForeignKey(
         'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_materials',
