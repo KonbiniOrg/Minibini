@@ -47,14 +47,7 @@ class InventoryService:
         pli.refresh_from_db()
 
         if po_line_item.job:
-            earmark, created = Earmark.objects.get_or_create(
-                price_list_item=pli,
-                job=po_line_item.job,
-                defaults={'quantity': po_line_item.qty},
-            )
-            if not created:
-                earmark.quantity = F('quantity') + po_line_item.qty
-                earmark.save(update_fields=['quantity'])
+            InventoryService._mutate_earmark(pli, po_line_item.job, po_line_item.qty)
 
     @staticmethod
     def consume_material(material):
