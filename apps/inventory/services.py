@@ -295,6 +295,25 @@ class InventoryService:
                 earmark.save(update_fields=['quantity'])
 
     @staticmethod
+    def _mutate_earmark(pli, job, delta):
+        """Apply `delta` to the (pli, job) Earmark. Upsert if positive net, delete if zero.
+        No-op if pli is None or not inventoried. Sole writer of Earmark rows."""
+        if pli is None or not pli.is_inventoried:
+            return
+        try:
+            earmark = Earmark.objects.get(price_list_item=pli, job=job)
+        except Earmark.DoesNotExist:
+            if delta > Decimal('0.00'):
+                Earmark.objects.create(price_list_item=pli, job=job, quantity=delta)
+            return
+        new_qty = earmark.quantity + delta
+        if new_qty <= Decimal('0.00'):
+            earmark.delete()
+        else:
+            earmark.quantity = new_qty
+            earmark.save(update_fields=['quantity'])
+
+    @staticmethod
     def release_earmarks_for_job(job):
         """Delete all remaining earmarks for a job.
 
