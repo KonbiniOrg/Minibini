@@ -106,11 +106,17 @@ Relevant existing services:
 - **new** `restocked_qty` → `DecimalField(max_digits=10, decimal_places=2, default=0)`
 - `clean()` enforces:
   - `self.task is None or self.task.job_id == self.job_id`
-  - `self.restocked_qty >= 0 and self.restocked_qty <= self.quantity`
+  - `self.restocked_qty >= 0`
+  - Manual-add invariant: `restocked_qty == 0`.
+  - Expense-bound invariant: `quantity + restocked_qty == purchase_qty`
+    (the original submitted purchase quantity).
 - `save()` auto-sets `consumption_state`:
   - `'pending'` on creation when `price_list_item` is inventoried.
   - `'na'` otherwise.
-- `effective_qty` property: `quantity - restocked_qty`.
+- `quantity` represents the amount currently applied to this job.
+- `restocked_qty` is nonzero only on expense-bound rows; it tracks the gap
+  between the current job-committed amount and the original purchase qty
+  so expense rejection can reverse QOH for the full purchase.
 - `is_expense_bound` property: `self.expenses.exists()` (lazy check via
   reverse relation from `Expense.material`).
 
@@ -192,10 +198,10 @@ All of these are service-method bodies; viewsets are thin wrappers.
 | Caller | Signed delta | When |
 |---|---|---|
 | `MaterialService.create_on_job(...)` | `+= quantity` | Material creation, any origin (manual, template-generated, worksheet-copy, estimate-to-job, expense submit). |
-| `MaterialService.consume(material)` | `-= effective_qty` | Consume op; plus `QOH -= effective_qty`, `qty_sold += effective_qty`, `state → consumed`. |
-| `MaterialService.restock(material, n)` | `-= n` | Restock op; plus `restocked_qty += n`. If manual-add and reaches full, calls `MaterialService._delete_internal` — which has nothing left to mutate earmark-wise since `_mutate_earmark(-= n)` already handled it. |
+| `MaterialService.consume(material)` | `-= quantity` | Consume op; plus `QOH -= quantity`, `qty_sold += quantity`, `state → consumed`. |
+| `MaterialService.restock(material, n)` | `-= n` | Restock op; plus `quantity -= n`. On expense-bound rows also `restocked_qty += n`. If manual-add and reaches full, calls `MaterialService._delete_internal` — which has nothing left to mutate earmark-wise since `_mutate_earmark(-= n)` already handled it. |
 | `MaterialService.draw_more(material, n)` | `+= n` | Draw-more op; plus `quantity += n`. Forbidden on expense-bound Materials. |
-| `ExpenseService.reject(expense)` | `-= effective_qty` per Material | Internal rejection cascade; then `QOH -= quantity` via `reverse_ad_hoc_purchase`; then Material row deleted. |
+| `ExpenseService.reject(expense)` | `-= quantity` per Material | Internal rejection cascade; then `QOH -= (quantity + restocked_qty)` via `reverse_ad_hoc_purchase` to undo the original purchase in full; then Material row deleted. |
 | `InventoryService.receive_po_line_item` (existing) | `+= qty` | PO receive with job link. Unchanged today; migrates to calling `_mutate_earmark` so the new helper is the sole Earmark writer. |
 
 ### Why no hooks
@@ -228,18 +234,19 @@ regime it should be a no-op in practice.
 
 | Op | Inventoried Material effect | Non-inventoried Material effect |
 |---|---|---|
-| **Consume** | `QOH -= effective_qty`, `qty_sold += effective_qty`, earmark `-= effective_qty`, `state → consumed`. | `state → consumed`. No mechanical effect on inventory. |
-| **Restock(n)** | earmark `-= n` (via `_mutate_earmark`), `restocked_qty += n`. If `restocked_qty == quantity` and Material is manual-add (not expense-bound): delete Material row internally (no further earmark mutation — `_mutate_earmark(-= n)` already ran). If expense-bound: Material stays, effective_qty is 0, invoice excludes it. | `restocked_qty += n`. Same manual-add-delete / expense-bound-survive rule. No earmark call since not inventoried. |
+| **Consume** | `QOH -= quantity`, `qty_sold += quantity`, earmark `-= quantity`, `state → consumed`. | `state → consumed`. No mechanical effect on inventory. |
+| **Restock(n)** | `quantity -= n`, earmark `-= n` (via `_mutate_earmark`). If `n == quantity` (full restock) and Material is manual-add (not expense-bound): delete Material row internally (no further earmark mutation — `_mutate_earmark(-= n)` already ran). If expense-bound: `restocked_qty += n`, row stays (with `quantity` potentially 0), invoice excludes it when `quantity == 0`. | `quantity -= n`. On expense-bound also `restocked_qty += n`. Same manual-add-delete / expense-bound-survive rule. No earmark call since not inventoried. |
 | **Draw more(n)** | `quantity += n`, earmark `+= n`. **Not available on expense-bound Materials** — the UI hides the button and the API endpoint returns 400. Extra demand is handled by the existing "Add material" button on the Job, which creates a separate manual-add Material drawing from existing stock. | `quantity += n`. Same "expense-bound not available" rule. |
 | **Edit description** | description-only change. Allowed on all pending Materials. | Same. |
 
 ### Op validation
 
-- Restock(n) requires `0 < n <= effective_qty`. Partial restock keeps state
+- Restock(n) requires `0 < n <= quantity`. Partial restock keeps state
   `pending`; full restock either deletes the row (manual-add) or leaves it
-  pending with effective_qty = 0 (expense-bound).
+  pending with `quantity = 0` (expense-bound, with `restocked_qty`
+  carrying the original purchase qty).
 - Draw more(n) requires `n > 0` and not expense-bound.
-- Consume requires `state == 'pending'` and `effective_qty > 0`. No-op on
+- Consume requires `state == 'pending'` and `quantity > 0`. No-op on
   materials that have nothing left to consume.
 - Edit description is always allowed on pending materials.
 
@@ -278,10 +285,11 @@ Material.objects.filter(
     task__isnull=True,
     price_list_item__is_inventoried=True,
     consumption_state='pending',
-).annotate(eff=F('quantity') - F('restocked_qty')).filter(eff__gt=0).exists()
+    quantity__gt=0,
+).exists()
 ```
 
-Fully-restocked expense-bound Materials (effective_qty = 0) do not block.
+Fully-restocked expense-bound Materials (`quantity = 0`) do not block.
 Task-attached Materials are gated by the task's own lifecycle, not this
 check.
 
@@ -322,10 +330,12 @@ transaction:
 - Forbidden if any of the expense's Materials has `state == 'consumed'`.
   (Consumed is terminal; reversal requires manual inventory adjustment.)
 - For each remaining (pending) Material:
-  - Call `_mutate_earmark(pli, job, -= effective_qty)` to release the
-    earmark contribution.
-  - If PLI-inventoried: `QOH -= material.quantity` via
-    `InventoryService.reverse_ad_hoc_purchase(material)`.
+  - Call `_mutate_earmark(pli, job, -= quantity)` to release the current
+    earmark contribution (any previously-restocked amount already came
+    off the earmark at restock time).
+  - If PLI-inventoried: `QOH -= (material.quantity + material.restocked_qty)`
+    via `InventoryService.reverse_ad_hoc_purchase(material)` — reversing
+    the full original purchase quantity regardless of intervening restocks.
   - Delete the Material row internally (no hook; the service has already
     handled earmark and QOH).
 
@@ -336,7 +346,7 @@ No user-facing delete endpoint exists for expense-bound Materials. The
 
 | Scenario | Start QOH | After `submit` | After Consume | After Restock(all) |
 |---|---|---|---|---|
-| Expense, inventoried PLI | X | X+qty (earmark += qty via `create_on_job`, QOH += qty via `receive_ad_hoc_purchase`) | X, qty_sold += qty | X+qty (excess in general inventory; material stays in pending with effective_qty=0) |
+| Expense, inventoried PLI | X | X+qty (earmark += qty via `create_on_job`, QOH += qty via `receive_ad_hoc_purchase`) | X, qty_sold += qty | X+qty (excess in general inventory; material stays in pending with `quantity = 0`, `restocked_qty = purchase qty`) |
 | Expense, non-inventoried PLI or freeform | n/a | n/a | n/a | n/a |
 | Manual add, inventoried PLI | X | — (`create_on_job` upserts earmark, no QOH change) | X-qty, qty_sold += qty | X, earmark released, Material row deleted |
 | Manual add, non-inventoried PLI or freeform | n/a | n/a | n/a | n/a |
@@ -400,26 +410,24 @@ group entry after the existing per-task loop:
 ```
 
 Atoms come from task-less Materials on the job, filtered to exclude
-materials with no billable balance (`effective_qty == 0`):
+materials with no billable balance (`quantity == 0`):
 
 ```python
-Material.objects.filter(job=job, task__isnull=True)
-    .annotate(eff=F('quantity') - F('restocked_qty'))
-    .filter(eff__gt=0)
+Material.objects.filter(job=job, task__isnull=True, quantity__gt=0)
     .order_by('pk')
 ```
 
-This single filter naturally hides fully-restocked expense-bound materials
-(they have `effective_qty == 0`). Manual-add fully-restocked materials don't
+This filter naturally hides fully-restocked expense-bound materials
+(they have `quantity == 0`). Manual-add fully-restocked materials don't
 exist as rows (they were deleted by the full Restock), so nothing to filter
 there.
 
 Claim tracking via `InvoiceLineItemSource` is unchanged; atoms of type
 `SOURCE_MATERIAL` just happen to come from task-less materials now.
-`_atom_computed_amount` uses `effective_qty * sell_price` so partial-
-restocked materials bill correctly. `_atom_category`, `_atom_source_type`,
-and `_resolve_atom` all dispatch by `isinstance(..., Material)` and
-require no changes.
+`_atom_computed_amount` uses `quantity * sell_price` so partial-restocked
+materials bill correctly (their `quantity` is the current remaining
+commitment). `_atom_category`, `_atom_source_type`, and `_resolve_atom`
+all dispatch by `isinstance(..., Material)` and require no changes.
 
 ### Estimate generation
 
@@ -562,7 +570,7 @@ Following the repo's TDD convention — failing tests first, then implementation
   Draw-more op semantics including the expense-bound-Draw-more forbiddance
   and the manual-add-full-Restock-deletes rule.
 - `tests/test_loose_material_work_complete.py` — `work_complete` gate,
-  effective_qty computation, fully-restocked materials not blocking.
+  `quantity__gt=0` filter behavior, fully-restocked materials not blocking.
 - `tests/test_expense_material_inventory.py` — `receive_ad_hoc_purchase`
   and `reverse_ad_hoc_purchase`, end-to-end expense submit → Material
   → earmark → consume flow, overbuy Restock scenario (excess retained
@@ -580,7 +588,7 @@ Following the repo's TDD convention — failing tests first, then implementation
   (including the task-attached post-populate gap now being closed),
   task-less Materials, and the placeholder-task migration.
 - `tests/test_invoice_wizard_service.py`, `tests/test_invoice_wizard_api.py`
-  — new "Materials (no task)" group in source pool, effective_qty-based
+  — new "Materials (no task)" group in source pool, `quantity__gt=0`
   filter, partial-restocked billing.
 - `tests/test_estimate_generation_materials.py` — task-less PlanMaterial
   becoming its own line item.
@@ -614,18 +622,21 @@ equivalent) once all automated tests pass.
 
 ### Consume / Restock / Draw more
 
-- Click **Consume**: `QOH -= effective_qty`, `qty_sold += effective_qty`,
+- Click **Consume**: `QOH -= quantity`, `qty_sold += quantity`,
   earmark shrinks, state → `consumed`, buttons hide, material still
   appears in invoice pool (billable).
-- Click **Restock**, enter partial quantity: earmark shrinks by that
-  amount, `restocked_qty` rises, QOH unchanged, still pending. Invoice
-  pool shows the reduced billable amount.
+- Click **Restock**, enter partial quantity: `quantity` shrinks by that
+  amount, earmark shrinks by the same amount, QOH unchanged, still
+  pending. On expense-bound rows, `restocked_qty` rises by the same
+  amount (so `quantity + restocked_qty == purchase qty` still holds).
+  Invoice pool shows the reduced billable amount.
 - Click **Restock** with full remaining quantity on a manual-add material:
   earmark shrinks, Material row is deleted, disappears from the job.
 - Click **Restock** with full remaining quantity on an expense-bound
   material: earmark shrinks, Material survives in pending state with
-  `effective_qty = 0`, excluded from invoice pool, still visible in the
-  job's material list (history/collapsed).
+  `quantity = 0` and `restocked_qty = purchase qty`, excluded from
+  invoice pool, still visible in the job's material list
+  (history/collapsed).
 - Click **Draw more** on a manual-add material, enter qty: quantity rises,
   earmark rises. Same on a non-inventoried manual-add (quantity rises;
   no earmark).
@@ -636,7 +647,7 @@ equivalent) once all automated tests pass.
 ### `work_complete` gate
 
 - Attempt `Mark work complete` while a task-less inventoried Material is
-  `pending` with `effective_qty > 0` → blocked with a clear error listing
+  `pending` with `quantity > 0` → blocked with a clear error listing
   the offending materials.
 - **Last-task-completion path.** Set up a Job with one remaining in-progress
   task and a task-less inventoried Material still in `pending`. Complete
@@ -661,9 +672,11 @@ equivalent) once all automated tests pass.
   restock amount, QOH stays bumped, invoice bills only the remainder.
 - Submit an expense, then Restock all of it (overbuy case): earmark
   fully drained, QOH stays at +qty (excess in general stock), Material
-  stays in pending with `effective_qty = 0`, excluded from invoice pool.
+  stays in pending with `quantity = 0` and `restocked_qty = purchase qty`,
+  excluded from invoice pool.
 - Reject the expense → all its materials deleted, QOH reversed for the
-  full purchase quantity on each, earmark contributions removed.
+  full purchase quantity on each (`quantity + restocked_qty`), earmark
+  contributions removed.
 - Reject an expense where any material is consumed → blocked with clear
   error.
 - Submit an expense with a non-inventoried PLI or freeform material: no
@@ -693,7 +706,7 @@ equivalent) once all automated tests pass.
 - Claiming task-less materials into an invoice line item works identically
   to task-attached materials.
 - Partial-restocked materials show the reduced billable quantity
-  (`effective_qty`).
+  (the current `quantity`).
 - Fully-restocked (expense-bound) materials do not appear in the pool.
 
 ### Data migration sanity (post-migrate)
@@ -716,7 +729,7 @@ equivalent) once all automated tests pass.
 ### Flagging pending task-less inventoried materials before work_complete
 
 The `work_complete` gate blocks the transition when a task-less inventoried
-Material is still in `pending` state with `effective_qty > 0`. Mechanically
+Material is still in `pending` state with `quantity > 0`. Mechanically
 this works: the user gets an error when they try to close the job.
 
 But that's a late signal. The subtle situation is: **the user has to
@@ -746,8 +759,8 @@ Open questions to settle:
 - Does this extend to task-attached pending materials too (where the
   task lifecycle is the usual driver), or stay scoped to task-less?
 
-Not in scope for this refactor. The underlying `consumption_state` +
-`effective_qty` fields are the data that any future surfacing would read,
+Not in scope for this refactor. The underlying `consumption_state` and
+`quantity` fields are the data that any future surfacing would read,
 so the data model is ready when we get to the UX.
 
 ### Audit: QOH can go negative
