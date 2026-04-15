@@ -202,7 +202,7 @@
   }
 
   async function handleRestockMaterial(material, _task) {
-    const raw = window.prompt(`Restock quantity (max ${material.effective_qty}):`, material.effective_qty);
+    const raw = window.prompt(`Restock quantity (max ${material.quantity}):`, material.quantity);
     if (raw === null) return;
     const quantity = raw.trim();
     if (!quantity) return;
