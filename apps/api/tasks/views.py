@@ -15,8 +15,8 @@ from apps.core.services import NotFoundError, ServiceError
 class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
     """Flat task endpoints — lifecycle actions, materials, subtasks.
 
-    These operations only need the task id; they were previously nested
-    under /api/work-orders/{wo_pk}/tasks/{task_id}/... via TaskLifecycleMixin.
+    These operations only need the task id; they live at
+    /api/tasks/{task_id}/... (tasks are job-scoped via Task.job).
 
     Any authenticated user can drive task lifecycle (start, complete,
     block, unblock, cancel) and their own time tracking (start-work,
@@ -112,7 +112,7 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
 
     @action(detail=True, methods=['get', 'post'], url_path='subtasks', url_name='subtasks')
     def subtasks(self, request, pk=None):
-        from apps.api.work_orders.serializers import TaskSerializer
+        from apps.api.tasks.serializers import TaskSerializer
         task = self.get_object()
         if request.method == 'GET':
             children = Task.objects.filter(parent_task=task).order_by('sort_order')
@@ -124,7 +124,7 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return err
         serializer = TaskSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(parent_task=task, work_order=task.work_order)
+        serializer.save(parent_task=task, job=task.job)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])

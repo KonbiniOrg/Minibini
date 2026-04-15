@@ -181,12 +181,20 @@ class AccountingCategory(models.Model):
 
 
 class AbstractWorkContainer(models.Model):
-    """Abstract base class for WorkOrder and EstWorksheet containing common fields."""
-    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
-    template = models.ForeignKey('estimates.WorkOrderTemplate', on_delete=models.SET_NULL, null=True, blank=True)
+    """Abstract base class for work containers (Job, EstWorksheet) containing common fields."""
+    template = models.ForeignKey('estimates.WorkTemplate', on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         abstract = True
+
+    def populate_from_template(self, template):
+        """Populate this container's tasks from a WorkTemplate.
+
+        Subclasses implement by reading the template's TemplateTaskAssociations
+        and TemplateBundles and creating the appropriate task type
+        (PlanTask on EstWorksheet, Task on Job).
+        """
+        raise NotImplementedError
 
 
 class BaseLineItem(models.Model):

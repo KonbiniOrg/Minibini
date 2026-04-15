@@ -27,10 +27,31 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
         read_only_fields = ['material_id']
 
 
+class TaskSerializer(serializers.ModelSerializer):
+    """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
+    assignee_name = serializers.SerializerMethodField()
+    units = UnitsField()
+
+    class Meta:
+        model = Task
+        fields = [
+            'task_id', 'name', 'description', 'sort_order', 'status',
+            'blocked_reason', 'units', 'rate', 'est_qty', 'accounting_category',
+            'parent_task', 'assignee', 'assignee_name', 'worker_queue',
+        ]
+        read_only_fields = ['task_id', 'sort_order', 'status']
+
+    def get_assignee_name(self, obj):
+        if obj.assignee:
+            name = obj.assignee.get_full_name()
+            return name if name else obj.assignee.username
+        return None
+
+
 class TaskDetailSerializer(serializers.ModelSerializer):
     assignee_name = serializers.SerializerMethodField()
     units = UnitsField()
-    work_order = serializers.SerializerMethodField()
+    job = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -38,7 +59,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'task_id', 'name', 'description', 'status',
             'blocked_reason', 'units', 'rate', 'est_qty', 'accounting_category',
             'parent_task', 'assignee', 'assignee_name',
-            'worker_queue', 'work_order',
+            'worker_queue', 'job',
         ]
         read_only_fields = fields
 
@@ -47,15 +68,11 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             return obj.assignee.get_full_name() or obj.assignee.username
         return None
 
-    def get_work_order(self, obj):
-        wo = obj.work_order
-        job = wo.job
+    def get_job(self, obj):
+        job = obj.job
         return {
-            'id': wo.pk,
-            'status': wo.status,
-            'job': {
-                'id': job.pk,
-                'job_number': job.job_number,
-                'name': job.name,
-            },
+            'id': job.pk,
+            'job_number': job.job_number,
+            'name': job.name,
+            'status': job.status,
         }

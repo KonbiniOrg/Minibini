@@ -304,34 +304,18 @@
         }
     },
     {
-        "model": "jobs.workorder",
-        "pk": 1,
-        "fields": {
-            "job": 1,
-            "status": "incomplete"
-        }
-    },
-    {
-        "model": "jobs.workorder",
-        "pk": 2,
-        "fields": {
-            "job": 2,
-            "status": "complete"
-        }
-    },
-    {
         "model": "jobs.task",
         "pk": 1,
         "fields": {
             "assignee": 2,
-            "work_order": 1,
             "name": "Kitchen demolition",
             "units": "hours",
             "rate": "75.00",
             "est_qty": "8.00",
             "description": "",
             "sort_order": null,
-            "accounting_category": null
+            "accounting_category": null,
+            "job": 1
         }
     },
     {
@@ -339,14 +323,14 @@
         "pk": 2,
         "fields": {
             "assignee": 2,
-            "work_order": 1,
             "name": "Electrical rough-in",
             "units": "ln ft",
             "rate": "12.50",
             "est_qty": "150.00",
             "description": "",
             "sort_order": null,
-            "accounting_category": null
+            "accounting_category": null,
+            "job": 1
         }
     },
     {
@@ -585,7 +569,7 @@
         }
     },
     {
-        "model": "estimates.workordertemplate",
+        "model": "estimates.worktemplate",
         "pk": 1,
         "fields": {
             "template_name": "Standard Kitchen Renovation",
@@ -595,7 +579,7 @@
         }
     },
     {
-        "model": "estimates.workordertemplate",
+        "model": "estimates.worktemplate",
         "pk": 2,
         "fields": {
             "template_name": "Basic Maintenance",
@@ -656,7 +640,7 @@
         "model": "estimates.templatetaskassociation",
         "pk": 1,
         "fields": {
-            "work_order_template": 1,
+            "work_template": 1,
             "task_template": 1,
             "est_qty": "1.00",
             "sort_order": 1
@@ -666,7 +650,7 @@
         "model": "estimates.templatetaskassociation",
         "pk": 2,
         "fields": {
-            "work_order_template": 1,
+            "work_template": 1,
             "task_template": 2,
             "est_qty": "2.00",
             "sort_order": 2
@@ -676,7 +660,7 @@
         "model": "estimates.templatetaskassociation",
         "pk": 3,
         "fields": {
-            "work_order_template": 1,
+            "work_template": 1,
             "task_template": 3,
             "est_qty": "150.00",
             "sort_order": 3
@@ -686,7 +670,7 @@
         "model": "estimates.templatetaskassociation",
         "pk": 4,
         "fields": {
-            "work_order_template": 1,
+            "work_template": 1,
             "task_template": 4,
             "est_qty": "200.00",
             "sort_order": 4

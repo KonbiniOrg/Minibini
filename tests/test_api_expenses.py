@@ -119,6 +119,75 @@ class ExpenseCreateTest(TestCase):
         mock_push.assert_called_once()
 
 
+class ExpenseCreateWithNewMaterialTest(TestCase):
+    def setUp(self):
+        from apps.contacts.models import Contact, Business
+        from apps.jobs.models import Job
+        Configuration.objects.update_or_create(
+            key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'},
+        )
+        Configuration.objects.update_or_create(
+            key='job_counter', defaults={'value': '0'},
+        )
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Supplies', qbo_expense_account_id='500',
+        )
+        self.user = User.objects.create_user(username='u', password='testpass')
+        self.client_http.force_login(self.user)
+        self.contact = Contact.objects.create(
+            first_name='A', last_name='B', email='a@b.com', mobile_number='555-0000',
+        )
+        self.business = Business.objects.create(
+            business_name='Acme', default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
+        self.job = Job.objects.create(
+            job_number='JOB-2026-NM01', contact=self.contact,
+        )
+
+    def test_create_personal_with_new_material_job_id(self):
+        payload = {
+            'amount': '25.00',
+            'purchased_on': '2026-04-05',
+            'accounting_category': self.cat.pk,
+            'payment_method': 'personal',
+            'purchased_by': self.user.pk,
+            'new_material': {
+                'job_id': self.job.pk,
+                'description': 'Bolts',
+                'quantity': 5,
+                'price': '25.00',
+            },
+        }
+        r = self.client_http.post(
+            '/api/expenses/', payload, content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        exp = Expense.objects.get()
+        self.assertIsNotNone(exp.material)
+        self.assertEqual(exp.material.task.job_id, self.job.pk)
+
+    def test_create_rejects_work_order_id_without_job_id(self):
+        """Legacy work_order_id key no longer accepted."""
+        payload = {
+            'amount': '25.00',
+            'purchased_on': '2026-04-05',
+            'accounting_category': self.cat.pk,
+            'payment_method': 'personal',
+            'purchased_by': self.user.pk,
+            'new_material': {
+                'work_order_id': self.job.pk,
+                'description': 'Bolts',
+            },
+        }
+        r = self.client_http.post(
+            '/api/expenses/', payload, content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 400)
+
+
 class ExpenseRejectRetryTest(TestCase):
     def setUp(self):
         self.client_http = Client()
@@ -199,75 +268,11 @@ class ExpenseDeleteTest(TestCase):
         self.assertFalse(Expense.objects.filter(pk=exp.pk).exists())
 
 
-class MaterialsBucketFlagTest(TestCase):
-    """Creating a material with _use_materials_bucket=true routes via
-    ExpenseService.find_or_create_materials_task."""
-
-    def setUp(self):
-        _seed_payment_accounts()
-        Configuration.objects.update_or_create(
-            key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'},
-        )
-        Configuration.objects.update_or_create(
-            key='job_counter', defaults={'value': '0'},
-        )
-        from apps.contacts.models import Contact, Business
-        from apps.jobs.models import Job, WorkOrder
-        self.client_http = Client()
-        self.admin = User.objects.create_user(username='admin', password='testpass')
-        perm = Permission.objects.get(
-            codename='can_manage_financials', content_type__app_label='core',
-        )
-        self.admin.user_permissions.add(perm)
-        self.admin = User.objects.get(pk=self.admin.pk)
-        self.client_http.force_login(self.admin)
-
-        contact = Contact.objects.create(
-            first_name='A', last_name='B', email='a@b.com', mobile_number='555',
-        )
-        business = Business.objects.create(
-            business_name='Acme', default_contact=contact,
-        )
-        contact.business = business
-        contact.save()
-        self.job = Job.objects.create(contact=contact, job_number='JOB-2026-0099')
-        self.wo = WorkOrder.objects.create(job=self.job)
-
-    def test_create_material_with_bucket_flag_creates_bucket_task(self):
-        from apps.jobs.models import Task
-        payload = {
-            'description': 'Touch-up paint',
-            'quantity': '1',
-            '_use_materials_bucket': True,
-        }
-        r = self.client_http.post(
-            f'/api/work-orders/{self.wo.pk}/materials/',
-            payload, content_type='application/json',
-        )
-        self.assertEqual(r.status_code, 201, r.content)
-        bucket = Task.objects.get(work_order=self.wo, name='Materials')
-        self.assertEqual(bucket.status, Task.STATUS_COMPLETE)
-        self.assertEqual(bucket.materials.count(), 1)
-
-    def test_second_create_reuses_bucket_task(self):
-        from apps.jobs.models import Task
-        for _ in range(2):
-            self.client_http.post(
-                f'/api/work-orders/{self.wo.pk}/materials/',
-                {'description': 'test', 'quantity': '1', '_use_materials_bucket': True},
-                content_type='application/json',
-            )
-        self.assertEqual(Task.objects.filter(work_order=self.wo, name='Materials').count(), 1)
-
-    def test_create_material_without_bucket_flag_requires_task(self):
-        """Without the bucket flag, creating a material at WO level should fail
-        because no task is specified."""
-        payload = {
-            'description': 'Some material',
-            'quantity': '1',
-        }
-        r = self.client_http.post(
-            f'/api/work-orders/{self.wo.pk}/materials/',
-            payload, content_type='application/json',
-        )
-        self.assertEqual(r.status_code, 400)
+# NOTE: MaterialsBucketFlagTest removed in Phase C2. The
+# /api/work-orders/{wo_pk}/materials/ endpoint with _use_materials_bucket
+# flag no longer exists after WorkOrder removal. The bucket-task pattern
+# at ExpenseService.find_or_create_materials_task is still available at
+# the service layer (now job-scoped) and is exercised by service-layer
+# tests in test_expense_service.py. A replacement job-scoped API
+# endpoint for bucket-mode material creation can be added when the
+# frontend requires it.

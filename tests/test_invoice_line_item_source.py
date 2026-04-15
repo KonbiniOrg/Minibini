@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.utils import timezone
 
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.jobs.models import Job, Task, Blep
 from apps.inventory.models import Material, PriceListItem
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
@@ -33,9 +33,8 @@ class InvoiceLineItemSourceTest(TestCase):
             contact=self.contact,
             status=Job.STATUS_APPROVED,
         )
-        self.workorder = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.workorder,
+            job=self.job,
             name='Labor',
             rate=Decimal('25.00'),
             accounting_category=self.category,

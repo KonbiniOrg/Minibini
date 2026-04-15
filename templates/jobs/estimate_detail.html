@@ -76,10 +76,6 @@
         {% if estimate.status != 'draft' %}
             <a href="{% url 'estimates:estimate_revise' estimate.estimate_id %}">Revise Estimate</a>
         {% endif %}
-        {% if estimate.status == 'accepted' %}
-            {% if estimate.status != 'draft' %} | {% endif %}
-            <a href="{% url 'estimates:work_order_create_from_estimate' estimate.estimate_id %}">Create Work Order</a>
-        {% endif %}
     </p>
 {% else %}
     <p>

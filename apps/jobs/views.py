@@ -8,64 +8,19 @@ from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
 from django.core.exceptions import ValidationError
-from .models import Job, Task, PlanTask, WorkOrder, Blep
+from .models import Job, Task, PlanTask, Blep
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.inventory.models import PlanMaterial
 from apps.core.services import TaxCalculationService, NotFoundError
-from .services import JobService, WorkOrderService, TaskService
+from .services import JobService, TaskService
 from apps.inventory.services import InventoryService
 from .forms import (
     JobCreateForm, JobEditForm,
-    TaskEditForm, WorkOrderStatusForm,
+    TaskEditForm,
     MaterialForm
 )
 from apps.purchasing.models import PurchaseOrder
 from apps.invoicing.models import Invoice
-
-
-def _build_task_hierarchy(tasks):
-    """Build a hierarchical task structure with level indicators, preserving sort_order."""
-    task_dict = {task.task_id: task for task in tasks}
-    root_tasks = []
-
-    # Find root tasks (no parent) and maintain sort_order
-    for task in tasks:
-        if not task.parent_task:
-            root_tasks.append(task)
-
-    # Sort root tasks by sort_order to ensure proper order
-    root_tasks.sort(key=lambda t: t.sort_order if t.sort_order is not None else float('inf'))
-
-    # Recursive function to get task with its children and level
-    def get_task_with_children(task, level=0):
-        result = {'task': task, 'level': level}
-        children = []
-        for potential_child in tasks:
-            if potential_child.parent_task_id == task.task_id:
-                children.append(potential_child)
-
-        # Sort children by sort_order to ensure proper order
-        children.sort(key=lambda t: t.sort_order if t.sort_order is not None else float('inf'))
-
-        # Recursively build the tree for each child
-        result['children'] = [get_task_with_children(child, level + 1) for child in children]
-        return result
-
-    # Build the tree
-    tree = []
-    for root_task in root_tasks:
-        tree.append(get_task_with_children(root_task))
-
-    # Flatten the tree for template display
-    def flatten_tree(tree_nodes):
-        flat_list = []
-        for node in tree_nodes:
-            flat_list.append({'task': node['task'], 'level': node['level']})
-            if node['children']:
-                flat_list.extend(flatten_tree(node['children']))
-        return flat_list
-
-    return flatten_tree(tree)
 
 
 @login_required
@@ -88,7 +43,7 @@ def job_list(request):
     # (allows explicitly clearing all statuses via empty submission)
     using_default_statuses = False
     if not status_filters and not request.GET:
-        status_filters = [Job.STATUS_DRAFT, Job.STATUS_APPROVED]
+        status_filters = [Job.STATUS_DRAFT, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE]
         using_default_statuses = True
 
     # Track if any filters are applied (beyond defaults)
@@ -121,15 +76,16 @@ def job_list(request):
     if business_filter:
         jobs = jobs.filter(contact__business_id=business_filter)
 
-    # Custom status ordering: Draft (0) → Approved (1) → Completed (2) → Rejected (3) → Cancelled (4)
+    # Custom status ordering: Draft → Submitted → Approved → WorkComplete → Completed → Rejected → Cancelled
     status_order = Case(
         When(status=Job.STATUS_DRAFT, then=Value(0)),
-        When(status=Job.STATUS_APPROVED, then=Value(1)),
-        When(status=Job.STATUS_SUBMITTED, then=Value(2)),
-        When(status=Job.STATUS_COMPLETED, then=Value(3)),
-        When(status=Job.STATUS_REJECTED, then=Value(4)),
-        When(status=Job.STATUS_CANCELLED, then=Value(5)),
-        default=Value(6),
+        When(status=Job.STATUS_SUBMITTED, then=Value(1)),
+        When(status=Job.STATUS_APPROVED, then=Value(2)),
+        When(status=Job.STATUS_WORK_COMPLETE, then=Value(3)),
+        When(status=Job.STATUS_COMPLETED, then=Value(4)),
+        When(status=Job.STATUS_REJECTED, then=Value(5)),
+        When(status=Job.STATUS_CANCELLED, then=Value(6)),
+        default=Value(7),
         output_field=IntegerField(),
     )
 
@@ -177,19 +133,11 @@ def job_detail(request, job_id):
         current_estimate_line_items = EstimateLineItem.objects.filter(estimate=current_estimate).order_by('line_item_id')
         current_estimate_total = sum(item.total_amount for item in current_estimate_line_items)
 
-    work_orders = WorkOrder.objects.filter(job=job).order_by('-work_order_id')
     worksheets = EstWorksheet.objects.filter(job=job).order_by('-created_date')
     from apps.purchasing.models import PurchaseOrderLineItem
     po_ids = PurchaseOrderLineItem.objects.filter(job=job).values_list('purchase_order_id', flat=True).distinct()
     purchase_orders = PurchaseOrder.objects.filter(po_id__in=po_ids).order_by('-po_id')
     invoices = Invoice.objects.filter(job=job).order_by('-invoice_id')
-
-    # Get current work order (most recent non-complete)
-    current_work_order = work_orders.exclude(status=WorkOrder.STATUS_COMPLETE).first()
-    current_work_order_tasks = []
-    if current_work_order:
-        all_tasks = Task.objects.filter(work_order=current_work_order).order_by('sort_order', 'task_id')
-        current_work_order_tasks = _build_task_hierarchy(all_tasks)
 
     return render(request, 'jobs/job_detail.html', {
         'job': job,
@@ -197,7 +145,6 @@ def job_detail(request, job_id):
         'current_estimate_line_items': current_estimate_line_items,
         'current_estimate_total': current_estimate_total,
         'superseded_estimates': superseded_estimates,
-        'work_orders': work_orders,
         'worksheets': worksheets,
         'purchase_orders': purchase_orders,
         'invoices': invoices
@@ -275,17 +222,6 @@ def job_edit(request, job_id):
 
 
 @login_required
-def task_list(request):
-    # Only show incomplete tasks with WorkOrders (not EstWorksheets)
-    tasks = Task.objects.filter(
-        work_order__isnull=False,
-        est_worksheet__isnull=True
-    ).exclude(
-        work_order__status=WorkOrder.STATUS_COMPLETE
-    ).select_related('work_order', 'work_order__job', 'assignee').order_by('-task_id')
-    return render(request, 'jobs/task_list.html', {'tasks': tasks})
-
-@login_required
 def task_detail(request, task_id):
     # Try worksheet-side PlanTask first, fall back to WO-side Task.
     # HTML side is legacy; SPA will supersede. This preserves existing URL behavior.
@@ -327,84 +263,6 @@ def task_edit(request, task_id):
         'form': form,
         'task': task,
     })
-
-
-@login_required
-def work_order_list(request):
-    work_orders = WorkOrder.objects.all().order_by('-work_order_id')
-    return render(request, 'jobs/work_order_list.html', {'work_orders': work_orders})
-
-@login_required
-def work_order_detail(request, work_order_id):
-    work_order = get_object_or_404(WorkOrder, work_order_id=work_order_id)
-
-    # Handle status update POST request
-    if request.method == 'POST' and 'update_status' in request.POST:
-        if work_order.status != WorkOrder.STATUS_COMPLETE:
-            form = WorkOrderStatusForm(request.POST, current_status=work_order.status)
-            if form.is_valid():
-                new_status = form.cleaned_data['status']
-                if new_status != work_order.status:
-                    WorkOrderService.update_status(work_order.pk, new_status)
-                    messages.success(request, f'Work Order status updated to {new_status.title()}')
-            return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
-        else:
-            messages.error(request, 'Cannot update the status of a completed work order.')
-            return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
-
-    # Get all tasks for this work order with blep summaries
-    all_tasks = Task.objects.filter(work_order=work_order).order_by('sort_order', 'task_id')
-    tasks_with_levels = _build_task_hierarchy(all_tasks)
-
-    # Calculate blep summary for each task
-    bleps_by_task = {}
-    for blep in Blep.objects.filter(task__work_order=work_order).select_related('user'):
-        bleps_by_task.setdefault(blep.task_id, []).append(blep)
-
-    for item in tasks_with_levels:
-        task_bleps = bleps_by_task.get(item['task'].task_id, [])
-        if not task_bleps:
-            item['blep_summary'] = "-"
-        else:
-            from datetime import timedelta
-            total = timedelta()
-            for b in task_bleps:
-                if b.elapsed:
-                    total += b.elapsed
-            total_seconds = int(total.total_seconds())
-            hours, remainder = divmod(total_seconds, 3600)
-            minutes, _ = divmod(remainder, 60)
-            count = len(task_bleps)
-            active = any(b.end_time is None for b in task_bleps)
-            time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-            parts = [time_str, f"({count} session{'s' if count != 1 else ''})"]
-            if active:
-                parts.append("ACTIVE")
-            item['blep_summary'] = " ".join(parts)
-
-    # Create status form for display (unless completed)
-    status_form = WorkOrderStatusForm(current_status=work_order.status) if work_order.status != WorkOrder.STATUS_COMPLETE else None
-
-    return render(request, 'jobs/work_order_detail.html', {
-        'work_order': work_order,
-        'tasks': tasks_with_levels,
-        'status_form': status_form,
-        'show_reorder': True,
-        'reorder_url_name': 'jobs:task_reorder_work_order',
-        'container_id': work_order.work_order_id
-    })
-
-
-@login_required
-@permission_required('core.can_manage_jobs', raise_exception=True)
-@require_POST
-def task_reorder_work_order(request, work_order_id, task_id, direction):
-    """Reorder tasks within a WorkOrder by swapping sort_order."""
-    try:
-        TaskService.reorder_tasks(task_id, direction)
-    except (ValidationError, NotFoundError) as e:
-        messages.error(request, str(e.message if hasattr(e, 'message') else e))
-    return redirect('jobs:work_order_detail', work_order_id=work_order_id)
 
 
 @login_required

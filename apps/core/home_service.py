@@ -22,24 +22,22 @@ class HomeService:
     def _assigned_tasks(cls, user):
         tasks = (
             Task.objects
-            .filter(assignee=user, work_order__isnull=False)
+            .filter(assignee=user)
             .exclude(status__in=cls.HIDDEN_TASK_STATUSES)
-            .select_related('work_order__job')
+            .select_related('job')
             .order_by('worker_queue', 'task_id')
         )
         return [cls._serialize_task(t) for t in tasks]
 
     @classmethod
     def _serialize_task(cls, task):
-        work_order = task.work_order
-        job = work_order.job if work_order else None
+        job = task.job
         return {
             'id': task.pk,
             'name': task.name,
             'description': task.description,
             'status': task.status,
             'worker_queue': task.worker_queue,
-            'work_order': {'id': work_order.pk} if work_order else None,
             'job': {
                 'id': job.pk,
                 'job_number': job.job_number,
@@ -53,8 +51,8 @@ class HomeService:
         # most recent Blep start_time on that job, limited.
         job_rows = (
             Job.objects
-            .filter(workorder__tasks__blep__user=user)
-            .annotate(last_worked_at=Max('workorder__tasks__blep__start_time'))
+            .filter(tasks__blep__user=user)
+            .annotate(last_worked_at=Max('tasks__blep__start_time'))
             .order_by('-last_worked_at')
             .distinct()
         )[:cls.RECENT_JOBS_LIMIT]

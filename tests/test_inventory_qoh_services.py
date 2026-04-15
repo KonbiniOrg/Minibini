@@ -6,7 +6,7 @@ from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, InventoryAdjustment, PriceListItem, Material
 from apps.inventory.services import InventoryService
-from apps.jobs.models import Job, Task, WorkOrder
+from apps.jobs.models import Job, Task
 from apps.estimates.models import EstWorksheet, Estimate
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 
@@ -124,9 +124,8 @@ class ConsumeMaterialTest(TestCase):
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('0.00'), accounting_category=self.category)
 
-        self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.work_order, name='Cut steel',
+            job=self.job, name='Cut steel',
             sort_order=1)
 
     def test_decreases_qoh_and_increases_qty_sold(self):
@@ -235,11 +234,10 @@ class ConsumeMaterialTest(TestCase):
         # Should not raise
         InventoryService.consume_material(material)
 
-    def test_consume_via_work_order_task(self):
-        """Consuming material on a work order task reduces earmark for the WO's job."""
-        wo = WorkOrder.objects.create(job=self.job)
+    def test_consume_via_job_task(self):
+        """Consuming material on a job task reduces earmark for the task's job."""
         wo_task = Task.objects.create(
-            work_order=wo, name='Assemble', sort_order=1)
+            job=self.job, name='Assemble', sort_order=1)
 
         Earmark.objects.create(
             price_list_item=self.pli, job=self.job,
@@ -272,9 +270,8 @@ class CompleteTaskAdjustmentTest(TestCase):
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('5.00'), accounting_category=self.category)
 
-        self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.work_order, name='Cut steel',
+            job=self.job, name='Cut steel',
             sort_order=1)
 
         self.material = Material(

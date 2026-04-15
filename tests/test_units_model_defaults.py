@@ -13,7 +13,7 @@ class UnitsDefaultTest(BaseTestCase):
         job = Job.objects.first()
         task = Task.objects.create(
             name='Test Task',
-            work_order=job.workorder_set.first() if job and job.workorder_set.exists() else None,
+            job=job,
         )
         self.assertEqual(task.units, 'none')
 

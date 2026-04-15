@@ -7,7 +7,7 @@ from decimal import Decimal
 from datetime import timedelta
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.core.models import User, Configuration, AccountingCategory
-from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.jobs.models import Job, Task, Blep
 from apps.estimates.models import Estimate, TaskTemplate
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import PriceListItem
@@ -59,14 +59,9 @@ class ComprehensiveModelIntegrationTest(TestCase):
             status=Estimate.STATUS_OPEN
         )
 
-        work_order = WorkOrder.objects.create(
-            job=job,
-            status=WorkOrder.STATUS_INCOMPLETE
-        )
-
         task = Task.objects.create(
             assignee=self.user,
-            work_order=work_order,
+            job=job,
             name="Test Task",
         )
 
@@ -78,8 +73,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         self.assertEqual(job.status, Job.STATUS_DRAFT)
         self.assertEqual(estimate.job, job)
-        self.assertEqual(work_order.job, job)
-        self.assertEqual(task.work_order, work_order)
+        self.assertEqual(task.job, job)
         self.assertEqual(blep.task, task)
 
     def test_invoice_line_item_workflow(self):
@@ -217,17 +211,15 @@ class ComprehensiveModelIntegrationTest(TestCase):
             contact=self.contact
         )
 
-        work_order = WorkOrder.objects.create(job=job)
-
         task = Task.objects.create(
-            work_order=work_order,
+            job=job,
             name="Planning Task",
         )
         task_template = TaskTemplate.objects.create(
             template_name="Planning Task Template"
         )
 
-        self.assertEqual(task.work_order, work_order)
+        self.assertEqual(task.job, job)
 
     def test_configuration_number_sequences(self):
         # Create configuration entries for number sequences
@@ -260,12 +252,11 @@ class ComprehensiveModelIntegrationTest(TestCase):
             contact=self.contact
         )
 
-        work_order = WorkOrder.objects.create(job=job)
-        task = Task.objects.create(work_order=work_order, name="Test Task")
+        task = Task.objects.create(job=job, name="Test Task")
 
         initial_task_count = Task.objects.count()
 
-        work_order.delete()
+        job.delete()
 
         self.assertEqual(Task.objects.count(), initial_task_count - 1)
 
@@ -381,9 +372,8 @@ class LineItemValidationTest(TestCase):
             contact=self.contact,
             vendor_invoice_number="VIN_VALID001"
         )
-        self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.work_order,
+            job=self.job,
             name="Test Task",
         )
         # EstimateLineItem.task targets PlanTask, not Task

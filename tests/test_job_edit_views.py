@@ -224,10 +224,10 @@ class JobEditApprovedStatusTest(TestCase):
         )
 
     def test_approved_job_can_change_status(self):
-        """Approved jobs can change status to completed"""
+        """Approved jobs can advance to work_complete (next valid state)."""
         response = self.client.post(self.url, {
             'contact': self.contact1.contact_id,
-            'status': Job.STATUS_COMPLETED,
+            'status': Job.STATUS_WORK_COMPLETE,
             'created_date': self.job.created_date.strftime('%Y-%m-%dT%H:%M'),
             'description': 'Original description',
             'customer_po_number': 'PO-002',
@@ -236,7 +236,7 @@ class JobEditApprovedStatusTest(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
+        self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
 
     def test_approved_job_can_change_description(self):
         """Approved jobs can change description"""

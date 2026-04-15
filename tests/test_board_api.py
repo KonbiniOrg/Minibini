@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 
 from tests.base import FixtureTestCase
-from apps.jobs.models import Task, WorkOrder, Job
+from apps.jobs.models import Task, Job
 from apps.contacts.models import Contact
 from apps.core.models import Configuration
 
@@ -23,12 +23,10 @@ class TaskWorkerQueueTest(FixtureTestCase):
             status='approved',
             contact=self.contact,
         )
-        self.wo = WorkOrder.objects.create(job=self.job)
-
     def test_task_worker_queue_field_exists(self):
         task = Task(
             name='Test task',
-            work_order=self.wo,
+            job=self.job,
             worker_queue=5,
         )
         task.save()
@@ -38,7 +36,7 @@ class TaskWorkerQueueTest(FixtureTestCase):
     def test_task_worker_queue_nullable(self):
         task = Task(
             name='Test task',
-            work_order=self.wo,
+            job=self.job,
             worker_queue=None,
         )
         task.save()
@@ -92,15 +90,14 @@ class TaskReorderEndpointTest(FixtureTestCase):
             job_number='JOB-TEST-0001', name='Test Job',
             status='approved', contact=self.contact,
         )
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task1 = Task.objects.create(
-            name='Task 1', work_order=self.wo, assignee=self.user, worker_queue=1,
+            name='Task 1', job=self.job, assignee=self.user, worker_queue=1,
         )
         self.task2 = Task.objects.create(
-            name='Task 2', work_order=self.wo, assignee=self.user, worker_queue=2,
+            name='Task 2', job=self.job, assignee=self.user, worker_queue=2,
         )
         self.task3 = Task.objects.create(
-            name='Task 3', work_order=self.wo, assignee=self.user, worker_queue=3,
+            name='Task 3', job=self.job, assignee=self.user, worker_queue=3,
         )
 
     def test_reorder_updates_worker_queue(self):
@@ -144,10 +141,10 @@ class TaskReorderEndpointTest(FixtureTestCase):
 
     def test_assign_task_via_patch(self):
         unassigned_task = Task.objects.create(
-            name='Unassigned', work_order=self.wo,
+            name='Unassigned', job=self.job,
         )
-        response = self.client.patch(
-            f'/api/work-orders/{self.wo.pk}/tasks/{unassigned_task.pk}/',
+        response = self.client.post(
+            f'/api/tasks/{unassigned_task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 4},
             content_type='application/json',
         )
@@ -157,8 +154,8 @@ class TaskReorderEndpointTest(FixtureTestCase):
         self.assertEqual(unassigned_task.worker_queue, 4)
 
     def test_unassign_task_clears_worker_queue(self):
-        response = self.client.patch(
-            f'/api/work-orders/{self.wo.pk}/tasks/{self.task1.pk}/',
+        response = self.client.post(
+            f'/api/tasks/{self.task1.pk}/assign/',
             data={'assignee': None, 'worker_queue': None},
             content_type='application/json',
         )
@@ -186,10 +183,8 @@ class TaskAssignEndpointTest(FixtureTestCase):
             job_number='JOB-TEST-0001', name='Test Job',
             status='approved', contact=self.contact,
         )
-        self.wo = WorkOrder.objects.create(job=self.job)
-
     def test_assign_task_to_worker(self):
-        task = Task.objects.create(name='Unassigned', work_order=self.wo)
+        task = Task.objects.create(name='Unassigned', job=self.job)
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},
@@ -202,7 +197,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
 
     def test_unassign_task(self):
         task = Task.objects.create(
-            name='Assigned', work_order=self.wo,
+            name='Assigned', job=self.job,
             assignee=self.user, worker_queue=1,
         )
         response = self.client.post(
@@ -218,7 +213,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
     def test_assign_requires_permission(self):
         viewer = User.objects.create_user(username='viewer', password='testpass')
         self.client.login(username='viewer', password='testpass')
-        task = Task.objects.create(name='Task', work_order=self.wo)
+        task = Task.objects.create(name='Task', job=self.job)
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},

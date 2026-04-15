@@ -9,7 +9,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.contacts.models import Contact, Business
 from apps.core.models import User
-from apps.jobs.models import Job, WorkOrder, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
@@ -159,63 +159,8 @@ class TaskReorderWorksheetTest(ReorderRequiresPostTestBase):
         self.assertEqual(self.task2.sort_order, 1)
 
 
-class TaskReorderWorkOrderTest(ReorderRequiresPostTestBase):
-    """Test task_reorder_work_order requires POST."""
-
-    def setUp(self):
-        super().setUp()
-        # Create estimate, worksheet, and work order (all require job from AbstractWorkContainer)
-        self.estimate = Estimate.objects.create(
-            estimate_number='EST-001',
-            job=self.job,
-            status=Estimate.STATUS_ACCEPTED,
-            version=1
-        )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job,
-            estimate=self.estimate,
-            template=None
-        )
-        self.work_order = WorkOrder.objects.create(
-            job=self.job,
-            status=Job.STATUS_DRAFT
-        )
-        self.task1 = Task.objects.create(
-            work_order=self.work_order,
-            name='Task 1',
-            sort_order=1
-        )
-        self.task2 = Task.objects.create(
-            work_order=self.work_order,
-            name='Task 2',
-            sort_order=2
-        )
-
-    def test_get_returns_405(self):
-        """GET request to reorder should return 405 Method Not Allowed."""
-        url = reverse('jobs:task_reorder_work_order', kwargs={
-            'work_order_id': self.work_order.work_order_id,
-            'task_id': self.task1.pk,
-            'direction': 'down'
-        })
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 405)
-
-    def test_post_reorders_successfully(self):
-        """POST request to reorder should work correctly."""
-        url = reverse('jobs:task_reorder_work_order', kwargs={
-            'work_order_id': self.work_order.work_order_id,
-            'task_id': self.task1.pk,
-            'direction': 'down'
-        })
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, 302)
-
-        # Verify reordering occurred
-        self.task1.refresh_from_db()
-        self.task2.refresh_from_db()
-        self.assertEqual(self.task1.sort_order, 2)
-        self.assertEqual(self.task2.sort_order, 1)
+# NOTE: TaskReorderWorkOrderTest removed along with the HTML
+# task_reorder_work_order URL during WorkOrder removal (Phase F).
 
 
 class InvoiceReorderLineItemTest(ReorderRequiresPostTestBase):

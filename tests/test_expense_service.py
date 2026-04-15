@@ -9,7 +9,7 @@ from apps.core.models import AccountingCategory, Configuration
 from apps.expenses.models import Expense
 from apps.expenses.services import ExpenseService
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, WorkOrder, Task
+from apps.jobs.models import Job, Task
 from apps.inventory.models import Material
 
 User = get_user_model()
@@ -265,15 +265,14 @@ class FindOrCreateMaterialsTaskTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-2026-0001', contact=self.contact,
         )
-        self.wo = WorkOrder.objects.create(job=self.job)
 
     def test_creates_task_in_complete_state_on_first_call(self):
-        task = ExpenseService.find_or_create_materials_task(work_order=self.wo)
+        task = ExpenseService.find_or_create_materials_task(job=self.job)
         self.assertEqual(task.status, Task.STATUS_COMPLETE)
-        self.assertEqual(task.work_order, self.wo)
+        self.assertEqual(task.job, self.job)
 
     def test_reuses_existing_task_on_second_call(self):
-        first = ExpenseService.find_or_create_materials_task(work_order=self.wo)
-        second = ExpenseService.find_or_create_materials_task(work_order=self.wo)
+        first = ExpenseService.find_or_create_materials_task(job=self.job)
+        second = ExpenseService.find_or_create_materials_task(job=self.job)
         self.assertEqual(first.pk, second.pk)
-        self.assertEqual(self.wo.tasks.filter(name='Materials').count(), 1)
+        self.assertEqual(self.job.tasks.filter(name='Materials').count(), 1)

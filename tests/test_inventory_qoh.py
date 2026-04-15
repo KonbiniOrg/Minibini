@@ -5,7 +5,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, PlanTask, Task, WorkOrder
+from apps.jobs.models import Job, PlanTask, Task
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial, Material
 from apps.inventory.models import PriceListItem
@@ -156,10 +156,9 @@ class ConsumeMaterialTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-QOH-002', contact=self.contact, description='Test Job',
         )
-        from apps.jobs.models import WorkOrder, Task
-        self.work_order = WorkOrder.objects.create(job=self.job)
+        from apps.jobs.models import Task
         self.task = Task.objects.create(
-            work_order=self.work_order,
+            job=self.job,
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
@@ -272,9 +271,8 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-QOH-003', contact=self.contact, description='Test Job',
         )
-        self.work_order = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.work_order,
+            job=self.job,
             name='Install plywood',
             description='Install plywood',
             sort_order=1,

@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.jobs.models import Job, Task, Blep
 from apps.jobs.services import BlepService
 
 
@@ -11,9 +11,8 @@ class BlepServicePrimitivesTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='Task', work_order=self.wo)
-        self.other_task = Task.objects.create(name='Other', work_order=self.wo)
+        self.task = Task.objects.create(name='Task', job=self.job)
+        self.other_task = Task.objects.create(name='Other', job=self.job)
         self.user = User.objects.get(username='admin')
         self.other_user = User.objects.create_user(username='worker2', password='x')
 
@@ -71,8 +70,7 @@ class CreateHistoricalTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='T', work_order=self.wo)
+        self.task = Task.objects.create(name='T', job=self.job)
         self.user = User.objects.create_user(username='worker1_historical', password='x')
         self.manager = User.objects.create_user(username='m', password='x')
         from django.contrib.auth.models import Permission
@@ -155,8 +153,7 @@ class UpdateBlepTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='T', work_order=self.wo)
+        self.task = Task.objects.create(name='T', job=self.job)
         self.user = User.objects.create_user(username='worker1_update', password='x')
         from django.contrib.auth.models import Permission
         self.manager = User.objects.create_user(username='m', password='x')
@@ -242,8 +239,7 @@ class DeleteBlepTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='T', work_order=self.wo)
+        self.task = Task.objects.create(name='T', job=self.job)
         self.user = User.objects.create_user(username='worker1_delete', password='x')
         from django.contrib.auth.models import Permission
         self.manager = User.objects.create_user(username='m', password='x')

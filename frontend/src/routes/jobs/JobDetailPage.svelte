@@ -9,7 +9,6 @@
   let contact = $state(null);
   let estimates = $state(null);
   let worksheets = $state(null);
-  let workOrders = $state(null);
   let invoices = $state(null);
   let history = $state(null);
   let purchaseOrders = $state(null);
@@ -23,11 +22,10 @@
     loadError = null;
     try {
       job = await api.get(`/api/jobs/${params.id}/`);
-      const [contactData, estimatesData, worksheetsData, workOrdersData, invoicesData, historyData, poData, emailData] = await Promise.all([
+      const [contactData, estimatesData, worksheetsData, invoicesData, historyData, poData, emailData] = await Promise.all([
         api.get(`/api/contacts/${job.contact}/`),
         api.get(`/api/estimates/?job=${params.id}`),
         api.get(`/api/est-worksheets/?job=${params.id}`),
-        api.get(`/api/work-orders/?job=${params.id}`),
         api.get(`/api/invoices/?job=${params.id}`),
         api.get(`/api/jobs/${params.id}/history/`),
         api.get(`/api/purchase-orders/?job=${params.id}`),
@@ -36,7 +34,6 @@
       contact = contactData;
       estimates = estimatesData;
       worksheets = worksheetsData;
-      workOrders = workOrdersData;
       invoices = invoicesData;
       history = historyData;
       purchaseOrders = poData;
@@ -91,7 +88,6 @@
     {contact}
     {estimates}
     {worksheets}
-    {workOrders}
     {invoices}
     {history}
     {purchaseOrders}

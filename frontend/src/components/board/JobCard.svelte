@@ -6,7 +6,7 @@
     'estimating':        { bg: '#dbeafe', color: '#2563eb' },
     'estimate-ready':    { bg: '#e0e7ff', color: '#4338ca' },
     'awaiting-response': { bg: '#fef3c7', color: '#b45309' },
-    'needs-work-order':  { bg: '#dcfce7', color: '#15803d' },
+    'needs-tasks':       { bg: '#dcfce7', color: '#15803d' },
     'work-ready':        { bg: '#dcfce7', color: '#0d9488' },
     'in-progress':       { bg: '#ccfbf1', color: '#0f766e' },
     'blocked':           { bg: '#fee2e2', color: '#b91c1c' },

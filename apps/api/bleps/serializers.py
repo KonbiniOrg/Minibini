@@ -5,9 +5,9 @@ from apps.jobs.models import Blep
 class BlepSerializer(serializers.ModelSerializer):
     user_name = serializers.SerializerMethodField()
     task_name = serializers.CharField(source='task.name', read_only=True)
-    job_id = serializers.IntegerField(source='task.work_order.job_id', read_only=True)
-    job_number = serializers.CharField(source='task.work_order.job.job_number', read_only=True)
-    job_name = serializers.CharField(source='task.work_order.job.name', read_only=True)
+    job_id = serializers.IntegerField(source='task.job_id', read_only=True)
+    job_number = serializers.CharField(source='task.job.job_number', read_only=True)
+    job_name = serializers.CharField(source='task.job.name', read_only=True)
 
     class Meta:
         model = Blep

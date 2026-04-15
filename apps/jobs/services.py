@@ -1,5 +1,5 @@
 """
-Service classes for handling complex creation workflows between Jobs, WorkOrders, and Tasks.
+Service classes for handling complex creation workflows between Jobs and Tasks.
 """
 
 from datetime import timedelta
@@ -12,9 +12,9 @@ from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.jobs.models import Job, Task, Blep
 from apps.estimates.models import (
-    Estimate, WorkOrderTemplate, TaskTemplate,
+    Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
 )
 from apps.inventory.models import PriceListItem
@@ -117,7 +117,7 @@ class BlepService:
         - target_user: user the blep belongs to (defaults to actor)
         - Creating for another user requires can_manage_time
         - Creating older than 24h requires can_manage_time
-        - Task must belong to a WorkOrder
+        - Task must belong to a Job
         - end_time must be >= start_time
         - Must not overlap another blep for target_user
         """
@@ -209,11 +209,11 @@ class BlepService:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# JobService, WorkOrderService, TaskService, TaskLifecycleService
+# JobService, TaskService, TaskLifecycleService
 # ═══════════════════════════════════════════════════════════════════
 
 class JobService:
-    """Service for Job CRUD operations."""
+    """Service for Job CRUD operations and workflows."""
 
     @staticmethod
     def create_job(**kwargs):
@@ -237,120 +237,94 @@ class JobService:
         job.save()
         return job
 
+    @staticmethod
+    def update_status(pk, new_status):
+        """Update job status; triggers earmark release on entry to work_complete."""
+        try:
+            job = Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {pk} not found')
+        if job.status == new_status:
+            return job
+        old_status = job.status
+        job.status = new_status
+        job.full_clean()
+        job.save()
 
-class WorkOrderService:
-    """Service class for WorkOrder creation workflows."""
+        if new_status == Job.STATUS_WORK_COMPLETE and old_status != Job.STATUS_WORK_COMPLETE:
+            from apps.inventory.services import InventoryService
+            InventoryService.release_earmarks_for_job(job)
+
+        return job
 
     @staticmethod
-    def create_from_estimate(estimate):
-        """
-        Create WorkOrder from Estimate.
-        Only Open and Accepted Estimates can create WorkOrders.
-        Created WorkOrder starts in 'incomplete' status.
+    def populate_from_estimate(job, estimate):
+        """Populate a Job's tasks from an Estimate's line items.
+
+        Only OPEN and ACCEPTED estimates are allowed.
         """
         if estimate.status not in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED]:
             raise ValidationError(
-                f"Only Open and Accepted estimates can create WorkOrders. "
+                f"Only Open and Accepted estimates can populate jobs. "
                 f"Estimate {estimate.estimate_number} is {estimate.status}."
             )
-
-        work_order = WorkOrder.objects.create(
-            job=estimate.job,
-            status=WorkOrder.STATUS_INCOMPLETE
-        )
-
-        # Convert LineItems to Tasks
         for line_item in estimate.estimatelineitem_set.all():
-            TaskService.create_from_line_item(line_item, work_order)
+            TaskService.create_from_line_item(line_item, job)
 
         from apps.inventory.services import InventoryService
-        InventoryService.create_earmarks_for_work_order(work_order)
-
-        return work_order
+        InventoryService.create_earmarks_for_job(job)
+        return job
 
     @staticmethod
-    def create_from_template(template, job):
-        """
-        Create WorkOrder from WorkOrderTemplate.
-        Created WorkOrder starts in 'incomplete' status.
-        """
+    def populate_from_template(job, template):
+        """Populate a Job from a WorkTemplate's task associations."""
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
 
-        work_order = WorkOrder.objects.create(
-            job=job,
-            template=template,
-        )
+        job.template = template
+        job.save(update_fields=['template'])
 
-        # Generate Tasks from TaskTemplate associations
         from apps.estimates.models import TemplateTaskAssociation
         associations = TemplateTaskAssociation.objects.filter(
-            work_order_template=template,
-            task_template__is_active=True
+            work_template=template,
+            task_template__is_active=True,
         ).order_by('sort_order', 'task_template__template_name')
 
         for association in associations:
-            association.task_template.generate_task(work_order, association.est_qty)
+            association.task_template.generate_task(job, association.est_qty)
 
         from apps.inventory.services import InventoryService
-        InventoryService.create_earmarks_for_work_order(work_order)
-
-        return work_order
-
-    @staticmethod
-    def create_direct(job, **kwargs):
-        """Create WorkOrder directly. Starts in 'incomplete' status."""
-        return WorkOrder.objects.create(
-            job=job,
-            **kwargs
-        )
+        InventoryService.create_earmarks_for_job(job)
+        return job
 
     @staticmethod
-    def update_status(pk, new_status):
-        """Update work order status."""
-        try:
-            wo = WorkOrder.objects.get(pk=pk)
-        except WorkOrder.DoesNotExist:
-            raise NotFoundError(f'WorkOrder {pk} not found')
-        wo.status = new_status
-        wo.full_clean()
-        wo.save()
+    def copy_from_worksheet(job_pk, worksheet_pk, template=None):
+        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a job.
 
-        # Release remaining earmarks when WO completes
-        if new_status == WorkOrder.STATUS_COMPLETE:
-            from apps.inventory.services import InventoryService
-            InventoryService.release_earmarks_for_job(wo.job)
-
-        return wo
-
-    @staticmethod
-    def copy_from_worksheet(work_order_pk, worksheet_pk):
-        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a work order.
-
-        Per spec 2026-04-05-task-split-and-worksheet-to-workorder.md:
-        - No bundle copy (RealBundle does not exist).
-        - No parent_task copy (hierarchy emerges during work).
-        - No mapping_strategy copy (irrelevant on work order).
-        - PlanMaterials become Materials with price_list_item preserved.
+        If `template` is provided, link it onto the job (for traceability).
         """
         from apps.estimates.models import EstWorksheet
         from apps.jobs.models import PlanTask
         from apps.inventory.models import Material
 
         try:
-            wo = WorkOrder.objects.get(pk=work_order_pk)
-        except WorkOrder.DoesNotExist:
-            raise NotFoundError(f'WorkOrder {work_order_pk} not found')
+            job = Job.objects.get(pk=job_pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {job_pk} not found')
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
 
+        if template is not None:
+            job.template = template
+            job.save(update_fields=['template'])
+
         for plan_task in PlanTask.objects.filter(
             est_worksheet=ws
         ).prefetch_related('plan_materials'):
             new_task = Task.objects.create(
-                work_order=wo,
+                job=job,
                 name=plan_task.name,
                 description=plan_task.description,
                 units=plan_task.units,
@@ -371,16 +345,16 @@ class WorkOrderService:
                 )
 
         from apps.inventory.services import InventoryService
-        InventoryService.create_earmarks_for_work_order(wo)
+        InventoryService.create_earmarks_for_job(job)
 
 
 class TaskService:
     """Service class for Task creation workflows."""
 
     @staticmethod
-    def create_from_line_item(line_item, work_order):
+    def create_from_line_item(line_item, job):
         """
-        Generate appropriate Task(s) for a LineItem in a WorkOrder.
+        Generate appropriate Task(s) for a LineItem on a Job.
 
         Dispatches to the right strategy based on line item source:
         - Worksheet task: copies the source task with all fields
@@ -391,15 +365,15 @@ class TaskService:
             List[Task]: Tasks created for this LineItem
         """
         if line_item.task:
-            return TaskService._copy_worksheet_tasks(line_item, work_order)
+            return TaskService._copy_worksheet_tasks(line_item, job)
         elif line_item.price_list_item:
-            return TaskService._create_task_from_catalog_item(line_item, work_order)
+            return TaskService._create_task_from_catalog_item(line_item, job)
         else:
-            return TaskService._create_generic_task(line_item, work_order)
+            return TaskService._create_generic_task(line_item, job)
 
     @staticmethod
-    def _copy_worksheet_tasks(line_item, work_order):
-        """Copy the PlanTask that contributed to this EstimateLineItem into a Task on the WO.
+    def _copy_worksheet_tasks(line_item, job):
+        """Copy the PlanTask that contributed to this EstimateLineItem into a Task on the Job.
 
         Note: after the spec 2026-04-05 model split, this function copies exactly one
         PlanTask to one Task. The prior "multi-task with parent relationships" logic was
@@ -407,7 +381,7 @@ class TaskService:
         """
         plan_task = line_item.task  # now a PlanTask FK
         new_task = Task.objects.create(
-            work_order=work_order,
+            job=job,
             name=plan_task.name,
             description=plan_task.description,
             units=plan_task.units,
@@ -419,14 +393,14 @@ class TaskService:
         return [new_task]
 
     @staticmethod
-    def _create_task_from_catalog_item(line_item, work_order):
+    def _create_task_from_catalog_item(line_item, job):
         """Create a task from PriceListItem data."""
         task_name = f"{line_item.price_list_item.code} - {line_item.price_list_item.description[:50]}"
         if len(line_item.price_list_item.description) > 50:
             task_name += "..."
 
         task = Task.objects.create(
-            work_order=work_order,
+            job=job,
             name=task_name,
             units=line_item.units if line_item.units not in ('', 'none') else line_item.price_list_item.units,
             rate=line_item.price or line_item.price_list_item.selling_price,
@@ -437,7 +411,7 @@ class TaskService:
         return [task]
 
     @staticmethod
-    def _create_generic_task(line_item, work_order):
+    def _create_generic_task(line_item, job):
         """Create a generic task from manual LineItem data."""
         if line_item.description:
             task_name = line_item.description[:255]
@@ -447,7 +421,7 @@ class TaskService:
             task_name = f"Line Item {line_item.pk}"
 
         task = Task.objects.create(
-            work_order=work_order,
+            job=job,
             name=task_name,
             units=line_item.units,
             rate=line_item.price,
@@ -458,7 +432,7 @@ class TaskService:
         return [task]
 
     @staticmethod
-    def create_from_template(template, work_order, assignee=None):
+    def create_from_template(template, job, assignee=None):
         """
         Create Task from TaskTemplate.
         """
@@ -466,7 +440,7 @@ class TaskService:
             raise ValidationError(f"Template {template.template_name} is not active.")
 
         task = Task.objects.create(
-            work_order=work_order,
+            job=job,
             accounting_category=template.accounting_category,
             name=template.template_name,
             assignee=assignee
@@ -474,10 +448,10 @@ class TaskService:
         return task
 
     @staticmethod
-    def create_direct(work_order, name, **kwargs):
+    def create_direct(job, name, **kwargs):
         """Create Task directly."""
         return Task.objects.create(
-            work_order=work_order,
+            job=job,
             name=name,
             **kwargs
         )
@@ -502,8 +476,6 @@ class TaskService:
         Rules:
         - In-progress and complete tasks cannot be deleted (cancel instead).
         - Tasks with bleps (time entries) cannot be deleted (cancel instead).
-        - If the deleted task was the last blocked task on its WO, the WO
-          is auto-unblocked back to incomplete.
         """
         try:
             task = Task.objects.get(pk=task_pk)
@@ -520,16 +492,7 @@ class TaskService:
                 "Cannot delete a task that has time entries. Cancel it instead."
             )
 
-        was_blocked = task.status == Task.STATUS_BLOCKED
-        wo = task.work_order
         task.delete()
-
-        if was_blocked and wo.status == WorkOrder.STATUS_BLOCKED:
-            still_blocked = Task.objects.filter(
-                work_order=wo, status=Task.STATUS_BLOCKED,
-            ).exists()
-            if not still_blocked:
-                WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
 
     @staticmethod
     def reorder_tasks(task_id, direction):
@@ -541,8 +504,7 @@ class TaskService:
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_id} not found')
 
-        # Post-split: Task is always work-order side.
-        items_qs = Task.objects.filter(work_order=task.work_order)
+        items_qs = Task.objects.filter(job=task.job)
 
         BundlingService.reorder_container_items(
             items_qs, 'task', task_id, direction,
@@ -570,20 +532,24 @@ class TaskLifecycleService:
             )
             task.status = Task.STATUS_COMPLETE
             task.blocked_reason = ''
-            TaskLifecycleService._check_wo_auto_complete(task)
+            TaskLifecycleService._check_job_work_complete(task)
             return task
 
     @staticmethod
-    def _check_wo_auto_complete(task):
-        """Auto-complete WO if all its tasks are complete or cancelled."""
-        # Post-split: task is always a Task (work-order side); no container check needed.
-        wo = task.work_order
+    def _check_job_work_complete(task):
+        """Auto-advance Job to work_complete if all its tasks are terminal.
+
+        Only fires when the Job is currently in APPROVED status.
+        """
+        job = task.job
+        if job.status != Job.STATUS_APPROVED:
+            return
         terminal = {Task.STATUS_COMPLETE, Task.STATUS_CANCELLED}
         all_terminal = not Task.objects.filter(
-            work_order=wo
+            job=job
         ).exclude(status__in=terminal).exists()
         if all_terminal:
-            WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_COMPLETE)
+            JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
 
     @staticmethod
     def block_task(task_pk, reason=''):
@@ -612,29 +578,7 @@ class TaskLifecycleService:
             )
             task.status = Task.STATUS_BLOCKED
             task.blocked_reason = reason
-            TaskLifecycleService._check_wo_blocked(task)
             return task
-
-    @staticmethod
-    def _check_wo_blocked(task):
-        """Block WorkOrder if a task on it is blocked."""
-        # Post-split: task is always a Task (work-order side); no container check needed.
-        wo = task.work_order
-        if wo.status in (WorkOrder.STATUS_BLOCKED, WorkOrder.STATUS_COMPLETE):
-            return
-        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_BLOCKED)
-
-    @staticmethod
-    def _check_wo_unblocked(task):
-        """Unblock WorkOrder if no other tasks on it are blocked."""
-        wo = task.work_order
-        if wo.status != WorkOrder.STATUS_BLOCKED:
-            return
-        still_blocked = Task.objects.filter(
-            work_order=wo, status=Task.STATUS_BLOCKED,
-        ).exclude(pk=task.pk).exists()
-        if not still_blocked:
-            WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
 
     @staticmethod
     def unblock_task(task_pk):
@@ -650,7 +594,6 @@ class TaskLifecycleService:
             )
             task.status = Task.STATUS_IN_PROGRESS
             task.blocked_reason = ''
-            TaskLifecycleService._check_wo_unblocked(task)
             return task
 
     @staticmethod
@@ -664,16 +607,13 @@ class TaskLifecycleService:
                     f"Cannot cancel task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
-            was_blocked = task.status == Task.STATUS_BLOCKED
             BlepService._close_open(task=task)
             Task.objects.filter(pk=task.pk).update(
                 status=Task.STATUS_CANCELLED, blocked_reason='',
             )
             task.status = Task.STATUS_CANCELLED
             task.blocked_reason = ''
-            if was_blocked:
-                TaskLifecycleService._check_wo_unblocked(task)
-            TaskLifecycleService._check_wo_auto_complete(task)
+            TaskLifecycleService._check_job_work_complete(task)
             return task
 
     @staticmethod
@@ -763,7 +703,7 @@ class BoardService:
     @staticmethod
     def get_board_data():
         """Assemble all data for the job board view."""
-        from apps.jobs.models import Job, WorkOrder, Task
+        from apps.jobs.models import Job, Task
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
@@ -797,14 +737,14 @@ class BoardService:
         # Build job_id -> accent_color map for tasks
         color_map = {j['job_id']: j['accent_color'] for j in approved_list}
 
-        # Get all active tasks from approved jobs' work orders
+        # Get all active tasks on approved jobs
         approved_job_ids = [j['job_id'] for j in approved_list]
         tasks = Task.objects.filter(
-            work_order__job_id__in=approved_job_ids,
+            job_id__in=approved_job_ids,
         ).exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         ).select_related(
-            'work_order__job', 'assignee'
+            'job', 'assignee'
         ).order_by('worker_queue', 'pk')
 
         # Group by assignee
@@ -864,7 +804,7 @@ class BoardService:
     @staticmethod
     def get_approved_data():
         """Return approved jobs where work is still active (not unpaid)."""
-        from apps.jobs.models import Job, WorkOrder, Task
+        from apps.jobs.models import Job, Task
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
@@ -890,25 +830,25 @@ class BoardService:
         # Task counts per job (for progress bar in popup)
         from django.db.models import Count, Q as DjQ
         stats = Task.objects.filter(
-            work_order__job_id__in=approved_job_ids
+            job_id__in=approved_job_ids
         ).exclude(status=Task.STATUS_CANCELLED).values(
-            'work_order__job_id'
+            'job_id'
         ).annotate(
             total=Count('task_id'),
             completed=Count('task_id', filter=DjQ(status=Task.STATUS_COMPLETE)),
         )
-        stats_by_job = {s['work_order__job_id']: s for s in stats}
+        stats_by_job = {s['job_id']: s for s in stats}
         for j in approved_list:
             s = stats_by_job.get(j['job_id'], {'total': 0, 'completed': 0})
             j['task_total'] = s['total']
             j['task_completed'] = s['completed']
 
         tasks = Task.objects.filter(
-            work_order__job_id__in=approved_job_ids,
+            job_id__in=approved_job_ids,
         ).exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         ).select_related(
-            'work_order__job', 'assignee'
+            'job', 'assignee'
         ).order_by('worker_queue', 'pk')
 
         worker_map = {}
@@ -942,18 +882,15 @@ class BoardService:
 
     @staticmethod
     def get_unpaid_data():
-        """Return approved jobs where work is done (unpaid sub-statuses)."""
+        """Return work_complete jobs (work done, invoicing/payment outstanding)."""
         from apps.jobs.models import Job
-        approved_jobs = Job.objects.filter(
-            status='approved'
+        unpaid_jobs = Job.objects.filter(
+            status=Job.STATUS_WORK_COMPLETE
         ).select_related('contact').order_by('due_date')
 
-        unpaid_list = []
-        for job in approved_jobs:
-            sub_status = BoardService.compute_sub_status(job)
-            if sub_status in BoardService.UNPAID_SUB_STATUSES:
-                unpaid_list.append(BoardService._serialize_unpaid_job(job))
-
+        unpaid_list = [
+            BoardService._serialize_unpaid_job(job) for job in unpaid_jobs
+        ]
         return {'jobs': unpaid_list}
 
     @staticmethod
@@ -1056,7 +993,7 @@ class BoardService:
         # field exists. Using half the billing rate as a temporary proxy.
         labor_cost = Decimal('0.00')
         bleps = Blep.objects.filter(
-            task__work_order__job=job,
+            task__job=job,
             start_time__isnull=False,
             end_time__isnull=False,
         ).select_related('task')
@@ -1094,7 +1031,7 @@ class BoardService:
 
     @staticmethod
     def _serialize_task(task, color_map):
-        job = task.work_order.job
+        job = task.job
         return {
             'task_id': task.task_id,
             'name': task.name,
@@ -1126,8 +1063,10 @@ class BoardService:
         """Derive the sub-status of a job based on related object states."""
         if job.status in ('draft', 'submitted'):
             return BoardService._pipeline_sub_status(job)
-        elif job.status == 'approved':
+        elif job.status == Job.STATUS_APPROVED:
             return BoardService._approved_sub_status(job)
+        elif job.status == Job.STATUS_WORK_COMPLETE:
+            return BoardService._work_complete_sub_status(job)
         return None
 
     @staticmethod
@@ -1157,30 +1096,19 @@ class BoardService:
 
     @staticmethod
     def _approved_sub_status(job):
-        """Sub-status for Approved jobs."""
-        invoices = job.invoice_set.all()
-        sent_invoice = invoices.filter(status='open').first()
-        if sent_invoice:
-            return 'invoice-sent'
+        """Sub-status for Approved jobs.
 
-        work_orders = job.workorder_set.all()
-        if not work_orders.exists():
-            return 'needs-work-order'
+        Post-WorkOrder-removal: tasks live directly on the job. The
+        previous "needs-work-order" sub-status (no WO existed yet) is
+        now "needs-tasks" (no task has been created yet). Approved jobs
+        with all tasks terminal are auto-advanced to work_complete, so
+        invoice-related sub-statuses live on _work_complete_sub_status.
+        """
+        all_tasks = job.tasks.all()
+        if not all_tasks.exists():
+            return 'needs-tasks'
 
-        active_wo = work_orders.filter(status='incomplete').order_by('-pk').first()
-        if not active_wo:
-            active_wo = work_orders.order_by('-pk').first()
-
-        if active_wo.status == 'complete':
-            # Check for non-cancelled, non-superseded invoices
-            has_invoice = invoices.exclude(
-                status__in=['cancelled', 'superseded']
-            ).exists()
-            if has_invoice:
-                return 'invoice-prepped'
-            return 'needs-invoice'
-
-        tasks = active_wo.tasks.exclude(
+        tasks = all_tasks.exclude(
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         )
         if tasks.filter(status=Task.STATUS_BLOCKED).exists():
@@ -1189,3 +1117,16 @@ class BoardService:
             return 'in-progress'
 
         return 'work-ready'
+
+    @staticmethod
+    def _work_complete_sub_status(job):
+        """Sub-status for work_complete jobs: invoice lifecycle."""
+        from apps.invoicing.models import Invoice
+        invoices = job.invoice_set.exclude(
+            status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]
+        )
+        if invoices.filter(status=Invoice.STATUS_OPEN).exists():
+            return 'invoice-sent'
+        if invoices.filter(status=Invoice.STATUS_DRAFT).exists():
+            return 'invoice-prepped'
+        return 'needs-invoice'

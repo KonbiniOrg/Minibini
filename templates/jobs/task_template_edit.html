@@ -19,15 +19,15 @@
     <a href="{% url 'estimates:task_template_list' %}">Cancel</a>
 </form>
 
-<h3>Used in Work Order Templates</h3>
-{% if work_order_templates %}
+<h3>Used in Work Templates</h3>
+{% if work_templates %}
 <ul>
-    {% for wot in work_order_templates %}
-    <li><a href="{% url 'estimates:work_order_template_detail' wot.template_id %}">{{ wot.template_name }}</a></li>
+    {% for wot in work_templates %}
+    <li><a href="{% url 'estimates:work_template_detail' wot.template_id %}">{{ wot.template_name }}</a></li>
     {% endfor %}
 </ul>
 {% else %}
-<p>This task template is not used in any Work Order Templates.</p>
+<p>This task template is not used in any Work Templates.</p>
 {% endif %}
 
 {% if can_delete %}

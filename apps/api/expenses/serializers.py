@@ -4,7 +4,7 @@ from apps.expenses.models import Expense
 
 class NewMaterialSerializer(serializers.Serializer):
     """Inline new-material descriptor — created atomically with the expense."""
-    work_order_id = serializers.IntegerField()
+    job_id = serializers.IntegerField()
     description = serializers.CharField(required=False, allow_blank=True, default='')
     quantity = serializers.IntegerField(required=False, default=1)
     price = serializers.DecimalField(
@@ -68,8 +68,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return self._name(obj.purchased_by)
 
     def _job(self, obj):
-        if obj.material_id and obj.material.task.work_order_id:
-            return obj.material.task.work_order.job
+        if obj.material_id and obj.material.task.job_id:
+            return obj.material.task.job
         return None
 
     def get_task_name(self, obj):

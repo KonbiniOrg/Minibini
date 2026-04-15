@@ -1,5 +1,5 @@
 from django.test import TestCase
-from apps.jobs.models import Job, WorkOrder
+from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstWorksheet
 from apps.invoicing.models import Invoice
 from apps.purchasing.models import PurchaseOrder, Bill
@@ -8,7 +8,7 @@ from apps.contacts.models import Contact, Business
 
 class AllTrackedModelsTest(TestCase):
     TRACKED_MODELS = [
-        Job, Estimate, EstWorksheet, WorkOrder,
+        Job, Estimate, EstWorksheet,
         Invoice, PurchaseOrder, Bill, Contact, Business,
     ]
 

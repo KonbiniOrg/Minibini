@@ -8,7 +8,7 @@
 
 {% block content %}
 <h2>Task Templates</h2>
-<p>Reusable task definitions that can be used across multiple WorkOrder templates.</p>
+<p>Reusable task definitions that can be used across multiple work templates.</p>
 
 <p><a href="{% url 'estimates:add_task_template_standalone' %}">Add New Task Template</a></p>
 
@@ -20,7 +20,7 @@
             <th>Units</th>
             <th>Rate</th>
             <th>Accounting Category</th>
-            <th>Used in WorkOrder Templates</th>
+            <th>Used in Work Templates</th>
             <th>Created</th>
             <th>Actions</th>
         </tr>
@@ -32,9 +32,9 @@
             <td>${{ template.rate|default:"0.00" }}</td>
             <td>{{ template.accounting_category|default:"-" }}</td>
             <td>
-                {% if template.work_order_templates.all %}
-                    {% for wot in template.work_order_templates.all %}
-                        <a href="{% url 'estimates:work_order_template_detail' template_id=wot.template_id %}">{{ wot.template_name }}</a>{% if not forloop.last %}, {% endif %}
+                {% if template.work_templates.all %}
+                    {% for wot in template.work_templates.all %}
+                        <a href="{% url 'estimates:work_template_detail' template_id=wot.template_id %}">{{ wot.template_name }}</a>{% if not forloop.last %}, {% endif %}
                     {% endfor %}
                 {% else %}
                     <em>Not used</em>

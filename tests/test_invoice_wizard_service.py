@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.invoicing.services import InvoiceWizardService, ClaimConflict
-from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.jobs.models import Job, Task, Blep
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
 from apps.inventory.models import Material, PriceListItem
@@ -27,6 +27,8 @@ class OpenForJobTest(TestCase):
         self.completed_job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0004'
         )
+        self.completed_job.status = Job.STATUS_WORK_COMPLETE
+        self.completed_job.save()
         self.completed_job.status = Job.STATUS_COMPLETED
         self.completed_job.save()
 
@@ -74,18 +76,17 @@ class GetSourcePoolTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
 
         self.task_billable = Task.objects.create(
-            work_order=self.wo, name='Site demo',
+            job=self.job, name='Site demo',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         self.task_empty = Task.objects.create(
-            work_order=self.wo, name='Inspection',
+            job=self.job, name='Inspection',
             rate=Decimal('50.00'), accounting_category=self.category,
         )
         self.task_cancelled = Task.objects.create(
-            work_order=self.wo, name='Cancelled work',
+            job=self.job, name='Cancelled work',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         self.task_cancelled.status = Task.STATUS_CANCELLED
@@ -120,10 +121,10 @@ class GetSourcePoolTest(TestCase):
 
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
-    def test_tree_includes_work_orders_and_tasks(self):
+    def test_tree_includes_tasks(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
-        self.assertEqual(len(pool['work_orders']), 1)
-        task_names = [t['name'] for t in pool['work_orders'][0]['tasks']]
+        self.assertIn('tasks', pool)
+        task_names = [t['name'] for t in pool['tasks']]
         self.assertIn('Site demo', task_names)
         self.assertIn('Inspection', task_names)
         self.assertNotIn('Cancelled work', task_names)
@@ -131,7 +132,7 @@ class GetSourcePoolTest(TestCase):
     def test_incomplete_bleps_are_excluded(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
-            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+            t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
         blep_atoms = [a for a in site_demo['atoms'] if a['atom_type'] == 'blep']
         self.assertEqual(len(blep_atoms), 1)
@@ -140,7 +141,7 @@ class GetSourcePoolTest(TestCase):
     def test_empty_task_has_flag_set(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         inspection = next(
-            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Inspection'
+            t for t in pool['tasks'] if t['name'] == 'Inspection'
         )
         self.assertFalse(inspection['has_billable_atoms'])
         self.assertEqual(inspection['atoms'], [])
@@ -148,7 +149,7 @@ class GetSourcePoolTest(TestCase):
     def test_atom_state_available(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
-            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+            t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
         for atom in site_demo['atoms']:
             self.assertEqual(atom['state'], 'available')
@@ -168,7 +169,7 @@ class GetSourcePoolTest(TestCase):
         )
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
-            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+            t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
         claimed = next(a for a in site_demo['atoms'] if a['atom_id'] == self.blep_complete.pk)
         self.assertEqual(claimed['state'], 'claimed_by_current')
@@ -190,7 +191,7 @@ class GetSourcePoolTest(TestCase):
         )
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
-            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+            t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
         claimed = next(a for a in site_demo['atoms'] if a['atom_id'] == self.blep_complete.pk)
         self.assertEqual(claimed['state'], 'claimed_by_other')
@@ -213,7 +214,7 @@ class GetSourcePoolTest(TestCase):
         )
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
-            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+            t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
         claimed_blep = next(a for a in site_demo['atoms'] if a['atom_id'] == self.blep_complete.pk)
         self.assertEqual(claimed_blep['state'], 'available')
@@ -221,7 +222,7 @@ class GetSourcePoolTest(TestCase):
     def test_material_atoms_included(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
-            t for t in pool['work_orders'][0]['tasks'] if t['name'] == 'Site demo'
+            t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
         materials = [a for a in site_demo['atoms'] if a['atom_type'] == 'material']
         self.assertEqual(len(materials), 1)
@@ -243,9 +244,8 @@ class AddAtomsToNewLineItemTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name='Labor',
+            job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.cat_labor,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -390,9 +390,8 @@ class AddAtomsToExistingLineItemTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name='Labor',
+            job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=4)
@@ -494,9 +493,8 @@ class RemoveAtomsFromLineItemTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name='Labor',
+            job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=6)
@@ -648,9 +646,8 @@ class DiscardDraftTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name='Labor',
+            job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -680,7 +677,7 @@ class DiscardDraftTest(TestCase):
         # Create a fresh draft and check the source pool
         fresh_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         pool = InvoiceWizardService.get_source_pool(fresh_invoice)
-        tasks = pool['work_orders'][0]['tasks']
+        tasks = pool['tasks']
         labor_task = next(t for t in tasks if t['name'] == 'Labor')
         blep_atom = next(a for a in labor_task['atoms'] if a['atom_id'] == self.blep.pk)
         self.assertEqual(blep_atom['state'], 'available')
