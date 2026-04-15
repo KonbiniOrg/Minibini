@@ -88,10 +88,10 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             from django.core.exceptions import ValidationError as DjangoValidationError
             if material.consumption_state == Material.CONSUMPTION_STATE_PENDING:
                 # Pending materials may have earmarks; restock fully to unwind them.
-                eff = material.effective_qty
-                if eff > 0:
+                qty = material.quantity
+                if qty > 0:
                     try:
-                        MaterialService.restock(material, eff)
+                        MaterialService.restock(material, qty)
                     except DjangoValidationError as e:
                         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
                 else:

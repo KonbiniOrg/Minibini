@@ -23,9 +23,6 @@ class PriceListItemSerializer(serializers.ModelSerializer):
 
 
 class MaterialSerializer(serializers.ModelSerializer):
-    effective_qty = serializers.DecimalField(
-        max_digits=10, decimal_places=2, read_only=True,
-    )
     is_expense_bound = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -34,12 +31,12 @@ class MaterialSerializer(serializers.ModelSerializer):
             'material_id', 'job', 'task',
             'description', 'quantity', 'unit_cost', 'sell_price',
             'price_list_item', 'accounting_category',
-            'consumption_state', 'restocked_qty', 'effective_qty',
+            'consumption_state', 'restocked_qty',
             'is_expense_bound',
         ]
         read_only_fields = [
             'material_id', 'job', 'task',
-            'consumption_state', 'restocked_qty', 'effective_qty', 'is_expense_bound',
+            'consumption_state', 'restocked_qty', 'is_expense_bound',
         ]
 
     def update(self, instance, validated_data):
