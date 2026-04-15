@@ -360,3 +360,19 @@ class MaterialService:
             material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
             material.save(update_fields=['consumption_state'])
         return material
+
+    @staticmethod
+    def restock(material, qty):
+        from django.db import transaction
+        from django.core.exceptions import ValidationError
+        if qty <= Decimal('0.00') or qty > material.effective_qty:
+            raise ValidationError('restock qty must be > 0 and <= effective_qty')
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('restock requires pending state')
+        with transaction.atomic():
+            InventoryService._mutate_earmark(material.price_list_item, material.job, -qty)
+            material.restocked_qty = material.restocked_qty + qty
+            material.save(update_fields=['restocked_qty'])
+            if material.effective_qty == Decimal('0.00') and not material.is_expense_bound:
+                material.delete()
+        return material
