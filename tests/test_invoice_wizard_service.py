@@ -687,3 +687,80 @@ class DiscardDraftTest(TestCase):
         self.invoice.save()
         with self.assertRaises(ValidationError):
             InvoiceWizardService.discard_draft(self.invoice)
+
+
+class SourcePoolLooseMaterialsTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@example.com', mobile_number='555-0000',
+        )
+
+    def test_taskless_materials_group_appears_with_effective_qty_filter(self):
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory, User
+        from apps.jobs.models import Job
+        from apps.invoicing.models import Invoice
+        from apps.invoicing.services import InvoiceWizardService
+        from apps.inventory.models import PriceListItem
+        from apps.inventory.services import MaterialService
+        from apps.expenses.models import Expense
+        cat = AccountingCategory.objects.create(name='c', code='IWL1')
+        pli = PriceListItem.objects.create(
+            code='I-IWL', accounting_category=cat, is_inventoried=True,
+            qty_on_hand=Decimal('10'),
+        )
+        job = Job.objects.create(contact=self.contact, job_number='JOB-IW-1')
+        m1 = MaterialService.create_on_job(
+            job=job, task=None, description='m1',
+            quantity=Decimal('3'), sell_price=Decimal('2'),
+            price_list_item=pli,
+        )
+        m2 = MaterialService.create_on_job(
+            job=job, task=None, description='fully restocked',
+            quantity=Decimal('2'), sell_price=Decimal('2'),
+            price_list_item=pli,
+        )
+        user = User.objects.create(username='iwl_user')
+        Expense.objects.create(
+            entered_by=user, purchased_by=user, amount=Decimal('4'),
+            purchased_on='2026-04-14',
+            accounting_category=cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            material=m2,
+        )
+        MaterialService.restock(m2, Decimal('2'))
+        inv = Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
+        pool = InvoiceWizardService.get_source_pool(inv)
+
+        loose = [g for g in pool['tasks'] if g['task_id'] is None]
+        self.assertEqual(len(loose), 1)
+        atoms = loose[0]['atoms']
+        self.assertEqual([a['atom_id'] for a in atoms], [m1.pk])
+        self.assertEqual(atoms[0]['computed_amount'], Decimal('6.00'))
+
+    def test_partial_restock_bills_effective_qty(self):
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import Job
+        from apps.invoicing.services import InvoiceWizardService
+        from apps.inventory.models import PriceListItem
+        from apps.inventory.services import MaterialService
+        cat = AccountingCategory.objects.create(name='c', code='IWL2')
+        pli = PriceListItem.objects.create(
+            code='I-IWL2', accounting_category=cat, is_inventoried=True,
+            qty_on_hand=Decimal('10'),
+        )
+        job = Job.objects.create(contact=self.contact, job_number='JOB-IW-2')
+        m = MaterialService.create_on_job(
+            job=job, task=None, description='m',
+            quantity=Decimal('5'), sell_price=Decimal('2'),
+            price_list_item=pli,
+        )
+        MaterialService.restock(m, Decimal('2'))
+        amount = InvoiceWizardService._atom_computed_amount(m)
+        self.assertEqual(amount, Decimal('6.00'))
