@@ -463,20 +463,21 @@ the existing task-generation step.
 
 ### New endpoints
 
+All new material endpoints require `IsAuthenticated` only — no
+`CanManageJobs` check. Material management is part of daily shop work
+and should not be gated behind the manager-level permission atom.
+
 - `POST /api/jobs/{id}/materials/` — create task-less Material on Job.
   Body: `{description, quantity, unit_cost, sell_price, price_list_item?, accounting_category?}`.
-  Permission: `CanManageJobs`.
 - `PATCH /api/materials/{id}/` — description-only edit. Other fields
-  rejected to force use of Restock/Draw-more. Permission: `CanManageJobs`.
+  rejected to force use of Restock/Draw-more.
 - `POST /api/materials/{id}/consume/` — execute Consume op.
-  Permission: `CanManageJobs`.
 - `POST /api/materials/{id}/restock/` — execute Restock(qty) op. Body:
-  `{quantity}`. Permission: `CanManageJobs`.
+  `{quantity}`.
 - `POST /api/materials/{id}/draw-more/` — execute Draw-more(qty) op. Body:
   `{quantity}`. Returns 400 if Material `is_expense_bound` (UI never
   surfaces the button for expense-bound Materials; this is a defensive
   API check).
-  Permission: `CanManageJobs`.
 
 ### No direct Material DELETE endpoint
 
