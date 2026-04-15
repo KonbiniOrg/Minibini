@@ -46,16 +46,71 @@ class ConsumeTest(TestCase):
         with self.assertRaises(ValidationError):
             MaterialService.consume(m)
 
-    def test_consume_uses_effective_qty(self):
+    def test_consume_uses_quantity(self):
+        m = MaterialService.create_on_job(
+            job=self.job, task=None,
+            description='x', quantity=Decimal('3'),
+            price_list_item=self.pli,
+        )
+        qoh_before = self.pli.qty_on_hand
+        sold_before = self.pli.qty_sold
+        e_before = Earmark.objects.get(
+            price_list_item=self.pli, job=self.job
+        ).quantity
+        MaterialService.consume(m)
+        m.refresh_from_db()
+        self.pli.refresh_from_db()
+        self.assertEqual(self.pli.qty_on_hand, qoh_before - Decimal('3'))
+        self.assertEqual(self.pli.qty_sold, sold_before + Decimal('3'))
+        self.assertFalse(
+            Earmark.objects.filter(
+                price_list_item=self.pli, job=self.job
+            ).exists()
+        )
+        # earmark started at e_before=3 and dropped by 3 (to 0, then removed)
+        self.assertEqual(e_before, Decimal('3'))
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+
+    def test_consume_after_partial_expense_bound_restock_uses_quantity(self):
+        from apps.expenses.models import Expense
+        from apps.core.models import User
+        user, _ = User.objects.get_or_create(username='consume_expense_user')
         m = MaterialService.create_on_job(
             job=self.job, task=None,
             description='x', quantity=Decimal('5'),
             price_list_item=self.pli,
         )
+        Expense.objects.create(
+            entered_by=user, amount=Decimal('10'),
+            purchased_on='2026-04-14',
+            accounting_category=m.accounting_category
+                or AccountingCategory.objects.first(),
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            purchased_by=user,
+            material=m,
+        )
         MaterialService.restock(m, Decimal('2'))
+        m.refresh_from_db()
+        # sanity: quantity=3, restocked_qty=2
+        self.assertEqual(m.quantity, Decimal('3'))
+        self.assertEqual(m.restocked_qty, Decimal('2'))
+        qoh_before = self.pli.qty_on_hand
+        sold_before = self.pli.qty_sold
+        e_before = Earmark.objects.get(
+            price_list_item=self.pli, job=self.job
+        ).quantity
         MaterialService.consume(m)
+        m.refresh_from_db()
         self.pli.refresh_from_db()
-        self.assertEqual(self.pli.qty_sold, Decimal('3'))
+        self.assertEqual(self.pli.qty_on_hand, qoh_before - Decimal('3'))
+        self.assertEqual(self.pli.qty_sold, sold_before + Decimal('3'))
+        self.assertEqual(e_before, Decimal('3'))
+        self.assertFalse(
+            Earmark.objects.filter(
+                price_list_item=self.pli, job=self.job
+            ).exists()
+        )
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
 
 
 class RestockTest(TestCase):

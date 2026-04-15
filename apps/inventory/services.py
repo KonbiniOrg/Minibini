@@ -346,18 +346,18 @@ class MaterialService:
             raise ValidationError(
                 f'consume requires pending state; got {material.consumption_state}'
             )
-        eff = material.effective_qty
-        if eff <= Decimal('0.00'):
+        qty = material.quantity
+        if qty <= Decimal('0.00'):
             return material
         with transaction.atomic():
             pli = material.price_list_item
             if pli and pli.is_inventoried:
                 from django.db.models import F
-                pli.qty_on_hand = F('qty_on_hand') - eff
-                pli.qty_sold = F('qty_sold') + eff
+                pli.qty_on_hand = F('qty_on_hand') - qty
+                pli.qty_sold = F('qty_sold') + qty
                 pli.save(update_fields=['qty_on_hand', 'qty_sold'])
                 pli.refresh_from_db()
-                InventoryService._mutate_earmark(pli, material.job, -eff)
+                InventoryService._mutate_earmark(pli, material.job, -qty)
             material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
             material.save(update_fields=['consumption_state'])
         return material
