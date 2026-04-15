@@ -54,22 +54,4 @@ services:
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
-  reset_database:
-    container_name: minibini
-    image: ashannonlee/minibini
-    environment:
-      - MYSQL_ROOT_PASSWORD=Ru5UPhae
-      - DATABASE_NAME=minibini_db
-      - DATABASE_USER=minidb_user
-      - DATABASE_PASSWORD=Ru5UPhae
-      - DATABASE_HOST=mysql
-    restart: never
-    depends_on:
-      mysql:
-        condition: service_healthy
-        restart: false
-    command: python manage.py migrate
-    profile: utility
-
-
 
