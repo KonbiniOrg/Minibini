@@ -17,8 +17,17 @@
   let startTime = $state('');
   let endTime = $state('');
   let targetUserId = $state('');
+  let users = $state([]);
   let busy = $state(false);
   let error = $state('');
+
+  async function loadUsers() {
+    try {
+      users = await api.get('/api/auth/users/');
+    } catch (e) {
+      users = [];
+    }
+  }
 
   function isoToLocal(iso) {
     if (!iso) return '';
@@ -45,6 +54,7 @@
         targetUserId = String(currentUser?.id ?? '');
       }
       error = '';
+      if (canManageTime) loadUsers();
     }
   });
 
@@ -53,10 +63,12 @@
     error = '';
     try {
       if (mode === 'edit') {
-        await api.patch(`/api/bleps/${blep.blep_id}/`, {
+        const payload = {
           start_time: localToIso(startTime),
           end_time: localToIso(endTime),
-        });
+        };
+        if (canManageTime && targetUserId) payload.user = Number(targetUserId);
+        await api.patch(`/api/bleps/${blep.blep_id}/`, payload);
       } else {
         const payload = {
           task: taskId,
@@ -107,7 +119,12 @@
       {#if canManageTime}
         <p>
           <label><strong>User (manager only)</strong><br>
-            <input type="number" bind:value={targetUserId}>
+            <select bind:value={targetUserId}>
+              <option value="">-- Select user --</option>
+              {#each users as u}
+                <option value={String(u.id)}>{u.name} ({u.username})</option>
+              {/each}
+            </select>
           </label>
         </p>
       {/if}

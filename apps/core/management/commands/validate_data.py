@@ -301,15 +301,21 @@ class Command(BaseCommand):
         from apps.invoicing.models import InvoiceLineItem
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 
-        accounting_categories = [
-            ('EstimateLineItem', EstimateLineItem),
-            ('InvoiceLineItem', InvoiceLineItem),
-            ('PurchaseOrderLineItem', PurchaseOrderLineItem),
-            ('BillLineItem', BillLineItem),
+        # (name, model, has_task_fk) — InvoiceLineItem's task FK was dropped in
+        # favour of InvoiceLineItemSource, so it can't be included in select_related.
+        line_item_models = [
+            ('EstimateLineItem', EstimateLineItem, True),
+            ('InvoiceLineItem', InvoiceLineItem, False),
+            ('PurchaseOrderLineItem', PurchaseOrderLineItem, True),
+            ('BillLineItem', BillLineItem, True),
         ]
 
-        for name, model in accounting_categories:
-            for li in model.objects.select_related('task', 'price_list_item').all():
+        for name, model, has_task_fk in line_item_models:
+            if has_task_fk:
+                qs = model.objects.select_related('task', 'price_list_item').all()
+            else:
+                qs = model.objects.select_related('price_list_item').all()
+            for li in qs:
                 # Mutual exclusivity: cannot have both task and price_list_item
                 if li.task and li.price_list_item:
                     self.errors.append(
@@ -389,7 +395,7 @@ class Command(BaseCommand):
             if not pli.accounting_category_id:
                 self.errors.append(
                     f'PLI {pli.code}: missing accounting_category '
-                    f'(will produce tax-exempt line items on documents)'
+                    f'(should not be possible — field is required)'
                 )
             if pli.purchase_price < 0:
                 self.errors.append(f'PLI {pli.code}: negative purchase_price {pli.purchase_price}')

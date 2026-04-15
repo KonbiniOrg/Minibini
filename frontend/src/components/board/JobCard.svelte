@@ -116,6 +116,9 @@
         <span class="doc-amount">{formatAmount(doc.total)}</span>
       </div>
     {/each}
+    {#if showProgress && job.sub_status === 'blocked'}
+      <div class="blocked-banner">BLOCKED</div>
+    {/if}
     {#if showProgress}
       {@const total = job.task_total ?? 0}
       {@const completed = job.task_completed ?? 0}
@@ -184,6 +187,12 @@
   .doc-pill-open { background: #fef3c7; color: #b45309; }
   .doc-date { font-size: 10px; color: #999; }
   .doc-amount { margin-left: auto; font-weight: 600; font-family: 'SF Mono', 'Fira Code', monospace; color: #333; }
+
+  .blocked-banner {
+    background: #fee2e2; color: #b91c1c; font-size: 11px; font-weight: 700;
+    text-align: center; padding: 3px 0; letter-spacing: 0.5px;
+    border-top: 1px solid #f0f0f0;
+  }
 
   .progress-bar {
     position: relative;

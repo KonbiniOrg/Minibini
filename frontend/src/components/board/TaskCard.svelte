@@ -109,6 +109,9 @@
     <div class="task-info">
       <div class="task-name">{task.name}</div>
       <div class="task-job-label">{deadlineLabel()}</div>
+      {#if task.status === 'blocked' && task.blocked_reason}
+        <div class="task-blocked-reason">{task.blocked_reason}</div>
+      {/if}
     </div>
     {#if STATUS_LABELS[task.status]}
       <span class="task-status-badge {labelClass()}">{STATUS_LABELS[task.status]}</span>
@@ -132,6 +135,9 @@
           <span class="tp-status {labelClass()}">{STATUS_LABELS[task.status]}</span>
         {/if}
       </div>
+      {#if task.status === 'blocked' && task.blocked_reason}
+        <div class="tp-blocked-reason">{task.blocked_reason}</div>
+      {/if}
       {#if popupDeadlineText()}
         <div class="tp-deadline">{popupDeadlineText()}</div>
       {/if}
@@ -180,4 +186,6 @@
   .tp-name { font-size: 13px; font-weight: 600; color: #333; flex: 1; line-height: 1.3; }
   .tp-status { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; font-weight: 700; flex-shrink: 0; }
   .tp-deadline { font-size: 11px; color: #888; }
+  .task-blocked-reason { font-size: 9px; color: #ef4444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tp-blocked-reason { font-size: 11px; color: #ef4444; margin-bottom: 2px; }
 </style>

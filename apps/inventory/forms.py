@@ -16,6 +16,7 @@ class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
             'qty_on_hand',
             'purchase_price',
             'selling_price',
+            'accounting_category',
         ]
 
     def clean_code(self):

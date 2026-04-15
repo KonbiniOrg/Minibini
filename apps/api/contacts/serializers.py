@@ -7,7 +7,7 @@ from apps.api.jobs.serializers import JobSummarySerializer
 class BusinessSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Business
-        fields = ['business_id', 'business_name', 'our_reference_code']
+        fields = ['business_id', 'business_name', 'our_reference_code', 'default_contact']
 
 
 class ContactSummarySerializer(serializers.ModelSerializer):

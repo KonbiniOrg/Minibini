@@ -8,7 +8,7 @@ from apps.jobs.models import WorkOrder, Task
 from apps.jobs.services import WorkOrderService
 from apps.estimates.models import WorkOrderTemplate, Estimate, EstWorksheet, TaskTemplate
 from apps.api.mixins import StatusTransitionMixin, WorkOrderTaskMixin
-from apps.api.permissions import CanManageJobs
+from apps.api.permissions import CanManageJobs, CanManageFinancials
 from .serializers import WorkOrderSerializer, TaskSerializer
 
 
@@ -29,6 +29,8 @@ class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.Model
             if self.request.method in ('GET', 'POST'):
                 return [IsAuthenticated()]
             return [IsAuthenticated(), CanManageJobs()]
+        if self.action == 'materials':
+            return [IsAuthenticated(), CanManageFinancials()]
         return [IsAuthenticated(), CanManageJobs()]
 
     # WorkOrderTaskMixin config
@@ -61,6 +63,57 @@ class WorkOrderViewSet(StatusTransitionMixin, WorkOrderTaskMixin, viewsets.Model
         job = data.get('job')
         wo = WorkOrderService.create_direct(job)
         serializer.instance = wo
+
+    @action(detail=True, methods=['post'], url_path='materials', url_name='materials')
+    def materials(self, request, pk=None):
+        """Create a material on this work order.
+
+        If ``_use_materials_bucket`` is truthy, the material is attached to
+        the auto-created "Materials" bucket task via
+        ``ExpenseService.find_or_create_materials_task``.  Otherwise the
+        caller must supply a ``task`` field pointing to an existing task on
+        this work order.
+        """
+        from apps.api.tasks.serializers import MaterialSerializer, MaterialWriteSerializer
+        from apps.inventory.services import InventoryService
+        from apps.core.services import NotFoundError, ServiceError
+
+        work_order = self.get_object()
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+
+        use_bucket = data.pop('_use_materials_bucket', False)
+        if use_bucket:
+            from apps.expenses.services import ExpenseService
+            bucket_task = ExpenseService.find_or_create_materials_task(work_order=work_order)
+            task_pk = bucket_task.pk
+        else:
+            task_pk = data.get('task')
+            if not task_pk:
+                return Response(
+                    {'task': ['This field is required when _use_materials_bucket is not set.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            # Verify the task belongs to this work order
+            if not Task.objects.filter(pk=task_pk, work_order=work_order).exists():
+                return Response(
+                    {'task': ['Task not found on this work order.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        serializer = MaterialWriteSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            mat = InventoryService.create_wo_material(
+                task_pk, **serializer.validated_data,
+            )
+        except NotFoundError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except ServiceError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            MaterialSerializer(mat).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=['post'], url_path='create-from-template')
     def create_from_template(self, request):

@@ -48,6 +48,15 @@
     }
   }
 
+  async function startWizard() {
+    try {
+      const { invoice_id } = await api.post(`/api/jobs/${job.job_id}/start-invoice-wizard/`);
+      push(`/invoices/${invoice_id}/wizard`);
+    } catch (e) {
+      error = e.message || 'Failed to start wizard';
+    }
+  }
+
   async function handleAddNote(text) {
     try {
       await api.post(`/api/jobs/${params.id}/notes/`, { text });
@@ -89,6 +98,7 @@
     {emails}
     onAddNote={handleAddNote}
     onStatusChange={loadJob}
+    onStartWizard={startWizard}
   />
 
   <p><a href="#/jobs">Back to list</a></p>

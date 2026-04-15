@@ -8,7 +8,7 @@ from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.inventory.models import PriceListItem
-from apps.core.models import Configuration
+from apps.core.models import AccountingCategory, Configuration
 
 
 class POLineItemJobTest(TestCase):
@@ -42,6 +42,7 @@ class POLineItemJobTest(TestCase):
             job_number='J-PO-002', contact=self.contact, description='Job B',
         )
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.inventoried_item = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Plywood',
@@ -49,6 +50,7 @@ class POLineItemJobTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
     def test_line_item_has_job_fk(self):

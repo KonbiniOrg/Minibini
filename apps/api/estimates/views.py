@@ -24,6 +24,7 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
     # Line item mixin config
     line_item_serializer_class = EstimateLineItemSerializer
     line_item_parent_field = 'estimate'
+    line_item_service_class = EstimateService
 
     # Status actions
     status_actions = {

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -61,8 +62,8 @@ class PurchaseOrder(models.Model):
         VALID_TRANSITIONS = {
             PurchaseOrder.STATUS_DRAFT: [PurchaseOrder.STATUS_ISSUED],
             PurchaseOrder.STATUS_ISSUED: [PurchaseOrder.STATUS_PARTLY_RECEIVED, PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED],
-            PurchaseOrder.STATUS_PARTLY_RECEIVED: [PurchaseOrder.STATUS_RECEIVED_IN_FULL],
-            PurchaseOrder.STATUS_RECEIVED_IN_FULL: [],  # Terminal state
+            PurchaseOrder.STATUS_PARTLY_RECEIVED: [PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_ISSUED],
+            PurchaseOrder.STATUS_RECEIVED_IN_FULL: [PurchaseOrder.STATUS_PARTLY_RECEIVED, PurchaseOrder.STATUS_ISSUED],
             PurchaseOrder.STATUS_CANCELLED: [],  # Terminal state
         }
 
@@ -360,6 +361,16 @@ class PurchaseOrderLineItem(BaseLineItem):
         'jobs.Job', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
+
+    # Receiving fields
+    qty_received = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    received_by = models.ForeignKey(
+        'core.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='received_po_line_items',
+    )
+    received_date = models.DateTimeField(null=True, blank=True)
+    receipt_note = models.TextField(blank=True, default='')
+    qty_cancelled = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
     class Meta:
         db_table = 'po_li'

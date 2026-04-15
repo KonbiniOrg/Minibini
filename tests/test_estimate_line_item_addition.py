@@ -49,6 +49,12 @@ class EstimateLineItemAdditionTests(TestCase):
             status=Job.STATUS_DRAFT
         )
 
+        # Create a line item type for manual form tests
+        self.service_type, _ = AccountingCategory.objects.get_or_create(
+            code='SVC',
+            defaults={'name': 'Service', 'taxable': False}
+        )
+
         # Create a price list item
         self.price_list_item = PriceListItem.objects.create(
             code='ITEM001',
@@ -56,13 +62,8 @@ class EstimateLineItemAdditionTests(TestCase):
             description='Test Price List Item',
             purchase_price=Decimal('10.00'),
             selling_price=Decimal('15.00'),
-            qty_on_hand=Decimal('100.00')
-        )
-
-        # Create a line item type for manual form tests
-        self.service_type, _ = AccountingCategory.objects.get_or_create(
-            code='SVC',
-            defaults={'name': 'Service', 'taxable': False}
+            qty_on_hand=Decimal('100.00'),
+            accounting_category=self.service_type,
         )
 
     def test_get_add_line_item_page(self):

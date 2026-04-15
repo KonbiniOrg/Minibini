@@ -24,7 +24,6 @@ class User(AbstractUser):
             ('can_manage_jobs', 'Can manage jobs, estimates, worksheets, work orders, tasks, contacts'),
             ('can_manage_financials', 'Can manage invoices, POs, bills, price list'),
             ('can_manage_time', "Can edit/delete anyone's time entries"),
-            ('can_approve_expenses', 'Can approve/reject expenses over threshold'),
             ('can_manage_config', 'Can manage settings, templates, user admin'),
         ]
 
@@ -235,9 +234,25 @@ class BaseLineItem(models.Model):
         if has_task and has_price_item:
             raise ValidationError("LineItem cannot have both task and price_list_item")
 
+    def _populate_from_pli(self):
+        """Copy description/units/accounting_category from linked PriceListItem if not already set.
+
+        Price is NOT populated here because purchase vs selling price is a
+        business decision — services set the correct price for each entity type.
+        """
+        if self.price_list_item:
+            if not self.description:
+                self.description = self.price_list_item.description
+            if self.units == 'none' or not self.units:
+                self.units = self.price_list_item.units
+            if not self.accounting_category and self.price_list_item.accounting_category:
+                self.accounting_category = self.price_list_item.accounting_category
+
     def save(self, *args, **kwargs):
         """Override save to ensure validation is always run and handle automatic line numbering."""
         from django.db import transaction
+
+        self._populate_from_pli()
 
         if self.line_number is None:
             with transaction.atomic():

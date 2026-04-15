@@ -5,6 +5,7 @@ InventoryService earmark methods: get_earmark_preview() and create_earmarks_for_
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
+from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, WorkOrder, Task
 from apps.inventory.models import Material, PriceListItem, Earmark
 from apps.inventory.services import InventoryService
@@ -30,6 +31,7 @@ class EarmarkPreviewTest(TestCase):
         )
         self.work_order = WorkOrder.objects.create(job=self.job)
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -38,6 +40,7 @@ class EarmarkPreviewTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
         self.screws = PriceListItem.objects.create(
             code='SCR.100',
@@ -47,6 +50,7 @@ class EarmarkPreviewTest(TestCase):
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
         self.task_a = Task.objects.create(
@@ -141,6 +145,7 @@ class EarmarkPreviewTest(TestCase):
     def test_preview_ignores_non_inventoried_pli(self):
         non_inv = PriceListItem.objects.create(
             code='NONINV', description='Not tracked', is_inventoried=False,
+            accounting_category=self.category,
         )
         Material.objects.create(
             task=self.task_a, price_list_item=non_inv,
@@ -169,6 +174,7 @@ class CreateEarmarksForJobTest(TestCase):
             job_number='J-EMK-003', contact=self.contact, description='Earmark Job',
         )
 
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -177,6 +183,7 @@ class CreateEarmarksForJobTest(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
         self.screws = PriceListItem.objects.create(
             code='SCR.100',
@@ -186,6 +193,7 @@ class CreateEarmarksForJobTest(TestCase):
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
     def test_creates_earmarks_from_data(self):

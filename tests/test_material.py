@@ -37,6 +37,9 @@ class MaterialTestBase(TestCase):
             rate=Decimal('50.00'),
             est_qty=Decimal('4.00'),
         )
+        self.category = AccountingCategory.objects.create(
+            name='Material', code='MAT',
+        )
         self.inventoried_item = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -44,12 +47,14 @@ class MaterialTestBase(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
         self.price_list_item = PriceListItem.objects.create(
             code='EDGE.OAK',
             description='Oak edge banding',
             purchase_price=Decimal('12.00'),
             selling_price=Decimal('24.00'),
+            accounting_category=self.category,
         )
 
 

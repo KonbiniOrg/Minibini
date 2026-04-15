@@ -4,6 +4,7 @@ Tests for earmark release when a WorkOrder is completed.
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact
+from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, WorkOrder, Task
 from apps.jobs.services import WorkOrderService
 from apps.inventory.models import Material, PriceListItem, Earmark
@@ -19,11 +20,12 @@ class EarmarkReleaseOnWOCompleteTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-REL-001', contact=self.contact,
         )
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.REL', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_inventoried=True,
+            is_inventoried=True, accounting_category=self.category,
         )
 
     def test_earmarks_released_on_wo_complete(self):

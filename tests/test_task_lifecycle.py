@@ -227,6 +227,20 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         TaskLifecycleService.start_work(self.task.pk, self.user)
         mock_consume.assert_called_once_with(mat)
 
+    def test_start_work_assigns_user_when_no_assignee(self):
+        self.assertIsNone(self.task.assignee)
+        TaskLifecycleService.start_work(self.task.pk, self.user)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee, self.user)
+
+    def test_start_work_preserves_existing_assignee(self):
+        other_user = User.objects.create_user(username='other', password='test')
+        self.task.assignee = other_user
+        self.task.save()
+        TaskLifecycleService.start_work(self.task.pk, self.user)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee, other_user)
+
 
 class CompleteTaskTest(BaseTestCase):
     def setUp(self):
@@ -265,6 +279,14 @@ class CompleteTaskTest(BaseTestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
 
+    def test_complete_from_blocked_clears_reason(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            status=Task.STATUS_BLOCKED, blocked_reason='Waiting on parts'
+        )
+        TaskLifecycleService.complete_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, '')
+
     def test_complete_last_task_auto_completes_wo(self):
         TaskLifecycleService.complete_task(self.task.pk)
         self.wo.refresh_from_db()
@@ -297,6 +319,16 @@ class BlockTaskTest(BaseTestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_BLOCKED)
 
+    def test_block_stores_reason(self):
+        TaskLifecycleService.block_task(self.task.pk, reason='Waiting on parts')
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, 'Waiting on parts')
+
+    def test_block_without_reason_stores_empty(self):
+        TaskLifecycleService.block_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, '')
+
     def test_block_from_in_progress(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.task.refresh_from_db()
@@ -328,6 +360,14 @@ class BlockTaskTest(BaseTestCase):
         TaskLifecycleService.unblock_task(self.task.pk)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+
+    def test_unblock_clears_blocked_reason(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            status=Task.STATUS_BLOCKED, blocked_reason='Waiting on parts'
+        )
+        TaskLifecycleService.unblock_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, '')
 
     def test_unblock_rejects_non_blocked(self):
         with self.assertRaises(ValidationError):
@@ -388,6 +428,14 @@ class CancelTaskTest(BaseTestCase):
         TaskLifecycleService.cancel_task(self.task.pk)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_CANCELLED)
+
+    def test_cancel_from_blocked_clears_reason(self):
+        Task.objects.filter(pk=self.task.pk).update(
+            status=Task.STATUS_BLOCKED, blocked_reason='Waiting on parts'
+        )
+        TaskLifecycleService.cancel_task(self.task.pk)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.blocked_reason, '')
 
     def test_cancel_rejects_complete(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)
@@ -466,6 +514,17 @@ class StartStopWorkTest(BaseTestCase):
         self.assertIn('blep', result)
         other_blep.refresh_from_db()
         self.assertIsNotNone(other_blep.end_time)
+
+    def test_start_work_join_does_not_change_assignee(self):
+        """Joining an in-progress task should not overwrite the existing assignee."""
+        self.task.assignee = self.worker2
+        self.task.save()
+        Blep.objects.create(
+            task=self.task, user=self.worker2, start_time=timezone.now()
+        )
+        TaskLifecycleService.start_work(self.task.pk, self.user, action='join')
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee, self.worker2)
 
     def test_stop_work_closes_blep(self):
         blep = Blep.objects.create(

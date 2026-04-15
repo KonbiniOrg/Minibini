@@ -34,17 +34,19 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-AEM-001', contact=self.contact,
         )
+        from apps.core.models import AccountingCategory
+        self.category = AccountingCategory.objects.create(name='Material', code='MAT')
         self.plywood = PriceListItem.objects.create(
             code='PLY.75', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_inventoried=True,
+            is_inventoried=True, accounting_category=self.category,
         )
         self.screws = PriceListItem.objects.create(
             code='SCR.100', description='Screws',
             units='ea', qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'), selling_price=Decimal('12.00'),
-            is_inventoried=True,
+            is_inventoried=True, accounting_category=self.category,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.plan_task = PlanTask.objects.create(
@@ -189,11 +191,13 @@ class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-AEM-004', contact=self.contact,
         )
+        from apps.core.models import AccountingCategory
+        self.category = AccountingCategory.objects.create(name='Material', code='MAT2')
         self.plywood = PriceListItem.objects.create(
             code='PLY.99', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_inventoried=True,
+            is_inventoried=True, accounting_category=self.category,
         )
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-AEM-005', version=1,

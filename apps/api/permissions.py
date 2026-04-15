@@ -14,5 +14,4 @@ def atom_permission(perm_codename):
 CanManageJobs = atom_permission('can_manage_jobs')
 CanManageFinancials = atom_permission('can_manage_financials')
 CanManageTime = atom_permission('can_manage_time')
-CanApproveExpenses = atom_permission('can_approve_expenses')
 CanManageConfig = atom_permission('can_manage_config')

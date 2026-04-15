@@ -697,6 +697,26 @@ class LineItemService:
     This matches how BundlingService delegates status checks to callers.
     """
 
+    @staticmethod
+    def normalize_fk_kwargs(model_class, kwargs):
+        """Convert FK fields passed as PKs to _id fields for model constructor.
+
+        Allows services to accept either model instances or integer PKs
+        for foreign key fields (e.g., price_list_item=5 becomes
+        price_list_item_id=5).
+        """
+        cleaned = {}
+        fk_fields = {
+            f.name for f in model_class._meta.get_fields()
+            if f.many_to_one or f.one_to_one
+        }
+        for key, value in kwargs.items():
+            if key in fk_fields and value is not None and not hasattr(value, 'pk'):
+                cleaned[f'{key}_id'] = value
+            else:
+                cleaned[key] = value
+        return cleaned
+
     @classmethod
     def get_line_item_model(cls, line_item):
         """

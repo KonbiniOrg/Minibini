@@ -252,6 +252,8 @@ with transaction.atomic():
 
 **Types:** Pass correct types to model fields (don't wrap numbers in `str()`).
 
+**`__init__.py` files:** Keep `__init__.py` files empty (or limited to re-exports). Do not put service classes, models, or other substantial code in `__init__.py`. Use dedicated modules instead (e.g., `services.py`, not `services/__init__.py`).
+
 **Field renames:** After migration renames, grep entire codebase for old field name. Python silently allows setting arbitrary attributes on model instances.
 
 **Permissions:** Always check permissions in views:
@@ -272,7 +274,6 @@ See `docs/designs/2026-03-24-permission-atom-redesign.md` for atoms, group mappi
 | `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, work orders, tasks, bundles, contacts, businesses; email-to-job actions (link, unlink, create-job-from-email) |
 | `can_manage_financials` | Full CRUD on invoices, POs, bills, price list items |
 | `can_manage_time` | Edit/delete anyone's time entries (shifts + bleps) |
-| `can_approve_expenses` | Approve/reject expenses over threshold |
 | `can_manage_config` | Settings, templates, accounting categories, user admin |
 
 **`IsAuthenticated` (no atom):** Read access to jobs, work orders, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, bills, emails. Write access to notes on jobs/contacts/businesses and adding tasks to work orders.
@@ -285,8 +286,8 @@ See `docs/designs/2026-03-24-permission-atom-redesign.md` for atoms, group mappi
 |---|---|
 | Worker | *(none — IsAuthenticated covers read access)* |
 | Admin | `can_manage_jobs` |
-| Bookkeeper | `can_manage_financials`, `can_approve_expenses` |
-| Manager | `can_manage_jobs`, `can_manage_financials`, `can_manage_time`, `can_approve_expenses` |
+| Bookkeeper | `can_manage_financials` |
+| Manager | `can_manage_jobs`, `can_manage_financials`, `can_manage_time` |
 | Owner | all atoms |
 
 Groups are defined in fixture data, not migrations. Shops customize to suit their needs.
@@ -318,6 +319,7 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - Tests in `/tests/` directory using Django TestCase
 - Fixtures in `/fixtures/` (JSON format)
 - Base test classes: `BaseTestCase`, `FixtureTestCase` in `tests/base.py`
+- **NEVER run `python manage.py test` from multiple subagents in parallel.** They all share one MySQL database and will deadlock fighting over test database creation/destruction. Only one agent at a time may run tests.
 
 ## Development Features
 

@@ -462,9 +462,6 @@ def estworksheet_generate_estimate(request, worksheet_id):
             service = EstimateGenerationService()
             estimate = service.generate_estimate_from_worksheet(worksheet)
 
-            # Mark worksheet as final after generating estimate
-            WorksheetService.finalize(worksheet.pk)
-
             messages.success(request, f'Estimate {estimate.estimate_number} generated successfully!')
             return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
 

@@ -13,13 +13,16 @@ from .serializers import JobSerializer
 
 
 class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
-    queryset = Job.objects.all().order_by('-created_date')
+    queryset = Job.objects.select_related('contact').all().order_by('-created_date')
     serializer_class = JobSerializer
     lookup_field = 'pk'
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve', 'history', 'notes'):
             return [IsAuthenticated()]
+        if self.action == 'start_invoice_wizard':
+            from apps.api.permissions import CanManageFinancials
+            return [IsAuthenticated(), (CanManageJobs | CanManageFinancials)()]
         return [IsAuthenticated(), CanManageJobs()]
 
     def get_queryset(self):
@@ -27,6 +30,15 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
         contact = self.request.query_params.get('contact')
         if contact:
             qs = qs.filter(contact_id=contact)
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(job_number__icontains=search)
+                | Q(name__icontains=search)
+                | Q(contact__first_name__icontains=search)
+                | Q(contact__last_name__icontains=search)
+                | Q(contact__business__business_name__icontains=search)
+            )
         return qs
 
     status_actions = {
@@ -49,6 +61,18 @@ class JobViewSet(StatusTransitionMixin, viewsets.ModelViewSet):
     def perform_update(self, serializer):
         job = JobService.update_job(self.get_object().pk, **serializer.validated_data)
         serializer.instance = job
+
+    @action(detail=True, methods=['post'], url_path='start-invoice-wizard')
+    def start_invoice_wizard(self, request, pk=None):
+        """Get or create the draft invoice for this job and return its id."""
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.services import InvoiceWizardService
+        job = self.get_object()
+        try:
+            invoice = InvoiceWizardService.open_for_job(job)
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
+        return Response({'invoice_id': invoice.pk})
 
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
     def history(self, request, pk=None):

@@ -43,5 +43,6 @@ export const api = {
   get: (url) => request('GET', url),
   post: (url, data) => request('POST', url, data),
   patch: (url, data) => request('PATCH', url, data),
+  put: (url, data) => request('PUT', url, data),
   delete: (url) => request('DELETE', url),
 };

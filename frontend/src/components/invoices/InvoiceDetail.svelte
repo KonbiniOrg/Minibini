@@ -1,10 +1,17 @@
 <!-- frontend/src/components/invoices/InvoiceDetail.svelte -->
 <script>
+  import { user } from '../../stores/auth.js';
+
   const {
     invoice,
     lineItems = [],
     onSendToQBO = null,
   } = $props();
+
+  let canEditInvoice = $derived(
+    ($user?.permissions?.includes('can_manage_jobs') ?? false) ||
+    ($user?.permissions?.includes('can_manage_financials') ?? false)
+  );
 </script>
 
 <h2>Invoice {invoice.invoice_number}</h2>
@@ -13,6 +20,14 @@
 <p><strong>Job:</strong> <a href="#/jobs/{invoice.job}">{invoice.job_number || `Job #${invoice.job}`}</a></p>
 {#if invoice.created_date}
   <p><strong>Created:</strong> {new Date(invoice.created_date).toLocaleDateString()}</p>
+{/if}
+
+{#if invoice.status === 'draft' && canEditInvoice}
+  <p>
+    <a href="#/invoices/{invoice.invoice_id}/wizard">Continue in wizard</a>
+    &nbsp;|&nbsp;
+    <a href="#/invoices/{invoice.invoice_id}/edit">Edit</a>
+  </p>
 {/if}
 
 {#if invoice.qbo_id}

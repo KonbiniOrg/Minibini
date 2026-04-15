@@ -6,6 +6,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from apps.purchasing.models import Bill, BillLineItem, PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
+from apps.core.models import AccountingCategory
 from apps.inventory.models import PriceListItem
 
 
@@ -53,6 +54,9 @@ class BillLineItemAdditionTests(TestCase):
             vendor_invoice_number='INV-TEST-001'
         )
 
+        # Create accounting category
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+
         # Create price list items
         self.price_list_item = PriceListItem.objects.create(
             code='WIDGET001',
@@ -60,7 +64,8 @@ class BillLineItemAdditionTests(TestCase):
             description='Widget Type A',
             purchase_price=Decimal('25.00'),
             selling_price=Decimal('50.00'),
-            qty_on_hand=Decimal('100.00')
+            qty_on_hand=Decimal('100.00'),
+            accounting_category=self.category,
         )
 
         self.price_list_item2 = PriceListItem.objects.create(
@@ -69,7 +74,8 @@ class BillLineItemAdditionTests(TestCase):
             description='Gadget Type B',
             purchase_price=Decimal('15.50'),
             selling_price=Decimal('30.00'),
-            qty_on_hand=Decimal('50.00')
+            qty_on_hand=Decimal('50.00'),
+            accounting_category=self.category,
         )
 
     def test_get_add_line_item_page(self):

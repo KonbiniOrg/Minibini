@@ -5,6 +5,7 @@ from django.urls import reverse
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import EstWorksheet
+from apps.core.models import AccountingCategory
 from apps.inventory.models import PlanMaterial
 from apps.inventory.models import PriceListItem
 
@@ -39,6 +40,7 @@ class MaterialViewTestBase(TestCase):
             rate=Decimal('50.00'),
             est_qty=Decimal('4.00'),
         )
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.inventoried_item = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -46,12 +48,14 @@ class MaterialViewTestBase(TestCase):
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
         self.price_list_item = PriceListItem.objects.create(
             code='EDGE.OAK',
             description='Oak edge banding',
             purchase_price=Decimal('12.00'),
             selling_price=Decimal('24.00'),
+            accounting_category=self.category,
         )
 
 

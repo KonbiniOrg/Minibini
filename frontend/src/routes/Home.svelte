@@ -8,7 +8,6 @@
   import ExpensesList from '../components/home/ExpensesList.svelte';
   import RecentLoginsList from '../components/home/RecentLoginsList.svelte';
   import TimeManagementList from '../components/home/TimeManagementList.svelte';
-  import ExpenseApprovalsList from '../components/home/ExpenseApprovalsList.svelte';
   import RecentTimeList from '../components/home/RecentTimeList.svelte';
 
   let loading = $state(true);
@@ -21,7 +20,6 @@
   }
 
   let canManageTime = $derived(hasPerm('can_manage_time'));
-  let canApproveExpenses = $derived(hasPerm('can_approve_expenses'));
 
   onMount(async () => {
     try {
@@ -50,9 +48,6 @@
   <ExpensesList />
   {#if canManageTime}
     <TimeManagementList />
-  {/if}
-  {#if canApproveExpenses}
-    <ExpenseApprovalsList />
   {/if}
   <RecentJobsList jobs={recentJobs} />
   <RecentLoginsList />

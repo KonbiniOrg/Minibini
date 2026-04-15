@@ -29,6 +29,13 @@ class ContactViewSet(viewsets.ModelViewSet):
             return ContactDetailSerializer
         return ContactSerializer
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        business = self.request.query_params.get('business')
+        if business:
+            qs = qs.filter(business_id=business)
+        return qs
+
     def perform_create(self, serializer):
         data = serializer.validated_data
         business = data.pop('business', None)

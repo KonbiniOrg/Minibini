@@ -17,11 +17,20 @@
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
+  import InvoiceWizardPage from './routes/invoices/InvoiceWizardPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
   import WorkOrderDetailPage from './routes/workorders/WorkOrderDetailPage.svelte';
+  import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
+  import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
+  import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
+  import UserListPage from './routes/users/UserListPage.svelte';
+  import UserCreatePage from './routes/users/UserCreatePage.svelte';
+  import UserDetailPage from './routes/users/UserDetailPage.svelte';
+  import ExpenseListPage from './routes/expenses/ExpenseListPage.svelte';
+  import ReimbursementDetailPage from './routes/reimbursements/ReimbursementDetailPage.svelte';
 
   const routes = {
     '/': Home,
@@ -40,8 +49,18 @@
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
     '/worksheets/:id': WorksheetDetailPage,
     '/work-orders/:id': WorkOrderDetailPage,
+    '/purchase-orders': PurchaseOrderListPage,
+    '/purchase-orders/new': PurchaseOrderFormPage,
+    '/purchase-orders/:id/edit': PurchaseOrderFormPage,
+    '/purchase-orders/:id': PurchaseOrderDetailPage,
+    '/invoices/:id/wizard': InvoiceWizardPage,
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
+    '/users': UserListPage,
+    '/users/new': UserCreatePage,
+    '/users/:id': UserDetailPage,
+    '/expenses': ExpenseListPage,
+    '/reimbursements/:id': ReimbursementDetailPage,
     '/profile': ProfilePage,
   };
 

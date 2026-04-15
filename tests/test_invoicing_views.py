@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
+from apps.core.models import AccountingCategory
 from apps.inventory.models import PriceListItem
 from apps.inventory.forms import PriceListItemForm
 
@@ -11,6 +12,7 @@ class PriceListItemViewsTest(TestCase):
     def setUp(self):
         """Set up test data."""
         self.client = Client()
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
 
         # Create test price list items
         self.item1 = PriceListItem.objects.create(
@@ -23,6 +25,7 @@ class PriceListItemViewsTest(TestCase):
             qty_sold=Decimal('25.00'),
             qty_wasted=Decimal('2.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
         self.item2 = PriceListItem.objects.create(
@@ -35,6 +38,7 @@ class PriceListItemViewsTest(TestCase):
             qty_sold=Decimal('10.00'),
             qty_wasted=Decimal('1.00'),
             is_inventoried=True,
+            accounting_category=self.category,
         )
 
     def test_price_list_item_list_view(self):
@@ -77,6 +81,7 @@ class PriceListItemViewsTest(TestCase):
             'qty_sold': '0.00',
             'qty_wasted': '0.00',
             'is_inventoried': True,
+            'accounting_category': self.category.pk,
         }
 
         response = self.client.post(url, data, follow=True)
@@ -149,6 +154,7 @@ class PriceListItemViewsTest(TestCase):
             'qty_sold': '30.00',  # Changed
             'qty_wasted': '3.00',  # Changed
             'is_inventoried': True,
+            'accounting_category': self.category.pk,
         }
 
         response = self.client.post(url, data, follow=True)
@@ -189,7 +195,8 @@ class PriceListItemViewsTest(TestCase):
             'selling_price': '15.00',
             'qty_on_hand': '100.00',
             'qty_sold': '0.00',
-            'qty_wasted': '0.00'
+            'qty_wasted': '0.00',
+            'accounting_category': self.category.pk,
         })
         self.assertFalse(form.is_valid())
         self.assertIn('code', form.errors)
@@ -203,7 +210,8 @@ class PriceListItemViewsTest(TestCase):
             'selling_price': '15.00',
             'qty_on_hand': '100.00',
             'qty_sold': '0.00',
-            'qty_wasted': '0.00'
+            'qty_wasted': '0.00',
+            'accounting_category': self.category.pk,
         })
         self.assertFalse(form.is_valid())
         self.assertIn('purchase_price', form.errors)
@@ -217,7 +225,8 @@ class PriceListItemViewsTest(TestCase):
             'selling_price': '15.00',
             'qty_on_hand': '100.00',
             'qty_sold': '25.00',
-            'qty_wasted': '2.00'
+            'qty_wasted': '2.00',
+            'accounting_category': self.category.pk,
         })
         self.assertTrue(form.is_valid())
 
@@ -228,13 +237,15 @@ class PriceListItemViewsTest(TestCase):
             code="AAA001",
             description="Should be first",
             purchase_price=Decimal('5.00'),
-            selling_price=Decimal('10.00')
+            selling_price=Decimal('10.00'),
+            accounting_category=self.category
         )
         PriceListItem.objects.create(
             code="ZZZ999",
             description="Should be last",
             purchase_price=Decimal('5.00'),
-            selling_price=Decimal('10.00')
+            selling_price=Decimal('10.00'),
+            accounting_category=self.category
         )
 
         url = reverse('inventory:price_list_item_list')

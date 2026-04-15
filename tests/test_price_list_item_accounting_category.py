@@ -24,15 +24,15 @@ class PriceListItemAccountingCategoryTest(TestCase):
             defaults={'name': 'Freight', 'taxable': True}
         )
 
-    def test_accounting_category_nullable_initially(self):
-        """Test that accounting_category is nullable (for migration strategy)."""
-        item = PriceListItem.objects.create(
-            code='ITEM-001',
-            description='Test Item',
-            selling_price=Decimal('100.00')
-        )
-
-        self.assertIsNone(item.accounting_category)
+    def test_accounting_category_required(self):
+        """Test that accounting_category is required."""
+        from django.db import IntegrityError
+        with self.assertRaises(IntegrityError):
+            PriceListItem.objects.create(
+                code='ITEM-001',
+                description='Test Item',
+                selling_price=Decimal('100.00')
+            )
 
     def test_accounting_category_can_be_assigned(self):
         """Test that accounting_category can be assigned."""

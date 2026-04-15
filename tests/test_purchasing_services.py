@@ -98,11 +98,27 @@ class PurchaseOrderServiceCancelTest(PurchasingTestBase):
     def test_cancel_issued_po(self):
         """Cancel an issued PO."""
         po = PurchaseOrderService.create_po(business=self.business)
-        PurchaseOrderLineItem.objects.create(purchase_order=po, description='Test item', price=Decimal('100.00'))
+        li = PurchaseOrderLineItem.objects.create(purchase_order=po, description='Test item', price=Decimal('100.00'), qty=Decimal('5.00'))
         po.status = PurchaseOrder.STATUS_ISSUED
         po.save()
         cancelled = PurchaseOrderService.cancel_po(po.pk)
         self.assertEqual(cancelled.status, PurchaseOrder.STATUS_CANCELLED)
+        li.refresh_from_db()
+        self.assertEqual(li.qty_cancelled, li.qty)
+
+    def test_cancel_issued_po_with_partial_receipt_sets_remaining_cancelled(self):
+        """Cancel a partially received PO — qty_cancelled should be qty - qty_received."""
+        # Note: cancel_po only works on ISSUED POs, so this tests the line item math
+        po = PurchaseOrderService.create_po(business=self.business)
+        li = PurchaseOrderLineItem.objects.create(
+            purchase_order=po, description='Test item', price=Decimal('100.00'), qty=Decimal('10.00'),
+            qty_received=Decimal('3.00'),
+        )
+        po.status = PurchaseOrder.STATUS_ISSUED
+        po.save()
+        PurchaseOrderService.cancel_po(po.pk)
+        li.refresh_from_db()
+        self.assertEqual(li.qty_cancelled, Decimal('7.00'))
 
     def test_cancel_draft_po_raises(self):
         """Cannot cancel a draft PO."""

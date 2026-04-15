@@ -23,6 +23,7 @@ class PriceListItemAPITest(BaseTestCase):
             'units': 'ea',
             'purchase_price': '10.00',
             'selling_price': '20.00',
+            'accounting_category': 901,
         }, format='json')
         self.assertEqual(response.status_code, 201)
 

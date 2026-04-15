@@ -48,7 +48,7 @@ class AccountingCategoryConfigTest(TestCase):
 
     def test_update_type(self):
         """Update an existing AccountingCategory by PK."""
-        lit = AccountingCategory.objects.create(code='SVC', name='Service', taxable=True)
+        lit = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': True})[0]
         updated = ConfigurationService.update_accounting_category(lit.pk, name='Labor', taxable=False)
         self.assertEqual(updated.name, 'Labor')
         self.assertFalse(updated.taxable)
@@ -56,7 +56,7 @@ class AccountingCategoryConfigTest(TestCase):
 
     def test_update_type_persists(self):
         """Update should be persisted to database."""
-        lit = AccountingCategory.objects.create(code='SVC', name='Service', taxable=True)
+        lit = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': True})[0]
         ConfigurationService.update_accounting_category(lit.pk, name='Labor')
         refreshed = AccountingCategory.objects.get(pk=lit.pk)
         self.assertEqual(refreshed.name, 'Labor')

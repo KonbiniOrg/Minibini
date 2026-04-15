@@ -55,6 +55,32 @@
         }
     },
     {
+        "model": "core.accountingcategory",
+        "pk": 901,
+        "fields": {
+            "code": "SVC",
+            "name": "Service",
+            "taxable": false,
+            "default_description": "Professional services and labor",
+            "is_active": true,
+            "qbo_item_id": "",
+            "qbo_expense_account_id": ""
+        }
+    },
+    {
+        "model": "core.accountingcategory",
+        "pk": 902,
+        "fields": {
+            "code": "MTL",
+            "name": "Material",
+            "taxable": true,
+            "default_description": "Raw materials",
+            "is_active": true,
+            "qbo_item_id": "",
+            "qbo_expense_account_id": ""
+        }
+    },
+    {
         "model": "inventory.pricelistitem",
         "pk": 200,
         "fields": {
@@ -65,7 +91,8 @@
             "selling_price": "8.00",
             "qty_on_hand": "500.00",
             "qty_sold": "120.00",
-            "qty_wasted": "5.00"
+            "qty_wasted": "5.00",
+            "accounting_category": 902
         }
     },
     {
@@ -79,7 +106,8 @@
             "selling_price": "25.00",
             "qty_on_hand": "50.00",
             "qty_sold": "30.00",
-            "qty_wasted": "2.00"
+            "qty_wasted": "2.00",
+            "accounting_category": 902
         }
     },
     {

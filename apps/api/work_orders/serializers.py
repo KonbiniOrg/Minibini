@@ -11,7 +11,7 @@ class TaskSerializer(serializers.ModelSerializer):
         model = Task
         fields = [
             'task_id', 'name', 'description', 'sort_order', 'status',
-            'units', 'rate', 'est_qty', 'accounting_category',
+            'blocked_reason', 'units', 'rate', 'est_qty', 'accounting_category',
             'parent_task', 'assignee', 'assignee_name', 'worker_queue',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']

@@ -1,0 +1,1191 @@
+"""
+Service classes for handling complex creation workflows between Jobs, WorkOrders, and Tasks.
+"""
+
+from datetime import timedelta
+from decimal import Decimal
+from collections import defaultdict
+from typing import List, Dict, Optional, Tuple
+
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
+from django.db.models import Q, Prefetch
+from django.utils import timezone
+
+from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.estimates.models import (
+    Estimate, WorkOrderTemplate, TaskTemplate,
+    EstWorksheet, EstimateLineItem,
+)
+from apps.inventory.models import PriceListItem
+from apps.core.models import Configuration
+from apps.core.services import NumberGenerationService, NotFoundError
+
+
+# ═══════════════════════════════════════════════════════════════════
+# BlepService (formerly apps.jobs.services.blep_service)
+# ═══════════════════════════════════════════════════════════════════
+
+class BlepPermissionError(Exception):
+    """Raised when a caller is not permitted to perform a blep operation."""
+    pass
+
+
+_EDIT_WINDOW = timedelta(hours=24)
+
+
+def _has_manage_time(user):
+    return user.has_perm('core.can_manage_time')
+
+
+def _within_edit_window(start_time, now=None):
+    if now is None:
+        now = timezone.now()
+    return (now - start_time) < _EDIT_WINDOW
+
+
+def _existing_overlaps(user, start_time, end_time, exclude_blep_id=None):
+    """Does `user` already have a blep whose interval intersects
+    [start_time, end_time)? Open bleps are treated as [start, now)."""
+    # A blep's effective interval is [start, end or now).
+    # Overlap: existing.start < new.end AND (existing.end or now) > new.start
+    qs = Blep.objects.filter(user=user, start_time__lt=end_time)
+    qs = qs.exclude(
+        end_time__isnull=False, end_time__lte=start_time,
+    ).exclude(
+        end_time__isnull=True, start_time__gte=end_time,
+    )
+    if exclude_blep_id is not None:
+        qs = qs.exclude(blep_id=exclude_blep_id)
+    return qs.exists()
+
+
+class BlepService:
+    """All Blep (time entry) writes flow through this service.
+
+    Primitives (leading underscore) skip validation — for trusted internal
+    callers like TaskLifecycleService. Public methods enforce ownership,
+    time windows, and overlap rules for user-initiated edits.
+    """
+
+    # ─────────────────────────── primitives ───────────────────────────
+
+    @staticmethod
+    def _create(task, user, start_time=None, end_time=None):
+        """Create a Blep. `start_time` defaults to now."""
+        if start_time is None:
+            start_time = timezone.now()
+        return Blep.objects.create(
+            task=task, user=user,
+            start_time=start_time, end_time=end_time,
+        )
+
+    @staticmethod
+    def _close_open(user=None, task=None, now=None):
+        """Close all open Bleps matching the given filter.
+
+        At least one of `user` or `task` must be provided. Returns the
+        number of bleps that were closed.
+        """
+        if user is None and task is None:
+            raise ValueError("_close_open requires user or task filter")
+        if now is None:
+            now = timezone.now()
+        qs = Blep.objects.filter(end_time__isnull=True)
+        if user is not None:
+            qs = qs.filter(user=user)
+        if task is not None:
+            qs = qs.filter(task=task)
+        return qs.update(end_time=now)
+
+    @staticmethod
+    def close_user_open_bleps(user, now=None):
+        """Close all open bleps for the given user.
+
+        Public wrapper around _close_open — used by UserAdminService when
+        deactivating a user. Returns the number of bleps that were closed.
+        """
+        return BlepService._close_open(user=user, now=now)
+
+    # ─────────────────────────── public API ───────────────────────────
+
+    @staticmethod
+    def create_historical(actor, task, start_time, end_time, target_user=None):
+        """Create a historical blep with validation.
+
+        - actor: the user performing the action
+        - target_user: user the blep belongs to (defaults to actor)
+        - Creating for another user requires can_manage_time
+        - Creating older than 24h requires can_manage_time
+        - Task must belong to a WorkOrder
+        - end_time must be >= start_time
+        - Must not overlap another blep for target_user
+        """
+        if target_user is None:
+            target_user = actor
+        if target_user != actor and not _has_manage_time(actor):
+            raise BlepPermissionError(
+                "Creating a time entry for another user requires can_manage_time."
+            )
+        # Post-split: task is always a Task (work-order side); no container check needed.
+        if end_time < start_time:
+            raise ValidationError("end_time must be >= start_time.")
+        if not _within_edit_window(start_time) and not _has_manage_time(actor):
+            raise BlepPermissionError(
+                "Creating a time entry older than 24 hours requires can_manage_time."
+            )
+        if _existing_overlaps(target_user, start_time, end_time):
+            raise ValidationError(
+                "This time entry overlaps an existing entry for the user."
+            )
+        return BlepService._create(
+            task, target_user, start_time=start_time, end_time=end_time,
+        )
+
+    @staticmethod
+    def update(blep, actor, **fields):
+        """Update a blep. Only `start_time` and `end_time` are editable here."""
+        is_own = blep.user_id == actor.pk
+        if is_own:
+            if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):
+                raise BlepPermissionError(
+                    "Editing a time entry older than 24 hours requires can_manage_time."
+                )
+        else:
+            if not _has_manage_time(actor):
+                raise BlepPermissionError(
+                    "Editing another user's time entry requires can_manage_time."
+                )
+
+        allowed_fields = {'start_time', 'end_time'}
+        # Reassigning a blep to a different user requires can_manage_time
+        if 'user' in fields:
+            if not _has_manage_time(actor):
+                raise ValidationError(
+                    "Reassigning a time entry to another user requires can_manage_time."
+                )
+            allowed_fields.add('user')
+
+        unknown = set(fields) - allowed_fields
+        if unknown:
+            raise ValidationError(
+                f"Cannot update fields: {', '.join(sorted(unknown))}"
+            )
+
+        new_start = fields.get('start_time', blep.start_time)
+        new_end = fields.get('end_time', blep.end_time)
+        if new_end is not None and new_start is not None and new_end < new_start:
+            raise ValidationError("end_time must be >= start_time.")
+
+        # Use the target user for overlap check (new user if reassigning, else current)
+        check_user = fields.get('user', blep.user)
+        effective_end = new_end if new_end is not None else timezone.now()
+        if _existing_overlaps(
+            check_user, new_start, effective_end, exclude_blep_id=blep.blep_id,
+        ):
+            raise ValidationError(
+                "This time entry would overlap an existing entry for the user."
+            )
+
+        for k, v in fields.items():
+            setattr(blep, k, v)
+        blep.save()
+        return blep
+
+    @staticmethod
+    def delete(blep, actor):
+        is_own = blep.user_id == actor.pk
+        if is_own:
+            if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):
+                raise BlepPermissionError(
+                    "Deleting a time entry older than 24 hours requires can_manage_time."
+                )
+        else:
+            if not _has_manage_time(actor):
+                raise BlepPermissionError(
+                    "Deleting another user's time entry requires can_manage_time."
+                )
+        blep.delete()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# JobService, WorkOrderService, TaskService, TaskLifecycleService
+# ═══════════════════════════════════════════════════════════════════
+
+class JobService:
+    """Service for Job CRUD operations."""
+
+    @staticmethod
+    def create_job(**kwargs):
+        """Create a new Job with auto-generated number."""
+        job_number = NumberGenerationService.generate_next_number('job')
+        job = Job(job_number=job_number, **kwargs)
+        job.full_clean()
+        job.save()
+        return job
+
+    @staticmethod
+    def update_job(pk, **kwargs):
+        """Update an existing Job by PK."""
+        try:
+            job = Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {pk} not found')
+        for field, value in kwargs.items():
+            setattr(job, field, value)
+        job.full_clean()
+        job.save()
+        return job
+
+
+class WorkOrderService:
+    """Service class for WorkOrder creation workflows."""
+
+    @staticmethod
+    def create_from_estimate(estimate):
+        """
+        Create WorkOrder from Estimate.
+        Only Open and Accepted Estimates can create WorkOrders.
+        Created WorkOrder starts in 'incomplete' status.
+        """
+        if estimate.status not in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED]:
+            raise ValidationError(
+                f"Only Open and Accepted estimates can create WorkOrders. "
+                f"Estimate {estimate.estimate_number} is {estimate.status}."
+            )
+
+        work_order = WorkOrder.objects.create(
+            job=estimate.job,
+            status=WorkOrder.STATUS_INCOMPLETE
+        )
+
+        # Convert LineItems to Tasks
+        for line_item in estimate.estimatelineitem_set.all():
+            TaskService.create_from_line_item(line_item, work_order)
+
+        from apps.inventory.services import InventoryService
+        InventoryService.create_earmarks_for_work_order(work_order)
+
+        return work_order
+
+    @staticmethod
+    def create_from_template(template, job):
+        """
+        Create WorkOrder from WorkOrderTemplate.
+        Created WorkOrder starts in 'incomplete' status.
+        """
+        if not template.is_active:
+            raise ValidationError(f"Template {template.template_name} is not active.")
+
+        work_order = WorkOrder.objects.create(
+            job=job,
+            template=template,
+        )
+
+        # Generate Tasks from TaskTemplate associations
+        from apps.estimates.models import TemplateTaskAssociation
+        associations = TemplateTaskAssociation.objects.filter(
+            work_order_template=template,
+            task_template__is_active=True
+        ).order_by('sort_order', 'task_template__template_name')
+
+        for association in associations:
+            association.task_template.generate_task(work_order, association.est_qty)
+
+        from apps.inventory.services import InventoryService
+        InventoryService.create_earmarks_for_work_order(work_order)
+
+        return work_order
+
+    @staticmethod
+    def create_direct(job, **kwargs):
+        """Create WorkOrder directly. Starts in 'incomplete' status."""
+        return WorkOrder.objects.create(
+            job=job,
+            **kwargs
+        )
+
+    @staticmethod
+    def update_status(pk, new_status):
+        """Update work order status."""
+        try:
+            wo = WorkOrder.objects.get(pk=pk)
+        except WorkOrder.DoesNotExist:
+            raise NotFoundError(f'WorkOrder {pk} not found')
+        wo.status = new_status
+        wo.full_clean()
+        wo.save()
+
+        # Release remaining earmarks when WO completes
+        if new_status == WorkOrder.STATUS_COMPLETE:
+            from apps.inventory.services import InventoryService
+            InventoryService.release_earmarks_for_job(wo.job)
+
+        return wo
+
+    @staticmethod
+    def copy_from_worksheet(work_order_pk, worksheet_pk):
+        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a work order.
+
+        Per spec 2026-04-05-task-split-and-worksheet-to-workorder.md:
+        - No bundle copy (RealBundle does not exist).
+        - No parent_task copy (hierarchy emerges during work).
+        - No mapping_strategy copy (irrelevant on work order).
+        - PlanMaterials become Materials with price_list_item preserved.
+        """
+        from apps.estimates.models import EstWorksheet
+        from apps.jobs.models import PlanTask
+        from apps.inventory.models import Material
+
+        try:
+            wo = WorkOrder.objects.get(pk=work_order_pk)
+        except WorkOrder.DoesNotExist:
+            raise NotFoundError(f'WorkOrder {work_order_pk} not found')
+        try:
+            ws = EstWorksheet.objects.get(pk=worksheet_pk)
+        except EstWorksheet.DoesNotExist:
+            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
+
+        for plan_task in PlanTask.objects.filter(
+            est_worksheet=ws
+        ).prefetch_related('plan_materials'):
+            new_task = Task.objects.create(
+                work_order=wo,
+                name=plan_task.name,
+                description=plan_task.description,
+                units=plan_task.units,
+                rate=plan_task.rate,
+                est_qty=plan_task.est_qty,
+                accounting_category=plan_task.accounting_category,
+                sort_order=plan_task.sort_order,
+            )
+            for pm in plan_task.plan_materials.all():
+                Material.objects.create(
+                    task=new_task,
+                    description=pm.description,
+                    quantity=pm.quantity,
+                    unit_cost=pm.unit_cost,
+                    sell_price=pm.sell_price,
+                    price_list_item=pm.price_list_item,
+                    accounting_category=pm.accounting_category,
+                )
+
+        from apps.inventory.services import InventoryService
+        InventoryService.create_earmarks_for_work_order(wo)
+
+
+class TaskService:
+    """Service class for Task creation workflows."""
+
+    @staticmethod
+    def create_from_line_item(line_item, work_order):
+        """
+        Generate appropriate Task(s) for a LineItem in a WorkOrder.
+
+        Dispatches to the right strategy based on line item source:
+        - Worksheet task: copies the source task with all fields
+        - Catalog PLI: creates task from PriceListItem data
+        - Manual: creates task from line item fields
+
+        Returns:
+            List[Task]: Tasks created for this LineItem
+        """
+        if line_item.task:
+            return TaskService._copy_worksheet_tasks(line_item, work_order)
+        elif line_item.price_list_item:
+            return TaskService._create_task_from_catalog_item(line_item, work_order)
+        else:
+            return TaskService._create_generic_task(line_item, work_order)
+
+    @staticmethod
+    def _copy_worksheet_tasks(line_item, work_order):
+        """Copy the PlanTask that contributed to this EstimateLineItem into a Task on the WO.
+
+        Note: after the spec 2026-04-05 model split, this function copies exactly one
+        PlanTask to one Task. The prior "multi-task with parent relationships" logic was
+        dead code (the source list was always a single element) and is removed.
+        """
+        plan_task = line_item.task  # now a PlanTask FK
+        new_task = Task.objects.create(
+            work_order=work_order,
+            name=plan_task.name,
+            description=plan_task.description,
+            units=plan_task.units,
+            rate=plan_task.rate,
+            est_qty=plan_task.est_qty,
+            accounting_category=plan_task.accounting_category,
+            # assignee and status use defaults; parent_task is None
+        )
+        return [new_task]
+
+    @staticmethod
+    def _create_task_from_catalog_item(line_item, work_order):
+        """Create a task from PriceListItem data."""
+        task_name = f"{line_item.price_list_item.code} - {line_item.price_list_item.description[:50]}"
+        if len(line_item.price_list_item.description) > 50:
+            task_name += "..."
+
+        task = Task.objects.create(
+            work_order=work_order,
+            name=task_name,
+            units=line_item.units if line_item.units not in ('', 'none') else line_item.price_list_item.units,
+            rate=line_item.price or line_item.price_list_item.selling_price,
+            est_qty=line_item.qty,
+            assignee=None,
+            parent_task=None
+        )
+        return [task]
+
+    @staticmethod
+    def _create_generic_task(line_item, work_order):
+        """Create a generic task from manual LineItem data."""
+        if line_item.description:
+            task_name = line_item.description[:255]
+        elif line_item.line_number:
+            task_name = f"Line Item {line_item.line_number}"
+        else:
+            task_name = f"Line Item {line_item.pk}"
+
+        task = Task.objects.create(
+            work_order=work_order,
+            name=task_name,
+            units=line_item.units,
+            rate=line_item.price,
+            est_qty=line_item.qty,
+            assignee=None,
+            parent_task=None
+        )
+        return [task]
+
+    @staticmethod
+    def create_from_template(template, work_order, assignee=None):
+        """
+        Create Task from TaskTemplate.
+        """
+        if not template.is_active:
+            raise ValidationError(f"Template {template.template_name} is not active.")
+
+        task = Task.objects.create(
+            work_order=work_order,
+            accounting_category=template.accounting_category,
+            name=template.template_name,
+            assignee=assignee
+        )
+        return task
+
+    @staticmethod
+    def create_direct(work_order, name, **kwargs):
+        """Create Task directly."""
+        return Task.objects.create(
+            work_order=work_order,
+            name=name,
+            **kwargs
+        )
+
+    @staticmethod
+    def update_task(pk, **kwargs):
+        """Update an existing Task by PK."""
+        try:
+            task = Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            raise NotFoundError(f'Task {pk} not found')
+        for field, value in kwargs.items():
+            setattr(task, field, value)
+        task.full_clean()
+        task.save()
+        return task
+
+    @staticmethod
+    def delete_task(task_pk):
+        """Delete a task if allowed.
+
+        Rules:
+        - In-progress and complete tasks cannot be deleted (cancel instead).
+        - Tasks with bleps (time entries) cannot be deleted (cancel instead).
+        - If the deleted task was the last blocked task on its WO, the WO
+          is auto-unblocked back to incomplete.
+        """
+        try:
+            task = Task.objects.get(pk=task_pk)
+        except Task.DoesNotExist:
+            raise NotFoundError(f'Task {task_pk} not found')
+
+        non_deletable = (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE)
+        if task.status in non_deletable:
+            raise ValidationError(
+                f"Cannot delete a {task.status} task. Cancel it instead."
+            )
+        if Blep.objects.filter(task=task).exists():
+            raise ValidationError(
+                "Cannot delete a task that has time entries. Cancel it instead."
+            )
+
+        was_blocked = task.status == Task.STATUS_BLOCKED
+        wo = task.work_order
+        task.delete()
+
+        if was_blocked and wo.status == WorkOrder.STATUS_BLOCKED:
+            still_blocked = Task.objects.filter(
+                work_order=wo, status=Task.STATUS_BLOCKED,
+            ).exists()
+            if not still_blocked:
+                WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
+
+    @staticmethod
+    def reorder_tasks(task_id, direction):
+        """Reorder a task within its container — delegates to BundlingService."""
+        from apps.core.services import BundlingService
+
+        try:
+            task = Task.objects.get(pk=task_id)
+        except Task.DoesNotExist:
+            raise NotFoundError(f'Task {task_id} not found')
+
+        # Post-split: Task is always work-order side.
+        items_qs = Task.objects.filter(work_order=task.work_order)
+
+        BundlingService.reorder_container_items(
+            items_qs, 'task', task_id, direction,
+        )
+        task.refresh_from_db()
+        return task
+
+
+class TaskLifecycleService:
+    """Service for managing Task status transitions and Blep (time tracking) lifecycle."""
+
+    @staticmethod
+    def complete_task(task_pk):
+        """Transition task from pending/in_progress/blocked -> complete."""
+        with transaction.atomic():
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED):
+                raise ValidationError(
+                    f"Cannot complete task: status is '{task.status}', "
+                    f"must be 'pending', 'in_progress', or 'blocked'."
+                )
+            BlepService._close_open(task=task)
+            Task.objects.filter(pk=task.pk).update(
+                status=Task.STATUS_COMPLETE, blocked_reason='',
+            )
+            task.status = Task.STATUS_COMPLETE
+            task.blocked_reason = ''
+            TaskLifecycleService._check_wo_auto_complete(task)
+            return task
+
+    @staticmethod
+    def _check_wo_auto_complete(task):
+        """Auto-complete WO if all its tasks are complete or cancelled."""
+        # Post-split: task is always a Task (work-order side); no container check needed.
+        wo = task.work_order
+        terminal = {Task.STATUS_COMPLETE, Task.STATUS_CANCELLED}
+        all_terminal = not Task.objects.filter(
+            work_order=wo
+        ).exclude(status__in=terminal).exists()
+        if all_terminal:
+            WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_COMPLETE)
+
+    @staticmethod
+    def block_task(task_pk, reason=''):
+        """Transition task from pending/in_progress -> blocked.
+        Returns conflict dict if open Bleps exist."""
+        with transaction.atomic():
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
+                raise ValidationError(
+                    f"Cannot block task: status is '{task.status}', "
+                    f"must be 'pending' or 'in_progress'."
+                )
+            open_bleps = Blep.objects.filter(task=task, end_time__isnull=True)
+            if open_bleps.exists():
+                workers = []
+                for b in open_bleps:
+                    workers.append({
+                        'user_id': b.user_id,
+                        'name': b.user.get_full_name() or b.user.username,
+                        'blep_id': b.blep_id,
+                        'started_at': b.start_time,
+                    })
+                return {'conflict': 'active_workers', 'workers': workers}
+            Task.objects.filter(pk=task.pk).update(
+                status=Task.STATUS_BLOCKED, blocked_reason=reason,
+            )
+            task.status = Task.STATUS_BLOCKED
+            task.blocked_reason = reason
+            TaskLifecycleService._check_wo_blocked(task)
+            return task
+
+    @staticmethod
+    def _check_wo_blocked(task):
+        """Block WorkOrder if a task on it is blocked."""
+        # Post-split: task is always a Task (work-order side); no container check needed.
+        wo = task.work_order
+        if wo.status in (WorkOrder.STATUS_BLOCKED, WorkOrder.STATUS_COMPLETE):
+            return
+        WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_BLOCKED)
+
+    @staticmethod
+    def _check_wo_unblocked(task):
+        """Unblock WorkOrder if no other tasks on it are blocked."""
+        wo = task.work_order
+        if wo.status != WorkOrder.STATUS_BLOCKED:
+            return
+        still_blocked = Task.objects.filter(
+            work_order=wo, status=Task.STATUS_BLOCKED,
+        ).exclude(pk=task.pk).exists()
+        if not still_blocked:
+            WorkOrderService.update_status(wo.pk, WorkOrder.STATUS_INCOMPLETE)
+
+    @staticmethod
+    def unblock_task(task_pk):
+        """Transition task from blocked -> in_progress."""
+        with transaction.atomic():
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            if task.status != Task.STATUS_BLOCKED:
+                raise ValidationError(
+                    f"Cannot unblock task: status is '{task.status}', must be 'blocked'."
+                )
+            Task.objects.filter(pk=task.pk).update(
+                status=Task.STATUS_IN_PROGRESS, blocked_reason='',
+            )
+            task.status = Task.STATUS_IN_PROGRESS
+            task.blocked_reason = ''
+            TaskLifecycleService._check_wo_unblocked(task)
+            return task
+
+    @staticmethod
+    def cancel_task(task_pk):
+        """Transition task from pending/in_progress/blocked -> cancelled."""
+        with transaction.atomic():
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            allowed = (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED)
+            if task.status not in allowed:
+                raise ValidationError(
+                    f"Cannot cancel task: status is '{task.status}', "
+                    f"must be 'pending', 'in_progress', or 'blocked'."
+                )
+            was_blocked = task.status == Task.STATUS_BLOCKED
+            BlepService._close_open(task=task)
+            Task.objects.filter(pk=task.pk).update(
+                status=Task.STATUS_CANCELLED, blocked_reason='',
+            )
+            task.status = Task.STATUS_CANCELLED
+            task.blocked_reason = ''
+            if was_blocked:
+                TaskLifecycleService._check_wo_unblocked(task)
+            TaskLifecycleService._check_wo_auto_complete(task)
+            return task
+
+    @staticmethod
+    def start_work(task_pk, user, action=None):
+        """Create a Blep for `user` on the given task.
+
+        - If the task is pending, promotes it to in_progress and consumes
+          materials (first worker to start the task).
+        - If already in_progress, handles multi-worker conflicts via
+          `action='join'` or `action='takeover'`.
+        - Rejects worksheet tasks and terminal statuses.
+        """
+        with transaction.atomic():
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            # Post-split: task is always a Task (work-order side); no container check needed.
+            if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
+                raise ValidationError(
+                    f"Cannot start work: task status is '{task.status}', "
+                    f"must be 'pending' or 'in_progress'."
+                )
+            now = timezone.now()
+
+            if task.status == Task.STATUS_PENDING:
+                # First worker on a pending task: promote and consume materials.
+                # No conflict possible — nobody has touched it yet.
+                BlepService._close_open(user=user, now=now)
+                updates = {'status': Task.STATUS_IN_PROGRESS}
+                if not task.assignee_id:
+                    updates['assignee'] = user
+                Task.objects.filter(pk=task.pk).update(**updates)
+                task.status = Task.STATUS_IN_PROGRESS
+                if 'assignee' in updates:
+                    task.assignee = user
+                from apps.inventory.services import InventoryService
+                for material in task.materials.all():
+                    InventoryService.consume_material(material)
+                blep = BlepService._create(task, user, start_time=now)
+                return {'task': task, 'blep': blep}
+
+            # Task is in_progress: check for other active workers.
+            other_bleps = Blep.objects.filter(
+                task=task, end_time__isnull=True
+            ).exclude(user=user)
+            if other_bleps.exists() and action is None:
+                b = other_bleps.first()
+                return {
+                    'conflict': 'active_worker',
+                    'worker': {
+                        'user_id': b.user_id,
+                        'name': b.user.get_full_name() or b.user.username,
+                    },
+                    'blep_id': b.blep_id,
+                    'started_at': b.start_time,
+                    'options': ['join', 'takeover'],
+                }
+            # Close user's open Blep on ANY task
+            BlepService._close_open(user=user, now=now)
+            if action == 'takeover':
+                other_bleps.update(end_time=now)
+            blep = BlepService._create(task, user, start_time=now)
+            return {'task': task, 'blep': blep}
+
+    @staticmethod
+    def stop_work(task_pk, user):
+        """Close user's open Blep on this task."""
+        with transaction.atomic():
+            task = Task.objects.get(pk=task_pk)
+            closed = BlepService._close_open(user=user, task=task)
+            if not closed:
+                raise ValidationError(
+                    "No open time entry found for this user on this task."
+                )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# BoardService (formerly apps.jobs.services.board_service)
+# ═══════════════════════════════════════════════════════════════════
+
+class BoardService:
+    """Computes board data including sub-statuses for jobs."""
+
+    ACCENT_COLORS = [
+        '#f97066', '#f59e0b', '#14b8a6', '#8b5cf6',
+        '#38bdf8', '#fb7185', '#84cc16', '#f97316',
+    ]
+
+    @staticmethod
+    def get_board_data():
+        """Assemble all data for the job board view."""
+        from apps.jobs.models import Job, WorkOrder, Task
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        retention_days = 14
+        try:
+            config = Configuration.objects.get(key='board_closed_retention_days')
+            retention_days = int(config.value)
+        except (Configuration.DoesNotExist, ValueError):
+            pass
+
+        cutoff = timezone.now() - timedelta(days=retention_days)
+
+        # Pipeline: draft + submitted
+        pipeline_jobs = Job.objects.filter(
+            status__in=['draft', 'submitted']
+        ).select_related('contact').order_by('due_date')
+        pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
+
+        # Approved
+        approved_jobs = Job.objects.filter(
+            status='approved'
+        ).select_related('contact').order_by('due_date')
+        approved_list = []
+        for i, job in enumerate(approved_jobs):
+            job_data = BoardService._serialize_job(job)
+            job_data['accent_color'] = BoardService.ACCENT_COLORS[
+                i % len(BoardService.ACCENT_COLORS)
+            ]
+            approved_list.append(job_data)
+
+        # Build job_id -> accent_color map for tasks
+        color_map = {j['job_id']: j['accent_color'] for j in approved_list}
+
+        # Get all active tasks from approved jobs' work orders
+        approved_job_ids = [j['job_id'] for j in approved_list]
+        tasks = Task.objects.filter(
+            work_order__job_id__in=approved_job_ids,
+        ).exclude(
+            status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
+        ).select_related(
+            'work_order__job', 'assignee'
+        ).order_by('worker_queue', 'pk')
+
+        # Group by assignee
+        worker_map = {}
+        unassigned = []
+        for task in tasks:
+            task_data = BoardService._serialize_task(task, color_map)
+            if task.assignee_id:
+                if task.assignee_id not in worker_map:
+                    worker_map[task.assignee_id] = {
+                        'user': BoardService._serialize_user(task.assignee),
+                        'tasks': [],
+                    }
+                worker_map[task.assignee_id]['tasks'].append(task_data)
+            else:
+                unassigned.append(task_data)
+
+        # Sort unassigned by job due_date
+        unassigned.sort(key=lambda t: t.get('job_due_date') or '9999-12-31')
+
+        # Closed: terminal states within retention
+        closed_jobs = Job.objects.filter(
+            status__in=['completed', 'rejected', 'cancelled'],
+            completed_date__gte=cutoff,
+        ).select_related('contact').order_by('-completed_date')
+        closed = [BoardService._serialize_closed_job(job) for job in closed_jobs]
+
+        # Available workers: active users not already shown in worker columns
+        existing_worker_ids = set(worker_map.keys())
+        available_users = User.objects.filter(
+            is_active=True
+        ).exclude(pk__in=existing_worker_ids).order_by('first_name', 'last_name')
+        available_workers = [BoardService._serialize_user(u) for u in available_users]
+
+        return {
+            'pipeline': pipeline,
+            'approved': {
+                'jobs': approved_list,
+                'workers': list(worker_map.values()),
+                'unassigned': unassigned,
+                'available_workers': available_workers,
+            },
+            'closed': closed,
+        }
+
+    @staticmethod
+    def get_pipeline_data():
+        """Return pipeline jobs (draft + submitted) with worksheet/estimate info."""
+        from apps.jobs.models import Job
+        pipeline_jobs = Job.objects.filter(
+            status__in=['draft', 'submitted']
+        ).select_related('contact').order_by('due_date')
+        return {
+            'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
+        }
+
+    @staticmethod
+    def get_approved_data():
+        """Return approved jobs where work is still active (not unpaid)."""
+        from apps.jobs.models import Job, WorkOrder, Task
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        approved_jobs = Job.objects.filter(
+            status='approved'
+        ).select_related('contact').order_by('due_date')
+
+        approved_list = []
+        for i, job in enumerate(approved_jobs):
+            sub_status = BoardService.compute_sub_status(job)
+            if sub_status in BoardService.UNPAID_SUB_STATUSES:
+                continue
+            job_data = BoardService._serialize_job(job)
+            job_data['accent_color'] = BoardService.ACCENT_COLORS[
+                i % len(BoardService.ACCENT_COLORS)
+            ]
+            approved_list.append(job_data)
+
+        color_map = {j['job_id']: j['accent_color'] for j in approved_list}
+
+        approved_job_ids = [j['job_id'] for j in approved_list]
+
+        # Task counts per job (for progress bar in popup)
+        from django.db.models import Count, Q as DjQ
+        stats = Task.objects.filter(
+            work_order__job_id__in=approved_job_ids
+        ).exclude(status=Task.STATUS_CANCELLED).values(
+            'work_order__job_id'
+        ).annotate(
+            total=Count('task_id'),
+            completed=Count('task_id', filter=DjQ(status=Task.STATUS_COMPLETE)),
+        )
+        stats_by_job = {s['work_order__job_id']: s for s in stats}
+        for j in approved_list:
+            s = stats_by_job.get(j['job_id'], {'total': 0, 'completed': 0})
+            j['task_total'] = s['total']
+            j['task_completed'] = s['completed']
+
+        tasks = Task.objects.filter(
+            work_order__job_id__in=approved_job_ids,
+        ).exclude(
+            status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
+        ).select_related(
+            'work_order__job', 'assignee'
+        ).order_by('worker_queue', 'pk')
+
+        worker_map = {}
+        unassigned = []
+        for task in tasks:
+            task_data = BoardService._serialize_task(task, color_map)
+            if task.assignee_id:
+                if task.assignee_id not in worker_map:
+                    worker_map[task.assignee_id] = {
+                        'user': BoardService._serialize_user(task.assignee),
+                        'tasks': [],
+                    }
+                worker_map[task.assignee_id]['tasks'].append(task_data)
+            else:
+                unassigned.append(task_data)
+
+        unassigned.sort(key=lambda t: t.get('job_due_date') or '9999-12-31')
+
+        existing_worker_ids = set(worker_map.keys())
+        available_users = User.objects.filter(
+            is_active=True
+        ).exclude(pk__in=existing_worker_ids).order_by('first_name', 'last_name')
+        available_workers = [BoardService._serialize_user(u) for u in available_users]
+
+        return {
+            'jobs': approved_list,
+            'workers': list(worker_map.values()),
+            'unassigned': unassigned,
+            'available_workers': available_workers,
+        }
+
+    @staticmethod
+    def get_unpaid_data():
+        """Return approved jobs where work is done (unpaid sub-statuses)."""
+        from apps.jobs.models import Job
+        approved_jobs = Job.objects.filter(
+            status='approved'
+        ).select_related('contact').order_by('due_date')
+
+        unpaid_list = []
+        for job in approved_jobs:
+            sub_status = BoardService.compute_sub_status(job)
+            if sub_status in BoardService.UNPAID_SUB_STATUSES:
+                unpaid_list.append(BoardService._serialize_unpaid_job(job))
+
+        return {'jobs': unpaid_list}
+
+    @staticmethod
+    def get_closed_data():
+        """Return terminal-status jobs within retention window."""
+        from apps.jobs.models import Job
+
+        retention_days = 14
+        try:
+            config = Configuration.objects.get(key='board_closed_retention_days')
+            retention_days = int(config.value)
+        except (Configuration.DoesNotExist, ValueError):
+            pass
+
+        cutoff = timezone.now() - timedelta(days=retention_days)
+
+        closed_jobs = Job.objects.filter(
+            status__in=['completed', 'rejected', 'cancelled'],
+            completed_date__gte=cutoff,
+        ).select_related('contact').order_by('-completed_date')
+        return {'jobs': [BoardService._serialize_closed_job(job) for job in closed_jobs]}
+
+    @staticmethod
+    def _serialize_job(job):
+        return {
+            'job_id': job.job_id,
+            'job_number': job.job_number,
+            'name': job.name,
+            'status': job.status,
+            'sub_status': BoardService.compute_sub_status(job),
+            'contact_id': job.contact_id,
+            'contact_name': str(job.contact) if job.contact else None,
+            'due_date': job.due_date.isoformat() if job.due_date else None,
+            'completed_date': job.completed_date.isoformat() if job.completed_date else None,
+        }
+
+    @staticmethod
+    def _serialize_closed_job(job):
+        """Serialize a closed job with dates and profitability."""
+        data = BoardService._serialize_job(job)
+        data['start_date'] = job.start_date.isoformat() if job.start_date else None
+        profitability = BoardService._compute_profitability(job)
+        data.update(profitability)
+        return data
+
+    @staticmethod
+    def _serialize_pipeline_job(job):
+        """Serialize a pipeline job with worksheet and estimate info."""
+        from apps.estimates.models import EstimateLineItem
+        data = BoardService._serialize_job(job)
+
+        worksheets = []
+        for ws in job.estworksheet_set.order_by('-pk'):
+            worksheets.append({
+                'est_worksheet_id': ws.est_worksheet_id,
+                'status': ws.status,
+                'created_date': ws.created_date.isoformat() if ws.created_date else None,
+            })
+        data['worksheets'] = worksheets
+
+        estimates = []
+        for est in job.estimate_set.order_by('-pk'):
+            total = EstimateLineItem.objects.filter(estimate=est).aggregate(
+                total=models.Sum(models.F('qty') * models.F('price'))
+            )['total'] or Decimal('0.00')
+            estimates.append({
+                'estimate_id': est.estimate_id,
+                'estimate_number': est.estimate_number,
+                'status': est.status,
+                'created_date': est.created_date.isoformat() if est.created_date else None,
+                'total': total,
+            })
+        data['estimates'] = estimates
+        return data
+
+    @staticmethod
+    def _compute_profitability(job):
+        """Compute billed/spent/profit for a job."""
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.purchasing.models import PurchaseOrderLineItem
+        from apps.jobs.models import Blep
+
+        billed = InvoiceLineItem.objects.filter(
+            invoice__job=job
+        ).exclude(
+            invoice__status__in=['cancelled', 'superseded']
+        ).aggregate(
+            total=models.Sum(models.F('qty') * models.F('price'))
+        )['total'] or Decimal('0.00')
+
+        material_cost = PurchaseOrderLineItem.objects.filter(
+            job=job
+        ).exclude(
+            purchase_order__status='cancelled'
+        ).aggregate(
+            total=models.Sum(models.F('qty') * models.F('price'))
+        )['total'] or Decimal('0.00')
+
+        # TODO: Replace task.rate / 2 with actual User.pay_rate once that
+        # field exists. Using half the billing rate as a temporary proxy.
+        labor_cost = Decimal('0.00')
+        bleps = Blep.objects.filter(
+            task__work_order__job=job,
+            start_time__isnull=False,
+            end_time__isnull=False,
+        ).select_related('task')
+        for blep in bleps:
+            if blep.task.rate:
+                elapsed_hours = Decimal(str(blep.elapsed.total_seconds() / 3600))
+                labor_cost += elapsed_hours * (blep.task.rate / 2)
+
+        spent = material_cost + labor_cost
+        return {'billed': billed, 'spent': spent, 'profit': billed - spent}
+
+    @staticmethod
+    def _serialize_unpaid_job(job):
+        """Serialize an unpaid job with invoice details and profitability."""
+        data = BoardService._serialize_job(job)
+        invoices = []
+        for inv in job.invoice_set.exclude(status__in=['cancelled', 'superseded']).order_by('created_date'):
+            total = inv.invoicelineitem_set.aggregate(
+                total=models.Sum(models.F('qty') * models.F('price'))
+            )['total'] or Decimal('0.00')
+            invoices.append({
+                'invoice_id': inv.invoice_id,
+                'invoice_number': inv.invoice_number,
+                'status': inv.status,
+                'total': total,
+                'created_date': inv.created_date.isoformat() if inv.created_date else None,
+                'sent_date': inv.sent_date.isoformat() if inv.sent_date else None,
+                'closed_date': inv.closed_date.isoformat() if inv.closed_date else None,
+                'amount_paid': inv.qbo_amount_paid,
+            })
+        data['invoices'] = invoices
+        profitability = BoardService._compute_profitability(job)
+        data.update(profitability)
+        return data
+
+    @staticmethod
+    def _serialize_task(task, color_map):
+        job = task.work_order.job
+        return {
+            'task_id': task.task_id,
+            'name': task.name,
+            'status': task.status,
+            'job_id': job.job_id,
+            'job_name': job.name,
+            'job_due_date': job.due_date.isoformat() if job.due_date else None,
+            'accent_color': color_map.get(job.job_id, '#94a3b8'),
+            'blocked_reason': task.blocked_reason,
+            'assignee_id': task.assignee_id,
+            'worker_queue': task.worker_queue,
+        }
+
+    @staticmethod
+    def _serialize_user(user):
+        first = user.first_name or ''
+        last = user.last_name or ''
+        initials = (first[:1] + last[:1]).upper() or user.username[:2].upper()
+        short_name = f"{first} {last[:1]}." if last else first or user.username
+        return {
+            'id': user.pk,
+            'username': user.username,
+            'initials': initials,
+            'name': short_name,
+        }
+
+    @staticmethod
+    def compute_sub_status(job):
+        """Derive the sub-status of a job based on related object states."""
+        if job.status in ('draft', 'submitted'):
+            return BoardService._pipeline_sub_status(job)
+        elif job.status == 'approved':
+            return BoardService._approved_sub_status(job)
+        return None
+
+    @staticmethod
+    def _pipeline_sub_status(job):
+        """Sub-status for Draft/Submitted jobs."""
+        estimates = job.estimate_set.all()
+        open_estimate = estimates.filter(status='open').first()
+        if open_estimate:
+            return 'awaiting-response'
+
+        worksheets = job.estworksheet_set.all()
+        if not worksheets.exists():
+            return 'needs-scoping'
+
+        latest_ws = worksheets.order_by('-pk').first()
+        if latest_ws.status == 'draft':
+            return 'estimating'
+
+        if latest_ws.status == 'final':
+            draft_estimate = estimates.filter(status='draft').first()
+            if draft_estimate:
+                return 'estimate-ready'
+
+        return 'needs-scoping'
+
+    UNPAID_SUB_STATUSES = {'invoice-sent', 'invoice-prepped', 'needs-invoice'}
+
+    @staticmethod
+    def _approved_sub_status(job):
+        """Sub-status for Approved jobs."""
+        invoices = job.invoice_set.all()
+        sent_invoice = invoices.filter(status='open').first()
+        if sent_invoice:
+            return 'invoice-sent'
+
+        work_orders = job.workorder_set.all()
+        if not work_orders.exists():
+            return 'needs-work-order'
+
+        active_wo = work_orders.filter(status='incomplete').order_by('-pk').first()
+        if not active_wo:
+            active_wo = work_orders.order_by('-pk').first()
+
+        if active_wo.status == 'complete':
+            # Check for non-cancelled, non-superseded invoices
+            has_invoice = invoices.exclude(
+                status__in=['cancelled', 'superseded']
+            ).exists()
+            if has_invoice:
+                return 'invoice-prepped'
+            return 'needs-invoice'
+
+        tasks = active_wo.tasks.exclude(
+            status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
+        )
+        if tasks.filter(status=Task.STATUS_BLOCKED).exists():
+            return 'blocked'
+        if tasks.filter(status=Task.STATUS_IN_PROGRESS).exists():
+            return 'in-progress'
+
+        return 'work-ready'

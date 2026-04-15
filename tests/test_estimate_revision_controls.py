@@ -183,13 +183,18 @@ class EstimateRevisionTests(TestCase):
             status=Estimate.STATUS_OPEN
         )
 
-        # Create some line items
+        # Create accounting category and price list item
+        self.service_type, _ = AccountingCategory.objects.get_or_create(
+            code='SVC',
+            defaults={'name': 'Service', 'taxable': False}
+        )
         self.price_list_item = PriceListItem.objects.create(
             code='ITEM001',
             units='hours',
             description='Test Item',
             purchase_price=50.00,
-            selling_price=100.00
+            selling_price=100.00,
+            accounting_category=self.service_type,
         )
 
         self.line_item1 = EstimateLineItem.objects.create(

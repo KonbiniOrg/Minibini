@@ -25,9 +25,8 @@
     return $user?.permissions?.includes(perm) ?? false;
   }
 
-  let showManage = $derived(hasPerm('can_manage_time') || hasPerm('can_approve_expenses'));
-  let showSettings = $derived(hasPerm('can_manage_config'));
-  let showAdminLabel = $derived(showManage || showSettings);
+  let showFinancials = $derived(hasPerm('can_manage_financials'));
+  let showAdminLabel = $derived(showFinancials || hasPerm('can_manage_config'));
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -50,14 +49,17 @@
     <a href="/jobs/board" use:link>Jobs</a>
     <a href="/contacts" use:link>Contacts</a>
     <a href="/email" use:link>Email</a>
-    <a href="/purchasing" use:link>Purchasing</a>
+    <a href="/purchase-orders" use:link>Purchasing</a>
     {#if showAdminLabel}
       <div class="section-label">Admin</div>
     {/if}
-    {#if showManage}
-      <a href="/manage" use:link>Manage</a>
+    {#if showFinancials}
+      <a href="/expenses" use:link>Expenses</a>
     {/if}
-    {#if showSettings}
+    {#if hasPerm('can_manage_config')}
+      <a href="/users" use:link>Users</a>
+    {/if}
+    {#if hasPerm('can_manage_config')}
       <a href="/settings" use:link>Settings</a>
     {/if}
     <div class="spacer"></div>
