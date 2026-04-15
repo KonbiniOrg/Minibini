@@ -277,15 +277,12 @@ class InvoiceWizardService:
                 })
 
             # Material atoms
-            from django.db.models import F
             materials = (
-                Material.objects.filter(task=task)
-                .annotate(eff=F('quantity') - F('restocked_qty'))
-                .filter(eff__gt=0)
+                Material.objects.filter(task=task, quantity__gt=0)
                 .order_by('pk')
             )
             for mat in materials:
-                amount = (mat.effective_qty * mat.sell_price).quantize(Decimal('0.01'))
+                amount = (mat.quantity * mat.sell_price).quantize(Decimal('0.01'))
                 key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
                 state_info = claims.get(key, default_state)
                 atoms.append({
@@ -304,17 +301,14 @@ class InvoiceWizardService:
                 'atoms': atoms,
             })
 
-        # "Materials (no task)" group — task-less Materials with effective_qty > 0
-        from django.db.models import F
+        # "Materials (no task)" group — task-less Materials with quantity > 0
         loose = (
-            Material.objects.filter(job=job, task__isnull=True)
-            .annotate(eff=F('quantity') - F('restocked_qty'))
-            .filter(eff__gt=0)
+            Material.objects.filter(job=job, task__isnull=True, quantity__gt=0)
             .order_by('pk')
         )
         loose_atoms = []
         for mat in loose:
-            amount = (mat.effective_qty * mat.sell_price).quantize(Decimal('0.01'))
+            amount = (mat.quantity * mat.sell_price).quantize(Decimal('0.01'))
             key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
             state_info = claims.get(key, default_state)
             loose_atoms.append({
@@ -363,7 +357,7 @@ class InvoiceWizardService:
             rate = atom_instance.task.rate or Decimal('0.00')
             return (hours * rate).quantize(Decimal('0.01'))
         if isinstance(atom_instance, Material):
-            return (atom_instance.effective_qty * atom_instance.sell_price).quantize(Decimal('0.01'))
+            return (atom_instance.quantity * atom_instance.sell_price).quantize(Decimal('0.01'))
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
 
     @staticmethod

@@ -701,7 +701,7 @@ class SourcePoolLooseMaterialsTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
 
-    def test_taskless_materials_group_appears_with_effective_qty_filter(self):
+    def test_taskless_materials_group_appears_with_quantity_filter(self):
         from decimal import Decimal
         from apps.core.models import AccountingCategory, User
         from apps.jobs.models import Job
@@ -744,7 +744,7 @@ class SourcePoolLooseMaterialsTest(TestCase):
         self.assertEqual([a['atom_id'] for a in atoms], [m1.pk])
         self.assertEqual(atoms[0]['computed_amount'], Decimal('6.00'))
 
-    def test_partial_restock_bills_effective_qty(self):
+    def test_partial_restock_bills_reduced_quantity(self):
         from decimal import Decimal
         from apps.core.models import AccountingCategory
         from apps.jobs.models import Job
@@ -768,7 +768,7 @@ class SourcePoolLooseMaterialsTest(TestCase):
 
 
 class TaskAttachedPartialRestockTest(TestCase):
-    """Gap 12: task-attached material with partial restock shows effective_qty in source pool."""
+    """Gap 12: task-attached material with partial restock shows reduced quantity in source pool."""
 
     def setUp(self):
         from apps.core.models import Configuration
@@ -782,7 +782,7 @@ class TaskAttachedPartialRestockTest(TestCase):
             email='tpr@test.com',
         )
 
-    def test_partial_restock_task_attached_bills_effective_qty(self):
+    def test_partial_restock_task_attached_bills_reduced_quantity(self):
         from apps.invoicing.services import InvoiceWizardService
         from apps.inventory.services import MaterialService
         job = Job.objects.create(
@@ -795,7 +795,7 @@ class TaskAttachedPartialRestockTest(TestCase):
             is_inventoried=True, selling_price=Decimal('3.00'),
             qty_on_hand=Decimal('20'),
         )
-        # qty=5, sell=2 per unit; restock 2 → effective=3, amount=3*2=6
+        # qty=5, sell=2 per unit; restock 2 → quantity=3, amount=3*2=6
         m = MaterialService.create_on_job(
             job=job, task=task, description='bolts',
             quantity=Decimal('5'), sell_price=Decimal('2.00'),
@@ -811,5 +811,5 @@ class TaskAttachedPartialRestockTest(TestCase):
         self.assertEqual(len(mat_atoms), 1)
         self.assertEqual(
             mat_atoms[0]['computed_amount'], Decimal('6.00'),
-            'computed_amount should be effective_qty(3) * sell_price(2) = 6.00',
+            'computed_amount should be quantity(3) * sell_price(2) = 6.00',
         )
