@@ -701,3 +701,42 @@ equivalent) once all automated tests pass.
   task-less on the same Job.
 - Any fixture files that slipped through the cleanup heuristic are tidied
   manually.
+
+## Deferred — revisit later
+
+### Flagging pending task-less inventoried materials before work_complete
+
+The `work_complete` gate blocks the transition when a task-less inventoried
+Material is still in `pending` state with `effective_qty > 0`. Mechanically
+this works: the user gets an error when they try to close the job.
+
+But that's a late signal. The subtle situation is: **the user has to
+remember these materials exist and resolve each one explicitly.** Nothing
+on the Job detail page calls attention to "you have 3 task-less materials
+sitting in pending state; decide Consume or Restock on each before
+closing."
+
+We don't yet have a concrete design for that surfacing. Candidates to
+consider when we come back to this:
+
+- A per-Job badge / count showing pending task-less materials, visible
+  from the job list and the job detail header.
+- An inline "Action needed" section on the Job detail page that groups
+  pending task-less materials with one-click Consume / Restock controls.
+- A block on the work_complete dialog that lists each pending material
+  and forces a per-item decision before the transition proceeds (modal
+  checklist).
+- A dashboard / notification for the shop showing all jobs with
+  unresolved task-less materials.
+
+Open questions to settle:
+
+- Is the gate enough, or is proactive surfacing required?
+- If surfacing, which surface (job detail, job list, dashboard,
+  work_complete modal, or multiple)?
+- Does this extend to task-attached pending materials too (where the
+  task lifecycle is the usual driver), or stay scoped to task-less?
+
+Not in scope for this refactor. The underlying `consumption_state` +
+`effective_qty` fields are the data that any future surfacing would read,
+so the data model is ready when we get to the UX.
