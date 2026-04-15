@@ -68,10 +68,10 @@ Relevant existing services:
   Consume, Restock(qty), Draw more(qty), Edit description.
 - Add `restocked_qty` field on Material to track partial-release.
 - Unify expense-born inventoried materials into the earmark pipeline
-  (expense submit → QOH bump via a dedicated op; earmark via the uniform
-  save hook).
-- Per-save / pre-delete hooks on Material as the single source of earmark
-  upsert/downsert.
+  (expense submit → QOH bump via a dedicated op; earmark via
+  `MaterialService.create_on_job`).
+- Service-mediated earmark mutations through a single
+  `InventoryService._mutate_earmark` helper — no Django signals.
 - Update invoice wizard source pool, estimate generation, and
   worksheet→job copy paths to handle task-less materials.
 - Data migration: backfill `job`/`est_worksheet` FKs; clean up placeholder
@@ -93,8 +93,14 @@ Relevant existing services:
 
 ### `Material` (`apps/inventory/models.py`)
 
-- `task` → `ForeignKey(Task, on_delete=CASCADE, null=True, blank=True, related_name='materials')`
+- `task` → `ForeignKey(Task, on_delete=SET_NULL, null=True, blank=True, related_name='materials')`
+  - **On-delete semantics change:** was CASCADE. Deleting a Task no longer
+    destroys its Materials; the Material survives as task-less on the same
+    Job. This prevents earmark orphaning when a Task is deleted without
+    going through the service layer.
 - **new** `job` → `ForeignKey(Job, on_delete=CASCADE, related_name='materials')`, not-null
+  - CASCADE is safe here because `Earmark.job` also cascades on Job
+    deletion; earmarks die with the job they belong to, no orphans.
 - **new** `consumption_state` → `CharField(max_length=20, choices=CONSUMPTION_STATE_CHOICES, default='na')`
   - Choices: `na`, `pending`, `consumed`
 - **new** `restocked_qty` → `DecimalField(max_digits=10, decimal_places=2, default=0)`
@@ -156,44 +162,74 @@ dispatches by concrete type. This matches the existing Task/PlanTask pattern.
 
 ## Earmark & consumption semantics
 
-### Single source of truth: save/delete hooks
+### Single source of truth: `InventoryService._mutate_earmark`
 
-The Material lifecycle drives all earmark upserts and downserts. Every code
-path that brings a Material into existence — manual add, expense submit,
-template populate, worksheet copy, estimate-to-job — uses the same save
-hook for its earmark effect. Every code path that removes a Material uses
-the same delete hook.
+All `Earmark` row writes go through one private helper:
 
-**Post-save hook on Material** (fires on creation only, `created=True`):
+```python
+# apps/inventory/services.py
+def _mutate_earmark(pli, job, delta):
+    """Apply `delta` to the (pli, job) earmark. Upsert if the delta makes
+    the earmark positive; delete if it hits zero. No-op if pli is not
+    inventoried."""
+```
 
-- If `price_list_item` is inventoried: upsert `(pli, job)` earmark
-  `+= quantity`.
-- Idempotent per Material (only fires on the create event).
+Every Material lifecycle event — create, consume, restock, draw-more,
+delete (via expense rejection or full-restock-on-manual-add) — calls this
+helper explicitly with the appropriate signed delta. `_mutate_earmark` is
+the only place in the codebase that reads or writes `Earmark` rows.
 
-**Pre-delete hook on Material** (fires when a Material row is about to be
-deleted):
+No Django signals. No `post_save` or `pre_delete` hook on Material. The
+service layer is the complete boundary: reading the service method tells
+you exactly when and by how much the earmark mutates. This matches the
+repo's service-mediated-saves convention
+(`docs/designs/2026-03-07-service-mediated-saves.md`).
 
-- If `price_list_item` is inventoried and `consumption_state == 'pending'`:
-  earmark `-= effective_qty`. (If `effective_qty == 0` because fully
-  restocked, the earmark has no contribution left; no-op.)
-- If `consumption_state == 'consumed'`: delete is forbidden at the API
-  layer and never reaches the hook. (Consumed is terminal; QOH/qty_sold
-  have already moved. Recovery goes through `manual_adjustment`, not row
-  deletion.)
+### Callers of `_mutate_earmark`
 
-These hooks are the sole earmark-upsert/downsert paths for Material-born
-flows. No service method else touches earmarks directly during
-Material-create or Material-delete.
+All of these are service-method bodies; viewsets are thin wrappers.
 
-This uniform handling closes today's latent gap where adding a `Material` to
-an existing `task` after initial populate leaves the earmark stale.
+| Caller | Signed delta | When |
+|---|---|---|
+| `MaterialService.create_on_job(...)` | `+= quantity` | Material creation, any origin (manual, template-generated, worksheet-copy, estimate-to-job, expense submit). |
+| `MaterialService.consume(material)` | `-= effective_qty` | Consume op; plus `QOH -= effective_qty`, `qty_sold += effective_qty`, `state → consumed`. |
+| `MaterialService.restock(material, n)` | `-= n` | Restock op; plus `restocked_qty += n`. If manual-add and reaches full, calls `MaterialService._delete_internal` — which has nothing left to mutate earmark-wise since `_mutate_earmark(-= n)` already handled it. |
+| `MaterialService.draw_more(material, n)` | `+= n` | Draw-more op; plus `quantity += n`. Forbidden on expense-bound Materials. |
+| `ExpenseService.reject(expense)` | `-= effective_qty` per Material | Internal rejection cascade; then `QOH -= quantity` via `reverse_ad_hoc_purchase`; then Material row deleted. |
+| `InventoryService.receive_po_line_item` (existing) | `+= qty` | PO receive with job link. Unchanged today; migrates to calling `_mutate_earmark` so the new helper is the sole Earmark writer. |
+
+### Why no hooks
+
+- **No safety net required.** `Material.task` changes to `on_delete=SET_NULL`
+  so Task deletion doesn't cascade-destroy Materials (which would orphan
+  earmarks). `Material.job` stays `on_delete=CASCADE`, but `Earmark.job` is
+  also CASCADE — Job deletion sweeps both cleanly.
+- **No hidden behavior.** Reading the code tells you exactly when Earmark
+  rows change. Fixtures, tests, and data migrations can call
+  `Material.objects.create(...)` directly without triggering earmark
+  mutations they didn't ask for.
+- **Matches existing repo pattern.** Services mediate business logic; signals
+  are avoided for state that's touched by explicit flows.
+
+### Closing today's post-populate gap
+
+Today, adding a `Material` to an existing Task after the initial
+`create_earmarks_for_job` run leaves the earmark stale. Under the new
+model, the only supported creation path is `MaterialService.create_on_job`,
+which always calls `_mutate_earmark`. The gap closes as a direct consequence
+of routing all creation through one place.
+
+`InventoryService.create_earmarks_for_job` (the bulk aggregator that runs
+at the end of `populate_from_template` etc.) stays as a defensive
+re-aggregator for code paths outside this refactor's scope. Under the new
+regime it should be a no-op in practice.
 
 ### User-facing ops
 
 | Op | Inventoried Material effect | Non-inventoried Material effect |
 |---|---|---|
 | **Consume** | `QOH -= effective_qty`, `qty_sold += effective_qty`, earmark `-= effective_qty`, `state → consumed`. | `state → consumed`. No mechanical effect on inventory. |
-| **Restock(n)** | earmark `-= n`, `restocked_qty += n`. If `restocked_qty == quantity` and Material is manual-add (not expense-bound): delete Material row (pre-delete hook runs, but effective_qty is already 0 so no-op on earmark). If expense-bound: Material stays, effective_qty is 0, invoice excludes it. | `restocked_qty += n`. Same manual-add-delete / expense-bound-survive rule. |
+| **Restock(n)** | earmark `-= n` (via `_mutate_earmark`), `restocked_qty += n`. If `restocked_qty == quantity` and Material is manual-add (not expense-bound): delete Material row internally (no further earmark mutation — `_mutate_earmark(-= n)` already ran). If expense-bound: Material stays, effective_qty is 0, invoice excludes it. | `restocked_qty += n`. Same manual-add-delete / expense-bound-survive rule. No earmark call since not inventoried. |
 | **Draw more(n)** | `quantity += n`, earmark `+= n`. **Forbidden on expense-bound Materials** — expense quantity is tied to the purchase record; extra demand creates a separate manual-add Material drawing from existing stock. | `quantity += n`. Same "expense-bound forbidden" rule. |
 | **Edit description** | description-only change. Allowed on all pending Materials. | Same. |
 
@@ -223,9 +259,9 @@ an existing `task` after initial populate leaves the earmark stale.
 
 `consumption_state` now applies to **all** inventoried Materials, not just
 task-less ones. A task-attached inventoried Material starts in `pending`
-and transitions to `consumed` when `consume_material` runs at task-start.
-This keeps the delete-hook rule (`forbid on consumed`, `shrink earmark on
-pending`) uniform and removes the task-vs-no-task branch.
+and transitions to `consumed` when `MaterialService.consume(...)` runs at
+task-start. This keeps the rule "consumed is terminal, forbidden to delete
+or mutate" uniform regardless of whether the Material is task-attached.
 
 The UI rule still differs: buttons (Consume, Restock, Draw more) appear
 only on **task-less** Materials. Task-attached Materials are driven by
@@ -258,31 +294,40 @@ transition and sweeps any remaining earmark balance.
 
 Inventory behavior is determined by `price_list_item.is_inventoried`
 alone. No "path α vs path β" distinction; no `from_expense` flag.
-Expenses, POs, and manual job-scope adds all go through the same
-earmark pipeline via the save hook.
+Expenses, POs, and manual job-scope adds all route through the same
+service-layer entry point (`MaterialService.create_on_job`), which calls
+`_mutate_earmark` for the earmark side and defers QOH bumps to the caller
+(via `receive_ad_hoc_purchase`) when appropriate.
 
 ### `ExpenseService.submit`
 
 - Remove `find_or_create_materials_task` and its usage.
-- The `new_material` branch creates `Material.objects.create(job=job, task=None, ...)` directly.
-- If the resulting Material has an inventoried PLI, call
-  `InventoryService.receive_ad_hoc_purchase(material)` (new op): `QOH += material.quantity`.
-  **Nothing else.** The earmark is already upserted by the save hook.
+- The `new_material` branch calls
+  `MaterialService.create_on_job(job=job, task=None, ...)` — which creates
+  the Material row and calls `_mutate_earmark(pli, job, += quantity)` if
+  inventoried.
+- Then, if the resulting Material has an inventoried PLI, call
+  `InventoryService.receive_ad_hoc_purchase(material)`: does **only**
+  `QOH += material.quantity`. The earmark was already handled by
+  `create_on_job`.
 - Material is saved with `consumption_state='pending'` (inventoried, so the
-  save-hook default applies).
+  model default applies on create).
 
 ### Expense rejection / revert
 
 Expense rejection is the **only** path that removes expense-bound Materials.
-`ExpenseService.reject(expense)` (or equivalent revert op):
+`ExpenseService.reject(expense)` (or equivalent revert op), all in one
+transaction:
 
 - Forbidden if any of the expense's Materials has `state == 'consumed'`.
   (Consumed is terminal; reversal requires manual inventory adjustment.)
 - For each remaining (pending) Material:
+  - Call `_mutate_earmark(pli, job, -= effective_qty)` to release the
+    earmark contribution.
   - If PLI-inventoried: `QOH -= material.quantity` via
     `InventoryService.reverse_ad_hoc_purchase(material)`.
-  - Delete the Material row. The pre-delete hook shrinks the earmark by
-    `effective_qty` (zero if fully restocked).
+  - Delete the Material row internally (no hook; the service has already
+    handled earmark and QOH).
 
 No user-facing delete endpoint exists for expense-bound Materials. The
 `Material.is_expense_bound` check fences them off from the delete API.
@@ -291,9 +336,9 @@ No user-facing delete endpoint exists for expense-bound Materials. The
 
 | Scenario | Start QOH | After `submit` | After Consume | After Restock(all) |
 |---|---|---|---|---|
-| Expense, inventoried PLI | X | X+qty (earmark += qty) | X, qty_sold += qty | X+qty (excess in general inventory; material stays in pending with effective_qty=0) |
+| Expense, inventoried PLI | X | X+qty (earmark += qty via `create_on_job`, QOH += qty via `receive_ad_hoc_purchase`) | X, qty_sold += qty | X+qty (excess in general inventory; material stays in pending with effective_qty=0) |
 | Expense, non-inventoried PLI or freeform | n/a | n/a | n/a | n/a |
-| Manual add, inventoried PLI | X | — (save hook creates earmark, no QOH change) | X-qty, qty_sold += qty | X, earmark released, Material row deleted |
+| Manual add, inventoried PLI | X | — (`create_on_job` upserts earmark, no QOH change) | X-qty, qty_sold += qty | X, earmark released, Material row deleted |
 | Manual add, non-inventoried PLI or freeform | n/a | n/a | n/a | n/a |
 
 The "overbuy" case (bought more than used) is handled by Restock: earmark
@@ -320,14 +365,16 @@ instance — matching how tasks replicate today.
 ### Job-direct population
 
 Add a parallel `generate_materials_for_job(job, quantity)` on `WorkTemplate`
-that creates task-less `Material` rows (`job=job, task=None`) the same way.
+that calls `MaterialService.create_on_job(job=job, task=None, ...)` for each
+template material. Every call routes through the service helper, so
+earmarks upsert automatically via `_mutate_earmark`.
 Called from `Job.populate_from_template`.
 
-The earmark save hook fires on each Material creation, so no separate
-aggregator call is needed for template-generated Materials. The existing
-`create_earmarks_for_job` call at the end of populate paths remains as a
-defensive re-aggregation; under the new save-hook regime it should be a
-no-op in practice.
+Since every call routes through `MaterialService.create_on_job`, earmarks
+are upserted at creation time. The existing `create_earmarks_for_job`
+aggregator call at the end of populate paths remains as a defensive
+re-aggregation for code paths outside this refactor's scope; under the
+new regime it should be a no-op in practice.
 
 ### Template editing
 
@@ -391,10 +438,15 @@ No bundling option for task-less PlanMaterials in this refactor
 
 After the existing `PlanTask → Task + PlanMaterials → Materials` loop,
 add a second loop for `worksheet.plan_materials.filter(plan_task__isnull=True)`
-that creates task-less `Material` rows on the job (`job=job, task=None`),
-copying fields the same way. The save hook handles earmark upserts;
-the existing `create_earmarks_for_job` trailing call stays as a defensive
-no-op.
+that calls `MaterialService.create_on_job(job=job, task=None, ...)` for each
+task-less PlanMaterial, copying fields the same way. `create_on_job`
+handles earmark upsert via `_mutate_earmark`. The existing
+`create_earmarks_for_job` trailing call stays as a defensive no-op.
+
+**Similarly, the existing task-attached loop that creates `Material` rows
+from `PlanMaterial` rows** moves from `Material.objects.create(...)` to
+`MaterialService.create_on_job(job=job, task=new_task, ...)` so the same
+earmark-upsert path applies uniformly.
 
 ### `Job.populate_from_estimate`
 
@@ -499,8 +551,10 @@ Following the repo's TDD convention — failing tests first, then implementation
 
 - `tests/test_material_task_optional.py` — core refactor behavior. Covers:
   creating task-less Materials, invariant enforcement
-  (`material.task.job_id == material.job_id` when task is set), save-hook
-  earmark upsert, pre-delete-hook earmark downsert.
+  (`material.task.job_id == material.job_id` when task is set),
+  `MaterialService.create_on_job` earmark upsert via `_mutate_earmark`,
+  `ExpenseService.reject` cascade correctness, `Material.task` SET_NULL
+  behavior on Task deletion.
 - `tests/test_material_ops.py` — Consume, Restock (partial + full),
   Draw-more op semantics including the expense-bound-Draw-more forbiddance
   and the manual-add-full-Restock-deletes rule.
@@ -519,9 +573,9 @@ Following the repo's TDD convention — failing tests first, then implementation
 ### Updated test files
 
 - `tests/test_auto_earmark.py`, `tests/test_earmark_flow.py` — extended
-  for the save/delete hooks (including the task-attached post-populate
-  gap now being closed), task-less Materials, and the placeholder-task
-  migration.
+  for `MaterialService.create_on_job` covering all creation paths
+  (including the task-attached post-populate gap now being closed),
+  task-less Materials, and the placeholder-task migration.
 - `tests/test_invoice_wizard_service.py`, `tests/test_invoice_wizard_api.py`
   — new "Materials (no task)" group in source pool, effective_qty-based
   filter, partial-restocked billing.
@@ -587,7 +641,8 @@ equivalent) once all automated tests pass.
 ### Expense-born materials (unified path)
 
 - Submit an expense with an inventoried PLI: verify `QOH += qty`, earmark
-  created (by save hook), Material task-less with state `pending`.
+  created (via `MaterialService.create_on_job` → `_mutate_earmark`),
+  Material task-less with state `pending`.
 - Consume it: QOH returns to original, `qty_sold += qty`. Net stock
   change across the full lifecycle = 0.
 - Submit an expense, then Restock part of it: earmark shrinks by the
@@ -609,7 +664,7 @@ equivalent) once all automated tests pass.
   the worksheet (no QOH/earmark effect).
 - Add a PLI-inventoried `TemplateMaterial`, populate a Job directly from
   the template. Verify a task-less Material is created on the Job,
-  earmark upserted by save hook, state `pending`.
+  earmark upserted via `_mutate_earmark`, state `pending`.
 - Populate with `quantity > 1` (multi-instance product). Verify N copies
   of each template material are generated.
 
@@ -618,7 +673,7 @@ equivalent) once all automated tests pass.
 - Worksheet with a task-less PlanMaterial → generate estimate. Verify the
   material appears as its own `EstimateLineItem`.
 - Accept the estimate, populate a Job from it. Verify task-less Materials
-  land on the Job, earmarks created correctly via save hook.
+  land on the Job, earmarks created correctly via `_mutate_earmark`.
 
 ### Invoice wizard
 
