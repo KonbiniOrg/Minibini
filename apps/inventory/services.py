@@ -266,16 +266,17 @@ class InventoryService:
 
     @staticmethod
     def create_earmarks_for_job(job):
-        """Create earmarks from a Job's task materials.
+        """Create earmarks from a Job's materials (task-attached and task-less).
 
-        Aggregates inventoried Materials by PLI across all Tasks on the job,
-        then upserts Earmark records for the job. Called as a hook after
-        each job-population path (estimate, template, worksheet copy).
+        Aggregates inventoried Materials by PLI across all Materials on the job
+        (both task-attached and task-less), then upserts Earmark records for the
+        job. Called as a hook after each job-population path (estimate, template,
+        worksheet copy).
         """
         from apps.inventory.models import Material
 
         materials = Material.objects.filter(
-            task__job=job,
+            job=job,
             price_list_item__is_inventoried=True,
         ).values('price_list_item').annotate(
             total_qty=Sum('quantity'),

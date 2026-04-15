@@ -307,7 +307,6 @@ class JobService:
         """
         from apps.estimates.models import EstWorksheet
         from apps.jobs.models import PlanTask
-        from apps.inventory.models import Material
 
         try:
             job = Job.objects.get(pk=job_pk)
@@ -321,6 +320,8 @@ class JobService:
         if template is not None:
             job.template = template
             job.save(update_fields=['template'])
+
+        from apps.inventory.services import InventoryService, MaterialService
 
         for plan_task in PlanTask.objects.filter(
             est_worksheet=ws
@@ -336,8 +337,8 @@ class JobService:
                 sort_order=plan_task.sort_order,
             )
             for pm in plan_task.plan_materials.all():
-                Material.objects.create(
-                    task=new_task,
+                MaterialService.create_on_job(
+                    job=job, task=new_task,
                     description=pm.description,
                     quantity=pm.quantity,
                     unit_cost=pm.unit_cost,
@@ -346,7 +347,17 @@ class JobService:
                     accounting_category=pm.accounting_category,
                 )
 
-        from apps.inventory.services import InventoryService
+        for pm in ws.plan_materials.filter(plan_task__isnull=True):
+            MaterialService.create_on_job(
+                job=job, task=None,
+                description=pm.description,
+                quantity=pm.quantity,
+                unit_cost=pm.unit_cost,
+                sell_price=pm.sell_price,
+                price_list_item=pm.price_list_item,
+                accounting_category=pm.accounting_category,
+            )
+
         InventoryService.create_earmarks_for_job(job)
 
 
