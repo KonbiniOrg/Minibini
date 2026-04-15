@@ -149,7 +149,11 @@ class InventoryService:
             plan_task = PlanTask.objects.get(pk=plan_task_pk)
         except PlanTask.DoesNotExist:
             raise NotFoundError(f'PlanTask {plan_task_pk} not found')
-        mat = PlanMaterial(plan_task=plan_task, **kwargs)
+        mat = PlanMaterial(
+            plan_task=plan_task,
+            est_worksheet_id=plan_task.est_worksheet_id,
+            **kwargs,
+        )
         mat.save()
         return mat
 
@@ -199,44 +203,6 @@ class InventoryService:
     def delete_material(pk):
         """Legacy wrapper; HTML views still call this."""
         return InventoryService.delete_plan_material(pk)
-
-    # --- WO Material CRUD (work-order-side) ---
-
-    @staticmethod
-    def create_wo_material(task_pk, **kwargs):
-        """Create a new Material on a Task (work order side). No earmark/inventory changes."""
-        from apps.core.services import NotFoundError
-        from apps.jobs.models import Task
-        try:
-            task = Task.objects.get(pk=task_pk)
-        except Task.DoesNotExist:
-            raise NotFoundError(f'Task {task_pk} not found')
-        mat = Material(task=task, **kwargs)
-        mat.save()
-        return mat
-
-    @staticmethod
-    def update_wo_material(pk, **kwargs):
-        """Update an existing Material by PK. No earmark/inventory changes."""
-        from apps.core.services import NotFoundError
-        try:
-            mat = Material.objects.get(pk=pk)
-        except Material.DoesNotExist:
-            raise NotFoundError(f'Material {pk} not found')
-        for field, value in kwargs.items():
-            setattr(mat, field, value)
-        mat.save()
-        return mat
-
-    @staticmethod
-    def delete_wo_material(pk):
-        """Delete a Material by PK. No earmark/inventory changes."""
-        from apps.core.services import NotFoundError
-        try:
-            mat = Material.objects.get(pk=pk)
-        except Material.DoesNotExist:
-            raise NotFoundError(f'Material {pk} not found')
-        mat.delete()
 
     # --- Earmark operations ---
 
