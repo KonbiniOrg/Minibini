@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import PriceListItem, Material
 from apps.core.units import UnitsField
 
 
@@ -20,3 +20,38 @@ class PriceListItemSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'price_list_item_id', 'qty_on_hand', 'qty_sold', 'qty_wasted',
         ]
+
+
+class MaterialSerializer(serializers.ModelSerializer):
+    effective_qty = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True,
+    )
+    is_expense_bound = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Material
+        fields = [
+            'material_id', 'job', 'task',
+            'description', 'quantity', 'unit_cost', 'sell_price',
+            'price_list_item', 'accounting_category',
+            'consumption_state', 'restocked_qty', 'effective_qty',
+            'is_expense_bound',
+        ]
+        read_only_fields = [
+            'material_id', 'job', 'task',
+            'consumption_state', 'restocked_qty', 'effective_qty', 'is_expense_bound',
+        ]
+
+    def update(self, instance, validated_data):
+        allowed = {'description'}
+        disallowed = set(validated_data.keys()) - allowed
+        if disallowed:
+            raise serializers.ValidationError({
+                k: 'read-only; use Restock/Draw-more for quantity, etc.'
+                for k in disallowed
+            })
+        return super().update(instance, validated_data)
+
+
+class MaterialOpSerializer(serializers.Serializer):
+    quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
