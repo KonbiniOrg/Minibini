@@ -230,7 +230,7 @@ regime it should be a no-op in practice.
 |---|---|---|
 | **Consume** | `QOH -= effective_qty`, `qty_sold += effective_qty`, earmark `-= effective_qty`, `state → consumed`. | `state → consumed`. No mechanical effect on inventory. |
 | **Restock(n)** | earmark `-= n` (via `_mutate_earmark`), `restocked_qty += n`. If `restocked_qty == quantity` and Material is manual-add (not expense-bound): delete Material row internally (no further earmark mutation — `_mutate_earmark(-= n)` already ran). If expense-bound: Material stays, effective_qty is 0, invoice excludes it. | `restocked_qty += n`. Same manual-add-delete / expense-bound-survive rule. No earmark call since not inventoried. |
-| **Draw more(n)** | `quantity += n`, earmark `+= n`. **Forbidden on expense-bound Materials** — expense quantity is tied to the purchase record; extra demand creates a separate manual-add Material drawing from existing stock. | `quantity += n`. Same "expense-bound forbidden" rule. |
+| **Draw more(n)** | `quantity += n`, earmark `+= n`. **Not available on expense-bound Materials** — the UI hides the button and the API endpoint returns 400. Extra demand is handled by the existing "Add material" button on the Job, which creates a separate manual-add Material drawing from existing stock. | `quantity += n`. Same "expense-bound not available" rule. |
 | **Edit description** | description-only change. Allowed on all pending Materials. | Same. |
 
 ### Op validation
@@ -473,7 +473,9 @@ the existing task-generation step.
 - `POST /api/materials/{id}/restock/` — execute Restock(qty) op. Body:
   `{quantity}`. Permission: `CanManageJobs`.
 - `POST /api/materials/{id}/draw-more/` — execute Draw-more(qty) op. Body:
-  `{quantity}`. Forbidden if Material `is_expense_bound`.
+  `{quantity}`. Returns 400 if Material `is_expense_bound` (UI never
+  surfaces the button for expense-bound Materials; this is a defensive
+  API check).
   Permission: `CanManageJobs`.
 
 ### No direct Material DELETE endpoint
@@ -626,8 +628,9 @@ equivalent) once all automated tests pass.
 - Click **Draw more** on a manual-add material, enter qty: quantity rises,
   earmark rises. Same on a non-inventoried manual-add (quantity rises;
   no earmark).
-- Click **Draw more** on an expense-bound material: rejected with clear
-  error ("expense quantity is fixed; add a separate material instead").
+- On an expense-bound material: verify **Draw more** button is not shown.
+  Only Consume and Restock appear. Use the Job's regular "Add material"
+  button to create a separate manual-add Material for any extra demand.
 
 ### `work_complete` gate
 
