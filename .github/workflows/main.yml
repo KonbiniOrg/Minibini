@@ -76,4 +76,5 @@ jobs:
           script: |
             touch i-was-here.txt
             docker-compose pull
+            docker-compose run --rm minibini python manage.py migrate
             docker compose up -d --pull always  minibini
