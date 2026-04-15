@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -190,10 +191,8 @@ class Material(MaterialBase):
     def clean(self):
         super().clean()
         if self.task_id and self.job_id and self.task.job_id != self.job_id:
-            from django.core.exceptions import ValidationError
             raise ValidationError('Material.task.job must match Material.job')
         if self.restocked_qty < Decimal('0.00') or self.restocked_qty > self.quantity:
-            from django.core.exceptions import ValidationError
             raise ValidationError('restocked_qty must be between 0 and quantity')
 
     def save(self, *args, **kwargs):
