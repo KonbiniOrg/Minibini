@@ -207,3 +207,79 @@ class ExpenseRejectCascadeTest(TestCase):
         self.assertFalse(Material.objects.filter(pk=exp.material.pk).exists())
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('10'))
+
+
+class ExpenseRejectNonInventoriedTest(TestCase):
+    """Gap 13: reject with non-inventoried / freeform expense material leaves QOH unchanged."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='NonInv', last_name='User',
+            email='noninv@example.com', work_number='555-0400',
+        )
+        business = Business.objects.create(
+            business_name='NonInv Business',
+            default_contact=self.contact,
+        )
+        self.contact.business = business
+        self.contact.save()
+
+        self.cat = AccountingCategory.objects.create(name='ni', code='NICAT1')
+        self.user = User.objects.create(username='ni_user')
+        self.job = Job.objects.create(job_number='JOB-NI-1', contact=self.contact)
+        self.pli_noninv = PriceListItem.objects.create(
+            code='NI-PLI', accounting_category=self.cat, is_inventoried=False,
+            qty_on_hand=Decimal('5'),
+        )
+
+    def _submit_noninv(self):
+        return ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            amount=Decimal('10'), purchased_on='2026-04-14',
+            accounting_category=self.cat,
+            new_material={
+                'job_id': self.job.pk, 'description': 'wrench',
+                'quantity': Decimal('1'), 'price': Decimal('10'),
+                'price_list_item_id': self.pli_noninv.pk,
+            },
+        )
+
+    def _submit_freeform(self):
+        return ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            amount=Decimal('8'), purchased_on='2026-04-14',
+            accounting_category=self.cat,
+            new_material={
+                'job_id': self.job.pk, 'description': 'miscellaneous',
+                'quantity': Decimal('1'), 'price': Decimal('8'),
+                # no price_list_item_id
+            },
+        )
+
+    def test_reject_non_inventoried_material_deletes_without_qoh_change(self):
+        exp = self._submit_noninv()
+        mat_pk = exp.material.pk
+        # No earmark should exist for non-inventoried PLI
+        self.assertFalse(Earmark.objects.filter(
+            price_list_item=self.pli_noninv, job=self.job).exists())
+        self.pli_noninv.refresh_from_db()
+        qoh_before = self.pli_noninv.qty_on_hand
+        ExpenseService.reject(expense=exp, actor=self.user)
+        self.assertFalse(Material.objects.filter(pk=mat_pk).exists(),
+                         'Material should be deleted on reject')
+        self.pli_noninv.refresh_from_db()
+        self.assertEqual(self.pli_noninv.qty_on_hand, qoh_before,
+                         'QOH must be unchanged for non-inventoried material')
+        self.assertFalse(Earmark.objects.filter(
+            price_list_item=self.pli_noninv, job=self.job).exists(),
+            'No Earmark should exist after reject')
+
+    def test_reject_freeform_material_deletes_without_qoh_change(self):
+        exp = self._submit_freeform()
+        mat_pk = exp.material.pk
+        # Freeform has no PLI — no QOH to track
+        ExpenseService.reject(expense=exp, actor=self.user)
+        self.assertFalse(Material.objects.filter(pk=mat_pk).exists(),
+                         'Freeform material should be deleted on reject')

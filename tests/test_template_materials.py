@@ -1,9 +1,10 @@
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact
+from apps.core.models import AccountingCategory
 from apps.jobs.models import Job
 from apps.estimates.models import WorkTemplate, EstWorksheet
-from apps.inventory.models import TemplateMaterial, PlanMaterial
+from apps.inventory.models import TemplateMaterial, PlanMaterial, Earmark, PriceListItem
 
 
 class TemplateMaterialTest(TestCase):
@@ -60,6 +61,69 @@ class GenerateMaterialsForWorksheetTest(TestCase):
             PlanMaterial.objects.filter(est_worksheet=ws, plan_task__isnull=True).count(),
             3,
         )
+
+
+class GenerateMaterialsForJobMultiInstanceTest(TestCase):
+    """Gap 5: generate_materials_for_job multi-instance replication."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(name='gmi', code='GMI1')
+        self.contact = Contact.objects.create(first_name='Multi', last_name='Inst')
+        self.pli = PriceListItem.objects.create(
+            code='GMI-I', accounting_category=self.cat, is_inventoried=True,
+        )
+
+    def test_quantity_multiplies_generation(self):
+        """generate_materials_for_job with quantity=3 should create 3 Material rows."""
+        from apps.jobs.services import JobService
+        from apps.inventory.models import Material
+        wt = WorkTemplate.objects.create(
+            template_name='gmi-wt', base_price=Decimal('0'), is_active=True,
+        )
+        TemplateMaterial.objects.create(
+            work_template=wt, description='bolt',
+            quantity=Decimal('10'), price_list_item=self.pli,
+        )
+        job = Job.objects.create(job_number='JOB-GMI-1', contact=self.contact)
+        wt.generate_materials_for_job(job, quantity=3)
+        mats = Material.objects.filter(job=job, task__isnull=True)
+        self.assertEqual(mats.count(), 3,
+                         'generate_materials_for_job(quantity=3) should create 3 Material rows')
+        # Each has qty=10; total earmark should be 3*10=30
+        e = Earmark.objects.get(price_list_item=self.pli, job=job)
+        self.assertEqual(e.quantity, Decimal('30'),
+                         'Earmark quantity should be 3 * 10 = 30')
+
+
+class TemplateEditDoesNotRetroactTest(TestCase):
+    """Gap 6: editing a TemplateMaterial after population must NOT mutate existing PlanMaterials."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(first_name='Retroact', last_name='Test')
+
+    def test_template_material_edit_does_not_change_existing_plan_materials(self):
+        wt = WorkTemplate.objects.create(
+            template_name='retroact-wt', base_price=Decimal('0'), is_active=True,
+        )
+        tm = TemplateMaterial.objects.create(
+            work_template=wt, description='original desc', quantity=Decimal('5'),
+        )
+        job = Job.objects.create(job_number='JOB-RET-1', contact=self.contact)
+        ws = EstWorksheet.objects.create(job=job)
+        # Populate worksheet from template
+        wt.generate_materials_for_worksheet(ws, quantity=1)
+        pms_before = list(PlanMaterial.objects.filter(est_worksheet=ws))
+        self.assertEqual(len(pms_before), 1)
+        original_desc = pms_before[0].description
+
+        # Mutate the template material
+        tm.description = 'changed desc'
+        tm.save()
+
+        # Re-query existing PlanMaterial rows — must be unchanged
+        pm = PlanMaterial.objects.get(pk=pms_before[0].pk)
+        self.assertEqual(pm.description, original_desc,
+                         'Editing TemplateMaterial must not retroactively alter populated PlanMaterials')
 
 
 class GenerateMaterialsForJobTest(TestCase):

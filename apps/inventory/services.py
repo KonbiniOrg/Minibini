@@ -52,7 +52,7 @@ class InventoryService:
     @staticmethod
     def consume_material(material):
         """Decrease QOH and increase qty_sold when material is consumed at task start.
-        Reduces/clears earmark for the material's job."""
+        Reduces/clears earmark for the material's job. Sets consumption_state=consumed."""
         pli = material.price_list_item
         if not pli or not pli.is_inventoried:
             return
@@ -63,7 +63,7 @@ class InventoryService:
         pli.refresh_from_db()
 
         # Reduce or clear earmark
-        job = material.task.job
+        job = material.job
         if job:
             try:
                 earmark = Earmark.objects.get(
@@ -77,6 +77,9 @@ class InventoryService:
                     earmark.save(update_fields=['quantity'])
             except Earmark.DoesNotExist:
                 pass
+
+        material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        material.save(update_fields=['consumption_state'])
 
     @staticmethod
     def complete_task_adjustment(material, actual_qty):

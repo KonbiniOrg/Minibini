@@ -32,6 +32,9 @@ class CopyFromWorksheetMaterialsTest(TestCase):
         self.assertEqual(mats.count(), 1)
         e = Earmark.objects.get(price_list_item=self.pli, job=dst)
         self.assertEqual(e.quantity, Decimal('3'))
+        # Concern: copied task-attached inventoried material must be CONSUMPTION_STATE_PENDING
+        self.assertEqual(mats.first().consumption_state, Material.CONSUMPTION_STATE_PENDING,
+                         'copied inventoried material should have consumption_state=pending')
 
     def test_taskless_plan_materials_copy_to_taskless_materials(self):
         PlanMaterial.objects.create(

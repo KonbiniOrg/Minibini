@@ -54,9 +54,12 @@ class MaterialServiceCreateOnJobTest(TestCase):
 
     def test_create_task_attached_inventoried_upserts_earmark(self):
         t = Task.objects.create(job=self.job, name='t')
-        MaterialService.create_on_job(
+        m = MaterialService.create_on_job(
             job=self.job, task=t, description='x', quantity=Decimal('2.00'),
             price_list_item=self.pli_inv,
         )
         e = Earmark.objects.get(price_list_item=self.pli_inv, job=self.job)
         self.assertEqual(e.quantity, Decimal('2.00'))
+        # Gap 4a: task-attached inventoried material must be CONSUMPTION_STATE_PENDING
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING,
+                         'task-attached inventoried material should start as pending')

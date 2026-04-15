@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.contrib.auth import get_user_model
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APIClient
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job
 from apps.inventory.models import PriceListItem, Material
@@ -60,6 +60,16 @@ class MaterialApiTest(APITestCase):
         m.refresh_from_db()
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
 
+    def test_delete_returns_405(self):
+        """Gap 7: DELETE on /api/materials/{id}/ must return 405."""
+        from apps.inventory.services import MaterialService
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='del-me',
+            quantity=Decimal('1'), price_list_item=None,
+        )
+        resp = self.client.delete(f'/api/materials/{m.pk}/')
+        self.assertEqual(resp.status_code, 405, resp.content)
+
     def test_draw_more_forbidden_on_expense_bound(self):
         from apps.inventory.services import MaterialService
         from apps.expenses.models import Expense
@@ -75,3 +85,42 @@ class MaterialApiTest(APITestCase):
         )
         r = self.client.post(f'/api/materials/{m.pk}/draw-more/', {'quantity': '1'}, format='json')
         self.assertEqual(r.status_code, 400)
+
+
+class MaterialApiPermissionTest(APITestCase):
+    """Gap 8: Material endpoint uses IsAuthenticated only (not CanManageJobs)."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(name='perm', code='MAPERM1')
+        contact = Contact.objects.create(first_name='P', last_name='T')
+        biz = Business.objects.create(business_name='PBiz', default_contact=contact)
+        contact.business = biz
+        contact.save()
+        self.job = Job.objects.create(job_number='JOB-PERM-1', contact=contact)
+        self.pli = PriceListItem.objects.create(
+            code='I-PERM', accounting_category=self.cat, is_inventoried=False,
+        )
+
+    def test_worker_with_no_atoms_can_create_material(self):
+        """(a) Worker (zero permission atoms) can POST to /api/jobs/{id}/materials/."""
+        worker = User.objects.create_user('perm_worker', password='p')
+        # Ensure worker has no extra permissions
+        worker.user_permissions.clear()
+        self.client.force_login(worker)
+        url = f'/api/jobs/{self.job.pk}/materials/'
+        resp = self.client.post(url, {
+            'description': 'worker item', 'quantity': '1',
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_unauthenticated_client_is_rejected(self):
+        """(b) Unauthenticated POST → 403 or 401."""
+        # Do not log in — use a fresh client
+        from rest_framework.test import APIClient
+        anon_client = APIClient()
+        url = f'/api/jobs/{self.job.pk}/materials/'
+        resp = anon_client.post(url, {
+            'description': 'anon item', 'quantity': '1',
+        }, format='json')
+        self.assertIn(resp.status_code, [401, 403],
+                      f'Expected 401 or 403, got {resp.status_code}')

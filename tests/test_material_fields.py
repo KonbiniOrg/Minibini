@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task
-from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
 from apps.core.models import AccountingCategory
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import PlanTask
@@ -80,3 +80,91 @@ class PlanMaterialFieldsTest(TestCase):
                 plan_task=self.pt, est_worksheet=other_ws,
                 description='x', quantity=Decimal('1.00'),
             )
+
+
+class MaterialTaskSetNullTest(TestCase):
+    """Gap 1: Material.task on_delete=SET_NULL — deleting a Task must not destroy its Materials."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Null', last_name='Test',
+            email='nulltest@example.com',
+        )
+        self.job = Job.objects.create(job_number='JOB-TSN-1', contact=self.contact)
+        self.task = Task.objects.create(job=self.job, name='deletable')
+
+    def test_delete_task_keeps_material_with_null_task_and_original_job(self):
+        m = Material.objects.create(
+            task=self.task, job=self.job,
+            description='widget', quantity=Decimal('3.00'),
+        )
+        task_pk = self.task.pk
+        material_pk = m.pk
+        original_job_pk = self.job.pk
+        self.task.delete()
+        self.assertTrue(Material.objects.filter(pk=material_pk).exists(),
+                        'Material row should survive task deletion')
+        m.refresh_from_db()
+        self.assertIsNone(m.task_id, 'task_id should be NULL after task deleted')
+        self.assertEqual(m.job_id, original_job_pk, 'job_id should be unchanged')
+
+
+class MaterialJobCascadeTest(TestCase):
+    """Gap 2: Material.job on_delete=CASCADE — deleting a Job destroys Materials and Earmarks."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(name='cascade', code='CASC1')
+        self.contact = Contact.objects.create(
+            first_name='Cascade', last_name='Test',
+            email='casctest@example.com',
+        )
+        self.job = Job.objects.create(job_number='JOB-CASC-1', contact=self.contact)
+        self.pli = PriceListItem.objects.create(
+            code='CASC-I', accounting_category=self.cat, is_inventoried=True,
+        )
+
+    def test_delete_job_removes_material_and_earmark(self):
+        m = Material.objects.create(
+            job=self.job, description='bolt', quantity=Decimal('5.00'),
+            price_list_item=self.pli,
+        )
+        Earmark.objects.create(
+            price_list_item=self.pli, job=self.job, quantity=Decimal('5.00'),
+        )
+        material_pk = m.pk
+        self.job.delete()
+        self.assertFalse(Material.objects.filter(pk=material_pk).exists(),
+                         'Material should be cascade-deleted with its Job')
+        self.assertFalse(Earmark.objects.filter(
+            price_list_item=self.pli).exists(),
+            'Earmark should be cascade-deleted with its Job')
+
+
+class MaterialPropertiesTest(TestCase):
+    """Gap 3: is_expense_bound property reflects the expense reverse relation."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(name='props', code='PROP1')
+        self.contact = Contact.objects.create(
+            first_name='Prop', last_name='Test',
+            email='proptest@example.com',
+        )
+        self.job = Job.objects.create(job_number='JOB-PROP-1', contact=self.contact)
+
+    def test_is_expense_bound_reflects_expense_reverse_relation(self):
+        from apps.expenses.models import Expense
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.create_user('prop_user', password='p')
+        m = Material.objects.create(
+            job=self.job, description='x', quantity=Decimal('1.00'),
+        )
+        self.assertFalse(m.is_expense_bound, 'No expenses yet — should be False')
+        Expense.objects.create(
+            entered_by=user, amount=Decimal('10'),
+            purchased_on='2026-04-14', accounting_category=self.cat,
+            payment_method='personal',
+            material=m,
+        )
+        m.refresh_from_db()
+        self.assertTrue(m.is_expense_bound, 'After creating Expense — should be True')
