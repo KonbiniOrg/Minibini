@@ -268,10 +268,23 @@ class JobService:
                 f"Only Open and Accepted estimates can populate jobs. "
                 f"Estimate {estimate.estimate_number} is {estimate.status}."
             )
+        from apps.inventory.services import InventoryService, MaterialService
         for line_item in estimate.estimatelineitem_set.all():
-            TaskService.create_from_line_item(line_item, job)
+            pm = getattr(line_item, 'material', None)
+            if pm is not None and pm.plan_task_id is None:
+                # task-less PlanMaterial → task-less Material
+                MaterialService.create_on_job(
+                    job=job, task=None,
+                    description=pm.description,
+                    quantity=pm.quantity,
+                    unit_cost=pm.unit_cost,
+                    sell_price=pm.sell_price,
+                    price_list_item=pm.price_list_item,
+                    accounting_category=pm.accounting_category,
+                )
+            else:
+                TaskService.create_from_line_item(line_item, job)
 
-        from apps.inventory.services import InventoryService
         InventoryService.create_earmarks_for_job(job)
         return job
 
