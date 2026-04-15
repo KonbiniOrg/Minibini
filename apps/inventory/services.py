@@ -376,3 +376,19 @@ class MaterialService:
             if material.effective_qty == Decimal('0.00') and not material.is_expense_bound:
                 material.delete()
         return material
+
+    @staticmethod
+    def draw_more(material, qty):
+        from django.db import transaction
+        from django.core.exceptions import ValidationError
+        if qty <= Decimal('0.00'):
+            raise ValidationError('draw_more qty must be > 0')
+        if material.is_expense_bound:
+            raise ValidationError('draw_more not allowed on expense-bound materials')
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('draw_more requires pending state')
+        with transaction.atomic():
+            material.quantity = material.quantity + qty
+            material.save(update_fields=['quantity'])
+            InventoryService._mutate_earmark(material.price_list_item, material.job, qty)
+        return material

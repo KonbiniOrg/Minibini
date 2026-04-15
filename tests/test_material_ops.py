@@ -102,3 +102,55 @@ class RestockTest(TestCase):
             MaterialService.restock(m, Decimal('0'))
         with self.assertRaises(ValidationError):
             MaterialService.restock(m, Decimal('3'))
+
+
+class DrawMoreTest(TestCase):
+    def setUp(self):
+        # match Job/contact setup used by RestockTest/ConsumeTest in this file
+        cat = AccountingCategory.objects.create(name='c')
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='Contact', email='d@test.com'
+        )
+        self.job = Job.objects.create(job_number='JOB-D-1', contact=self.contact)
+        self.pli = PriceListItem.objects.create(
+            code='I', accounting_category=cat, is_inventoried=True,
+            qty_on_hand=Decimal('10'),
+        )
+
+    def test_draw_more_increases_quantity_and_earmark(self):
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('2'), price_list_item=self.pli,
+        )
+        MaterialService.draw_more(m, Decimal('3'))
+        m.refresh_from_db()
+        self.assertEqual(m.quantity, Decimal('5'))
+        e = Earmark.objects.get(price_list_item=self.pli, job=self.job)
+        self.assertEqual(e.quantity, Decimal('5'))
+
+    def test_draw_more_rejects_non_positive(self):
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('1'), price_list_item=self.pli,
+        )
+        with self.assertRaises(ValidationError):
+            MaterialService.draw_more(m, Decimal('0'))
+
+    def test_draw_more_forbidden_on_expense_bound(self):
+        from apps.expenses.models import Expense
+        from apps.core.models import User
+        user = User.objects.create(username='drawmore_user')
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('1'), price_list_item=self.pli,
+        )
+        Expense.objects.create(
+            entered_by=user, amount=Decimal('10'),
+            purchased_on='2026-04-14',
+            accounting_category=m.accounting_category or AccountingCategory.objects.first(),
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            purchased_by=user,
+            material=m,
+        )
+        with self.assertRaises(ValidationError):
+            MaterialService.draw_more(m, Decimal('1'))
