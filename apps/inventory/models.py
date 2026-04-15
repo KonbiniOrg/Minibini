@@ -132,14 +132,25 @@ class MaterialBase(models.Model):
 
 
 class PlanMaterial(MaterialBase):
-    """Planning material on a PlanTask. No inventory side effects."""
+    """Planning material on a Worksheet; optionally attached to a PlanTask. No inventory side effects."""
     plan_material_id = models.AutoField(primary_key=True)
     plan_task = models.ForeignKey(
         'jobs.PlanTask', on_delete=models.CASCADE, related_name='plan_materials'
     )
+    est_worksheet = models.ForeignKey(
+        'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_materials',
+        null=True, blank=True,  # nullable during additive phase; tightened in Task 22
+    )
 
     class Meta:
         db_table = 'plan_materials'
+
+    def clean(self):
+        super().clean()
+        if self.plan_task_id and self.est_worksheet_id and (
+            self.plan_task.est_worksheet_id != self.est_worksheet_id
+        ):
+            raise ValidationError('plan_task.est_worksheet must match est_worksheet')
 
     def save(self, *args, **kwargs):
         self._populate_from_pli()
