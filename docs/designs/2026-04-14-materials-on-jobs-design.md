@@ -765,3 +765,40 @@ To revisit when we come back to this:
 Not in scope for this refactor — the materials-on-jobs work doesn't
 introduce new QOH-drop paths (Consume still goes through the existing
 `consume_material`). Flagging here so we don't forget.
+
+### Surface earmark overcommitment (total earmarks > QOH)
+
+The point of earmarks is to tell the shop "you've promised more stock
+than you have on hand — order more." Today, nothing surfaces that
+condition. `get_earmark_preview(job)` computes per-job shortfall at
+populate time only, and there's no ongoing view of total earmarks
+across jobs vs. QOH per PLI.
+
+The data is trivial to compute:
+
+```python
+Earmark.objects.values('price_list_item').annotate(
+    total_earmarked=Sum('quantity'),
+).values(
+    'price_list_item', 'total_earmarked',
+)
+# compare to PriceListItem.qty_on_hand
+```
+
+To revisit when we come back to this:
+
+- Where should overcommitment surface? Candidates: inventory dashboard,
+  per-PLI detail page, a shop-wide "attention needed" feed, a filterable
+  alert on each affected Job, or multiple.
+- Threshold: flag when `total_earmarked > qty_on_hand` (true shortfall)
+  or also when `total_earmarked > qty_on_hand - safety_stock` (low-stock
+  warning)? Do we introduce a safety-stock field on PLI?
+- Refresh model: computed on demand (view query), materialized column on
+  PLI updated via signal, or periodic task?
+- Purchase-order tie-in: is there a one-click "create PO for the
+  shortfall" action?
+
+Not in scope for this refactor — the earmark-write plumbing this refactor
+cleans up is what makes the data reliable enough to build on. Flagging
+here so we come back to turn earmarks from bookkeeping into an actual
+reorder signal.
