@@ -1,10 +1,10 @@
 import logging
+from decimal import Decimal
 
 from django.db import transaction
 from django.core.exceptions import ValidationError
 
 from apps.expenses.models import Expense
-from apps.jobs.models import Task
 
 logger = logging.getLogger(__name__)
 
@@ -20,20 +20,25 @@ class ExpenseService:
             # If new_material info is provided, create the material atomically
             if new_material and not material:
                 from apps.jobs.models import Job
-                from apps.inventory.models import Material
-                job_id = new_material['job_id']
-                job = Job.objects.get(pk=job_id)
-                task = ExpenseService.find_or_create_materials_task(job=job)
-                qty = new_material.get('quantity') or 1
+                from apps.inventory.models import PriceListItem
+                from apps.inventory.services import InventoryService, MaterialService
+                job = Job.objects.get(pk=new_material['job_id'])
+                pli = None
+                if new_material.get('price_list_item_id'):
+                    pli = PriceListItem.objects.get(pk=new_material['price_list_item_id'])
+                qty = new_material.get('quantity') or Decimal('1')
                 price = new_material.get('price')
                 if price is None:
                     price = amount
-                material = Material.objects.create(
-                    task=task,
+                material = MaterialService.create_on_job(
+                    job=job, task=None,
                     description=new_material.get('description', description),
                     quantity=qty,
                     unit_cost=price,
+                    price_list_item=pli,
                 )
+                if pli and pli.is_inventoried:
+                    InventoryService.receive_ad_hoc_purchase(material)
 
             expense = Expense(
                 entered_by=entered_by,
@@ -140,19 +145,6 @@ class ExpenseService:
         ExpenseService._push_and_set_status(expense)
         expense.refresh_from_db()
         return expense
-
-    @staticmethod
-    def find_or_create_materials_task(*, job):
-        existing = Task.objects.filter(
-            job=job, name='Materials',
-        ).first()
-        if existing:
-            return existing
-        return Task.objects.create(
-            job=job,
-            name='Materials',
-            status=Task.STATUS_COMPLETE,
-        )
 
 
 class ReimbursementService:

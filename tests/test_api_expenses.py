@@ -167,7 +167,8 @@ class ExpenseCreateWithNewMaterialTest(TestCase):
         self.assertEqual(r.status_code, 201, r.content)
         exp = Expense.objects.get()
         self.assertIsNotNone(exp.material)
-        self.assertEqual(exp.material.task.job_id, self.job.pk)
+        self.assertEqual(exp.material.job_id, self.job.pk)
+        self.assertIsNone(exp.material.task_id)
 
     def test_create_rejects_work_order_id_without_job_id(self):
         """Legacy work_order_id key no longer accepted."""

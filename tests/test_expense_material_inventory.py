@@ -6,11 +6,16 @@ receive_ad_hoc_purchase is QOH-only — it does not touch earmarks.
 """
 from decimal import Decimal
 from django.test import TestCase
+from django.contrib.auth import get_user_model
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.inventory.models import PriceListItem
+from apps.expenses.models import Expense
+from apps.expenses.services import ExpenseService
+from apps.inventory.models import Material, Earmark, PriceListItem
 from apps.inventory.services import InventoryService, MaterialService
 from apps.jobs.models import Job
+
+User = get_user_model()
 
 
 class AdHocPurchaseTest(TestCase):
@@ -81,3 +86,61 @@ class AdHocPurchaseTest(TestCase):
         )
         # Should not raise
         InventoryService.receive_ad_hoc_purchase(m)
+
+
+class ExpenseSubmitPathTest(TestCase):
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Test', last_name='User',
+            email='exptest@example.com', work_number='555-0200',
+        )
+        self.business = Business.objects.create(
+            business_name='Expense Test Business',
+            default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
+
+        self.cat = AccountingCategory.objects.create(name='c', code='EXCAT1')
+        self.user = User.objects.create(username='exp_user')
+        self.job = Job.objects.create(job_number='JOB-EX-1', contact=self.contact)
+        self.pli = PriceListItem.objects.create(
+            code='I-EX', accounting_category=self.cat, is_inventoried=True,
+            qty_on_hand=Decimal('10'),
+        )
+
+    def test_submit_inventoried_creates_taskless_material_and_bumps_qoh(self):
+        exp = ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            amount=Decimal('25'), purchased_on='2026-04-14',
+            accounting_category=self.cat,
+            new_material={
+                'job_id': self.job.pk,
+                'description': 'bolts',
+                'quantity': Decimal('5'),
+                'price': Decimal('5'),
+                'price_list_item_id': self.pli.pk,
+            },
+        )
+        self.assertEqual(exp.material.job_id, self.job.pk)
+        self.assertIsNone(exp.material.task_id)
+        self.assertEqual(exp.material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.pli.refresh_from_db()
+        self.assertEqual(self.pli.qty_on_hand, Decimal('15'))
+        e = Earmark.objects.get(price_list_item=self.pli, job=self.job)
+        self.assertEqual(e.quantity, Decimal('5'))
+
+    def test_submit_does_not_create_placeholder_task(self):
+        from apps.jobs.models import Task
+        ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            amount=Decimal('25'), purchased_on='2026-04-14',
+            accounting_category=self.cat,
+            new_material={
+                'job_id': self.job.pk, 'description': 'x',
+                'quantity': Decimal('1'), 'price': Decimal('25'),
+            },
+        )
+        self.assertFalse(Task.objects.filter(job=self.job, name='Materials').exists())
