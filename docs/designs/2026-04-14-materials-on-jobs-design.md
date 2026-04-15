@@ -740,3 +740,28 @@ Open questions to settle:
 Not in scope for this refactor. The underlying `consumption_state` +
 `effective_qty` fields are the data that any future surfacing would read,
 so the data model is ready when we get to the UX.
+
+### Audit: QOH can go negative
+
+The current inventory code appears to allow `PriceListItem.qty_on_hand`
+to go negative — `consume_material` does `QOH = F('qty_on_hand') - quantity`
+without a guard, and there's no `CheckConstraint` on the field. In reality
+you can't consume stock you don't have; a negative QOH indicates a data
+error (double-consume, missed PO receive, untracked manual usage, etc.)
+rather than a real state.
+
+To revisit when we come back to this:
+
+- Identify every place QOH changes: `consume_material`,
+  `complete_task_adjustment`, `manual_adjustment`, `receive_po_line_item`,
+  the new `receive_ad_hoc_purchase` / `reverse_ad_hoc_purchase`.
+- Decide the enforcement strategy: pre-op validation (raise if the
+  resulting QOH would go negative), DB-level `CheckConstraint`, or both.
+- Decide the break-glass path: `manual_adjustment` probably needs to
+  remain able to set negative QOH for reconciliation-after-the-fact.
+- Audit existing fixture and production data for any current negatives
+  and resolve them before enforcement goes in.
+
+Not in scope for this refactor — the materials-on-jobs work doesn't
+introduce new QOH-drop paths (Consume still goes through the existing
+`consume_material`). Flagging here so we don't forget.
