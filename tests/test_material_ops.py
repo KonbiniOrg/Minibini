@@ -70,19 +70,35 @@ class RestockTest(TestCase):
             qty_on_hand=Decimal('10'),
         )
 
-    def test_partial_restock_shrinks_earmark_and_bumps_restocked_qty(self):
+    def _make_expense_bound(self, material):
+        from apps.expenses.models import Expense
+        from apps.core.models import User
+        user, _ = User.objects.get_or_create(username='restock_expense_user')
+        Expense.objects.create(
+            entered_by=user, amount=Decimal('10'),
+            purchased_on='2026-04-14',
+            accounting_category=material.accounting_category
+                or AccountingCategory.objects.first(),
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            purchased_by=user,
+            material=material,
+        )
+
+    def test_partial_restock_manual_add_shrinks_quantity_and_earmark(self):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('5'), price_list_item=self.pli,
         )
         MaterialService.restock(m, Decimal('2'))
         m.refresh_from_db()
-        self.assertEqual(m.restocked_qty, Decimal('2'))
+        self.assertEqual(m.quantity, Decimal('3'))
+        self.assertEqual(m.restocked_qty, Decimal('0'))
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         e = Earmark.objects.get(price_list_item=self.pli, job=self.job)
         self.assertEqual(e.quantity, Decimal('3'))
+        self.assertTrue(Material.objects.filter(pk=m.pk).exists())
 
-    def test_full_restock_manual_add_deletes_material(self):
+    def test_full_restock_manual_add_deletes_row(self):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('5'), price_list_item=self.pli,
@@ -93,7 +109,37 @@ class RestockTest(TestCase):
         self.assertFalse(Earmark.objects.filter(
             price_list_item=self.pli, job=self.job).exists())
 
-    def test_restock_validates_positive_and_leq_effective(self):
+    def test_partial_restock_expense_bound_shrinks_quantity_and_bumps_restocked_qty(self):
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('5'), price_list_item=self.pli,
+        )
+        self._make_expense_bound(m)
+        MaterialService.restock(m, Decimal('2'))
+        m.refresh_from_db()
+        self.assertEqual(m.quantity, Decimal('3'))
+        self.assertEqual(m.restocked_qty, Decimal('2'))
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        e = Earmark.objects.get(price_list_item=self.pli, job=self.job)
+        self.assertEqual(e.quantity, Decimal('3'))
+        self.assertTrue(Material.objects.filter(pk=m.pk).exists())
+
+    def test_full_restock_expense_bound_keeps_row_with_quantity_zero(self):
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('5'), price_list_item=self.pli,
+        )
+        self._make_expense_bound(m)
+        MaterialService.restock(m, Decimal('5'))
+        m.refresh_from_db()
+        self.assertEqual(m.quantity, Decimal('0'))
+        self.assertEqual(m.restocked_qty, Decimal('5'))
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertFalse(Earmark.objects.filter(
+            price_list_item=self.pli, job=self.job).exists())
+        self.assertTrue(Material.objects.filter(pk=m.pk).exists())
+
+    def test_restock_validates_positive_and_leq_quantity(self):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('2'), price_list_item=self.pli,
