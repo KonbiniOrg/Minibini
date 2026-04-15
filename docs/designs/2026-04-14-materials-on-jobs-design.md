@@ -638,6 +638,14 @@ equivalent) once all automated tests pass.
 - Attempt `Mark work complete` while a task-less inventoried Material is
   `pending` with `effective_qty > 0` → blocked with a clear error listing
   the offending materials.
+- **Last-task-completion path.** Set up a Job with one remaining in-progress
+  task and a task-less inventoried Material still in `pending`. Complete
+  the last task (which would normally advance the Job to `work_complete`
+  automatically). Verify the auto-advance is blocked by the task-less
+  material — the Job stays in its pre-complete state, the user sees a
+  clear error, and the blocking material is listed. This covers both
+  the user-initiated `Mark work complete` and the signal-driven
+  last-task-done path.
 - Resolve all (consume or restock-to-full each), retry → succeeds. Any
   remaining task-attached earmark balance released by
   `release_earmarks_for_job`.
