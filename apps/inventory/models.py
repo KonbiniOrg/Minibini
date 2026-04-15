@@ -212,10 +212,6 @@ class Material(MaterialBase):
         db_table = 'materials'
 
     @property
-    def effective_qty(self):
-        return self.quantity - self.restocked_qty
-
-    @property
     def is_expense_bound(self):
         return self.expenses.exists()
 
@@ -223,8 +219,8 @@ class Material(MaterialBase):
         super().clean()
         if self.task_id and self.job_id and self.task.job_id != self.job_id:
             raise ValidationError('Material.task.job must match Material.job')
-        if self.restocked_qty < Decimal('0.00') or self.restocked_qty > self.quantity:
-            raise ValidationError('restocked_qty must be between 0 and quantity')
+        if self.restocked_qty < Decimal('0.00'):
+            raise ValidationError('restocked_qty must be non-negative')
 
     def save(self, *args, **kwargs):
         self._populate_from_pli()

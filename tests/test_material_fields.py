@@ -28,15 +28,6 @@ class MaterialFieldsTest(TestCase):
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_NA)
         self.assertEqual(m.restocked_qty, Decimal('0.00'))
 
-    def test_material_effective_qty(self):
-        m = Material.objects.create(
-            task=self.task, job=self.job,
-            description='x', quantity=Decimal('5.00'),
-        )
-        m.restocked_qty = Decimal('2.00')
-        m.save()
-        self.assertEqual(m.effective_qty, Decimal('3.00'))
-
     def test_material_rejects_mismatched_task_job(self):
         job_b = Job.objects.create(job_number='JOB-TEST-2', contact=self.contact)
         with self.assertRaises(ValidationError):
@@ -45,12 +36,12 @@ class MaterialFieldsTest(TestCase):
                 description='x', quantity=Decimal('1.00'),
             )
 
-    def test_material_rejects_restocked_qty_exceeding_quantity(self):
+    def test_material_rejects_negative_restocked_qty(self):
         m = Material.objects.create(
             task=self.task, job=self.job,
             description='x', quantity=Decimal('2.00'),
         )
-        m.restocked_qty = Decimal('3.00')
+        m.restocked_qty = Decimal('-1.00')
         with self.assertRaises(ValidationError):
             m.save()
 
