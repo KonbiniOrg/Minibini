@@ -40,6 +40,7 @@ class PlanTaskAPITest(TestCase):
     def test_retrieve_includes_materials(self):
         from apps.inventory.models import PlanMaterial
         PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.plan_task,
             description='Shelf bracket',
             quantity=6,
@@ -101,6 +102,7 @@ class WorksheetNestedPlanTaskTest(TestCase):
     def test_nested_task_list_includes_materials(self):
         from apps.inventory.models import PlanMaterial
         PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.plan_task,
             description='Sandpaper 120 grit',
             quantity=10,

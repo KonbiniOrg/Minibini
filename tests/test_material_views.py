@@ -113,6 +113,7 @@ class MaterialEditViewTest(MaterialViewTestBase):
     def setUp(self):
         super().setUp()
         self.material = PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.task,
             description='Original material',
             quantity=Decimal('5.00'),
@@ -156,6 +157,7 @@ class MaterialDeleteViewTest(MaterialViewTestBase):
     def setUp(self):
         super().setUp()
         self.material = PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.task,
             description='To be deleted',
             quantity=Decimal('1.00'),

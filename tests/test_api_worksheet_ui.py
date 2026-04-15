@@ -39,6 +39,7 @@ class PlanMaterialCRUDTest(TestCase):
             name='General', code='GEN',
         )
         self.material = PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.plan_task,
             description='Granite slab',
             quantity=2,

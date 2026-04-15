@@ -540,6 +540,7 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
         ws = WorksheetService.create_worksheet(self.job.pk)
         task = PlanTask.objects.create(est_worksheet=ws, name='Task', sort_order=1)
         PlanMaterial.objects.create(
+            est_worksheet=ws,
             plan_task=task, description='Steel', quantity=Decimal('5.00'),
         )
 

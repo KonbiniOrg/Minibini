@@ -297,6 +297,7 @@ class EstWorksheet(AbstractWorkContainer):
             for plan_material in plan_task.plan_materials.all():
                 PlanMaterial.objects.create(
                     plan_task=new_plan_task,
+                    est_worksheet=new_worksheet,
                     price_list_item=plan_material.price_list_item,
                     accounting_category=plan_material.accounting_category,
                     description=plan_material.description,

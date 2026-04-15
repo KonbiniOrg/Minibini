@@ -56,12 +56,14 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
 
     def test_earmarks_created_on_copy_from_worksheet(self):
         PlanMaterial.objects.create(
-            plan_task=self.plan_task, price_list_item=self.plywood,
+            plan_task=self.plan_task, est_worksheet=self.worksheet,
+            price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
         PlanMaterial.objects.create(
-            plan_task=self.plan_task, price_list_item=self.screws,
+            plan_task=self.plan_task, est_worksheet=self.worksheet,
+            price_list_item=self.screws,
             quantity=Decimal('2.00'), unit_cost=Decimal('8.00'),
             sell_price=Decimal('12.00'),
         )
@@ -84,12 +86,14 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
             name='Install trim', sort_order=2,
         )
         PlanMaterial.objects.create(
-            plan_task=self.plan_task, price_list_item=self.plywood,
+            plan_task=self.plan_task, est_worksheet=self.worksheet,
+            price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
         PlanMaterial.objects.create(
-            plan_task=plan_task_b, price_list_item=self.plywood,
+            plan_task=plan_task_b, est_worksheet=self.worksheet,
+            price_list_item=self.plywood,
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
@@ -101,7 +105,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
 
     def test_no_earmarks_without_inventoried_materials(self):
         PlanMaterial.objects.create(
-            plan_task=self.plan_task,
+            plan_task=self.plan_task, est_worksheet=self.worksheet,
             description='Custom brackets',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'),
             sell_price=Decimal('20.00'),
@@ -206,7 +210,8 @@ class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
             name='Build stuff', sort_order=1,
         )
         PlanMaterial.objects.create(
-            plan_task=self.plan_task, price_list_item=self.plywood,
+            plan_task=self.plan_task, est_worksheet=self.worksheet,
+            price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )

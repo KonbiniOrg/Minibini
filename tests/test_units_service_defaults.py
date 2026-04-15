@@ -70,7 +70,7 @@ class EstimateGenerationUnitsDefaultTest(TestCase):
             units='hours',
             mapping_strategy='direct',
         )
-        PlanMaterial.objects.create(plan_task=task,
+        PlanMaterial.objects.create(est_worksheet=self.worksheet,plan_task=task,
             description='Plywood sheet',
             quantity=Decimal('3.00'),
             unit_cost=Decimal('45.00'),

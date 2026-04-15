@@ -49,6 +49,7 @@ class JobPopulateFromEstimateEndToEndTest(TestCase):
             est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.plan_task,
             description='Bracket',
             quantity=Decimal('4'),

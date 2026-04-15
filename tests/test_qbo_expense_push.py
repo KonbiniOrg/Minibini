@@ -624,7 +624,7 @@ class SFMOMAIntegrationTest(TestCase):
             name='Paint main gallery',
         )
         existing_material = Material.objects.create(
-            task=existing_task, description='Acrylic paint 1gal',
+            job=self.job, task=existing_task, description='Acrylic paint 1gal',
             quantity=2,
         )
 

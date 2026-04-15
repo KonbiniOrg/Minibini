@@ -206,6 +206,7 @@ class MaterialServiceTest(JobsTestBase):
 
     def test_update_material(self):
         mat = PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.plan_task, description='Old', quantity=Decimal('1.00'),
         )
         updated = InventoryService.update_plan_material(
@@ -216,6 +217,7 @@ class MaterialServiceTest(JobsTestBase):
 
     def test_delete_material(self):
         mat = PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.plan_task, description='Delete me', quantity=Decimal('1.00'),
         )
         pk = mat.pk
@@ -447,7 +449,8 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
             purchase_price=Decimal('50.00'),
             accounting_category=self.lit)
         PlanMaterial(
-            plan_task=ws_task, price_list_item=pli,
+            plan_task=ws_task, est_worksheet=self.worksheet,
+            price_list_item=pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'), sell_price=Decimal('75.00')).save()
 
@@ -501,6 +504,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
             accounting_category=self.lit)
         PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=plan_task, price_list_item=pli,
             description='Linked', quantity=Decimal('2.00'))
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)

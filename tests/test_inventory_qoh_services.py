@@ -131,6 +131,7 @@ class ConsumeMaterialTest(TestCase):
     def test_decreases_qoh_and_increases_qty_sold(self):
         """Consuming material decreases QOH and increases qty_sold."""
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
@@ -149,6 +150,7 @@ class ConsumeMaterialTest(TestCase):
             quantity=Decimal('10.00'))
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('3.00'),
             unit_cost=Decimal('50.00'))
@@ -166,6 +168,7 @@ class ConsumeMaterialTest(TestCase):
             quantity=Decimal('5.00'))
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
@@ -183,6 +186,7 @@ class ConsumeMaterialTest(TestCase):
             quantity=Decimal('3.00'))
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
@@ -196,6 +200,7 @@ class ConsumeMaterialTest(TestCase):
     def test_no_earmark_no_error(self):
         """Consuming without an earmark does not raise."""
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
@@ -213,6 +218,7 @@ class ConsumeMaterialTest(TestCase):
             accounting_category=self.category)
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=non_inv,
             description='Service', quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'))
@@ -226,6 +232,7 @@ class ConsumeMaterialTest(TestCase):
     def test_skips_no_pli(self):
         """Materials without a PLI are silently skipped."""
         material = Material(
+            job=self.job,
             task=self.task,
             description='Ad hoc material', quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'))
@@ -244,6 +251,7 @@ class ConsumeMaterialTest(TestCase):
             quantity=Decimal('10.00'))
 
         material = Material(
+            job=self.job,
             task=wo_task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('4.00'),
             unit_cost=Decimal('50.00'))
@@ -275,6 +283,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             sort_order=1)
 
         self.material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
@@ -317,6 +326,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             accounting_category=self.category)
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=non_inv,
             description='Service', quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'))
@@ -331,6 +341,7 @@ class CompleteTaskAdjustmentTest(TestCase):
     def test_skips_no_pli(self):
         """Materials without a PLI are silently skipped."""
         material = Material(
+            job=self.job,
             task=self.task,
             description='Ad hoc', quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'))
