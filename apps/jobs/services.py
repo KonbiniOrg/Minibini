@@ -238,6 +238,24 @@ class JobService:
         return job
 
     @staticmethod
+    def _loose_pending_inventoried_materials(job):
+        """Return task-less inventoried Materials on this job that still have
+        a positive effective quantity (quantity - restocked_qty > 0) and are
+        in the PENDING consumption state."""
+        from django.db.models import F
+        from apps.inventory.models import Material
+        return (
+            Material.objects.filter(
+                job=job,
+                task__isnull=True,
+                price_list_item__is_inventoried=True,
+                consumption_state=Material.CONSUMPTION_STATE_PENDING,
+            )
+            .annotate(eff=F('quantity') - F('restocked_qty'))
+            .filter(eff__gt=0)
+        )
+
+    @staticmethod
     def update_status(pk, new_status):
         """Update job status; triggers earmark release on entry to work_complete."""
         try:
@@ -246,6 +264,15 @@ class JobService:
             raise NotFoundError(f'Job {pk} not found')
         if job.status == new_status:
             return job
+
+        if new_status == Job.STATUS_WORK_COMPLETE:
+            offenders = JobService._loose_pending_inventoried_materials(job)
+            if offenders.exists():
+                names = ', '.join(m.description or str(m.pk) for m in offenders)
+                raise ValidationError(
+                    f'Cannot advance to work_complete: unresolved task-less materials: {names}'
+                )
+
         old_status = job.status
         job.status = new_status
         job.full_clean()
@@ -575,7 +602,10 @@ class TaskLifecycleService:
             job=job
         ).exclude(status__in=terminal).exists()
         if all_terminal:
-            JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
+            try:
+                JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
+            except ValidationError:
+                pass  # Pending task-less materials block auto-advance; task completion itself succeeds.
 
     @staticmethod
     def block_task(task_pk, reason=''):
