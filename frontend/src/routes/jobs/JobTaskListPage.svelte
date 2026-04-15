@@ -168,11 +168,51 @@
     materialModalOpen = true;
   }
 
-  function openEditMaterial(material, task) {
-    materialModalMaterial = material;
-    materialModalTaskId = task.task_id;
-    materialModalMode = 'edit';
-    materialModalOpen = true;
+  async function handleEditMaterialDescription(material, _task) {
+    const next = window.prompt('Edit description:', material.description || '');
+    if (next === null) return;
+    try {
+      await api.patch(`/api/materials/${material.material_id}/`, { description: next });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not edit description.');
+    }
+  }
+
+  async function handleConsumeMaterial(material, _task) {
+    if (!confirm('Consume this material?')) return;
+    try {
+      await api.post(`/api/materials/${material.material_id}/consume/`, {});
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not consume.');
+    }
+  }
+
+  async function handleRestockMaterial(material, _task) {
+    const raw = window.prompt(`Restock quantity (max ${material.effective_qty}):`, material.effective_qty);
+    if (raw === null) return;
+    const quantity = raw.trim();
+    if (!quantity) return;
+    try {
+      await api.post(`/api/materials/${material.material_id}/restock/`, { quantity });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not restock.');
+    }
+  }
+
+  async function handleDrawMoreMaterial(material, _task) {
+    const raw = window.prompt('Draw more quantity:', '1');
+    if (raw === null) return;
+    const quantity = raw.trim();
+    if (!quantity) return;
+    try {
+      await api.post(`/api/materials/${material.material_id}/draw-more/`, { quantity });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not draw more.');
+    }
   }
 
   async function handleDeleteMaterial(material, task) {
@@ -273,8 +313,11 @@
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onAddMaterial={openAddMaterial}
-    onEditMaterial={openEditMaterial}
+    onEditMaterial={handleEditMaterialDescription}
     onDeleteMaterial={handleDeleteMaterial}
+    onConsumeMaterial={handleConsumeMaterial}
+    onRestockMaterial={handleRestockMaterial}
+    onDrawMoreMaterial={handleDrawMoreMaterial}
     onAddSubtask={openAddSubtask}
     onReorder={handleReorder}
     onTaskClick={handleTaskClick}

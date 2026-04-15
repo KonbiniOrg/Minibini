@@ -6,12 +6,19 @@ from apps.core.units import UnitsField
 
 
 class MaterialSerializer(serializers.ModelSerializer):
+    effective_qty = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True,
+    )
+    is_expense_bound = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
             'unit_cost', 'sell_price', 'price_list_item',
             'accounting_category',
+            'consumption_state', 'restocked_qty', 'effective_qty',
+            'is_expense_bound',
         ]
         read_only_fields = fields
 
