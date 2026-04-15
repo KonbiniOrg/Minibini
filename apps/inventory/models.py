@@ -140,7 +140,6 @@ class PlanMaterial(MaterialBase):
     )
     est_worksheet = models.ForeignKey(
         'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_materials',
-        null=True, blank=True,  # nullable during additive phase; tightened in Task 22
     )
 
     class Meta:
@@ -200,7 +199,6 @@ class Material(MaterialBase):
     )
     job = models.ForeignKey(
         'jobs.Job', on_delete=models.CASCADE, related_name='materials',
-        null=True, blank=True,  # nullable during additive phase; tightened in Task 22
     )
     consumption_state = models.CharField(
         max_length=20, choices=CONSUMPTION_STATE_CHOICES,
