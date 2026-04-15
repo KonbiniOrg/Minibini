@@ -194,7 +194,8 @@ class Material(MaterialBase):
 
     material_id = models.AutoField(primary_key=True)
     task = models.ForeignKey(
-        'jobs.Task', on_delete=models.CASCADE, related_name='materials'
+        'jobs.Task', on_delete=models.SET_NULL, related_name='materials',
+        null=True, blank=True,  # nullable; task-less materials attach directly to job
     )
     job = models.ForeignKey(
         'jobs.Job', on_delete=models.CASCADE, related_name='materials',
