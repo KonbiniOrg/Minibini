@@ -150,17 +150,57 @@ class PlanMaterial(MaterialBase):
 
 
 class Material(MaterialBase):
-    """Actual material on a Task (work order). Participates in earmark/QOH flows."""
+    """Actual material on a Job; optionally attached to a Task. Participates in earmark/QOH flows."""
+    CONSUMPTION_STATE_NA = 'na'
+    CONSUMPTION_STATE_PENDING = 'pending'
+    CONSUMPTION_STATE_CONSUMED = 'consumed'
+    CONSUMPTION_STATE_CHOICES = [
+        (CONSUMPTION_STATE_NA, 'N/A'),
+        (CONSUMPTION_STATE_PENDING, 'Pending'),
+        (CONSUMPTION_STATE_CONSUMED, 'Consumed'),
+    ]
+
     material_id = models.AutoField(primary_key=True)
     task = models.ForeignKey(
         'jobs.Task', on_delete=models.CASCADE, related_name='materials'
+    )
+    job = models.ForeignKey(
+        'jobs.Job', on_delete=models.CASCADE, related_name='materials',
+        null=True, blank=True,  # nullable during additive phase; tightened in Task 22
+    )
+    consumption_state = models.CharField(
+        max_length=20, choices=CONSUMPTION_STATE_CHOICES,
+        default=CONSUMPTION_STATE_NA,
+    )
+    restocked_qty = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal('0.00'),
     )
 
     class Meta:
         db_table = 'materials'
 
+    @property
+    def effective_qty(self):
+        return self.quantity - self.restocked_qty
+
+    @property
+    def is_expense_bound(self):
+        return self.expenses.exists()
+
+    def clean(self):
+        super().clean()
+        if self.task_id and self.job_id and self.task.job_id != self.job_id:
+            from django.core.exceptions import ValidationError
+            raise ValidationError('Material.task.job must match Material.job')
+        if self.restocked_qty < Decimal('0.00') or self.restocked_qty > self.quantity:
+            from django.core.exceptions import ValidationError
+            raise ValidationError('restocked_qty must be between 0 and quantity')
+
     def save(self, *args, **kwargs):
         self._populate_from_pli()
+        if not self.pk and self.price_list_item and self.price_list_item.is_inventoried:
+            if self.consumption_state == self.CONSUMPTION_STATE_NA:
+                self.consumption_state = self.CONSUMPTION_STATE_PENDING
         self.full_clean()
         super().save(*args, **kwargs)
 
