@@ -176,6 +176,13 @@ class InventoryService:
             raise NotFoundError(f'PlanMaterial {pk} not found')
         mat.delete()
 
+    @staticmethod
+    def create_plan_material_on_worksheet(worksheet, **kwargs):
+        """Create a task-less PlanMaterial on a worksheet."""
+        mat = PlanMaterial(est_worksheet=worksheet, plan_task=None, **kwargs)
+        mat.save()
+        return mat
+
     # --- Thin wrappers for legacy HTML view call sites (to be removed in Phase 4) ---
 
     @staticmethod

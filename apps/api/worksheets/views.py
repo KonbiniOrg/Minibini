@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from apps.core.services import ServiceError, NotFoundError
 from apps.api.mixins import StatusTransitionMixin, PlanTaskBundleMixin
 from apps.api.permissions import CanManageJobs
-from .serializers import EstWorksheetSerializer, PlanTaskSerializer, PlanBundleSerializer
+from .serializers import EstWorksheetSerializer, PlanTaskSerializer, PlanBundleSerializer, PlanMaterialWriteSerializer
 
 
 class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.ModelViewSet):
@@ -18,7 +18,7 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.M
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve')
-        mixed_actions = ('tasks', 'bundles')
+        mixed_actions = ('tasks', 'bundles', 'plan_materials', 'plan_material_detail')
         if self.action in read_actions:
             return [IsAuthenticated()]
         if self.action in mixed_actions and self.request.method == 'GET':
@@ -111,6 +111,50 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.M
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         serializer = PlanTaskSerializer(task)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get', 'post'], url_path='plan-materials', url_name='plan-materials')
+    def plan_materials(self, request, pk=None):
+        worksheet = self.get_object()
+        if request.method == 'GET':
+            from apps.inventory.models import PlanMaterial
+            mats = PlanMaterial.objects.filter(est_worksheet=worksheet)
+            serializer = PlanMaterialWriteSerializer(mats, many=True)
+            return Response(serializer.data)
+
+        serializer = PlanMaterialWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        plan_task = serializer.validated_data.get('plan_task')
+        kwargs = {k: v for k, v in serializer.validated_data.items() if k != 'plan_task'}
+        if plan_task is not None:
+            kwargs['plan_task'] = plan_task
+            from apps.inventory.models import PlanMaterial
+            mat = PlanMaterial(est_worksheet=worksheet, **kwargs)
+            mat.save()
+        else:
+            from apps.inventory.services import InventoryService
+            mat = InventoryService.create_plan_material_on_worksheet(worksheet, **kwargs)
+        out = PlanMaterialWriteSerializer(mat)
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch', 'delete'],
+            url_path='plan-materials/(?P<mat_id>[0-9]+)', url_name='plan-material-detail')
+    def plan_material_detail(self, request, pk=None, mat_id=None):
+        worksheet = self.get_object()
+        from apps.inventory.models import PlanMaterial
+        try:
+            mat = PlanMaterial.objects.get(pk=mat_id, est_worksheet=worksheet)
+        except PlanMaterial.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+
+        if request.method == 'DELETE':
+            mat.delete()
+            return Response({'message': 'Plan material deleted.'})
+
+        serializer = PlanMaterialWriteSerializer(mat, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
     @action(detail=True, methods=['post'], url_path='generate-estimate')
     def generate_estimate(self, request, pk=None):
