@@ -46,7 +46,10 @@ class JobSerializer(serializers.ModelSerializer):
 
     def get_materials(self, obj):
         from apps.api.inventory.serializers import MaterialSerializer
-        return MaterialSerializer(obj.materials.all().order_by('pk'), many=True).data
+        materials = obj.materials.all()
+        if not hasattr(obj, '_prefetched_objects_cache') or 'materials' not in obj._prefetched_objects_cache:
+            materials = materials.order_by('pk')
+        return MaterialSerializer(materials, many=True).data
 
     def get_template(self, obj):
         if obj.template_id is None:
