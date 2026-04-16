@@ -47,9 +47,12 @@ Relevant existing services:
   aggregates `Material.objects.filter(task__job=job, price_list_item__is_inventoried=True)`
   by PLI and upserts Earmark rows. Runs at the end of `populate_from_template`,
   `populate_from_estimate`, and `copy_from_worksheet`.
-- `InventoryService.consume_material(material)` (`apps/inventory/services.py:60`)
-  decrements QOH, increments qty_sold, shrinks the (pli, job) earmark. Called
-  at task-start.
+- `MaterialService.consume(material)` (`apps/inventory/services.py`)
+  is the sole consume path: flips `consumption_state → consumed` and,
+  when inventoried, decrements QOH, increments qty_sold, and shrinks the
+  (pli, job) earmark. Called at task-start for task-attached Materials
+  and by the explicit Consume op for task-less Materials. The older
+  duplicate on `InventoryService` has been removed.
 - `InventoryService.receive_po_line_item(po_line_item)` (`apps/inventory/services.py:38`)
   bumps QOH and upserts the earmark when a PO line item with a job is received.
 - `InvoiceWizardService.get_source_pool(invoice)` (`apps/invoicing/services.py:200`)
@@ -101,8 +104,8 @@ Relevant existing services:
 - **new** `job` → `ForeignKey(Job, on_delete=CASCADE, related_name='materials')`, not-null
   - CASCADE is safe here because `Earmark.job` also cascades on Job
     deletion; earmarks die with the job they belong to, no orphans.
-- **new** `consumption_state` → `CharField(max_length=20, choices=CONSUMPTION_STATE_CHOICES, default='na')`
-  - Choices: `na`, `pending`, `consumed`
+- **new** `consumption_state` → `CharField(max_length=20, choices=CONSUMPTION_STATE_CHOICES, default='pending')`
+  - Choices: `pending`, `consumed`
 - **new** `restocked_qty` → `DecimalField(max_digits=10, decimal_places=2, default=0)`
 - `clean()` enforces:
   - `self.task is None or self.task.job_id == self.job_id`
@@ -110,9 +113,10 @@ Relevant existing services:
   - Manual-add invariant: `restocked_qty == 0`.
   - Expense-bound invariant: `quantity + restocked_qty == purchase_qty`
     (the original submitted purchase quantity).
-- `save()` auto-sets `consumption_state`:
-  - `'pending'` on creation when `price_list_item` is inventoried.
-  - `'na'` otherwise.
+- Every Material starts in `pending` and transitions to `consumed` once —
+  either by task-start (for task-attached Materials) or by an explicit
+  Consume op (for task-less Materials). The model default handles creation;
+  no `save()`-time branching on PLI type.
 - `quantity` represents the amount currently applied to this job.
 - `restocked_qty` is nonzero only on expense-bound rows; it tracks the gap
   between the current job-committed amount and the original purchase qty
@@ -232,12 +236,39 @@ regime it should be a no-op in practice.
 
 ### User-facing ops
 
-| Op | Inventoried Material effect | Non-inventoried Material effect |
-|---|---|---|
-| **Consume** | `QOH -= quantity`, `qty_sold += quantity`, earmark `-= quantity`, `state → consumed`. | `state → consumed`. No mechanical effect on inventory. |
-| **Restock(n)** | `quantity -= n`, earmark `-= n` (via `_mutate_earmark`). If `n == quantity` (full restock) and Material is manual-add (not expense-bound): delete Material row internally (no further earmark mutation — `_mutate_earmark(-= n)` already ran). If expense-bound: `restocked_qty += n`, row stays (with `quantity` potentially 0), invoice excludes it when `quantity == 0`. | `quantity -= n`. On expense-bound also `restocked_qty += n`. Same manual-add-delete / expense-bound-survive rule. No earmark call since not inventoried. |
-| **Draw more(n)** | `quantity += n`, earmark `+= n`. **Not available on expense-bound Materials** — the UI hides the button and the API endpoint returns 400. Extra demand is handled by the existing "Add material" button on the Job, which creates a separate manual-add Material drawing from existing stock. | `quantity += n`. Same "expense-bound not available" rule. |
-| **Edit description** | description-only change. Allowed on all pending Materials. | Same. |
+The op rules collapse along the attachment axis — task-attached vs
+task-less — rather than along the PLI axis. Non-inventoried Materials
+participate in the same state machine; their Consume just has no QOH or
+earmark side effect (state flips as a marker only).
+
+| Attachment | State | Restock | Draw more | Consume | Edit desc |
+|---|---|---|---|---|---|
+| task-attached | `pending` | ✅ (to-zero deletes manual-add) | ✅ (hidden on expense-bound) | — (task lifecycle fires it) | ✅ |
+| task-less | `pending` | ✅ (to-zero deletes manual-add) | ✅ (hidden on expense-bound) | ✅ | ✅ |
+| any | `consumed` | — | — | — | — |
+
+All rows additionally require the job's status not in
+`{completed, cancelled, rejected}`. The UI enforces this via a
+`jobLocked` terminal-job check; consumed Materials and terminal Jobs
+both collapse the op set to empty.
+
+Mechanical effects by op (apply where the table above permits the op):
+
+- **Consume** — inventoried: `QOH -= quantity`, `qty_sold += quantity`,
+  earmark `-= quantity`, `state → consumed`. Non-inventoried:
+  `state → consumed` as a marker; no QOH/earmark side effect.
+- **Restock(n)** — `quantity -= n`; if inventoried, earmark `-= n` via
+  `_mutate_earmark`. If `n == quantity` (full restock) and Material is
+  manual-add (not expense-bound): delete the Material row internally.
+  If expense-bound: `restocked_qty += n`, row stays (with `quantity`
+  potentially 0), invoice excludes it when `quantity == 0`.
+- **Draw more(n)** — `quantity += n`; if inventoried, earmark `+= n`.
+  Hidden on expense-bound Materials; the API endpoint returns 400
+  defensively. Extra demand on expense-bound rows is handled by the
+  Job's regular "Add material" button, which creates a separate
+  manual-add Material.
+- **Edit description** — description-only change. Allowed on any
+  non-consumed Material.
 
 ### Op validation
 
@@ -255,7 +286,8 @@ regime it should be a no-op in practice.
 - **`waive` / `restore` / `'waived'` state** — subsumed by Restock.
 - **`earmark_active` boolean** — unnecessary once consumed is terminal; the
   state + restocked_qty fields are enough.
-- **User-facing Delete op** — replaced by full Restock on manual-add.
+- **User-facing Delete op** — no `del` button in the UI. Full Restock on
+  a manual-add Material deletes the row server-side as a side effect.
   Expense-bound Materials are never user-deletable; their lifecycle is
   owned by the Expense.
 - **Edit quantity** — replaced by Restock (down) and Draw more (up).
@@ -264,34 +296,41 @@ regime it should be a no-op in practice.
 
 ### Uniformity note on `consumption_state`
 
-`consumption_state` now applies to **all** inventoried Materials, not just
-task-less ones. A task-attached inventoried Material starts in `pending`
-and transitions to `consumed` when `MaterialService.consume(...)` runs at
-task-start. This keeps the rule "consumed is terminal, forbidden to delete
-or mutate" uniform regardless of whether the Material is task-attached.
+`consumption_state` applies to **every** Material, regardless of PLI
+type or task attachment. The state machine is uniform: every Material
+starts `pending` and transitions to `consumed` exactly once — by
+task-start for task-attached Materials, or by an explicit Consume op
+for task-less Materials. "Consumed is terminal, forbidden to delete or
+mutate" holds everywhere.
 
-The UI rule still differs: buttons (Consume, Restock, Draw more) appear
-only on **task-less** Materials. Task-attached Materials are driven by
-task lifecycle; they don't need explicit buttons.
+For non-inventoried Materials the transition is a marker with no QOH or
+earmark side effect; it still gates the op set the same way.
+
+Task-attached Materials do not show a Consume button — their task
+lifecycle drives the transition. Restock, Draw more, and Edit
+description are available on both task-attached and task-less Materials
+while pending (see the op table above).
 
 ### `work_complete` gate
 
-Block `Job` → `work_complete` transition if any Material on the job is
-task-less, inventoried, and has un-resolved commitment:
+Block `Job` → `work_complete` transition if any task-less Material on
+the job has un-resolved commitment, uniform across inventoried and
+non-inventoried PLIs:
 
 ```
 Material.objects.filter(
     job=job,
     task__isnull=True,
-    price_list_item__is_inventoried=True,
     consumption_state='pending',
     quantity__gt=0,
 ).exists()
 ```
 
-Fully-restocked expense-bound Materials (`quantity = 0`) do not block.
-Task-attached Materials are gated by the task's own lifecycle, not this
-check.
+The gate is deliberately PLI-agnostic: a task-less non-inventoried
+Material still represents an unresolved decision (Consume or Restock)
+that the user needs to make before the job can close. Fully-restocked
+expense-bound Materials (`quantity = 0`) do not block. Task-attached
+Materials are gated by the task's own lifecycle, not this check.
 
 The existing `release_earmarks_for_job(job)` still runs on successful
 transition and sweeps any remaining earmark balance.
@@ -489,14 +528,16 @@ and should not be gated behind the manager-level permission atom.
 
 ### No direct Material DELETE endpoint
 
-User-facing Material deletion is always indirect:
+No standalone DELETE endpoint exists, and no `del` button is exposed in
+the UI. User-facing Material deletion is always indirect:
 
-- Manual-add Material: deleted as a side effect of Restock reaching full
-  quantity. No standalone DELETE endpoint.
-- Expense-bound Material: deleted only by Expense rejection. No user-facing
-  path.
+- Manual-add Material: deleted server-side as a side effect of Restock
+  reaching full quantity.
+- Expense-bound Material: deleted only by Expense rejection. No
+  user-facing path.
 
-This keeps the lifecycle rules unambiguous at the API boundary.
+This keeps the lifecycle rules unambiguous at both the API and UI
+boundaries.
 
 ### Modified endpoints
 
@@ -517,7 +558,7 @@ RunPython data step between.
 ### Migration A (additive)
 
 - Add `Material.job` (nullable initially).
-- Add `Material.consumption_state` (default `'na'`).
+- Add `Material.consumption_state` (default `'pending'`).
 - Add `Material.restocked_qty` (default 0).
 - Add `PlanMaterial.est_worksheet` (nullable initially).
 - Create `TemplateMaterial` table.
@@ -526,10 +567,10 @@ RunPython data step between.
 
 1. Backfill `Material.job_id = Material.task.job_id` for every existing row.
 2. Backfill `PlanMaterial.est_worksheet_id = PlanMaterial.plan_task.est_worksheet_id`.
-3. For every existing inventoried Material with `task` set, set
+3. For every existing Material with `task` set, set
    `consumption_state = 'pending'` if the task hasn't been started/completed
-   (per task status), else `'consumed'`. Non-inventoried or freeform
-   Materials stay at `'na'`.
+   (per task status), else `'consumed'`. The state machine is uniform
+   across PLI types; non-inventoried Materials get the same treatment.
 4. Placeholder-task cleanup: for each Task where `name='Materials'` AND no
    Bleps AND every Material on it has `expenses.exists()`, null out
    `Material.task` for those materials and delete the Task. If any criterion
@@ -614,8 +655,9 @@ equivalent) once all automated tests pass.
   save. Verify it appears in the job's material list and in the invoice
   wizard's "Materials (no task)" group.
 - PLI-backed non-inventoried material: verify no earmark created, no QOH
-  change, appears in invoice pool, no Consume/Restock/Draw-more buttons
-  (non-inventoried → nothing to do).
+  change, appears in invoice pool. Consume / Restock / Draw more buttons
+  are present (the state machine is uniform); Consume flips state to
+  `consumed` as a marker with no QOH/earmark side effect.
 - PLI-backed inventoried material: verify earmark upserted on `(pli, job)`,
   QOH unchanged, state `pending`, Consume / Restock / Draw more buttons
   present.
@@ -646,11 +688,11 @@ equivalent) once all automated tests pass.
 
 ### `work_complete` gate
 
-- Attempt `Mark work complete` while a task-less inventoried Material is
-  `pending` with `quantity > 0` → blocked with a clear error listing
-  the offending materials.
+- Attempt `Mark work complete` while any task-less Material is
+  `pending` with `quantity > 0` (inventoried or not) → blocked with a
+  clear error listing the offending materials.
 - **Last-task-completion path.** Set up a Job with one remaining in-progress
-  task and a task-less inventoried Material still in `pending`. Complete
+  task and a task-less Material still in `pending`. Complete
   the last task (which would normally advance the Job to `work_complete`
   automatically). Verify the auto-advance is blocked by the task-less
   material — the Job stays in its pre-complete state, the user sees a
@@ -680,7 +722,9 @@ equivalent) once all automated tests pass.
 - Reject an expense where any material is consumed → blocked with clear
   error.
 - Submit an expense with a non-inventoried PLI or freeform material: no
-  QOH change, no earmark, no Consume/Restock/Draw-more buttons.
+  QOH change, no earmark. Consume / Restock / Draw more buttons are
+  still present under the uniform state machine; Consume is a marker
+  flip with no inventory side effect.
 
 ### Templates
 
@@ -715,8 +759,8 @@ equivalent) once all automated tests pass.
   holds (`material.task.job_id == material.job_id` when task is set).
 - Every `PlanMaterial` has `est_worksheet` populated with the matching
   invariant on `plan_task`.
-- Inventoried task-attached materials have `consumption_state` populated
-  (pending or consumed as appropriate).
+- Task-attached materials have `consumption_state` populated
+  (pending or consumed as appropriate), regardless of PLI type.
 - `restocked_qty` defaults to 0 on all existing rows.
 - Placeholder "Materials" tasks created by the old
   `find_or_create_materials_task` path are gone; their materials are now
@@ -726,9 +770,9 @@ equivalent) once all automated tests pass.
 
 ## Deferred — revisit later
 
-### Flagging pending task-less inventoried materials before work_complete
+### Flagging pending task-less materials before work_complete
 
-The `work_complete` gate blocks the transition when a task-less inventoried
+The `work_complete` gate blocks the transition when any task-less
 Material is still in `pending` state with `quantity > 0`. Mechanically
 this works: the user gets an error when they try to close the job.
 
@@ -766,15 +810,16 @@ so the data model is ready when we get to the UX.
 ### Audit: QOH can go negative
 
 The current inventory code appears to allow `PriceListItem.qty_on_hand`
-to go negative — `consume_material` does `QOH = F('qty_on_hand') - quantity`
-without a guard, and there's no `CheckConstraint` on the field. In reality
+to go negative — `MaterialService.consume` does
+`QOH = F('qty_on_hand') - quantity` without a guard, and there's no
+`CheckConstraint` on the field. In reality
 you can't consume stock you don't have; a negative QOH indicates a data
 error (double-consume, missed PO receive, untracked manual usage, etc.)
 rather than a real state.
 
 To revisit when we come back to this:
 
-- Identify every place QOH changes: `consume_material`,
+- Identify every place QOH changes: `MaterialService.consume`,
   `complete_task_adjustment`, `manual_adjustment`, `receive_po_line_item`,
   the new `receive_ad_hoc_purchase` / `reverse_ad_hoc_purchase`.
 - Decide the enforcement strategy: pre-op validation (raise if the
@@ -785,8 +830,8 @@ To revisit when we come back to this:
   and resolve them before enforcement goes in.
 
 Not in scope for this refactor — the materials-on-jobs work doesn't
-introduce new QOH-drop paths (Consume still goes through the existing
-`consume_material`). Flagging here so we don't forget.
+introduce new QOH-drop paths (Consume still goes through the single
+`MaterialService.consume` path). Flagging here so we don't forget.
 
 ### Surface earmark overcommitment (total earmarks > QOH)
 
