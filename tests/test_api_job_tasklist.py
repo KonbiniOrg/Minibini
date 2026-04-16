@@ -39,6 +39,7 @@ class MaterialCRUDTest(TestCase):
             name='General', code='GEN',
         )
         self.material = Material.objects.create(
+            job=self.job,
             task=self.task,
             description='Granite slab',
             quantity=2,
@@ -99,21 +100,31 @@ class MaterialCRUDTest(TestCase):
         self.assertEqual(response.data['unit_cost'], '10.00')
         self.assertEqual(response.data['sell_price'], '20.00')
 
-    def test_update_material(self):
+    def test_update_material_description(self):
+        """PATCH with description-only update succeeds."""
+        response = self.client.patch(
+            f'/api/tasks/{self.task.pk}/materials/{self.material.pk}/',
+            {'description': 'Updated slab'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['description'], 'Updated slab')
+
+    def test_update_material_quantity_rejected(self):
+        """PATCH with quantity is rejected; quantity changes go through draw-more/restock."""
         response = self.client.patch(
             f'/api/tasks/{self.task.pk}/materials/{self.material.pk}/',
             {'quantity': '5.00'},
             format='json',
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['quantity'], '5.00')
+        self.assertEqual(response.status_code, 400)
 
     def test_update_material_any_authenticated_user(self):
         worker = User.objects.create_user(username='worker2', password='testpass')
         self.client.force_authenticate(user=worker)
         response = self.client.patch(
             f'/api/tasks/{self.task.pk}/materials/{self.material.pk}/',
-            {'quantity': '3.00'},
+            {'description': 'Worker update'},
             format='json',
         )
         self.assertEqual(response.status_code, 200)
@@ -137,7 +148,7 @@ class MaterialCRUDTest(TestCase):
     def test_material_not_found(self):
         response = self.client.patch(
             f'/api/tasks/{self.task.pk}/materials/99999/',
-            {'quantity': '1.00'},
+            {'description': 'nonexistent'},
             format='json',
         )
         self.assertEqual(response.status_code, 404)
@@ -149,7 +160,7 @@ class MaterialCRUDTest(TestCase):
         )
         response = self.client.patch(
             f'/api/tasks/{task2.pk}/materials/{self.material.pk}/',
-            {'quantity': '1.00'},
+            {'description': 'wrong task'},
             format='json',
         )
         self.assertEqual(response.status_code, 404)
@@ -269,7 +280,7 @@ class TerminalTaskGuardTest(TestCase):
     def test_cannot_edit_material_on_complete_task(self):
         task = self._make_task(Task.STATUS_COMPLETE)
         mat = Material.objects.create(
-            task=task, description='Existing', quantity=1,
+            job=self.job, task=task, description='Existing', quantity=1,
             unit_cost=Decimal('5.00'), sell_price=Decimal('10.00'),
         )
         response = self.client.patch(
@@ -282,7 +293,7 @@ class TerminalTaskGuardTest(TestCase):
     def test_cannot_delete_material_on_complete_task(self):
         task = self._make_task(Task.STATUS_COMPLETE)
         mat = Material.objects.create(
-            task=task, description='Existing', quantity=1,
+            job=self.job, task=task, description='Existing', quantity=1,
             unit_cost=Decimal('5.00'), sell_price=Decimal('10.00'),
         )
         response = self.client.delete(

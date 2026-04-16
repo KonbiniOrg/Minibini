@@ -55,11 +55,11 @@ class EstimateGenerationMaterialsTest(TestCase):
             rate=Decimal('50.00'), est_qty=Decimal('4.00'), units='hours',
             mapping_strategy='direct',
         )
-        PlanMaterial.objects.create(plan_task=task, description='Plywood',
+        PlanMaterial.objects.create(est_worksheet=task.est_worksheet, plan_task=task, description='Plywood',
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
-        PlanMaterial.objects.create(plan_task=task, description='Screws',
+        PlanMaterial.objects.create(est_worksheet=task.est_worksheet, plan_task=task, description='Screws',
             quantity=Decimal('100.00'), unit_cost=Decimal('0.10'),
             sell_price=Decimal('0.20'),
         )
@@ -100,7 +100,7 @@ class EstimateGenerationMaterialsTest(TestCase):
             rate=None, est_qty=None,
             mapping_strategy='direct',
         )
-        PlanMaterial.objects.create(plan_task=task, description='Special order hardware',
+        PlanMaterial.objects.create(est_worksheet=task.est_worksheet, plan_task=task, description='Special order hardware',
             quantity=Decimal('1.00'), unit_cost=Decimal('50.00'),
             sell_price=Decimal('100.00'),
         )
@@ -123,7 +123,7 @@ class EstimateGenerationMaterialsTest(TestCase):
             rate=Decimal('0.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        PlanMaterial.objects.create(plan_task=task, description='Widget',
+        PlanMaterial.objects.create(est_worksheet=task.est_worksheet, plan_task=task, description='Widget',
             quantity=Decimal('2.00'), unit_cost=Decimal('25.00'),
             sell_price=Decimal('50.00'),
         )
@@ -153,11 +153,11 @@ class EstimateGenerationMaterialsTest(TestCase):
             mapping_strategy='bundle', bundle=bundle,
         )
         # Materials on bundled tasks
-        PlanMaterial.objects.create(plan_task=task1, description='Plywood',
+        PlanMaterial.objects.create(est_worksheet=task1.est_worksheet, plan_task=task1, description='Plywood',
             quantity=Decimal('2.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
-        PlanMaterial.objects.create(plan_task=task2, description='Screws',
+        PlanMaterial.objects.create(est_worksheet=task2.est_worksheet, plan_task=task2, description='Screws',
             quantity=Decimal('50.00'), unit_cost=Decimal('0.05'),
             sell_price=Decimal('0.10'),
         )
@@ -182,7 +182,7 @@ class EstimateGenerationMaterialsTest(TestCase):
             rate=Decimal('25.00'), est_qty=Decimal('1.00'),
             mapping_strategy='exclude',
         )
-        PlanMaterial.objects.create(plan_task=task, description='Should not appear',
+        PlanMaterial.objects.create(est_worksheet=task.est_worksheet, plan_task=task, description='Should not appear',
             quantity=Decimal('1.00'), unit_cost=Decimal('10.00'),
             sell_price=Decimal('20.00'),
         )
@@ -228,7 +228,7 @@ class EstimateGenerationMaterialsTest(TestCase):
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        material = PlanMaterial.objects.create(plan_task=task, description='Bracket',
+        material = PlanMaterial.objects.create(est_worksheet=task.est_worksheet, plan_task=task, description='Bracket',
             quantity=Decimal('4.00'), unit_cost=Decimal('5.00'),
             sell_price=Decimal('10.00'),
         )
@@ -250,7 +250,7 @@ class EstimateGenerationMaterialsTest(TestCase):
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        PlanMaterial.objects.create(plan_task=task, price_list_item=self.pli_plywood,
+        PlanMaterial.objects.create(est_worksheet=task.est_worksheet, plan_task=task, price_list_item=self.pli_plywood,
             quantity=Decimal('4.00'),
         )
 
@@ -270,7 +270,7 @@ class EstimateGenerationMaterialsTest(TestCase):
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        PlanMaterial.objects.create(plan_task=task, description='Custom bracket',
+        PlanMaterial.objects.create(est_worksheet=task.est_worksheet, plan_task=task, description='Custom bracket',
             quantity=Decimal('4.00'), unit_cost=Decimal('5.00'),
             sell_price=Decimal('10.00'),
             accounting_category=self.lit_material,
@@ -292,7 +292,7 @@ class EstimateGenerationMaterialsTest(TestCase):
             rate=Decimal('50.00'), est_qty=Decimal('1.00'),
             mapping_strategy='direct',
         )
-        PlanMaterial.objects.create(plan_task=task, description='Mystery part',
+        PlanMaterial.objects.create(est_worksheet=task.est_worksheet, plan_task=task, description='Mystery part',
             quantity=Decimal('1.00'), unit_cost=Decimal('5.00'),
             sell_price=Decimal('10.00'),
         )
@@ -305,3 +305,39 @@ class EstimateGenerationMaterialsTest(TestCase):
         ).first()
         # Should get some type (first active), not None
         self.assertIsNotNone(material_li.accounting_category)
+
+
+class TasklessPlanMaterialLineItemTest(TestCase):
+    def setUp(self):
+        Configuration.objects.get_or_create(
+            key='estimate_number_sequence',
+            defaults={'value': 'EST-{year}-{counter:05d}'}
+        )
+        Configuration.objects.get_or_create(
+            key='estimate_counter',
+            defaults={'value': '0'}
+        )
+
+    def test_taskless_plan_material_becomes_own_line_item(self):
+        cat = AccountingCategory.objects.create(name='c', code='TPM1')
+        pli = PriceListItem.objects.create(
+            code='P-TPM', accounting_category=cat, is_inventoried=False,
+        )
+        contact = Contact.objects.create(first_name='Test', last_name='TPM')
+        job = Job.objects.create(job_number='JOB-EG-TPM1', contact=contact)
+        ws = EstWorksheet.objects.create(job=job)
+        PlanMaterial.objects.create(
+            plan_task=None, est_worksheet=ws,
+            description='loose', quantity=Decimal('2'),
+            unit_cost=Decimal('1'), sell_price=Decimal('3'),
+            price_list_item=pli,
+        )
+        # Need at least one PlanTask to satisfy the "no tasks" guard
+        PlanTask.objects.create(
+            est_worksheet=ws, name='dummy',
+            est_qty=Decimal('1'), rate=Decimal('0'),
+            mapping_strategy='direct',
+        )
+        est = EstimateGenerationService().generate_estimate_from_worksheet(ws)
+        loose = est.estimatelineitem_set.filter(description='loose')
+        self.assertEqual(loose.count(), 1)

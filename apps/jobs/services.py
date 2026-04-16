@@ -238,6 +238,19 @@ class JobService:
         return job
 
     @staticmethod
+    def _loose_pending_materials(job):
+        """Return task-less Materials on this job that still have a positive
+        outstanding quantity committed to the job and are in the PENDING
+        consumption state."""
+        from apps.inventory.models import Material
+        return Material.objects.filter(
+            job=job,
+            task__isnull=True,
+            consumption_state=Material.CONSUMPTION_STATE_PENDING,
+            quantity__gt=0,
+        )
+
+    @staticmethod
     def update_status(pk, new_status):
         """Update job status; triggers earmark release on entry to work_complete."""
         try:
@@ -246,6 +259,15 @@ class JobService:
             raise NotFoundError(f'Job {pk} not found')
         if job.status == new_status:
             return job
+
+        if new_status == Job.STATUS_WORK_COMPLETE:
+            offenders = JobService._loose_pending_materials(job)
+            if offenders.exists():
+                names = ', '.join(m.description or str(m.pk) for m in offenders)
+                raise ValidationError(
+                    f'Cannot advance to work_complete: unresolved task-less materials: {names}'
+                )
+
         old_status = job.status
         job.status = new_status
         job.full_clean()
@@ -268,10 +290,23 @@ class JobService:
                 f"Only Open and Accepted estimates can populate jobs. "
                 f"Estimate {estimate.estimate_number} is {estimate.status}."
             )
+        from apps.inventory.services import InventoryService, MaterialService
         for line_item in estimate.estimatelineitem_set.all():
-            TaskService.create_from_line_item(line_item, job)
+            pm = getattr(line_item, 'material', None)
+            if pm is not None and pm.plan_task_id is None:
+                # task-less PlanMaterial → task-less Material
+                MaterialService.create_on_job(
+                    job=job, task=None,
+                    description=pm.description,
+                    quantity=pm.quantity,
+                    unit_cost=pm.unit_cost,
+                    sell_price=pm.sell_price,
+                    price_list_item=pm.price_list_item,
+                    accounting_category=pm.accounting_category,
+                )
+            else:
+                TaskService.create_from_line_item(line_item, job)
 
-        from apps.inventory.services import InventoryService
         InventoryService.create_earmarks_for_job(job)
         return job
 
@@ -293,6 +328,8 @@ class JobService:
         for association in associations:
             association.task_template.generate_task(job, association.est_qty)
 
+        template.generate_materials_for_job(job, quantity=1)
+
         from apps.inventory.services import InventoryService
         InventoryService.create_earmarks_for_job(job)
         return job
@@ -305,7 +342,6 @@ class JobService:
         """
         from apps.estimates.models import EstWorksheet
         from apps.jobs.models import PlanTask
-        from apps.inventory.models import Material
 
         try:
             job = Job.objects.get(pk=job_pk)
@@ -319,6 +355,8 @@ class JobService:
         if template is not None:
             job.template = template
             job.save(update_fields=['template'])
+
+        from apps.inventory.services import InventoryService, MaterialService
 
         for plan_task in PlanTask.objects.filter(
             est_worksheet=ws
@@ -334,8 +372,8 @@ class JobService:
                 sort_order=plan_task.sort_order,
             )
             for pm in plan_task.plan_materials.all():
-                Material.objects.create(
-                    task=new_task,
+                MaterialService.create_on_job(
+                    job=job, task=new_task,
                     description=pm.description,
                     quantity=pm.quantity,
                     unit_cost=pm.unit_cost,
@@ -344,7 +382,17 @@ class JobService:
                     accounting_category=pm.accounting_category,
                 )
 
-        from apps.inventory.services import InventoryService
+        for pm in ws.plan_materials.filter(plan_task__isnull=True):
+            MaterialService.create_on_job(
+                job=job, task=None,
+                description=pm.description,
+                quantity=pm.quantity,
+                unit_cost=pm.unit_cost,
+                sell_price=pm.sell_price,
+                price_list_item=pm.price_list_item,
+                accounting_category=pm.accounting_category,
+            )
+
         InventoryService.create_earmarks_for_job(job)
 
 
@@ -549,7 +597,10 @@ class TaskLifecycleService:
             job=job
         ).exclude(status__in=terminal).exists()
         if all_terminal:
-            JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
+            try:
+                JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
+            except ValidationError:
+                pass  # Pending task-less materials block auto-advance; task completion itself succeeds.
 
     @staticmethod
     def block_task(task_pk, reason=''):
@@ -647,9 +698,9 @@ class TaskLifecycleService:
                 task.status = Task.STATUS_IN_PROGRESS
                 if 'assignee' in updates:
                     task.assignee = user
-                from apps.inventory.services import InventoryService
+                from apps.inventory.services import MaterialService
                 for material in task.materials.all():
-                    InventoryService.consume_material(material)
+                    MaterialService.consume(material)
                 blep = BlepService._create(task, user, start_time=now)
                 return {'task': task, 'blep': blep}
 

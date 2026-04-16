@@ -562,16 +562,12 @@ class SFMOMAIntegrationTest(TestCase):
         self.job = Job.objects.create(contact=contact, job_number='JOB-2026-0042')
 
     @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
-    def test_new_material_creates_bucket_task_once_per_job(self, mock_push):
-        """First new-material expense on a Job creates the 'Materials' bucket;
-        a second new-material expense reuses the same bucket."""
+    def test_two_new_material_expenses_create_two_taskless_materials(self, mock_push):
+        """Two new-material expenses on the same Job each create a distinct
+        task-less Material; no 'Materials' placeholder task is created."""
         mock_push.return_value = '9001'
 
-        # First expense — creates task + material
-        task1 = ExpenseService.find_or_create_materials_task(job=self.job)
-        mat1 = Material.objects.create(
-            task=task1, description='Acrylic paint 1gal', quantity=2,
-        )
+        # First expense — creates task-less material via new_material
         exp1 = ExpenseService.submit(
             entered_by=self.user,
             amount=Decimal('218.45'),
@@ -579,14 +575,15 @@ class SFMOMAIntegrationTest(TestCase):
             accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
             payment_account_id='57',
-            material=mat1,
+            new_material={
+                'job_id': self.job.pk,
+                'description': 'Acrylic paint 1gal',
+                'quantity': 2,
+                'price': '218.45',
+            },
         )
 
-        # Second expense with a new material — should reuse the bucket task
-        task2 = ExpenseService.find_or_create_materials_task(job=self.job)
-        mat2 = Material.objects.create(
-            task=task2, description='Roller brushes', quantity=3,
-        )
+        # Second expense — creates a second task-less material
         exp2 = ExpenseService.submit(
             entered_by=self.user,
             amount=Decimal('28.50'),
@@ -594,17 +591,22 @@ class SFMOMAIntegrationTest(TestCase):
             accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
             payment_account_id='57',
-            material=mat2,
+            new_material={
+                'job_id': self.job.pk,
+                'description': 'Roller brushes',
+                'quantity': 3,
+                'price': '28.50',
+            },
         )
 
-        # Assert: exactly one 'Materials' task on the Job
-        bucket_tasks = Task.objects.filter(job=self.job, name='Materials')
-        self.assertEqual(bucket_tasks.count(), 1)
-        self.assertEqual(task1.pk, task2.pk)
-        self.assertEqual(bucket_tasks.first().materials.count(), 2)
+        # Assert: no 'Materials' placeholder task exists
+        self.assertFalse(Task.objects.filter(job=self.job, name='Materials').exists())
 
-        # Assert: task is in completed state
-        self.assertEqual(bucket_tasks.first().status, Task.STATUS_COMPLETE)
+        # Assert: two separate task-less materials, each linked to the job
+        mats = Material.objects.filter(job=self.job, task__isnull=True).order_by('material_id')
+        self.assertEqual(mats.count(), 2)
+        self.assertEqual(mats[0].description, 'Acrylic paint 1gal')
+        self.assertEqual(mats[1].description, 'Roller brushes')
 
         # Both expenses pushed to QBO
         self.assertEqual(mock_push.call_count, 2)
@@ -622,7 +624,7 @@ class SFMOMAIntegrationTest(TestCase):
             name='Paint main gallery',
         )
         existing_material = Material.objects.create(
-            task=existing_task, description='Acrylic paint 1gal',
+            job=self.job, task=existing_task, description='Acrylic paint 1gal',
             quantity=2,
         )
 

@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.db.models import Prefetch
 from apps.jobs.models import Job, Task
+from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
 from apps.core.models import HistoryEntry
 from apps.core.services import NotFoundError, ServiceError
@@ -22,6 +23,7 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     queryset = Job.objects.select_related('contact', 'template') \
         .prefetch_related(
             Prefetch('tasks', queryset=Task.objects.select_related('assignee').order_by('sort_order')),
+            Prefetch('materials', queryset=Material.objects.select_related('price_list_item')),
             'template__templatetaskassociation_set__task_template',
             'template__bundles',
         ) \
@@ -32,8 +34,8 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve', 'history', 'notes')
-        # add-from-template is IsAuthenticated only (workers can add tasks)
-        authenticated_only_actions = ('add_from_template',)
+        # add-from-template and create_material are IsAuthenticated only (workers can add tasks/materials)
+        authenticated_only_actions = ('add_from_template', 'create_material')
         if self.action in read_actions or self.action in authenticated_only_actions:
             return [IsAuthenticated()]
         if self.action == 'tasks':
@@ -263,6 +265,36 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response({'status': 'ok'})
+
+    @action(detail=True, methods=['post'], url_path='materials',
+            permission_classes=[IsAuthenticated])
+    def create_material(self, request, pk=None):
+        from decimal import Decimal as _Decimal
+        from apps.inventory.services import MaterialService
+        from apps.inventory.models import PriceListItem
+        from apps.core.models import AccountingCategory
+        from apps.api.inventory.serializers import MaterialSerializer
+        job = self.get_object()
+        data = request.data
+        pli = None
+        if data.get('price_list_item'):
+            pli = PriceListItem.objects.get(pk=data['price_list_item'])
+        ac = None
+        if data.get('accounting_category'):
+            ac = AccountingCategory.objects.get(pk=data['accounting_category'])
+        try:
+            m = MaterialService.create_on_job(
+                job=job, task=None,
+                description=data.get('description', ''),
+                quantity=_Decimal(str(data.get('quantity', 0))),
+                unit_cost=_Decimal(str(data.get('unit_cost', 0))),
+                sell_price=_Decimal(str(data.get('sell_price', 0))),
+                price_list_item=pli,
+                accounting_category=ac,
+            )
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):

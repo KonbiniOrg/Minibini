@@ -5,7 +5,7 @@ from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, InventoryAdjustment, PriceListItem, Material
-from apps.inventory.services import InventoryService
+from apps.inventory.services import InventoryService, MaterialService
 from apps.jobs.models import Job, Task
 from apps.estimates.models import EstWorksheet, Estimate
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
@@ -110,7 +110,7 @@ class ReceivePOLineItemTest(TestCase):
 
 
 class ConsumeMaterialTest(TestCase):
-    """Tests for InventoryService.consume_material."""
+    """Tests for MaterialService.consume."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -131,12 +131,13 @@ class ConsumeMaterialTest(TestCase):
     def test_decreases_qoh_and_increases_qty_sold(self):
         """Consuming material decreases QOH and increases qty_sold."""
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('15.00'))
@@ -149,12 +150,13 @@ class ConsumeMaterialTest(TestCase):
             quantity=Decimal('10.00'))
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('3.00'),
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         earmark = Earmark.objects.get(price_list_item=self.pli, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('7.00'))
@@ -166,12 +168,13 @@ class ConsumeMaterialTest(TestCase):
             quantity=Decimal('5.00'))
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         self.assertFalse(
             Earmark.objects.filter(price_list_item=self.pli, job=self.job).exists())
@@ -183,12 +186,13 @@ class ConsumeMaterialTest(TestCase):
             quantity=Decimal('3.00'))
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         self.assertFalse(
             Earmark.objects.filter(price_list_item=self.pli, job=self.job).exists())
@@ -196,12 +200,13 @@ class ConsumeMaterialTest(TestCase):
     def test_no_earmark_no_error(self):
         """Consuming without an earmark does not raise."""
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('15.00'))
@@ -213,12 +218,13 @@ class ConsumeMaterialTest(TestCase):
             accounting_category=self.category)
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=non_inv,
             description='Service', quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         non_inv.refresh_from_db()
         self.assertEqual(non_inv.qty_on_hand, Decimal('0.00'))
@@ -226,13 +232,14 @@ class ConsumeMaterialTest(TestCase):
     def test_skips_no_pli(self):
         """Materials without a PLI are silently skipped."""
         material = Material(
+            job=self.job,
             task=self.task,
             description='Ad hoc material', quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'))
         material.save()
 
         # Should not raise
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
     def test_consume_via_job_task(self):
         """Consuming material on a job task reduces earmark for the task's job."""
@@ -244,12 +251,13 @@ class ConsumeMaterialTest(TestCase):
             quantity=Decimal('10.00'))
 
         material = Material(
+            job=self.job,
             task=wo_task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('4.00'),
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         earmark = Earmark.objects.get(price_list_item=self.pli, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('6.00'))
@@ -275,6 +283,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             sort_order=1)
 
         self.material = Material(
+            job=self.job,
             task=self.task, price_list_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
@@ -317,6 +326,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             accounting_category=self.category)
 
         material = Material(
+            job=self.job,
             task=self.task, price_list_item=non_inv,
             description='Service', quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'))
@@ -331,6 +341,7 @@ class CompleteTaskAdjustmentTest(TestCase):
     def test_skips_no_pli(self):
         """Materials without a PLI are silently skipped."""
         material = Material(
+            job=self.job,
             task=self.task,
             description='Ad hoc', quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'))

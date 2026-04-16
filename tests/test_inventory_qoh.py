@@ -11,7 +11,7 @@ from apps.inventory.models import PlanMaterial, Material
 from apps.inventory.models import PriceListItem
 from apps.inventory.models import Earmark, InventoryAdjustment
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
-from apps.inventory.services import InventoryService
+from apps.inventory.services import InventoryService, MaterialService
 
 
 class ReceivePOLineItemTest(TestCase):
@@ -139,7 +139,7 @@ class ReceivePOLineItemTest(TestCase):
 
 
 class ConsumeMaterialTest(TestCase):
-    """Tests for InventoryService.consume_material()."""
+    """Tests for MaterialService.consume()."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -179,6 +179,7 @@ class ConsumeMaterialTest(TestCase):
     def test_consume_decreases_qoh(self):
         """Consuming material decreases QOH."""
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             price_list_item=self.plywood,
             description='Plywood',
@@ -186,13 +187,14 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
         self.plywood.refresh_from_db()
         self.assertEqual(self.plywood.qty_on_hand, Decimal('15.00'))
 
     def test_consume_increases_qty_sold(self):
         """Consuming material increases qty_sold."""
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             price_list_item=self.plywood,
             description='Plywood',
@@ -200,7 +202,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
         self.plywood.refresh_from_db()
         self.assertEqual(self.plywood.qty_sold, Decimal('5.00'))
 
@@ -210,6 +212,7 @@ class ConsumeMaterialTest(TestCase):
             price_list_item=self.plywood, job=self.job, quantity=Decimal('10.00'),
         )
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             price_list_item=self.plywood,
             description='Plywood',
@@ -217,7 +220,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
         earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('5.00'))
 
@@ -227,6 +230,7 @@ class ConsumeMaterialTest(TestCase):
             price_list_item=self.plywood, job=self.job, quantity=Decimal('5.00'),
         )
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             price_list_item=self.plywood,
             description='Plywood',
@@ -234,7 +238,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
         self.assertEqual(
             Earmark.objects.filter(price_list_item=self.plywood, job=self.job).count(), 0
         )
@@ -242,13 +246,14 @@ class ConsumeMaterialTest(TestCase):
     def test_consume_no_price_list_item_is_noop(self):
         """Consuming a material without price_list_item does nothing."""
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             description='Custom brackets',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'),
             sell_price=Decimal('20.00'),
         )
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
         self.plywood.refresh_from_db()
         self.assertEqual(self.plywood.qty_on_hand, Decimal('20.00'))
 
@@ -294,6 +299,7 @@ class CompleteTaskAdjustmentTest(TestCase):
     def test_actual_less_than_estimated_returns_excess(self):
         """If actual < estimated, excess is returned to stock."""
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             price_list_item=self.plywood,
             description='Plywood',
@@ -309,6 +315,7 @@ class CompleteTaskAdjustmentTest(TestCase):
     def test_actual_more_than_estimated_consumes_more(self):
         """If actual > estimated, additional stock is consumed."""
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             price_list_item=self.plywood,
             description='Plywood',
@@ -324,6 +331,7 @@ class CompleteTaskAdjustmentTest(TestCase):
     def test_actual_equals_estimated_no_change(self):
         """If actual == estimated, no adjustment needed."""
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             price_list_item=self.plywood,
             description='Plywood',
@@ -339,6 +347,7 @@ class CompleteTaskAdjustmentTest(TestCase):
     def test_no_price_list_item_is_noop(self):
         """Adjustment on material without price_list_item does nothing."""
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             description='Custom brackets',
             quantity=Decimal('5.00'),

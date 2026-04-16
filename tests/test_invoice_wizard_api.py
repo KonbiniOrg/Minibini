@@ -100,9 +100,8 @@ class SourcePoolEndpointTest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn('tasks', data)
-        self.assertEqual(len(data['tasks']), 1)
-        task = data['tasks'][0]
-        self.assertEqual(task['name'], 'Labor')
+        # tasks list includes task groups + the "Materials (no task)" sentinel group
+        task = next(t for t in data['tasks'] if t['name'] == 'Labor')
         self.assertTrue(task['has_billable_atoms'])
         self.assertEqual(len(task['atoms']), 1)
         atom = task['atoms'][0]

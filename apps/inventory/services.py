@@ -47,43 +47,7 @@ class InventoryService:
         pli.refresh_from_db()
 
         if po_line_item.job:
-            earmark, created = Earmark.objects.get_or_create(
-                price_list_item=pli,
-                job=po_line_item.job,
-                defaults={'quantity': po_line_item.qty},
-            )
-            if not created:
-                earmark.quantity = F('quantity') + po_line_item.qty
-                earmark.save(update_fields=['quantity'])
-
-    @staticmethod
-    def consume_material(material):
-        """Decrease QOH and increase qty_sold when material is consumed at task start.
-        Reduces/clears earmark for the material's job."""
-        pli = material.price_list_item
-        if not pli or not pli.is_inventoried:
-            return
-
-        pli.qty_on_hand = F('qty_on_hand') - material.quantity
-        pli.qty_sold = F('qty_sold') + material.quantity
-        pli.save(update_fields=['qty_on_hand', 'qty_sold'])
-        pli.refresh_from_db()
-
-        # Reduce or clear earmark
-        job = material.task.job
-        if job:
-            try:
-                earmark = Earmark.objects.get(
-                    price_list_item=pli, job=job,
-                )
-                new_qty = earmark.quantity - material.quantity
-                if new_qty <= Decimal('0.00'):
-                    earmark.delete()
-                else:
-                    earmark.quantity = new_qty
-                    earmark.save(update_fields=['quantity'])
-            except Earmark.DoesNotExist:
-                pass
+            InventoryService._mutate_earmark(pli, po_line_item.job, po_line_item.qty)
 
     @staticmethod
     def complete_task_adjustment(material, actual_qty):
@@ -121,6 +85,31 @@ class InventoryService:
             reason=reason,
         )
 
+    @staticmethod
+    def receive_ad_hoc_purchase(material):
+        """Increase QOH for an ad-hoc (job-level, no PO) purchase material.
+        QOH-only — earmark was already created by MaterialService.create_on_job."""
+        from django.db.models import F
+        pli = material.price_list_item
+        if not pli or not pli.is_inventoried:
+            return
+        pli.qty_on_hand = F('qty_on_hand') + material.quantity
+        pli.save(update_fields=['qty_on_hand'])
+        pli.refresh_from_db()
+
+    @staticmethod
+    def reverse_ad_hoc_purchase(material):
+        """Decrease QOH to reverse a previously received ad-hoc purchase.
+        Reverses the full original purchase quantity (quantity + restocked_qty)."""
+        from django.db.models import F
+        pli = material.price_list_item
+        if not pli or not pli.is_inventoried:
+            return
+        total = material.quantity + material.restocked_qty
+        pli.qty_on_hand = F('qty_on_hand') - total
+        pli.save(update_fields=['qty_on_hand'])
+        pli.refresh_from_db()
+
     # --- PlanMaterial CRUD (worksheet-side) ---
 
     @staticmethod
@@ -132,7 +121,11 @@ class InventoryService:
             plan_task = PlanTask.objects.get(pk=plan_task_pk)
         except PlanTask.DoesNotExist:
             raise NotFoundError(f'PlanTask {plan_task_pk} not found')
-        mat = PlanMaterial(plan_task=plan_task, **kwargs)
+        mat = PlanMaterial(
+            plan_task=plan_task,
+            est_worksheet_id=plan_task.est_worksheet_id,
+            **kwargs,
+        )
         mat.save()
         return mat
 
@@ -159,6 +152,13 @@ class InventoryService:
             raise NotFoundError(f'PlanMaterial {pk} not found')
         mat.delete()
 
+    @staticmethod
+    def create_plan_material_on_worksheet(worksheet, **kwargs):
+        """Create a task-less PlanMaterial on a worksheet."""
+        mat = PlanMaterial(est_worksheet=worksheet, plan_task=None, **kwargs)
+        mat.save()
+        return mat
+
     # --- Thin wrappers for legacy HTML view call sites (to be removed in Phase 4) ---
 
     @staticmethod
@@ -175,44 +175,6 @@ class InventoryService:
     def delete_material(pk):
         """Legacy wrapper; HTML views still call this."""
         return InventoryService.delete_plan_material(pk)
-
-    # --- WO Material CRUD (work-order-side) ---
-
-    @staticmethod
-    def create_wo_material(task_pk, **kwargs):
-        """Create a new Material on a Task (work order side). No earmark/inventory changes."""
-        from apps.core.services import NotFoundError
-        from apps.jobs.models import Task
-        try:
-            task = Task.objects.get(pk=task_pk)
-        except Task.DoesNotExist:
-            raise NotFoundError(f'Task {task_pk} not found')
-        mat = Material(task=task, **kwargs)
-        mat.save()
-        return mat
-
-    @staticmethod
-    def update_wo_material(pk, **kwargs):
-        """Update an existing Material by PK. No earmark/inventory changes."""
-        from apps.core.services import NotFoundError
-        try:
-            mat = Material.objects.get(pk=pk)
-        except Material.DoesNotExist:
-            raise NotFoundError(f'Material {pk} not found')
-        for field, value in kwargs.items():
-            setattr(mat, field, value)
-        mat.save()
-        return mat
-
-    @staticmethod
-    def delete_wo_material(pk):
-        """Delete a Material by PK. No earmark/inventory changes."""
-        from apps.core.services import NotFoundError
-        try:
-            mat = Material.objects.get(pk=pk)
-        except Material.DoesNotExist:
-            raise NotFoundError(f'Material {pk} not found')
-        mat.delete()
 
     # --- Earmark operations ---
 
@@ -249,16 +211,17 @@ class InventoryService:
 
     @staticmethod
     def create_earmarks_for_job(job):
-        """Create earmarks from a Job's task materials.
+        """Create earmarks from a Job's materials (task-attached and task-less).
 
-        Aggregates inventoried Materials by PLI across all Tasks on the job,
-        then upserts Earmark records for the job. Called as a hook after
-        each job-population path (estimate, template, worksheet copy).
+        Aggregates inventoried Materials by PLI across all Materials on the job
+        (both task-attached and task-less), then upserts Earmark records for the
+        job. Called as a hook after each job-population path (estimate, template,
+        worksheet copy).
         """
         from apps.inventory.models import Material
 
         materials = Material.objects.filter(
-            task__job=job,
+            job=job,
             price_list_item__is_inventoried=True,
         ).values('price_list_item').annotate(
             total_qty=Sum('quantity'),
@@ -295,6 +258,25 @@ class InventoryService:
                 earmark.save(update_fields=['quantity'])
 
     @staticmethod
+    def _mutate_earmark(pli, job, delta):
+        """Apply `delta` to the (pli, job) Earmark. Upsert if positive net, delete if zero.
+        No-op if pli is None or not inventoried. Sole writer of Earmark rows."""
+        if pli is None or not pli.is_inventoried:
+            return
+        try:
+            earmark = Earmark.objects.get(price_list_item=pli, job=job)
+        except Earmark.DoesNotExist:
+            if delta > Decimal('0.00'):
+                Earmark.objects.create(price_list_item=pli, job=job, quantity=delta)
+            return
+        new_qty = earmark.quantity + delta
+        if new_qty <= Decimal('0.00'):
+            earmark.delete()
+        else:
+            earmark.quantity = new_qty
+            earmark.save(update_fields=['quantity'])
+
+    @staticmethod
     def release_earmarks_for_job(job):
         """Delete all remaining earmarks for a job.
 
@@ -302,3 +284,98 @@ class InventoryService:
         balance is released back to general inventory availability.
         """
         Earmark.objects.filter(job=job).delete()
+
+
+class MaterialService:
+    """Sole entry point for Material row creation and lifecycle ops.
+    All earmark mutations go through InventoryService._mutate_earmark."""
+
+    @staticmethod
+    def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
+                      unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
+                      price_list_item=None, accounting_category=None):
+        from django.db import transaction
+        with transaction.atomic():
+            m = Material(
+                job=job, task=task,
+                description=description, quantity=quantity,
+                unit_cost=unit_cost, sell_price=sell_price,
+                price_list_item=price_list_item,
+                accounting_category=accounting_category,
+            )
+            m.save()  # full_clean() runs here; enforces task/job invariant
+            InventoryService._mutate_earmark(price_list_item, job, quantity)
+        return m
+
+    @staticmethod
+    def consume(material):
+        from django.db import transaction
+        from django.core.exceptions import ValidationError
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError(
+                f'consume requires pending state; got {material.consumption_state}'
+            )
+        qty = material.quantity
+        with transaction.atomic():
+            pli = material.price_list_item
+            if pli and pli.is_inventoried and qty > Decimal('0.00'):
+                from django.db.models import F
+                pli.qty_on_hand = F('qty_on_hand') - qty
+                pli.qty_sold = F('qty_sold') + qty
+                pli.save(update_fields=['qty_on_hand', 'qty_sold'])
+                pli.refresh_from_db()
+                InventoryService._mutate_earmark(pli, material.job, -qty)
+            material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+            material.save(update_fields=['consumption_state'])
+        return material
+
+    @staticmethod
+    def restock(material, qty):
+        from django.db import transaction
+        from django.core.exceptions import ValidationError
+        if qty <= Decimal('0.00') or qty > material.quantity:
+            raise ValidationError('restock qty must be > 0 and <= quantity')
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('restock requires pending state')
+        expense_bound = material.is_expense_bound
+        with transaction.atomic():
+            InventoryService._mutate_earmark(material.price_list_item, material.job, -qty)
+            material.quantity = material.quantity - qty
+            update_fields = ['quantity']
+            if expense_bound:
+                material.restocked_qty = material.restocked_qty + qty
+                update_fields.append('restocked_qty')
+            material.save(update_fields=update_fields)
+            if material.quantity == Decimal('0.00') and not expense_bound:
+                material.delete()
+        return material
+
+    @staticmethod
+    def draw_more(material, qty):
+        from django.db import transaction
+        from django.core.exceptions import ValidationError
+        if qty <= Decimal('0.00'):
+            raise ValidationError('draw_more qty must be > 0')
+        if material.is_expense_bound:
+            raise ValidationError('draw_more not allowed on expense-bound materials')
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('draw_more requires pending state')
+        with transaction.atomic():
+            material.quantity = material.quantity + qty
+            material.save(update_fields=['quantity'])
+            InventoryService._mutate_earmark(material.price_list_item, material.job, qty)
+        return material
+
+    @staticmethod
+    def assign_task(material, task):
+        """Move a material to a different task (or make it taskless with task=None)."""
+        from django.core.exceptions import ValidationError
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('assign_task requires pending state')
+        if task is not None:
+            if task.job_id != material.job_id:
+                raise ValidationError('Task must belong to the same job as the material')
+            if task.status in ('complete', 'cancelled'):
+                raise ValidationError('Cannot assign material to a completed or cancelled task')
+        material.task = task
+        material.save(update_fields=['task_id'])

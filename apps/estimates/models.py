@@ -297,6 +297,7 @@ class EstWorksheet(AbstractWorkContainer):
             for plan_material in plan_task.plan_materials.all():
                 PlanMaterial.objects.create(
                     plan_task=new_plan_task,
+                    est_worksheet=new_worksheet,
                     price_list_item=plan_material.price_list_item,
                     accounting_category=plan_material.accounting_category,
                     description=plan_material.description,
@@ -379,6 +380,35 @@ class WorkTemplate(models.Model):
                 generated_tasks.append(task)
 
         return generated_tasks
+
+    def generate_materials_for_worksheet(self, worksheet, quantity=1):
+        from apps.inventory.models import PlanMaterial
+        for tm in self.materials.all():
+            for _ in range(quantity):
+                PlanMaterial.objects.create(
+                    est_worksheet=worksheet,
+                    plan_task=None,
+                    description=tm.description,
+                    quantity=tm.quantity,
+                    unit_cost=tm.unit_cost,
+                    sell_price=tm.sell_price,
+                    price_list_item=tm.price_list_item,
+                    accounting_category=tm.accounting_category,
+                )
+
+    def generate_materials_for_job(self, job, quantity=1):
+        from apps.inventory.services import MaterialService
+        for tm in self.materials.all():
+            for _ in range(quantity):
+                MaterialService.create_on_job(
+                    job=job, task=None,
+                    description=tm.description,
+                    quantity=tm.quantity,
+                    unit_cost=tm.unit_cost,
+                    sell_price=tm.sell_price,
+                    price_list_item=tm.price_list_item,
+                    accounting_category=tm.accounting_category,
+                )
 
 
 class TemplateBundle(models.Model):

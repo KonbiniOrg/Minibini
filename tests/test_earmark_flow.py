@@ -66,11 +66,11 @@ class EarmarkPreviewTest(TestCase):
     def test_preview_aggregates_by_item(self):
         """Preview aggregates material quantities by price list item across tasks."""
         Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+            job=self.job, task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         Material.objects.create(
-            task=self.task_b, price_list_item=self.plywood,
+            job=self.job, task=self.task_b, price_list_item=self.plywood,
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -80,7 +80,7 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_shows_available_qty(self):
         Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+            job=self.job, task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -88,7 +88,7 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_shows_shortfall(self):
         Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+            job=self.job, task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('25.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -96,7 +96,7 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_no_shortfall_when_sufficient(self):
         Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+            job=self.job, task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -104,11 +104,11 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_multiple_items(self):
         Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+            job=self.job, task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         Material.objects.create(
-            task=self.task_a, price_list_item=self.screws,
+            job=self.job, task=self.task_a, price_list_item=self.screws,
             quantity=Decimal('2.00'), unit_cost=Decimal('8.00'), sell_price=Decimal('12.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -125,7 +125,7 @@ class EarmarkPreviewTest(TestCase):
             price_list_item=self.plywood, job=other_job, quantity=Decimal('15.00'),
         )
         Material.objects.create(
-            task=self.task_a, price_list_item=self.plywood,
+            job=self.job, task=self.task_a, price_list_item=self.plywood,
             quantity=Decimal('10.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -134,7 +134,7 @@ class EarmarkPreviewTest(TestCase):
 
     def test_preview_empty_when_no_inventoried_materials(self):
         Material.objects.create(
-            task=self.task_a,
+            job=self.job, task=self.task_a,
             description='Custom brackets',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
         )
@@ -147,7 +147,7 @@ class EarmarkPreviewTest(TestCase):
             accounting_category=self.category,
         )
         Material.objects.create(
-            task=self.task_a, price_list_item=non_inv,
+            job=self.job, task=self.task_a, price_list_item=non_inv,
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
@@ -226,3 +226,39 @@ class UpsertEarmarksTest(TestCase):
         ]
         InventoryService._upsert_earmarks(self.job, earmark_data)
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
+
+
+class CreateEarmarksForJobIsNoopTest(TestCase):
+    def test_no_new_earmarks_when_materials_already_upserted(self):
+        """After JobService.copy_from_worksheet populates a job, calling
+        InventoryService.create_earmarks_for_job again should not change
+        any earmark rows."""
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import Job, PlanTask
+        from apps.estimates.models import EstWorksheet
+        from apps.inventory.models import PriceListItem, PlanMaterial, Earmark
+        from apps.inventory.services import InventoryService
+        from apps.jobs.services import JobService
+        # Setup - follow existing patterns in this file for Contact/Business/Job
+        from apps.contacts.models import Contact, Business
+        contact = Contact.objects.create(first_name='C', last_name='T')
+        biz = Business.objects.create(business_name='B', default_contact=contact)
+        contact.business = biz; contact.save()
+        cat = AccountingCategory.objects.create(name='c', code='NOP1')
+        pli = PriceListItem.objects.create(
+            code='I-NOP', accounting_category=cat, is_inventoried=True,
+        )
+        src_job = Job.objects.create(job_number='JOB-NOP-SRC', contact=contact)
+        ws = EstWorksheet.objects.create(job=src_job)
+        pt = PlanTask.objects.create(est_worksheet=ws, name='pt')
+        PlanMaterial.objects.create(
+            plan_task=pt, est_worksheet=ws,
+            description='x', quantity=Decimal('3'), price_list_item=pli,
+        )
+        dst = Job.objects.create(job_number='JOB-NOP-DST', contact=contact)
+        JobService.copy_from_worksheet(dst.pk, ws.pk)
+        before = {(e.price_list_item_id, e.job_id): e.quantity for e in Earmark.objects.filter(job=dst)}
+        InventoryService.create_earmarks_for_job(dst)
+        after = {(e.price_list_item_id, e.job_id): e.quantity for e in Earmark.objects.filter(job=dst)}
+        self.assertEqual(before, after)

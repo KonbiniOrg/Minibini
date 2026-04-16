@@ -81,6 +81,7 @@ class InvoiceLineItemSourceTest(TestCase):
             accounting_category=self.category,
         )
         material = Material.objects.create(
+            job=self.job,
             task=self.task,
             quantity=Decimal('3.00'),
             sell_price=Decimal('10.00'),

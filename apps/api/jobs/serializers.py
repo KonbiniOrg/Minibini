@@ -12,6 +12,7 @@ class JobSummarySerializer(serializers.ModelSerializer):
 class JobSerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
     tasks = serializers.SerializerMethodField()
+    materials = serializers.SerializerMethodField()
     template = serializers.SerializerMethodField()
     template_id = serializers.PrimaryKeyRelatedField(
         queryset=WorkTemplate.objects.all(),
@@ -27,7 +28,7 @@ class JobSerializer(serializers.ModelSerializer):
             'job_id', 'job_number', 'name', 'status',
             'contact', 'contact_name', 'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
-            'tasks', 'template', 'template_id',
+            'tasks', 'materials', 'template', 'template_id',
         ]
         read_only_fields = ['job_id', 'job_number', 'created_date', 'completed_date']
 
@@ -42,6 +43,13 @@ class JobSerializer(serializers.ModelSerializer):
         if not hasattr(obj, '_prefetched_objects_cache') or 'tasks' not in obj._prefetched_objects_cache:
             tasks = tasks.order_by('sort_order')
         return TaskSerializer(tasks, many=True).data
+
+    def get_materials(self, obj):
+        from apps.api.inventory.serializers import MaterialSerializer
+        materials = obj.materials.all()
+        if not hasattr(obj, '_prefetched_objects_cache') or 'materials' not in obj._prefetched_objects_cache:
+            materials = materials.order_by('pk')
+        return MaterialSerializer(materials, many=True).data
 
     def get_template(self, obj):
         if obj.template_id is None:

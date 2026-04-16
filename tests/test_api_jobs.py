@@ -485,6 +485,7 @@ class JobCopyFromWorksheetTest(TestCase):
             units='each', rate=200, est_qty=1,
         )
         PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.plan_task,
             description='Plywood sheet',
             quantity=2, unit_cost=40, sell_price=60,

@@ -277,7 +277,10 @@ class InvoiceWizardService:
                 })
 
             # Material atoms
-            materials = Material.objects.filter(task=task).order_by('pk')
+            materials = (
+                Material.objects.filter(task=task, quantity__gt=0)
+                .order_by('pk')
+            )
             for mat in materials:
                 amount = (mat.quantity * mat.sell_price).quantize(Decimal('0.01'))
                 key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
@@ -297,6 +300,31 @@ class InvoiceWizardService:
                 'has_billable_atoms': len(atoms) > 0,
                 'atoms': atoms,
             })
+
+        # "Materials (no task)" group — task-less Materials with quantity > 0
+        loose = (
+            Material.objects.filter(job=job, task__isnull=True, quantity__gt=0)
+            .order_by('pk')
+        )
+        loose_atoms = []
+        for mat in loose:
+            amount = (mat.quantity * mat.sell_price).quantize(Decimal('0.01'))
+            key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
+            state_info = claims.get(key, default_state)
+            loose_atoms.append({
+                'atom_type': 'material',
+                'atom_id': mat.pk,
+                'description': mat.description,
+                'sub_info': '',
+                'computed_amount': amount,
+                **state_info,
+            })
+        task_list.append({
+            'task_id': None,
+            'name': 'Materials (no task)',
+            'has_billable_atoms': len(loose_atoms) > 0,
+            'atoms': loose_atoms,
+        })
 
         return {'tasks': task_list}
 

@@ -313,7 +313,7 @@ class JobListSortingTest(JobListFilterTestCase):
     """Tests for sorting behavior."""
 
     def test_sort_by_status_order(self):
-        """Test that jobs are sorted by status in correct order: Draft, Approved, Submitted, Completed, Rejected, Cancelled."""
+        """Test that jobs are sorted by status in correct order: Draft, Submitted, Approved, Completed, Rejected, Cancelled."""
         response = self.client.get(self.url, {
             'status': [Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED]
         })
@@ -322,8 +322,8 @@ class JobListSortingTest(JobListFilterTestCase):
         jobs = list(response.context['jobs'])
         statuses = [job.status for job in jobs]
 
-        # Define expected order
-        status_priority = {Job.STATUS_DRAFT: 0, Job.STATUS_APPROVED: 1, Job.STATUS_SUBMITTED: 2, Job.STATUS_COMPLETED: 3, Job.STATUS_REJECTED: 4, Job.STATUS_CANCELLED: 5}
+        # Define expected order matching views.py status_order Case expression
+        status_priority = {Job.STATUS_DRAFT: 0, Job.STATUS_SUBMITTED: 1, Job.STATUS_APPROVED: 2, Job.STATUS_COMPLETED: 3, Job.STATUS_REJECTED: 4, Job.STATUS_CANCELLED: 5}
 
         # Verify sorting is correct
         for i in range(len(statuses) - 1):

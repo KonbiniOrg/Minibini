@@ -12,6 +12,7 @@
 
   let job = $state(null);
   let enrichedTasks = $state([]);
+  let jobMaterials = $state([]);
   let templates = $state([]);
   let categories = $state([]);
   let loading = $state(true);
@@ -26,6 +27,9 @@
   let materialModalMode = $state('create');
   let materialModalMaterial = $state(null);
   let materialModalTaskId = $state(null);
+  let materialModalJobId = $state(null);
+
+  let selectedTaskId = $state(null);
 
   let subtaskModalOpen = $state(false);
   let subtaskModalParentTaskId = $state(null);
@@ -40,11 +44,16 @@
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
 
+  const jobLocked = $derived(
+    job && ['completed', 'cancelled', 'rejected'].includes(job.status)
+  );
+
   async function loadJob() {
     loading = true;
     error = '';
     try {
       job = await api.get(`/api/jobs/${params.id}/`);
+      jobMaterials = (job.materials || []).filter(m => !m.task);
       await enrichTasks();
     } catch (e) {
       error = e.message || 'Could not load job.';
@@ -164,24 +173,73 @@
   function openAddMaterial(task) {
     materialModalMaterial = null;
     materialModalTaskId = task.task_id;
+    materialModalJobId = null;
     materialModalMode = 'create';
     materialModalOpen = true;
   }
 
-  function openEditMaterial(material, task) {
-    materialModalMaterial = material;
-    materialModalTaskId = task.task_id;
-    materialModalMode = 'edit';
+  function openAddJobMaterial() {
+    materialModalMaterial = null;
+    materialModalTaskId = null;
+    materialModalJobId = job.job_id;
+    materialModalMode = 'create';
     materialModalOpen = true;
   }
 
-  async function handleDeleteMaterial(material, task) {
-    if (!confirm('Delete this material?')) return;
+  async function handleEditMaterialDescription(material, _task) {
+    const next = window.prompt('Edit description:', material.description || '');
+    if (next === null) return;
     try {
-      await api.delete(`/api/tasks/${task.task_id}/materials/${material.material_id}/`);
+      await api.patch(`/api/materials/${material.material_id}/`, { description: next });
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not delete material.');
+      alert(e.message || 'Could not edit description.');
+    }
+  }
+
+  async function handleConsumeMaterial(material, _task) {
+    if (!confirm('Consume this material?')) return;
+    try {
+      await api.post(`/api/materials/${material.material_id}/consume/`, {});
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not consume.');
+    }
+  }
+
+  async function handleRestockMaterial(material, _task) {
+    const raw = window.prompt(`Restock quantity (max ${material.quantity}):`, material.quantity);
+    if (raw === null) return;
+    const quantity = raw.trim();
+    if (!quantity) return;
+    try {
+      await api.post(`/api/materials/${material.material_id}/restock/`, { quantity });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not restock.');
+    }
+  }
+
+  async function handleDrawMoreMaterial(material, _task) {
+    const raw = window.prompt('Draw more quantity:', '1');
+    if (raw === null) return;
+    const quantity = raw.trim();
+    if (!quantity) return;
+    try {
+      await api.post(`/api/materials/${material.material_id}/draw-more/`, { quantity });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not draw more.');
+    }
+  }
+
+  async function handleMoveMaterial(material, taskId) {
+    try {
+      await api.post(`/api/materials/${material.material_id}/assign-task/`, { task: taskId });
+      selectedTaskId = null;
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not move material.');
     }
   }
 
@@ -189,6 +247,7 @@
     materialModalOpen = false;
     materialModalMaterial = null;
     materialModalTaskId = null;
+    materialModalJobId = null;
     reload();
   }
 
@@ -263,23 +322,32 @@
     </div>
   {/if}
 
-  <div class="action-bar">
-    <button type="button" onclick={openAddTask}>Add Task</button>
-  </div>
+  {#if !jobLocked}
+    <div class="action-bar">
+      <button type="button" onclick={openAddTask}>Add Task</button>
+      <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+    </div>
+  {/if}
 
   <TaskTree
     tasks={enrichedTasks}
+    {jobMaterials}
     readonly={false}
+    {jobLocked}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onAddMaterial={openAddMaterial}
-    onEditMaterial={openEditMaterial}
-    onDeleteMaterial={handleDeleteMaterial}
+    onEditMaterial={handleEditMaterialDescription}
+    onConsumeMaterial={handleConsumeMaterial}
+    onRestockMaterial={handleRestockMaterial}
+    onDrawMoreMaterial={handleDrawMoreMaterial}
     onAddSubtask={openAddSubtask}
     onReorder={handleReorder}
     onTaskClick={handleTaskClick}
     onAssignTask={(task) => { assignModalTask = task; assignModalOpen = true; }}
     onCancelTask={handleCancelTask}
+    onMoveMaterial={handleMoveMaterial}
+    bind:selectedTaskId
   />
 
   <!-- Modals -->
@@ -299,6 +367,7 @@
     mode={materialModalMode}
     material={materialModalMaterial}
     taskId={materialModalTaskId}
+    jobId={materialModalJobId}
     {categories}
     onSaved={handleMaterialSaved}
     onClose={() => { materialModalOpen = false; }}
