@@ -28,7 +28,7 @@ class PriceListItemViewSet(viewsets.ModelViewSet):
 
 
 class MaterialViewSet(viewsets.ModelViewSet):
-    queryset = Material.objects.all()
+    queryset = Material.objects.select_related('price_list_item').all()
     serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
     http_method_names = ['get', 'patch', 'post', 'head', 'options']

@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.db.models import Prefetch
 from apps.jobs.models import Job, Task
+from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
 from apps.core.models import HistoryEntry
 from apps.core.services import NotFoundError, ServiceError
@@ -22,7 +23,7 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     queryset = Job.objects.select_related('contact', 'template') \
         .prefetch_related(
             Prefetch('tasks', queryset=Task.objects.select_related('assignee').order_by('sort_order')),
-            'materials',
+            Prefetch('materials', queryset=Material.objects.select_related('price_list_item')),
             'template__templatetaskassociation_set__task_template',
             'template__bundles',
         ) \

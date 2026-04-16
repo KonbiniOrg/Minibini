@@ -24,6 +24,7 @@ class PriceListItemSerializer(serializers.ModelSerializer):
 
 class MaterialSerializer(serializers.ModelSerializer):
     is_expense_bound = serializers.BooleanField(read_only=True)
+    price_list_item_is_inventoried = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
@@ -32,12 +33,16 @@ class MaterialSerializer(serializers.ModelSerializer):
             'description', 'quantity', 'unit_cost', 'sell_price',
             'price_list_item', 'accounting_category',
             'consumption_state', 'restocked_qty',
-            'is_expense_bound',
+            'is_expense_bound', 'price_list_item_is_inventoried',
         ]
         read_only_fields = [
             'material_id', 'job', 'task',
             'consumption_state', 'restocked_qty', 'is_expense_bound',
+            'price_list_item_is_inventoried',
         ]
+
+    def get_price_list_item_is_inventoried(self, obj):
+        return bool(obj.price_list_item and obj.price_list_item.is_inventoried)
 
     def update(self, instance, validated_data):
         allowed = {'description'}

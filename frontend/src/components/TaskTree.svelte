@@ -124,6 +124,7 @@
         <tr class="material-row">
           <td class="indent">
             <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}
           </td>
           {#if showAssignee}<td></td>{/if}
           {#if showStatus}<td></td>{/if}
@@ -181,6 +182,7 @@
           <tr class="material-row">
             <td class="indent-2">
               <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+              {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}
             </td>
             {#if showAssignee}<td></td>{/if}
             {#if showStatus}<td></td>{/if}
@@ -212,6 +214,7 @@
         <tr class="material-row">
           <td class="indent">
             <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}
           </td>
           {#if showAssignee}<td></td>{/if}
           {#if showStatus}<td></td>{/if}
@@ -253,6 +256,7 @@
   .indent { padding-left: 28px; }
   .indent-2 { padding-left: 48px; }
   .material-marker { color: #aaa; font-size: 8px; vertical-align: middle; margin-right: 4px; }
+  .inv-badge { margin-left: 6px; font-size: 11px; }
 
   .task-row { background: #fff; }
   .task-row:nth-child(even) { background: #fafafa; }

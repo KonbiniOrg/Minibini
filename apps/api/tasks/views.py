@@ -54,7 +54,7 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
         from apps.api.tasks.serializers import MaterialSerializer, MaterialWriteSerializer
         task = self.get_object()
         if request.method == 'GET':
-            materials = Material.objects.filter(task=task)
+            materials = Material.objects.filter(task=task).select_related('price_list_item')
             serializer = MaterialSerializer(materials, many=True)
             return Response(serializer.data)
 
