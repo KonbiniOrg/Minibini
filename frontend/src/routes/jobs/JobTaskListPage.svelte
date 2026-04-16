@@ -236,6 +236,7 @@
   async function handleMoveMaterial(material, taskId) {
     try {
       await api.post(`/api/materials/${material.material_id}/assign-task/`, { task: taskId });
+      selectedTaskId = null;
       await reload();
     } catch (e) {
       alert(e.message || 'Could not move material.');
