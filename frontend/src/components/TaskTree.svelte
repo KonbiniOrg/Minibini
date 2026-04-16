@@ -3,13 +3,13 @@
     tasks = [],
     jobMaterials = [],
     readonly = false,
+    jobLocked = false,
     showStatus = true,
     showAssignee = true,
     onEditTask = () => {},
     onDeleteTask = () => {},
     onAddMaterial = () => {},
     onEditMaterial = () => {},
-    onDeleteMaterial = () => {},
     onAddSubtask = () => {},
     onReorder = () => {},
     onTaskClick = () => {},
@@ -64,7 +64,7 @@
     return n ? `$${Number(n).toFixed(2)}` : '-';
   }
 
-  const colCount = $derived(6 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 2));
+  const colCount = $derived(6 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1));
 
   function isMaterialPending(mat) {
     return mat.consumption_state === 'pending';
@@ -82,7 +82,7 @@
       <th class="text-right">Unit Cost</th>
       <th class="text-right">Sell Price</th>
       <th class="text-right">Total</th>
-      {#if !readonly}<th>Actions</th><th>Del</th>{/if}
+      {#if !readonly}<th>Actions</th>{/if}
     </tr>
   </thead>
   <tbody>
@@ -100,7 +100,7 @@
         <td class="text-right">-</td>
         <td class="text-right">{fmt(task.rate)}</td>
         <td class="text-right">{fmt(taskTotal(task))}</td>
-        {#if !readonly}
+        {#if !readonly && !jobLocked}
           <td class="actions-cell">
             {#if !isTerminal(task)}
               <button type="button" onclick={() => onEditTask(task)}>edit</button>
@@ -114,6 +114,7 @@
             <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
             <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === tasks.length - 1}>&#9660;</button>
           </td>
+        {:else if !readonly}
           <td class="actions-cell"></td>
         {/if}
       </tr>
@@ -131,22 +132,15 @@
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
-          {#if !readonly && !isTerminal(task)}
+          {#if !readonly && !jobLocked && !isTerminal(task) && isMaterialPending(mat)}
             <td class="actions-cell">
-              {#if isMaterialPending(mat)}
-                <button type="button" onclick={() => onConsumeMaterial(mat, task)}>consume</button>
-                <button type="button" onclick={() => onRestockMaterial(mat, task)}>restock</button>
-                {#if !mat.is_expense_bound}
-                  <button type="button" onclick={() => onDrawMoreMaterial(mat, task)}>draw more</button>
-                {/if}
-                <button type="button" onclick={() => onEditMaterial(mat, task)}>edit desc</button>
+              <button type="button" onclick={() => onRestockMaterial(mat, task)}>restock</button>
+              {#if !mat.is_expense_bound}
+                <button type="button" onclick={() => onDrawMoreMaterial(mat, task)}>draw more</button>
               {/if}
-            </td>
-            <td class="actions-cell">
-              <button type="button" onclick={() => onDeleteMaterial(mat, task)}>del</button>
+              <button type="button" onclick={() => onEditMaterial(mat, task)}>edit desc</button>
             </td>
           {:else if !readonly}
-            <td class="actions-cell"></td>
             <td class="actions-cell"></td>
           {/if}
         </tr>
@@ -166,7 +160,7 @@
           <td class="text-right">-</td>
           <td class="text-right">{fmt(sub.rate)}</td>
           <td class="text-right">{fmt(taskTotal(sub))}</td>
-          {#if !readonly}
+          {#if !readonly && !jobLocked}
             <td class="actions-cell">
               {#if !isTerminal(sub)}
                 <button type="button" onclick={() => onEditTask(sub)}>edit</button>
@@ -177,6 +171,7 @@
                 <button type="button" onclick={() => onDeleteTask(sub)}>del</button>
               {/if}
             </td>
+          {:else if !readonly}
             <td class="actions-cell"></td>
           {/if}
         </tr>
@@ -194,22 +189,15 @@
             <td class="text-right">{fmt(mat.unit_cost)}</td>
             <td class="text-right">{fmt(mat.sell_price)}</td>
             <td class="text-right">{fmt(materialTotal(mat))}</td>
-            {#if !readonly && !isTerminal(sub)}
+            {#if !readonly && !jobLocked && !isTerminal(sub) && isMaterialPending(mat)}
               <td class="actions-cell">
-                {#if isMaterialPending(mat)}
-                  <button type="button" onclick={() => onConsumeMaterial(mat, sub)}>consume</button>
-                  <button type="button" onclick={() => onRestockMaterial(mat, sub)}>restock</button>
-                  {#if !mat.is_expense_bound}
-                    <button type="button" onclick={() => onDrawMoreMaterial(mat, sub)}>draw more</button>
-                  {/if}
-                  <button type="button" onclick={() => onEditMaterial(mat, sub)}>edit desc</button>
+                <button type="button" onclick={() => onRestockMaterial(mat, sub)}>restock</button>
+                {#if !mat.is_expense_bound}
+                  <button type="button" onclick={() => onDrawMoreMaterial(mat, sub)}>draw more</button>
                 {/if}
-              </td>
-              <td class="actions-cell">
-                <button type="button" onclick={() => onDeleteMaterial(mat, sub)}>del</button>
+                <button type="button" onclick={() => onEditMaterial(mat, sub)}>edit desc</button>
               </td>
             {:else if !readonly}
-              <td class="actions-cell"></td>
               <td class="actions-cell"></td>
             {/if}
           </tr>
@@ -232,17 +220,16 @@
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
-          {#if !readonly}
+          {#if !readonly && !jobLocked && isMaterialPending(mat)}
             <td class="actions-cell">
-              {#if isMaterialPending(mat)}
-                <button type="button" onclick={() => onConsumeMaterial(mat, null)}>consume</button>
-                <button type="button" onclick={() => onRestockMaterial(mat, null)}>restock</button>
-                {#if !mat.is_expense_bound}
-                  <button type="button" onclick={() => onDrawMoreMaterial(mat, null)}>draw more</button>
-                {/if}
-                <button type="button" onclick={() => onEditMaterial(mat, null)}>edit desc</button>
+              <button type="button" onclick={() => onConsumeMaterial(mat, null)}>consume</button>
+              <button type="button" onclick={() => onRestockMaterial(mat, null)}>restock</button>
+              {#if !mat.is_expense_bound}
+                <button type="button" onclick={() => onDrawMoreMaterial(mat, null)}>draw more</button>
               {/if}
+              <button type="button" onclick={() => onEditMaterial(mat, null)}>edit desc</button>
             </td>
+          {:else if !readonly}
             <td class="actions-cell"></td>
           {/if}
         </tr>

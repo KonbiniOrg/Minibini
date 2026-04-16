@@ -42,6 +42,10 @@
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
 
+  const jobLocked = $derived(
+    job && ['completed', 'cancelled', 'rejected'].includes(job.status)
+  );
+
   async function loadJob() {
     loading = true;
     error = '';
@@ -227,16 +231,6 @@
     }
   }
 
-  async function handleDeleteMaterial(material, task) {
-    if (!confirm('Delete this material?')) return;
-    try {
-      await api.delete(`/api/tasks/${task.task_id}/materials/${material.material_id}/`);
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not delete material.');
-    }
-  }
-
   function handleMaterialSaved() {
     materialModalOpen = false;
     materialModalMaterial = null;
@@ -316,20 +310,22 @@
     </div>
   {/if}
 
-  <div class="action-bar">
-    <button type="button" onclick={openAddTask}>Add Task</button>
-    <button type="button" onclick={openAddJobMaterial}>Add Material</button>
-  </div>
+  {#if !jobLocked}
+    <div class="action-bar">
+      <button type="button" onclick={openAddTask}>Add Task</button>
+      <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+    </div>
+  {/if}
 
   <TaskTree
     tasks={enrichedTasks}
     {jobMaterials}
     readonly={false}
+    {jobLocked}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onAddMaterial={openAddMaterial}
     onEditMaterial={handleEditMaterialDescription}
-    onDeleteMaterial={handleDeleteMaterial}
     onConsumeMaterial={handleConsumeMaterial}
     onRestockMaterial={handleRestockMaterial}
     onDrawMoreMaterial={handleDrawMoreMaterial}
