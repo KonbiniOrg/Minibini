@@ -71,6 +71,12 @@
   function isMaterialPending(mat) {
     return mat.consumption_state === 'pending';
   }
+
+  function isMaterialFinalized(mat) {
+    // Consumed, or expense-bound fully restocked (quantity depleted).
+    return mat.consumption_state === 'consumed'
+      || (mat.is_expense_bound && Number(mat.quantity) === 0);
+  }
 </script>
 
 <table border="1" class="task-tree-table">
@@ -127,9 +133,9 @@
 
       <!-- Materials for this task -->
       {#each (task.materials || []) as mat}
-        <tr class="material-row" class:consumed={mat.consumption_state === 'consumed'}>
+        <tr class="material-row" class:consumed={isMaterialFinalized(mat)}>
           {#if !readonly && !jobLocked}
-            <td class="move-cell">{#if isMaterialPending(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
+            <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
             {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
@@ -141,7 +147,7 @@
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
-          {#if !readonly && !jobLocked && !isTerminal(task) && isMaterialPending(mat)}
+          {#if !readonly && !jobLocked && !isTerminal(task) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
             <td class="actions-cell">
               <button type="button" onclick={() => onRestockMaterial(mat, task)}>restock</button>
               {#if !mat.is_expense_bound}
@@ -190,9 +196,9 @@
 
         <!-- Materials for this subtask -->
         {#each (sub.materials || []) as mat}
-          <tr class="material-row" class:consumed={mat.consumption_state === 'consumed'}>
+          <tr class="material-row" class:consumed={isMaterialFinalized(mat)}>
             {#if !readonly && !jobLocked}
-              <td class="move-cell">{#if isMaterialPending(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
+              <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
             {/if}
             <td class="indent-2">
               {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
@@ -204,7 +210,7 @@
             <td class="text-right">{fmt(mat.unit_cost)}</td>
             <td class="text-right">{fmt(mat.sell_price)}</td>
             <td class="text-right">{fmt(materialTotal(mat))}</td>
-            {#if !readonly && !jobLocked && !isTerminal(sub) && isMaterialPending(mat)}
+            {#if !readonly && !jobLocked && !isTerminal(sub) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
               <td class="actions-cell">
                 <button type="button" onclick={() => onRestockMaterial(mat, sub)}>restock</button>
                 {#if !mat.is_expense_bound}
@@ -224,9 +230,9 @@
         <td colspan={colCount}><strong>Materials (no task)</strong></td>
       </tr>
       {#each jobMaterials as mat}
-        <tr class="material-row" class:consumed={mat.consumption_state === 'consumed'}>
+        <tr class="material-row" class:consumed={isMaterialFinalized(mat)}>
           {#if !readonly && !jobLocked}
-            <td class="move-cell">{#if isMaterialPending(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
+            <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
             {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
@@ -238,7 +244,7 @@
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
-          {#if !readonly && !jobLocked && isMaterialPending(mat)}
+          {#if !readonly && !jobLocked && isMaterialPending(mat) && !isMaterialFinalized(mat)}
             <td class="actions-cell">
               <button type="button" onclick={() => onConsumeMaterial(mat, null)}>consume</button>
               <button type="button" onclick={() => onRestockMaterial(mat, null)}>restock</button>
