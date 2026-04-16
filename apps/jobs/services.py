@@ -238,15 +238,14 @@ class JobService:
         return job
 
     @staticmethod
-    def _loose_pending_inventoried_materials(job):
-        """Return task-less inventoried Materials on this job that still have
-        a positive outstanding quantity committed to the job and are in the
-        PENDING consumption state."""
+    def _loose_pending_materials(job):
+        """Return task-less Materials on this job that still have a positive
+        outstanding quantity committed to the job and are in the PENDING
+        consumption state."""
         from apps.inventory.models import Material
         return Material.objects.filter(
             job=job,
             task__isnull=True,
-            price_list_item__is_inventoried=True,
             consumption_state=Material.CONSUMPTION_STATE_PENDING,
             quantity__gt=0,
         )
@@ -262,7 +261,7 @@ class JobService:
             return job
 
         if new_status == Job.STATUS_WORK_COMPLETE:
-            offenders = JobService._loose_pending_inventoried_materials(job)
+            offenders = JobService._loose_pending_materials(job)
             if offenders.exists():
                 names = ', '.join(m.description or str(m.pk) for m in offenders)
                 raise ValidationError(

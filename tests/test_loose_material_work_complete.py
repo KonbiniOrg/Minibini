@@ -76,6 +76,34 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
 
+    def test_taskless_non_inventoried_pending_material_blocks_transition(self):
+        """A pending task-less non-inventoried material also blocks work_complete."""
+        cat = AccountingCategory.objects.first()
+        non_inv_pli = PriceListItem.objects.create(
+            code='NI-WCG', accounting_category=cat, is_inventoried=False,
+        )
+        MaterialService.create_on_job(
+            job=self.job, task=None, description='non-inv pending',
+            quantity=Decimal('1'), price_list_item=non_inv_pli,
+        )
+        with self.assertRaises(ValidationError):
+            JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
+
+    def test_consumed_non_inventoried_does_not_block(self):
+        """A consumed task-less non-inventoried material does not block work_complete."""
+        cat = AccountingCategory.objects.first()
+        non_inv_pli = PriceListItem.objects.create(
+            code='NI-WCG2', accounting_category=cat, is_inventoried=False,
+        )
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='non-inv consume',
+            quantity=Decimal('1'), price_list_item=non_inv_pli,
+        )
+        MaterialService.consume(m)
+        JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
+
     def test_last_task_completion_autoadvance_blocked_by_loose_material(self):
         """Auto-advance from last task completion does not fire when loose materials are pending."""
         MaterialService.create_on_job(
