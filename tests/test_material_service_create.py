@@ -39,7 +39,7 @@ class MaterialServiceCreateOnJobTest(TestCase):
             description='x', quantity=Decimal('4.00'),
             price_list_item=self.pli_noninv,
         )
-        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_NA)
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         self.assertFalse(Earmark.objects.exists())
 
     def test_create_task_attached_invariant_enforced(self):

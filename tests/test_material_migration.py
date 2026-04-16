@@ -7,7 +7,7 @@ states, then call backfill() directly and assert outcomes.
 
 Gaps covered:
   9:  pm.est_worksheet_id populated from plan_task.est_worksheet_id
-  10: m.consumption_state set correctly (pending/consumed/na)
+  10: m.consumption_state set correctly (pending/consumed)
   11: placeholder "Materials" Task cleaned up; its materials become task-less
 """
 import unittest
@@ -79,7 +79,14 @@ class BackfillMaterialJobTest(TestCase):
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
 
     def test_non_inventoried_pli_state_unchanged(self):
-        """Material with non-inventoried PLI → consumption_state stays 'na'."""
+        """Material with non-inventoried PLI → 0013 backfill leaves state untouched.
+
+        The 0013 backfill only rewrites rows where PLI is_inventoried. Rows
+        with a non-inventoried PLI are skipped. (The legacy 'na' value has
+        since been removed from the choices and backfilled away by 0015, but
+        this test exercises the frozen 0013 logic against a simulated
+        pre-migration 'na' row.)
+        """
         m = Material.objects.create(
             job=self.job, task=self.task_pending,
             description='x', quantity=Decimal('1'),
@@ -88,10 +95,13 @@ class BackfillMaterialJobTest(TestCase):
         Material.objects.filter(pk=m.pk).update(consumption_state='na')
         _backfill()
         m.refresh_from_db()
-        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_NA)
+        self.assertEqual(m.consumption_state, 'na')
 
     def test_no_pli_state_unchanged(self):
-        """Material with no PLI → consumption_state stays 'na'."""
+        """Material with no PLI → 0013 backfill leaves state untouched.
+
+        See ``test_non_inventoried_pli_state_unchanged`` for the rationale.
+        """
         m = Material.objects.create(
             job=self.job, task=self.task_pending,
             description='x', quantity=Decimal('1'),
@@ -99,7 +109,7 @@ class BackfillMaterialJobTest(TestCase):
         Material.objects.filter(pk=m.pk).update(consumption_state='na')
         _backfill()
         m.refresh_from_db()
-        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_NA)
+        self.assertEqual(m.consumption_state, 'na')
 
     @unittest.skip(
         'MySQL enforces NOT NULL on materials.job_id at the DB level (even with FK_CHECKS=0 '
