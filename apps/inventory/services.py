@@ -365,3 +365,17 @@ class MaterialService:
             material.save(update_fields=['quantity'])
             InventoryService._mutate_earmark(material.price_list_item, material.job, qty)
         return material
+
+    @staticmethod
+    def assign_task(material, task):
+        """Move a material to a different task (or make it taskless with task=None)."""
+        from django.core.exceptions import ValidationError
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('assign_task requires pending state')
+        if task is not None:
+            if task.job_id != material.job_id:
+                raise ValidationError('Task must belong to the same job as the material')
+            if task.status in ('complete', 'cancelled'):
+                raise ValidationError('Cannot assign material to a completed or cancelled task')
+        material.task = task
+        material.save(update_fields=['task_id'])

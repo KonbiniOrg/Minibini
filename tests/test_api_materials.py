@@ -146,6 +146,70 @@ class MaterialInventoriedFlagSerializerTest(APITestCase):
         self.assertFalse(mats_by_id[m_none.pk]['price_list_item_is_inventoried'])
 
 
+class MaterialAssignTaskApiTest(APITestCase):
+    """assign-task action: move a material to a different task (or make it taskless)."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(name='c', code='MASGN1')
+        self.user = User.objects.create_user('masgn_u', password='p')
+        self.client.force_login(self.user)
+        contact = Contact.objects.create(first_name='C', last_name='T')
+        biz = Business.objects.create(business_name='B', default_contact=contact)
+        contact.business = biz; contact.save()
+        self.job = Job.objects.create(job_number='JOB-ASGN-1', contact=contact)
+        from apps.jobs.models import Task
+        self.task_a = Task.objects.create(name='A', job=self.job)
+        self.task_b = Task.objects.create(name='B', job=self.job)
+        self.task_done = Task.objects.create(name='Done', job=self.job, status='complete')
+        self.other_job = Job.objects.create(job_number='JOB-ASGN-2', contact=contact)
+        self.other_task = Task.objects.create(name='Other', job=self.other_job)
+
+    def _make(self, task=None):
+        from apps.inventory.services import MaterialService
+        return MaterialService.create_on_job(
+            job=self.job, task=task, description='x',
+            quantity=Decimal('1'), price_list_item=None,
+        )
+
+    def test_assign_taskless_material_to_task(self):
+        m = self._make(task=None)
+        r = self.client.post(f'/api/materials/{m.pk}/assign-task/', {'task': self.task_a.pk}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        m.refresh_from_db()
+        self.assertEqual(m.task_id, self.task_a.pk)
+
+    def test_move_material_between_tasks(self):
+        m = self._make(task=self.task_a)
+        r = self.client.post(f'/api/materials/{m.pk}/assign-task/', {'task': self.task_b.pk}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        m.refresh_from_db()
+        self.assertEqual(m.task_id, self.task_b.pk)
+
+    def test_unassign_material_from_task(self):
+        m = self._make(task=self.task_a)
+        r = self.client.post(f'/api/materials/{m.pk}/assign-task/', {'task': None}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        m.refresh_from_db()
+        self.assertIsNone(m.task_id)
+
+    def test_reject_task_from_different_job(self):
+        m = self._make(task=None)
+        r = self.client.post(f'/api/materials/{m.pk}/assign-task/', {'task': self.other_task.pk}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_reject_consumed_material(self):
+        m = self._make(task=None)
+        from apps.inventory.services import MaterialService
+        MaterialService.consume(m)
+        r = self.client.post(f'/api/materials/{m.pk}/assign-task/', {'task': self.task_a.pk}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_reject_completed_task(self):
+        m = self._make(task=None)
+        r = self.client.post(f'/api/materials/{m.pk}/assign-task/', {'task': self.task_done.pk}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+
 class MaterialApiPermissionTest(APITestCase):
     """Gap 8: Material endpoint uses IsAuthenticated only (not CanManageJobs)."""
 

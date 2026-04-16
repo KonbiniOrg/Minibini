@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from apps.inventory.models import PriceListItem, Material
 from apps.inventory.services import InventoryService, MaterialService
 from apps.api.permissions import CanManageFinancials
-from .serializers import PriceListItemSerializer, MaterialSerializer, MaterialOpSerializer
+from .serializers import PriceListItemSerializer, MaterialSerializer, MaterialOpSerializer, MaterialAssignTaskSerializer
 
 
 class PriceListItemViewSet(viewsets.ModelViewSet):
@@ -74,6 +74,18 @@ class MaterialViewSet(viewsets.ModelViewSet):
         m = self.get_object()
         try:
             MaterialService.draw_more(m, s.validated_data['quantity'])
+        except DjangoValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        m.refresh_from_db()
+        return Response(MaterialSerializer(m).data)
+
+    @action(detail=True, methods=['post'], url_path='assign-task')
+    def assign_task(self, request, pk=None):
+        s = MaterialAssignTaskSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        m = self.get_object()
+        try:
+            MaterialService.assign_task(m, s.validated_data['task'])
         except DjangoValidationError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         m.refresh_from_db()

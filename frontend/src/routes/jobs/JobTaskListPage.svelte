@@ -29,6 +29,8 @@
   let materialModalTaskId = $state(null);
   let materialModalJobId = $state(null);
 
+  let selectedTaskId = $state(null);
+
   let subtaskModalOpen = $state(false);
   let subtaskModalParentTaskId = $state(null);
 
@@ -231,6 +233,15 @@
     }
   }
 
+  async function handleMoveMaterial(material, taskId) {
+    try {
+      await api.post(`/api/materials/${material.material_id}/assign-task/`, { task: taskId });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not move material.');
+    }
+  }
+
   function handleMaterialSaved() {
     materialModalOpen = false;
     materialModalMaterial = null;
@@ -334,6 +345,8 @@
     onTaskClick={handleTaskClick}
     onAssignTask={(task) => { assignModalTask = task; assignModalOpen = true; }}
     onCancelTask={handleCancelTask}
+    onMoveMaterial={handleMoveMaterial}
+    bind:selectedTaskId
   />
 
   <!-- Modals -->

@@ -57,3 +57,10 @@ class MaterialSerializer(serializers.ModelSerializer):
 
 class MaterialOpSerializer(serializers.Serializer):
     quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+
+class MaterialAssignTaskSerializer(serializers.Serializer):
+    task = serializers.PrimaryKeyRelatedField(
+        queryset=__import__('apps.jobs.models', fromlist=['Task']).Task.objects.all(),
+        allow_null=True,
+    )
