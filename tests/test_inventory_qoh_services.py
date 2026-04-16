@@ -5,7 +5,7 @@ from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, InventoryAdjustment, PriceListItem, Material
-from apps.inventory.services import InventoryService
+from apps.inventory.services import InventoryService, MaterialService
 from apps.jobs.models import Job, Task
 from apps.estimates.models import EstWorksheet, Estimate
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
@@ -110,7 +110,7 @@ class ReceivePOLineItemTest(TestCase):
 
 
 class ConsumeMaterialTest(TestCase):
-    """Tests for InventoryService.consume_material."""
+    """Tests for MaterialService.consume."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -137,7 +137,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('15.00'))
@@ -156,7 +156,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         earmark = Earmark.objects.get(price_list_item=self.pli, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('7.00'))
@@ -174,7 +174,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         self.assertFalse(
             Earmark.objects.filter(price_list_item=self.pli, job=self.job).exists())
@@ -192,7 +192,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         self.assertFalse(
             Earmark.objects.filter(price_list_item=self.pli, job=self.job).exists())
@@ -206,7 +206,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('15.00'))
@@ -224,7 +224,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('10.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         non_inv.refresh_from_db()
         self.assertEqual(non_inv.qty_on_hand, Decimal('0.00'))
@@ -239,7 +239,7 @@ class ConsumeMaterialTest(TestCase):
         material.save()
 
         # Should not raise
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
     def test_consume_via_job_task(self):
         """Consuming material on a job task reduces earmark for the task's job."""
@@ -257,7 +257,7 @@ class ConsumeMaterialTest(TestCase):
             unit_cost=Decimal('50.00'))
         material.save()
 
-        InventoryService.consume_material(material)
+        MaterialService.consume(material)
 
         earmark = Earmark.objects.get(price_list_item=self.pli, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('6.00'))

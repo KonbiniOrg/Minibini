@@ -50,38 +50,6 @@ class InventoryService:
             InventoryService._mutate_earmark(pli, po_line_item.job, po_line_item.qty)
 
     @staticmethod
-    def consume_material(material):
-        """Decrease QOH and increase qty_sold when material is consumed at task start.
-        Reduces/clears earmark for the material's job. Sets consumption_state=consumed."""
-        pli = material.price_list_item
-        if not pli or not pli.is_inventoried:
-            return
-
-        pli.qty_on_hand = F('qty_on_hand') - material.quantity
-        pli.qty_sold = F('qty_sold') + material.quantity
-        pli.save(update_fields=['qty_on_hand', 'qty_sold'])
-        pli.refresh_from_db()
-
-        # Reduce or clear earmark
-        job = material.job
-        if job:
-            try:
-                earmark = Earmark.objects.get(
-                    price_list_item=pli, job=job,
-                )
-                new_qty = earmark.quantity - material.quantity
-                if new_qty <= Decimal('0.00'):
-                    earmark.delete()
-                else:
-                    earmark.quantity = new_qty
-                    earmark.save(update_fields=['quantity'])
-            except Earmark.DoesNotExist:
-                pass
-
-        material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
-        material.save(update_fields=['consumption_state'])
-
-    @staticmethod
     def complete_task_adjustment(material, actual_qty):
         """Adjust inventory when task completes and actual quantity differs from estimated.
         If actual < estimated, return excess to stock.
@@ -348,11 +316,9 @@ class MaterialService:
                 f'consume requires pending state; got {material.consumption_state}'
             )
         qty = material.quantity
-        if qty <= Decimal('0.00'):
-            return material
         with transaction.atomic():
             pli = material.price_list_item
-            if pli and pli.is_inventoried:
+            if pli and pli.is_inventoried and qty > Decimal('0.00'):
                 from django.db.models import F
                 pli.qty_on_hand = F('qty_on_hand') - qty
                 pli.qty_sold = F('qty_sold') + qty

@@ -699,9 +699,9 @@ class TaskLifecycleService:
                 task.status = Task.STATUS_IN_PROGRESS
                 if 'assignee' in updates:
                     task.assignee = user
-                from apps.inventory.services import InventoryService
+                from apps.inventory.services import MaterialService
                 for material in task.materials.all():
-                    InventoryService.consume_material(material)
+                    MaterialService.consume(material)
                 blep = BlepService._create(task, user, start_time=now)
                 return {'task': task, 'blep': blep}
 

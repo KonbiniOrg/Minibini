@@ -1,10 +1,10 @@
-"""Gap 4b: InventoryService.consume_material sets consumption_state=consumed."""
+"""Gap 4b: MaterialService.consume sets consumption_state=consumed."""
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from apps.inventory.models import Material, PriceListItem
-from apps.inventory.services import InventoryService, MaterialService
+from apps.inventory.services import MaterialService
 from apps.jobs.models import Job, Task
 
 
@@ -22,16 +22,16 @@ class ConsumeMaterialUniformityTest(TestCase):
             is_inventoried=True, qty_on_hand=Decimal('20'),
         )
 
-    def test_consume_material_sets_state_consumed_on_task_attached(self):
-        """InventoryService.consume_material must set consumption_state=consumed."""
+    def test_consume_sets_state_consumed_on_task_attached(self):
+        """MaterialService.consume must set consumption_state=consumed."""
         m = MaterialService.create_on_job(
             job=self.job, task=self.task, description='x',
             quantity=Decimal('3'), price_list_item=self.pli,
         )
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
-        InventoryService.consume_material(m)
+        MaterialService.consume(m)
         m.refresh_from_db()
         self.assertEqual(
             m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED,
-            'consume_material must transition consumption_state to consumed',
+            'consume must transition consumption_state to consumed',
         )
