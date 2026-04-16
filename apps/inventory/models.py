@@ -183,11 +183,9 @@ class TemplateMaterial(MaterialBase):
 
 class Material(MaterialBase):
     """Actual material on a Job; optionally attached to a Task. Participates in earmark/QOH flows."""
-    CONSUMPTION_STATE_NA = 'na'
     CONSUMPTION_STATE_PENDING = 'pending'
     CONSUMPTION_STATE_CONSUMED = 'consumed'
     CONSUMPTION_STATE_CHOICES = [
-        (CONSUMPTION_STATE_NA, 'N/A'),
         (CONSUMPTION_STATE_PENDING, 'Pending'),
         (CONSUMPTION_STATE_CONSUMED, 'Consumed'),
     ]
@@ -202,7 +200,7 @@ class Material(MaterialBase):
     )
     consumption_state = models.CharField(
         max_length=20, choices=CONSUMPTION_STATE_CHOICES,
-        default=CONSUMPTION_STATE_NA,
+        default=CONSUMPTION_STATE_PENDING,
     )
     restocked_qty = models.DecimalField(
         max_digits=10, decimal_places=2, default=Decimal('0.00'),
@@ -224,9 +222,8 @@ class Material(MaterialBase):
 
     def save(self, *args, **kwargs):
         self._populate_from_pli()
-        if not self.pk and self.price_list_item and self.price_list_item.is_inventoried:
-            if self.consumption_state == self.CONSUMPTION_STATE_NA:
-                self.consumption_state = self.CONSUMPTION_STATE_PENDING
+        if not self.pk and not self.consumption_state:
+            self.consumption_state = self.CONSUMPTION_STATE_PENDING
         self.full_clean()
         super().save(*args, **kwargs)
 

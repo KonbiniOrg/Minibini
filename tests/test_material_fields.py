@@ -25,8 +25,16 @@ class MaterialFieldsTest(TestCase):
             description='x', quantity=Decimal('2.00'),
         )
         self.assertEqual(m.job_id, self.job.pk)
-        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_NA)
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         self.assertEqual(m.restocked_qty, Decimal('0.00'))
+
+    def test_non_inventoried_material_defaults_to_pending(self):
+        m = Material.objects.create(
+            task=self.task, job=self.job,
+            description='no-pli', quantity=Decimal('1.00'),
+        )
+        self.assertIsNone(m.price_list_item)
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
     def test_material_rejects_mismatched_task_job(self):
         job_b = Job.objects.create(job_number='JOB-TEST-2', contact=self.contact)
