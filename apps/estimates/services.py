@@ -732,9 +732,18 @@ class EstimateGenerationService:
         return estimate
 
     def _create_direct_line_item(self, task, estimate) -> 'EstimateLineItem':
-        """Create a line item for a direct-mapped task."""
-        qty = task.est_qty or Decimal('1.00')
-        rate = task.rate or Decimal('0.00')
+        """Create a line item for a direct-mapped task.
+        Uses PlanCharge if available; falls back to task fields."""
+        from apps.jobs.models import PlanCharge
+        try:
+            charge = task.charge
+            qty = charge.estimated_billable_qty
+            rate = charge.effective_rate()
+            units = charge.rate_scheme.unit_label
+        except (PlanCharge.DoesNotExist, AttributeError):
+            qty = task.est_qty or Decimal('1.00')
+            rate = task.rate or Decimal('0.00')
+            units = task.units or 'none'
 
         # Get accounting_category from task directly
         accounting_category = task.accounting_category
@@ -748,7 +757,7 @@ class EstimateGenerationService:
             line_number=self.line_number,
             description=task.name,
             qty=qty,
-            units=task.units or 'none',
+            units=units,
             price=rate,
             accounting_category=accounting_category
         )
@@ -783,11 +792,17 @@ class EstimateGenerationService:
 
     def _create_bundle_line_item(self, tasks, bundle, estimate) -> 'EstimateLineItem':
         """Create a single line item for bundled tasks, including material costs."""
+        from apps.jobs.models import PlanCharge
         total_price = Decimal('0.00')
 
         for task in tasks:
-            qty = task.est_qty or Decimal('1.00')
-            rate = task.rate or Decimal('0.00')
+            try:
+                charge = task.charge
+                qty = charge.estimated_billable_qty
+                rate = charge.effective_rate()
+            except (PlanCharge.DoesNotExist, AttributeError):
+                qty = task.est_qty or Decimal('1.00')
+                rate = task.rate or Decimal('0.00')
             total_price += qty * rate
             # Add material sell totals to bundle price
             for material in task.plan_materials.all():
