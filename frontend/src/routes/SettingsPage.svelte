@@ -3,6 +3,7 @@
   import AccountingCategoryMapping from '../components/AccountingCategoryMapping.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
+  import TaskTemplateManager from '../components/TaskTemplateManager.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
   let qboAccounts = $state([]);
@@ -55,6 +56,8 @@
 <UnitsManager />
 
 <RateSchemeManager />
+
+<TaskTemplateManager />
 
 <h3>Payment accounts</h3>
 <p>
