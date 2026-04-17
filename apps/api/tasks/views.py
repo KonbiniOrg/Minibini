@@ -1,12 +1,12 @@
 from django.core.exceptions import ValidationError
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound
 from rest_framework.mixins import RetrieveModelMixin
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.jobs.models import Task
+from apps.jobs.models import Task, TaskCharge
 from apps.inventory.models import Material
 from apps.inventory.services import MaterialService
 from apps.core.services import NotFoundError, ServiceError
@@ -205,4 +205,49 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'ok'})
+
+
+@api_view(['GET', 'POST', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def task_charge_view(request, job_pk, task_pk):
+    from apps.api.tasks.serializers import TaskChargeSerializer, TaskChargeReadSerializer
+    try:
+        task = Task.objects.get(pk=task_pk, job_id=job_pk)
+    except Task.DoesNotExist:
+        return Response({'detail': 'Task not found.'}, status=404)
+
+    if request.method == 'GET':
+        try:
+            charge = task.charge
+        except TaskCharge.DoesNotExist:
+            return Response(None)
+        return Response(TaskChargeReadSerializer(charge).data)
+
+    # POST/PATCH require CanManageJobs
+    if not request.user.has_perm('core.can_manage_jobs'):
+        return Response(status=403)
+
+    if request.method == 'POST':
+        try:
+            task.charge  # check if exists
+            return Response(
+                {'detail': 'Charge already exists. Use PATCH to update.'},
+                status=400,
+            )
+        except TaskCharge.DoesNotExist:
+            pass
+        serializer = TaskChargeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(task=task)
+        return Response(TaskChargeReadSerializer(serializer.instance).data, status=201)
+
+    # PATCH
+    try:
+        charge = task.charge
+    except TaskCharge.DoesNotExist:
+        return Response({'detail': 'No charge to update.'}, status=404)
+    serializer = TaskChargeSerializer(charge, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(TaskChargeReadSerializer(charge).data)
 

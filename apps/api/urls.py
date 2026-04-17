@@ -10,7 +10,7 @@ from apps.api.worksheets.views import EstWorksheetViewSet
 from apps.api.invoicing.views import InvoiceViewSet
 from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
 from apps.api.inventory.views import PriceListItemViewSet, MaterialViewSet
-from apps.api.tasks.views import TaskViewSet
+from apps.api.tasks.views import TaskViewSet, task_charge_view
 from apps.api.plan_tasks.views import PlanTaskViewSet
 from apps.api.bleps.views import BlepViewSet
 from apps.api.search.views import search_view
@@ -98,6 +98,7 @@ urlpatterns = [
     path('bleps/current/', current_blep_view, name='bleps-current'),
     path('tasks/reorder/', task_reorder_view, name='task-reorder'),
     path('tasks/<int:task_pk>/assign/', task_assign_view, name='task-assign'),
+    path('jobs/<int:job_pk>/tasks/<int:task_pk>/charge/', task_charge_view, name='task-charge'),
     path('time-tracking/status/', stub_501('GET /api/time-tracking/status/'), name='time-tracking-status'),
     path('time-tracking/active/', stub_501('GET /api/time-tracking/active/'), name='time-tracking-active'),
 ] + router.urls
