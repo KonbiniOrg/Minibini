@@ -485,6 +485,20 @@ class TaskTemplate(models.Model):
     description = models.TextField(blank=True)
     units = models.CharField(max_length=50, default='none')
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    rate_scheme = models.ForeignKey(
+        'jobs.RateScheme',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        help_text="Default billing scheme for tasks from this template"
+    )
+    default_active_modifiers = models.JSONField(
+        default=list, blank=True,
+        help_text="Pre-checked modifier keys from the scheme"
+    )
+    default_billable_qty = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Typical estimated billable quantity"
+    )
 
     # AccountingCategory determines what type of line item this task produces when mapped directly
     accounting_category = models.ForeignKey(

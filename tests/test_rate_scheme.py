@@ -2,6 +2,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from tests.base import BaseTestCase
 from apps.jobs.models import RateScheme
+from apps.estimates.models import TaskTemplate
 
 
 class RateSchemeModelTest(BaseTestCase):
@@ -175,3 +176,51 @@ class RateSchemeComputeTest(BaseTestCase):
         self.assertEqual(result, self.modifiers)
         # Should be a copy (list), not the same object reference check not required
         self.assertIsInstance(result, list)
+
+
+class TaskTemplateRateSchemeTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.scheme = RateScheme.objects.create(
+            name='Hourly Labor Test',
+            algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('45.00'),
+            unit_label='hour',
+            modifiers=[{'key': 'messy', 'label': 'Messy', 'percent': 10}],
+        )
+
+    def test_task_template_with_rate_scheme(self):
+        tmpl = TaskTemplate.objects.create(
+            template_name='Assembly',
+            rate_scheme=self.scheme,
+            default_active_modifiers=['messy'],
+            default_billable_qty=Decimal('4.00'),
+        )
+        self.assertEqual(tmpl.rate_scheme, self.scheme)
+        self.assertEqual(tmpl.default_active_modifiers, ['messy'])
+        self.assertEqual(tmpl.default_billable_qty, Decimal('4.00'))
+
+    def test_task_template_without_rate_scheme(self):
+        tmpl = TaskTemplate.objects.create(template_name='Legacy Template')
+        self.assertIsNone(tmpl.rate_scheme)
+        self.assertEqual(tmpl.default_active_modifiers, [])
+        self.assertIsNone(tmpl.default_billable_qty)
+
+    def test_task_template_api_includes_rate_scheme(self):
+        tmpl = TaskTemplate.objects.create(
+            template_name='Assembly',
+            rate_scheme=self.scheme,
+            default_active_modifiers=['messy'],
+            default_billable_qty=Decimal('4.00'),
+        )
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.first()
+        self.client.force_login(user)
+
+        resp = self.client.get(f'/api/task-templates/{tmpl.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['rate_scheme'], self.scheme.pk)
+        self.assertEqual(data['default_active_modifiers'], ['messy'])
+        self.assertEqual(data['default_billable_qty'], '4.00')
