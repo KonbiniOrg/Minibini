@@ -125,6 +125,10 @@ class TaskBase(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default='')
     sort_order = models.PositiveIntegerField(blank=True, null=True)
+    est_worker_time = models.DurationField(
+        null=True, blank=True,
+        help_text="Estimated worker time for scheduling"
+    )
     units = models.CharField(max_length=50, default='none')
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -225,6 +229,12 @@ class Task(TaskBase):
         'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks'
     )
     assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
+    source_template = models.ForeignKey(
+        'estimates.TaskTemplate',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        help_text="TaskTemplate this task was created from"
+    )
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
     blocked_reason = models.TextField(blank=True, default='')

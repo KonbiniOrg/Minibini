@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import timedelta
 from django.db import IntegrityError
 from django.utils import timezone
 from tests.base import BaseTestCase
@@ -245,3 +246,36 @@ class PlanChargeModelTest(BaseTestCase):
         )
         result = charge.effective_rate()
         self.assertEqual(result, Decimal('4.40'))
+
+
+class EstWorkerTimeTest(BaseTestCase):
+
+    def test_task_has_est_worker_time(self):
+        task = Task.objects.get(pk=1)
+        self.assertIsNone(task.est_worker_time)
+
+    def test_task_set_est_worker_time(self):
+        task = Task.objects.get(pk=1)
+        task.est_worker_time = timedelta(hours=2, minutes=30)
+        task.save()
+        task.refresh_from_db()
+        self.assertEqual(task.est_worker_time, timedelta(hours=2, minutes=30))
+
+    def test_plan_task_has_est_worker_time(self):
+        pt = PlanTask.objects.first()
+        if pt is None:
+            self.skipTest('No PlanTask in fixtures')
+        self.assertIsNone(pt.est_worker_time)
+
+    def test_task_has_source_template(self):
+        task = Task.objects.get(pk=1)
+        self.assertIsNone(task.source_template)
+
+    def test_task_set_source_template(self):
+        from apps.estimates.models import TaskTemplate
+        tmpl = TaskTemplate.objects.first()
+        task = Task.objects.get(pk=1)
+        task.source_template = tmpl
+        task.save()
+        task.refresh_from_db()
+        self.assertEqual(task.source_template, tmpl)
