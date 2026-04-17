@@ -292,7 +292,7 @@
   <!-- Charge section -->
   {#if charge}
     <h3>Charge</h3>
-    <table border="1">
+    <table border="1"><tbody>
       <tr><td><strong>Scheme</strong></td><td>{charge.scheme_name}</td></tr>
       <tr><td><strong>Rate</strong></td><td>${charge.effective_rate}/{charge.scheme_unit_label}</td></tr>
       {#if charge.active_modifiers.length > 0}
@@ -310,7 +310,7 @@
       {#if charge.computed_charge}
         <tr><td><strong>Charge</strong></td><td>${charge.computed_charge}</td></tr>
       {/if}
-    </table>
+    </tbody></table>
   {/if}
 
   <!-- Materials section -->
