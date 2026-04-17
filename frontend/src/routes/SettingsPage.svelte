@@ -1,6 +1,6 @@
 <script>
   import QBOConnectionCard from '../components/QBOConnectionCard.svelte';
-  import AccountingCategoryMapping from '../components/AccountingCategoryMapping.svelte';
+  import AccountingCategories from '../components/settings/AccountingCategories.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
@@ -58,10 +58,7 @@
 {#if tab === 'accounting'}
   <QBOConnectionCard />
 
-  <h3>Accounting categories</h3>
-  <p><em>Not yet implemented in Svelte. <a href="/core/accounting-categories/">Accounting categories (legacy)</a></em></p>
-
-  <AccountingCategoryMapping />
+  <AccountingCategories />
 
   <h3>Payment accounts</h3>
   <p>
