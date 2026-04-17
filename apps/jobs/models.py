@@ -322,3 +322,63 @@ class Blep(models.Model):
 
     def __str__(self):
         return f"Blep {self.pk} for Task {self.task.pk}"
+
+
+class RateScheme(models.Model):
+    ELAPSED_TIME = 'elapsed_time'
+    ENTERED_QTY = 'entered_qty'
+    FLAT_FEE = 'flat_fee'
+
+    ALGORITHM_CHOICES = [
+        (ELAPSED_TIME, 'Based on time worked'),
+        (ENTERED_QTY, 'Worker enters quantity'),
+        (FLAT_FEE, 'Fixed charge'),
+    ]
+
+    rate_scheme_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, default='')
+    algorithm = models.CharField(max_length=20, choices=ALGORITHM_CHOICES)
+    rate = models.DecimalField(max_digits=10, decimal_places=2)
+    unit_label = models.CharField(max_length=50)
+    minimum_charge = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    modifiers = models.JSONField(default=list, blank=True)
+    accounting_category = models.ForeignKey(
+        'core.AccountingCategory', on_delete=models.PROTECT, null=True, blank=True,
+    )
+
+    class Meta:
+        db_table = 'rate_schemes'
+
+    def effective_rate(self, active_modifiers=None):
+        """Compute rate with additive modifier surcharges."""
+        modifier_percent = sum(
+            m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
+        )
+        return self.rate * (1 + Decimal(modifier_percent) / 100)
+
+    def compute_charge(self, qty, active_modifiers=None):
+        """Compute total charge for the given quantity."""
+        total = qty * self.effective_rate(active_modifiers)
+        if self.minimum_charge:
+            total = max(total, self.minimum_charge)
+        return total
+
+    def get_actual_qty(self, task):
+        """Resolve actual quantity based on algorithm."""
+        if self.algorithm == self.ELAPSED_TIME:
+            total_seconds = sum(
+                b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
+            )
+            return Decimal(total_seconds) / 3600
+        elif self.algorithm == self.ENTERED_QTY:
+            return task.charge.actuals.get('qty', 0)
+        else:  # FLAT_FEE
+            return Decimal('1')
+
+    def get_modifier_inputs(self):
+        """Return modifiers list for UI rendering."""
+        return list(self.modifiers)
+
+    def __str__(self):
+        return self.name
