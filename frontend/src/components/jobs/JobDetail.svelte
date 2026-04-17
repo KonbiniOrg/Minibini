@@ -106,6 +106,22 @@
       populating = false;
     }
   }
+
+  async function copyFromWorksheet() {
+    if (!currentWorksheet) return;
+    populating = true;
+    populateError = '';
+    try {
+      await api.post(`/api/jobs/${job.job_id}/copy-from-worksheet/`, {
+        worksheet_id: currentWorksheet.est_worksheet_id,
+      });
+      if (onStatusChange) onStatusChange();
+    } catch (e) {
+      populateError = e.data?.detail || e.message || 'Could not copy tasks from worksheet.';
+    } finally {
+      populating = false;
+    }
+  }
 </script>
 
 <div class="job-header">
@@ -240,8 +256,13 @@
       <button type="button" onclick={populateFromEstimate} disabled={populating}>
         {populating ? 'Populating...' : 'Populate tasks from estimate'}
       </button>
-      {#if populateError}<em>{populateError}</em>{/if}
     {/if}
+    {#if canManageJobs && currentWorksheet && !hasTasks}
+      <button type="button" onclick={copyFromWorksheet} disabled={populating}>
+        {populating ? 'Copying...' : 'Copy tasks from worksheet'}
+      </button>
+    {/if}
+    {#if populateError}<em>{populateError}</em>{/if}
     {#if canManageJobs && !currentEstimate}
       <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
     {/if}

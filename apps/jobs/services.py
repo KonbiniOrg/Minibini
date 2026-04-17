@@ -371,6 +371,18 @@ class JobService:
                 accounting_category=plan_task.accounting_category,
                 sort_order=plan_task.sort_order,
             )
+            # Copy PlanCharge → TaskCharge if one exists
+            from apps.jobs.models import PlanCharge, TaskCharge
+            try:
+                plan_charge = plan_task.charge
+                TaskCharge.objects.create(
+                    task=new_task,
+                    rate_scheme=plan_charge.rate_scheme,
+                    active_modifiers=plan_charge.active_modifiers,
+                    actuals={},
+                )
+            except PlanCharge.DoesNotExist:
+                pass
             for pm in plan_task.plan_materials.all():
                 MaterialService.create_on_job(
                     job=job, task=new_task,
