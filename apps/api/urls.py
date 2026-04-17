@@ -24,6 +24,7 @@ from apps.api.templates_config.views import (
     WorkTemplateViewSet, TaskTemplateViewSet,
     AccountingCategoryViewSet, settings_view, units_view,
 )
+from apps.api.rate_schemes.views import RateSchemeViewSet
 
 
 @api_view(['GET'])
@@ -50,6 +51,7 @@ def api_root(request):
         'task-templates': '/api/task-templates/',
         'settings': '/api/settings/',
         'accounting-categories': '/api/accounting-categories/',
+        'rate-schemes': '/api/rate-schemes/',
     })
 
 
@@ -73,6 +75,7 @@ router.register(r'bleps', BlepViewSet, basename='blep')
 router.register(r'work-templates', WorkTemplateViewSet, basename='work-template')
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
+router.register(r'rate-schemes', RateSchemeViewSet, basename='rate-scheme')
 
 urlpatterns = [
     path('', api_root, name='api-root'),
