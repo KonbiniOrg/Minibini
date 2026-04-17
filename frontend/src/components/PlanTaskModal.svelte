@@ -81,7 +81,7 @@
   const title = $derived(isEdit ? 'Edit Task' : 'Add Task');
 
   const selectedTemplate = $derived(
-    templates.find(t => String(t.task_template_id) === String(templateId)) || null
+    templates.find(t => String(t.template_id) === String(templateId)) || null
   );
 
   const selectedScheme = $derived.by(() => {
@@ -205,7 +205,7 @@
             <select bind:value={templateId}>
               <option value="">-- Select template --</option>
               {#each templates as tmpl}
-                <option value={tmpl.task_template_id}>{tmpl.name}</option>
+                <option value={tmpl.template_id}>{tmpl.template_name}</option>
               {/each}
             </select>
           </label>
