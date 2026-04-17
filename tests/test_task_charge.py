@@ -1,0 +1,247 @@
+from decimal import Decimal
+from django.db import IntegrityError
+from django.utils import timezone
+from tests.base import BaseTestCase
+from apps.jobs.models import Task, PlanTask, RateScheme, Blep
+
+
+class TaskChargeModelTest(BaseTestCase):
+    """Test creation and basic behavior of TaskCharge."""
+
+    def setUp(self):
+        super().setUp()
+        self.task = Task.objects.get(pk=1)
+        self.modifiers = [
+            {'key': 'messy', 'label': 'Messy job', 'percent': 10},
+            {'key': 'doublestick', 'label': 'Double-stick tape', 'percent': 5},
+        ]
+        self.scheme = RateScheme.objects.create(
+            name='Vinyl Application',
+            algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('4.00'),
+            unit_label='sq ft',
+            modifiers=self.modifiers,
+        )
+
+    def test_create_task_charge(self):
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=['messy', 'doublestick'],
+            actuals={'qty': 30},
+        )
+        self.assertEqual(charge.task, self.task)
+        self.assertEqual(charge.rate_scheme, self.scheme)
+        self.assertEqual(charge.active_modifiers, ['messy', 'doublestick'])
+        self.assertEqual(charge.actuals, {'qty': 30})
+
+    def test_task_charge_compute(self):
+        """entered_qty: 30 sq ft × $4.60 effective = $138"""
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=['messy', 'doublestick'],
+            actuals={'qty': 30},
+        )
+        result = charge.compute()
+        self.assertEqual(result, Decimal('138.00'))
+
+    def test_task_charge_effective_rate(self):
+        """With one modifier: $4.00 + 10% = $4.40"""
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=['messy'],
+            actuals={},
+        )
+        result = charge.effective_rate()
+        self.assertEqual(result, Decimal('4.40'))
+
+    def test_task_charge_has_actuals_false(self):
+        """No actuals entered for entered_qty scheme → has_actuals() is False."""
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=[],
+            actuals={},
+        )
+        self.assertFalse(charge.has_actuals())
+
+    def test_task_charge_has_actuals_true(self):
+        """Actuals present for entered_qty scheme → has_actuals() is True."""
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=[],
+            actuals={'qty': 10},
+        )
+        self.assertTrue(charge.has_actuals())
+
+    def test_task_charge_one_to_one(self):
+        """Second TaskCharge on same task raises an error."""
+        from apps.jobs.models import TaskCharge
+        TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=[],
+            actuals={},
+        )
+        with self.assertRaises(IntegrityError):
+            TaskCharge.objects.create(
+                task=self.task,
+                rate_scheme=self.scheme,
+                active_modifiers=[],
+                actuals={},
+            )
+
+    def test_task_charge_reverse_access(self):
+        """task.charge.actuals works via reverse relation."""
+        from apps.jobs.models import TaskCharge
+        TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=[],
+            actuals={'qty': 42},
+        )
+        task = Task.objects.get(pk=self.task.pk)
+        self.assertEqual(task.charge.actuals, {'qty': 42})
+
+
+class TaskChargeElapsedTimeTest(BaseTestCase):
+    """Test compute() for elapsed_time algorithm via real Bleps."""
+
+    def setUp(self):
+        super().setUp()
+        self.task = Task.objects.get(pk=1)
+        self.scheme = RateScheme.objects.create(
+            name='Labor Rate',
+            algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('45.00'),
+            unit_label='hour',
+        )
+        # Create 2 Bleps totaling 2 hours
+        now = timezone.now()
+        from datetime import timedelta
+        self.blep1 = Blep.objects.create(
+            task=self.task,
+            start_time=now - timedelta(hours=2),
+            end_time=now - timedelta(hours=1),
+        )
+        self.blep2 = Blep.objects.create(
+            task=self.task,
+            start_time=now - timedelta(hours=1),
+            end_time=now,
+        )
+
+    def test_compute_from_bleps(self):
+        """elapsed_time: 2 hours × $45/hr = $90"""
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=[],
+            actuals={},
+        )
+        result = charge.compute()
+        # Allow slight floating point tolerance (2 hours = $90.00)
+        self.assertAlmostEqual(float(result), 90.0, places=1)
+
+
+class TaskChargeFlatFeeTest(BaseTestCase):
+    """Test compute() for flat_fee algorithm."""
+
+    def setUp(self):
+        super().setUp()
+        self.task = Task.objects.get(pk=1)
+        self.scheme = RateScheme.objects.create(
+            name='Setup Fee',
+            algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('50.00'),
+            unit_label='job',
+        )
+
+    def test_flat_fee_compute(self):
+        """flat_fee: 1 × $50 = $50"""
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=[],
+            actuals={},
+        )
+        result = charge.compute()
+        self.assertEqual(result, Decimal('50.00'))
+
+    def test_flat_fee_has_actuals_always_true(self):
+        """flat_fee never requires manual actuals → has_actuals() is True."""
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=[],
+            actuals={},
+        )
+        self.assertTrue(charge.has_actuals())
+
+
+class PlanChargeModelTest(BaseTestCase):
+    """Test PlanCharge model."""
+
+    def setUp(self):
+        super().setUp()
+        self.modifiers = [
+            {'key': 'messy', 'label': 'Messy job', 'percent': 10},
+        ]
+        self.scheme = RateScheme.objects.create(
+            name='Vinyl Application Plan',
+            algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('4.00'),
+            unit_label='sq ft',
+            modifiers=self.modifiers,
+        )
+        # Find a PlanTask from fixtures; skip if none exist
+        self.plan_task = PlanTask.objects.first()
+        if self.plan_task is None:
+            self.skipTest("No PlanTask in fixtures")
+
+    def test_create_plan_charge(self):
+        from apps.jobs.models import PlanCharge
+        charge = PlanCharge.objects.create(
+            plan_task=self.plan_task,
+            rate_scheme=self.scheme,
+            active_modifiers=['messy'],
+            estimated_billable_qty=Decimal('30'),
+        )
+        self.assertEqual(charge.plan_task, self.plan_task)
+        self.assertEqual(charge.rate_scheme, self.scheme)
+        self.assertEqual(charge.active_modifiers, ['messy'])
+        self.assertEqual(charge.estimated_billable_qty, Decimal('30'))
+
+    def test_plan_charge_compute(self):
+        """30 sq ft × $4.40 effective (with messy +10%) = $132"""
+        from apps.jobs.models import PlanCharge
+        charge = PlanCharge.objects.create(
+            plan_task=self.plan_task,
+            rate_scheme=self.scheme,
+            active_modifiers=['messy'],
+            estimated_billable_qty=Decimal('30'),
+        )
+        result = charge.compute()
+        self.assertEqual(result, Decimal('132.00'))
+
+    def test_plan_charge_effective_rate(self):
+        """With messy modifier: $4.00 + 10% = $4.40"""
+        from apps.jobs.models import PlanCharge
+        charge = PlanCharge.objects.create(
+            plan_task=self.plan_task,
+            rate_scheme=self.scheme,
+            active_modifiers=['messy'],
+            estimated_billable_qty=Decimal('30'),
+        )
+        result = charge.effective_rate()
+        self.assertEqual(result, Decimal('4.40'))
