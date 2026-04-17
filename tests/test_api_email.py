@@ -1,3 +1,4 @@
+from unittest.mock import patch, MagicMock
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, EmailRecord, TempEmail
@@ -76,6 +77,153 @@ class EmailAPITest(BaseTestCase):
     def test_send_stub_returns_501(self):
         response = self.client.post('/api/emails/send/', {}, format='json')
         self.assertEqual(response.status_code, 501)
+
+    def test_refresh_returns_stats(self):
+        with patch('apps.api.email.views.EmailService') as mock_service_class:
+            mock_service = MagicMock()
+            mock_service.fetch_emails_by_date_range.return_value = {
+                'new': 3,
+                'existing': 27,
+                'errors': [],
+            }
+            mock_service_class.return_value = mock_service
+
+            response = self.client.post('/api/emails/refresh/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['new'], 3)
+        self.assertEqual(response.data['existing'], 27)
+        self.assertEqual(response.data['errors'], [])
+        self.assertIn('email_address', response.data)
+        mock_service.fetch_emails_by_date_range.assert_called_once_with(days_back=30)
+
+    def test_refresh_returns_configured_email_address(self):
+        from django.test import override_settings
+        with override_settings(EMAIL_HOST_USER='ops@example.com'):
+            with patch('apps.api.email.views.EmailService') as mock_service_class:
+                mock_service = MagicMock()
+                mock_service.fetch_emails_by_date_range.return_value = {'new': 0, 'existing': 0, 'errors': []}
+                mock_service_class.return_value = mock_service
+
+                response = self.client.post('/api/emails/refresh/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['email_address'], 'ops@example.com')
+
+    def test_refresh_reports_imap_errors(self):
+        with patch('apps.api.email.views.EmailService') as mock_service_class:
+            mock_service = MagicMock()
+            mock_service.fetch_emails_by_date_range.side_effect = Exception("IMAP connection failed")
+            mock_service_class.return_value = mock_service
+
+            response = self.client.post('/api/emails/refresh/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['new'], 0)
+        self.assertEqual(response.data['existing'], 0)
+        self.assertIn('IMAP connection failed', response.data['errors'][0])
+
+    def test_refresh_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post('/api/emails/refresh/')
+        self.assertEqual(response.status_code, 403)
+
+    def _mock_email_content(self, from_header='Jane Doe <jane@acme.com>', text='Hi,\n\nLet us talk.\n\nRegards,\nJane Doe\nAcme Corp LLC\n'):
+        return {
+            'subject': 'Hello',
+            'from': from_header,
+            'to': ['ops@ours.com'],
+            'cc': [],
+            'date': timezone.now(),
+            'text': text,
+            'html': '',
+            'attachments': [],
+        }
+
+    def test_sender_info_parses_sender_and_matches_contact(self):
+        from apps.contacts.models import Contact, Business
+        contact = Contact.objects.create(
+            first_name='Jane',
+            last_name='Doe',
+            email='jane@acme.com',
+        )
+        business = Business.objects.create(business_name='Acme Corp LLC', default_contact=contact)
+        contact.business = business
+        contact.save()
+        with patch('apps.api.email.views.EmailService') as mock_service_class:
+            mock_service = MagicMock()
+            mock_service.get_email_content.return_value = self._mock_email_content()
+            mock_service_class.return_value = mock_service
+
+            response = self.client.get(f'/api/emails/{self.email.pk}/sender-info/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['sender_name'], 'Jane Doe')
+        self.assertEqual(response.data['sender_email'], 'jane@acme.com')
+        self.assertIn('Let us talk', response.data['suggested_body'])
+        match_ids = [c['id'] for c in response.data['matching_contacts']]
+        self.assertIn(contact.contact_id, match_ids)
+
+    def test_sender_info_no_contact_match_returns_business_suggestion(self):
+        from apps.contacts.models import Contact, Business
+        anchor = Contact.objects.create(first_name='Anchor', last_name='Person', email='anchor@acme.com')
+        biz = Business.objects.create(business_name='Acme Corp LLC', default_contact=anchor)
+        with patch('apps.api.email.views.EmailService') as mock_service_class:
+            mock_service = MagicMock()
+            mock_service.get_email_content.return_value = self._mock_email_content()
+            mock_service_class.return_value = mock_service
+
+            response = self.client.get(f'/api/emails/{self.email.pk}/sender-info/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['matching_contacts'], [])
+        self.assertEqual(response.data['extracted_company'], 'Acme Corp LLC')
+        biz_ids = [b['id'] for b in response.data['matching_businesses']]
+        self.assertIn(biz.business_id, biz_ids)
+
+    def test_sender_info_returns_503_when_content_unavailable(self):
+        with patch('apps.api.email.views.EmailService') as mock_service_class:
+            mock_service = MagicMock()
+            mock_service.get_email_content.return_value = None
+            mock_service_class.return_value = mock_service
+
+            response = self.client.get(f'/api/emails/{self.email.pk}/sender-info/')
+
+        self.assertEqual(response.status_code, 503)
+
+    def test_sender_info_not_found(self):
+        response = self.client.get('/api/emails/99999/sender-info/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_sender_info_requires_can_manage_jobs(self):
+        plain_user = User.objects.create_user(username='worker_xx', password='pw')
+        self.client.force_authenticate(user=plain_user)
+        response = self.client.get(f'/api/emails/{self.email.pk}/sender-info/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_link_to_job_rejects_non_integer_job_id(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-job/',
+            {'job_id': 'not-a-number'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_list_ignores_invalid_job_filter(self):
+        response = self.client.get('/api/emails/?job=not-a-number')
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_job_returns_400_on_validation_error(self):
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='X', last_name='Y', email='x@y.com', mobile_number='555')
+        overlong = 'a' * 100  # Job.name max_length is 50
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-job/',
+            {'contact': contact.contact_id, 'name': overlong},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('name', str(response.data).lower())
 
     def test_filter_emails_by_job(self):
         """Emails can be filtered by job."""
