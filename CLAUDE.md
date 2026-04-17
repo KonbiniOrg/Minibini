@@ -225,6 +225,8 @@ DRF-based API serving the Svelte frontend. Session-based authentication (no toke
 
 **Anti-patterns:** Inline styled divs, styled buttons, links styled as buttons, duplicate message handling blocks.
 
+**Table markup:** Always wrap `<tr>` rows in `<tbody>` (or `<thead>`/`<tfoot>`). Svelte 5 strict mode rejects `<tr>` as a direct child of `<table>` and the build will fail.
+
 ## Code Conventions
 
 **Status Constants:** Always use model constants, not string literals:
