@@ -592,7 +592,7 @@
         "model": "jobs.ratescheme",
         "pk": 1,
         "fields": {
-            "name": "Hourly Labor",
+            "name": "Std Hourly",
             "description": "Standard hourly rate for bench work",
             "algorithm": "elapsed_time",
             "rate": "45.00",
@@ -606,7 +606,7 @@
         "model": "jobs.ratescheme",
         "pk": 2,
         "fields": {
-            "name": "CNC Router",
+            "name": "Std CNC Router",
             "description": "Per-minute CNC charge with optional modifiers",
             "algorithm": "entered_qty",
             "rate": "4.00",
@@ -623,7 +623,7 @@
         "model": "jobs.ratescheme",
         "pk": 3,
         "fields": {
-            "name": "Setup Fee",
+            "name": "Std Setup Fee",
             "description": "Flat setup charge",
             "algorithm": "flat_fee",
             "rate": "50.00",
