@@ -104,3 +104,17 @@ class APIPOJobMaterialTest(TestCase):
         )
         r = self.client.delete(f'/api/purchase-orders/{self.po.pk}/?confirm=true')
         self.assertEqual(r.status_code, 400)
+
+    def test_po_list_filtered_by_job_returns_pos_for_that_job(self):
+        line = PurchaseOrderService.add_line_item(
+            self.po.pk, description='x', qty=Decimal('5.00'),
+            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+        )
+        other_job = Job.objects.create(job_number='J-2', contact=self.job.contact, description='o')
+        r = self.client.get(f'/api/purchase-orders/?job={self.job.pk}')
+        self.assertEqual(r.status_code, 200)
+        ids = [po['po_id'] for po in r.json()['results']]
+        self.assertIn(self.po.pk, ids)
+        r2 = self.client.get(f'/api/purchase-orders/?job={other_job.pk}')
+        ids2 = [po['po_id'] for po in r2.json()['results']]
+        self.assertNotIn(self.po.pk, ids2)

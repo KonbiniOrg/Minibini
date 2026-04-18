@@ -22,7 +22,6 @@ from .serializers import (
 class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
     queryset = PurchaseOrder.objects.all().prefetch_related(
         'purchaseorderlineitem_set__task__job',
-        'purchaseorderlineitem_set__job',
     ).order_by('-created_date')
     serializer_class = PurchaseOrderSerializer
     lookup_field = 'pk'
@@ -47,7 +46,11 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             qs = qs.filter(contact_id=contact)
         job = self.request.query_params.get('job')
         if job:
-            qs = qs.filter(purchaseorderlineitem__job=job).distinct()
+            from apps.inventory.models import Material
+            line_ids = Material.objects.filter(
+                job=job, po_line_item__isnull=False,
+            ).values_list('po_line_item_id', flat=True)
+            qs = qs.filter(purchaseorderlineitem__in=line_ids).distinct()
         po_status = self.request.query_params.get('status')
         if po_status:
             qs = qs.filter(status=po_status)
