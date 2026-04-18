@@ -403,20 +403,18 @@ class MaterialService:
     @staticmethod
     def sever(material, decision):
         """'keep' clears FK. 'delete' deletes the Material and backs out earmark.
-        Raises if Material is consumed or decision is invalid."""
+        Raises if decision is invalid or Material is consumed."""
         from django.core.exceptions import ValidationError
         from django.db import transaction
+        if decision not in ('keep', 'delete'):
+            raise ValidationError(f'Unknown sever decision: {decision!r}')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError('Cannot sever; Material is not pending.')
         if decision == 'keep':
-            material.po_line_item = None
-            material.save(update_fields=['po_line_item'])
+            MaterialService.unlink_from_po_line(material)
             return
-        if decision == 'delete':
-            with transaction.atomic():
-                InventoryService._mutate_earmark(
-                    material.price_list_item, material.job, -material.quantity,
-                )
-                material.delete()
-            return
-        raise ValidationError(f'Unknown sever decision: {decision!r}')
+        with transaction.atomic():
+            InventoryService._mutate_earmark(
+                material.price_list_item, material.job, -material.quantity,
+            )
+            material.delete()

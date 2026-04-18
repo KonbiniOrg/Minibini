@@ -58,3 +58,11 @@ class MaterialSeverTest(TestCase):
     def test_sever_raises_on_unknown_decision(self):
         with self.assertRaises(ValidationError):
             MaterialService.sever(self.material, 'something-else')
+
+    def test_sever_validates_decision_before_pending_state(self):
+        """Unknown decision on a consumed material raises 'Unknown sever decision', not 'not pending'."""
+        self.material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        self.material.save(update_fields=['consumption_state'])
+        with self.assertRaises(ValidationError) as ctx:
+            MaterialService.sever(self.material, 'garbage')
+        self.assertIn('Unknown sever decision', str(ctx.exception))
