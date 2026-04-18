@@ -418,3 +418,49 @@ class MaterialService:
                 material.price_list_item, material.job, -material.quantity,
             )
             material.delete()
+
+    @staticmethod
+    def resolve_or_create_for_line(po_line, *, job, price_list_item=None,
+                                    qty, unit_cost, description,
+                                    accounting_category=None, material_id=None):
+        """Resolver precedence: explicit (material_id) -> claim exactly-one -> create new.
+        Returns the linked Material. Raises ValidationError on explicit-link failures."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+
+        with transaction.atomic():
+            # Step 1: explicit link
+            if material_id is not None:
+                try:
+                    mat = Material.objects.select_for_update().get(pk=material_id)
+                except Material.DoesNotExist:
+                    raise ValidationError(f'Material {material_id} not found')
+                if mat.job_id != getattr(job, 'pk', job):
+                    raise ValidationError('Material is not on the requested job')
+                MaterialService.link_to_po_line(mat, po_line)
+                return mat
+
+            # Step 2: claim exactly-one unlinked pending match
+            if price_list_item is not None:
+                candidates = Material.objects.filter(
+                    job=job,
+                    price_list_item=price_list_item,
+                    consumption_state=Material.CONSUMPTION_STATE_PENDING,
+                    po_line_item__isnull=True,
+                )
+                matches = list(candidates[:2])
+                if len(matches) == 1:
+                    MaterialService.link_to_po_line(matches[0], po_line)
+                    return matches[0]
+
+            # Step 3: create new
+            mat = MaterialService.create_on_job(
+                job=job,
+                price_list_item=price_list_item,
+                description=description,
+                quantity=qty,
+                unit_cost=unit_cost,
+                accounting_category=accounting_category,
+            )
+            MaterialService.link_to_po_line(mat, po_line)
+            return mat
