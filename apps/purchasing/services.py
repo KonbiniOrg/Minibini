@@ -470,9 +470,15 @@ class PurchaseOrderReceivingService:
 
     @staticmethod
     def reverse_receipt(po, line_item_id, user, note=''):
-        """Reverse all received quantity on a line item (data correction)."""
+        """Reverse all received quantity on a line item (data correction).
+
+        Bumps QOH back down and resets the line's receipt fields. The linked
+        Material (if any) is NOT touched — its quantity and earmark stay as
+        they were planned. If the linked Material has already been consumed,
+        the reversal is rejected (the caller must restock the Material first).
+        """
         from apps.core.models import HistoryEntry
-        from apps.inventory.models import InventoryAdjustment
+        from apps.inventory.models import InventoryAdjustment, Material
 
         if po.status not in (
             PurchaseOrder.STATUS_ISSUED,
@@ -490,6 +496,14 @@ class PurchaseOrderReceivingService:
             if li.qty_received <= 0:
                 raise ValidationError(
                     f'Line item #{li.line_number} has no received quantity to reverse.'
+                )
+
+            existing_mat = li.linked_material
+            if (existing_mat is not None
+                    and existing_mat.consumption_state == Material.CONSUMPTION_STATE_CONSUMED):
+                raise ValidationError(
+                    f'Cannot reverse receipt on line #{li.line_number}: '
+                    f'linked Material has been consumed. Restock the Material first.'
                 )
 
             reversed_qty = li.qty_received
