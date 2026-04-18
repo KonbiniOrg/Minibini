@@ -335,16 +335,9 @@ class PurchaseOrderReceivingService:
 
     @staticmethod
     def receive_items(po, items, user):
-        """
-        Record receipt of items on a PO.
-
-        Args:
-            po: PurchaseOrder instance
-            items: list of dicts with {line_item_id, qty_received, note?}
-            user: User performing the receipt
-
-        Returns the updated PO.
-        """
+        """Record receipt of items on a PO.
+        Material.quantity is unchanged — planned consumption is set at line-add time.
+        QOH bumps by received qty for inventoried PLIs. Overage is accepted."""
         from apps.core.models import HistoryEntry
         from apps.inventory.models import InventoryAdjustment
         from django.utils import timezone
@@ -367,11 +360,6 @@ class PurchaseOrderReceivingService:
                     pk=item_data['line_item_id'],
                     purchase_order=po,
                 )
-                if li.qty_received + li.qty_cancelled >= li.qty:
-                    raise ValidationError(
-                        f'Line item #{li.line_number} has no outstanding quantity to receive.'
-                    )
-
                 qty = Decimal(str(item_data['qty_received']))
                 if qty <= 0:
                     continue
@@ -388,7 +376,7 @@ class PurchaseOrderReceivingService:
                     + (f' — {item_data["note"]}' if item_data.get('note') else '')
                 )
 
-                # Inventory adjustment for PLI-linked items
+                # QOH for inventoried PLI-backed lines
                 if li.price_list_item and li.price_list_item.is_inventoried:
                     li.price_list_item.qty_on_hand += qty
                     li.price_list_item.save(update_fields=['qty_on_hand'])
@@ -399,10 +387,8 @@ class PurchaseOrderReceivingService:
                     )
                     inventory_updates.append(li.price_list_item.code)
 
-            # Auto-transition PO status
             PurchaseOrderReceivingService._update_po_status(po)
 
-            # History entry
             if history_lines:
                 action_text = f'Items received by {user.get_full_name() or user.username}'
                 if inventory_updates:
@@ -415,7 +401,6 @@ class PurchaseOrderReceivingService:
                     changes={'_action': action_text},
                     text='\n'.join(history_lines),
                 )
-
         return po
 
     @staticmethod
@@ -548,7 +533,7 @@ class PurchaseOrderReceivingService:
         if not all_items:
             return
 
-        all_done = all(li.qty_received + li.qty_cancelled == li.qty for li in all_items)
+        all_done = all(li.qty_received + li.qty_cancelled >= li.qty for li in all_items)
         any_received = any(li.qty_received > 0 for li in all_items)
 
         if all_done and any_received:
