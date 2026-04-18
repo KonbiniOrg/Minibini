@@ -38,6 +38,12 @@ class MaterialLinkToPOLineTest(TestCase):
         m.refresh_from_db()
         self.assertEqual(m.po_line_item_id, self.line.pk)
 
+    def test_link_to_same_line_is_idempotent(self):
+        m = self._make_material(po_line_item=self.line)
+        MaterialService.link_to_po_line(m, self.line)  # must not raise
+        m.refresh_from_db()
+        self.assertEqual(m.po_line_item_id, self.line.pk)
+
     def test_link_refuses_consumed_material(self):
         m = self._make_material(consumption_state=Material.CONSUMPTION_STATE_CONSUMED)
         with self.assertRaises(ValidationError):
@@ -55,6 +61,12 @@ class MaterialLinkToPOLineTest(TestCase):
     def test_unlink_clears_fk(self):
         m = self._make_material(po_line_item=self.line)
         MaterialService.unlink_from_po_line(m)
+        m.refresh_from_db()
+        self.assertIsNone(m.po_line_item_id)
+
+    def test_unlink_when_already_unlinked_is_no_op(self):
+        m = self._make_material()  # po_line_item is None by default
+        MaterialService.unlink_from_po_line(m)  # must not raise
         m.refresh_from_db()
         self.assertIsNone(m.po_line_item_id)
 
