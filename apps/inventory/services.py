@@ -379,3 +379,23 @@ class MaterialService:
                 raise ValidationError('Cannot assign material to a completed or cancelled task')
         material.task = task
         material.save(update_fields=['task_id'])
+
+    @staticmethod
+    def link_to_po_line(material, po_line):
+        """Set material.po_line_item = po_line. Validates pending + unlinked invariants."""
+        from django.core.exceptions import ValidationError
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Cannot link; Material is not pending.')
+        if material.po_line_item_id is not None and material.po_line_item_id != po_line.pk:
+            raise ValidationError('Material is already linked to a different PO line.')
+        material.po_line_item = po_line
+        material.save(update_fields=['po_line_item'])
+
+    @staticmethod
+    def unlink_from_po_line(material):
+        """Clear material.po_line_item. Validates pending state."""
+        from django.core.exceptions import ValidationError
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Cannot unlink; Material is not pending.')
+        material.po_line_item = None
+        material.save(update_fields=['po_line_item'])
