@@ -1,5 +1,6 @@
 <script>
   import UnitsSelect from '../UnitsSelect.svelte';
+  import JobPicker from '../JobPicker.svelte';
 
   const {
     po,
@@ -16,6 +17,7 @@
     onReceiveItems = null,
     onCancelLineItem = null,
     onReverseReceipt = null,
+    onChangeLineJob = null,
   } = $props();
 
   let lineItems = $derived(
@@ -63,6 +65,13 @@
       qty: li.qty,
       units: li.units || 'none',
       price: li.price,
+      job: li.effective_job_id
+        ? { job_id: li.effective_job_id, job_number: li.effective_job_number }
+        : null,
+      _hadLinkedMaterial: !!li.material,
+      _linkedMaterial: li.material,
+      _lineNumber: li.line_number,
+      _description: li.description,
     };
   }
 
@@ -72,6 +81,11 @@
   }
 
   function saveEdit() {
+    const original = lineItems.find(li => li.line_item_id === editingId);
+    const origJobId = original?.effective_job_id ?? null;
+    const newJobId = editForm.job?.job_id ?? null;
+    const jobChanged = origJobId !== newJobId;
+
     if (onEditLineItem) {
       onEditLineItem(editingId, {
         description: editForm.description,
@@ -79,6 +93,13 @@
         units: editForm.units,
         price: editForm.price,
       });
+    }
+    if (jobChanged && onChangeLineJob) {
+      onChangeLineJob(
+        editingId,
+        newJobId,
+        editForm._hadLinkedMaterial ? editForm._linkedMaterial : null
+      );
     }
     editingId = null;
     editForm = {};
@@ -182,13 +203,7 @@
             <td><UnitsSelect bind:value={editForm.units} /></td>
             <td><input type="number" bind:value={editForm.price} step="0.01" min="0" style="width:80px;text-align:right;"></td>
             <td class="text-right">${(Number(editForm.qty) * Number(editForm.price)).toFixed(2)}</td>
-            <td>
-              {#if li.effective_job_id}
-                <a href="#/jobs/{li.effective_job_id}">{li.effective_job_number}</a>
-              {:else}
-                —
-              {/if}
-            </td>
+            <td><JobPicker bind:value={editForm.job} /></td>
             <td>
               <button onclick={saveEdit}>Save</button>
               <button onclick={cancelEdit}>Cancel</button>

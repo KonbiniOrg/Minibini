@@ -285,6 +285,42 @@
     }
   }
 
+  async function handleChangeLineJob(lineItemId, newJobId, existingMaterial) {
+    const runPatch = async (severDecision) => {
+      busy = true;
+      error = null;
+      try {
+        const payload = { job: newJobId };
+        if (severDecision) payload.sever_decision = severDecision;
+        await api.patch(
+          `/api/purchase-orders/${po.po_id}/line-items/${lineItemId}/`,
+          payload,
+        );
+        await reload();
+      } catch (e) {
+        error = e.data?.detail || e.message;
+      } finally {
+        busy = false;
+        severPrompt = null;
+      }
+    };
+    if (existingMaterial && existingMaterial.consumption_state === 'pending') {
+      const line = (po.line_items || []).find(li => li.line_item_id === lineItemId);
+      severPrompt = {
+        items: [{
+          material_id: existingMaterial.material_id,
+          line_item_id: lineItemId,
+          job_number: existingMaterial.job_number,
+          quantity: existingMaterial.quantity,
+          description: line?.description ?? existingMaterial.description ?? '',
+        }],
+        onSubmit: (decisions) => runPatch(decisions[lineItemId]),
+      };
+    } else {
+      await runPatch(null);
+    }
+  }
+
   async function handleAddNote(text) {
     try {
       await api.post(`/api/purchase-orders/${params.id}/notes/`, { text });
@@ -333,6 +369,7 @@
     onReceiveItems={() => { showReceiveForm = true; }}
     onCancelLineItem={handleCancelLineItem}
     onReverseReceipt={handleReverseReceipt}
+    onChangeLineJob={handleChangeLineJob}
   />
 
   {#if showSendDialog}
