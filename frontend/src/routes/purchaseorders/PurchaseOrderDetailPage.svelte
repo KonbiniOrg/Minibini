@@ -6,6 +6,7 @@
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
   import SendPODialog from '../../components/purchaseorders/SendPODialog.svelte';
   import ReceiveItemsForm from '../../components/purchaseorders/ReceiveItemsForm.svelte';
+  import MaterialSeverDialog from '../../components/purchaseorders/MaterialSeverDialog.svelte';
   import HistoryPanel from '../../components/HistoryPanel.svelte';
 
   const { params = {} } = $props();
@@ -21,6 +22,19 @@
   let showSendDialog = $state(false);
   let showReceiveForm = $state(false);
   let busy = $state(false);
+  let severPrompt = $state(null); // { items, onSubmit } when showing
+
+  function collectLinkedMaterials(lines) {
+    return (lines || [])
+      .filter(li => li.material && li.material.consumption_state === 'pending')
+      .map(li => ({
+        material_id: li.material.material_id,
+        line_item_id: li.line_item_id,
+        job_number: li.material.job_number,
+        quantity: li.material.quantity,
+        description: li.description,
+      }));
+  }
 
   let canManageFinancials = $derived(
     $user?.permissions?.includes('can_manage_financials') ?? false
@@ -78,19 +92,58 @@
   async function handleCancel() {
     const reason = prompt('Reason for cancellation:');
     if (!reason) return;
-    await handleStatusAction('cancel', { reason });
+    const linkedMaterials = collectLinkedMaterials(po.line_items);
+    const runCancel = async (severDecision) => {
+      busy = true;
+      error = null;
+      success = null;
+      try {
+        const payload = { reason };
+        if (severDecision) payload.sever_decision = severDecision;
+        await api.post(`/api/purchase-orders/${po.po_id}/cancel/`, payload);
+        await reload();
+        success = 'Purchase order cancelled.';
+      } catch (e) {
+        error = e.data?.detail || e.data?.reason?.[0] || e.message;
+      } finally {
+        busy = false;
+        severPrompt = null;
+      }
+    };
+    if (linkedMaterials.length > 0) {
+      severPrompt = {
+        items: linkedMaterials,
+        onSubmit: (decisions) => runCancel(decisions),
+      };
+    } else {
+      await runCancel(null);
+    }
   }
 
   async function handleDelete() {
     if (!confirm('Delete this purchase order? This cannot be undone.')) return;
-    busy = true;
-    error = null;
-    try {
-      await api.delete(`/api/purchase-orders/${po.po_id}/?confirm=true`);
-      push('/purchase-orders');
-    } catch (e) {
-      error = e.message;
-      busy = false;
+    const linkedMaterials = collectLinkedMaterials(po.line_items);
+    const runDelete = async (severDecision) => {
+      busy = true;
+      error = null;
+      try {
+        const payload = severDecision ? { sever_decision: severDecision } : null;
+        await api.delete(`/api/purchase-orders/${po.po_id}/?confirm=true`, payload);
+        severPrompt = null;
+        push('/purchase-orders');
+      } catch (e) {
+        error = e.data?.detail || e.message;
+        busy = false;
+        severPrompt = null;
+      }
+    };
+    if (linkedMaterials.length > 0) {
+      severPrompt = {
+        items: linkedMaterials,
+        onSubmit: (decisions) => runDelete(decisions),
+      };
+    } else {
+      await runDelete(null);
     }
   }
 
@@ -177,20 +230,40 @@
   }
 
   async function handleCancelLineItem(lineItemId, note) {
-    busy = true;
-    error = null;
-    success = null;
-    try {
-      await api.post(`/api/purchase-orders/${po.po_id}/cancel-line-item/`, {
-        line_item_id: lineItemId,
-        note,
-      });
-      success = 'Line item cancelled.';
-      await reload();
-    } catch (e) {
-      error = e.data?.detail || e.message;
-    } finally {
-      busy = false;
+    const line = (po.line_items || []).find(li => li.line_item_id === lineItemId);
+    const linked = (line && line.material && line.material.consumption_state === 'pending')
+      ? [{
+          material_id: line.material.material_id,
+          line_item_id: line.line_item_id,
+          job_number: line.material.job_number,
+          quantity: line.material.quantity,
+          description: line.description,
+        }]
+      : [];
+    const runCancelLine = async (severDecision) => {
+      busy = true;
+      error = null;
+      success = null;
+      try {
+        const payload = { line_item_id: lineItemId, note };
+        if (severDecision) payload.sever_decision = severDecision;
+        await api.post(`/api/purchase-orders/${po.po_id}/cancel-line-item/`, payload);
+        success = 'Line item cancelled.';
+        await reload();
+      } catch (e) {
+        error = e.data?.detail || e.message;
+      } finally {
+        busy = false;
+        severPrompt = null;
+      }
+    };
+    if (linked.length > 0) {
+      severPrompt = {
+        items: linked,
+        onSubmit: (decisions) => runCancelLine(decisions),
+      };
+    } else {
+      await runCancelLine(null);
     }
   }
 
@@ -295,6 +368,14 @@
   <HistoryPanel {history} onAddNote={handleAddNote} />
 
   <p><a href="#/purchase-orders">Back to list</a></p>
+{/if}
+
+{#if severPrompt}
+  <MaterialSeverDialog
+    items={severPrompt.items}
+    onSubmit={severPrompt.onSubmit}
+    onCancel={() => { severPrompt = null; }}
+  />
 {/if}
 
 <style>
