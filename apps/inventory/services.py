@@ -35,21 +35,6 @@ class InventoryService:
     # --- QOH operations ---
 
     @staticmethod
-    def receive_po_line_item(po_line_item):
-        """Increase QOH for inventoried PO line items.
-        Creates/updates earmark if line item has a job."""
-        pli = po_line_item.price_list_item
-        if not pli or not pli.is_inventoried:
-            return
-
-        pli.qty_on_hand = F('qty_on_hand') + po_line_item.qty
-        pli.save(update_fields=['qty_on_hand'])
-        pli.refresh_from_db()
-
-        if po_line_item.job:
-            InventoryService._mutate_earmark(pli, po_line_item.job, po_line_item.qty)
-
-    @staticmethod
     def complete_task_adjustment(material, actual_qty):
         """Adjust inventory when task completes and actual quantity differs from estimated.
         If actual < estimated, return excess to stock.
