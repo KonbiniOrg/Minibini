@@ -49,15 +49,29 @@ class PurchaseOrderService:
     def _sever_line_material(li, sever_decision):
         """If line has a pending linked Material, require decision and apply.
         No-op if no Material or Material is consumed."""
+        from apps.inventory.models import Material
         from apps.inventory.services import MaterialService
         existing = li.linked_material
-        if existing is None or existing.consumption_state != existing.CONSUMPTION_STATE_PENDING:
+        if existing is None or existing.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             return
         if sever_decision is None:
             raise ValidationError(
                 f'sever_decision is required; line #{li.line_number} has a linked Material.'
             )
         MaterialService.sever(existing, sever_decision)
+
+    @staticmethod
+    def _validate_sever_decisions(line_items, sever_decisions):
+        """Raise ValidationError if any line needs a sever decision and none was supplied."""
+        from apps.inventory.models import Material
+        for li in line_items:
+            existing = li.linked_material
+            if existing is None or existing.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+                continue
+            if sever_decisions.get(li.pk) is None:
+                raise ValidationError(
+                    f'sever_decision is required; line #{li.line_number} has a linked Material.'
+                )
 
     @staticmethod
     def cancel_po(pk, sever_decisions=None):
@@ -80,15 +94,7 @@ class PurchaseOrderService:
 
         line_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
 
-        # Validation pass: ensure decisions are provided for every line that needs one.
-        for li in line_items:
-            existing = li.linked_material
-            if existing is None or existing.consumption_state != existing.CONSUMPTION_STATE_PENDING:
-                continue
-            if sever_decisions.get(li.pk) is None:
-                raise ValidationError(
-                    f'sever_decision is required; line #{li.line_number} has a linked Material.'
-                )
+        PurchaseOrderService._validate_sever_decisions(line_items, sever_decisions)
 
         with transaction.atomic():
             for li in line_items:
@@ -120,15 +126,7 @@ class PurchaseOrderService:
 
         line_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
 
-        # Validation pass.
-        for li in line_items:
-            existing = li.linked_material
-            if existing is None or existing.consumption_state != existing.CONSUMPTION_STATE_PENDING:
-                continue
-            if sever_decisions.get(li.pk) is None:
-                raise ValidationError(
-                    f'sever_decision is required; line #{li.line_number} has a linked Material.'
-                )
+        PurchaseOrderService._validate_sever_decisions(line_items, sever_decisions)
 
         with transaction.atomic():
             for li in line_items:
