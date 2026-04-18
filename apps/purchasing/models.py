@@ -357,10 +357,6 @@ class PurchaseOrderLineItem(BaseLineItem):
 
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE)
     task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)
-    job = models.ForeignKey(
-        'jobs.Job', on_delete=models.SET_NULL,
-        null=True, blank=True,
-    )
 
     # Receiving fields
     qty_received = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
