@@ -1,15 +1,19 @@
 <script>
   import PriceListItemPicker from '../PriceListItemPicker.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
+  import JobPicker from '../JobPicker.svelte';
 
   const {
     categories = [],
     onSubmit,
     onCancel,
+    defaultJob = null,
+    materialId = null,
   } = $props();
 
   let mode = $state('manual'); // 'manual' or 'pli'
   let selectedPLI = $state(null);
+  let selectedJob = $state(defaultJob);
 
   let form = $state({
     description: '',
@@ -44,6 +48,13 @@
       if (form.accounting_category) {
         data.accounting_category = Number(form.accounting_category);
       }
+    }
+
+    if (selectedJob?.job_id) {
+      data.job = selectedJob.job_id;
+    }
+    if (materialId) {
+      data.material_id = materialId;
     }
 
     onSubmit(data);
@@ -99,6 +110,11 @@
         </select>
       </p>
     {/if}
+
+    <p>
+      <label><strong>Job (optional)</strong></label><br>
+      <JobPicker bind:value={selectedJob} />
+    </p>
 
     <p>
       <button type="submit">Add</button>
