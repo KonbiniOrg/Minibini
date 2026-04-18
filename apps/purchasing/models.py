@@ -372,6 +372,11 @@ class PurchaseOrderLineItem(BaseLineItem):
     receipt_note = models.TextField(blank=True, default='')
     qty_cancelled = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
+    @property
+    def linked_material(self):
+        from apps.inventory.models import Material
+        return Material.objects.filter(po_line_item=self).first()
+
     class Meta:
         db_table = 'po_li'
         verbose_name = "Purchase Order Line Item"
