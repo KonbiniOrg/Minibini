@@ -336,9 +336,16 @@ class SearchService:
     @staticmethod
     def search_purchase_orders_with_line_items(query):
         """Search for purchase orders and their line items, returning grouped results"""
+        from apps.inventory.models import Material
+        material_line_ids = list(
+            Material.objects.filter(
+                job__job_number__icontains=query,
+                po_line_item__isnull=False,
+            ).values_list('po_line_item_id', flat=True)
+        )
         purchase_orders = PurchaseOrder.objects.filter(
             Q(po_number__icontains=query) |
-            Q(purchaseorderlineitem__job__job_number__icontains=query)
+            Q(purchaseorderlineitem__in=material_line_ids)
         ).distinct().prefetch_related('purchaseorderlineitem_set')
 
         po_line_items = PurchaseOrderLineItem.objects.annotate(
@@ -827,12 +834,19 @@ class SearchService:
 
         # PURCHASE ORDERS
         if 'PurchaseOrder' in result_ids and result_ids['PurchaseOrder']:
+            from apps.inventory.models import Material
+            material_line_ids = list(
+                Material.objects.filter(
+                    job__job_number__icontains=within_query,
+                    po_line_item__isnull=False,
+                ).values_list('po_line_item_id', flat=True)
+            )
             purchase_orders = PurchaseOrder.objects.filter(
                 pk__in=result_ids['PurchaseOrder']
             ).filter(
                 Q(po_number__icontains=within_query) |
-                Q(job__job_number__icontains=within_query)
-            ).select_related('job')
+                Q(purchaseorderlineitem__in=material_line_ids)
+            ).distinct()
 
             if purchase_orders.exists():
                 categories['purchase_orders'] = {
