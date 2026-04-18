@@ -204,6 +204,7 @@ class PurchaseOrderService:
                 MaterialService.sever(existing, sever_decision)
 
             if new_job_obj is not None:
+                # Inlined (not via _resolve_material_for_line) because we already have new_job_obj.
                 MaterialService.resolve_or_create_for_line(
                     li,
                     job=new_job_obj,
@@ -213,6 +214,7 @@ class PurchaseOrderService:
                     description=li.description,
                     accounting_category=li.accounting_category,
                 )
+        return li
 
     @staticmethod
     def update_line_item(line_item_id, **kwargs):
