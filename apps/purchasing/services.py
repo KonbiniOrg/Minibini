@@ -165,6 +165,56 @@ class PurchaseOrderService:
         return li
 
     @staticmethod
+    def change_line_job(line_item_id, new_job_id, sever_decision=None):
+        """Change a PO line's job attribution. Allowed on any non-cancelled PO
+        as long as the linked Material (if any) is pending.
+
+        If the line already has a linked Material, `sever_decision` ('keep'|'delete')
+        is required. 'keep' unlinks the existing Material from the PO line (it stays
+        on the old job); 'delete' removes the Material and backs out its earmark.
+
+        If `new_job_id` is None, the line is left unattributed (no new Material
+        is created). Otherwise the resolver runs against the new job to attach
+        a new Material.
+        """
+        from apps.inventory.services import MaterialService
+        from apps.jobs.models import Job
+
+        try:
+            li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
+        except PurchaseOrderLineItem.DoesNotExist:
+            raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
+        if li.purchase_order.status == PurchaseOrder.STATUS_CANCELLED:
+            raise ValidationError('Cannot change job on a cancelled PO.')
+
+        new_job_obj = None
+        if new_job_id is not None:
+            try:
+                new_job_obj = Job.objects.get(pk=new_job_id)
+            except Job.DoesNotExist:
+                raise ValidationError(f'Job {new_job_id} not found')
+
+        with transaction.atomic():
+            existing = li.linked_material
+            if existing is not None:
+                if sever_decision is None:
+                    raise ValidationError(
+                        'sever_decision is required when the line has a linked Material.'
+                    )
+                MaterialService.sever(existing, sever_decision)
+
+            if new_job_obj is not None:
+                MaterialService.resolve_or_create_for_line(
+                    li,
+                    job=new_job_obj,
+                    price_list_item=li.price_list_item,
+                    qty=li.qty,
+                    unit_cost=li.price,
+                    description=li.description,
+                    accounting_category=li.accounting_category,
+                )
+
+    @staticmethod
     def update_line_item(line_item_id, **kwargs):
         """Update a PO line item — validates draft status."""
         from apps.core.services import LineItemService
