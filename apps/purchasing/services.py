@@ -88,23 +88,56 @@ class PurchaseOrderService:
 
     @staticmethod
     def add_line_item(po_id, **kwargs):
-        """Add a manual line item to a draft PO."""
+        """Add a manual line item to a draft PO. Accepts optional transient job, material_id."""
         from apps.core.services import LineItemService
+        from apps.inventory.services import MaterialService
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
         PurchaseOrderService._validate_draft(po)
+
+        # Pop transient params before they hit the model constructor
+        job_id = kwargs.pop('job', None)
+        material_id = kwargs.pop('material_id', None)
+
         kwargs = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, kwargs)
-        li = PurchaseOrderLineItem(purchase_order=po, **kwargs)
-        li.full_clean()
-        li.save()
+        with transaction.atomic():
+            li = PurchaseOrderLineItem(purchase_order=po, **kwargs)
+            li.full_clean()
+            li.save()
+            if job_id is not None or material_id is not None:
+                from apps.jobs.models import Job
+                from apps.inventory.models import Material
+                job_obj = None
+                if job_id is not None:
+                    try:
+                        job_obj = Job.objects.get(pk=job_id)
+                    except Job.DoesNotExist:
+                        raise ValidationError(f'Job {job_id} not found')
+                elif material_id is not None:
+                    # Derive job from the material when only material_id is given
+                    try:
+                        job_obj = Material.objects.get(pk=material_id).job
+                    except Material.DoesNotExist:
+                        raise ValidationError(f'Material {material_id} not found')
+                MaterialService.resolve_or_create_for_line(
+                    li,
+                    job=job_obj,
+                    price_list_item=li.price_list_item,
+                    qty=li.qty,
+                    unit_cost=li.price,
+                    description=li.description,
+                    accounting_category=li.accounting_category,
+                    material_id=material_id,
+                )
         return li
 
     @staticmethod
-    def add_line_item_from_pli(po_id, price_list_item_id, qty):
-        """Add a line item from a PriceListItem to a draft PO."""
+    def add_line_item_from_pli(po_id, price_list_item_id, qty, job=None, material_id=None):
+        """Add a line item from a PriceListItem to a draft PO. Accepts optional job, material_id."""
         from apps.inventory.models import PriceListItem
+        from apps.inventory.services import MaterialService
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
@@ -114,17 +147,43 @@ class PurchaseOrderService:
             pli = PriceListItem.objects.get(pk=price_list_item_id)
         except PriceListItem.DoesNotExist:
             raise NotFoundError(f'PriceListItem {price_list_item_id} not found')
-        li = PurchaseOrderLineItem(
-            purchase_order=po,
-            price_list_item=pli,
-            description=pli.description,
-            qty=qty,
-            units=pli.units,
-            price=pli.purchase_price,
-            accounting_category=pli.accounting_category,
-        )
-        li.full_clean()
-        li.save()
+        with transaction.atomic():
+            li = PurchaseOrderLineItem(
+                purchase_order=po,
+                price_list_item=pli,
+                description=pli.description,
+                qty=qty,
+                units=pli.units,
+                price=pli.purchase_price,
+                accounting_category=pli.accounting_category,
+            )
+            li.full_clean()
+            li.save()
+            if job is not None or material_id is not None:
+                from apps.jobs.models import Job
+                from apps.inventory.models import Material
+                job_obj = None
+                if job is not None:
+                    try:
+                        job_obj = Job.objects.get(pk=job)
+                    except Job.DoesNotExist:
+                        raise ValidationError(f'Job {job} not found')
+                elif material_id is not None:
+                    # Derive job from the material when only material_id is given
+                    try:
+                        job_obj = Material.objects.get(pk=material_id).job
+                    except Material.DoesNotExist:
+                        raise ValidationError(f'Material {material_id} not found')
+                MaterialService.resolve_or_create_for_line(
+                    li,
+                    job=job_obj,
+                    price_list_item=pli,
+                    qty=li.qty,
+                    unit_cost=li.price,
+                    description=li.description,
+                    accounting_category=li.accounting_category,
+                    material_id=material_id,
+                )
         return li
 
     @staticmethod
