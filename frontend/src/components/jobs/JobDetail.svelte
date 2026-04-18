@@ -311,12 +311,12 @@
             </td>
             <td class="text-center"><span class="pill pill-{po.status}">{po.status}</span></td>
           </tr>
-          {#if po.line_items?.some(li => li.job && li.job !== job.job_id)}
+          {#if po.line_items?.some(li => li.effective_job_id && li.effective_job_id !== job.job_id)}
             {#each po.line_items as li}
-              <tr class:other-job={li.job && li.job !== job.job_id}>
+              <tr class:other-job={li.effective_job_id && li.effective_job_id !== job.job_id}>
                 <td colspan="2" style="padding-left: 32px; font-size: 13px;">
                   {li.description}
-                  {#if li.job && li.job !== job.job_id}
+                  {#if li.effective_job_id && li.effective_job_id !== job.job_id}
                     <span class="other-job-label">(other job)</span>
                   {/if}
                 </td>
