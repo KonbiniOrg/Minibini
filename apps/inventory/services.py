@@ -399,3 +399,24 @@ class MaterialService:
             raise ValidationError('Cannot unlink; Material is not pending.')
         material.po_line_item = None
         material.save(update_fields=['po_line_item'])
+
+    @staticmethod
+    def sever(material, decision):
+        """'keep' clears FK. 'delete' deletes the Material and backs out earmark.
+        Raises if Material is consumed or decision is invalid."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Cannot sever; Material is not pending.')
+        if decision == 'keep':
+            material.po_line_item = None
+            material.save(update_fields=['po_line_item'])
+            return
+        if decision == 'delete':
+            with transaction.atomic():
+                InventoryService._mutate_earmark(
+                    material.price_list_item, material.job, -material.quantity,
+                )
+                material.delete()
+            return
+        raise ValidationError(f'Unknown sever decision: {decision!r}')
