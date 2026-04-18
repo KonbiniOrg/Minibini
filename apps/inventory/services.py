@@ -420,12 +420,17 @@ class MaterialService:
             material.delete()
 
     @staticmethod
-    def resolve_or_create_for_line(po_line, *, job, price_list_item=None,
+    def resolve_or_create_for_line(po_line, *, job=None, price_list_item=None,
                                     qty, unit_cost, description,
                                     accounting_category=None, material_id=None):
         """Resolver precedence: explicit (material_id) -> claim exactly-one -> create new.
 
         Returns the linked Material. Raises ValidationError on explicit-link failures.
+
+        Job arg semantics:
+          - If material_id is given, job may be None — the Material's job is used.
+            If both are given, they must match.
+          - If material_id is None, job must be supplied (used for claim/create).
 
         Note: on explicit and claim paths, the existing Material's qty/unit_cost/
         description are NOT updated from the PO line. The Material is the source
@@ -441,10 +446,14 @@ class MaterialService:
                     mat = Material.objects.select_for_update().get(pk=material_id)
                 except Material.DoesNotExist:
                     raise ValidationError(f'Material {material_id} not found')
-                if mat.job_id != job.pk:
+                if job is not None and mat.job_id != job.pk:
                     raise ValidationError('Material is not on the requested job')
                 MaterialService.link_to_po_line(mat, po_line)
                 return mat
+
+            # Step 2 and 3 require a job
+            if job is None:
+                raise ValidationError('job is required when material_id is not provided')
 
             # Step 2: claim exactly-one unlinked pending match
             if price_list_item is not None:

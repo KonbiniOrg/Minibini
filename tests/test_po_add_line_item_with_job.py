@@ -81,3 +81,29 @@ class POAddLineItemWithJobTest(TestCase):
         self.assertEqual(mat.description, 'Custom service')
         self.assertEqual(mat.quantity, Decimal('1.00'))
         self.assertEqual(mat.unit_cost, Decimal('500.00'))
+
+    def test_add_line_item_with_invalid_job_raises(self):
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.add_line_item(
+                self.po.pk,
+                description='x',
+                qty=Decimal('5.00'),
+                price=Decimal('1.00'),
+                price_list_item=self.pli.pk,
+                job=999999,  # nonexistent
+            )
+        self.assertIn('Job 999999 not found', str(ctx.exception))
+
+    def test_add_line_item_with_invalid_material_id_raises(self):
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError) as ctx:
+            PurchaseOrderService.add_line_item(
+                self.po.pk,
+                description='x',
+                qty=Decimal('5.00'),
+                price=Decimal('1.00'),
+                price_list_item=self.pli.pk,
+                material_id=999999,  # nonexistent
+            )
+        self.assertIn('Material 999999 not found', str(ctx.exception))

@@ -119,3 +119,38 @@ class MaterialResolveOrCreateTest(TestCase):
             self.line, material_id=existing.pk, **self._args(),
         )
         self.assertEqual(result.pk, existing.pk)
+
+    def test_explicit_link_with_no_job_uses_materials_job(self):
+        """When only material_id is given, the Material's job is used."""
+        existing = MaterialService.create_on_job(
+            job=self.job, price_list_item=self.pli, quantity=Decimal('3.00'),
+        )
+        args = self._args()
+        args.pop('job')  # don't pass job
+        result = MaterialService.resolve_or_create_for_line(
+            self.line, material_id=existing.pk, **args,
+        )
+        self.assertEqual(result.pk, existing.pk)
+        result.refresh_from_db()
+        self.assertEqual(result.po_line_item_id, self.line.pk)
+
+    def test_resolver_raises_when_no_job_and_no_material_id(self):
+        args = self._args()
+        args.pop('job')
+        with self.assertRaises(ValidationError) as ctx:
+            MaterialService.resolve_or_create_for_line(self.line, **args)
+        self.assertIn('job is required', str(ctx.exception))
+
+    def test_explicit_link_with_mismatched_job_raises(self):
+        """If job is given AND material_id is given, they must match."""
+        other_contact = Contact.objects.create(first_name='X', last_name='Y', work_number='9')
+        other_job = Job.objects.create(job_number='J-2', contact=other_contact, description='other')
+        existing = MaterialService.create_on_job(
+            job=self.job, price_list_item=self.pli, quantity=Decimal('3.00'),
+        )
+        args = self._args(job=other_job)  # mismatching job
+        with self.assertRaises(ValidationError) as ctx:
+            MaterialService.resolve_or_create_for_line(
+                self.line, material_id=existing.pk, **args,
+            )
+        self.assertIn('not on the requested job', str(ctx.exception))
