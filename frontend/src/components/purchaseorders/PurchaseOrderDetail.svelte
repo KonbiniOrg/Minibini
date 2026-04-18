@@ -31,6 +31,21 @@
   let editingId = $state(null);
   let editForm = $state({});
 
+  let changeJobLine = $state(null);
+  let changeJobPick = $state(null);
+
+  function canChangeJob(li) {
+    if (po.status === 'cancelled') return false;
+    if (!li.material) return po.status === 'draft';
+    return li.material.consumption_state === 'pending';
+  }
+  function openChangeJob(li) {
+    changeJobLine = li;
+    changeJobPick = li.effective_job_id
+      ? { job_id: li.effective_job_id, job_number: li.effective_job_number }
+      : null;
+  }
+
   let canReceive = $derived(
     po.status === 'issued' || po.status === 'partly_received'
   );
@@ -258,6 +273,9 @@
                 <button onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
                 <button onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
                 <button onclick={() => onDeleteLineItem(li)}>Delete</button>
+                {#if canChangeJob(li) && editingId !== li.line_item_id}
+                  <button onclick={() => openChangeJob(li)}>Change Job</button>
+                {/if}
               </td>
             {/if}
             {#if showReceived}
@@ -267,6 +285,9 @@
                 {/if}
                 {#if Number(li.qty_received) > 0}
                   <button onclick={() => handleReverseLine(li)}>Reverse Receipt</button>
+                {/if}
+                {#if canChangeJob(li)}
+                  <button onclick={() => openChangeJob(li)}>Change Job</button>
                 {/if}
               </td>
             {/if}
@@ -288,6 +309,29 @@
       </tr>
     </tfoot>
   </table>
+{/if}
+
+{#if changeJobLine}
+  <div class="overlay">
+    <div class="dialog">
+      <h3>Change Job for Line #{changeJobLine.line_number}</h3>
+      <p><strong>{changeJobLine.description}</strong></p>
+      <JobPicker bind:value={changeJobPick} />
+      <p>
+        <button onclick={() => {
+          if (onChangeLineJob) {
+            onChangeLineJob(
+              changeJobLine.line_item_id,
+              changeJobPick?.job_id ?? null,
+              changeJobLine.material,
+            );
+          }
+          changeJobLine = null;
+        }}>Save</button>
+        <button onclick={() => { changeJobLine = null; }}>Cancel</button>
+      </p>
+    </div>
+  </div>
 {/if}
 
 <style>
@@ -319,4 +363,11 @@
   .line-status.partial { background: #fef3c7; color: #92400e; }
   .line-status.pending { background: #f3f4f6; color: #374151; }
   .line-status.cancelled { background: #fee2e2; color: #991b1b; }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .dialog {
+    background: white; padding: 20px; max-width: 600px; border-radius: 6px;
+  }
 </style>
