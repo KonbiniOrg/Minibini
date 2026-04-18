@@ -1,7 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { user } from '../../stores/auth.js';
-  import { push } from 'svelte-spa-router';
+  import { push, querystring } from 'svelte-spa-router';
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
   import SendPODialog from '../../components/purchaseorders/SendPODialog.svelte';
@@ -23,6 +23,15 @@
   let showReceiveForm = $state(false);
   let busy = $state(false);
   let severPrompt = $state(null); // { items, onSubmit } when showing
+
+  // Prefill state when navigating in with ?prefill_material=...&default_job=...
+  const initialQs = new URLSearchParams($querystring);
+  const prefillMaterialId = initialQs.get('prefill_material');
+  const defaultJobId = initialQs.get('default_job');
+  let prefilledJob = $state(null);
+  let prefilledMaterial = $state(null);
+  let prefilledMaterialIdNum = $state(null);
+  let prefillLoaded = $state(false);
 
   function collectLinkedMaterials(lines) {
     return (lines || [])
@@ -51,10 +60,37 @@
       ]);
       history = histData;
       categories = catData.results || catData;
+      await loadPrefill();
     } catch (e) {
       loadError = e.message;
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadPrefill() {
+    if (prefillLoaded) return;
+    prefillLoaded = true;
+    if (defaultJobId) {
+      try {
+        prefilledJob = await api.get(`/api/jobs/${defaultJobId}/`);
+      } catch {
+        prefilledJob = null;
+      }
+    }
+    if (prefillMaterialId) {
+      try {
+        prefilledMaterial = await api.get(`/api/materials/${prefillMaterialId}/`);
+        prefilledMaterialIdNum = Number(prefillMaterialId);
+      } catch {
+        prefilledMaterial = null;
+        prefilledMaterialIdNum = null;
+      }
+    }
+    // Auto-open the add-line-item form when we have any prefill context
+    // and the PO is still in draft.
+    if ((prefilledJob || prefilledMaterial) && po?.status === 'draft') {
+      showAddLineItem = true;
     }
   }
 
@@ -393,6 +429,8 @@
       {#if showAddLineItem}
         <LineItemForm
           {categories}
+          defaultJob={prefilledJob}
+          materialId={prefilledMaterialIdNum}
           onSubmit={handleAddLineItem}
           onCancel={() => { showAddLineItem = false; }}
         />
