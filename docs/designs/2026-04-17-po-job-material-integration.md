@@ -526,6 +526,62 @@ Run each scenario end-to-end with the dev server and Vite proxy. Verify via UI w
 
 ---
 
+## Affected existing code (audit)
+
+Everywhere `PurchaseOrderLineItem.job` is referenced today must change or be removed. Because Material's `.po_line_item` FK replaces Line.job entirely, most of these callsites switch from `line.job` / `filter(job=X)` to `line.linked_material.job` / `filter(material__job=X)`. A concrete pre-flight checklist for the implementation plan:
+
+**Backend — models & migrations:**
+- `apps/purchasing/models.py:358-363` — remove `PurchaseOrderLineItem.job` FK. Keep `task` FK (reserved for future service-PO work; this feature's code leaves it null).
+- New migration in `apps/inventory/migrations/` — add `Material.po_line_item` nullable FK.
+- New migration in `apps/purchasing/migrations/` — drop `PurchaseOrderLineItem.job` column.
+- Add helper `PurchaseOrderLineItem.linked_material` property.
+
+**Backend — services:**
+- `apps/purchasing/services.py:90-145` — `add_line_item`, `update_line_item`: accept transient `job` and `material_id` params; delegate to resolver. Existing signature changes need to be coordinated with viewset callers.
+- `apps/purchasing/services.py` — new `change_line_job(line_item_id, new_job_id, sever_decision)` method.
+- `apps/purchasing/services.py:190-296` — `PurchaseOrderReceivingService.receive_items` and `reverse_receipt`: remove the overage rejection, stop creating Materials on receipt, stop using `li.job`, keep QOH/earmark semantics coherent with the new Material-at-creation model.
+- `apps/purchasing/services.py:49-67` — `cancel_po`: accept `sever_decisions` dict.
+- `apps/purchasing/services.py:70-80` — `delete_po`: accept `sever_decisions` dict.
+- `apps/inventory/services.py:38-50` — delete the orphaned `InventoryService.receive_po_line_item` helper (uses `po_line_item.job`; subsumed by new flow).
+- `apps/inventory/services.py` — add `MaterialService.link_to_po_line`, `unlink_from_po_line`, `resolve_or_create_for_line`, `sever`.
+
+**Backend — API views & serializers:**
+- `apps/api/purchasing/serializers.py:18-38` — `POLineItemSerializer`: remove `job` from `fields`; rewrite `_effective_job` helper (lines 45-50) to use `obj.linked_material` instead of `obj.job_id` / `obj.task_id`; add `material` read-only nested field.
+- `apps/api/purchasing/views.py:49` — PO list `?job=X` filter uses `qs.filter(purchaseorderlineitem__job=job).distinct()`. Rewrite to `qs.filter(purchaseorderlineitem__material__job=job).distinct()`.
+- `apps/api/purchasing/views.py` — line-item POST/PATCH viewset: accept and route `job`, `material_id`, `sever_decision`.
+- `apps/api/purchasing/views.py` — cancel-line-item, cancel, destroy actions: accept and forward `sever_decision(s)`.
+- `apps/api/jobs/serializers.py` — Material serializer: add `po_line_item_id`, `po_number`, `po_status` read-only fields.
+
+**Backend — search:**
+- `apps/search/services.py:341` — `Q(purchaseorderlineitem__job__job_number__icontains=query)` becomes `Q(purchaseorderlineitem__material__job__job_number__icontains=query)`. Verify within-search variant (line 789 area) doesn't repeat the old pattern.
+
+**Backend — legacy HTML views:**
+- `apps/jobs/views.py:136-139` — the job detail Django view queries `PurchaseOrderLineItem.objects.filter(job=job)` to populate the POs list. Rewrite to `PurchaseOrder.objects.filter(purchaseorderlineitem__material__job=job).distinct()`.
+- `apps/purchasing/views.py:80-94` — `purchase_order_create_for_job` is the legacy Django HTML "Create PO for this job" view. It doesn't read `line.job` directly but is the server-rendered equivalent of the Svelte flow we're building. Leave it alone (HTML views are being deprecated), but verify nothing in its helpers depends on `line.job`.
+- `templates/jobs/job_detail.html:205-227` — server-rendered PO list on the Django detail view. Relies on the view's query above; no template change needed beyond the view rewrite. Leave unchanged (deprecated template).
+
+**Frontend:**
+- `frontend/src/components/jobs/JobDetail.svelte:314-327` — reads `li.job` from PO line-item payloads to render "(other job)" badges. Switch to `li.effective_job_id` (already populated by the serializer, now sourced from the Material). Verify the cross-job filter still functions.
+- `frontend/src/routes/jobs/JobDetailPage.svelte` — confirm the PO list fetch and rendering still works end-to-end (reads from the PO list endpoint filtered by job).
+- `frontend/src/components/purchaseorders/PurchaseOrderDetail.svelte:186-211` — already uses `effective_job_id` / `effective_job_number`; no change needed as long as the serializer keeps these.
+- `frontend/src/components/purchaseorders/LineItemForm.svelte` — add the new Job picker (fresh code).
+- Add the new `MaterialSeverDialog.svelte` component (fresh code).
+- Add "Create PO for this job" button on the job page (fresh code).
+- Add "Order" action and PO-badge on pending Material rows (fresh code in the Materials section of the job page).
+
+**Tests:**
+- `tests/test_po_line_item_job.py` — every test in this file exercises `PurchaseOrderLineItem.job`. Rewrite to cover the new attribution path (Material.po_line_item + transient `job` at line creation). Tests that only verify the FK exists become obsolete; tests of the end-to-end behavior migrate to the new flow.
+- `tests/test_api_purchasing.py:58` — uses `job=job` directly on a PO line item; rewrite to send `job` as a transient POST param and assert via `line.linked_material.job`.
+- `tests/test_api_purchasing.py:74` — uses `?job=X` filter; that endpoint's filter behavior is preserved (internally routed through Material), so the test should continue to pass after the serializer change.
+
+**Fixtures:**
+- No fixture currently sets `job` on a `purchasing.purchaseorderlineitem` row (verified across `fixtures/` and `nealseed*.json`). No backfill needed.
+- `fixtures/unit_test_data.json` — consider adding a pending `Material` on an existing test Job for resolver step-2 claim tests.
+
+**Documentation:**
+- `CLAUDE.md` — no explicit references to `Line.job`, but the Purchasing and Inventory sections will get more accurate once this feature lands. Update text to mention the PO↔Material link as the job-attribution mechanism if relevant.
+- `docs/designs/2026-04-06-purchasing-workflow-design.md` — older spec that pre-dates this change; reference this newer design from it for anyone reading the purchasing arc.
+
 ## Implementation notes
 
 - The `Material.po_line_item` migration is additive (nullable FK), no backfill needed.
