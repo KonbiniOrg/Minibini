@@ -42,10 +42,11 @@ class PurchaseOrderAPITest(BaseTestCase):
         self.assertIn(response.status_code, [200, 201])
 
     def test_filter_purchase_orders_by_job(self):
-        """POs can be filtered by job via line item linkage."""
+        """POs can be filtered by job via line item linkage (Material.po_line_item)."""
+        from decimal import Decimal
         from apps.contacts.models import Business
         from apps.jobs.models import Job
-        from apps.purchasing.models import PurchaseOrderLineItem
+        from apps.purchasing.services import PurchaseOrderService
         business = Business.objects.first()
         job = Job.objects.first()
 
@@ -53,22 +54,22 @@ class PurchaseOrderAPITest(BaseTestCase):
             business=business,
             po_number='PO-TEST-FILTER',
         )
-        PurchaseOrderLineItem.objects.create(
-            purchase_order=po,
-            job=job,
+        PurchaseOrderService.add_line_item(
+            po.pk,
             description='Test item',
-            qty=1,
-            price=100,
+            qty=Decimal('1'),
+            price=Decimal('100'),
+            job=job.pk,
         )
         po2 = PurchaseOrder.objects.create(
             business=business,
             po_number='PO-TEST-NOJOB',
         )
-        PurchaseOrderLineItem.objects.create(
-            purchase_order=po2,
+        PurchaseOrderService.add_line_item(
+            po2.pk,
             description='Unlinked item',
-            qty=1,
-            price=50,
+            qty=Decimal('1'),
+            price=Decimal('50'),
         )
 
         response = self.client.get(f'/api/purchase-orders/?job={job.job_id}')
