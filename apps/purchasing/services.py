@@ -46,8 +46,29 @@ class PurchaseOrderService:
         return po
 
     @staticmethod
-    def cancel_po(pk):
-        """Cancel an issued PO and mark all line items as cancelled."""
+    def _sever_line_material(li, sever_decision):
+        """If line has a pending linked Material, require decision and apply.
+        No-op if no Material or Material is consumed."""
+        from apps.inventory.services import MaterialService
+        existing = li.linked_material
+        if existing is None or existing.consumption_state != existing.CONSUMPTION_STATE_PENDING:
+            return
+        if sever_decision is None:
+            raise ValidationError(
+                f'sever_decision is required; line #{li.line_number} has a linked Material.'
+            )
+        MaterialService.sever(existing, sever_decision)
+
+    @staticmethod
+    def cancel_po(pk, sever_decisions=None):
+        """Cancel an issued PO and mark all line items as cancelled.
+
+        Any line with a pending linked Material requires an entry in
+        `sever_decisions` ({line_item_id: 'keep'|'delete'}). The validation
+        pass runs before the atomic block so we don't open a transaction
+        we'll just abort.
+        """
+        sever_decisions = sever_decisions or {}
         try:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
@@ -56,19 +77,38 @@ class PurchaseOrderService:
             raise ValidationError(
                 f'Cannot cancel PO {po.po_number}. Only issued POs can be cancelled.'
             )
+
+        line_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+
+        # Validation pass: ensure decisions are provided for every line that needs one.
+        for li in line_items:
+            existing = li.linked_material
+            if existing is None or existing.consumption_state != existing.CONSUMPTION_STATE_PENDING:
+                continue
+            if sever_decisions.get(li.pk) is None:
+                raise ValidationError(
+                    f'sever_decision is required; line #{li.line_number} has a linked Material.'
+                )
+
         with transaction.atomic():
+            for li in line_items:
+                PurchaseOrderService._sever_line_material(li, sever_decisions.get(li.pk))
+                li.qty_cancelled = li.qty - li.qty_received
+                li.save(update_fields=['qty_cancelled'])
             po.status = PurchaseOrder.STATUS_CANCELLED
             po.full_clean()
             po.save()
-            # Set qty_cancelled on all line items
-            for li in PurchaseOrderLineItem.objects.filter(purchase_order=po):
-                li.qty_cancelled = li.qty - li.qty_received
-                li.save(update_fields=['qty_cancelled'])
         return po
 
     @staticmethod
-    def delete_po(pk):
-        """Delete a draft PO."""
+    def delete_po(pk, sever_decisions=None):
+        """Delete a draft PO.
+
+        Any line with a pending linked Material requires an entry in
+        `sever_decisions` ({line_item_id: 'keep'|'delete'}). The validation
+        pass runs before the atomic block.
+        """
+        sever_decisions = sever_decisions or {}
         try:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
@@ -77,7 +117,23 @@ class PurchaseOrderService:
             raise ValidationError(
                 f'Cannot delete PO {po.po_number}. Only draft POs can be deleted.'
             )
-        po.delete()
+
+        line_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+
+        # Validation pass.
+        for li in line_items:
+            existing = li.linked_material
+            if existing is None or existing.consumption_state != existing.CONSUMPTION_STATE_PENDING:
+                continue
+            if sever_decisions.get(li.pk) is None:
+                raise ValidationError(
+                    f'sever_decision is required; line #{li.line_number} has a linked Material.'
+                )
+
+        with transaction.atomic():
+            for li in line_items:
+                PurchaseOrderService._sever_line_material(li, sever_decisions.get(li.pk))
+            po.delete()
 
     @staticmethod
     def _validate_draft(po):
@@ -385,8 +441,12 @@ class PurchaseOrderReceivingService:
         return PurchaseOrderReceivingService.receive_items(po, items, user)
 
     @staticmethod
-    def cancel_line_item(po, line_item_id, user, note=''):
-        """Cancel remaining quantity on a line item."""
+    def cancel_line_item(po, line_item_id, user, note='', sever_decision=None):
+        """Cancel remaining quantity on a line item.
+
+        If the line has a pending linked Material, `sever_decision`
+        ('keep'|'delete') is required.
+        """
         from apps.core.models import HistoryEntry
 
         if po.status not in (
@@ -405,6 +465,8 @@ class PurchaseOrderReceivingService:
                 raise ValidationError(
                     f'Line item #{li.line_number} has no outstanding quantity to cancel.'
                 )
+
+            PurchaseOrderService._sever_line_material(li, sever_decision)
 
             qty_to_cancel = li.qty - li.qty_received - li.qty_cancelled
             li.qty_cancelled = li.qty - li.qty_received
