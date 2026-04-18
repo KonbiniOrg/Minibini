@@ -159,6 +159,7 @@
         <th>Units</th>
         <th class="text-right">Price</th>
         <th class="text-right">Total</th>
+        <th>Job</th>
         {#if showReceived}
           <th class="text-right">Received</th>
           <th>Status</th>
@@ -182,6 +183,13 @@
             <td><input type="number" bind:value={editForm.price} step="0.01" min="0" style="width:80px;text-align:right;"></td>
             <td class="text-right">${(Number(editForm.qty) * Number(editForm.price)).toFixed(2)}</td>
             <td>
+              {#if li.effective_job_id}
+                <a href="#/jobs/{li.effective_job_id}">{li.effective_job_number}</a>
+              {:else}
+                —
+              {/if}
+            </td>
+            <td>
               <button onclick={saveEdit}>Save</button>
               <button onclick={cancelEdit}>Cancel</button>
             </td>
@@ -194,6 +202,13 @@
             <td>{li.units || ''}</td>
             <td class="text-right">${Number(li.price).toFixed(2)}</td>
             <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
+            <td>
+              {#if li.effective_job_id}
+                <a href="#/jobs/{li.effective_job_id}">{li.effective_job_number}</a>
+              {:else}
+                —
+              {/if}
+            </td>
             {#if showReceived}
               <td class="text-right">
                 {#if Number(li.qty_cancelled) >= Number(li.qty)}
@@ -248,6 +263,7 @@
       <tr>
         <td colspan="5" class="text-right"><strong>Total</strong></td>
         <td class="text-right"><strong>${total.toFixed(2)}</strong></td>
+        <td></td>
         {#if showReceived}
           <td></td><td></td>
         {/if}
