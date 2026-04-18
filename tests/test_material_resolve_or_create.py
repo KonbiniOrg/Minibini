@@ -109,3 +109,13 @@ class MaterialResolveOrCreateTest(TestCase):
         )
         self.assertIsNone(result.price_list_item_id)
         self.assertEqual(result.quantity, Decimal('5.00'))
+
+    def test_explicit_link_with_job_instance_works(self):
+        """Defensive: confirm passing a Job instance (not just pk) works."""
+        existing = MaterialService.create_on_job(
+            job=self.job, price_list_item=self.pli, quantity=Decimal('3.00'),
+        )
+        result = MaterialService.resolve_or_create_for_line(
+            self.line, material_id=existing.pk, **self._args(),
+        )
+        self.assertEqual(result.pk, existing.pk)
