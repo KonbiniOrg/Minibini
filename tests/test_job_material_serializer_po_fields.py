@@ -39,5 +39,6 @@ class JobMaterialSerializerPOFieldsTest(TestCase):
         self.assertEqual(len(linked), 1)
         mat = linked[0]
         self.assertEqual(mat['po_line_item_id'], self.line.pk)
+        self.assertEqual(mat['po_id'], self.po.pk)
         self.assertEqual(mat['po_number'], self.po.po_number)
         self.assertEqual(mat['po_status'], self.po.status)

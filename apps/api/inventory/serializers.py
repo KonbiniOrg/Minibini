@@ -26,6 +26,7 @@ class MaterialSerializer(serializers.ModelSerializer):
     is_expense_bound = serializers.BooleanField(read_only=True)
     price_list_item_is_inventoried = serializers.SerializerMethodField()
     po_line_item_id = serializers.SerializerMethodField()
+    po_id = serializers.SerializerMethodField()
     po_number = serializers.SerializerMethodField()
     po_status = serializers.SerializerMethodField()
 
@@ -37,13 +38,13 @@ class MaterialSerializer(serializers.ModelSerializer):
             'price_list_item', 'accounting_category',
             'consumption_state', 'restocked_qty',
             'is_expense_bound', 'price_list_item_is_inventoried',
-            'po_line_item_id', 'po_number', 'po_status',
+            'po_line_item_id', 'po_id', 'po_number', 'po_status',
         ]
         read_only_fields = [
             'material_id', 'job', 'task',
             'consumption_state', 'restocked_qty', 'is_expense_bound',
             'price_list_item_is_inventoried',
-            'po_line_item_id', 'po_number', 'po_status',
+            'po_line_item_id', 'po_id', 'po_number', 'po_status',
         ]
 
     def get_price_list_item_is_inventoried(self, obj):
@@ -51,6 +52,11 @@ class MaterialSerializer(serializers.ModelSerializer):
 
     def get_po_line_item_id(self, obj):
         return obj.po_line_item_id
+
+    def get_po_id(self, obj):
+        if obj.po_line_item_id and obj.po_line_item:
+            return obj.po_line_item.purchase_order_id
+        return None
 
     def get_po_number(self, obj):
         if obj.po_line_item_id and obj.po_line_item:
