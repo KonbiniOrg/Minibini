@@ -431,6 +431,7 @@
           {categories}
           defaultJob={prefilledJob}
           materialId={prefilledMaterialIdNum}
+          prefillMaterial={prefilledMaterial}
           onSubmit={handleAddLineItem}
           onCancel={() => { showAddLineItem = false; }}
         />
