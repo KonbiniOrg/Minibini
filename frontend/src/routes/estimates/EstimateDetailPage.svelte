@@ -20,6 +20,57 @@
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
 
+  // Send Estimate (draft → open) is handled by the mark-open action, not the dropdown.
+  const VALID_TRANSITIONS = {
+    draft: ['rejected'],
+    open: ['accepted', 'rejected', 'expired', 'superseded'],
+    accepted: [],
+    rejected: [],
+    expired: [],
+    superseded: [],
+  };
+  let validNextStatuses = $derived(VALID_TRANSITIONS[estimate?.status] || []);
+
+  let marking = $state(false);
+  let revising = $state(false);
+
+  async function handleRevise() {
+    if (!confirm('Revise this estimate? This will mark the current version superseded and open a new draft.')) return;
+    revising = true;
+    try {
+      const newEst = await api.post(`/api/estimates/${estimate.estimate_id}/revise/`);
+      window.location.hash = `/estimates/${newEst.estimate_id}`;
+    } catch (e) {
+      alert(e.message || 'Could not revise estimate.');
+      revising = false;
+    }
+  }
+
+  async function handleMarkAsSent() {
+    if (!confirm('Mark this estimate as sent? This will set the sent/expiration dates and finalize the worksheet.')) return;
+    marking = true;
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/mark-open/`);
+      await loadEstimate();
+    } catch (e) {
+      alert(e.message || 'Could not mark estimate as sent.');
+    } finally {
+      marking = false;
+    }
+  }
+
+  async function handleStatusChange(e) {
+    const newStatus = e.target.value;
+    if (newStatus === estimate.status) return;
+    try {
+      await api.patch(`/api/estimates/${estimate.estimate_id}/`, { status: newStatus });
+      await loadEstimate();
+    } catch (err) {
+      e.target.value = estimate.status;
+      alert(err.message || 'Status change failed');
+    }
+  }
+
   let lineItems = $derived(
     (estimate?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
   );
@@ -159,6 +210,32 @@
 {:else if estimate}
   <h2 class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</h2>
 
+  <div class="status-line">
+    {#if canManageJobs && validNextStatuses.length > 0}
+      <span class="status-select-wrapper">
+        <select class="status-select status-{estimate.status}" onchange={handleStatusChange}>
+          <option value={estimate.status} selected>{estimate.status}</option>
+          {#each validNextStatuses as nextStatus}
+            <option value={nextStatus}>{nextStatus}</option>
+          {/each}
+        </select>
+      </span>
+    {:else}
+      <span class="status-badge status-{estimate.status}">{estimate.status}</span>
+    {/if}
+    {#if canManageJobs && estimate.status === 'draft'}
+      <button type="button" disabled title="Coming soon: render PDF and email to customer">Send Estimate</button>
+      <button type="button" onclick={handleMarkAsSent} disabled={marking}>
+        {marking ? 'Marking...' : 'Mark as Sent'}
+      </button>
+    {/if}
+    {#if canManageJobs && estimate.status === 'open'}
+      <button type="button" onclick={handleRevise} disabled={revising}>
+        {revising ? 'Revising...' : 'Revise Estimate'}
+      </button>
+    {/if}
+  </div>
+
   <table border="1" class:superseded={isSuperseded}>
     <tbody>
       <tr><th>Field</th><th>Value</th></tr>
@@ -270,4 +347,30 @@
   .superseded { opacity: 0.6; }
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
+
+  .status-line { margin: 8px 0 16px; display: flex; align-items: center; gap: 12px; }
+  .status-badge {
+    padding: 4px 12px; border-radius: 12px; font-size: 13px;
+    font-weight: 600; text-transform: capitalize;
+  }
+  .status-select-wrapper { position: relative; display: inline-block; }
+  .status-select {
+    appearance: none; -webkit-appearance: none;
+    padding: 4px 28px 4px 12px; border-radius: 12px;
+    font-size: 13px; font-weight: 600; text-transform: capitalize;
+    border: 2px solid transparent; cursor: pointer; outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .status-select:hover { border-color: rgba(0,0,0,0.15); }
+  .status-select:focus { border-color: rgba(0,0,0,0.3); }
+  .status-select-wrapper::after {
+    content: '\25BE'; position: absolute; right: 10px; top: 50%;
+    transform: translateY(-50%); font-size: 11px; pointer-events: none; opacity: 0.6;
+  }
+  .status-draft { background: #f3f4f6; color: #374151; }
+  .status-open { background: #dbeafe; color: #1e40af; }
+  .status-accepted { background: #dcfce7; color: #166534; }
+  .status-rejected { background: #fee2e2; color: #991b1b; }
+  .status-expired { background: #fef3c7; color: #92400e; }
+  .status-superseded { background: #fed7aa; color: #9a3412; }
 </style>
