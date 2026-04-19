@@ -125,6 +125,31 @@
       alert(e.message || 'Could not delete line item.');
     }
   }
+
+  async function handleReorder(itemIds) {
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/reorder/`, {
+        item_ids: itemIds,
+      });
+      await loadEstimate();
+    } catch (e) {
+      alert(e.message || 'Could not reorder line items.');
+    }
+  }
+
+  function moveUp(index) {
+    if (index === 0) return;
+    const ids = lineItems.map(li => li.line_item_id);
+    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+    handleReorder(ids);
+  }
+
+  function moveDown(index) {
+    if (index >= lineItems.length - 1) return;
+    const ids = lineItems.map(li => li.line_item_id);
+    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
+    handleReorder(ids);
+  }
 </script>
 
 {#if loading}
@@ -186,7 +211,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each lineItems as li}
+        {#each lineItems as li, i}
           <tr>
             <td>{li.line_number}</td>
             <td>{categoryName(li.accounting_category)}</td>
@@ -200,6 +225,8 @@
             {#if canEdit}
               <td>
                 <button type="button" onclick={() => openEditItem(li)}>Edit</button>
+                <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
+                <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
                 <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
               </td>
             {/if}
