@@ -134,9 +134,13 @@ def job_detail(request, job_id):
         current_estimate_total = sum(item.total_amount for item in current_estimate_line_items)
 
     worksheets = EstWorksheet.objects.filter(job=job).order_by('-created_date')
-    from apps.purchasing.models import PurchaseOrderLineItem
-    po_ids = PurchaseOrderLineItem.objects.filter(job=job).values_list('purchase_order_id', flat=True).distinct()
-    purchase_orders = PurchaseOrder.objects.filter(po_id__in=po_ids).order_by('-po_id')
+    from apps.inventory.models import Material
+    line_ids = Material.objects.filter(job=job, po_line_item__isnull=False).values_list(
+        'po_line_item_id', flat=True,
+    )
+    purchase_orders = PurchaseOrder.objects.filter(
+        purchaseorderlineitem__in=line_ids,
+    ).distinct().order_by('-po_id')
     invoices = Invoice.objects.filter(job=job).order_by('-invoice_id')
 
     return render(request, 'jobs/job_detail.html', {
