@@ -31,6 +31,10 @@
   import UserDetailPage from './routes/users/UserDetailPage.svelte';
   import ExpenseListPage from './routes/expenses/ExpenseListPage.svelte';
   import ReimbursementDetailPage from './routes/reimbursements/ReimbursementDetailPage.svelte';
+  import EmailInboxPage from './routes/email/EmailInboxPage.svelte';
+  import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
+  import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
+  import EmailAssociatePage from './routes/email/EmailAssociatePage.svelte';
 
   const routes = {
     '/': Home,
@@ -61,6 +65,10 @@
     '/users/:id': UserDetailPage,
     '/expenses': ExpenseListPage,
     '/reimbursements/:id': ReimbursementDetailPage,
+    '/email': EmailInboxPage,
+    '/email/:id/create-job': EmailCreateJobPage,
+    '/email/:id/associate': EmailAssociatePage,
+    '/email/:id': EmailDetailPage,
     '/profile': ProfilePage,
   };
 

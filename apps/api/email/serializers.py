@@ -13,7 +13,8 @@ class TempEmailSerializer(serializers.ModelSerializer):
 
 class EmailRecordSerializer(serializers.ModelSerializer):
     temp_email = TempEmailSerializer(source='temp_data', read_only=True)
+    job_number = serializers.CharField(source='job.job_number', read_only=True, default=None)
 
     class Meta:
         model = EmailRecord
-        fields = ['email_record_id', 'message_id', 'job', 'created_at', 'temp_email']
+        fields = ['email_record_id', 'message_id', 'job', 'job_number', 'created_at', 'temp_email']
