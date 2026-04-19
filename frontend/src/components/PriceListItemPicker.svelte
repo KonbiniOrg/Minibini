@@ -3,6 +3,7 @@
 
   let {
     value = null,
+    selectedItem = null,
     onSelect = () => {},
     disabled = false,
   } = $props();
@@ -23,12 +24,23 @@
     );
   });
 
-  // When value changes externally (e.g. edit mode), resolve the label
+  // Resolve the displayed label from one of three sources, in priority order:
+  //   1. selectedItem prop (full object provided by parent — used for prefill)
+  //   2. value + already-loaded allItems (typical edit-mode case)
+  //   3. value with no catalog yet → kick off the fetch
   $effect(() => {
-    if (value && allItems.length > 0) {
-      const found = allItems.find(i => i.price_list_item_id === value);
-      if (found) selectedLabel = `${found.code} — ${found.description}`;
-    } else if (!value) {
+    if (selectedItem) {
+      selectedLabel = `${selectedItem.code} — ${selectedItem.description}`;
+      return;
+    }
+    if (value) {
+      if (allItems.length > 0) {
+        const found = allItems.find(i => i.price_list_item_id === value);
+        if (found) selectedLabel = `${found.code} — ${found.description}`;
+      } else {
+        fetchAllItems();
+      }
+    } else {
       selectedLabel = '';
     }
   });

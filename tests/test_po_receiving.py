@@ -143,7 +143,10 @@ class ReceiveItemsTest(POReceivingTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['status'], PurchaseOrder.STATUS_RECEIVED_IN_FULL)
 
-    def test_receive_done_line_rejected(self):
+    def test_receive_overage_accepted(self):
+        """Overage receipts are accepted — receiving against a line where
+        qty_received + qty_cancelled already meets/exceeds qty just records
+        the additional received quantity."""
         po = self._make_issued_po()
         li = PurchaseOrderLineItem.objects.filter(purchase_order=po).first()
         li.qty_cancelled = li.qty
@@ -153,7 +156,9 @@ class ReceiveItemsTest(POReceivingTestBase):
             {'items': [{'line_item_id': li.pk, 'qty_received': 5}]},
             format='json',
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
+        li.refresh_from_db()
+        self.assertEqual(li.qty_received, Decimal('5'))
 
     def test_receive_requires_items(self):
         po = self._make_issued_po()

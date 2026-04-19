@@ -122,6 +122,9 @@
       populating = false;
     }
   }
+
+  // All materials on this job (for the Materials section)
+  let jobMaterials = $derived(job.materials || []);
 </script>
 
 <div class="job-header">
@@ -298,6 +301,48 @@
 </Accordion>
 
 <Accordion
+  title="Materials"
+  meta={jobMaterials.length > 0 ? `${jobMaterials.length} item${jobMaterials.length === 1 ? '' : 's'}` : 'None'}
+  open={false}
+  headerBg="#ca8a04"
+  borderColor="#fde68a"
+>
+  {#if jobMaterials.length > 0}
+    <table class="mat-table">
+      <thead><tr>
+        <th>Description</th>
+        <th class="text-right">Qty</th>
+        <th class="text-right">Unit Cost</th>
+        <th class="text-center">State</th>
+        <th>Order</th>
+      </tr></thead>
+      <tbody>
+        {#each jobMaterials as mat}
+          <tr>
+            <td>{mat.description || '(no description)'}</td>
+            <td class="text-right">{mat.quantity ?? '-'}</td>
+            <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
+            <td class="text-center"><span class="pill pill-{mat.consumption_state}">{mat.consumption_state}</span></td>
+            <td>
+              {#if mat.po_line_item_id}
+                <span class="po-badge">
+                  Ordered on <a href="#/purchase-orders/{mat.po_id}">{mat.po_number}</a>
+                  &middot; {mat.po_status}
+                </span>
+              {:else if mat.consumption_state === 'pending' && canManageFinancials}
+                <a href="#/purchase-orders/new?job={job.job_id}&material={mat.material_id}"><button>Order</button></a>
+              {/if}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p class="empty-msg">No materials.</p>
+  {/if}
+</Accordion>
+
+<Accordion
   title="Invoices"
   meta={invList.length > 0 ? `${invList[0].invoice_number} · ${invList.length} invoice${invList.length > 1 ? 's' : ''}` : 'None yet'}
   open={defaultOpen === 'invoices'}
@@ -354,12 +399,12 @@
             </td>
             <td class="text-center"><span class="pill pill-{po.status}">{po.status}</span></td>
           </tr>
-          {#if po.line_items?.some(li => li.job && li.job !== job.job_id)}
+          {#if po.line_items?.some(li => li.effective_job_id && li.effective_job_id !== job.job_id)}
             {#each po.line_items as li}
-              <tr class:other-job={li.job && li.job !== job.job_id}>
+              <tr class:other-job={li.effective_job_id && li.effective_job_id !== job.job_id}>
                 <td colspan="2" style="padding-left: 32px; font-size: 13px;">
                   {li.description}
-                  {#if li.job && li.job !== job.job_id}
+                  {#if li.effective_job_id && li.effective_job_id !== job.job_id}
                     <span class="other-job-label">(other job)</span>
                   {/if}
                 </td>
@@ -375,8 +420,8 @@
     <p class="empty-msg">No purchase orders for this job.</p>
   {/if}
   <div class="accordion-actions">
-    {#if canManageJobs}
-      <a href="#/jobs/{job.job_id}/create-po">Create Purchase Order</a>
+    {#if canManageFinancials}
+      <a href="#/purchase-orders/new?job={job.job_id}"><button>Create PO for this job</button></a>
     {/if}
   </div>
 </Accordion>
@@ -488,6 +533,17 @@
   .po-table tbody tr { background: #f8fafc; }
   .po-table tbody tr:nth-child(even) { background: #f1f5f9; }
   .po-table tbody tr + tr { border-top: 1px solid #e2e8f0; }
+
+  /* Material table colors */
+  .mat-table thead { background: #fde68a; }
+  .mat-table thead th { color: #78350f; }
+  .mat-table tbody tr { background: #fffbeb; }
+  .mat-table tbody tr:nth-child(even) { background: #fef3c7; }
+  .mat-table tbody tr + tr { border-top: 1px solid #fde68a; }
+  .po-badge { font-size: 12px; color: #555; }
+  .pill-pending { background: #f3e8ff; color: #7c3aed; }
+  .pill-consumed { background: #d1fae5; color: #065f46; }
+  .pill-na { background: #f3f4f6; color: #6b7280; }
 
   /* Accordion action rows */
   .accordion-actions {

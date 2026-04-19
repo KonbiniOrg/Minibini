@@ -13,15 +13,19 @@
   let entries = $state([]);
 
   $effect(() => {
-    entries = receivableItems.map(li => ({
-      line_item_id: li.line_item_id,
-      line_number: li.line_number,
-      description: li.description,
-      qty_ordered: Number(li.qty),
-      qty_already_received: Number(li.qty_received),
-      qty_receiving: '',
-      note: '',
-    }));
+    entries = receivableItems.map(li => {
+      const remaining = Number(li.qty) - Number(li.qty_received);
+      return {
+        line_item_id: li.line_item_id,
+        line_number: li.line_number,
+        description: li.description,
+        qty_ordered: Number(li.qty),
+        qty_already_received: Number(li.qty_received),
+        // Pre-fill with remaining qty; user can edit (overage allowed).
+        qty_receiving: remaining > 0 ? String(remaining) : '',
+        note: '',
+      };
+    });
   });
 
   function handleSubmit(e) {
@@ -71,7 +75,6 @@
                   bind:value={entries[i].qty_receiving}
                   step="any"
                   min="0"
-                  max={entry.qty_ordered - entry.qty_already_received}
                   style="width:80px;text-align:right;"
                 >
               </td>

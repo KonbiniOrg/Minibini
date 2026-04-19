@@ -35,21 +35,6 @@ class InventoryService:
     # --- QOH operations ---
 
     @staticmethod
-    def receive_po_line_item(po_line_item):
-        """Increase QOH for inventoried PO line items.
-        Creates/updates earmark if line item has a job."""
-        pli = po_line_item.price_list_item
-        if not pli or not pli.is_inventoried:
-            return
-
-        pli.qty_on_hand = F('qty_on_hand') + po_line_item.qty
-        pli.save(update_fields=['qty_on_hand'])
-        pli.refresh_from_db()
-
-        if po_line_item.job:
-            InventoryService._mutate_earmark(pli, po_line_item.job, po_line_item.qty)
-
-    @staticmethod
     def complete_task_adjustment(material, actual_qty):
         """Adjust inventory when task completes and actual quantity differs from estimated.
         If actual < estimated, return excess to stock.
@@ -379,3 +364,103 @@ class MaterialService:
                 raise ValidationError('Cannot assign material to a completed or cancelled task')
         material.task = task
         material.save(update_fields=['task_id'])
+
+    @staticmethod
+    def link_to_po_line(material, po_line):
+        """Set material.po_line_item = po_line. Validates pending + unlinked invariants."""
+        from django.core.exceptions import ValidationError
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Cannot link; Material is not pending.')
+        if material.po_line_item_id is not None and material.po_line_item_id != po_line.pk:
+            raise ValidationError('Material is already linked to a different PO line.')
+        material.po_line_item = po_line
+        material.save(update_fields=['po_line_item'])
+
+    @staticmethod
+    def unlink_from_po_line(material):
+        """Clear material.po_line_item. Validates pending state."""
+        from django.core.exceptions import ValidationError
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Cannot unlink; Material is not pending.')
+        material.po_line_item = None
+        material.save(update_fields=['po_line_item'])
+
+    @staticmethod
+    def sever(material, decision):
+        """'keep' clears FK. 'delete' deletes the Material and backs out earmark.
+        Raises if decision is invalid or Material is consumed."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        if decision not in ('keep', 'delete'):
+            raise ValidationError(f'Unknown sever decision: {decision!r}')
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Cannot sever; Material is not pending.')
+        if decision == 'keep':
+            MaterialService.unlink_from_po_line(material)
+            return
+        with transaction.atomic():
+            InventoryService._mutate_earmark(
+                material.price_list_item, material.job, -material.quantity,
+            )
+            material.delete()
+
+    @staticmethod
+    def resolve_or_create_for_line(po_line, *, job=None, price_list_item=None,
+                                    qty, unit_cost, description,
+                                    accounting_category=None, material_id=None):
+        """Resolver precedence: explicit (material_id) -> claim exactly-one -> create new.
+
+        Returns the linked Material. Raises ValidationError on explicit-link failures.
+
+        Job arg semantics:
+          - If material_id is given, job may be None — the Material's job is used.
+            If both are given, they must match.
+          - If material_id is None, job must be supplied (used for claim/create).
+
+        Note: on explicit and claim paths, the existing Material's qty/unit_cost/
+        description are NOT updated from the PO line. The Material is the source
+        of truth for planned consumption; only the link is established.
+        """
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+
+        with transaction.atomic():
+            # Step 1: explicit link
+            if material_id is not None:
+                try:
+                    mat = Material.objects.select_for_update().get(pk=material_id)
+                except Material.DoesNotExist:
+                    raise ValidationError(f'Material {material_id} not found')
+                if job is not None and mat.job_id != job.pk:
+                    raise ValidationError('Material is not on the requested job')
+                MaterialService.link_to_po_line(mat, po_line)
+                return mat
+
+            # Step 2 and 3 require a job
+            if job is None:
+                raise ValidationError('job is required when material_id is not provided')
+
+            # Step 2: claim exactly-one unlinked pending match
+            if price_list_item is not None:
+                candidates = Material.objects.select_for_update().filter(
+                    job=job,
+                    price_list_item=price_list_item,
+                    consumption_state=Material.CONSUMPTION_STATE_PENDING,
+                    po_line_item__isnull=True,
+                )
+                matches = list(candidates[:2])
+                if len(matches) == 1:
+                    MaterialService.link_to_po_line(matches[0], po_line)
+                    return matches[0]
+
+            # Step 3: create new
+            mat = MaterialService.create_on_job(
+                job=job,
+                price_list_item=price_list_item,
+                description=description,
+                quantity=qty,
+                unit_cost=unit_cost,
+                accounting_category=accounting_category,
+            )
+            MaterialService.link_to_po_line(mat, po_line)
+            return mat

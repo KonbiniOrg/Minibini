@@ -1,11 +1,12 @@
 <script>
   import { api } from '../../lib/api.js';
   import { user } from '../../stores/auth.js';
-  import { push } from 'svelte-spa-router';
+  import { push, querystring } from 'svelte-spa-router';
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
   import SendPODialog from '../../components/purchaseorders/SendPODialog.svelte';
   import ReceiveItemsForm from '../../components/purchaseorders/ReceiveItemsForm.svelte';
+  import MaterialSeverDialog from '../../components/purchaseorders/MaterialSeverDialog.svelte';
   import HistoryPanel from '../../components/HistoryPanel.svelte';
 
   const { params = {} } = $props();
@@ -21,6 +22,28 @@
   let showSendDialog = $state(false);
   let showReceiveForm = $state(false);
   let busy = $state(false);
+  let severPrompt = $state(null); // { items, onSubmit } when showing
+
+  // Prefill state when navigating in with ?prefill_material=...&default_job=...
+  const initialQs = new URLSearchParams($querystring);
+  const prefillMaterialId = initialQs.get('prefill_material');
+  const defaultJobId = initialQs.get('default_job');
+  let prefilledJob = $state(null);
+  let prefilledMaterial = $state(null);
+  let prefilledMaterialIdNum = $state(null);
+  let prefillLoaded = $state(false);
+
+  function collectLinkedMaterials(lines) {
+    return (lines || [])
+      .filter(li => li.material && li.material.consumption_state === 'pending')
+      .map(li => ({
+        material_id: li.material.material_id,
+        line_item_id: li.line_item_id,
+        job_number: li.material.job_number,
+        quantity: li.material.quantity,
+        description: li.description,
+      }));
+  }
 
   let canManageFinancials = $derived(
     $user?.permissions?.includes('can_manage_financials') ?? false
@@ -37,10 +60,37 @@
       ]);
       history = histData;
       categories = catData.results || catData;
+      await loadPrefill();
     } catch (e) {
       loadError = e.message;
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadPrefill() {
+    if (prefillLoaded) return;
+    prefillLoaded = true;
+    if (defaultJobId) {
+      try {
+        prefilledJob = await api.get(`/api/jobs/${defaultJobId}/`);
+      } catch {
+        prefilledJob = null;
+      }
+    }
+    if (prefillMaterialId) {
+      try {
+        prefilledMaterial = await api.get(`/api/materials/${prefillMaterialId}/`);
+        prefilledMaterialIdNum = Number(prefillMaterialId);
+      } catch {
+        prefilledMaterial = null;
+        prefilledMaterialIdNum = null;
+      }
+    }
+    // Auto-open the add-line-item form when we have any prefill context
+    // and the PO is still in draft.
+    if ((prefilledJob || prefilledMaterial) && po?.status === 'draft') {
+      showAddLineItem = true;
     }
   }
 
@@ -78,19 +128,58 @@
   async function handleCancel() {
     const reason = prompt('Reason for cancellation:');
     if (!reason) return;
-    await handleStatusAction('cancel', { reason });
+    const linkedMaterials = collectLinkedMaterials(po.line_items);
+    const runCancel = async (severDecision) => {
+      busy = true;
+      error = null;
+      success = null;
+      try {
+        const payload = { reason };
+        if (severDecision) payload.sever_decision = severDecision;
+        await api.post(`/api/purchase-orders/${po.po_id}/cancel/`, payload);
+        await reload();
+        success = 'Purchase order cancelled.';
+      } catch (e) {
+        error = e.data?.detail || e.data?.reason?.[0] || e.message;
+      } finally {
+        busy = false;
+        severPrompt = null;
+      }
+    };
+    if (linkedMaterials.length > 0) {
+      severPrompt = {
+        items: linkedMaterials,
+        onSubmit: (decisions) => runCancel(decisions),
+      };
+    } else {
+      await runCancel(null);
+    }
   }
 
   async function handleDelete() {
     if (!confirm('Delete this purchase order? This cannot be undone.')) return;
-    busy = true;
-    error = null;
-    try {
-      await api.delete(`/api/purchase-orders/${po.po_id}/?confirm=true`);
-      push('/purchase-orders');
-    } catch (e) {
-      error = e.message;
-      busy = false;
+    const linkedMaterials = collectLinkedMaterials(po.line_items);
+    const runDelete = async (severDecision) => {
+      busy = true;
+      error = null;
+      try {
+        const payload = severDecision ? { sever_decision: severDecision } : null;
+        await api.delete(`/api/purchase-orders/${po.po_id}/?confirm=true`, payload);
+        severPrompt = null;
+        push('/purchase-orders');
+      } catch (e) {
+        error = e.data?.detail || e.message;
+        busy = false;
+        severPrompt = null;
+      }
+    };
+    if (linkedMaterials.length > 0) {
+      severPrompt = {
+        items: linkedMaterials,
+        onSubmit: (decisions) => runDelete(decisions),
+      };
+    } else {
+      await runDelete(null);
     }
   }
 
@@ -177,20 +266,40 @@
   }
 
   async function handleCancelLineItem(lineItemId, note) {
-    busy = true;
-    error = null;
-    success = null;
-    try {
-      await api.post(`/api/purchase-orders/${po.po_id}/cancel-line-item/`, {
-        line_item_id: lineItemId,
-        note,
-      });
-      success = 'Line item cancelled.';
-      await reload();
-    } catch (e) {
-      error = e.data?.detail || e.message;
-    } finally {
-      busy = false;
+    const line = (po.line_items || []).find(li => li.line_item_id === lineItemId);
+    const linked = (line && line.material && line.material.consumption_state === 'pending')
+      ? [{
+          material_id: line.material.material_id,
+          line_item_id: line.line_item_id,
+          job_number: line.material.job_number,
+          quantity: line.material.quantity,
+          description: line.description,
+        }]
+      : [];
+    const runCancelLine = async (severDecision) => {
+      busy = true;
+      error = null;
+      success = null;
+      try {
+        const payload = { line_item_id: lineItemId, note };
+        if (severDecision) payload.sever_decision = severDecision;
+        await api.post(`/api/purchase-orders/${po.po_id}/cancel-line-item/`, payload);
+        success = 'Line item cancelled.';
+        await reload();
+      } catch (e) {
+        error = e.data?.detail || e.message;
+      } finally {
+        busy = false;
+        severPrompt = null;
+      }
+    };
+    if (linked.length > 0) {
+      severPrompt = {
+        items: linked,
+        onSubmit: (decisions) => runCancelLine(decisions),
+      };
+    } else {
+      await runCancelLine(null);
     }
   }
 
@@ -209,6 +318,42 @@
       error = e.data?.detail || e.message;
     } finally {
       busy = false;
+    }
+  }
+
+  async function handleChangeLineJob(lineItemId, newJobId, existingMaterial) {
+    const runPatch = async (severDecision) => {
+      busy = true;
+      error = null;
+      try {
+        const payload = { job: newJobId };
+        if (severDecision) payload.sever_decision = severDecision;
+        await api.patch(
+          `/api/purchase-orders/${po.po_id}/line-items/${lineItemId}/`,
+          payload,
+        );
+        await reload();
+      } catch (e) {
+        error = e.data?.detail || e.message;
+      } finally {
+        busy = false;
+        severPrompt = null;
+      }
+    };
+    if (existingMaterial && existingMaterial.consumption_state === 'pending') {
+      const line = (po.line_items || []).find(li => li.line_item_id === lineItemId);
+      severPrompt = {
+        items: [{
+          material_id: existingMaterial.material_id,
+          line_item_id: lineItemId,
+          job_number: existingMaterial.job_number,
+          quantity: existingMaterial.quantity,
+          description: line?.description ?? existingMaterial.description ?? '',
+        }],
+        onSubmit: (decisions) => runPatch(decisions[lineItemId]),
+      };
+    } else {
+      await runPatch(null);
     }
   }
 
@@ -260,6 +405,7 @@
     onReceiveItems={() => { showReceiveForm = true; }}
     onCancelLineItem={handleCancelLineItem}
     onReverseReceipt={handleReverseReceipt}
+    onChangeLineJob={handleChangeLineJob}
   />
 
   {#if showSendDialog}
@@ -283,6 +429,9 @@
       {#if showAddLineItem}
         <LineItemForm
           {categories}
+          defaultJob={prefilledJob}
+          materialId={prefilledMaterialIdNum}
+          prefillMaterial={prefilledMaterial}
           onSubmit={handleAddLineItem}
           onCancel={() => { showAddLineItem = false; }}
         />
@@ -295,6 +444,14 @@
   <HistoryPanel {history} onAddNote={handleAddNote} />
 
   <p><a href="#/purchase-orders">Back to list</a></p>
+{/if}
+
+{#if severPrompt}
+  <MaterialSeverDialog
+    items={severPrompt.items}
+    onSubmit={severPrompt.onSubmit}
+    onCancel={() => { severPrompt = null; }}
+  />
 {/if}
 
 <style>

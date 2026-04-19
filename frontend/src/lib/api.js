@@ -44,5 +44,5 @@ export const api = {
   post: (url, data) => request('POST', url, data),
   patch: (url, data) => request('PATCH', url, data),
   put: (url, data) => request('PUT', url, data),
-  delete: (url) => request('DELETE', url),
+  delete: (url, data = null) => request('DELETE', url, data),
 };

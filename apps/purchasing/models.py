@@ -357,10 +357,6 @@ class PurchaseOrderLineItem(BaseLineItem):
 
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE)
     task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT, null=True, blank=True)
-    job = models.ForeignKey(
-        'jobs.Job', on_delete=models.SET_NULL,
-        null=True, blank=True,
-    )
 
     # Receiving fields
     qty_received = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -371,6 +367,11 @@ class PurchaseOrderLineItem(BaseLineItem):
     received_date = models.DateTimeField(null=True, blank=True)
     receipt_note = models.TextField(blank=True, default='')
     qty_cancelled = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    @property
+    def linked_material(self):
+        from apps.inventory.models import Material
+        return Material.objects.filter(po_line_item=self).first()
 
     class Meta:
         db_table = 'po_li'

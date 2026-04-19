@@ -1034,6 +1034,7 @@ class BoardService:
         """Compute billed/spent/profit for a job."""
         from apps.invoicing.models import InvoiceLineItem
         from apps.purchasing.models import PurchaseOrderLineItem
+        from apps.inventory.models import Material
         from apps.jobs.models import Blep
 
         billed = InvoiceLineItem.objects.filter(
@@ -1044,8 +1045,11 @@ class BoardService:
             total=models.Sum(models.F('qty') * models.F('price'))
         )['total'] or Decimal('0.00')
 
+        line_ids = Material.objects.filter(
+            job=job, po_line_item__isnull=False,
+        ).values_list('po_line_item_id', flat=True)
         material_cost = PurchaseOrderLineItem.objects.filter(
-            job=job
+            line_item_id__in=line_ids,
         ).exclude(
             purchase_order__status='cancelled'
         ).aggregate(

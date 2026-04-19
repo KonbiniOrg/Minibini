@@ -20,13 +20,14 @@ class POLineItemSerializer(serializers.ModelSerializer):
     received_by_name = serializers.SerializerMethodField()
     effective_job_id = serializers.SerializerMethodField()
     effective_job_number = serializers.SerializerMethodField()
+    material = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseOrderLineItem
         fields = [
             'line_item_id', 'line_number', 'task', 'price_list_item',
-            'qty', 'units', 'description', 'price', 'job',
-            'effective_job_id', 'effective_job_number',
+            'qty', 'units', 'description', 'price',
+            'effective_job_id', 'effective_job_number', 'material',
             'accounting_category', 'taxable_override', 'tax_rate_override',
             'qty_received', 'received_by', 'received_by_name',
             'received_date', 'receipt_note', 'qty_cancelled',
@@ -34,7 +35,7 @@ class POLineItemSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'line_item_id', 'qty_received', 'received_by', 'received_by_name',
             'received_date', 'receipt_note', 'qty_cancelled',
-            'effective_job_id', 'effective_job_number',
+            'effective_job_id', 'effective_job_number', 'material',
         ]
 
     def get_received_by_name(self, obj):
@@ -42,20 +43,29 @@ class POLineItemSerializer(serializers.ModelSerializer):
             return obj.received_by.get_full_name() or obj.received_by.username
         return None
 
-    def _effective_job(self, obj):
-        if obj.job_id:
-            return obj.job
-        if obj.task_id and obj.task.job_id:
-            return obj.task.job
-        return None
+    def _material(self, obj):
+        return obj.linked_material
 
     def get_effective_job_id(self, obj):
-        job = self._effective_job(obj)
-        return job.pk if job else None
+        mat = self._material(obj)
+        return mat.job_id if mat else None
 
     def get_effective_job_number(self, obj):
-        job = self._effective_job(obj)
-        return job.job_number if job else None
+        mat = self._material(obj)
+        return mat.job.job_number if mat else None
+
+    def get_material(self, obj):
+        mat = self._material(obj)
+        if mat is None:
+            return None
+        return {
+            'material_id': mat.pk,
+            'description': mat.description,
+            'quantity': str(mat.quantity),
+            'consumption_state': mat.consumption_state,
+            'job_id': mat.job_id,
+            'job_number': mat.job.job_number,
+        }
 
 
 

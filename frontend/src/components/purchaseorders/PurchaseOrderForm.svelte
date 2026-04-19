@@ -7,6 +7,7 @@
     onSubmit,
     onCancel,
     errors = null,
+    contextJob = null,
   } = $props();
 
   let form = $state({
@@ -84,6 +85,10 @@
 <form onsubmit={handleSubmit}>
   {#if errors}
     <p><strong>Error:</strong> {errors}</p>
+  {/if}
+
+  {#if contextJob}
+    <p><strong>For job: <a href="#/jobs/{contextJob.job_id}">{contextJob.job_number}</a></strong></p>
   {/if}
 
   <p>
