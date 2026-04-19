@@ -123,7 +123,7 @@
             <select bind:value={templateId}>
               <option value="">-- Select template --</option>
               {#each templates as tmpl}
-                <option value={tmpl.task_template_id}>{tmpl.name}</option>
+                <option value={tmpl.template_id}>{tmpl.template_name}</option>
               {/each}
             </select>
           </label>
