@@ -343,3 +343,39 @@ class RemoveAtomsFromLineItemTest(TestCase):
         self.assertTrue(result['line_item_deleted'])
         from apps.estimates.models import EstimateLineItem
         self.assertFalse(EstimateLineItem.objects.filter(pk=self.li.pk).exists())
+
+    def test_deletes_line_item_even_if_overridden(self):
+        """Removing all sources deletes the line item regardless of price override."""
+        self.li.price = Decimal('999.00')
+        self.li.save()
+        all_ids = list(self.li.sources.values_list('source_id', flat=True))
+        result = EstimateWizardService.remove_atoms_from_line_item(self.li, all_ids)
+        self.assertTrue(result['line_item_deleted'])
+        from apps.estimates.models import EstimateLineItem
+        self.assertFalse(EstimateLineItem.objects.filter(pk=self.li.pk).exists())
+
+    def test_refuses_mutation_on_non_draft_estimate(self):
+        """Wizard refuses remove operation on non-draft estimates."""
+        # Bypass model transition validation (same pattern used elsewhere in this file)
+        Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_OPEN)
+        self.estimate.refresh_from_db()
+        self.li.estimate = self.estimate  # refresh the cached estimate on the line item
+        src_to_remove = self.li.sources.first()
+        with self.assertRaises(ValidationError):
+            EstimateWizardService.remove_atoms_from_line_item(
+                self.li, [src_to_remove.source_id],
+            )
+
+    def test_recomputes_per_unit_when_in_sync_with_qty_gt_1(self):
+        """Recompute uses per-unit math: new_price = sum / qty."""
+        # Set qty to 2 and in-sync price to sum/qty = 200/2 = 100
+        self.li.qty = Decimal('2')
+        self.li.price = Decimal('100.00')
+        self.li.save()
+        src_to_remove = self.li.sources.filter(source_pk=self.pc1.pk).first()
+        EstimateWizardService.remove_atoms_from_line_item(
+            self.li, [src_to_remove.source_id],
+        )
+        self.li.refresh_from_db()
+        # After removal: remaining sum = $100, qty=2, expected = 50.00
+        self.assertEqual(self.li.price, Decimal('50.00'))
