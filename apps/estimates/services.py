@@ -876,3 +876,142 @@ class EstimateWizardService:
             worksheet.estimate = estimate
             worksheet.save()
         return estimate
+
+    @staticmethod
+    def _resolve_atom(atom_ref):
+        """Convert {'type': 'plan_charge'|'plan_material', 'id': N} to a model instance."""
+        from apps.jobs.models import PlanCharge
+        from apps.inventory.models import PlanMaterial
+        atom_type = atom_ref.get('type')
+        atom_id = atom_ref.get('id')
+        if atom_type == 'plan_charge':
+            try:
+                return PlanCharge.objects.get(pk=atom_id)
+            except PlanCharge.DoesNotExist:
+                raise ValidationError(f'PlanCharge {atom_id} not found')
+        if atom_type == 'plan_material':
+            try:
+                return PlanMaterial.objects.get(pk=atom_id)
+            except PlanMaterial.DoesNotExist:
+                raise ValidationError(f'PlanMaterial {atom_id} not found')
+        raise ValidationError(f'Unknown atom type: {atom_type}')
+
+    @staticmethod
+    def _atom_source_type(atom_instance):
+        from apps.jobs.models import PlanCharge
+        from apps.inventory.models import PlanMaterial
+        from apps.estimates.models import EstimateLineItemSource
+        if isinstance(atom_instance, PlanCharge):
+            return EstimateLineItemSource.SOURCE_PLAN_CHARGE
+        if isinstance(atom_instance, PlanMaterial):
+            return EstimateLineItemSource.SOURCE_PLAN_MATERIAL
+        raise ValueError(f'Unknown atom instance type: {type(atom_instance)}')
+
+    @staticmethod
+    def _atom_category(atom_instance):
+        from apps.jobs.models import PlanCharge
+        from apps.inventory.models import PlanMaterial
+        if isinstance(atom_instance, PlanCharge):
+            return atom_instance.plan_task.accounting_category
+        if isinstance(atom_instance, PlanMaterial):
+            return atom_instance.accounting_category
+        return None
+
+    @staticmethod
+    def _atom_description(atom_instance):
+        from apps.jobs.models import PlanCharge
+        from apps.inventory.models import PlanMaterial
+        if isinstance(atom_instance, PlanCharge):
+            return atom_instance.plan_task.name
+        if isinstance(atom_instance, PlanMaterial):
+            return atom_instance.description
+        return ''
+
+    @staticmethod
+    def _atom_units(atom_instance):
+        from apps.jobs.models import PlanCharge
+        from apps.inventory.models import PlanMaterial
+        if isinstance(atom_instance, PlanCharge):
+            return atom_instance.plan_task.units
+        if isinstance(atom_instance, PlanMaterial):
+            return 'each'
+        return 'each'
+
+    @staticmethod
+    def get_source_pool(worksheet):
+        """Walk the worksheet's atoms and return a flat pool with claim state.
+
+        Returns: {'atoms': [
+            {'type': 'plan_charge'|'plan_material', 'id': N, 'description': str,
+             'amount': Decimal, 'state': 'available'|'claimed_by_current'|'claimed_by_other',
+             'category_id': N or None, 'units': str}
+        ]}
+        """
+        from apps.estimates.models import EstimateLineItemSource, Estimate
+        from apps.jobs.models import PlanCharge
+        from apps.inventory.models import PlanMaterial
+
+        # Build the claim lookup: (source_type, source_pk) -> state info
+        # Plan-side does NOT release on supersede, so we don't filter by status.
+        claimed_sources = (
+            EstimateLineItemSource.objects
+            .filter(estimate_line_item__estimate__job=worksheet.job)
+            .select_related('estimate_line_item', 'estimate_line_item__estimate')
+        )
+        current_estimate_pk = worksheet.estimate_id
+        claims = {}
+        for src in claimed_sources:
+            li = src.estimate_line_item
+            est = li.estimate
+            key = (src.source_type, src.source_pk)
+            if est.pk == current_estimate_pk:
+                claims[key] = {
+                    'state': 'claimed_by_current',
+                    'claiming_line_item_id': li.pk,
+                    'claiming_estimate_id': None,
+                    'claiming_estimate_number': None,
+                }
+            else:
+                claims[key] = {
+                    'state': 'claimed_by_other',
+                    'claiming_line_item_id': None,
+                    'claiming_estimate_id': est.pk,
+                    'claiming_estimate_number': est.estimate_number,
+                }
+
+        default_state = {
+            'state': 'available',
+            'claiming_line_item_id': None,
+            'claiming_estimate_id': None,
+            'claiming_estimate_number': None,
+        }
+
+        atoms = []
+
+        for pc in PlanCharge.objects.filter(plan_task__est_worksheet=worksheet).select_related('plan_task', 'plan_task__accounting_category', 'rate_scheme'):
+            key = (EstimateLineItemSource.SOURCE_PLAN_CHARGE, pc.pk)
+            state_info = claims.get(key, default_state)
+            atoms.append({
+                'type': 'plan_charge',
+                'id': pc.pk,
+                'description': pc.plan_task.name,
+                'amount': pc.compute_amount(),
+                'units': pc.plan_task.units,
+                'category_id': pc.plan_task.accounting_category_id,
+                **state_info,
+            })
+
+        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related('accounting_category'):
+            key = (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk)
+            state_info = claims.get(key, default_state)
+            atoms.append({
+                'type': 'plan_material',
+                'id': pm.pk,
+                'description': pm.description,
+                'amount': pm.compute_amount(),
+                'units': 'each',
+                'category_id': pm.accounting_category_id,
+                **state_info,
+            })
+
+        return {'atoms': atoms}
