@@ -1062,3 +1062,66 @@ class EstimateWizardService:
             raise EstimateClaimConflict(atom_ids=conflicts)
 
         return line_item
+
+    @staticmethod
+    def _sum_sources(line_item):
+        """Sum the computed amounts of all source atoms on a line item."""
+        total = Decimal('0.00')
+        for src in line_item.sources.all():
+            instance = src.resolve()
+            total += instance.compute_amount()
+        return total
+
+    @staticmethod
+    def _expected_per_unit(sum_value, qty):
+        """The per-unit price the wizard would compute right now: round(sum/qty, 2)."""
+        if not qty:
+            return Decimal('0.00')
+        return (sum_value / qty).quantize(Decimal('0.01'))
+
+    @staticmethod
+    def _is_in_sync(line_item, sum_value):
+        """In sync iff price == round(sum / qty, 2)."""
+        if not line_item.qty:
+            return False
+        return line_item.price == EstimateWizardService._expected_per_unit(sum_value, line_item.qty)
+
+    @staticmethod
+    def add_atoms_to_line_item(line_item, atoms):
+        """Append N atoms as sources to an existing line item.
+
+        Recomputes the line item's price if it was in sync before the operation;
+        preserves an overridden price otherwise.
+        """
+        from django.db import IntegrityError
+        from apps.estimates.models import EstimateLineItemSource
+
+        EstimateWizardService._validate_draft_estimate(line_item.estimate)
+
+        old_sum = EstimateWizardService._sum_sources(line_item)
+        was_in_sync = EstimateWizardService._is_in_sync(line_item, old_sum)
+
+        instances = [EstimateWizardService._resolve_atom(a) for a in atoms]
+
+        try:
+            with transaction.atomic():
+                for instance in instances:
+                    EstimateLineItemSource.objects.create(
+                        estimate_line_item=line_item,
+                        source_type=EstimateWizardService._atom_source_type(instance),
+                        source_pk=instance.pk,
+                    )
+                if was_in_sync:
+                    new_sum = EstimateWizardService._sum_sources(line_item)
+                    line_item.price = EstimateWizardService._expected_per_unit(new_sum, line_item.qty)
+                    line_item.save()
+        except IntegrityError:
+            existing = set(
+                EstimateLineItemSource.objects
+                .filter(source_type__in=[a['type'] for a in atoms])
+                .values_list('source_type', 'source_pk')
+            )
+            conflicts = [a for a in atoms if (a['type'], a['id']) in existing]
+            raise EstimateClaimConflict(atom_ids=conflicts)
+
+        return line_item
