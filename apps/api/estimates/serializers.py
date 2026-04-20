@@ -3,8 +3,30 @@ from apps.estimates.models import Estimate, EstimateLineItem
 from apps.core.units import UnitsField
 
 
+class EstimateLineItemSourceSerializer(serializers.Serializer):
+    """Serializer for EstimateLineItemSource that resolves the atom for display."""
+    source_id = serializers.IntegerField(read_only=True)
+    source_type = serializers.CharField(read_only=True)
+    source_pk = serializers.IntegerField(read_only=True)
+    description = serializers.SerializerMethodField()
+    computed_amount = serializers.SerializerMethodField()
+
+    def get_description(self, obj):
+        instance = obj.resolve()
+        from apps.jobs.models import PlanCharge
+        if isinstance(instance, PlanCharge):
+            return instance.plan_task.name
+        return instance.description  # PlanMaterial
+
+    def get_computed_amount(self, obj):
+        from decimal import Decimal
+        instance = obj.resolve()
+        return str(instance.compute_amount().quantize(Decimal('0.01')))
+
+
 class EstimateLineItemSerializer(serializers.ModelSerializer):
     units = UnitsField()
+    sources = EstimateLineItemSourceSerializer(many=True, read_only=True)
 
     class Meta:
         model = EstimateLineItem
@@ -12,6 +34,7 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'line_item_id', 'line_number', 'task', 'price_list_item',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'taxable_override', 'tax_rate_override',
+            'sources',
         ]
         read_only_fields = ['line_item_id']
 

@@ -108,6 +108,19 @@ class EstimateWizardAPITest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()['line_item_deleted'])
 
+    def test_line_items_list_includes_sources(self):
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'plan_charge', 'id': self.pc.pk}],
+        )
+        url = f'/api/estimates/{self.estimate.pk}/line-items/'
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        items = data.get('results', data) if isinstance(data, dict) else data  # handle pagination
+        match = next(i for i in items if i['line_item_id'] == li.pk)
+        self.assertEqual(len(match['sources']), 1)
+        self.assertEqual(match['sources'][0]['source_type'], 'plan_charge')
+
 
 class SendAllAtomsAPITest(TestCase):
     def setUp(self):
