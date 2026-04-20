@@ -947,7 +947,7 @@ class EstimateWizardService:
              'category_id': N or None, 'units': str}
         ]}
         """
-        from apps.estimates.models import EstimateLineItemSource, Estimate
+        from apps.estimates.models import EstimateLineItemSource
         from apps.jobs.models import PlanCharge
         from apps.inventory.models import PlanMaterial
 
