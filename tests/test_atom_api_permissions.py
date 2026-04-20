@@ -226,7 +226,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         ('delete', '/api/est-worksheets/1/', None),
         ('post', '/api/est-worksheets/1/tasks/', {'name': 'Test'}),
         ('post', '/api/est-worksheets/1/bundles/', {'name': 'Test'}),
-        ('post', '/api/est-worksheets/1/generate-estimate/', {}),
         ('post', '/api/est-worksheets/1/revise/', {}),
     ]
 

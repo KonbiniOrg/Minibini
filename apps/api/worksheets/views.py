@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.estimates.models import EstWorksheet
-from apps.estimates.services import WorksheetService, EstimateGenerationService
+from apps.estimates.services import WorksheetService
 from django.core.exceptions import ValidationError
 from apps.core.services import ServiceError, NotFoundError
 from apps.api.mixins import StatusTransitionMixin, PlanTaskBundleMixin
@@ -172,18 +172,3 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.M
             'created_count': result['created_count'],
         })
 
-    @action(detail=True, methods=['post'], url_path='generate-estimate')
-    def generate_estimate(self, request, pk=None):
-        worksheet = self.get_object()
-        try:
-            service = EstimateGenerationService()
-            estimate = service.generate_estimate_from_worksheet(worksheet)
-        except ServiceError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({
-            'detail': 'Estimate generated.',
-            'estimate_id': estimate.pk,
-            'estimate_number': estimate.estimate_number,
-        })

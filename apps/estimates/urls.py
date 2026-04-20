@@ -15,7 +15,6 @@ urlpatterns = [
     path('create-for-job/<int:job_id>/', views.estimate_create_for_job, name='estimate_create_for_job'),
     path('worksheets/', views.estworksheet_list, name='estworksheet_list'),
     path('worksheets/<int:worksheet_id>/', views.estworksheet_detail, name='estworksheet_detail'),
-    path('worksheets/<int:worksheet_id>/generate-estimate/', views.estworksheet_generate_estimate, name='estworksheet_generate_estimate'),
     path('worksheets/<int:worksheet_id>/revise/', views.estworksheet_revise, name='estworksheet_revise'),
     path('worksheets/<int:worksheet_id>/add-task-from-template/', views.task_add_from_template, name='task_add_from_template'),
     path('worksheets/<int:worksheet_id>/add-task-manual/', views.task_add_manual, name='task_add_manual'),
