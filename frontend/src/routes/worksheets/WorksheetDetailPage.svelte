@@ -1,5 +1,5 @@
 <script>
-  import { link } from 'svelte-spa-router';
+  import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import WorksheetTaskTable from '../../components/WorksheetTaskTable.svelte';
@@ -215,6 +215,35 @@
     }
   }
 
+  // Send all atoms / open wizard
+  let sendingAll = $state(false);
+
+  async function sendAllAtoms() {
+    if (!confirm('Send all unclaimed atoms to the estimate as 1:1 line items?')) return;
+    sendingAll = true;
+    try {
+      const result = await api.post(
+        `/api/est-worksheets/${params.id}/send-all-atoms-to-estimate/`
+      );
+      push(`/estimates/${result.estimate_id}`);
+    } catch (e) {
+      alert(e.message || 'Failed to send atoms');
+    } finally {
+      sendingAll = false;
+    }
+  }
+
+  async function openWizard() {
+    try {
+      const result = await api.post(
+        `/api/est-worksheets/${params.id}/send-all-atoms-to-estimate/`
+      );
+      push(`/estimates/${result.estimate_id}/wizard`);
+    } catch (e) {
+      alert(e.message || 'Failed to open wizard');
+    }
+  }
+
   // Generate estimate
   let generating = $state(false);
   async function generateEstimate() {
@@ -253,6 +282,10 @@
     <div class="action-bar">
       <button type="button" onclick={openAddTask}>Add Task</button>
       <button type="button" onclick={openAddBundle}>Create Bundle</button>
+      <button type="button" onclick={sendAllAtoms} disabled={sendingAll}>
+        {sendingAll ? 'Sending…' : 'Send all atoms to estimate'}
+      </button>
+      <button type="button" onclick={openWizard}>Open wizard to group atoms</button>
       {#if worksheet.status === 'draft' || worksheet.status === 'final'}
         <button type="button" onclick={generateEstimate} disabled={generating}>
           {generating ? 'Generating...' : 'Generate Estimate'}
