@@ -157,47 +157,17 @@ class PlanTask(TaskBase):
         'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_tasks'
     )
 
-    MAPPING_CHOICES = [
-        ('direct', 'Direct'),
-        ('bundle', 'Bundle'),
-        ('exclude', 'Exclude'),
-    ]
-    mapping_strategy = models.CharField(max_length=20, choices=MAPPING_CHOICES, default='direct')
-    bundle = models.ForeignKey(
-        'PlanBundle',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='plan_tasks'
-    )
-
     class Meta:
         db_table = 'plan_tasks'
 
-    def clean(self):
-        from django.core.exceptions import ValidationError
-        if self.mapping_strategy == 'bundle' and not self.bundle:
-            raise ValidationError("Bundled plan tasks must have a bundle assigned")
-        if self.bundle and self.mapping_strategy != 'bundle':
-            raise ValidationError("Plan tasks with a bundle must use 'bundle' mapping strategy")
-
     def save(self, *args, **kwargs):
-        """Auto-assign sort_order at the worksheet level (tasks + bundles share the ordering space)."""
+        """Auto-assign sort_order at the worksheet level."""
         from django.db import transaction
         if self.sort_order is None:
             with transaction.atomic():
-                if self.bundle:
-                    max_order = PlanTask.objects.filter(bundle=self.bundle).aggregate(
-                        models.Max('sort_order')
-                    )['sort_order__max'] or 0
-                else:
-                    max_task = PlanTask.objects.filter(
-                        bundle__isnull=True, est_worksheet=self.est_worksheet
-                    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-                    max_bundle = PlanBundle.objects.filter(
-                        est_worksheet=self.est_worksheet
-                    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-                    max_order = max(max_task, max_bundle)
+                max_order = PlanTask.objects.filter(
+                    est_worksheet=self.est_worksheet
+                ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
                 self.sort_order = max_order + 1
         self.full_clean()
         super().save(*args, **kwargs)
@@ -278,35 +248,6 @@ class Task(TaskBase):
         self.full_clean()
         super().save(*args, **kwargs)
 
-
-class PlanBundle(models.Model):
-    """Instance-level grouping of PlanTasks within a worksheet.
-
-    Parallel to TemplateBundle, but lives on the worksheet instance.
-    PlanTasks with mapping_strategy='bundle' point to a PlanBundle, and
-    the bundle becomes a single line item on the estimate.
-    """
-    plan_bundle_id = models.AutoField(primary_key=True)
-    est_worksheet = models.ForeignKey(
-        'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_bundles'
-    )
-    name = models.CharField(max_length=100)
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
-        on_delete=models.PROTECT
-    )
-    sort_order = models.IntegerField(default=0)
-    source_template_bundle = models.ForeignKey(
-        'estimates.TemplateBundle', on_delete=models.SET_NULL,
-        null=True, blank=True
-    )
-
-    class Meta:
-        db_table = 'plan_bundles'
-        ordering = ['sort_order', 'name']
-
-    def __str__(self):
-        return f"{self.est_worksheet} - {self.name}"
 
 
 class Blep(models.Model):

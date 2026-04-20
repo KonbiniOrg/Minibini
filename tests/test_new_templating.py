@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.db.models import ProtectedError
 from django.core.exceptions import ValidationError
 
-from apps.jobs.models import PlanBundle, Job, PlanTask
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact

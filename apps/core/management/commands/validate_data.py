@@ -26,8 +26,7 @@ Per-model field checks:
                    W  accepted/rejected/superseded/expired: missing closed_date
   EstWorksheet     E  valid status value
   Task             E  must belong to a Job
-                   E  mapping_strategy='bundle' requires bundle; bundle requires strategy='bundle'
-  PlanBundle       E  must belong to an EstWorksheet
+                   E  must belong to an EstWorksheet
   Material         E  must have description or price_list_item
                    E  negative quantity
                    W  has PLI but empty description (--fix: auto-fill)
@@ -66,7 +65,6 @@ Cross-model relationship checks:
   Worksheet ver.   E  parent version must be lower than child
                    E  parent must belong to same job
                    W  parent should be 'superseded'
-  Task/Bundle      E  task's bundle must be on the same container as the task
   Bundle/Tasks     E  all tasks in a bundle must be on the bundle's container
   EstLineItem/Job  E  task-sourced line item's job must match estimate's job
   PO contact/biz   E  contact's business must match PO's business
@@ -236,25 +234,9 @@ class Command(BaseCommand):
             if not t.job_id:
                 self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
         # Plan tasks: PlanTask is worksheet-only
-        for t in PlanTask.objects.select_related('est_worksheet', 'bundle').all():
+        for t in PlanTask.objects.select_related('est_worksheet').all():
             if not t.est_worksheet_id:
                 self.errors.append(f'PlanTask {t.pk} ({t.name}): not attached to an EstWorksheet')
-            if t.mapping_strategy == 'bundle' and not t.bundle:
-                self.errors.append(f'PlanTask {t.pk} ({t.name}): mapping_strategy=bundle but no bundle assigned')
-            if t.bundle and t.mapping_strategy != 'bundle':
-                self.errors.append(
-                    f'PlanTask {t.pk} ({t.name}): has bundle but mapping_strategy={t.mapping_strategy}'
-                )
-
-    # ── PlanBundles ───────────────────────────────────────────
-
-    def check_task_bundles(self):
-        from apps.jobs.models import PlanBundle
-        for pb in PlanBundle.objects.select_related('est_worksheet').all():
-            if not pb.est_worksheet_id:
-                self.errors.append(
-                    f'PlanBundle {pb.pk} ({pb.name}): not attached to an EstWorksheet'
-                )
 
     # ── Materials ─────────────────────────────────────────────
 
@@ -615,32 +597,6 @@ class Command(BaseCommand):
                     f'EstWorksheet {ws.pk}: job is {ws.job_id} but '
                     f'parent worksheet belongs to job {ws.parent.job_id}'
                 )
-
-    def check_task_container_job_consistency(self):
-        """PlanTasks with a bundle should share the same worksheet as the bundle."""
-        from apps.jobs.models import PlanTask
-
-        for t in PlanTask.objects.select_related(
-            'est_worksheet__job', 'bundle'
-        ).all():
-            if t.bundle and t.bundle.est_worksheet_id != t.est_worksheet_id:
-                self.errors.append(
-                    f'PlanTask {t.pk} ({t.name}): bundle {t.bundle.pk} belongs to '
-                    f'worksheet {t.bundle.est_worksheet_id}, task is on worksheet {t.est_worksheet_id}'
-                )
-
-    def check_bundle_container_consistency(self):
-        """PlanBundles should only contain PlanTasks from the same worksheet."""
-        from apps.jobs.models import PlanBundle, PlanTask
-
-        for pb in PlanBundle.objects.select_related('est_worksheet').all():
-            plan_tasks = PlanTask.objects.filter(bundle=pb)
-            for t in plan_tasks:
-                if t.est_worksheet_id != pb.est_worksheet_id:
-                    self.errors.append(
-                        f'PlanBundle {pb.pk} ({pb.name}): contains plan task {t.pk} from '
-                        f'worksheet {t.est_worksheet_id}, bundle is on worksheet {pb.est_worksheet_id}'
-                    )
 
     def check_estimate_line_item_job_consistency(self):
         """EstimateLineItems with a task source: the task's worksheet should

@@ -4,7 +4,6 @@
   import { user as userStore } from '../../stores/auth.js';
   import WorksheetTaskTable from '../../components/WorksheetTaskTable.svelte';
   import PlanTaskModal from '../../components/PlanTaskModal.svelte';
-  import PlanBundleModal from '../../components/PlanBundleModal.svelte';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
 
   let { params = {} } = $props();
@@ -19,10 +18,6 @@
   let taskModalOpen = $state(false);
   let taskModalMode = $state('create-freeform');
   let taskModalTask = $state(null);
-
-  let bundleModalOpen = $state(false);
-  let bundleModalMode = $state('create');
-  let bundleModalBundle = $state(null);
 
   let materialModalOpen = $state(false);
   let materialModalMode = $state('create');
@@ -106,35 +101,6 @@
     reload();
   }
 
-  // Bundle modal handlers
-  function openAddBundle() {
-    bundleModalBundle = null;
-    bundleModalMode = 'create';
-    bundleModalOpen = true;
-  }
-
-  function openEditBundle(bundle) {
-    bundleModalBundle = bundle;
-    bundleModalMode = 'edit';
-    bundleModalOpen = true;
-  }
-
-  async function handleDeleteBundle(bundle) {
-    if (!confirm(`Delete bundle "${bundle.name}"? Tasks will be unbundled.`)) return;
-    try {
-      await api.delete(`/api/est-worksheets/${worksheet.est_worksheet_id}/bundles/${bundle.plan_bundle_id}/`);
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not delete bundle.');
-    }
-  }
-
-  function handleBundleSaved() {
-    bundleModalOpen = false;
-    bundleModalBundle = null;
-    reload();
-  }
-
   // Material modal handlers
   function openAddMaterial(task) {
     materialModalMaterial = null;
@@ -181,40 +147,6 @@
     }
   }
 
-  async function handleReorderInBundle(task, direction) {
-    try {
-      await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/reorder-in-bundle/`, {
-        task_id: task.plan_task_id,
-        direction,
-      });
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not reorder in bundle.');
-    }
-  }
-
-  async function handleMoveToBundle(task, bundleId) {
-    try {
-      await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/bundles/${bundleId}/add-tasks/`, {
-        task_ids: [task.plan_task_id],
-      });
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not move task to bundle.');
-    }
-  }
-
-  async function handleRemoveFromBundle(task, bundle) {
-    try {
-      await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/bundles/${bundle.plan_bundle_id}/remove-tasks/`, {
-        task_ids: [task.plan_task_id],
-      });
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not remove task from bundle.');
-    }
-  }
-
   // Send all atoms / open wizard
   let sendingAll = $state(false);
 
@@ -243,21 +175,6 @@
       alert(e.message || 'Failed to open wizard');
     }
   }
-
-  // Generate estimate
-  let generating = $state(false);
-  async function generateEstimate() {
-    if (!confirm('Generate an estimate from this worksheet?')) return;
-    generating = true;
-    try {
-      const result = await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/generate-estimate/`);
-      // Redirect to job page where the new estimate will appear
-      window.location.hash = `/jobs/${worksheet.job}`;
-    } catch (e) {
-      alert(e.message || 'Could not generate estimate.');
-      generating = false;
-    }
-  }
 </script>
 
 {#if loading}
@@ -281,16 +198,10 @@
   {#if canEdit}
     <div class="action-bar">
       <button type="button" onclick={openAddTask}>Add Task</button>
-      <button type="button" onclick={openAddBundle}>Create Bundle</button>
       <button type="button" onclick={sendAllAtoms} disabled={sendingAll}>
         {sendingAll ? 'Sending…' : 'Send all atoms to estimate'}
       </button>
       <button type="button" onclick={openWizard}>Open wizard to group atoms</button>
-      {#if worksheet.status === 'draft' || worksheet.status === 'final'}
-        <button type="button" onclick={generateEstimate} disabled={generating}>
-          {generating ? 'Generating...' : 'Generate Estimate'}
-        </button>
-      {/if}
     </div>
   {/if}
 
@@ -302,12 +213,7 @@
     onAddMaterial={openAddMaterial}
     onEditMaterial={openEditMaterial}
     onDeleteMaterial={handleDeleteMaterial}
-    onEditBundle={openEditBundle}
-    onDeleteBundle={handleDeleteBundle}
     onReorder={handleReorder}
-    onReorderInBundle={handleReorderInBundle}
-    onMoveToBundle={handleMoveToBundle}
-    onRemoveFromBundle={handleRemoveFromBundle}
   />
 
   <!-- Modals -->
@@ -320,16 +226,6 @@
     {categories}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
-  />
-
-  <PlanBundleModal
-    open={bundleModalOpen}
-    mode={bundleModalMode}
-    bundle={bundleModalBundle}
-    worksheetId={worksheet.est_worksheet_id}
-    {categories}
-    onSaved={handleBundleSaved}
-    onClose={() => { bundleModalOpen = false; }}
   />
 
   <PlanMaterialModal

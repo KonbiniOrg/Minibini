@@ -249,7 +249,7 @@ class EstWorksheet(AbstractWorkContainer):
 
     def create_new_version(self):
         """Create a new version of this worksheet, marking this one as superseded."""
-        from apps.jobs.models import PlanTask, PlanBundle
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
 
         # Mark current worksheet as superseded
@@ -266,21 +266,8 @@ class EstWorksheet(AbstractWorkContainer):
             estimate=None  # New version starts without an estimate
         )
 
-        # Copy PlanBundles, mapping old bundle PKs to new ones
-        bundle_mapping = {}
-        for bundle in self.plan_bundles.all():
-            new_bundle = PlanBundle.objects.create(
-                est_worksheet=new_worksheet,
-                name=bundle.name,
-                accounting_category=bundle.accounting_category,
-                sort_order=bundle.sort_order,
-                source_template_bundle=bundle.source_template_bundle,
-            )
-            bundle_mapping[bundle.pk] = new_bundle
-
         # Copy all plan tasks to the new worksheet
         for plan_task in self.plan_tasks.all():
-            new_bundle = bundle_mapping.get(plan_task.bundle_id) if plan_task.bundle_id else None
             new_plan_task = PlanTask.objects.create(
                 est_worksheet=new_worksheet,
                 name=plan_task.name,
@@ -289,8 +276,6 @@ class EstWorksheet(AbstractWorkContainer):
                 rate=plan_task.rate,
                 est_qty=plan_task.est_qty,
                 accounting_category=plan_task.accounting_category,
-                mapping_strategy=plan_task.mapping_strategy,
-                bundle=new_bundle,
             )
 
             # Copy plan materials to the new plan task
@@ -336,45 +321,21 @@ class WorkTemplate(models.Model):
         return self.template_name
 
     def generate_tasks_for_worksheet(self, worksheet, quantity=1):
-        """Generate all plan tasks for a worksheet, with proper product grouping and bundling."""
-        from apps.jobs.models import PlanBundle
-
+        """Generate all plan tasks for a worksheet from this template."""
         generated_tasks = []
 
         for instance in range(1, quantity + 1):
-            bundle_identifier = f"{self.template_name}_{worksheet.est_worksheet_id}_{instance}"
-
-            # Create PlanBundles from TemplateBundles
-            template_to_instance_bundle = {}
-            for template_bundle in self.bundles.all():
-                plan_bundle = PlanBundle.objects.create(
-                    est_worksheet=worksheet,
-                    name=template_bundle.name,
-                    accounting_category=template_bundle.accounting_category,
-                    sort_order=template_bundle.sort_order,
-                    source_template_bundle=template_bundle,
-                )
-                template_to_instance_bundle[template_bundle.pk] = plan_bundle
-
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
                 work_template=self,
                 task_template__is_active=True
-            ).select_related('bundle').order_by('sort_order', 'task_template__template_name')
+            ).order_by('sort_order', 'task_template__template_name')
 
             for association in associations:
-                # Resolve instance-level bundle for this association
-                instance_bundle = None
-                if association.bundle_id:
-                    instance_bundle = template_to_instance_bundle.get(association.bundle_id)
-
                 task = association.task_template.generate_task(
                     worksheet,
                     est_qty=association.est_qty,
-                    bundle_identifier=bundle_identifier,
                     product_instance=instance if quantity > 1 else None,
-                    mapping_strategy=association.mapping_strategy,
-                    bundle=instance_bundle,
                     sort_order=association.sort_order,
                 )
                 generated_tasks.append(task)
@@ -523,8 +484,8 @@ class TaskTemplate(models.Model):
         return self.template_name
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
-                       assignee=None, mapping_strategy='direct', bundle=None, sort_order=None):
-        """Generate a PlanTask or Task from this template with specified quantity and mapping config.
+                       assignee=None, sort_order=None):
+        """Generate a PlanTask or Task from this template with specified quantity.
 
         The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
         """
@@ -551,8 +512,6 @@ class TaskTemplate(models.Model):
                 rate=self.rate,
                 est_qty=est_qty,
                 accounting_category=self.accounting_category,
-                mapping_strategy=mapping_strategy,
-                bundle=bundle,
                 sort_order=sort_order,
             )
 

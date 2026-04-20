@@ -3,7 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, Task, PlanTask, PlanBundle
+from apps.jobs.models import Job, Task, PlanTask
 from apps.jobs.services import JobService, TaskService
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet,
@@ -432,7 +432,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
             est_worksheet=self.worksheet, name='Paint',
             description='Apply primer and topcoat',
             units='sq ft', rate=Decimal('5.00'), est_qty=Decimal('100.00'),
-            accounting_category=self.lit, mapping_strategy='direct', sort_order=1)
+            accounting_category=self.lit, sort_order=1)
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
@@ -466,23 +466,6 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         self.assertEqual(mat.unit_cost, Decimal('50.00'))
         self.assertEqual(mat.sell_price, Decimal('75.00'))
         self.assertEqual(mat.price_list_item, pli)
-
-    def test_bundles_are_dropped_on_copy(self):
-        """PlanBundles on the worksheet are NOT copied; bundled PlanTasks become flat Tasks."""
-        bundle = PlanBundle.objects.create(
-            est_worksheet=self.worksheet, name='Assembly',
-            sort_order=1, accounting_category=self.lit)
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Assemble part A',
-            bundle=bundle, mapping_strategy='bundle', sort_order=1)
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Assemble part B',
-            bundle=bundle, mapping_strategy='bundle', sort_order=2)
-
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-
-        job_tasks = Task.objects.filter(job=self.job).order_by('sort_order')
-        self.assertEqual(job_tasks.count(), 2)
 
     def test_empty_worksheet(self):
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)

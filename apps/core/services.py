@@ -526,9 +526,10 @@ class BundlingService:
     Shared low-level service for bundle/unbundle/reorder operations.
 
     Works with any item model that has `mapping_strategy`, `bundle` (FK), and
-    `sort_order` fields, and any bundle model with `sort_order`. Domain services
-    (WorksheetService, WorkTemplateService) call BundlingService after
-    handling domain-specific validation (e.g. status checks).
+    `sort_order` fields, and any bundle model with `sort_order`. Currently used
+    by WorkTemplateService for TemplateTaskAssociation/TemplateBundle. Domain
+    services call BundlingService after handling domain-specific validation
+    (e.g. status checks).
     """
 
     @staticmethod
@@ -614,7 +615,7 @@ class BundlingService:
         container_items = []
         seen_bundles = set()
 
-        # WO Tasks have no 'bundle' field; only PlanTasks (and TemplateTaskAssociations) do.
+        # TemplateTaskAssociations have a 'bundle' field; plain task models do not.
         has_bundle = any(
             f.name == 'bundle' for f in items_qs.model._meta.get_fields()
         )

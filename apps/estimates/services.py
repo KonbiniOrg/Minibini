@@ -497,78 +497,6 @@ class WorksheetService:
         return task
 
     @staticmethod
-    def bundle_tasks(worksheet_pk, task_ids, bundle_name, accounting_category):
-        """Bundle PlanTasks on a draft worksheet. Requires >= 2 tasks."""
-        from apps.jobs.models import PlanTask, PlanBundle
-        from apps.core.services import BundlingService
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
-            raise ValidationError('Cannot bundle tasks on a non-draft worksheet.')
-        if len(task_ids) < 2:
-            raise ValidationError('Please select at least 2 tasks to bundle.')
-
-        # Get or create the bundle
-        from django.db import models as db_models
-        max_task = PlanTask.objects.filter(
-            est_worksheet=ws, bundle__isnull=True,
-        ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
-        max_bundle = PlanBundle.objects.filter(
-            est_worksheet=ws,
-        ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
-        next_sort = max(max_task, max_bundle) + 1
-
-        bundle, _ = PlanBundle.objects.get_or_create(
-            est_worksheet=ws, name=bundle_name,
-            defaults={
-                'accounting_category': accounting_category,
-                'sort_order': next_sort,
-            },
-        )
-
-        selected = PlanTask.objects.filter(
-            plan_task_id__in=task_ids, est_worksheet=ws,
-        ).order_by('sort_order', 'plan_task_id')
-        BundlingService.bundle_items(selected, bundle)
-
-        # Auto-dissolve other bundles that lost members
-        all_bundles = PlanBundle.objects.filter(est_worksheet=ws)
-        BundlingService.auto_dissolve_bundles(all_bundles, PlanTask, exclude_pk=bundle.pk)
-
-        return bundle
-
-    @staticmethod
-    def unbundle_task(worksheet_pk, task_pk):
-        """Unbundle a PlanTask from its bundle on a draft worksheet."""
-        from apps.jobs.models import PlanTask, PlanBundle
-        from apps.core.services import BundlingService
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
-            raise ValidationError('Cannot unbundle tasks on a non-draft worksheet.')
-        try:
-            task = PlanTask.objects.get(pk=task_pk, est_worksheet=ws)
-        except PlanTask.DoesNotExist:
-            raise NotFoundError(f'PlanTask {task_pk} not found')
-        if task.mapping_strategy != 'bundle' or not task.bundle:
-            return  # Nothing to unbundle
-
-        container_items_qs = PlanTask.objects.filter(
-            est_worksheet=ws, bundle__isnull=True,
-        )
-        container_bundles_qs = PlanBundle.objects.filter(est_worksheet=ws)
-        BundlingService.unbundle_item(task, container_items_qs, container_bundles_qs)
-
-        # Auto-dissolve bundles that may now have 0 or 1 items
-        BundlingService.auto_dissolve_bundles(
-            PlanBundle.objects.filter(est_worksheet=ws), PlanTask,
-        )
-
-    @staticmethod
     def reorder_items(worksheet_pk, item_type, item_id, direction):
         """Reorder PlanTasks at container level on a draft worksheet."""
         from apps.jobs.models import PlanTask
@@ -584,27 +512,6 @@ class WorksheetService:
         BundlingService.reorder_container_items(
             items_qs, item_type, item_id, direction,
         )
-
-    @staticmethod
-    def reorder_in_bundle(worksheet_pk, task_pk, direction):
-        """Reorder a PlanTask within its bundle on a draft worksheet."""
-        from apps.jobs.models import PlanTask
-        from apps.core.services import BundlingService
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
-            raise ValidationError('Cannot reorder on a non-draft worksheet.')
-        try:
-            task = PlanTask.objects.get(
-                pk=task_pk, est_worksheet=ws,
-                mapping_strategy='bundle', bundle__isnull=False,
-            )
-        except PlanTask.DoesNotExist:
-            raise NotFoundError(f'PlanTask {task_pk} not found in bundle')
-        bundle_items_qs = PlanTask.objects.filter(bundle=task.bundle)
-        BundlingService.reorder_in_bundle(bundle_items_qs, task, direction)
 
     @staticmethod
     def finalize(worksheet_pk):

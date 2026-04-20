@@ -7,7 +7,7 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Job, Task, PlanTask, PlanBundle
+from apps.jobs.models import Job, Task, PlanTask
 from apps.jobs.services import JobService
 from apps.inventory.models import Material, PlanMaterial
 from apps.core.services import NotFoundError
@@ -516,24 +516,6 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
 
         JobService.copy_from_worksheet(self.job.pk, ws.pk)
         self.assertEqual(Task.objects.filter(job=self.job).count(), 2)
-
-    def test_copy_bundles_drops_bundle_info(self):
-        """PlanBundles on the worksheet are NOT copied; bundled PlanTasks become flat Tasks."""
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        bundle = PlanBundle.objects.create(
-            est_worksheet=ws, name='Bundle 1',
-            accounting_category=self.lit, sort_order=1,
-        )
-        PlanTask.objects.create(
-            est_worksheet=ws, name='Bundled', sort_order=1,
-            mapping_strategy='bundle', bundle=bundle,
-        )
-
-        JobService.copy_from_worksheet(self.job.pk, ws.pk)
-        tasks = Task.objects.filter(job=self.job)
-        self.assertEqual(tasks.count(), 1)
-        self.assertEqual(tasks.first().name, 'Bundled')
 
     def test_copy_materials(self):
         from apps.estimates.services import WorksheetService

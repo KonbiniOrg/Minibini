@@ -8,7 +8,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.db.models import ProtectedError
 
-from apps.jobs.models import PlanBundle, Job, PlanTask
+from apps.jobs.models import Job, PlanTask
 from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.jobs.services import TaskService
 from apps.core.models import AccountingCategory, Configuration, User

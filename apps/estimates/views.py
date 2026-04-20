@@ -11,7 +11,7 @@ from .models import (
     TaskTemplate, TemplateTaskAssociation, TemplateBundle
 )
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, PlanTask, PlanBundle
+from apps.jobs.models import Job, PlanTask
 from apps.core.services import TaxCalculationService, NotFoundError
 from .services import (
     EstimateService, WorkTemplateService, WorksheetService,
@@ -81,14 +81,12 @@ def _next_container_sort_order(template):
 
 
 def _build_container_items_from_tasks(worksheet):
-    """Normalize worksheet PlanTasks/PlanBundles into the shared container_items format."""
+    """Normalize worksheet PlanTasks into the shared container_items format."""
     tasks = PlanTask.objects.filter(
         est_worksheet=worksheet
-    ).select_related('bundle').prefetch_related('plan_materials').order_by('sort_order', 'plan_task_id')
+    ).prefetch_related('plan_materials').order_by('sort_order', 'plan_task_id')
 
-    bundles_by_id = {}
-    unbundled = []
-
+    container_items = []
     for task in tasks:
         materials = list(task.plan_materials.all())
         item = {
@@ -98,47 +96,23 @@ def _build_container_items_from_tasks(worksheet):
             'units': task.units,
             'rate': task.rate,
             'est_qty': task.est_qty,
-            'mapping_strategy': task.mapping_strategy,
             'remove_id': task.plan_task_id,
             'sort_order': task.sort_order or 0,
             'detail_url': reverse('jobs:task_detail', args=[task.plan_task_id]),
             'materials': materials,
         }
-        if task.mapping_strategy == 'bundle' and task.bundle:
-            bid = task.bundle_id
-            if bid not in bundles_by_id:
-                bundles_by_id[bid] = {
-                    'id': bid,
-                    'name': task.bundle.name,
-                    'accounting_category_name': task.bundle.accounting_category.name,
-                    'sort_order': task.bundle.sort_order,
-                    'items': [],
-                }
-            bundles_by_id[bid]['items'].append(item)
-        else:
-            unbundled.append((task.sort_order or 0, item))
+        container_items.append(('task', item, task.sort_order or 0))
 
-    for bundle_data in bundles_by_id.values():
-        bundle_data['items'].sort(key=lambda i: i['sort_order'])
-
-    container_items = []
-    for sort_order, item in unbundled:
-        container_items.append(('task', item, sort_order))
-    for bundle_data in bundles_by_id.values():
-        container_items.append(('bundle', bundle_data, bundle_data['sort_order']))
     container_items.sort(key=lambda x: x[2])
     return container_items
 
 
 def _next_worksheet_sort_order(worksheet):
-    """Get the next sort_order in the shared container-level space for a worksheet."""
+    """Get the next sort_order for tasks on a worksheet."""
     max_task = PlanTask.objects.filter(
-        est_worksheet=worksheet, bundle__isnull=True
-    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-    max_bundle = PlanBundle.objects.filter(
         est_worksheet=worksheet
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-    return max(max_task, max_bundle) + 1
+    return max_task + 1
 
 
 def estimate_list(request):
@@ -354,55 +328,12 @@ def estworksheet_list(request):
 
 
 def estworksheet_detail(request, worksheet_id):
-    """Show details of a specific EstWorksheet with its tasks and bundle editing."""
+    """Show details of a specific EstWorksheet with its tasks."""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
     can_edit = worksheet.status == EstWorksheet.STATUS_DRAFT
 
-    # Handle bundle creation
-    if request.method == 'POST' and 'bundle_tasks' in request.POST and can_edit:
-        from apps.core.models import AccountingCategory
-
-        selected_ids = request.POST.getlist('selected_tasks')
-        bundle_name = request.POST.get('bundle_name', '').strip()
-        accounting_category_id = request.POST.get('accounting_category')
-
-        if not bundle_name:
-            messages.error(request, 'Bundle name is required.')
-        elif not accounting_category_id:
-            messages.error(request, 'Line item type is required.')
-        else:
-            accounting_category = get_object_or_404(AccountingCategory, pk=accounting_category_id)
-            try:
-                WorksheetService.bundle_tasks(
-                    worksheet.pk,
-                    [int(i) for i in selected_ids],
-                    bundle_name,
-                    accounting_category,
-                )
-                messages.success(request, f'Bundle "{bundle_name}" updated.')
-            except ValidationError as e:
-                messages.error(request, str(e.message if hasattr(e, 'message') else e))
-
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    # Handle unbundle / remove
-    if request.method == 'POST' and 'remove_task' in request.POST and can_edit:
-        task_id = request.POST.get('remove_task')
-        task = get_object_or_404(PlanTask, plan_task_id=task_id, est_worksheet=worksheet)
-
-        if task.mapping_strategy == 'bundle' and task.bundle:
-            WorksheetService.unbundle_task(worksheet.pk, task.pk)
-            messages.success(request, f'"{task.name}" unbundled.')
-        else:
-            messages.info(request, f'Task "{task.name}" is not bundled.')
-
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
     # Build context
-    from apps.core.models import AccountingCategory
-
     container_items = _build_container_items_from_tasks(worksheet)
-    accounting_categories = AccountingCategory.objects.all().order_by('name')
 
     # Calculate total cost from all tasks
     all_tasks = PlanTask.objects.filter(est_worksheet=worksheet)
@@ -413,11 +344,9 @@ def estworksheet_detail(request, worksheet_id):
     return render(request, 'jobs/estworksheet_detail.html', {
         'worksheet': worksheet,
         'container_items': container_items,
-        'accounting_categories': accounting_categories,
         'total_cost': total_cost,
         'can_edit': can_edit,
         'reorder_container_url': 'estimates:worksheet_reorder_item',
-        'reorder_in_bundle_url': 'estimates:worksheet_reorder_in_bundle',
         'container_id': worksheet.est_worksheet_id,
     })
 

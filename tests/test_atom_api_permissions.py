@@ -112,7 +112,6 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/estimates/1/line-items/',
         '/api/est-worksheets/1/',
         '/api/est-worksheets/1/tasks/',
-        '/api/est-worksheets/1/bundles/',
         '/api/bleps/1/',
         '/api/contacts/1/',
         '/api/contacts/1/history/',
@@ -225,7 +224,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         ('patch', '/api/est-worksheets/1/', {'notes': 'test'}),
         ('delete', '/api/est-worksheets/1/', None),
         ('post', '/api/est-worksheets/1/tasks/', {'name': 'Test'}),
-        ('post', '/api/est-worksheets/1/bundles/', {'name': 'Test'}),
         ('post', '/api/est-worksheets/1/revise/', {}),
     ]
 
