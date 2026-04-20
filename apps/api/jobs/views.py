@@ -184,32 +184,6 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
         job.refresh_from_db()
         return Response(self.get_serializer(job).data)
 
-    @action(detail=True, methods=['post'], url_path='populate-from-estimate')
-    def populate_from_estimate(self, request, pk=None):
-        job = self.get_object()
-        estimate_pk = request.data.get('estimate_id')
-        if not estimate_pk:
-            return Response(
-                {'estimate_id': ['This field is required.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            estimate = Estimate.objects.get(pk=estimate_pk)
-        except Estimate.DoesNotExist:
-            return Response(
-                {'estimate_id': ['Estimate not found.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            JobService.populate_from_estimate(job, estimate)
-        except ValidationError as e:
-            return Response(
-                {'detail': e.message if hasattr(e, 'message') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        job.refresh_from_db()
-        return Response(self.get_serializer(job).data)
-
     @action(detail=True, methods=['post'], url_path='copy-from-worksheet')
     def copy_from_worksheet(self, request, pk=None):
         job = self.get_object()

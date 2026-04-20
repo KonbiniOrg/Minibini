@@ -234,13 +234,23 @@ class BaseLineItem(models.Model):
         abstract = True
 
     def clean(self):
-        """Validate that line item cannot have both task and price_list_item."""
-        super().clean()
-        has_task = self.task is not None
-        has_price_item = self.price_list_item is not None
+        """Validate that line item cannot have both task and price_list_item.
 
-        if has_task and has_price_item:
-            raise ValidationError("LineItem cannot have both task and price_list_item")
+        Only applies to subclasses that still carry a task FK (e.g. PurchaseOrderLineItem,
+        BillLineItem). EstimateLineItem dropped its task FK in favour of EstimateLineItemSource.
+        """
+        super().clean()
+        try:
+            task_fk = self._meta.get_field('task')
+        except Exception:
+            task_fk = None
+
+        if task_fk is not None:
+            has_task = self.task is not None
+            has_price_item = self.price_list_item is not None
+
+            if has_task and has_price_item:
+                raise ValidationError("LineItem cannot have both task and price_list_item")
 
     def _populate_from_pli(self):
         """Copy description/units/accounting_category from linked PriceListItem if not already set.

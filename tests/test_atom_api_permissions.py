@@ -234,7 +234,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         ('delete', '/api/jobs/1/tasks/1/', None),
         ('post', '/api/jobs/1/work-complete/', {}),
         ('post', '/api/jobs/1/populate-from-template/', {'template_id': 1}),
-        ('post', '/api/jobs/1/populate-from-estimate/', {'estimate_id': 1}),
         ('post', '/api/jobs/1/copy-from-worksheet/', {'worksheet_id': 1}),
         ('post', '/api/jobs/1/reorder-tasks/', {'task_id': 1, 'direction': 'up'}),
     ]

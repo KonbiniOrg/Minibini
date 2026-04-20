@@ -9,8 +9,7 @@ from django.urls import reverse
 from django.db.models import ProtectedError
 
 from apps.jobs.models import Job, PlanTask
-from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation, EstWorksheet, Estimate, EstimateLineItem
-from apps.jobs.services import TaskService
+from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation, EstWorksheet
 from apps.core.models import AccountingCategory, Configuration, User
 from apps.contacts.models import Contact
 
@@ -121,36 +120,6 @@ class CopyPointsPreserveAccountingCategoryTests(TestCase):
         new_ws = ws.create_new_version()
         new_task = new_ws.plan_tasks.first()
         self.assertEqual(new_task.accounting_category, self.lit)
-
-    def test_copy_worksheet_tasks_copies_accounting_category(self):
-        """_copy_worksheet_tasks should copy accounting_category onto job tasks."""
-        from apps.core.services import NumberGenerationService
-        ws = EstWorksheet.objects.create(job=self.job)
-        source_task = PlanTask.objects.create(
-            est_worksheet=ws, name="Sand", rate=Decimal("50.00"),
-            est_qty=Decimal("2.00"), accounting_category=self.lit,
-        )
-        # Create estimate and line item manually (no EstimateGenerationService)
-        estimate = Estimate.objects.create(
-            job=self.job,
-            estimate_number=NumberGenerationService.generate_next_number('estimate'),
-            version=1,
-            status=Estimate.STATUS_DRAFT,
-        )
-        line_item = EstimateLineItem.objects.create(
-            estimate=estimate,
-            task=source_task,
-            line_number=1,
-            description="Sand",
-            qty=Decimal("2.00"),
-            units="hours",
-            price=Decimal("50.00"),
-            accounting_category=self.lit,
-        )
-
-        tasks = TaskService._copy_worksheet_tasks(line_item, self.job)
-        self.assertEqual(tasks[0].accounting_category, self.lit)
-
 
 class TaskDetailAccountingCategoryTests(TestCase):
     """Tests that task_detail shows accounting_category."""

@@ -472,11 +472,6 @@ class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
-    task = models.ForeignKey('jobs.PlanTask', on_delete=models.PROTECT, null=True, blank=True)
-    material = models.ForeignKey(
-        'inventory.PlanMaterial', on_delete=models.SET_NULL,
-        null=True, blank=True,
-    )
     source_template = models.ForeignKey(
         'estimates.TaskTemplate',
         on_delete=models.SET_NULL,

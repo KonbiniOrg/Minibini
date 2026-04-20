@@ -108,22 +108,6 @@
   let populating = $state(false);
   let populateError = $state('');
 
-  async function populateFromEstimate() {
-    if (!currentEstimate) return;
-    populating = true;
-    populateError = '';
-    try {
-      await api.post(`/api/jobs/${job.job_id}/populate-from-estimate/`, {
-        estimate_id: currentEstimate.estimate_id,
-      });
-      if (onStatusChange) onStatusChange();
-    } catch (e) {
-      populateError = e.data?.detail || e.message || 'Could not populate tasks.';
-    } finally {
-      populating = false;
-    }
-  }
-
   async function copyFromWorksheet() {
     if (!currentWorksheet) return;
     populating = true;
@@ -278,11 +262,6 @@
     {/if}
     {#if canManageJobs && currentEstimate && (currentEstimate.status === 'open' || currentEstimate.status === 'accepted')}
       <a href="#/estimates/{currentEstimate.estimate_id}/revise">Revise Estimate</a>
-    {/if}
-    {#if canManageJobs && currentEstimate?.status === 'accepted' && !hasTasks}
-      <button type="button" onclick={populateFromEstimate} disabled={populating}>
-        {populating ? 'Populating...' : 'Populate tasks from estimate'}
-      </button>
     {/if}
     {#if canManageJobs && currentWorksheet && !hasTasks}
       <button type="button" onclick={copyFromWorksheet} disabled={populating}>

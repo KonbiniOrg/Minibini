@@ -280,37 +280,6 @@ class JobService:
         return job
 
     @staticmethod
-    def populate_from_estimate(job, estimate):
-        """Populate a Job's tasks from an Estimate's line items.
-
-        Only OPEN and ACCEPTED estimates are allowed.
-        """
-        if estimate.status not in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED]:
-            raise ValidationError(
-                f"Only Open and Accepted estimates can populate jobs. "
-                f"Estimate {estimate.estimate_number} is {estimate.status}."
-            )
-        from apps.inventory.services import InventoryService, MaterialService
-        for line_item in estimate.estimatelineitem_set.all():
-            pm = getattr(line_item, 'material', None)
-            if pm is not None and pm.plan_task_id is None:
-                # task-less PlanMaterial → task-less Material
-                MaterialService.create_on_job(
-                    job=job, task=None,
-                    description=pm.description,
-                    quantity=pm.quantity,
-                    unit_cost=pm.unit_cost,
-                    sell_price=pm.sell_price,
-                    price_list_item=pm.price_list_item,
-                    accounting_category=pm.accounting_category,
-                )
-            else:
-                TaskService.create_from_line_item(line_item, job)
-
-        InventoryService.create_earmarks_for_job(job)
-        return job
-
-    @staticmethod
     def populate_from_template(job, template):
         """Populate a Job from a WorkTemplate's task associations."""
         if not template.is_active:
@@ -410,86 +379,6 @@ class JobService:
 
 class TaskService:
     """Service class for Task creation workflows."""
-
-    @staticmethod
-    def create_from_line_item(line_item, job):
-        """
-        Generate appropriate Task(s) for a LineItem on a Job.
-
-        Dispatches to the right strategy based on line item source:
-        - Worksheet task: copies the source task with all fields
-        - Catalog PLI: creates task from PriceListItem data
-        - Manual: creates task from line item fields
-
-        Returns:
-            List[Task]: Tasks created for this LineItem
-        """
-        if line_item.task:
-            return TaskService._copy_worksheet_tasks(line_item, job)
-        elif line_item.price_list_item:
-            return TaskService._create_task_from_catalog_item(line_item, job)
-        else:
-            return TaskService._create_generic_task(line_item, job)
-
-    @staticmethod
-    def _copy_worksheet_tasks(line_item, job):
-        """Copy the PlanTask that contributed to this EstimateLineItem into a Task on the Job.
-
-        Note: after the spec 2026-04-05 model split, this function copies exactly one
-        PlanTask to one Task. The prior "multi-task with parent relationships" logic was
-        dead code (the source list was always a single element) and is removed.
-        """
-        plan_task = line_item.task  # now a PlanTask FK
-        new_task = Task.objects.create(
-            job=job,
-            name=plan_task.name,
-            description=plan_task.description,
-            units=plan_task.units,
-            rate=plan_task.rate,
-            est_qty=plan_task.est_qty,
-            accounting_category=plan_task.accounting_category,
-            # assignee and status use defaults; parent_task is None
-        )
-        return [new_task]
-
-    @staticmethod
-    def _create_task_from_catalog_item(line_item, job):
-        """Create a task from PriceListItem data."""
-        task_name = f"{line_item.price_list_item.code} - {line_item.price_list_item.description[:50]}"
-        if len(line_item.price_list_item.description) > 50:
-            task_name += "..."
-
-        task = Task.objects.create(
-            job=job,
-            name=task_name,
-            units=line_item.units if line_item.units not in ('', 'none') else line_item.price_list_item.units,
-            rate=line_item.price or line_item.price_list_item.selling_price,
-            est_qty=line_item.qty,
-            assignee=None,
-            parent_task=None
-        )
-        return [task]
-
-    @staticmethod
-    def _create_generic_task(line_item, job):
-        """Create a generic task from manual LineItem data."""
-        if line_item.description:
-            task_name = line_item.description[:255]
-        elif line_item.line_number:
-            task_name = f"Line Item {line_item.line_number}"
-        else:
-            task_name = f"Line Item {line_item.pk}"
-
-        task = Task.objects.create(
-            job=job,
-            name=task_name,
-            units=line_item.units,
-            rate=line_item.price,
-            est_qty=line_item.qty,
-            assignee=None,
-            parent_task=None
-        )
-        return [task]
 
     @staticmethod
     def create_from_template(template, job, assignee=None):

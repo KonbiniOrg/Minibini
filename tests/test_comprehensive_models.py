@@ -394,28 +394,25 @@ class LineItemValidationTest(TestCase):
         )
 
     def test_estimate_line_item_validation_both_null_allowed(self):
-        """Test EstimateLineItem allows both task and price_list_item to be null"""
+        """Test EstimateLineItem allows price_list_item to be null (manual line item)"""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            task=None,
             price_list_item=None,
-            description="No task or price item"
+            description="Manual line item with no price list item"
         )
         line_item.full_clean()  # Should not raise
-        self.assertIsNone(line_item.task)
         self.assertIsNone(line_item.price_list_item)
 
     def test_estimate_line_item_validation_cannot_have_both(self):
-        """Test EstimateLineItem cannot have both task and price_list_item"""
+        """EstimateLineItem no longer has a task FK; mutual-exclusivity check is skipped.
+        This test verifies that a line item with only price_list_item passes validation."""
         line_item = EstimateLineItem(
             estimate=self.estimate,
-            task=self.plan_task,
             price_list_item=self.price_list_item,
-            description="Invalid - has both"
+            description="PLI-backed line item"
         )
-        with self.assertRaises(ValidationError) as context:
-            line_item.full_clean()
-        self.assertIn("cannot have both task and price_list_item", str(context.exception))
+        # Should NOT raise — ELI dropped its task FK, so no mutual-exclusivity check
+        line_item.full_clean()
 
     def test_purchase_order_line_item_validation_both_null_allowed(self):
         """Test PurchaseOrderLineItem allows both task and price_list_item to be null"""

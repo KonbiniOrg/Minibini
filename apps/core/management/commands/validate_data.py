@@ -283,10 +283,11 @@ class Command(BaseCommand):
         from apps.invoicing.models import InvoiceLineItem
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 
-        # (name, model, has_task_fk) — InvoiceLineItem's task FK was dropped in
-        # favour of InvoiceLineItemSource, so it can't be included in select_related.
+        # (name, model, has_task_fk) — EstimateLineItem.task FK was dropped in
+        # favour of EstimateLineItemSource; InvoiceLineItem.task was dropped for
+        # InvoiceLineItemSource. Neither can use select_related('task').
         line_item_models = [
-            ('EstimateLineItem', EstimateLineItem, True),
+            ('EstimateLineItem', EstimateLineItem, False),
             ('InvoiceLineItem', InvoiceLineItem, False),
             ('PurchaseOrderLineItem', PurchaseOrderLineItem, True),
             ('BillLineItem', BillLineItem, True),
@@ -299,7 +300,8 @@ class Command(BaseCommand):
                 qs = model.objects.select_related('price_list_item').all()
             for li in qs:
                 # Mutual exclusivity: cannot have both task and price_list_item
-                if li.task and li.price_list_item:
+                # (only applicable to models that still have a task FK)
+                if has_task_fk and li.task and li.price_list_item:
                     self.errors.append(
                         f'{name} {li.pk}: has both task and price_list_item (mutually exclusive)'
                     )
@@ -599,18 +601,26 @@ class Command(BaseCommand):
                 )
 
     def check_estimate_line_item_job_consistency(self):
-        """EstimateLineItems with a task source: the task's worksheet should
-        belong to the same job as the estimate."""
-        from apps.estimates.models import EstimateLineItem
+        """EstimateLineItemSource rows pointing at PlanCharge atoms: the atom's
+        PlanTask's worksheet should belong to the same job as the estimate."""
+        from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
+        from apps.jobs.models import PlanCharge
 
-        for li in EstimateLineItem.objects.select_related(
-            'estimate__job', 'task__est_worksheet__job'
-        ).filter(task__isnull=False):
-            task_worksheet = li.task.est_worksheet
-            if task_worksheet and task_worksheet.job_id != li.estimate.job_id:
+        for source in EstimateLineItemSource.objects.filter(
+            source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE
+        ).select_related('estimate_line_item__estimate__job'):
+            try:
+                charge = PlanCharge.objects.select_related(
+                    'plan_task__est_worksheet__job'
+                ).get(pk=source.source_pk)
+            except PlanCharge.DoesNotExist:
+                continue
+            ws = charge.plan_task.est_worksheet
+            li = source.estimate_line_item
+            if ws and ws.job_id != li.estimate.job_id:
                 self.errors.append(
                     f'EstimateLineItem {li.pk}: estimate is for job {li.estimate.job_id} '
-                    f'but plan task {li.task.pk} belongs to job {task_worksheet.job_id}'
+                    f'but PlanCharge {source.source_pk} belongs to job {ws.job_id}'
                 )
 
     def check_po_contact_business_match(self):

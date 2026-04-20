@@ -1,13 +1,12 @@
-"""API-side tests for populating a Job from an Estimate/Worksheet.
+"""API-side tests for populating a Job from a Worksheet.
 
 Formerly tests/test_workorder_from_estimate.py, which targeted Django
 HTML views for the old WorkOrder-creation flow. The HTML views will be
-rewritten in Phase F; this file now covers the new API contract via
-/api/jobs/{id}/populate-from-estimate/ and copy-from-worksheet/.
+rewritten in Phase F; this file now covers the copy-from-worksheet API
+contract.
 
-Comprehensive coverage of those endpoints lives in test_api_jobs.py;
-this file adds the end-to-end "populate from estimate with associated
-worksheet" scenario.
+Comprehensive coverage of that endpoint lives in test_api_jobs.py;
+this file adds the end-to-end "copy from worksheet with template" scenario.
 """
 
 from decimal import Decimal
@@ -17,11 +16,11 @@ from rest_framework.test import APIClient
 from apps.core.models import User
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task, PlanTask
-from apps.estimates.models import Estimate, EstWorksheet, WorkTemplate
+from apps.estimates.models import EstWorksheet, WorkTemplate
 from apps.inventory.models import PlanMaterial
 
 
-class JobPopulateFromEstimateEndToEndTest(TestCase):
+class JobCopyFromWorksheetEndToEndTest(TestCase):
 
     def setUp(self):
         self.client = APIClient()
@@ -70,27 +69,3 @@ class JobPopulateFromEstimateEndToEndTest(TestCase):
         self.assertEqual(tasks.count(), 1)
         self.assertEqual(tasks.first().name, 'Assembly')
         self.assertEqual(tasks.first().materials.count(), 1)
-
-    def test_populate_from_accepted_estimate(self):
-        estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-E2E-001',
-            status=Estimate.STATUS_ACCEPTED,
-        )
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/populate-from-estimate/',
-            {'estimate_id': estimate.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200, response.data)
-
-    def test_populate_from_draft_estimate_rejected(self):
-        estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-E2E-002',
-            status=Estimate.STATUS_DRAFT,
-        )
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/populate-from-estimate/',
-            {'estimate_id': estimate.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)

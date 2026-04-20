@@ -101,11 +101,11 @@ class EstimateService:
             parent=parent,
         )
 
-        # Copy line items
+        # Copy line items (source rows are NOT carried forward; the new revision
+        # gets fresh atoms via worksheet revision or manual adds)
         for li in EstimateLineItem.objects.filter(estimate=parent):
             EstimateLineItem.objects.create(
                 estimate=new_estimate,
-                task=li.task,
                 price_list_item=li.price_list_item,
                 qty=li.qty,
                 units=li.units,

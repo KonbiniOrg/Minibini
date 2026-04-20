@@ -8,7 +8,7 @@ from apps.core.models import User, HistoryEntry, AccountingCategory
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task, PlanTask
 from apps.estimates.models import (
-    Estimate, EstWorksheet, WorkTemplate, TaskTemplate,
+    EstWorksheet, WorkTemplate, TaskTemplate,
     TemplateTaskAssociation,
 )
 from apps.inventory.models import PlanMaterial
@@ -409,61 +409,6 @@ class JobPopulateFromTemplateTest(TestCase):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/populate-from-template/',
             {'template_id': self.template.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 403)
-
-
-class JobPopulateFromEstimateTest(TestCase):
-    """Phase C2: POST /api/jobs/{id}/populate-from-estimate/."""
-
-    def setUp(self):
-        self.client = APIClient()
-        self.user = _make_admin('popest_admin')
-        self.client.force_authenticate(user=self.user)
-        self.contact = Contact.objects.create(first_name='T', last_name='C')
-        self.job = Job.objects.create(
-            job_number='C2-PE-001', name='PE Job', contact=self.contact,
-        )
-        self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-PE-001',
-            status=Estimate.STATUS_ACCEPTED,
-        )
-
-    def test_populate_from_accepted_estimate(self):
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/populate-from-estimate/',
-            {'estimate_id': self.estimate.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200, response.data)
-
-    def test_populate_from_draft_estimate_400(self):
-        draft = Estimate.objects.create(
-            job=self.job, estimate_number='EST-PE-002',
-            status=Estimate.STATUS_DRAFT,
-        )
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/populate-from-estimate/',
-            {'estimate_id': draft.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_populate_from_estimate_missing(self):
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/populate-from-estimate/',
-            {},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_populate_from_estimate_requires_can_manage_jobs(self):
-        worker = User.objects.create_user(username='pe_worker', password='pass')
-        self.client.force_authenticate(user=worker)
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/populate-from-estimate/',
-            {'estimate_id': self.estimate.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 403)
