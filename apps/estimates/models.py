@@ -566,6 +566,12 @@ class EstimateLineItem(BaseLineItem):
         'inventory.PlanMaterial', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
+    source_template = models.ForeignKey(
+        'estimates.TaskTemplate',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        help_text='TaskTemplate this line item was created from (preserves catalog ref for direct-estimate carry-over).',
+    )
 
     class Meta:
         db_table = 'est_li'
