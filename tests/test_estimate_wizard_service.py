@@ -379,3 +379,70 @@ class RemoveAtomsFromLineItemTest(TestCase):
         self.li.refresh_from_db()
         # After removal: remaining sum = $100, qty=2, expected = 50.00
         self.assertEqual(self.li.price, Decimal('50.00'))
+
+
+class SendAllAtomsTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
+        self.ws = EstWorksheet.objects.create(job=self.job)
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='A', units='hours',
+            est_qty=Decimal('2'), accounting_category=self.cat,
+        )
+        self.pc = PlanCharge.objects.create(
+            plan_task=self.pt, rate_scheme=self.scheme,
+            estimated_billable_qty=Decimal('2'),
+        )
+        self.pm = PlanMaterial.objects.create(
+            est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
+            sell_price=Decimal('5'), accounting_category=self.cat,
+        )
+
+    def test_creates_one_line_item_per_unclaimed_atom(self):
+        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        self.assertEqual(result['created_count'], 2)
+        from apps.estimates.models import EstimateLineItem
+        line_items = EstimateLineItem.objects.filter(estimate=result['estimate'])
+        self.assertEqual(line_items.count(), 2)
+
+    def test_each_line_item_has_one_source(self):
+        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        from apps.estimates.models import EstimateLineItem
+        for li in EstimateLineItem.objects.filter(estimate=result['estimate']):
+            self.assertEqual(li.sources.count(), 1)
+
+    def test_skips_already_claimed_atoms(self):
+        # Pre-claim the PlanCharge via an existing line item
+        estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        EstimateWizardService.add_atoms_to_new_line_item(
+            estimate, [{'type': 'plan_charge', 'id': self.pc.pk}],
+        )
+        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        # Only the PlanMaterial gets a new line item
+        self.assertEqual(result['created_count'], 1)
+
+    def test_amount_matches_compute_amount(self):
+        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        from apps.estimates.models import EstimateLineItem
+        prices = sorted(
+            EstimateLineItem.objects.filter(estimate=result['estimate']).values_list('price', flat=True)
+        )
+        # PlanCharge: 2 × $100 = $200; PlanMaterial: 3 × $5 = $15
+        self.assertEqual(prices, [Decimal('15.00'), Decimal('200.00')])
+
+    def test_returns_estimate(self):
+        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        self.assertEqual(result['estimate'].job, self.job)
+        self.assertEqual(result['estimate'].status, Estimate.STATUS_DRAFT)

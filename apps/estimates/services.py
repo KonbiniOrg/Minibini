@@ -1155,3 +1155,66 @@ class EstimateWizardService:
                 line_item.save()
 
         return {'line_item_deleted': False}
+
+    @staticmethod
+    def send_all_atoms_to_estimate(worksheet):
+        """Bulk 1:1 conversion of unclaimed atoms on the worksheet to EstimateLineItems.
+
+        Iterates all PlanCharges and PlanMaterials on the worksheet that aren't yet
+        claimed by any EstimateLineItemSource, and creates one EstimateLineItem per
+        atom (with one source row pointing at the atom).
+
+        Returns: {'estimate': Estimate, 'created_count': int}
+        """
+        from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
+        from apps.jobs.models import PlanCharge
+        from apps.inventory.models import PlanMaterial
+
+        estimate = EstimateWizardService.open_for_worksheet(worksheet)
+
+        # Build set of currently-claimed (type, pk) pairs
+        claimed = set(
+            EstimateLineItemSource.objects.values_list('source_type', 'source_pk')
+        )
+
+        created_count = 0
+
+        # PlanCharges
+        for pc in PlanCharge.objects.filter(plan_task__est_worksheet=worksheet).select_related('plan_task', 'plan_task__accounting_category'):
+            if (EstimateLineItemSource.SOURCE_PLAN_CHARGE, pc.pk) in claimed:
+                continue
+            li = EstimateLineItem.objects.create(
+                estimate=estimate,
+                description=pc.plan_task.name,
+                qty=Decimal('1'),
+                units=pc.plan_task.units,
+                price=pc.compute_amount().quantize(Decimal('0.01')),
+                accounting_category=pc.plan_task.accounting_category,
+            )
+            EstimateLineItemSource.objects.create(
+                estimate_line_item=li,
+                source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE,
+                source_pk=pc.pk,
+            )
+            created_count += 1
+
+        # PlanMaterials
+        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related('accounting_category'):
+            if (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk) in claimed:
+                continue
+            li = EstimateLineItem.objects.create(
+                estimate=estimate,
+                description=pm.description,
+                qty=Decimal('1'),
+                units='each',
+                price=pm.compute_amount().quantize(Decimal('0.01')),
+                accounting_category=pm.accounting_category,
+            )
+            EstimateLineItemSource.objects.create(
+                estimate_line_item=li,
+                source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL,
+                source_pk=pm.pk,
+            )
+            created_count += 1
+
+        return {'estimate': estimate, 'created_count': created_count}
