@@ -1,4 +1,4 @@
-"""Tests for BundlingService and domain-level bundling operations."""
+"""Tests for ReorderService and domain-level reorder operations."""
 from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
@@ -35,8 +35,8 @@ class BundlingTestBase(TestCase):
         self.job = JobService.create_job(name='Test Job', contact=self.contact)
 
 
-class BundlingServiceReorderContainerFlatTest(BundlingTestBase):
-    """Tests for BundlingService.reorder_container_items with flat (no-bundle) PlanTasks."""
+class ReorderServiceTest(BundlingTestBase):
+    """Tests for ReorderService.reorder_container_items with flat PlanTasks."""
 
     def setUp(self):
         super().setUp()
