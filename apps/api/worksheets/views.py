@@ -156,6 +156,22 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.M
         serializer.save()
         return Response(serializer.data)
 
+    @action(detail=True, methods=['post'], url_path='send-all-atoms-to-estimate')
+    def send_all_atoms_to_estimate(self, request, pk=None):
+        """Bulk 1:1 conversion of unclaimed atoms to EstimateLineItems."""
+        from apps.estimates.services import EstimateWizardService
+
+        worksheet = self.get_object()
+        try:
+            result = EstimateWizardService.send_all_atoms_to_estimate(worksheet)
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
+        return Response({
+            'estimate_id': result['estimate'].pk,
+            'estimate_number': result['estimate'].estimate_number,
+            'created_count': result['created_count'],
+        })
+
     @action(detail=True, methods=['post'], url_path='generate-estimate')
     def generate_estimate(self, request, pk=None):
         worksheet = self.get_object()

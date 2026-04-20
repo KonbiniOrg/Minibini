@@ -107,3 +107,52 @@ class EstimateWizardAPITest(TestCase):
         resp = self.client.post(url, {'source_ids': all_ids}, format='json')
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()['line_item_deleted'])
+
+
+class SendAllAtomsAPITest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+        )
+        # Create user with can_manage_jobs permission (Django custom permission pattern)
+        from django.contrib.auth.models import Permission
+        self.user = User.objects.create_user(username='u', password='p')
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.user.user_permissions.add(perm)
+        self.client = APIClient()
+        self.client.login(username='u', password='p')
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
+        self.ws = EstWorksheet.objects.create(job=self.job)
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='Setup', units='hours',
+            est_qty=Decimal('1'), accounting_category=self.cat,
+        )
+        self.pc = PlanCharge.objects.create(
+            plan_task=self.pt, rate_scheme=self.scheme,
+            estimated_billable_qty=Decimal('1'),
+        )
+
+    def test_send_all_creates_estimate_and_line_items(self):
+        url = f'/api/est-worksheets/{self.ws.pk}/send-all-atoms-to-estimate/'
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('estimate_id', data)
+        self.assertEqual(data['created_count'], 1)
+        self.assertEqual(EstimateLineItem.objects.filter(estimate_id=data['estimate_id']).count(), 1)
+
+    def test_send_all_idempotent_for_already_claimed(self):
+        url = f'/api/est-worksheets/{self.ws.pk}/send-all-atoms-to-estimate/'
+        self.client.post(url)
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['created_count'], 0)
