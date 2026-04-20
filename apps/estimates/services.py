@@ -866,12 +866,13 @@ class EstimateWizardService:
         if worksheet.estimate and worksheet.estimate.status == Estimate.STATUS_DRAFT:
             return worksheet.estimate
 
-        estimate_number = NumberGenerationService.generate_next_number('estimate')
-        estimate = Estimate.objects.create(
-            job=worksheet.job,
-            estimate_number=estimate_number,
-            status=Estimate.STATUS_DRAFT,
-        )
-        worksheet.estimate = estimate
-        worksheet.save()
+        with transaction.atomic():
+            estimate_number = NumberGenerationService.generate_next_number('estimate')
+            estimate = Estimate.objects.create(
+                job=worksheet.job,
+                estimate_number=estimate_number,
+                status=Estimate.STATUS_DRAFT,
+            )
+            worksheet.estimate = estimate
+            worksheet.save()
         return estimate
