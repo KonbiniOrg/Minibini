@@ -30,7 +30,9 @@
   const VALID_TRANSITIONS = {
     draft: ['submitted', 'rejected'],
     submitted: ['approved', 'rejected'],
-    approved: ['completed', 'cancelled'],
+    approved: ['cancelled'],
+    in_progress: ['work_complete', 'cancelled'],
+    work_complete: [],
     rejected: [],
     completed: [],
     cancelled: [],
@@ -48,6 +50,21 @@
       // Revert select on failure
       e.target.value = job.status;
       alert(err.message || 'Status change failed');
+    }
+  }
+
+  let releasingToFloor = $state(false);
+
+  async function releaseToFloor() {
+    if (!confirm('Release this job to the floor? Workers will see it as In Progress.')) return;
+    releasingToFloor = true;
+    try {
+      await api.patch(`/api/jobs/${job.job_id}/`, { status: 'in_progress' });
+      if (onStatusChange) onStatusChange();
+    } catch (e) {
+      alert(e.message || 'Failed to release to floor.');
+    } finally {
+      releasingToFloor = false;
     }
   }
 
@@ -154,6 +171,13 @@
       {#if job.customer_po_number}{(job.start_date || job.due_date || job.completed_date) ? ' · ' : ''}PO: {job.customer_po_number}{/if}
     </span>
   </div>
+  {#if job.status === 'approved' && canManageJobs}
+    <p>
+      <button onclick={releaseToFloor} disabled={releasingToFloor}>
+        {releasingToFloor ? 'Releasing…' : 'Release to floor'}
+      </button>
+    </p>
+  {/if}
 </div>
 
 <div class="desc-history">
