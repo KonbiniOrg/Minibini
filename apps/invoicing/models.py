@@ -101,9 +101,12 @@ class Invoice(models.Model):
 
         if not unresolved:
             old_status = job.status
-            # Walk through work_complete when coming from approved
-            # (transition rules route approved → work_complete → completed).
+            # Walk through in_progress and work_complete when coming from approved
+            # (transition rules route approved → in_progress → work_complete → completed).
             if job.status == Job.STATUS_APPROVED:
+                job.status = Job.STATUS_IN_PROGRESS
+                job.save()
+            if job.status == Job.STATUS_IN_PROGRESS:
                 job.status = Job.STATUS_WORK_COMPLETE
                 job.save()
             job.status = Job.STATUS_COMPLETED

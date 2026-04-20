@@ -146,6 +146,9 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     def work_complete(self, request, pk=None):
         job = self.get_object()
         try:
+            # Walk approved → in_progress → work_complete if needed.
+            if job.status == Job.STATUS_APPROVED:
+                job = JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
             job = JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
         except ValidationError as e:
             return Response(

@@ -599,10 +599,12 @@ class TaskLifecycleService:
     def _check_job_work_complete(task):
         """Auto-advance Job to work_complete if all its tasks are terminal.
 
-        Only fires when the Job is currently in APPROVED status.
+        Fires when the Job is currently in APPROVED or IN_PROGRESS status.
+        When the job is APPROVED, it walks approved → in_progress → work_complete
+        so that the state machine is respected.
         """
         job = task.job
-        if job.status != Job.STATUS_APPROVED:
+        if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
             return
         terminal = {Task.STATUS_COMPLETE, Task.STATUS_CANCELLED}
         all_terminal = not Task.objects.filter(
@@ -610,6 +612,8 @@ class TaskLifecycleService:
         ).exclude(status__in=terminal).exists()
         if all_terminal:
             try:
+                if job.status == Job.STATUS_APPROVED:
+                    JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
                 JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
             except ValidationError:
                 pass  # Pending task-less materials block auto-advance; task completion itself succeeds.
