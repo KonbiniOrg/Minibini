@@ -584,3 +584,47 @@ class EstimateLineItem(BaseLineItem):
 
     def __str__(self):
         return f"Estimate Line Item {self.pk} for {self.estimate.estimate_number}"
+
+
+class EstimateLineItemSource(models.Model):
+    """Polymorphic join between an EstimateLineItem and its source atom (PlanCharge or PlanMaterial).
+
+    The unique_together on (source_type, source_pk) enforces whole-atom claim at the
+    database level: an atom can be referenced by at most one estimate line item.
+
+    Note: unlike InvoiceLineItemSource, this constraint is NOT scoped by Estimate status
+    on the plan side. Worksheet revisions copy atoms (creating new instances), so the
+    constraint never needs to fire across revisions in practice.
+    """
+    SOURCE_PLAN_CHARGE = 'plan_charge'
+    SOURCE_PLAN_MATERIAL = 'plan_material'
+    SOURCE_TYPE_CHOICES = [
+        (SOURCE_PLAN_CHARGE, 'PlanCharge'),
+        (SOURCE_PLAN_MATERIAL, 'PlanMaterial'),
+    ]
+
+    source_id = models.AutoField(primary_key=True)
+    estimate_line_item = models.ForeignKey(
+        EstimateLineItem,
+        on_delete=models.CASCADE,
+        related_name='sources',
+    )
+    source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES)
+    source_pk = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = 'estimate_line_item_sources'
+        unique_together = [('source_type', 'source_pk')]
+
+    def resolve(self):
+        """Return the concrete atom instance (PlanCharge or PlanMaterial) referenced by this source."""
+        if self.source_type == self.SOURCE_PLAN_CHARGE:
+            from apps.jobs.models import PlanCharge
+            return PlanCharge.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_PLAN_MATERIAL:
+            from apps.inventory.models import PlanMaterial
+            return PlanMaterial.objects.get(pk=self.source_pk)
+        raise ValueError(f'Unknown source_type: {self.source_type}')
+
+    def __str__(self):
+        return f'Source {self.source_id}: {self.source_type}:{self.source_pk} → EstLineItem {self.estimate_line_item_id}'
