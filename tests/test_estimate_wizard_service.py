@@ -117,3 +117,85 @@ class GetSourcePoolTest(TestCase):
         states = {(a['type'], a['id']): a['state'] for a in pool['atoms']}
         self.assertEqual(states[('plan_charge', self.pc.pk)], 'claimed_by_current')
         self.assertEqual(states[('plan_material', self.pm.pk)], 'available')
+
+
+class AddAtomsToNewLineItemTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+        self.cat = AccountingCategory.objects.create(name='Labor', code='LAB', is_active=True)
+        self.cat2 = AccountingCategory.objects.create(name='Materials', code='MAT', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
+        self.ws = EstWorksheet.objects.create(job=self.job)
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='Setup', units='hours',
+            est_qty=Decimal('2'), accounting_category=self.cat,
+        )
+        self.pc = PlanCharge.objects.create(
+            plan_task=self.pt, rate_scheme=self.scheme,
+            estimated_billable_qty=Decimal('2'),
+        )
+        self.pm = PlanMaterial.objects.create(
+            est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
+            sell_price=Decimal('5'), accounting_category=self.cat2,
+        )
+        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+
+    def test_creates_line_item_with_summed_price(self):
+        atoms = [
+            {'type': 'plan_charge', 'id': self.pc.pk},
+            {'type': 'plan_material', 'id': self.pm.pk},
+        ]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        # 200 + 15 = 215
+        self.assertEqual(li.price, Decimal('215.00'))
+
+    def test_creates_source_rows(self):
+        atoms = [{'type': 'plan_charge', 'id': self.pc.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.sources.count(), 1)
+        self.assertEqual(li.sources.first().source_pk, self.pc.pk)
+
+    def test_uniform_category_kept(self):
+        # Both atoms in same category
+        pm_same_cat = PlanMaterial.objects.create(
+            est_worksheet=self.ws, description='m', quantity=Decimal('1'),
+            sell_price=Decimal('1'), accounting_category=self.cat,
+        )
+        atoms = [
+            {'type': 'plan_charge', 'id': self.pc.pk},
+            {'type': 'plan_material', 'id': pm_same_cat.pk},
+        ]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.accounting_category, self.cat)
+
+    def test_mixed_category_left_null(self):
+        atoms = [
+            {'type': 'plan_charge', 'id': self.pc.pk},
+            {'type': 'plan_material', 'id': self.pm.pk},
+        ]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertIsNone(li.accounting_category)
+
+    def test_double_claim_raises(self):
+        atoms = [{'type': 'plan_charge', 'id': self.pc.pk}]
+        EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        with self.assertRaises(EstimateClaimConflict):
+            EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+
+    def test_refuses_non_draft_estimate(self):
+        # Use update() to bypass model-level transition validation
+        Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_OPEN)
+        self.estimate.refresh_from_db()
+        atoms = [{'type': 'plan_charge', 'id': self.pc.pk}]
+        with self.assertRaises(ValidationError):
+            EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)

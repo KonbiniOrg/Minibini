@@ -1015,3 +1015,50 @@ class EstimateWizardService:
             })
 
         return {'atoms': atoms}
+
+    @staticmethod
+    def add_atoms_to_new_line_item(estimate, atoms):
+        """Create a new EstimateLineItem on `estimate` with the given atoms as sources.
+
+        atoms: list of {'type': 'plan_charge'|'plan_material', 'id': N} dicts.
+        """
+        from django.db import IntegrityError
+        from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
+
+        EstimateWizardService._validate_draft_estimate(estimate)
+
+        instances = [EstimateWizardService._resolve_atom(a) for a in atoms]
+
+        total_price = sum(
+            (i.compute_amount() for i in instances),
+            Decimal('0.00'),
+        ).quantize(Decimal('0.01'))
+        categories = {EstimateWizardService._atom_category(i) for i in instances}
+        category = categories.pop() if len(categories) == 1 else None
+
+        try:
+            with transaction.atomic():
+                line_item = EstimateLineItem.objects.create(
+                    estimate=estimate,
+                    description='',
+                    qty=Decimal('1'),
+                    units='each',
+                    price=total_price,
+                    accounting_category=category,
+                )
+                for instance in instances:
+                    EstimateLineItemSource.objects.create(
+                        estimate_line_item=line_item,
+                        source_type=EstimateWizardService._atom_source_type(instance),
+                        source_pk=instance.pk,
+                    )
+        except IntegrityError:
+            existing = set(
+                EstimateLineItemSource.objects
+                .filter(source_type__in=[a['type'] for a in atoms])
+                .values_list('source_type', 'source_pk')
+            )
+            conflicts = [a for a in atoms if (a['type'], a['id']) in existing]
+            raise EstimateClaimConflict(atom_ids=conflicts)
+
+        return line_item
