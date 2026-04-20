@@ -267,3 +267,79 @@ class AddAtomsToExistingLineItemTest(TestCase):
             EstimateWizardService.add_atoms_to_line_item(
                 self.li, [{'type': 'plan_charge', 'id': self.pc1.pk}],
             )
+
+
+class RemoveAtomsFromLineItemTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
+        self.ws = EstWorksheet.objects.create(job=self.job)
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.pt1 = PlanTask.objects.create(
+            est_worksheet=self.ws, name='A', units='hours',
+            est_qty=Decimal('1'), accounting_category=self.cat,
+        )
+        self.pc1 = PlanCharge.objects.create(
+            plan_task=self.pt1, rate_scheme=self.scheme,
+            estimated_billable_qty=Decimal('1'),
+        )
+        self.pt2 = PlanTask.objects.create(
+            est_worksheet=self.ws, name='B', units='hours',
+            est_qty=Decimal('1'), accounting_category=self.cat,
+        )
+        self.pc2 = PlanCharge.objects.create(
+            plan_task=self.pt2, rate_scheme=self.scheme,
+            estimated_billable_qty=Decimal('1'),
+        )
+        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate,
+            [
+                {'type': 'plan_charge', 'id': self.pc1.pk},
+                {'type': 'plan_charge', 'id': self.pc2.pk},
+            ],
+        )
+
+    def test_removes_subset(self):
+        src_to_remove = self.li.sources.filter(source_pk=self.pc1.pk).first()
+        result = EstimateWizardService.remove_atoms_from_line_item(
+            self.li, [src_to_remove.source_id],
+        )
+        self.assertFalse(result['line_item_deleted'])
+        self.assertEqual(self.li.sources.count(), 1)
+
+    def test_recomputes_price_when_in_sync(self):
+        # initial $200 / 1 qty. Remove pc1 -> remaining sum = $100, expected price = $100.
+        src_to_remove = self.li.sources.filter(source_pk=self.pc1.pk).first()
+        EstimateWizardService.remove_atoms_from_line_item(
+            self.li, [src_to_remove.source_id],
+        )
+        self.li.refresh_from_db()
+        self.assertEqual(self.li.price, Decimal('100.00'))
+
+    def test_preserves_overridden_price(self):
+        self.li.price = Decimal('999.00')
+        self.li.save()
+        src_to_remove = self.li.sources.filter(source_pk=self.pc1.pk).first()
+        EstimateWizardService.remove_atoms_from_line_item(
+            self.li, [src_to_remove.source_id],
+        )
+        self.li.refresh_from_db()
+        self.assertEqual(self.li.price, Decimal('999.00'))
+
+    def test_deletes_line_item_when_all_sources_removed(self):
+        all_ids = list(self.li.sources.values_list('source_id', flat=True))
+        result = EstimateWizardService.remove_atoms_from_line_item(self.li, all_ids)
+        self.assertTrue(result['line_item_deleted'])
+        from apps.estimates.models import EstimateLineItem
+        self.assertFalse(EstimateLineItem.objects.filter(pk=self.li.pk).exists())

@@ -1125,3 +1125,33 @@ class EstimateWizardService:
             raise EstimateClaimConflict(atom_ids=conflicts)
 
         return line_item
+
+    @staticmethod
+    def remove_atoms_from_line_item(line_item, source_ids):
+        """Remove a subset of source rows from a line item.
+
+        - Recomputes price if the line item was in sync before.
+        - Preserves price if it was overridden.
+        - Deletes the line item if all sources are removed.
+
+        Returns: {'line_item_deleted': bool}
+        """
+        EstimateWizardService._validate_draft_estimate(line_item.estimate)
+
+        old_sum = EstimateWizardService._sum_sources(line_item)
+        was_in_sync = EstimateWizardService._is_in_sync(line_item, old_sum)
+
+        with transaction.atomic():
+            line_item.sources.filter(source_id__in=source_ids).delete()
+            remaining = line_item.sources.count()
+
+            if remaining == 0:
+                line_item.delete()
+                return {'line_item_deleted': True}
+
+            if was_in_sync:
+                new_sum = EstimateWizardService._sum_sources(line_item)
+                line_item.price = EstimateWizardService._expected_per_unit(new_sum, line_item.qty)
+                line_item.save()
+
+        return {'line_item_deleted': False}
