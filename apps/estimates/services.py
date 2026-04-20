@@ -1164,6 +1164,9 @@ class EstimateWizardService:
         claimed by any EstimateLineItemSource, and creates one EstimateLineItem per
         atom (with one source row pointing at the atom).
 
+        Deliberately NOT wrapped in a transaction: if one atom fails (e.g. concurrent
+        claim), the successful conversions are kept so the caller can re-run to finish.
+
         Returns: {'estimate': Estimate, 'created_count': int}
         """
         from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
@@ -1171,10 +1174,13 @@ class EstimateWizardService:
         from apps.inventory.models import PlanMaterial
 
         estimate = EstimateWizardService.open_for_worksheet(worksheet)
+        EstimateWizardService._validate_draft_estimate(estimate)
 
-        # Build set of currently-claimed (type, pk) pairs
+        # Build set of currently-claimed (type, pk) pairs, scoped to this job's estimates
         claimed = set(
-            EstimateLineItemSource.objects.values_list('source_type', 'source_pk')
+            EstimateLineItemSource.objects
+            .filter(estimate_line_item__estimate__job=worksheet.job)
+            .values_list('source_type', 'source_pk')
         )
 
         created_count = 0
