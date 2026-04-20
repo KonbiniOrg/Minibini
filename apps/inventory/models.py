@@ -118,6 +118,14 @@ class MaterialBase(models.Model):
     def total_sell(self):
         return self.quantity * self.sell_price
 
+    def compute_amount(self, active_modifiers=None):
+        """Uniform atom interface: total billable amount for this material.
+
+        Materials have no modifier concept; the parameter is accepted to match
+        the BillableAtom interface shared with TaskCharge/PlanCharge.
+        """
+        return self.quantity * self.sell_price
+
     def _populate_from_pli(self):
         """Copy description/unit_cost/sell_price/accounting_category from linked PriceListItem if not already set."""
         if self.price_list_item:
