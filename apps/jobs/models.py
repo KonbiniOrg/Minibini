@@ -11,6 +11,7 @@ class Job(AbstractWorkContainer):
     STATUS_DRAFT = 'draft'
     STATUS_SUBMITTED = 'submitted'
     STATUS_APPROVED = 'approved'
+    STATUS_IN_PROGRESS = 'in_progress'
     STATUS_WORK_COMPLETE = 'work_complete'
     STATUS_REJECTED = 'rejected'
     STATUS_COMPLETED = 'completed'
@@ -20,6 +21,7 @@ class Job(AbstractWorkContainer):
         (STATUS_DRAFT, 'Draft'),
         (STATUS_SUBMITTED, 'Submitted'),
         (STATUS_APPROVED, 'Approved'),
+        (STATUS_IN_PROGRESS, 'In Progress'),  # NEW — between approved and work_complete
         (STATUS_WORK_COMPLETE, 'Work Complete'),
         (STATUS_REJECTED, 'Rejected'),
         (STATUS_COMPLETED, 'Completed'),
@@ -46,7 +48,8 @@ class Job(AbstractWorkContainer):
         VALID_TRANSITIONS = {
             Job.STATUS_DRAFT: [Job.STATUS_SUBMITTED, Job.STATUS_REJECTED],
             Job.STATUS_SUBMITTED: [Job.STATUS_APPROVED, Job.STATUS_REJECTED],
-            Job.STATUS_APPROVED: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],
+            Job.STATUS_APPROVED: [Job.STATUS_IN_PROGRESS, Job.STATUS_CANCELLED],
+            Job.STATUS_IN_PROGRESS: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],  # NEW
             Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED],
             Job.STATUS_REJECTED: [],  # Terminal state
             Job.STATUS_COMPLETED: [],  # Terminal state
