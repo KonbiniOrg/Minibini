@@ -197,7 +197,7 @@
       <a href="#/jobs/{job.job_id}/create-worksheet">Create Worksheet</a>
     {/if}
     {#if canManageJobs && currentWorksheet && !currentEstimate && (currentWorksheet.status === 'draft' || currentWorksheet.status === 'final')}
-      <a href="#/worksheets/{currentWorksheet.est_worksheet_id}/generate-estimate">Generate Estimate</a>
+      <a href={`#/worksheets/${currentWorksheet.est_worksheet_id}`}>Open worksheet to send atoms</a>
     {/if}
   </div>
 </Accordion>
