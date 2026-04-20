@@ -820,3 +820,58 @@ class EstimateGenerationService:
 
         self.line_number += 1
         return line_item
+
+
+class EstimateClaimConflict(Exception):
+    """Raised when the estimate wizard tries to claim an atom already claimed elsewhere."""
+
+    def __init__(self, atom_ids):
+        self.atom_ids = atom_ids
+        super().__init__(f'Atoms already claimed: {atom_ids}')
+
+
+class EstimateWizardService:
+    """Orchestration layer for the estimate wizard.
+
+    Mirrors InvoiceWizardService shape. Composes on top of EstimateService rather
+    than replacing it; manual line-item CRUD continues to use EstimateService.
+    """
+
+    @staticmethod
+    def _validate_draft_worksheet(worksheet):
+        from apps.estimates.models import EstWorksheet
+        if worksheet.status != EstWorksheet.STATUS_DRAFT:
+            raise ValidationError(
+                f'Cannot run wizard on worksheet in status "{worksheet.status}". '
+                f'Worksheet must be in draft.'
+            )
+
+    @staticmethod
+    def _validate_draft_estimate(estimate):
+        from apps.estimates.models import Estimate
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError(
+                f'Cannot modify line items on estimate in status "{estimate.status}".'
+            )
+
+    @staticmethod
+    def open_for_worksheet(worksheet):
+        """Return the worksheet's draft Estimate, creating one if none exists.
+
+        Raises ValidationError if the worksheet is not in draft.
+        """
+        from apps.estimates.models import Estimate
+        EstimateWizardService._validate_draft_worksheet(worksheet)
+
+        if worksheet.estimate and worksheet.estimate.status == Estimate.STATUS_DRAFT:
+            return worksheet.estimate
+
+        estimate_number = NumberGenerationService.generate_next_number('estimate')
+        estimate = Estimate.objects.create(
+            job=worksheet.job,
+            estimate_number=estimate_number,
+            status=Estimate.STATUS_DRAFT,
+        )
+        worksheet.estimate = estimate
+        worksheet.save()
+        return estimate
