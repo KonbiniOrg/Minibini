@@ -171,8 +171,12 @@
     if (!confirm('Generate an estimate from this worksheet?')) return;
     generating = true;
     try {
-      await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/generate-estimate/`);
-      window.location.hash = `/jobs/${worksheet.job}`;
+      const resp = await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/generate-estimate/`);
+      if (resp?.estimate_id) {
+        window.location.hash = `/estimates/${resp.estimate_id}`;
+      } else {
+        window.location.hash = `/jobs/${worksheet.job}`;
+      }
     } catch (e) {
       alert(e.message || 'Could not generate estimate.');
       generating = false;
