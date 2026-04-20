@@ -22,6 +22,7 @@
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
+  import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
@@ -59,6 +60,7 @@
     '/purchase-orders/:id': PurchaseOrderDetailPage,
     '/invoices/:id/wizard': InvoiceWizardPage,
     '/invoices/:id': InvoiceDetailPage,
+    '/estimates/:id': EstimateDetailPage,
     '/settings': SettingsPage,
     '/users': UserListPage,
     '/users/new': UserCreatePage,
