@@ -25,7 +25,6 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
             Prefetch('tasks', queryset=Task.objects.select_related('assignee').order_by('sort_order')),
             Prefetch('materials', queryset=Material.objects.select_related('price_list_item')),
             'template__templatetaskassociation_set__task_template',
-            'template__bundles',
         ) \
         .all().order_by('-created_date')
     serializer_class = JobSerializer

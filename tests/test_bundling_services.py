@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.db import models
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
+    EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.estimates.services import WorkTemplateService, WorksheetService
 from apps.jobs.models import Job, PlanTask
@@ -102,101 +102,6 @@ class WorksheetServiceReorderTest(BundlingTestBase):
             )
 
 
-# --- WorkTemplateService domain bundling tests ---
-
-class TemplateServiceBundleTest(BundlingTestBase):
-    """Tests for WorkTemplateService.bundle_associations."""
-
-    def setUp(self):
-        super().setUp()
-        self.tmpl = WorkTemplateService.create_template(
-            template_name='Test Template',
-        )
-        self.tt1 = WorkTemplateService.create_task_template(
-            template_name='TT1', accounting_category=self.lit,
-        )
-        self.tt2 = WorkTemplateService.create_task_template(
-            template_name='TT2', accounting_category=self.lit,
-        )
-        self.a1 = TemplateTaskAssociation.objects.create(
-            work_template=self.tmpl, task_template=self.tt1, sort_order=1,
-        )
-        self.a2 = TemplateTaskAssociation.objects.create(
-            work_template=self.tmpl, task_template=self.tt2, sort_order=2,
-        )
-
-    def test_bundle_associations(self):
-        """Bundle associations on a template."""
-        bundle = WorkTemplateService.bundle_associations(
-            self.tmpl.pk, [self.a1.pk, self.a2.pk],
-            bundle_name='My Bundle', accounting_category=self.lit,
-        )
-        self.assertIsNotNone(bundle.pk)
-        self.a1.refresh_from_db()
-        self.a2.refresh_from_db()
-        self.assertEqual(self.a1.mapping_strategy, 'bundle')
-        self.assertEqual(self.a2.mapping_strategy, 'bundle')
-        self.assertEqual(self.a1.bundle, bundle)
-
-    def test_bundle_requires_two(self):
-        """Cannot bundle fewer than 2 associations."""
-        with self.assertRaises(ValidationError):
-            WorkTemplateService.bundle_associations(
-                self.tmpl.pk, [self.a1.pk],
-                bundle_name='Solo', accounting_category=self.lit,
-            )
-
-
-class TemplateServiceUnbundleTest(BundlingTestBase):
-    """Tests for WorkTemplateService.unbundle_association."""
-
-    def setUp(self):
-        super().setUp()
-        self.tmpl = WorkTemplateService.create_template(
-            template_name='Test Template',
-        )
-        self.tt1 = WorkTemplateService.create_task_template(
-            template_name='TT1', accounting_category=self.lit,
-        )
-        self.tt2 = WorkTemplateService.create_task_template(
-            template_name='TT2', accounting_category=self.lit,
-        )
-        self.tt3 = WorkTemplateService.create_task_template(
-            template_name='TT3', accounting_category=self.lit,
-        )
-        self.bundle = TemplateBundle.objects.create(
-            work_template=self.tmpl, name='Bundle',
-            accounting_category=self.lit, sort_order=5,
-        )
-        self.a1 = TemplateTaskAssociation.objects.create(
-            work_template=self.tmpl, task_template=self.tt1,
-            sort_order=1, mapping_strategy='bundle', bundle=self.bundle,
-        )
-        self.a2 = TemplateTaskAssociation.objects.create(
-            work_template=self.tmpl, task_template=self.tt2,
-            sort_order=2, mapping_strategy='bundle', bundle=self.bundle,
-        )
-        self.a3 = TemplateTaskAssociation.objects.create(
-            work_template=self.tmpl, task_template=self.tt3,
-            sort_order=3, mapping_strategy='bundle', bundle=self.bundle,
-        )
-
-    def test_unbundle_association(self):
-        """Unbundle an association from a template bundle."""
-        WorkTemplateService.unbundle_association(self.tmpl.pk, self.a1.pk)
-        self.a1.refresh_from_db()
-        self.assertEqual(self.a1.mapping_strategy, 'direct')
-        self.assertIsNone(self.a1.bundle)
-
-    def test_unbundle_dissolves_single_remaining(self):
-        """Auto-dissolves bundle when only 1 association remains."""
-        WorkTemplateService.unbundle_association(self.tmpl.pk, self.a1.pk)
-        WorkTemplateService.unbundle_association(self.tmpl.pk, self.a2.pk)
-        self.a3.refresh_from_db()
-        self.assertEqual(self.a3.mapping_strategy, 'direct')
-        self.assertFalse(TemplateBundle.objects.filter(pk=self.bundle.pk).exists())
-
-
 class TemplateServiceReorderTest(BundlingTestBase):
     """Tests for WorkTemplateService reorder methods."""
 
@@ -222,29 +127,6 @@ class TemplateServiceReorderTest(BundlingTestBase):
         """Reorder associations at container level."""
         WorkTemplateService.reorder_items(
             self.tmpl.pk, 'task', self.a1.pk, 'down',
-        )
-        self.a1.refresh_from_db()
-        self.a2.refresh_from_db()
-        self.assertEqual(self.a1.sort_order, 2)
-        self.assertEqual(self.a2.sort_order, 1)
-
-    def test_reorder_in_bundle(self):
-        """Reorder associations within a bundle."""
-        bundle = TemplateBundle.objects.create(
-            work_template=self.tmpl, name='B',
-            accounting_category=self.lit, sort_order=10,
-        )
-        self.a1.mapping_strategy = 'bundle'
-        self.a1.bundle = bundle
-        self.a1.sort_order = 1
-        self.a1.save()
-        self.a2.mapping_strategy = 'bundle'
-        self.a2.bundle = bundle
-        self.a2.sort_order = 2
-        self.a2.save()
-
-        WorkTemplateService.reorder_in_bundle(
-            self.tmpl.pk, self.a1.pk, 'down',
         )
         self.a1.refresh_from_db()
         self.a2.refresh_from_db()

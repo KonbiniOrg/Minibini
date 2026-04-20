@@ -526,8 +526,7 @@ class BundlingService:
     Shared low-level service for bundle/unbundle/reorder operations.
 
     Works with any item model that has `mapping_strategy`, `bundle` (FK), and
-    `sort_order` fields, and any bundle model with `sort_order`. Currently used
-    by WorkTemplateService for TemplateTaskAssociation/TemplateBundle. Domain
+    `sort_order` fields, and any bundle model with `sort_order`. Domain
     services call BundlingService after handling domain-specific validation
     (e.g. status checks).
     """
@@ -539,7 +538,7 @@ class BundlingService:
         Additive: starts from existing max sort_order in the bundle + 1.
         """
         from django.db.models import Max
-        # Try plan_tasks (PlanBundle) first, then associations (TemplateBundle)
+        # Try plan_tasks first, then associations
         if hasattr(bundle, 'plan_tasks'):
             existing_max = bundle.plan_tasks.aggregate(
                 Max('sort_order')

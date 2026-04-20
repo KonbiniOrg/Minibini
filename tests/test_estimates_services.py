@@ -451,7 +451,7 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_template=tmpl, task_template=tt,
-            mapping_strategy='direct', sort_order=1,
+            sort_order=1,
         )
         pk = assoc.pk
         WorkTemplateService.delete_association(tmpl.pk, pk)
@@ -472,7 +472,7 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_template=tmpl1, task_template=tt,
-            mapping_strategy='direct', sort_order=1,
+            sort_order=1,
         )
         with self.assertRaises(NotFoundError):
             WorkTemplateService.delete_association(tmpl2.pk, assoc.pk)

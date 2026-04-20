@@ -2,8 +2,7 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 
-from apps.estimates.models import WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
-from apps.core.models import AccountingCategory
+from apps.estimates.models import WorkTemplate, TaskTemplate, TemplateTaskAssociation
 
 
 class WorkTemplateEditViewTest(TestCase):
@@ -121,28 +120,6 @@ class WorkTemplateDeleteViewTest(TestCase):
         # Verify association is deleted but task template remains
         self.assertFalse(TemplateTaskAssociation.objects.filter(pk=association_id).exists())
         self.assertTrue(TaskTemplate.objects.filter(template_id=task_template.template_id).exists())
-
-    def test_delete_view_cascades_to_bundles(self):
-        """Test that deleting template also deletes bundles."""
-        # Create a line item type for the bundle
-        accounting_category = AccountingCategory.objects.create(
-            code='TEST',
-            name='Test Type'
-        )
-        bundle = TemplateBundle.objects.create(
-            work_template=self.template,
-            name='Test Bundle',
-            accounting_category=accounting_category
-        )
-        bundle_id = bundle.pk
-
-        # Delete the work order template
-        self.client.post(
-            reverse('estimates:work_template_delete', args=[self.template.template_id])
-        )
-
-        # Verify bundle is deleted
-        self.assertFalse(TemplateBundle.objects.filter(pk=bundle_id).exists())
 
     def test_delete_view_get_not_allowed(self):
         """Test that GET request is not allowed for delete."""

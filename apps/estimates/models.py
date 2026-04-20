@@ -372,36 +372,8 @@ class WorkTemplate(models.Model):
                 )
 
 
-class TemplateBundle(models.Model):
-    """
-    A named grouping within a WorkTemplate that becomes one line item.
-
-    TemplateTaskAssociations point to a bundle to indicate they should be
-    combined into a single line item on the estimate.
-    """
-    work_template = models.ForeignKey(
-        WorkTemplate,
-        on_delete=models.CASCADE,
-        related_name='bundles'
-    )
-    name = models.CharField(max_length=100)
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
-        on_delete=models.PROTECT
-    )
-    sort_order = models.IntegerField(default=0)
-
-    class Meta:
-        db_table = 'template_bundles'
-        unique_together = ['work_template', 'name']
-        ordering = ['sort_order', 'name']
-
-    def __str__(self):
-        return f"{self.work_template.template_name} - {self.name}"
-
-
 class TemplateTaskAssociation(models.Model):
-    """Association between WorkTemplate and TaskTemplate with mapping configuration."""
+    """Association between WorkTemplate and TaskTemplate with ordering."""
     work_template = models.ForeignKey(WorkTemplate, on_delete=models.CASCADE)
     task_template = models.ForeignKey('TaskTemplate', on_delete=models.CASCADE)
 
@@ -409,30 +381,10 @@ class TemplateTaskAssociation(models.Model):
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, default=1)
     sort_order = models.IntegerField(default=0)
 
-    # Mapping configuration
-    MAPPING_CHOICES = [
-        ('direct', 'Direct - becomes its own line item'),
-        ('bundle', 'Bundle - part of a bundled line item'),
-        ('exclude', 'Exclude - internal only, not on estimate'),
-    ]
-    mapping_strategy = models.CharField(max_length=20, choices=MAPPING_CHOICES, default='direct')
-    bundle = models.ForeignKey(
-        TemplateBundle,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='associations'
-    )
-
     class Meta:
         db_table = 'template_task_assoc'
         unique_together = ['work_template', 'task_template']
         ordering = ['sort_order']
-
-    def clean(self):
-        from django.core.exceptions import ValidationError
-        if self.bundle and self.bundle.work_template != self.work_template:
-            raise ValidationError("Bundle must belong to the same WorkTemplate")
 
     def __str__(self):
         return f"{self.work_template.template_name} -> {self.task_template.template_name}"

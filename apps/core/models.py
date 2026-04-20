@@ -191,7 +191,7 @@ class AbstractWorkContainer(models.Model):
         """Populate this container's tasks from a WorkTemplate.
 
         Subclasses implement by reading the template's TemplateTaskAssociations
-        and TemplateBundles and creating the appropriate task type
+        and creating the appropriate task type
         (PlanTask on EstWorksheet, Task on Job).
         """
         raise NotImplementedError

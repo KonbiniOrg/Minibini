@@ -299,7 +299,7 @@ class WorkTemplateService:
 
     @staticmethod
     def delete_association(template_pk, assoc_pk):
-        """Delete an unbundled association from a template."""
+        """Delete an association from a template."""
         try:
             tmpl = WorkTemplate.objects.get(pk=template_pk)
         except WorkTemplate.DoesNotExist:
@@ -311,84 +311,6 @@ class WorkTemplateService:
         except TemplateTaskAssociation.DoesNotExist:
             raise NotFoundError(f'TemplateTaskAssociation {assoc_pk} not found')
         assoc.delete()
-
-    # --- Bundling operations ---
-
-    @staticmethod
-    def bundle_associations(template_pk, assoc_ids, bundle_name, accounting_category):
-        """Bundle associations on a template. Requires >= 2 associations."""
-        from apps.core.services import BundlingService
-        from apps.estimates.models import TemplateBundle
-        from django.db import models as db_models
-
-        try:
-            tmpl = WorkTemplate.objects.get(pk=template_pk)
-        except WorkTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkTemplate {template_pk} not found')
-        if len(assoc_ids) < 2:
-            raise ValidationError('Please select at least 2 tasks to bundle.')
-
-        # Calculate next sort_order at container level
-        max_assoc = TemplateTaskAssociation.objects.filter(
-            work_template=tmpl, bundle__isnull=True,
-        ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
-        max_bundle = TemplateBundle.objects.filter(
-            work_template=tmpl,
-        ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
-        next_sort = max(max_assoc, max_bundle) + 1
-
-        bundle, _ = TemplateBundle.objects.get_or_create(
-            work_template=tmpl, name=bundle_name,
-            defaults={
-                'accounting_category': accounting_category,
-                'sort_order': next_sort,
-            },
-        )
-
-        selected = TemplateTaskAssociation.objects.filter(
-            pk__in=assoc_ids, work_template=tmpl,
-        ).order_by('sort_order', 'pk')
-        BundlingService.bundle_items(selected, bundle)
-
-        # Auto-dissolve other bundles that lost members
-        all_bundles = TemplateBundle.objects.filter(work_template=tmpl)
-        BundlingService.auto_dissolve_bundles(
-            all_bundles, TemplateTaskAssociation, exclude_pk=bundle.pk,
-        )
-
-        return bundle
-
-    @staticmethod
-    def unbundle_association(template_pk, assoc_pk):
-        """Unbundle an association from its bundle on a template."""
-        from apps.core.services import BundlingService
-        from apps.estimates.models import TemplateBundle
-
-        try:
-            tmpl = WorkTemplate.objects.get(pk=template_pk)
-        except WorkTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkTemplate {template_pk} not found')
-        try:
-            assoc = TemplateTaskAssociation.objects.get(
-                pk=assoc_pk, work_template=tmpl,
-            )
-        except TemplateTaskAssociation.DoesNotExist:
-            raise NotFoundError(f'TemplateTaskAssociation {assoc_pk} not found')
-        if assoc.mapping_strategy != 'bundle' or not assoc.bundle:
-            return
-
-        container_items_qs = TemplateTaskAssociation.objects.filter(
-            work_template=tmpl, bundle__isnull=True,
-        )
-        container_bundles_qs = TemplateBundle.objects.filter(
-            work_template=tmpl,
-        )
-        BundlingService.unbundle_item(assoc, container_items_qs, container_bundles_qs)
-
-        BundlingService.auto_dissolve_bundles(
-            TemplateBundle.objects.filter(work_template=tmpl),
-            TemplateTaskAssociation,
-        )
 
     @staticmethod
     def reorder_items(template_pk, item_type, item_id, direction):
@@ -406,25 +328,6 @@ class WorkTemplateService:
         BundlingService.reorder_container_items(
             items_qs, item_type, item_id, direction,
         )
-
-    @staticmethod
-    def reorder_in_bundle(template_pk, assoc_pk, direction):
-        """Reorder an association within its bundle on a template."""
-        from apps.core.services import BundlingService
-
-        try:
-            tmpl = WorkTemplate.objects.get(pk=template_pk)
-        except WorkTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkTemplate {template_pk} not found')
-        try:
-            assoc = TemplateTaskAssociation.objects.get(
-                pk=assoc_pk, work_template=tmpl,
-                mapping_strategy='bundle', bundle__isnull=False,
-            )
-        except TemplateTaskAssociation.DoesNotExist:
-            raise NotFoundError(f'TemplateTaskAssociation {assoc_pk} not found in bundle')
-        bundle_items_qs = TemplateTaskAssociation.objects.filter(bundle=assoc.bundle)
-        BundlingService.reorder_in_bundle(bundle_items_qs, assoc, direction)
 
 
 class WorksheetService:
