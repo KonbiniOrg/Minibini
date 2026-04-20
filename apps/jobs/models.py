@@ -413,6 +413,15 @@ class TaskCharge(models.Model):
         qty = self.rate_scheme.get_actual_qty(self.task)
         return self.rate_scheme.compute_charge(qty, self.active_modifiers)
 
+    def compute_amount(self, active_modifiers=None):
+        """Uniform atom interface: total billable amount for this charge.
+
+        Ignores the active_modifiers argument (uses self.active_modifiers).
+        Parameter is accepted to match the BillableAtom interface shared with
+        Material/PlanMaterial.
+        """
+        return self.compute()
+
     def effective_rate(self):
         return self.rate_scheme.effective_rate(self.active_modifiers)
 
@@ -438,6 +447,14 @@ class PlanCharge(models.Model):
 
     def compute(self):
         return self.rate_scheme.compute_charge(self.estimated_billable_qty, self.active_modifiers)
+
+    def compute_amount(self, active_modifiers=None):
+        """Uniform atom interface: total billable amount for this charge.
+
+        Ignores the active_modifiers argument (uses self.active_modifiers).
+        Parameter is accepted to match the BillableAtom interface.
+        """
+        return self.compute()
 
     def effective_rate(self):
         return self.rate_scheme.effective_rate(self.active_modifiers)

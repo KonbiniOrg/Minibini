@@ -40,3 +40,82 @@ class MaterialComputeAmountTest(TestCase):
         )
         # Materials don't have modifiers; the parameter is accepted for uniform interface.
         self.assertEqual(m.compute_amount(active_modifiers=['rush']), Decimal('5'))
+
+
+from apps.jobs.models import (
+    Blep, PlanCharge, PlanTask, RateScheme, Task, TaskCharge,
+)
+from django.utils import timezone
+from datetime import timedelta
+
+
+class TaskChargeComputeAmountTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.scheme_time = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.scheme_qty = RateScheme.objects.create(
+            name='PerItem', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50'), unit_label='item', accounting_category=self.cat,
+        )
+        self.scheme_flat = RateScheme.objects.create(
+            name='FlatFee', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('250'), unit_label='each', accounting_category=self.cat,
+        )
+
+    def test_task_charge_elapsed_time(self):
+        task = Task.objects.create(job=self.job, name='t', units='hours')
+        TaskCharge.objects.create(task=task, rate_scheme=self.scheme_time)
+        now = timezone.now()
+        Blep.objects.create(task=task, start_time=now - timedelta(hours=2), end_time=now)
+        # 2 hours × $100 = $200
+        self.assertEqual(task.charge.compute_amount(), Decimal('200.00'))
+
+    def test_task_charge_entered_qty(self):
+        task = Task.objects.create(job=self.job, name='t', units='item')
+        TaskCharge.objects.create(
+            task=task, rate_scheme=self.scheme_qty, actuals={'qty': 3},
+        )
+        # 3 × $50 = $150
+        self.assertEqual(task.charge.compute_amount(), Decimal('150.00'))
+
+    def test_task_charge_flat_fee(self):
+        task = Task.objects.create(job=self.job, name='t', units='each')
+        TaskCharge.objects.create(task=task, rate_scheme=self.scheme_flat)
+        self.assertEqual(task.charge.compute_amount(), Decimal('250.00'))
+
+
+class PlanChargeComputeAmountTest(TestCase):
+    def setUp(self):
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+        )
+        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
+        self.ws = EstWorksheet.objects.create(job=self.job)
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
+        )
+
+    def test_plan_charge_uses_estimated_qty(self):
+        pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='setup', units='hours',
+            est_qty=Decimal('2'), accounting_category=self.cat,
+        )
+        PlanCharge.objects.create(
+            plan_task=pt, rate_scheme=self.scheme,
+            estimated_billable_qty=Decimal('2'),
+        )
+        # 2 hours × $100 = $200
+        self.assertEqual(pt.charge.compute_amount(), Decimal('200.00'))
