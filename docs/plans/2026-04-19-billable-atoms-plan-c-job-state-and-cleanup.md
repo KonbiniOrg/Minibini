@@ -1295,3 +1295,8 @@ Expected: no matches in code (matches in `docs/` or `test_output.txt` are OK).
 - Wiring `CatalogPicker` into Job atom creation and Invoice direct line item creation
 - Adding `TaskTemplate ↔ TemplateMaterial` association (per the design's Out-of-scope section)
 - Modifier-toggle UI polish in the catalog picker
+
+**Known issues inherited from Plan A (to address in a future cleanup pass across both wizard services):**
+- `IntegrityError` recovery query in `add_atoms_to_new_line_item` and `add_atoms_to_line_item` (both `InvoiceWizardService` and `EstimateWizardService`) is filtered only by `source_type__in=[...]`, not by `source_pk__in=[...]`. It loads every claim of those types into memory before filtering in Python. At scale this should be scoped to the atoms being inserted. See `apps/estimates/services.py` around the `except IntegrityError` blocks and the matching pattern in `apps/invoicing/services.py`.
+- `EstimateClaimConflict.atom_ids` (and `ClaimConflict.atom_ids` on the invoice side) is misnamed — the field holds a list of `{'type','id'}` dicts, not bare ids. Rename to `conflicting_atoms` in both services and update the API response shape and any frontend consumers (Plan B's wizard components).
+- `source_pool` API endpoint (on `EstimateViewSet`) uses `estimate.worksheets.first()` with no ordering, which is nondeterministic when multiple worksheet versions exist (revision chain). Should order by `pk` descending and pick the draft one, or otherwise make deterministic.
