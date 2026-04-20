@@ -112,3 +112,12 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             return 1
 
     return 0
+
+
+@receiver(estimate_accepted)
+def trigger_atom_carry_over(sender, estimate, **kwargs):
+    """When an Estimate is accepted, carry over atoms from its worksheet (and from
+    any direct-estimate line items with template refs) to the Job.
+    """
+    from apps.estimates.carry_over import AtomCarryOverService
+    AtomCarryOverService.carry_over_for_estimate(estimate)
