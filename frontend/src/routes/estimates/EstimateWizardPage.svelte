@@ -99,10 +99,6 @@
 
   // Walk the flat source pool atoms and update state from current line items.
   // claimed_by_other atoms (snapshot at mount) are left alone.
-  // NOTE: EstimateLineItemSerializer does not include nested `sources`, so
-  // claimMap will always be empty until that serializer is extended.
-  // Atoms claimed by this estimate will remain shown as available after
-  // actions until the serializer is updated. See Task 5 concern.
   function reconcileAtomStates() {
     if (!sourcePool) return;
     const claimMap = new Map();
