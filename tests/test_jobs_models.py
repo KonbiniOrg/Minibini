@@ -165,7 +165,7 @@ class JobStatusTransitionTest(TestCase):
             Job.STATUS_DRAFT: [Job.STATUS_DRAFT],
             Job.STATUS_SUBMITTED: [Job.STATUS_SUBMITTED],
             Job.STATUS_APPROVED: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED],
-            Job.STATUS_WORK_COMPLETE: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE],
+            Job.STATUS_WORK_COMPLETE: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE],
         }
         for s in path_map[status]:
             job.status = s
@@ -173,7 +173,10 @@ class JobStatusTransitionTest(TestCase):
         return job
 
     def test_approved_to_work_complete_allowed(self):
+        """approved → in_progress → work_complete is the valid path."""
         job = self._job(Job.STATUS_APPROVED)
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
         job.status = Job.STATUS_WORK_COMPLETE
         job.save()
         job.refresh_from_db()

@@ -105,6 +105,8 @@ class JobListFilterTestCase(TestCase):
         self.job_completed.save()
         self.job_completed.status = Job.STATUS_APPROVED
         self.job_completed.save()
+        self.job_completed.status = Job.STATUS_IN_PROGRESS
+        self.job_completed.save()
         self.job_completed.status = Job.STATUS_WORK_COMPLETE
         self.job_completed.save()
         self.job_completed.status = Job.STATUS_COMPLETED

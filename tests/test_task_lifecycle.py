@@ -318,12 +318,14 @@ class JobAutoWorkCompleteTest(BaseTestCase):
 
     def test_no_auto_advance_when_job_already_work_complete(self):
         """A job already in work_complete does not get mutated by task completion."""
-        # Walk the job to work_complete first.
+        # Walk the job to work_complete via valid transitions.
+        self.job.status = Job.STATUS_IN_PROGRESS
+        self.job.save()
         self.job.status = Job.STATUS_WORK_COMPLETE
         self.job.save()
         # Create another task somehow (bypass the expectation by updating status
         # directly). Then complete it: the _check_job_work_complete guard only
-        # fires when job.status == APPROVED, so this is a no-op.
+        # fires when job.status == APPROVED or IN_PROGRESS, so this is a no-op.
         other = Task.objects.create(name='Extra', job=self.job)
         with patch(
             'apps.jobs.services.JobService.update_status'

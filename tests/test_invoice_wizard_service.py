@@ -27,6 +27,8 @@ class OpenForJobTest(TestCase):
         self.completed_job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0004'
         )
+        self.completed_job.status = Job.STATUS_IN_PROGRESS
+        self.completed_job.save()
         self.completed_job.status = Job.STATUS_WORK_COMPLETE
         self.completed_job.save()
         self.completed_job.status = Job.STATUS_COMPLETED

@@ -80,12 +80,13 @@ def _walk_to(job, target_status):
         Job.STATUS_DRAFT: [Job.STATUS_DRAFT],
         Job.STATUS_SUBMITTED: [Job.STATUS_SUBMITTED],
         Job.STATUS_APPROVED: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED],
+        Job.STATUS_IN_PROGRESS: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS],
         Job.STATUS_WORK_COMPLETE: [
-            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE,
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
         ],
         Job.STATUS_COMPLETED: [
             Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
-            Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED,
+            Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED,
         ],
     }[target_status]
     for step in path:
@@ -126,7 +127,7 @@ class JobServiceUpdateStatusTest(JobsTestBase):
         mock_save.assert_not_called()
 
     def test_update_status_fires_release_on_transition_into_work_complete(self):
-        _walk_to(self.job, Job.STATUS_APPROVED)
+        _walk_to(self.job, Job.STATUS_IN_PROGRESS)
 
         with patch(
             'apps.inventory.services.InventoryService.release_earmarks_for_job'

@@ -103,7 +103,9 @@ class JobAPITest(BaseTestCase):
 
     def test_complete_job(self):
         job = self._get_approved_job()
-        # Must walk: approved -> work_complete -> completed
+        # Must walk: approved -> in_progress -> work_complete -> completed
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
         job.status = Job.STATUS_WORK_COMPLETE
         job.save()
         response = self.client.post(f'/api/jobs/{job.pk}/complete/')
