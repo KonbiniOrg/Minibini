@@ -783,15 +783,15 @@ class BoardService:
 
         cutoff = timezone.now() - timedelta(days=retention_days)
 
-        # Pipeline: draft + submitted
+        # Pipeline: draft + submitted + approved (estimate accepted, awaiting prep)
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted']
+            status__in=['draft', 'submitted', 'approved']
         ).select_related('contact').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
-        # Approved
+        # In Progress (board column key kept as 'approved' for URL stability)
         approved_jobs = Job.objects.filter(
-            status='approved'
+            status='in_progress'
         ).select_related('contact').order_by('due_date')
         approved_list = []
         for i, job in enumerate(approved_jobs):
@@ -859,10 +859,10 @@ class BoardService:
 
     @staticmethod
     def get_pipeline_data():
-        """Return pipeline jobs (draft + submitted) with worksheet/estimate info."""
+        """Return pipeline jobs (draft + submitted + approved) with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted']
+            status__in=['draft', 'submitted', 'approved']
         ).select_related('contact').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
@@ -870,13 +870,18 @@ class BoardService:
 
     @staticmethod
     def get_approved_data():
-        """Return approved jobs where work is still active (not unpaid)."""
+        """Return in_progress jobs where work is still active (not unpaid).
+
+        Method name kept for URL/view stability. Conceptually this is now the
+        "In Progress" column — jobs that have been released to the floor.
+        Follow-up: rename to get_in_progress_data.
+        """
         from apps.jobs.models import Job, Task
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
         approved_jobs = Job.objects.filter(
-            status='approved'
+            status='in_progress'
         ).select_related('contact').order_by('due_date')
 
         approved_list = []
@@ -1135,7 +1140,10 @@ class BoardService:
         if job.status in ('draft', 'submitted'):
             return BoardService._pipeline_sub_status(job)
         elif job.status == Job.STATUS_APPROVED:
-            return BoardService._approved_sub_status(job)
+            # approved = estimate accepted, awaiting prep / release to floor
+            return 'awaiting-prep'
+        elif job.status == Job.STATUS_IN_PROGRESS:
+            return BoardService._in_progress_sub_status(job)
         elif job.status == Job.STATUS_WORK_COMPLETE:
             return BoardService._work_complete_sub_status(job)
         return None
@@ -1166,14 +1174,14 @@ class BoardService:
     UNPAID_SUB_STATUSES = {'invoice-sent', 'invoice-prepped', 'needs-invoice'}
 
     @staticmethod
-    def _approved_sub_status(job):
-        """Sub-status for Approved jobs.
+    def _in_progress_sub_status(job):
+        """Sub-status for In Progress jobs (status='in_progress').
 
-        Post-WorkOrder-removal: tasks live directly on the job. The
-        previous "needs-work-order" sub-status (no WO existed yet) is
-        now "needs-tasks" (no task has been created yet). Approved jobs
-        with all tasks terminal are auto-advanced to work_complete, so
-        invoice-related sub-statuses live on _work_complete_sub_status.
+        Tasks live directly on the job. Jobs with all tasks terminal are
+        auto-advanced to work_complete, so invoice-related sub-statuses
+        live on _work_complete_sub_status.
+
+        Renamed from _approved_sub_status — follow-up: remove the old name.
         """
         all_tasks = job.tasks.all()
         if not all_tasks.exists():
