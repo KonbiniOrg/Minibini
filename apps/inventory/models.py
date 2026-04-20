@@ -219,6 +219,13 @@ class Material(MaterialBase):
         null=True, blank=True,
         related_name='+',
     )
+    source_plan_material = models.OneToOneField(
+        'inventory.PlanMaterial',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='carried_material',
+        help_text='PlanMaterial this material was carried over from (carry-over idempotency)',
+    )
 
     class Meta:
         db_table = 'materials'
