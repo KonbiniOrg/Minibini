@@ -9,6 +9,18 @@ class JobSummarySerializer(serializers.ModelSerializer):
         fields = ['job_id', 'job_number', 'name', 'status']
 
 
+class JobSearchSerializer(serializers.ModelSerializer):
+    contact_name = serializers.SerializerMethodField()
+
+    def get_contact_name(self, obj):
+        return obj.contact.name if obj.contact else None
+
+    class Meta:
+        model = Job
+        fields = ['job_id', 'job_number', 'name', 'status', 'created_date', 'start_date',
+                  'description', 'customer_po_number', 'contact_name']
+
+
 class JobSerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
     tasks = serializers.SerializerMethodField()
