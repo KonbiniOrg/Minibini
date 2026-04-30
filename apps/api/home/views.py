@@ -9,8 +9,7 @@ from apps.jobs.models import Blep
 
 def _serialize_current_blep(blep):
     task = blep.task
-    work_order = task.work_order
-    job = work_order.job if work_order else None
+    job = task.job
     return {
         'id': blep.blep_id,
         'start_time': blep.start_time.isoformat() if blep.start_time else None,
@@ -25,9 +24,6 @@ def _serialize_current_blep(blep):
             'job_number': job.job_number,
             'name': job.name,
         } if job else None,
-        'work_order': {
-            'id': work_order.pk,
-        } if work_order else None,
     }
 
 
@@ -43,7 +39,7 @@ def current_blep_view(request):
     blep = (
         Blep.objects
         .filter(user=request.user, end_time__isnull=True)
-        .select_related('task__work_order__job')
+        .select_related('task__job')
         .order_by('-start_time')
         .first()
     )

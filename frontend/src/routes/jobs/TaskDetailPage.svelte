@@ -169,8 +169,8 @@
 
   // Subtask tree callbacks
   function handleSubtaskTaskClick(sub) {
-    if (task && task.work_order) {
-      window.location.hash = `/jobs/${task.work_order.job.id}/tasks/${sub.task_id}`;
+    if (task && task.job) {
+      window.location.hash = `/jobs/${task.job.id}/tasks/${sub.task_id}`;
     }
   }
 
@@ -224,14 +224,14 @@
   <p class="error">{error}</p>
 {:else if task}
   <h2>Task: {task.name}</h2>
-  {#if task.work_order}
+  {#if task.job}
     <p>
-      <a href={`/jobs/${task.work_order.job.id}`} use:link>
-        &laquo; {task.work_order.job.job_number} {task.work_order.job.name}
+      <a href={`/jobs/${task.job.id}`} use:link>
+        &laquo; {task.job.job_number} {task.job.name}
       </a>
       &nbsp;·&nbsp;
-      <a href={`/work-orders/${task.work_order.id}`} use:link>
-        Work Order
+      <a href={`/jobs/${task.job.id}/tasklist`} use:link>
+        Task list
       </a>
     </p>
   {/if}

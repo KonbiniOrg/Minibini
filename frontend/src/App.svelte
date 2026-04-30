@@ -14,6 +14,8 @@
   import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
+  import JobEditPage from './routes/jobs/JobEditPage.svelte';
+  import CreateWorksheetPage from './routes/jobs/CreateWorksheetPage.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
@@ -22,7 +24,8 @@
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
-  import WorkOrderDetailPage from './routes/workorders/WorkOrderDetailPage.svelte';
+  import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
+  import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
   import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
@@ -31,6 +34,10 @@
   import UserDetailPage from './routes/users/UserDetailPage.svelte';
   import ExpenseListPage from './routes/expenses/ExpenseListPage.svelte';
   import ReimbursementDetailPage from './routes/reimbursements/ReimbursementDetailPage.svelte';
+  import EmailInboxPage from './routes/email/EmailInboxPage.svelte';
+  import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
+  import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
+  import EmailAssociatePage from './routes/email/EmailAssociatePage.svelte';
 
   const routes = {
     '/': Home,
@@ -46,9 +53,12 @@
     '/jobs': JobListPage,
     '/jobs/board': JobBoardPage,
     '/jobs/:id': JobDetailPage,
+    '/jobs/:id/edit': JobEditPage,
+    '/jobs/:id/create-worksheet': CreateWorksheetPage,
+    '/jobs/:id/tasklist': JobTaskListPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
     '/worksheets/:id': WorksheetDetailPage,
-    '/work-orders/:id': WorkOrderDetailPage,
+    '/estimates/:id': EstimateDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
     '/purchase-orders/new': PurchaseOrderFormPage,
     '/purchase-orders/:id/edit': PurchaseOrderFormPage,
@@ -61,6 +71,10 @@
     '/users/:id': UserDetailPage,
     '/expenses': ExpenseListPage,
     '/reimbursements/:id': ReimbursementDetailPage,
+    '/email': EmailInboxPage,
+    '/email/:id/create-job': EmailCreateJobPage,
+    '/email/:id/associate': EmailAssociatePage,
+    '/email/:id': EmailDetailPage,
     '/profile': ProfilePage,
   };
 

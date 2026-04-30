@@ -1,9 +1,10 @@
 from rest_framework import serializers
 from apps.estimates.models import (
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
+    WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
 )
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.units import UnitsField
+from apps.inventory.models import TemplateMaterial
 
 
 class TaskTemplateSerializer(serializers.ModelSerializer):
@@ -39,19 +40,30 @@ class TemplateAssociationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
-class WorkOrderTemplateSerializer(serializers.ModelSerializer):
+class WorkTemplateSerializer(serializers.ModelSerializer):
     associations = TemplateAssociationSerializer(
         source='templatetaskassociation_set', many=True, read_only=True
     )
     bundles = TemplateBundleSerializer(many=True, read_only=True)
 
     class Meta:
-        model = WorkOrderTemplate
+        model = WorkTemplate
         fields = [
             'template_id', 'template_name', 'description',
             'is_active', 'associations', 'bundles',
         ]
         read_only_fields = ['template_id']
+
+
+class TemplateMaterialSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TemplateMaterial
+        fields = [
+            'template_material_id', 'work_template', 'description', 'quantity',
+            'unit_cost', 'sell_price', 'price_list_item', 'accounting_category',
+            'sort_order',
+        ]
+        read_only_fields = ['template_material_id', 'work_template']
 
 
 class ConfigurationSerializer(serializers.ModelSerializer):

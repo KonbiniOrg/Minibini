@@ -6,7 +6,7 @@
     open = false,
     mode = 'create-freeform', // 'create-freeform' | 'create-template' | 'edit'
     task = null,
-    workOrderId = null,
+    jobId = null,
     templates = [],
     categories = [],
     onSaved = () => {},
@@ -66,7 +66,7 @@
     error = '';
     try {
       if (isEdit && task) {
-        await api.patch(`/api/work-orders/${workOrderId}/tasks/${task.task_id}/`, {
+        await api.patch(`/api/jobs/${jobId}/tasks/${task.task_id}/`, {
           name, description, units,
           rate: rate || null,
           est_qty: estQty || null,
@@ -74,12 +74,12 @@
         });
       } else if (createMode === 'template') {
         if (!templateId) { error = 'Please select a template.'; busy = false; return; }
-        await api.post(`/api/work-orders/${workOrderId}/add-from-template/`, {
+        await api.post(`/api/jobs/${jobId}/add-from-template/`, {
           task_template_id: Number(templateId),
           est_qty: estQty || null,
         });
       } else {
-        await api.post(`/api/work-orders/${workOrderId}/tasks/`, {
+        await api.post(`/api/jobs/${jobId}/tasks/`, {
           name, description, units,
           rate: rate || null,
           est_qty: estQty || null,
@@ -123,7 +123,7 @@
             <select bind:value={templateId}>
               <option value="">-- Select template --</option>
               {#each templates as tmpl}
-                <option value={tmpl.task_template_id}>{tmpl.name}</option>
+                <option value={tmpl.template_id}>{tmpl.template_name}</option>
               {/each}
             </select>
           </label>

@@ -228,6 +228,7 @@ class EstWorksheet(AbstractWorkContainer):
     ]
 
     est_worksheet_id = models.AutoField(primary_key=True)
+    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
     estimate = models.ForeignKey(Estimate, on_delete=models.SET_NULL, null=True, blank=True, related_name='worksheets')
     status = models.CharField(max_length=20, choices=EST_WORKSHEET_STATUS_CHOICES, default=STATUS_DRAFT)
     version = models.IntegerField(default=1)
@@ -296,6 +297,7 @@ class EstWorksheet(AbstractWorkContainer):
             for plan_material in plan_task.plan_materials.all():
                 PlanMaterial.objects.create(
                     plan_task=new_plan_task,
+                    est_worksheet=new_worksheet,
                     price_list_item=plan_material.price_list_item,
                     accounting_category=plan_material.accounting_category,
                     description=plan_material.description,
@@ -313,8 +315,8 @@ class EstWorksheet(AbstractWorkContainer):
         return f"EstWorksheet {self.pk} v{self.version}"
 
 
-class WorkOrderTemplate(models.Model):
-    """Template for creating WorkOrders/EstWorksheets with product structure"""
+class WorkTemplate(models.Model):
+    """Template for populating Jobs and EstWorksheets with product structure"""
 
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
@@ -328,7 +330,7 @@ class WorkOrderTemplate(models.Model):
     created_date = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'wo_templates'
+        db_table = 'work_templates'
 
     def __str__(self):
         return self.template_name
@@ -356,7 +358,7 @@ class WorkOrderTemplate(models.Model):
 
             # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
-                work_order_template=self,
+                work_template=self,
                 task_template__is_active=True
             ).select_related('bundle').order_by('sort_order', 'task_template__template_name')
 
@@ -379,16 +381,45 @@ class WorkOrderTemplate(models.Model):
 
         return generated_tasks
 
+    def generate_materials_for_worksheet(self, worksheet, quantity=1):
+        from apps.inventory.models import PlanMaterial
+        for tm in self.materials.all():
+            for _ in range(quantity):
+                PlanMaterial.objects.create(
+                    est_worksheet=worksheet,
+                    plan_task=None,
+                    description=tm.description,
+                    quantity=tm.quantity,
+                    unit_cost=tm.unit_cost,
+                    sell_price=tm.sell_price,
+                    price_list_item=tm.price_list_item,
+                    accounting_category=tm.accounting_category,
+                )
+
+    def generate_materials_for_job(self, job, quantity=1):
+        from apps.inventory.services import MaterialService
+        for tm in self.materials.all():
+            for _ in range(quantity):
+                MaterialService.create_on_job(
+                    job=job, task=None,
+                    description=tm.description,
+                    quantity=tm.quantity,
+                    unit_cost=tm.unit_cost,
+                    sell_price=tm.sell_price,
+                    price_list_item=tm.price_list_item,
+                    accounting_category=tm.accounting_category,
+                )
+
 
 class TemplateBundle(models.Model):
     """
-    A named grouping within a WorkOrderTemplate that becomes one line item.
+    A named grouping within a WorkTemplate that becomes one line item.
 
     TemplateTaskAssociations point to a bundle to indicate they should be
     combined into a single line item on the estimate.
     """
-    work_order_template = models.ForeignKey(
-        WorkOrderTemplate,
+    work_template = models.ForeignKey(
+        WorkTemplate,
         on_delete=models.CASCADE,
         related_name='bundles'
     )
@@ -401,16 +432,16 @@ class TemplateBundle(models.Model):
 
     class Meta:
         db_table = 'template_bundles'
-        unique_together = ['work_order_template', 'name']
+        unique_together = ['work_template', 'name']
         ordering = ['sort_order', 'name']
 
     def __str__(self):
-        return f"{self.work_order_template.template_name} - {self.name}"
+        return f"{self.work_template.template_name} - {self.name}"
 
 
 class TemplateTaskAssociation(models.Model):
-    """Association between WorkOrderTemplate and TaskTemplate with mapping configuration."""
-    work_order_template = models.ForeignKey(WorkOrderTemplate, on_delete=models.CASCADE)
+    """Association between WorkTemplate and TaskTemplate with mapping configuration."""
+    work_template = models.ForeignKey(WorkTemplate, on_delete=models.CASCADE)
     task_template = models.ForeignKey('TaskTemplate', on_delete=models.CASCADE)
 
     # Quantity and ordering
@@ -434,16 +465,16 @@ class TemplateTaskAssociation(models.Model):
 
     class Meta:
         db_table = 'template_task_assoc'
-        unique_together = ['work_order_template', 'task_template']
+        unique_together = ['work_template', 'task_template']
         ordering = ['sort_order']
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        if self.bundle and self.bundle.work_order_template != self.work_order_template:
-            raise ValidationError("Bundle must belong to the same WorkOrderTemplate")
+        if self.bundle and self.bundle.work_template != self.work_template:
+            raise ValidationError("Bundle must belong to the same WorkTemplate")
 
     def __str__(self):
-        return f"{self.work_order_template.template_name} -> {self.task_template.template_name}"
+        return f"{self.work_template.template_name} -> {self.task_template.template_name}"
 
 
 class TaskTemplate(models.Model):
@@ -465,7 +496,7 @@ class TaskTemplate(models.Model):
     )
 
     # Relationships
-    work_order_templates = models.ManyToManyField(WorkOrderTemplate, through='TemplateTaskAssociation', related_name='task_templates')
+    work_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='task_templates')
 
     created_date = models.DateTimeField(auto_now_add=True)
     # is_active no longer used but kept in case we change our minds later and to avoid a migration
@@ -481,13 +512,13 @@ class TaskTemplate(models.Model):
                        assignee=None, mapping_strategy='direct', bundle=None, sort_order=None):
         """Generate a PlanTask or Task from this template with specified quantity and mapping config.
 
-        The return type depends on the container: EstWorksheet -> PlanTask, WorkOrder -> Task.
+        The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
         """
-        from apps.jobs.models import WorkOrder, Task, PlanTask
+        from apps.jobs.models import Job, Task, PlanTask
 
-        if isinstance(container, WorkOrder):
+        if isinstance(container, Job):
             return Task.objects.create(
-                work_order=container,
+                job=container,
                 name=self.template_name,
                 description=self.description,
                 units=self.units,

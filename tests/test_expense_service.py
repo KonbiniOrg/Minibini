@@ -8,9 +8,6 @@ from django.contrib.auth import get_user_model
 from apps.core.models import AccountingCategory, Configuration
 from apps.expenses.models import Expense
 from apps.expenses.services import ExpenseService
-from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, WorkOrder, Task
-from apps.inventory.models import Material
 
 User = get_user_model()
 
@@ -249,31 +246,3 @@ class ExpenseRetrySyncTest(TestCase):
         mock_push.assert_called_once()
 
 
-class FindOrCreateMaterialsTaskTest(TestCase):
-    def setUp(self):
-        _seed_job_config()
-        self.user = User.objects.create_user(username='admin', password='testpass')
-        self.contact = Contact.objects.create(
-            first_name='A', last_name='B',
-            email='a@b.com', mobile_number='555-0000',
-        )
-        self.business = Business.objects.create(
-            business_name='Acme', default_contact=self.contact,
-        )
-        self.contact.business = self.business
-        self.contact.save()
-        self.job = Job.objects.create(
-            job_number='JOB-2026-0001', contact=self.contact,
-        )
-        self.wo = WorkOrder.objects.create(job=self.job)
-
-    def test_creates_task_in_complete_state_on_first_call(self):
-        task = ExpenseService.find_or_create_materials_task(work_order=self.wo)
-        self.assertEqual(task.status, Task.STATUS_COMPLETE)
-        self.assertEqual(task.work_order, self.wo)
-
-    def test_reuses_existing_task_on_second_call(self):
-        first = ExpenseService.find_or_create_materials_task(work_order=self.wo)
-        second = ExpenseService.find_or_create_materials_task(work_order=self.wo)
-        self.assertEqual(first.pk, second.pk)
-        self.assertEqual(self.wo.tasks.filter(name='Materials').count(), 1)

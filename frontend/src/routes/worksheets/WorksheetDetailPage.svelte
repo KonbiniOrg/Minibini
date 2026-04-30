@@ -4,7 +4,6 @@
   import { user as userStore } from '../../stores/auth.js';
   import WorksheetTaskTable from '../../components/WorksheetTaskTable.svelte';
   import PlanTaskModal from '../../components/PlanTaskModal.svelte';
-  import PlanBundleModal from '../../components/PlanBundleModal.svelte';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
 
   let { params = {} } = $props();
@@ -15,19 +14,16 @@
   let loading = $state(true);
   let error = $state('');
 
-  // Modal state
   let taskModalOpen = $state(false);
   let taskModalMode = $state('create-freeform');
   let taskModalTask = $state(null);
-
-  let bundleModalOpen = $state(false);
-  let bundleModalMode = $state('create');
-  let bundleModalBundle = $state(null);
 
   let materialModalOpen = $state(false);
   let materialModalMode = $state('create');
   let materialModalMaterial = $state(null);
   let materialModalTaskId = $state(null);
+
+  let materials = $state([]);
 
   const canManageJobs = $derived(
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
@@ -40,10 +36,20 @@
     error = '';
     try {
       worksheet = await api.get(`/api/est-worksheets/${params.id}/`);
+      await loadMaterials();
     } catch (e) {
       error = e.message || 'Could not load worksheet.';
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadMaterials() {
+    try {
+      const all = await api.get(`/api/est-worksheets/${params.id}/plan-materials/`);
+      materials = all.filter(m => !m.plan_task);
+    } catch (e) {
+      materials = [];
     }
   }
 
@@ -77,7 +83,6 @@
     }
   });
 
-  // Task modal handlers
   function openAddTask() {
     taskModalTask = null;
     taskModalMode = 'create-freeform';
@@ -106,54 +111,35 @@
     reload();
   }
 
-  // Bundle modal handlers
-  function openAddBundle() {
-    bundleModalBundle = null;
-    bundleModalMode = 'create';
-    bundleModalOpen = true;
+  function openAddMaterial() {
+    materialModalMaterial = null;
+    materialModalTaskId = null;
+    materialModalMode = 'create';
+    materialModalOpen = true;
   }
 
-  function openEditBundle(bundle) {
-    bundleModalBundle = bundle;
-    bundleModalMode = 'edit';
-    bundleModalOpen = true;
+  function openEditMaterial(mat, task = null) {
+    materialModalMaterial = mat;
+    materialModalTaskId = task ? task.plan_task_id : null;
+    materialModalMode = 'edit';
+    materialModalOpen = true;
   }
 
-  async function handleDeleteBundle(bundle) {
-    if (!confirm(`Delete bundle "${bundle.name}"? Tasks will be unbundled.`)) return;
-    try {
-      await api.delete(`/api/est-worksheets/${worksheet.est_worksheet_id}/bundles/${bundle.plan_bundle_id}/`);
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not delete bundle.');
-    }
-  }
-
-  function handleBundleSaved() {
-    bundleModalOpen = false;
-    bundleModalBundle = null;
-    reload();
-  }
-
-  // Material modal handlers
-  function openAddMaterial(task) {
+  function openAddTaskMaterial(task) {
     materialModalMaterial = null;
     materialModalTaskId = task.plan_task_id;
     materialModalMode = 'create';
     materialModalOpen = true;
   }
 
-  function openEditMaterial(material, task) {
-    materialModalMaterial = material;
-    materialModalTaskId = task.plan_task_id;
-    materialModalMode = 'edit';
-    materialModalOpen = true;
-  }
-
-  async function handleDeleteMaterial(material, task) {
-    if (!confirm('Delete this material?')) return;
+  async function handleDeleteMaterial(mat, task = null) {
+    if (!confirm(`Delete material "${mat.description || 'No description'}"?`)) return;
     try {
-      await api.delete(`/api/plan-tasks/${task.plan_task_id}/materials/${material.plan_material_id}/`);
+      if (task) {
+        await api.delete(`/api/plan-tasks/${task.plan_task_id}/materials/${mat.plan_material_id}/`);
+      } else {
+        await api.delete(`/api/est-worksheets/${worksheet.est_worksheet_id}/plan-materials/${mat.plan_material_id}/`);
+      }
       await reload();
     } catch (e) {
       alert(e.message || 'Could not delete material.');
@@ -167,12 +153,11 @@
     reload();
   }
 
-  // Reorder handlers
-  async function handleReorder(itemType, itemId, direction) {
+  async function handleReorder(taskId, direction) {
     try {
       await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/reorder/`, {
-        item_type: itemType,
-        item_id: itemId,
+        item_type: 'task',
+        item_id: taskId,
         direction,
       });
       await reload();
@@ -181,49 +166,17 @@
     }
   }
 
-  async function handleReorderInBundle(task, direction) {
-    try {
-      await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/reorder-in-bundle/`, {
-        task_id: task.plan_task_id,
-        direction,
-      });
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not reorder in bundle.');
-    }
-  }
-
-  async function handleMoveToBundle(task, bundleId) {
-    try {
-      await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/bundles/${bundleId}/add-tasks/`, {
-        task_ids: [task.plan_task_id],
-      });
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not move task to bundle.');
-    }
-  }
-
-  async function handleRemoveFromBundle(task, bundle) {
-    try {
-      await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/bundles/${bundle.plan_bundle_id}/remove-tasks/`, {
-        task_ids: [task.plan_task_id],
-      });
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not remove task from bundle.');
-    }
-  }
-
-  // Generate estimate
   let generating = $state(false);
   async function generateEstimate() {
     if (!confirm('Generate an estimate from this worksheet?')) return;
     generating = true;
     try {
-      const result = await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/generate-estimate/`);
-      // Redirect to job page where the new estimate will appear
-      window.location.hash = `/jobs/${worksheet.job}`;
+      const resp = await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/generate-estimate/`);
+      if (resp?.estimate_id) {
+        window.location.hash = `/estimates/${resp.estimate_id}`;
+      } else {
+        window.location.hash = `/jobs/${worksheet.job}`;
+      }
     } catch (e) {
       alert(e.message || 'Could not generate estimate.');
       generating = false;
@@ -252,7 +205,7 @@
   {#if canEdit}
     <div class="action-bar">
       <button type="button" onclick={openAddTask}>Add Task</button>
-      <button type="button" onclick={openAddBundle}>Create Bundle</button>
+      <button type="button" onclick={openAddMaterial}>Add Material</button>
       {#if worksheet.status === 'draft' || worksheet.status === 'final'}
         <button type="button" onclick={generateEstimate} disabled={generating}>
           {generating ? 'Generating...' : 'Generate Estimate'}
@@ -266,18 +219,47 @@
     readonly={!canEdit}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
-    onAddMaterial={openAddMaterial}
+    onReorder={handleReorder}
+    onAddMaterial={openAddTaskMaterial}
     onEditMaterial={openEditMaterial}
     onDeleteMaterial={handleDeleteMaterial}
-    onEditBundle={openEditBundle}
-    onDeleteBundle={handleDeleteBundle}
-    onReorder={handleReorder}
-    onReorderInBundle={handleReorderInBundle}
-    onMoveToBundle={handleMoveToBundle}
-    onRemoveFromBundle={handleRemoveFromBundle}
   />
 
-  <!-- Modals -->
+  {#if materials.length > 0 || canEdit}
+    <h3>Materials</h3>
+    {#if materials.length === 0}
+      <p class="empty-msg">No taskless materials.</p>
+    {:else}
+      <table border="1" class="mat-table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th class="text-right">Qty</th>
+            <th class="text-right">Unit Cost</th>
+            <th class="text-right">Sell Price</th>
+            {#if canEdit}<th>Actions</th>{/if}
+          </tr>
+        </thead>
+        <tbody>
+          {#each materials as mat}
+            <tr>
+              <td>{mat.description || '(no description)'}</td>
+              <td class="text-right">{mat.quantity ?? '-'}</td>
+              <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
+              <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
+              {#if canEdit}
+                <td class="actions-cell">
+                  <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
+                  <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
+                </td>
+              {/if}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  {/if}
+
   <PlanTaskModal
     open={taskModalOpen}
     mode={taskModalMode}
@@ -289,20 +271,11 @@
     onClose={() => { taskModalOpen = false; }}
   />
 
-  <PlanBundleModal
-    open={bundleModalOpen}
-    mode={bundleModalMode}
-    bundle={bundleModalBundle}
-    worksheetId={worksheet.est_worksheet_id}
-    {categories}
-    onSaved={handleBundleSaved}
-    onClose={() => { bundleModalOpen = false; }}
-  />
-
   <PlanMaterialModal
     open={materialModalOpen}
     mode={materialModalMode}
     material={materialModalMaterial}
+    worksheetId={worksheet.est_worksheet_id}
     planTaskId={materialModalTaskId}
     {categories}
     onSaved={handleMaterialSaved}
@@ -328,4 +301,15 @@
   }
   .action-bar button:hover { background: #f3f4f6; }
   .action-bar button:disabled { opacity: 0.5; cursor: default; }
+
+  .mat-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+  .mat-table th { padding: 8px 10px; text-align: left; background: #fef3c7; color: #78350f; }
+  .mat-table td { padding: 6px 10px; vertical-align: top; }
+  .mat-table .text-right { text-align: right; }
+  .mat-table .actions-cell button {
+    font-size: 11px; padding: 2px 6px; margin-right: 2px;
+    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
+  }
+  .mat-table .actions-cell button:hover { background: #f0f0f0; }
+  .empty-msg { color: #888; }
 </style>

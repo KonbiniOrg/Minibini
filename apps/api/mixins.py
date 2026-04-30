@@ -324,12 +324,12 @@ class PlanTaskBundleMixin:
             raise NotFound()
 
 
-class WorkOrderTaskMixin:
+class JobTaskMixin:
     """
-    Adds task CRUD actions to the WorkOrder viewset.
+    Adds task CRUD actions to the Job viewset.
 
-    Works against Task (work-order-side model). No bundles — RealBundle
-    does not exist after the 2026-04-05 model split.
+    Works against Task (now belongs directly to Job after the 2026-04-12
+    WorkOrder removal). No bundles on the job side.
 
     Subclasses declare:
         task_serializer_class = SomeTaskSerializer
@@ -338,23 +338,23 @@ class WorkOrderTaskMixin:
 
     @action(detail=True, methods=['get', 'post'], url_path='tasks', url_name='tasks')
     def tasks(self, request, pk=None):
-        work_order = self.get_object()
+        job = self.get_object()
         if request.method == 'GET':
             from apps.jobs.models import Task
-            tasks = Task.objects.filter(work_order=work_order).order_by('sort_order')
+            tasks = Task.objects.filter(job=job).order_by('sort_order')
             serializer = self.task_serializer_class(tasks, many=True)
             return Response(serializer.data)
 
         serializer = self.task_serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(work_order=work_order)
+        serializer.save(job=job)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['patch', 'delete'],
-            url_path='tasks/(?P<task_id>[0-9]+)', url_name='task-detail')
-    def task_detail(self, request, pk=None, task_id=None):
-        work_order = self.get_object()
-        task = self._get_task_or_404(work_order, task_id)
+            url_path='tasks/(?P<task_pk>[0-9]+)', url_name='task-detail')
+    def task_detail(self, request, pk=None, task_pk=None):
+        job = self.get_object()
+        task = self._get_task_or_404(job, task_pk)
 
         if request.method == 'DELETE':
             from django.core.exceptions import ValidationError
@@ -373,10 +373,10 @@ class WorkOrderTaskMixin:
         serializer.save()
         return Response(serializer.data)
 
-    def _get_task_or_404(self, work_order, task_id):
+    def _get_task_or_404(self, job, task_pk):
         from apps.jobs.models import Task
         try:
-            return Task.objects.get(pk=task_id, work_order=work_order)
+            return Task.objects.get(pk=task_pk, job=job)
         except Task.DoesNotExist:
             from rest_framework.exceptions import NotFound
             raise NotFound()

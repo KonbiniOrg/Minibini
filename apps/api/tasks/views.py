@@ -8,15 +8,15 @@ from rest_framework.response import Response
 
 from apps.jobs.models import Task
 from apps.inventory.models import Material
-from apps.inventory.services import InventoryService
+from apps.inventory.services import MaterialService
 from apps.core.services import NotFoundError, ServiceError
 
 
 class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
     """Flat task endpoints — lifecycle actions, materials, subtasks.
 
-    These operations only need the task id; they were previously nested
-    under /api/work-orders/{wo_pk}/tasks/{task_id}/... via TaskLifecycleMixin.
+    These operations only need the task id; they live at
+    /api/tasks/{task_id}/... (tasks are job-scoped via Task.job).
 
     Any authenticated user can drive task lifecycle (start, complete,
     block, unblock, cancel) and their own time tracking (start-work,
@@ -54,7 +54,7 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
         from apps.api.tasks.serializers import MaterialSerializer, MaterialWriteSerializer
         task = self.get_object()
         if request.method == 'GET':
-            materials = Material.objects.filter(task=task)
+            materials = Material.objects.filter(task=task).select_related('price_list_item')
             serializer = MaterialSerializer(materials, many=True)
             return Response(serializer.data)
 
@@ -63,14 +63,9 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return err
         serializer = MaterialWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            mat = InventoryService.create_wo_material(
-                task.pk, **serializer.validated_data
-            )
-        except NotFoundError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
-        except ServiceError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        mat = MaterialService.create_on_job(
+            job=task.job, task=task, **serializer.validated_data
+        )
         return Response(
             MaterialSerializer(mat).data,
             status=status.HTTP_201_CREATED,
@@ -90,29 +85,43 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             raise NotFound()
 
         if request.method == 'DELETE':
-            try:
-                InventoryService.delete_wo_material(material.pk)
-            except NotFoundError as e:
-                return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            if material.consumption_state == Material.CONSUMPTION_STATE_PENDING:
+                # Pending materials may have earmarks; restock fully to unwind them.
+                qty = material.quantity
+                if qty > 0:
+                    try:
+                        MaterialService.restock(material, qty)
+                    except DjangoValidationError as e:
+                        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    material.delete()
+            else:
+                # NA-state material: no earmark/inventory accounting; safe to delete directly.
+                material.delete()
             return Response({'message': 'Material deleted.'})
 
+        # PATCH — only metadata fields allowed; quantity changes go through
+        # /api/materials/{id}/draw-more/ or /api/materials/{id}/restock/.
+        QUANTITY_FIELDS = {'quantity', 'restocked_qty'}
+        disallowed = QUANTITY_FIELDS.intersection(request.data.keys())
+        if disallowed:
+            return Response(
+                {'detail': 'Quantity changes must use draw-more or restock actions on /api/materials/{id}/.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = MaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        try:
-            mat = InventoryService.update_wo_material(
-                material.pk, **serializer.validated_data
-            )
-        except NotFoundError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
-        except ServiceError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(MaterialSerializer(mat).data)
+        for field, value in serializer.validated_data.items():
+            setattr(material, field, value)
+        material.save()
+        return Response(MaterialSerializer(material).data)
 
     # --- Subtask CRUD ---
 
     @action(detail=True, methods=['get', 'post'], url_path='subtasks', url_name='subtasks')
     def subtasks(self, request, pk=None):
-        from apps.api.work_orders.serializers import TaskSerializer
+        from apps.api.tasks.serializers import TaskSerializer
         task = self.get_object()
         if request.method == 'GET':
             children = Task.objects.filter(parent_task=task).order_by('sort_order')
@@ -124,7 +133,7 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return err
         serializer = TaskSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(parent_task=task, work_order=task.work_order)
+        serializer.save(parent_task=task, job=task.job)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])

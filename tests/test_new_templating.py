@@ -8,7 +8,7 @@ from django.db.models import ProtectedError
 from django.core.exceptions import ValidationError
 
 from apps.jobs.models import PlanBundle, Job, PlanTask
-from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
+from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.estimates.services import EstimateGenerationService
 from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact
@@ -48,35 +48,35 @@ class TestTemplateBundle(TestCase):
     """Tests for TemplateBundle model"""
 
     def test_create_template_bundle(self):
-        """Can create a TemplateBundle attached to WorkOrderTemplate"""
+        """Can create a TemplateBundle attached to WorkTemplate"""
         lit = AccountingCategory.objects.create(name="Labor", code="LBR")
-        wot = WorkOrderTemplate.objects.create(template_name="Cabinet Refinish")
+        wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
 
         bundle = TemplateBundle.objects.create(
-            work_order_template=wot,
+            work_template=wot,
             name="Prep Work",
             accounting_category=lit
         )
 
-        self.assertEqual(bundle.work_order_template, wot)
+        self.assertEqual(bundle.work_template, wot)
         self.assertEqual(bundle.name, "Prep Work")
         self.assertEqual(bundle.accounting_category, lit)
 
     def test_bundle_name_unique_per_template(self):
-        """Bundle names must be unique within a WorkOrderTemplate"""
+        """Bundle names must be unique within a WorkTemplate"""
         lit = AccountingCategory.objects.create(name="Labor", code="LBR")
-        wot = WorkOrderTemplate.objects.create(template_name="Cabinet Refinish")
+        wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
 
-        TemplateBundle.objects.create(work_order_template=wot, name="Prep", accounting_category=lit)
+        TemplateBundle.objects.create(work_template=wot, name="Prep", accounting_category=lit)
 
         with self.assertRaises(IntegrityError):
-            TemplateBundle.objects.create(work_order_template=wot, name="Prep", accounting_category=lit)
+            TemplateBundle.objects.create(work_template=wot, name="Prep", accounting_category=lit)
 
     def test_bundle_cascades_on_template_delete(self):
-        """Deleting WorkOrderTemplate deletes its bundles"""
+        """Deleting WorkTemplate deletes its bundles"""
         lit = AccountingCategory.objects.create(name="Labor", code="LBR")
-        wot = WorkOrderTemplate.objects.create(template_name="Cabinet Refinish")
-        TemplateBundle.objects.create(work_order_template=wot, name="Prep", accounting_category=lit)
+        wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
+        TemplateBundle.objects.create(work_template=wot, name="Prep", accounting_category=lit)
 
         wot.delete()
         self.assertEqual(TemplateBundle.objects.count(), 0)
@@ -84,8 +84,8 @@ class TestTemplateBundle(TestCase):
     def test_bundle_accounting_category_protected(self):
         """Cannot delete AccountingCategory if TemplateBundle references it"""
         lit = AccountingCategory.objects.create(name="Labor", code="LBR")
-        wot = WorkOrderTemplate.objects.create(template_name="Cabinet Refinish")
-        TemplateBundle.objects.create(work_order_template=wot, name="Prep", accounting_category=lit)
+        wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
+        TemplateBundle.objects.create(work_template=wot, name="Prep", accounting_category=lit)
 
         with self.assertRaises(ProtectedError):
             lit.delete()
@@ -97,11 +97,11 @@ class TestTemplateTaskAssociationMapping(TestCase):
     def test_association_direct_mapping(self):
         """Association can have direct mapping strategy"""
         lit = AccountingCategory.objects.create(name="Labor", code="LBR")
-        wot = WorkOrderTemplate.objects.create(template_name="Cabinet Refinish")
+        wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
         tt = TaskTemplate.objects.create(template_name="Sand", accounting_category=lit)
 
         assoc = TemplateTaskAssociation.objects.create(
-            work_order_template=wot,
+            work_template=wot,
             task_template=tt,
             est_qty=1,
             mapping_strategy='direct'
@@ -113,12 +113,12 @@ class TestTemplateTaskAssociationMapping(TestCase):
     def test_association_bundle_mapping(self):
         """Association can point to a bundle"""
         lit = AccountingCategory.objects.create(name="Labor", code="LBR")
-        wot = WorkOrderTemplate.objects.create(template_name="Cabinet Refinish")
+        wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
         tt = TaskTemplate.objects.create(template_name="Sand", accounting_category=lit)
-        bundle = TemplateBundle.objects.create(work_order_template=wot, name="Prep", accounting_category=lit)
+        bundle = TemplateBundle.objects.create(work_template=wot, name="Prep", accounting_category=lit)
 
         assoc = TemplateTaskAssociation.objects.create(
-            work_order_template=wot,
+            work_template=wot,
             task_template=tt,
             est_qty=1,
             mapping_strategy='bundle',
@@ -129,15 +129,15 @@ class TestTemplateTaskAssociationMapping(TestCase):
         self.assertEqual(assoc.bundle, bundle)
 
     def test_bundle_must_belong_to_same_template(self):
-        """Cannot assign a bundle from a different WorkOrderTemplate"""
+        """Cannot assign a bundle from a different WorkTemplate"""
         lit = AccountingCategory.objects.create(name="Labor", code="LBR")
-        wot1 = WorkOrderTemplate.objects.create(template_name="Cabinet Refinish")
-        wot2 = WorkOrderTemplate.objects.create(template_name="Table Refinish")
+        wot1 = WorkTemplate.objects.create(template_name="Cabinet Refinish")
+        wot2 = WorkTemplate.objects.create(template_name="Table Refinish")
         tt = TaskTemplate.objects.create(template_name="Sand", accounting_category=lit)
-        bundle = TemplateBundle.objects.create(work_order_template=wot2, name="Prep", accounting_category=lit)
+        bundle = TemplateBundle.objects.create(work_template=wot2, name="Prep", accounting_category=lit)
 
         assoc = TemplateTaskAssociation(
-            work_order_template=wot1,
+            work_template=wot1,
             task_template=tt,
             est_qty=1,
             mapping_strategy='bundle',
@@ -173,16 +173,16 @@ class TestEstimateGeneration(TestCase):
     def test_direct_tasks_become_line_items(self):
         """Tasks with direct mapping become individual line items"""
         # Create templates
-        wot = WorkOrderTemplate.objects.create(template_name="Simple Job")
+        wot = WorkTemplate.objects.create(template_name="Simple Job")
         tt1 = TaskTemplate.objects.create(template_name="Sand", rate=50, accounting_category=self.lit_labor)
         tt2 = TaskTemplate.objects.create(template_name="Stain", rate=75, accounting_category=self.lit_labor)
 
         # Create associations (both direct)
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt1, est_qty=2, mapping_strategy='direct'
+            work_template=wot, task_template=tt1, est_qty=2, mapping_strategy='direct'
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt2, est_qty=1, mapping_strategy='direct'
+            work_template=wot, task_template=tt2, est_qty=1, mapping_strategy='direct'
         )
 
         # Create worksheet and tasks
@@ -203,19 +203,19 @@ class TestEstimateGeneration(TestCase):
 
     def test_bundled_tasks_become_one_line_item(self):
         """Tasks in same bundle become one line item"""
-        wot = WorkOrderTemplate.objects.create(template_name="Bundle Job")
+        wot = WorkTemplate.objects.create(template_name="Bundle Job")
         bundle = TemplateBundle.objects.create(
-            work_order_template=wot, name="Prep Work", accounting_category=self.lit_labor
+            work_template=wot, name="Prep Work", accounting_category=self.lit_labor
         )
 
         tt1 = TaskTemplate.objects.create(template_name="Sand", rate=50, accounting_category=self.lit_labor)
         tt2 = TaskTemplate.objects.create(template_name="Clean", rate=25, accounting_category=self.lit_labor)
 
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt1, est_qty=1, mapping_strategy='bundle', bundle=bundle
+            work_template=wot, task_template=tt1, est_qty=1, mapping_strategy='bundle', bundle=bundle
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt2, est_qty=1, mapping_strategy='bundle', bundle=bundle
+            work_template=wot, task_template=tt2, est_qty=1, mapping_strategy='bundle', bundle=bundle
         )
 
         worksheet = EstWorksheet.objects.create(job=self.job)
@@ -244,15 +244,15 @@ class TestEstimateGeneration(TestCase):
 
     def test_excluded_tasks_not_on_estimate(self):
         """Tasks with exclude mapping don't appear on estimate"""
-        wot = WorkOrderTemplate.objects.create(template_name="With Excluded")
+        wot = WorkTemplate.objects.create(template_name="With Excluded")
         tt1 = TaskTemplate.objects.create(template_name="Sand", rate=50, accounting_category=self.lit_labor)
         tt2 = TaskTemplate.objects.create(template_name="Internal Check", rate=0, accounting_category=self.lit_labor)
 
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt1, est_qty=1, mapping_strategy='direct'
+            work_template=wot, task_template=tt1, est_qty=1, mapping_strategy='direct'
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt2, est_qty=1, mapping_strategy='exclude'
+            work_template=wot, task_template=tt2, est_qty=1, mapping_strategy='exclude'
         )
 
         worksheet = EstWorksheet.objects.create(job=self.job)

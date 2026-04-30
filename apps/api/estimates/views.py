@@ -1,5 +1,9 @@
-from rest_framework import viewsets
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from apps.core.services import NotFoundError, ServiceError
 from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateService
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
@@ -29,8 +33,19 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
     # Status actions
     status_actions = {
         'mark-open': {'service': EstimateService.mark_open},
-        'revise': {'service': EstimateService.revise_estimate},
     }
+
+    @action(detail=True, methods=['post'], url_path='revise')
+    def revise(self, request, pk=None):
+        try:
+            new_estimate = EstimateService.revise_estimate(pk)
+        except NotFoundError:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        except (ServiceError, DjangoValidationError) as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(new_estimate)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def get_queryset(self):
         qs = super().get_queryset()

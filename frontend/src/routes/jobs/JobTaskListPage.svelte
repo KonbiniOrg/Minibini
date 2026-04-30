@@ -1,0 +1,413 @@
+<script>
+  import { link } from 'svelte-spa-router';
+  import { api } from '../../lib/api.js';
+  import { user as userStore } from '../../stores/auth.js';
+  import TaskTree from '../../components/TaskTree.svelte';
+  import TaskModal from '../../components/TaskModal.svelte';
+  import MaterialModal from '../../components/MaterialModal.svelte';
+  import SubtaskModal from '../../components/SubtaskModal.svelte';
+  import AssignModal from '../../components/AssignModal.svelte';
+
+  let { params = {} } = $props();
+
+  let job = $state(null);
+  let enrichedTasks = $state([]);
+  let jobMaterials = $state([]);
+  let templates = $state([]);
+  let categories = $state([]);
+  let loading = $state(true);
+  let error = $state('');
+
+  // Modal state
+  let taskModalOpen = $state(false);
+  let taskModalMode = $state('create-freeform');
+  let taskModalTask = $state(null);
+
+  let materialModalOpen = $state(false);
+  let materialModalMode = $state('create');
+  let materialModalMaterial = $state(null);
+  let materialModalTaskId = $state(null);
+  let materialModalJobId = $state(null);
+
+  let selectedTaskId = $state(null);
+
+  let subtaskModalOpen = $state(false);
+  let subtaskModalParentTaskId = $state(null);
+
+  let assignModalOpen = $state(false);
+  let assignModalTask = $state(null);
+
+  // Status action state
+  let statusBusy = $state(false);
+
+  const canManageJobs = $derived(
+    $userStore?.permissions?.includes('can_manage_jobs') ?? false
+  );
+
+  const jobLocked = $derived(
+    job && ['completed', 'cancelled', 'rejected'].includes(job.status)
+  );
+
+  async function loadJob() {
+    loading = true;
+    error = '';
+    try {
+      job = await api.get(`/api/jobs/${params.id}/`);
+      jobMaterials = (job.materials || []).filter(m => !m.task);
+      await enrichTasks();
+    } catch (e) {
+      error = e.message || 'Could not load job.';
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function enrichTasks() {
+    if (!job || !job.tasks) {
+      enrichedTasks = [];
+      return;
+    }
+    // Only top-level tasks (subtasks are fetched and nested separately)
+    const tasks = (job.tasks || []).filter(t => !t.parent_task);
+    const enriched = await Promise.all(tasks.map(async (task) => {
+      const [materials, subtasks] = await Promise.all([
+        fetchMaterials(task.task_id),
+        fetchSubtasks(task.task_id),
+      ]);
+      // Enrich subtasks with their materials
+      const enrichedSubs = await Promise.all(subtasks.map(async (sub) => {
+        const subMaterials = await fetchMaterials(sub.task_id);
+        return { ...sub, materials: subMaterials };
+      }));
+      return { ...task, materials, subtasks: enrichedSubs };
+    }));
+    enrichedTasks = enriched;
+  }
+
+  async function fetchMaterials(taskId) {
+    try {
+      return await api.get(`/api/tasks/${taskId}/materials/`);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async function fetchSubtasks(taskId) {
+    try {
+      return await api.get(`/api/tasks/${taskId}/subtasks/`);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async function loadTemplates() {
+    try {
+      const resp = await api.get('/api/task-templates/?page_size=100');
+      templates = resp.results || resp;
+    } catch (e) {
+      templates = [];
+    }
+  }
+
+  async function loadCategories() {
+    try {
+      const resp = await api.get('/api/accounting-categories/?page_size=100');
+      categories = resp.results || resp;
+    } catch (e) {
+      categories = [];
+    }
+  }
+
+  async function reload() {
+    await loadJob();
+  }
+
+  $effect(() => {
+    if (params.id) {
+      loadJob();
+      loadTemplates();
+      loadCategories();
+    }
+  });
+
+  // Task modal handlers
+  function openAddTask() {
+    taskModalTask = null;
+    taskModalMode = 'create-freeform';
+    taskModalOpen = true;
+  }
+
+  function openEditTask(task) {
+    taskModalTask = task;
+    taskModalMode = 'edit';
+    taskModalOpen = true;
+  }
+
+  async function handleDeleteTask(task) {
+    if (!confirm(`Delete task "${task.name}"?`)) return;
+    try {
+      await api.delete(`/api/jobs/${job.job_id}/tasks/${task.task_id}/`);
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not delete task.');
+    }
+  }
+
+  async function handleCancelTask(task) {
+    if (!confirm(`Cancel task "${task.name}"?`)) return;
+    try {
+      await api.post(`/api/tasks/${task.task_id}/cancel/`);
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not cancel task.');
+    }
+  }
+
+  function handleTaskSaved() {
+    taskModalOpen = false;
+    taskModalTask = null;
+    reload();
+  }
+
+  // Material modal handlers
+  function openAddMaterial(task) {
+    materialModalMaterial = null;
+    materialModalTaskId = task.task_id;
+    materialModalJobId = null;
+    materialModalMode = 'create';
+    materialModalOpen = true;
+  }
+
+  function openAddJobMaterial() {
+    materialModalMaterial = null;
+    materialModalTaskId = null;
+    materialModalJobId = job.job_id;
+    materialModalMode = 'create';
+    materialModalOpen = true;
+  }
+
+  async function handleEditMaterialDescription(material, _task) {
+    const next = window.prompt('Edit description:', material.description || '');
+    if (next === null) return;
+    try {
+      await api.patch(`/api/materials/${material.material_id}/`, { description: next });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not edit description.');
+    }
+  }
+
+  async function handleConsumeMaterial(material, _task) {
+    if (!confirm('Consume this material?')) return;
+    try {
+      await api.post(`/api/materials/${material.material_id}/consume/`, {});
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not consume.');
+    }
+  }
+
+  async function handleRestockMaterial(material, _task) {
+    const raw = window.prompt(`Restock quantity (max ${material.quantity}):`, material.quantity);
+    if (raw === null) return;
+    const quantity = raw.trim();
+    if (!quantity) return;
+    try {
+      await api.post(`/api/materials/${material.material_id}/restock/`, { quantity });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not restock.');
+    }
+  }
+
+  async function handleDrawMoreMaterial(material, _task) {
+    const raw = window.prompt('Draw more quantity:', '1');
+    if (raw === null) return;
+    const quantity = raw.trim();
+    if (!quantity) return;
+    try {
+      await api.post(`/api/materials/${material.material_id}/draw-more/`, { quantity });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not draw more.');
+    }
+  }
+
+  async function handleMoveMaterial(material, taskId) {
+    try {
+      await api.post(`/api/materials/${material.material_id}/assign-task/`, { task: taskId });
+      selectedTaskId = null;
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not move material.');
+    }
+  }
+
+  function handleMaterialSaved() {
+    materialModalOpen = false;
+    materialModalMaterial = null;
+    materialModalTaskId = null;
+    materialModalJobId = null;
+    reload();
+  }
+
+  // Subtask modal handlers
+  function openAddSubtask(task) {
+    subtaskModalParentTaskId = task.task_id;
+    subtaskModalOpen = true;
+  }
+
+  function handleSubtaskSaved() {
+    subtaskModalOpen = false;
+    subtaskModalParentTaskId = null;
+    reload();
+  }
+
+  // Reorder handler
+  async function handleReorder(taskId, direction) {
+    try {
+      await api.post(`/api/jobs/${job.job_id}/reorder-tasks/`, {
+        task_id: taskId,
+        direction,
+      });
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not reorder.');
+    }
+  }
+
+  // Task click -> navigate to task detail
+  function handleTaskClick(task) {
+    if (job) {
+      window.location.hash = `/jobs/${job.job_id}/tasks/${task.task_id}`;
+    }
+  }
+
+  // Mark all work complete
+  async function handleWorkComplete() {
+    if (!confirm('Mark all work complete on this job?')) return;
+    statusBusy = true;
+    try {
+      await api.post(`/api/jobs/${job.job_id}/work-complete/`, {});
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not mark work complete.');
+    } finally {
+      statusBusy = false;
+    }
+  }
+</script>
+
+{#if loading}
+  <p>Loading...</p>
+{:else if error}
+  <p class="error">{error}</p>
+{:else if job}
+  <h2>Tasks for Job {job.job_number}</h2>
+
+  <p>
+    <a href={`/jobs/${job.job_id}`} use:link>&laquo; Back to Job</a>
+  </p>
+
+  <div class="status-line">
+    <span class="status-badge status-{job.status}">{job.status}</span>
+    {#if job.template?.name}
+      <span class="meta">Template: {job.template.name}</span>
+    {/if}
+  </div>
+
+  {#if canManageJobs}
+    <div class="action-bar">
+      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
+    </div>
+  {/if}
+
+  {#if !jobLocked}
+    <div class="action-bar">
+      <button type="button" onclick={openAddTask}>Add Task</button>
+      <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+    </div>
+  {/if}
+
+  <TaskTree
+    tasks={enrichedTasks}
+    {jobMaterials}
+    readonly={false}
+    {jobLocked}
+    onEditTask={openEditTask}
+    onDeleteTask={handleDeleteTask}
+    onAddMaterial={openAddMaterial}
+    onEditMaterial={handleEditMaterialDescription}
+    onConsumeMaterial={handleConsumeMaterial}
+    onRestockMaterial={handleRestockMaterial}
+    onDrawMoreMaterial={handleDrawMoreMaterial}
+    onAddSubtask={openAddSubtask}
+    onReorder={handleReorder}
+    onTaskClick={handleTaskClick}
+    onAssignTask={(task) => { assignModalTask = task; assignModalOpen = true; }}
+    onCancelTask={handleCancelTask}
+    onMoveMaterial={handleMoveMaterial}
+    bind:selectedTaskId
+  />
+
+  <!-- Modals -->
+  <TaskModal
+    open={taskModalOpen}
+    mode={taskModalMode}
+    task={taskModalTask}
+    jobId={job.job_id}
+    {templates}
+    {categories}
+    onSaved={handleTaskSaved}
+    onClose={() => { taskModalOpen = false; }}
+  />
+
+  <MaterialModal
+    open={materialModalOpen}
+    mode={materialModalMode}
+    material={materialModalMaterial}
+    taskId={materialModalTaskId}
+    jobId={materialModalJobId}
+    {categories}
+    onSaved={handleMaterialSaved}
+    onClose={() => { materialModalOpen = false; }}
+  />
+
+  <SubtaskModal
+    open={subtaskModalOpen}
+    parentTaskId={subtaskModalParentTaskId}
+    onSaved={handleSubtaskSaved}
+    onClose={() => { subtaskModalOpen = false; }}
+  />
+
+  <AssignModal
+    open={assignModalOpen}
+    task={assignModalTask}
+    onSaved={() => { assignModalOpen = false; assignModalTask = null; reload(); }}
+    onClose={() => { assignModalOpen = false; assignModalTask = null; }}
+  />
+{/if}
+
+<style>
+  .error { color: #a8071a; }
+  .status-line { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+  .status-badge {
+    padding: 4px 12px; border-radius: 12px; font-size: 13px;
+    font-weight: 600; text-transform: capitalize;
+  }
+  .status-draft { background: #f3f4f6; color: #374151; }
+  .status-submitted { background: #dbeafe; color: #1e40af; }
+  .status-approved { background: #dcfce7; color: #166534; }
+  .status-work_complete { background: #ccfbf1; color: #115e59; }
+  .status-completed { background: #dbeafe; color: #1e40af; }
+  .status-rejected { background: #fee2e2; color: #991b1b; }
+  .status-cancelled { background: #fef3c7; color: #92400e; }
+  .meta { color: #888; font-size: 13px; }
+  .action-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+  .action-bar button {
+    padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;
+    background: #fff; cursor: pointer; font-size: 13px;
+  }
+  .action-bar button:hover { background: #f3f4f6; }
+  .action-bar button:disabled { opacity: 0.5; cursor: default; }
+</style>

@@ -7,6 +7,7 @@
     mode = 'create', // 'create' | 'edit'
     material = null,
     taskId = null,
+    jobId = null,
     categories = [],
     onSaved = () => {},
     onClose = () => {},
@@ -75,9 +76,11 @@
     };
     try {
       if (mode === 'edit' && material) {
-        await api.patch(`/api/tasks/${taskId}/materials/${material.material_id}/`, payload);
-      } else {
+        await api.patch(`/api/materials/${material.material_id}/`, { description: payload.description });
+      } else if (taskId) {
         await api.post(`/api/tasks/${taskId}/materials/`, payload);
+      } else {
+        await api.post(`/api/jobs/${jobId}/materials/`, payload);
       }
       onSaved();
     } catch (e) {

@@ -1,15 +1,21 @@
 <script>
+  import { api } from '../../lib/api.js';
   import PriceListItemPicker from '../PriceListItemPicker.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
+  import JobPicker from '../JobPicker.svelte';
 
   const {
     categories = [],
     onSubmit,
     onCancel,
+    defaultJob = null,
+    materialId = null,
+    prefillMaterial = null,
   } = $props();
 
   let mode = $state('manual'); // 'manual' or 'pli'
   let selectedPLI = $state(null);
+  let selectedJob = $state(defaultJob);
 
   let form = $state({
     description: '',
@@ -17,6 +23,32 @@
     units: 'none',
     price: '',
     accounting_category: '',
+  });
+
+  // Pre-populate from a Material when this form was opened via the
+  // "Order this material" flow. PLI-backed materials switch to 'pli' mode
+  // (and fetch the PLI to fill description/units/price); PLI-less materials
+  // stay in manual mode and copy description/qty/unit_cost.
+  $effect(() => {
+    if (!prefillMaterial) return;
+    form.qty = String(prefillMaterial.quantity ?? '');
+    if (prefillMaterial.price_list_item) {
+      mode = 'pli';
+      api.get(`/api/price-list-items/${prefillMaterial.price_list_item}/`)
+        .then(pli => { handlePLISelect(pli); })
+        .catch(() => {
+          // Fall back to manual mode if PLI fetch fails
+          mode = 'manual';
+          form.description = prefillMaterial.description || '';
+          form.price = String(prefillMaterial.unit_cost ?? '');
+        });
+    } else {
+      form.description = prefillMaterial.description || '';
+      form.price = String(prefillMaterial.unit_cost ?? '');
+      if (prefillMaterial.accounting_category) {
+        form.accounting_category = prefillMaterial.accounting_category;
+      }
+    }
   });
 
   function handlePLISelect(item) {
@@ -46,6 +78,13 @@
       }
     }
 
+    if (selectedJob?.job_id) {
+      data.job = selectedJob.job_id;
+    }
+    if (materialId) {
+      data.material_id = materialId;
+    }
+
     onSubmit(data);
   }
 </script>
@@ -66,7 +105,11 @@
     {#if mode === 'pli'}
       <p>
         <label><strong>Price List Item *</strong></label><br>
-        <PriceListItemPicker onSelect={handlePLISelect} />
+        <PriceListItemPicker
+          value={selectedPLI?.price_list_item_id}
+          selectedItem={selectedPLI}
+          onSelect={handlePLISelect}
+        />
       </p>
       <p>
         <label for="qty"><strong>Qty *</strong></label><br>
@@ -99,6 +142,11 @@
         </select>
       </p>
     {/if}
+
+    <p>
+      <label><strong>Job (optional)</strong></label><br>
+      <JobPicker bind:value={selectedJob} />
+    </p>
 
     <p>
       <button type="submit">Add</button>

@@ -266,6 +266,8 @@ class EstimateJobStatusSyncTest(TestCase):
         # Change job to approved, then completed
         self.job.status = Job.STATUS_APPROVED
         self.job.save()
+        self.job.status = Job.STATUS_WORK_COMPLETE
+        self.job.save()
         self.job.status = Job.STATUS_COMPLETED
         self.job.save()
 
@@ -358,6 +360,8 @@ class EstimateJobStatusSyncTest(TestCase):
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
 
         # Complete the job
+        self.job.status = Job.STATUS_WORK_COMPLETE
+        self.job.save()
         self.job.status = Job.STATUS_COMPLETED
         self.job.save()
 

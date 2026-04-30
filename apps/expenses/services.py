@@ -1,10 +1,10 @@
 import logging
+from decimal import Decimal
 
 from django.db import transaction
 from django.core.exceptions import ValidationError
 
 from apps.expenses.models import Expense
-from apps.jobs.models import Task
 
 logger = logging.getLogger(__name__)
 
@@ -19,20 +19,26 @@ class ExpenseService:
         with transaction.atomic():
             # If new_material info is provided, create the material atomically
             if new_material and not material:
-                from apps.jobs.models import WorkOrder
-                from apps.inventory.models import Material
-                wo = WorkOrder.objects.get(pk=new_material['work_order_id'])
-                task = ExpenseService.find_or_create_materials_task(work_order=wo)
-                qty = new_material.get('quantity') or 1
+                from apps.jobs.models import Job
+                from apps.inventory.models import PriceListItem
+                from apps.inventory.services import InventoryService, MaterialService
+                job = Job.objects.get(pk=new_material['job_id'])
+                pli = None
+                if new_material.get('price_list_item_id'):
+                    pli = PriceListItem.objects.get(pk=new_material['price_list_item_id'])
+                qty = new_material.get('quantity') or Decimal('1')
                 price = new_material.get('price')
                 if price is None:
                     price = amount
-                material = Material.objects.create(
-                    task=task,
+                material = MaterialService.create_on_job(
+                    job=job, task=None,
                     description=new_material.get('description', description),
                     quantity=qty,
                     unit_cost=price,
+                    price_list_item=pli,
                 )
+                if pli and pli.is_inventoried:
+                    InventoryService.receive_ad_hoc_purchase(material)
 
             expense = Expense(
                 entered_by=entered_by,
@@ -120,14 +126,29 @@ class ExpenseService:
 
     @staticmethod
     def reject(*, expense, actor):
+        from apps.inventory.models import Material
+        from apps.inventory.services import InventoryService
         if expense.payment_method != Expense.PAYMENT_METHOD_PERSONAL:
             raise ValidationError('Only personal expenses can be rejected.')
         if expense.status not in (Expense.STATUS_SUBMITTED,):
             raise ValidationError(
                 f'Cannot reject an expense in status {expense.status!r}.'
             )
-        expense.status = Expense.STATUS_REJECTED
-        expense.save(update_fields=['status'])
+        materials = list(Material.objects.filter(expenses=expense))
+        for m in materials:
+            if m.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
+                raise ValidationError(
+                    'Cannot reject expense with consumed materials; adjust inventory manually.'
+                )
+        with transaction.atomic():
+            for m in materials:
+                InventoryService._mutate_earmark(
+                    m.price_list_item, m.job, -m.quantity,
+                )
+                InventoryService.reverse_ad_hoc_purchase(m)
+                m.delete()
+            expense.status = Expense.STATUS_REJECTED
+            expense.save(update_fields=['status'])
         return expense
 
     @staticmethod
@@ -139,19 +160,6 @@ class ExpenseService:
         ExpenseService._push_and_set_status(expense)
         expense.refresh_from_db()
         return expense
-
-    @staticmethod
-    def find_or_create_materials_task(*, work_order):
-        existing = Task.objects.filter(
-            work_order=work_order, name='Materials',
-        ).first()
-        if existing:
-            return existing
-        return Task.objects.create(
-            work_order=work_order,
-            name='Materials',
-            status=Task.STATUS_COMPLETE,
-        )
 
 
 class ReimbursementService:

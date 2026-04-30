@@ -111,7 +111,7 @@
         }
     },
     {
-        "model": "estimates.workordertemplate",
+        "model": "estimates.worktemplate",
         "pk": 200,
         "fields": {
             "template_name": "Mixed Test Template",

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import PriceListItem, Material
 from apps.core.units import UnitsField
 
 
@@ -20,3 +20,71 @@ class PriceListItemSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'price_list_item_id', 'qty_on_hand', 'qty_sold', 'qty_wasted',
         ]
+
+
+class MaterialSerializer(serializers.ModelSerializer):
+    is_expense_bound = serializers.BooleanField(read_only=True)
+    price_list_item_is_inventoried = serializers.SerializerMethodField()
+    po_line_item_id = serializers.SerializerMethodField()
+    po_id = serializers.SerializerMethodField()
+    po_number = serializers.SerializerMethodField()
+    po_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Material
+        fields = [
+            'material_id', 'job', 'task',
+            'description', 'quantity', 'unit_cost', 'sell_price',
+            'price_list_item', 'accounting_category',
+            'consumption_state', 'restocked_qty',
+            'is_expense_bound', 'price_list_item_is_inventoried',
+            'po_line_item_id', 'po_id', 'po_number', 'po_status',
+        ]
+        read_only_fields = [
+            'material_id', 'job', 'task',
+            'consumption_state', 'restocked_qty', 'is_expense_bound',
+            'price_list_item_is_inventoried',
+            'po_line_item_id', 'po_id', 'po_number', 'po_status',
+        ]
+
+    def get_price_list_item_is_inventoried(self, obj):
+        return bool(obj.price_list_item and obj.price_list_item.is_inventoried)
+
+    def get_po_line_item_id(self, obj):
+        return obj.po_line_item_id
+
+    def get_po_id(self, obj):
+        if obj.po_line_item_id and obj.po_line_item:
+            return obj.po_line_item.purchase_order_id
+        return None
+
+    def get_po_number(self, obj):
+        if obj.po_line_item_id and obj.po_line_item:
+            return obj.po_line_item.purchase_order.po_number
+        return None
+
+    def get_po_status(self, obj):
+        if obj.po_line_item_id and obj.po_line_item:
+            return obj.po_line_item.purchase_order.status
+        return None
+
+    def update(self, instance, validated_data):
+        allowed = {'description'}
+        disallowed = set(validated_data.keys()) - allowed
+        if disallowed:
+            raise serializers.ValidationError({
+                k: 'read-only; use Restock/Draw-more for quantity, etc.'
+                for k in disallowed
+            })
+        return super().update(instance, validated_data)
+
+
+class MaterialOpSerializer(serializers.Serializer):
+    quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+
+class MaterialAssignTaskSerializer(serializers.Serializer):
+    task = serializers.PrimaryKeyRelatedField(
+        queryset=__import__('apps.jobs.models', fromlist=['Task']).Task.objects.all(),
+        allow_null=True,
+    )

@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import Job, PlanTask
-from apps.estimates.models import EstWorksheet, WorkOrderTemplate
+from apps.estimates.models import EstWorksheet, WorkTemplate
 from apps.contacts.models import Contact
 
 
@@ -16,7 +16,7 @@ class EstWorksheetCreateFromJobTest(TestCase):
             contact=self.contact,
             description="Test job for worksheet creation"
         )
-        self.template = WorkOrderTemplate.objects.create(
+        self.template = WorkTemplate.objects.create(
             template_name="Test Template",
             description="Template for testing",
             is_active=True
@@ -139,13 +139,13 @@ class EstWorksheetCreateFromJobTest(TestCase):
 
         # Associate tasks with the template
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template,
+            work_template=self.template,
             task_template=task_template1,
             est_qty=2.0,
             sort_order=1
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template,
+            work_template=self.template,
             task_template=task_template2,
             est_qty=5.0,
             sort_order=2

@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from apps.core.models import User, Configuration, AccountingCategory
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.jobs.models import Job, Task, Blep
 from apps.inventory.models import Material, PriceListItem
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 
@@ -31,9 +31,8 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name='Labor',
+            job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -86,9 +85,8 @@ class SourcePoolEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name='Labor',
+            job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -101,13 +99,9 @@ class SourcePoolEndpointTest(TestCase):
         response = self.client.get(f'/api/invoices/{self.invoice.pk}/source-pool/')
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIn('work_orders', data)
-        self.assertEqual(len(data['work_orders']), 1)
-        wo = data['work_orders'][0]
-        self.assertIn('tasks', wo)
-        self.assertEqual(len(wo['tasks']), 1)
-        task = wo['tasks'][0]
-        self.assertEqual(task['name'], 'Labor')
+        self.assertIn('tasks', data)
+        # tasks list includes task groups + the "Materials (no task)" sentinel group
+        task = next(t for t in data['tasks'] if t['name'] == 'Labor')
         self.assertTrue(task['has_billable_atoms'])
         self.assertEqual(len(task['atoms']), 1)
         atom = task['atoms'][0]
@@ -147,9 +141,8 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name='Labor',
+            job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -226,9 +219,8 @@ class AddAtomsEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name='Labor',
+            job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=4)
@@ -297,9 +289,8 @@ class RemoveAtomsEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name='Labor',
+            job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=4)

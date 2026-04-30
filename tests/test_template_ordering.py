@@ -1,5 +1,5 @@
 """
-Tests for WorkOrderTemplate bundling and ordering functionality.
+Tests for WorkTemplate bundling and ordering functionality.
 
 Covers:
 A. Remove/Unbundle behavior
@@ -13,7 +13,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
-from apps.estimates.models import WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.core.models import AccountingCategory
 
 User = get_user_model()
@@ -38,7 +38,7 @@ class TemplateOrderingTestBase(TestCase):
             code="MAT", defaults={"name": "Material"}
         )
 
-        self.wo_template = WorkOrderTemplate.objects.create(
+        self.wo_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
         )
 
@@ -62,7 +62,7 @@ class TemplateOrderingTestBase(TestCase):
     def _detail_url(self, template=None):
         t = template or self.wo_template
         return reverse(
-            'estimates:work_order_template_detail',
+            'estimates:work_template_detail',
             kwargs={'template_id': t.template_id},
         )
 
@@ -100,7 +100,7 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
     def test_remove_unbundled_task_deletes_association(self):
         """A1: Removing an unbundled (direct) task deletes the TemplateTaskAssociation."""
         assoc = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1,
             sort_order=1,
@@ -119,25 +119,25 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
     def test_remove_bundled_task_unbundles_it(self):
         """A2: Removing a bundled task unbundles it (mapping_strategy='direct', bundle=None)."""
         bundle = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Bundle A",
             accounting_category=self.lit,
             sort_order=1,
         )
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
             mapping_strategy='bundle', bundle=bundle,
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
             mapping_strategy='bundle', bundle=bundle,
         )
         assoc3 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=1, sort_order=3,
             mapping_strategy='bundle', bundle=bundle,
@@ -155,25 +155,25 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
     def test_unbundle_then_remove_deletes_association(self):
         """A3: After unbundling, a second remove deletes the association."""
         bundle = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Bundle A",
             accounting_category=self.lit,
             sort_order=1,
         )
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
             mapping_strategy='bundle', bundle=bundle,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
             mapping_strategy='bundle', bundle=bundle,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=1, sort_order=3,
             mapping_strategy='bundle', bundle=bundle,
@@ -197,7 +197,7 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
     def test_unbundle_from_two_task_bundle_dissolves_bundle(self):
         """A4: Unbundling from a 2-task bundle auto-dissolves the bundle."""
         bundle = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Bundle A",
             accounting_category=self.lit,
             sort_order=1,
@@ -205,13 +205,13 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
         bundle_pk = bundle.pk
 
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
             mapping_strategy='bundle', bundle=bundle,
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
             mapping_strategy='bundle', bundle=bundle,
@@ -237,25 +237,25 @@ class RemoveUnbundleTests(TemplateOrderingTestBase):
     def test_unbundle_from_three_task_bundle_keeps_bundle(self):
         """A5: Unbundling from a 3-task bundle keeps the bundle (2 remain)."""
         bundle = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Bundle A",
             accounting_category=self.lit,
             sort_order=1,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
             mapping_strategy='bundle', bundle=bundle,
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
             mapping_strategy='bundle', bundle=bundle,
         )
         assoc3 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=1, sort_order=3,
             mapping_strategy='bundle', bundle=bundle,
@@ -285,17 +285,17 @@ class BundleCreationTests(TemplateOrderingTestBase):
     def test_bundling_assigns_sequential_sort_order(self):
         """B6: Bundling assigns sequential sort_order within the bundle (1, 2, ...)."""
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
         )
         assoc3 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=1, sort_order=3,
         )
@@ -323,19 +323,19 @@ class BundleCreationTests(TemplateOrderingTestBase):
         """B7: Bundle sort_order uses the shared container-level space (max of unbundled + bundles + 1)."""
         # Create an existing unbundled association with sort_order=5
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=1, sort_order=5,
             mapping_strategy='direct',
         )
 
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
         )
@@ -349,7 +349,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
         })
 
         bundle = TemplateBundle.objects.get(
-            work_order_template=self.wo_template, name='Late Bundle'
+            work_template=self.wo_template, name='Late Bundle'
         )
         # The next container sort_order should be max(5, 0) + 1 = 6
         self.assertEqual(bundle.sort_order, 6)
@@ -357,22 +357,22 @@ class BundleCreationTests(TemplateOrderingTestBase):
     def test_same_bundle_name_adds_to_existing_bundle(self):
         """B8: Using the same bundle name adds tasks to existing bundle via get_or_create."""
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
         )
         assoc3 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=1, sort_order=3,
         )
         assoc4 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task4,
             est_qty=1, sort_order=4,
         )
@@ -388,7 +388,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
 
         self.assertEqual(
             TemplateBundle.objects.filter(
-                work_order_template=self.wo_template, name='Shared Bundle'
+                work_template=self.wo_template, name='Shared Bundle'
             ).count(),
             1,
         )
@@ -405,13 +405,13 @@ class BundleCreationTests(TemplateOrderingTestBase):
         # Still only one bundle
         self.assertEqual(
             TemplateBundle.objects.filter(
-                work_order_template=self.wo_template, name='Shared Bundle'
+                work_template=self.wo_template, name='Shared Bundle'
             ).count(),
             1,
         )
 
         bundle = TemplateBundle.objects.get(
-            work_order_template=self.wo_template, name='Shared Bundle'
+            work_template=self.wo_template, name='Shared Bundle'
         )
         # All four should be in the bundle
         self.assertEqual(
@@ -421,7 +421,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
     def test_moving_all_tasks_to_new_bundle_deletes_old_bundle(self):
         """B9: Moving all tasks from Bundle A to Bundle B deletes Bundle A."""
         bundle_a = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Bundle A",
             accounting_category=self.lit,
             sort_order=1,
@@ -429,13 +429,13 @@ class BundleCreationTests(TemplateOrderingTestBase):
         bundle_a_pk = bundle_a.pk
 
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
             mapping_strategy='bundle', bundle=bundle_a,
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
             mapping_strategy='bundle', bundle=bundle_a,
@@ -457,7 +457,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
 
         # Bundle B should exist with both tasks
         bundle_b = TemplateBundle.objects.get(
-            work_order_template=self.wo_template, name='Bundle B'
+            work_template=self.wo_template, name='Bundle B'
         )
         self.assertEqual(
             TemplateTaskAssociation.objects.filter(bundle=bundle_b).count(), 2
@@ -466,7 +466,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
     def test_moving_two_of_three_auto_unbundles_last_and_deletes_old_bundle(self):
         """B10: Moving 2 of 3 tasks from Bundle A to Bundle B auto-unbundles the last and deletes A."""
         bundle_a = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Bundle A",
             accounting_category=self.lit,
             sort_order=1,
@@ -474,19 +474,19 @@ class BundleCreationTests(TemplateOrderingTestBase):
         bundle_a_pk = bundle_a.pk
 
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
             mapping_strategy='bundle', bundle=bundle_a,
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
             mapping_strategy='bundle', bundle=bundle_a,
         )
         assoc3 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=1, sort_order=3,
             mapping_strategy='bundle', bundle=bundle_a,
@@ -513,7 +513,7 @@ class BundleCreationTests(TemplateOrderingTestBase):
 
         # Tasks 1 and 2 are in Bundle B
         bundle_b = TemplateBundle.objects.get(
-            work_order_template=self.wo_template, name='Bundle B'
+            work_template=self.wo_template, name='Bundle B'
         )
         assoc1.refresh_from_db()
         assoc2.refresh_from_db()
@@ -531,12 +531,12 @@ class ContainerReorderTests(TemplateOrderingTestBase):
     def test_reorder_unbundled_task_down(self):
         """C11: Reorder unbundled task down swaps sort_orders."""
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1, mapping_strategy='direct',
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2, mapping_strategy='direct',
         )
@@ -553,24 +553,24 @@ class ContainerReorderTests(TemplateOrderingTestBase):
     def test_reorder_bundle_up_swaps_with_unbundled_task(self):
         """C12: Reorder bundle up swaps sort_orders with adjacent unbundled task."""
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1, mapping_strategy='direct',
         )
         bundle = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Bundle A",
             accounting_category=self.lit,
             sort_order=2,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=1,
             mapping_strategy='bundle', bundle=bundle,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=1, sort_order=2,
             mapping_strategy='bundle', bundle=bundle,
@@ -588,12 +588,12 @@ class ContainerReorderTests(TemplateOrderingTestBase):
     def test_reorder_first_item_up_does_nothing(self):
         """C13: Reorder first item up does nothing (still redirects)."""
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1, mapping_strategy='direct',
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2, mapping_strategy='direct',
         )
@@ -610,12 +610,12 @@ class ContainerReorderTests(TemplateOrderingTestBase):
     def test_reorder_last_item_down_does_nothing(self):
         """C14: Reorder last item down does nothing (still redirects)."""
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1, mapping_strategy='direct',
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2, mapping_strategy='direct',
         )
@@ -632,7 +632,7 @@ class ContainerReorderTests(TemplateOrderingTestBase):
     def test_reorder_requires_post(self):
         """C15: Reorder requires POST (GET returns 405)."""
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1, mapping_strategy='direct',
         )
@@ -652,25 +652,25 @@ class WithinBundleReorderTests(TemplateOrderingTestBase):
     def setUp(self):
         super().setUp()
         self.bundle = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Bundle A",
             accounting_category=self.lit,
             sort_order=1,
         )
         self.assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
             mapping_strategy='bundle', bundle=self.bundle,
         )
         self.assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
             mapping_strategy='bundle', bundle=self.bundle,
         )
         self.assoc3 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
             est_qty=1, sort_order=3,
             mapping_strategy='bundle', bundle=self.bundle,
@@ -727,7 +727,7 @@ class WithinBundleReorderTests(TemplateOrderingTestBase):
     def test_reorder_non_bundled_association_redirects_with_error(self):
         """D20: Reorder with a non-bundled association redirects with error."""
         direct_assoc = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task4,
             est_qty=1, sort_order=10,
             mapping_strategy='direct',
@@ -749,7 +749,7 @@ class SortOrderHelperTests(TemplateOrderingTestBase):
         """E21: New task association gets sort_order after existing bundles and unbundled tasks."""
         # Create an unbundled association at sort_order=3
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=3,
             mapping_strategy='direct',
@@ -757,13 +757,13 @@ class SortOrderHelperTests(TemplateOrderingTestBase):
 
         # Create a bundle at sort_order=5
         bundle = TemplateBundle.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             name="Bundle A",
             accounting_category=self.lit,
             sort_order=5,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=1,
             mapping_strategy='bundle', bundle=bundle,
@@ -777,7 +777,7 @@ class SortOrderHelperTests(TemplateOrderingTestBase):
         })
 
         new_assoc = TemplateTaskAssociation.objects.get(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task3,
         )
         # Max of unbundled (3) and bundle (5) is 5, so next = 6
@@ -792,8 +792,8 @@ class EdgeCaseTests(TemplateOrderingTestBase):
     """Edge case tests for template ordering."""
 
     def test_same_bundle_name_different_templates_no_cross_contamination(self):
-        """F22: Same bundle name on different WorkOrderTemplates doesn't cross-contaminate."""
-        wo_template_2 = WorkOrderTemplate.objects.create(
+        """F22: Same bundle name on different WorkTemplates doesn't cross-contaminate."""
+        wo_template_2 = WorkTemplate.objects.create(
             template_name="Second WO Template"
         )
         task_a = TaskTemplate.objects.create(
@@ -805,24 +805,24 @@ class EdgeCaseTests(TemplateOrderingTestBase):
 
         # Create associations on template 1
         assoc1 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task1,
             est_qty=1, sort_order=1,
         )
         assoc2 = TemplateTaskAssociation.objects.create(
-            work_order_template=self.wo_template,
+            work_template=self.wo_template,
             task_template=self.task2,
             est_qty=1, sort_order=2,
         )
 
         # Create associations on template 2
         assoc_a = TemplateTaskAssociation.objects.create(
-            work_order_template=wo_template_2,
+            work_template=wo_template_2,
             task_template=task_a,
             est_qty=1, sort_order=1,
         )
         assoc_b = TemplateTaskAssociation.objects.create(
-            work_order_template=wo_template_2,
+            work_template=wo_template_2,
             task_template=task_b,
             est_qty=1, sort_order=2,
         )
@@ -847,10 +847,10 @@ class EdgeCaseTests(TemplateOrderingTestBase):
 
         # Two separate bundles should exist
         bundle_1 = TemplateBundle.objects.get(
-            work_order_template=self.wo_template, name='Prep'
+            work_template=self.wo_template, name='Prep'
         )
         bundle_2 = TemplateBundle.objects.get(
-            work_order_template=wo_template_2, name='Prep'
+            work_template=wo_template_2, name='Prep'
         )
         self.assertNotEqual(bundle_1.pk, bundle_2.pk)
 

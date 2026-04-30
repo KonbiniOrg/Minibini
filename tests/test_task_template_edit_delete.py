@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 
-from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation
+from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation
 
 
 class TaskTemplateEditViewTest(TestCase):
@@ -34,7 +34,7 @@ class TaskTemplateEditViewTest(TestCase):
             {
                 'template_name': 'Updated Task',
                 'description': 'Updated description',
-                'units': 'pcs',
+                'units': 'ea',
                 'rate': '75.00',
             }
         )
@@ -43,7 +43,7 @@ class TaskTemplateEditViewTest(TestCase):
         self.template.refresh_from_db()
         self.assertEqual(self.template.template_name, 'Updated Task')
         self.assertEqual(self.template.description, 'Updated description')
-        self.assertEqual(self.template.units, 'pcs')
+        self.assertEqual(self.template.units, 'ea')
         self.assertEqual(self.template.rate, Decimal('75.00'))
 
     def test_edit_view_shows_success_message(self):
@@ -78,13 +78,13 @@ class TaskTemplateEditViewTest(TestCase):
 
     def test_edit_view_hides_delete_button_when_used(self):
         """Test that edit page hides Delete button when template is used."""
-        # Associate with a WorkOrderTemplate
-        work_order_template = WorkOrderTemplate.objects.create(
+        # Associate with a WorkTemplate
+        work_template = WorkTemplate.objects.create(
             template_name='Test WOT',
             description='Test'
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=work_order_template,
+            work_template=work_template,
             task_template=self.template,
             est_qty=1
         )
@@ -96,24 +96,24 @@ class TaskTemplateEditViewTest(TestCase):
         delete_url = reverse('estimates:task_template_delete', args=[self.template.template_id])
         self.assertNotContains(response, delete_url)
 
-    def test_edit_view_shows_work_order_templates_using_this(self):
-        """Test that edit page shows list of WorkOrderTemplates using this TaskTemplate."""
-        # Associate with WorkOrderTemplates
-        wot1 = WorkOrderTemplate.objects.create(
+    def test_edit_view_shows_work_templates_using_this(self):
+        """Test that edit page shows list of WorkTemplates using this TaskTemplate."""
+        # Associate with WorkTemplates
+        wot1 = WorkTemplate.objects.create(
             template_name='Kitchen Remodel',
             description='Test'
         )
-        wot2 = WorkOrderTemplate.objects.create(
+        wot2 = WorkTemplate.objects.create(
             template_name='Bathroom Renovation',
             description='Test'
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot1,
+            work_template=wot1,
             task_template=self.template,
             est_qty=1
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot2,
+            work_template=wot2,
             task_template=self.template,
             est_qty=2
         )
@@ -173,14 +173,14 @@ class TaskTemplateDeleteViewTest(TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_delete_view_blocks_deletion_when_used(self):
-        """Test that deletion is blocked when template is used in WorkOrderTemplates."""
-        # Associate with a WorkOrderTemplate
-        work_order_template = WorkOrderTemplate.objects.create(
+        """Test that deletion is blocked when template is used in WorkTemplates."""
+        # Associate with a WorkTemplate
+        work_template = WorkTemplate.objects.create(
             template_name='Test WOT',
             description='Test'
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=work_order_template,
+            work_template=work_template,
             task_template=self.template,
             est_qty=1
         )

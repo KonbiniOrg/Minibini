@@ -55,7 +55,7 @@
         }
     },
     {
-        "model": "estimates.workordertemplate",
+        "model": "estimates.worktemplate",
         "pk": 50,
         "fields": {
             "template_name": "Test Product Template",

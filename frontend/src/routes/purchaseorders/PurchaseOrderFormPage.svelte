@@ -1,7 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import PurchaseOrderForm from '../../components/purchaseorders/PurchaseOrderForm.svelte';
-  import { push } from 'svelte-spa-router';
+  import { push, querystring } from 'svelte-spa-router';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
@@ -11,6 +11,13 @@
   let loading = $state(true);
   let errors = $state(null);
 
+  // Context from query params (when called as ?job=...&material=...)
+  const initialParams = new URLSearchParams($querystring);
+  const contextJobId = initialParams.get('job');
+  const contextMaterialId = initialParams.get('material');
+  let contextJob = $state(null);
+  let contextMaterial = $state(null);
+
   async function load() {
     loading = true;
     try {
@@ -19,6 +26,21 @@
 
       if (isEdit) {
         po = await api.get(`/api/purchase-orders/${params.id}/`);
+      }
+
+      if (contextJobId) {
+        try {
+          contextJob = await api.get(`/api/jobs/${contextJobId}/`);
+        } catch {
+          contextJob = null;
+        }
+      }
+      if (contextMaterialId) {
+        try {
+          contextMaterial = await api.get(`/api/materials/${contextMaterialId}/`);
+        } catch {
+          contextMaterial = null;
+        }
       }
     } catch (e) {
       errors = e.message;
@@ -35,7 +57,16 @@
         push(`/purchase-orders/${params.id}`);
       } else {
         const created = await api.post('/api/purchase-orders/', data);
-        push(`/purchase-orders/${created.po_id}`);
+        // Forward context onto the detail page so the line-item form prefills.
+        const qs = [];
+        if (contextMaterial?.material_id) {
+          qs.push(`prefill_material=${contextMaterial.material_id}`);
+        }
+        if (contextJob?.job_id) {
+          qs.push(`default_job=${contextJob.job_id}`);
+        }
+        const suffix = qs.length ? `?${qs.join('&')}` : '';
+        push(`/purchase-orders/${created.po_id}${suffix}`);
       }
     } catch (e) {
       errors = e.data ? JSON.stringify(e.data) : e.message;
@@ -65,6 +96,7 @@
     {po}
     {businesses}
     {errors}
+    {contextJob}
     onSubmit={handleSubmit}
     onCancel={handleCancel}
   />

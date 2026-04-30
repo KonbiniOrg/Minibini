@@ -1,6 +1,6 @@
 from django.utils import timezone
 from rest_framework.test import APIClient
-from apps.jobs.models import Task, WorkOrder, Blep
+from apps.jobs.models import Task, Blep
 from tests.base import BaseTestCase
 
 
@@ -13,9 +13,8 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.user = User.objects.first()
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name="Test task",
+            job=self.job, name="Test task",
             units="hours", rate="10.00", est_qty="1",
         )
 
@@ -151,14 +150,13 @@ class TaskSerializerStatusTest(BaseTestCase):
         self.user = User.objects.first()
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job)
         self.task = Task.objects.create(
-            work_order=self.wo, name="Test task",
+            job=self.job, name="Test task",
             units="hours", rate="10.00", est_qty="1",
         )
 
     def test_task_list_includes_status(self):
-        url = f'/api/work-orders/{self.wo.pk}/tasks/'
+        url = f'/api/jobs/{self.job.pk}/tasks/'
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 200)
         self.assertIn('status', resp.data[0])

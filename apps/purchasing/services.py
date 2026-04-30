@@ -46,8 +46,43 @@ class PurchaseOrderService:
         return po
 
     @staticmethod
-    def cancel_po(pk):
-        """Cancel an issued PO and mark all line items as cancelled."""
+    def _sever_line_material(li, sever_decision):
+        """If line has a pending linked Material, require decision and apply.
+        No-op if no Material or Material is consumed."""
+        from apps.inventory.models import Material
+        from apps.inventory.services import MaterialService
+        existing = li.linked_material
+        if existing is None or existing.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            return
+        if sever_decision is None:
+            raise ValidationError(
+                f'sever_decision is required; line #{li.line_number} has a linked Material.'
+            )
+        MaterialService.sever(existing, sever_decision)
+
+    @staticmethod
+    def _validate_sever_decisions(line_items, sever_decisions):
+        """Raise ValidationError if any line needs a sever decision and none was supplied."""
+        from apps.inventory.models import Material
+        for li in line_items:
+            existing = li.linked_material
+            if existing is None or existing.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+                continue
+            if sever_decisions.get(li.pk) is None:
+                raise ValidationError(
+                    f'sever_decision is required; line #{li.line_number} has a linked Material.'
+                )
+
+    @staticmethod
+    def cancel_po(pk, sever_decisions=None):
+        """Cancel an issued PO and mark all line items as cancelled.
+
+        Any line with a pending linked Material requires an entry in
+        `sever_decisions` ({line_item_id: 'keep'|'delete'}). The validation
+        pass runs before the atomic block so we don't open a transaction
+        we'll just abort.
+        """
+        sever_decisions = sever_decisions or {}
         try:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
@@ -56,19 +91,30 @@ class PurchaseOrderService:
             raise ValidationError(
                 f'Cannot cancel PO {po.po_number}. Only issued POs can be cancelled.'
             )
+
+        line_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+
+        PurchaseOrderService._validate_sever_decisions(line_items, sever_decisions)
+
         with transaction.atomic():
+            for li in line_items:
+                PurchaseOrderService._sever_line_material(li, sever_decisions.get(li.pk))
+                li.qty_cancelled = li.qty - li.qty_received
+                li.save(update_fields=['qty_cancelled'])
             po.status = PurchaseOrder.STATUS_CANCELLED
             po.full_clean()
             po.save()
-            # Set qty_cancelled on all line items
-            for li in PurchaseOrderLineItem.objects.filter(purchase_order=po):
-                li.qty_cancelled = li.qty - li.qty_received
-                li.save(update_fields=['qty_cancelled'])
         return po
 
     @staticmethod
-    def delete_po(pk):
-        """Delete a draft PO."""
+    def delete_po(pk, sever_decisions=None):
+        """Delete a draft PO.
+
+        Any line with a pending linked Material requires an entry in
+        `sever_decisions` ({line_item_id: 'keep'|'delete'}). The validation
+        pass runs before the atomic block.
+        """
+        sever_decisions = sever_decisions or {}
         try:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
@@ -77,7 +123,15 @@ class PurchaseOrderService:
             raise ValidationError(
                 f'Cannot delete PO {po.po_number}. Only draft POs can be deleted.'
             )
-        po.delete()
+
+        line_items = list(PurchaseOrderLineItem.objects.filter(purchase_order=po))
+
+        PurchaseOrderService._validate_sever_decisions(line_items, sever_decisions)
+
+        with transaction.atomic():
+            for li in line_items:
+                PurchaseOrderService._sever_line_material(li, sever_decisions.get(li.pk))
+            po.delete()
 
     @staticmethod
     def _validate_draft(po):
@@ -87,23 +141,58 @@ class PurchaseOrderService:
             )
 
     @staticmethod
+    def _resolve_material_for_line(li, job_id, material_id):
+        """Common job/material resolution for newly-created PO lines.
+
+        Looks up the Job by id (raises ValidationError on miss), then delegates
+        to MaterialService.resolve_or_create_for_line. No-op if both are None.
+        """
+        if job_id is None and material_id is None:
+            return
+        from apps.inventory.services import MaterialService
+        job_obj = None
+        if job_id is not None:
+            from apps.jobs.models import Job
+            try:
+                job_obj = Job.objects.get(pk=job_id)
+            except Job.DoesNotExist:
+                raise ValidationError(f'Job {job_id} not found')
+        MaterialService.resolve_or_create_for_line(
+            li,
+            job=job_obj,
+            price_list_item=li.price_list_item,
+            qty=li.qty,
+            unit_cost=li.price,
+            description=li.description,
+            accounting_category=li.accounting_category,
+            material_id=material_id,
+        )
+
+    @staticmethod
     def add_line_item(po_id, **kwargs):
-        """Add a manual line item to a draft PO."""
+        """Add a manual line item to a draft PO. Accepts optional transient job, material_id."""
         from apps.core.services import LineItemService
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
         PurchaseOrderService._validate_draft(po)
+
+        # Pop transient params before they hit the model constructor
+        job_id = kwargs.pop('job', None)
+        material_id = kwargs.pop('material_id', None)
+
         kwargs = LineItemService.normalize_fk_kwargs(PurchaseOrderLineItem, kwargs)
-        li = PurchaseOrderLineItem(purchase_order=po, **kwargs)
-        li.full_clean()
-        li.save()
+        with transaction.atomic():
+            li = PurchaseOrderLineItem(purchase_order=po, **kwargs)
+            li.full_clean()
+            li.save()
+            PurchaseOrderService._resolve_material_for_line(li, job_id, material_id)
         return li
 
     @staticmethod
-    def add_line_item_from_pli(po_id, price_list_item_id, qty):
-        """Add a line item from a PriceListItem to a draft PO."""
+    def add_line_item_from_pli(po_id, price_list_item_id, qty, job=None, material_id=None):
+        """Add a line item from a PriceListItem to a draft PO. Accepts optional job, material_id."""
         from apps.inventory.models import PriceListItem
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
@@ -114,17 +203,71 @@ class PurchaseOrderService:
             pli = PriceListItem.objects.get(pk=price_list_item_id)
         except PriceListItem.DoesNotExist:
             raise NotFoundError(f'PriceListItem {price_list_item_id} not found')
-        li = PurchaseOrderLineItem(
-            purchase_order=po,
-            price_list_item=pli,
-            description=pli.description,
-            qty=qty,
-            units=pli.units,
-            price=pli.purchase_price,
-            accounting_category=pli.accounting_category,
-        )
-        li.full_clean()
-        li.save()
+        with transaction.atomic():
+            li = PurchaseOrderLineItem(
+                purchase_order=po,
+                price_list_item=pli,
+                description=pli.description,
+                qty=qty,
+                units=pli.units,
+                price=pli.purchase_price,
+                accounting_category=pli.accounting_category,
+            )
+            li.full_clean()
+            li.save()
+            PurchaseOrderService._resolve_material_for_line(li, job, material_id)
+        return li
+
+    @staticmethod
+    def change_line_job(line_item_id, new_job_id, sever_decision=None):
+        """Change a PO line's job attribution. Allowed on any non-cancelled PO
+        as long as the linked Material (if any) is pending.
+
+        If the line already has a linked Material, `sever_decision` ('keep'|'delete')
+        is required. 'keep' unlinks the existing Material from the PO line (it stays
+        on the old job); 'delete' removes the Material and backs out its earmark.
+
+        If `new_job_id` is None, the line is left unattributed (no new Material
+        is created). Otherwise the resolver runs against the new job to attach
+        a new Material.
+        """
+        from apps.inventory.services import MaterialService
+        from apps.jobs.models import Job
+
+        try:
+            li = PurchaseOrderLineItem.objects.get(pk=line_item_id)
+        except PurchaseOrderLineItem.DoesNotExist:
+            raise NotFoundError(f'PurchaseOrderLineItem {line_item_id} not found')
+        if li.purchase_order.status == PurchaseOrder.STATUS_CANCELLED:
+            raise ValidationError('Cannot change job on a cancelled PO.')
+
+        new_job_obj = None
+        if new_job_id is not None:
+            try:
+                new_job_obj = Job.objects.get(pk=new_job_id)
+            except Job.DoesNotExist:
+                raise ValidationError(f'Job {new_job_id} not found')
+
+        with transaction.atomic():
+            existing = li.linked_material
+            if existing is not None:
+                if sever_decision is None:
+                    raise ValidationError(
+                        'sever_decision is required when the line has a linked Material.'
+                    )
+                MaterialService.sever(existing, sever_decision)
+
+            if new_job_obj is not None:
+                # Inlined (not via _resolve_material_for_line) because we already have new_job_obj.
+                MaterialService.resolve_or_create_for_line(
+                    li,
+                    job=new_job_obj,
+                    price_list_item=li.price_list_item,
+                    qty=li.qty,
+                    unit_cost=li.price,
+                    description=li.description,
+                    accounting_category=li.accounting_category,
+                )
         return li
 
     @staticmethod
@@ -192,16 +335,9 @@ class PurchaseOrderReceivingService:
 
     @staticmethod
     def receive_items(po, items, user):
-        """
-        Record receipt of items on a PO.
-
-        Args:
-            po: PurchaseOrder instance
-            items: list of dicts with {line_item_id, qty_received, note?}
-            user: User performing the receipt
-
-        Returns the updated PO.
-        """
+        """Record receipt of items on a PO.
+        Material.quantity is unchanged — planned consumption is set at line-add time.
+        QOH bumps by received qty for inventoried PLIs. Overage is accepted."""
         from apps.core.models import HistoryEntry
         from apps.inventory.models import InventoryAdjustment
         from django.utils import timezone
@@ -224,11 +360,6 @@ class PurchaseOrderReceivingService:
                     pk=item_data['line_item_id'],
                     purchase_order=po,
                 )
-                if li.qty_received + li.qty_cancelled >= li.qty:
-                    raise ValidationError(
-                        f'Line item #{li.line_number} has no outstanding quantity to receive.'
-                    )
-
                 qty = Decimal(str(item_data['qty_received']))
                 if qty <= 0:
                     continue
@@ -245,7 +376,7 @@ class PurchaseOrderReceivingService:
                     + (f' — {item_data["note"]}' if item_data.get('note') else '')
                 )
 
-                # Inventory adjustment for PLI-linked items
+                # QOH for inventoried PLI-backed lines
                 if li.price_list_item and li.price_list_item.is_inventoried:
                     li.price_list_item.qty_on_hand += qty
                     li.price_list_item.save(update_fields=['qty_on_hand'])
@@ -256,10 +387,8 @@ class PurchaseOrderReceivingService:
                     )
                     inventory_updates.append(li.price_list_item.code)
 
-            # Auto-transition PO status
             PurchaseOrderReceivingService._update_po_status(po)
 
-            # History entry
             if history_lines:
                 action_text = f'Items received by {user.get_full_name() or user.username}'
                 if inventory_updates:
@@ -272,7 +401,6 @@ class PurchaseOrderReceivingService:
                     changes={'_action': action_text},
                     text='\n'.join(history_lines),
                 )
-
         return po
 
     @staticmethod
@@ -296,8 +424,12 @@ class PurchaseOrderReceivingService:
         return PurchaseOrderReceivingService.receive_items(po, items, user)
 
     @staticmethod
-    def cancel_line_item(po, line_item_id, user, note=''):
-        """Cancel remaining quantity on a line item."""
+    def cancel_line_item(po, line_item_id, user, note='', sever_decision=None):
+        """Cancel remaining quantity on a line item.
+
+        If the line has a pending linked Material, `sever_decision`
+        ('keep'|'delete') is required.
+        """
         from apps.core.models import HistoryEntry
 
         if po.status not in (
@@ -316,6 +448,8 @@ class PurchaseOrderReceivingService:
                 raise ValidationError(
                     f'Line item #{li.line_number} has no outstanding quantity to cancel.'
                 )
+
+            PurchaseOrderService._sever_line_material(li, sever_decision)
 
             qty_to_cancel = li.qty - li.qty_received - li.qty_cancelled
             li.qty_cancelled = li.qty - li.qty_received
@@ -336,9 +470,15 @@ class PurchaseOrderReceivingService:
 
     @staticmethod
     def reverse_receipt(po, line_item_id, user, note=''):
-        """Reverse all received quantity on a line item (data correction)."""
+        """Reverse all received quantity on a line item (data correction).
+
+        Bumps QOH back down and resets the line's receipt fields. The linked
+        Material (if any) is NOT touched — its quantity and earmark stay as
+        they were planned. If the linked Material has already been consumed,
+        the reversal is rejected (the caller must restock the Material first).
+        """
         from apps.core.models import HistoryEntry
-        from apps.inventory.models import InventoryAdjustment
+        from apps.inventory.models import InventoryAdjustment, Material
 
         if po.status not in (
             PurchaseOrder.STATUS_ISSUED,
@@ -356,6 +496,14 @@ class PurchaseOrderReceivingService:
             if li.qty_received <= 0:
                 raise ValidationError(
                     f'Line item #{li.line_number} has no received quantity to reverse.'
+                )
+
+            existing_mat = li.linked_material
+            if (existing_mat is not None
+                    and existing_mat.consumption_state == Material.CONSUMPTION_STATE_CONSUMED):
+                raise ValidationError(
+                    f'Cannot reverse receipt on line #{li.line_number}: '
+                    f'linked Material has been consumed. Restock the Material first.'
                 )
 
             reversed_qty = li.qty_received
@@ -399,7 +547,7 @@ class PurchaseOrderReceivingService:
         if not all_items:
             return
 
-        all_done = all(li.qty_received + li.qty_cancelled == li.qty for li in all_items)
+        all_done = all(li.qty_received + li.qty_cancelled >= li.qty for li in all_items)
         any_received = any(li.qty_received > 0 for li in all_items)
 
         if all_done and any_received:

@@ -1,5 +1,6 @@
 <script>
   import UnitsSelect from '../UnitsSelect.svelte';
+  import JobPicker from '../JobPicker.svelte';
 
   const {
     po,
@@ -16,6 +17,7 @@
     onReceiveItems = null,
     onCancelLineItem = null,
     onReverseReceipt = null,
+    onChangeLineJob = null,
   } = $props();
 
   let lineItems = $derived(
@@ -28,6 +30,21 @@
 
   let editingId = $state(null);
   let editForm = $state({});
+
+  let changeJobLine = $state(null);
+  let changeJobPick = $state(null);
+
+  function canChangeJob(li) {
+    if (po.status === 'cancelled') return false;
+    if (!li.material) return po.status === 'draft';
+    return li.material.consumption_state === 'pending';
+  }
+  function openChangeJob(li) {
+    changeJobLine = li;
+    changeJobPick = li.effective_job_id
+      ? { job_id: li.effective_job_id, job_number: li.effective_job_number }
+      : null;
+  }
 
   let canReceive = $derived(
     po.status === 'issued' || po.status === 'partly_received'
@@ -63,6 +80,13 @@
       qty: li.qty,
       units: li.units || 'none',
       price: li.price,
+      job: li.effective_job_id
+        ? { job_id: li.effective_job_id, job_number: li.effective_job_number }
+        : null,
+      _hadLinkedMaterial: !!li.material,
+      _linkedMaterial: li.material,
+      _lineNumber: li.line_number,
+      _description: li.description,
     };
   }
 
@@ -72,6 +96,11 @@
   }
 
   function saveEdit() {
+    const original = lineItems.find(li => li.line_item_id === editingId);
+    const origJobId = original?.effective_job_id ?? null;
+    const newJobId = editForm.job?.job_id ?? null;
+    const jobChanged = origJobId !== newJobId;
+
     if (onEditLineItem) {
       onEditLineItem(editingId, {
         description: editForm.description,
@@ -79,6 +108,13 @@
         units: editForm.units,
         price: editForm.price,
       });
+    }
+    if (jobChanged && onChangeLineJob) {
+      onChangeLineJob(
+        editingId,
+        newJobId,
+        editForm._hadLinkedMaterial ? editForm._linkedMaterial : null
+      );
     }
     editingId = null;
     editForm = {};
@@ -159,6 +195,7 @@
         <th>Units</th>
         <th class="text-right">Price</th>
         <th class="text-right">Total</th>
+        <th>Job</th>
         {#if showReceived}
           <th class="text-right">Received</th>
           <th>Status</th>
@@ -181,6 +218,7 @@
             <td><UnitsSelect bind:value={editForm.units} /></td>
             <td><input type="number" bind:value={editForm.price} step="0.01" min="0" style="width:80px;text-align:right;"></td>
             <td class="text-right">${(Number(editForm.qty) * Number(editForm.price)).toFixed(2)}</td>
+            <td><JobPicker bind:value={editForm.job} /></td>
             <td>
               <button onclick={saveEdit}>Save</button>
               <button onclick={cancelEdit}>Cancel</button>
@@ -194,6 +232,13 @@
             <td>{li.units || ''}</td>
             <td class="text-right">${Number(li.price).toFixed(2)}</td>
             <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
+            <td>
+              {#if li.effective_job_id}
+                <a href="#/jobs/{li.effective_job_id}">{li.effective_job_number}</a>
+              {:else}
+                —
+              {/if}
+            </td>
             {#if showReceived}
               <td class="text-right">
                 {#if Number(li.qty_cancelled) >= Number(li.qty)}
@@ -228,6 +273,9 @@
                 <button onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
                 <button onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
                 <button onclick={() => onDeleteLineItem(li)}>Delete</button>
+                {#if canChangeJob(li) && editingId !== li.line_item_id}
+                  <button onclick={() => openChangeJob(li)}>Change Job</button>
+                {/if}
               </td>
             {/if}
             {#if showReceived}
@@ -237,6 +285,9 @@
                 {/if}
                 {#if Number(li.qty_received) > 0}
                   <button onclick={() => handleReverseLine(li)}>Reverse Receipt</button>
+                {/if}
+                {#if canChangeJob(li)}
+                  <button onclick={() => openChangeJob(li)}>Change Job</button>
                 {/if}
               </td>
             {/if}
@@ -248,6 +299,7 @@
       <tr>
         <td colspan="5" class="text-right"><strong>Total</strong></td>
         <td class="text-right"><strong>${total.toFixed(2)}</strong></td>
+        <td></td>
         {#if showReceived}
           <td></td><td></td>
         {/if}
@@ -257,6 +309,29 @@
       </tr>
     </tfoot>
   </table>
+{/if}
+
+{#if changeJobLine}
+  <div class="overlay">
+    <div class="dialog">
+      <h3>Change Job for Line #{changeJobLine.line_number}</h3>
+      <p><strong>{changeJobLine.description}</strong></p>
+      <JobPicker bind:value={changeJobPick} />
+      <p>
+        <button onclick={() => {
+          if (onChangeLineJob) {
+            onChangeLineJob(
+              changeJobLine.line_item_id,
+              changeJobPick?.job_id ?? null,
+              changeJobLine.material,
+            );
+          }
+          changeJobLine = null;
+        }}>Save</button>
+        <button onclick={() => { changeJobLine = null; }}>Cancel</button>
+      </p>
+    </div>
+  </div>
 {/if}
 
 <style>
@@ -288,4 +363,11 @@
   .line-status.partial { background: #fef3c7; color: #92400e; }
   .line-status.pending { background: #f3f4f6; color: #374151; }
   .line-status.cancelled { background: #fee2e2; color: #991b1b; }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .dialog {
+    background: white; padding: 20px; max-width: 600px; border-radius: 6px;
+  }
 </style>

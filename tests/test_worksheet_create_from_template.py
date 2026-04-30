@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.urls import reverse
 from apps.jobs.models import PlanTask, PlanBundle, Job
-from apps.estimates.models import EstWorksheet, WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
+from apps.estimates.models import EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
 from apps.contacts.models import Contact, Business
 from apps.core.models import User, AccountingCategory
 
@@ -35,9 +35,9 @@ class WorksheetCreateFromTemplateTest(TestCase):
         )
 
         # Set up a template with a bundle
-        self.wot = WorkOrderTemplate.objects.create(template_name='Floor Refinish')
+        self.wot = WorkTemplate.objects.create(template_name='Floor Refinish')
         self.template_bundle = TemplateBundle.objects.create(
-            work_order_template=self.wot, name='Prep Work',
+            work_template=self.wot, name='Prep Work',
             accounting_category=self.lit_labor, sort_order=1
         )
         self.tt_sand = TaskTemplate.objects.create(
@@ -53,17 +53,17 @@ class WorksheetCreateFromTemplateTest(TestCase):
             units='hours', accounting_category=self.lit_labor
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wot, task_template=self.tt_sand,
+            work_template=self.wot, task_template=self.tt_sand,
             est_qty=Decimal('1'), mapping_strategy='bundle',
             bundle=self.template_bundle, sort_order=1
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wot, task_template=self.tt_clean,
+            work_template=self.wot, task_template=self.tt_clean,
             est_qty=Decimal('1'), mapping_strategy='bundle',
             bundle=self.template_bundle, sort_order=2
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.wot, task_template=self.tt_finish,
+            work_template=self.wot, task_template=self.tt_finish,
             est_qty=Decimal('2'), mapping_strategy='direct', sort_order=3
         )
 

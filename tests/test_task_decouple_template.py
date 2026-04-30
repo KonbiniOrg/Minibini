@@ -8,8 +8,8 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.db.models import ProtectedError
 
-from apps.jobs.models import PlanBundle, Job, PlanTask, WorkOrder
-from apps.estimates.models import TaskTemplate, WorkOrderTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
+from apps.jobs.models import PlanBundle, Job, PlanTask
+from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation, TemplateBundle, EstWorksheet, Estimate, EstimateLineItem
 from apps.estimates.services import EstimateGenerationService
 from apps.jobs.services import TaskService
 from apps.core.models import AccountingCategory, Configuration, User
@@ -81,12 +81,12 @@ class GenerateTaskCopiesAccountingCategoryTests(TestCase):
 
     def test_generate_tasks_for_worksheet_copies_accounting_category(self):
         """Full template generation copies accounting_category to each task."""
-        wot = WorkOrderTemplate.objects.create(template_name="Cabinet")
+        wot = WorkTemplate.objects.create(template_name="Cabinet")
         tt = TaskTemplate.objects.create(
             template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wot, task_template=tt,
+            work_template=wot, task_template=tt,
             est_qty=Decimal("2.00"), mapping_strategy='direct'
         )
         tasks = wot.generate_tasks_for_worksheet(self.worksheet)
@@ -126,7 +126,7 @@ class CopyPointsPreserveAccountingCategoryTests(TestCase):
         self.assertEqual(new_task.accounting_category, self.lit)
 
     def test_copy_worksheet_tasks_copies_accounting_category(self):
-        """_copy_worksheet_tasks should copy accounting_category to work order tasks."""
+        """_copy_worksheet_tasks should copy accounting_category onto job tasks."""
         ws = EstWorksheet.objects.create(job=self.job)
         source_task = PlanTask.objects.create(
             est_worksheet=ws, name="Sand", rate=Decimal("50.00"),
@@ -137,8 +137,7 @@ class CopyPointsPreserveAccountingCategoryTests(TestCase):
         estimate = service.generate_estimate_from_worksheet(ws)
         line_item = estimate.estimatelineitem_set.first()
 
-        wo = WorkOrder.objects.create(job=self.job)
-        tasks = TaskService._copy_worksheet_tasks(line_item, wo)
+        tasks = TaskService._copy_worksheet_tasks(line_item, self.job)
         self.assertEqual(tasks[0].accounting_category, self.lit)
 
 

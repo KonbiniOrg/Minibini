@@ -7,17 +7,17 @@ from django.utils import timezone
 from django.db import models
 from django.views.decorators.http import require_POST
 from .models import (
-    Estimate, EstimateLineItem, EstWorksheet, WorkOrderTemplate,
+    Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
     TaskTemplate, TemplateTaskAssociation, TemplateBundle
 )
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, WorkOrder, PlanTask, PlanBundle
+from apps.jobs.models import Job, PlanTask, PlanBundle
 from apps.core.services import TaxCalculationService, NotFoundError
 from .services import (
-    EstimateService, WorkOrderTemplateService, WorksheetService,
+    EstimateService, WorkTemplateService, WorksheetService,
 )
 from .forms import (
-    WorkOrderTemplateForm, TaskTemplateForm, EstWorksheetForm,
+    WorkTemplateForm, TaskTemplateForm, EstWorksheetForm,
     ManualLineItemForm, PriceListLineItemForm, EstimateStatusForm
 )
 from apps.jobs.forms import TaskEditForm, TaskFromTemplateForm
@@ -72,10 +72,10 @@ def _next_container_sort_order(template):
     """Get the next sort_order in the shared container-level space (bundles + unbundled associations)."""
     from .models import TemplateTaskAssociation, TemplateBundle
     max_assoc = TemplateTaskAssociation.objects.filter(
-        work_order_template=template, bundle__isnull=True
+        work_template=template, bundle__isnull=True
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
     max_bundle = TemplateBundle.objects.filter(
-        work_order_template=template
+        work_template=template
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
     return max(max_assoc, max_bundle) + 1
 
@@ -205,53 +205,53 @@ def estimate_detail(request, estimate_id):
     })
 
 
-def add_work_order_template(request):
+def add_work_template(request):
     if request.method == 'POST':
-        form = WorkOrderTemplateForm(request.POST)
+        form = WorkTemplateForm(request.POST)
         if form.is_valid():
-            template = WorkOrderTemplateService.create_template(**form.cleaned_data)
+            template = WorkTemplateService.create_template(**form.cleaned_data)
             messages.success(request, f'Work Order Template "{template.template_name}" created successfully.')
-            return redirect('estimates:work_order_template_detail', template_id=template.template_id)
+            return redirect('estimates:work_template_detail', template_id=template.template_id)
     else:
-        form = WorkOrderTemplateForm()
+        form = WorkTemplateForm()
 
-    return render(request, 'jobs/add_work_order_template.html', {'form': form})
+    return render(request, 'jobs/add_work_template.html', {'form': form})
 
 
-def work_order_template_edit(request, template_id):
-    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+def work_template_edit(request, template_id):
+    template = get_object_or_404(WorkTemplate, template_id=template_id)
 
     if request.method == 'POST':
-        form = WorkOrderTemplateForm(request.POST, instance=template)
+        form = WorkTemplateForm(request.POST, instance=template)
         if form.is_valid():
-            WorkOrderTemplateService.update_template(template.pk, **form.cleaned_data)
+            WorkTemplateService.update_template(template.pk, **form.cleaned_data)
             messages.success(request, f'Work Order Template "{template.template_name}" updated successfully.')
-            return redirect('estimates:work_order_template_detail', template_id=template.template_id)
+            return redirect('estimates:work_template_detail', template_id=template.template_id)
     else:
-        form = WorkOrderTemplateForm(instance=template)
+        form = WorkTemplateForm(instance=template)
 
-    return render(request, 'jobs/work_order_template_edit.html', {
+    return render(request, 'jobs/work_template_edit.html', {
         'form': form,
         'template': template
     })
 
 
 @require_POST
-def work_order_template_delete(request, template_id):
-    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+def work_template_delete(request, template_id):
+    template = get_object_or_404(WorkTemplate, template_id=template_id)
     template_name = template.template_name
-    WorkOrderTemplateService.delete_template(template.pk)
+    WorkTemplateService.delete_template(template.pk)
     messages.success(request, f'Work Order Template "{template_name}" deleted successfully.')
-    return redirect('estimates:work_order_template_list')
+    return redirect('estimates:work_template_list')
 
 
-def work_order_template_list(request):
-    templates = WorkOrderTemplate.objects.all().order_by('-created_date')
-    return render(request, 'jobs/work_order_template_list.html', {'templates': templates})
+def work_template_list(request):
+    templates = WorkTemplate.objects.all().order_by('-created_date')
+    return render(request, 'jobs/work_template_list.html', {'templates': templates})
 
 
-def work_order_template_detail(request, template_id):
-    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+def work_template_detail(request, template_id):
+    template = get_object_or_404(WorkTemplate, template_id=template_id)
 
     # Handle TaskTemplate association
     if request.method == 'POST' and 'associate_task' in request.POST:
@@ -263,7 +263,7 @@ def work_order_template_detail(request, template_id):
             next_sort_order = _next_container_sort_order(template)
 
             association, created = TemplateTaskAssociation.objects.get_or_create(
-                work_order_template=template,
+                work_template=template,
                 task_template=task_template,
                 defaults={'est_qty': est_qty, 'sort_order': next_sort_order}
             )
@@ -271,7 +271,7 @@ def work_order_template_detail(request, template_id):
                 messages.success(request, f'Task Template "{task_template.template_name}" associated with quantity {est_qty}.')
             else:
                 messages.warning(request, f'Task Template "{task_template.template_name}" is already associated.')
-        return redirect('estimates:work_order_template_detail', template_id=template_id)
+        return redirect('estimates:work_template_detail', template_id=template_id)
 
     # Handle TaskTemplate removal (unbundle if bundled, delete if unbundled)
     if request.method == 'POST' and 'remove_task' in request.POST:
@@ -279,16 +279,16 @@ def work_order_template_detail(request, template_id):
         if task_template_id:
             task_template = get_object_or_404(TaskTemplate, template_id=task_template_id)
             assoc = TemplateTaskAssociation.objects.filter(
-                work_order_template=template,
+                work_template=template,
                 task_template=task_template
             ).first()
             if assoc and assoc.mapping_strategy == 'bundle' and assoc.bundle:
-                WorkOrderTemplateService.unbundle_association(template.pk, assoc.pk)
+                WorkTemplateService.unbundle_association(template.pk, assoc.pk)
                 messages.success(request, f'"{task_template.template_name}" unbundled.')
             elif assoc:
-                WorkOrderTemplateService.delete_association(template.pk, assoc.pk)
+                WorkTemplateService.delete_association(template.pk, assoc.pk)
                 messages.success(request, f'Task Template "{task_template.template_name}" removed.')
-        return redirect('estimates:work_order_template_detail', template_id=template_id)
+        return redirect('estimates:work_template_detail', template_id=template_id)
 
     # Handle bundle creation
     if request.method == 'POST' and 'bundle_tasks' in request.POST:
@@ -305,7 +305,7 @@ def work_order_template_detail(request, template_id):
         else:
             accounting_category = get_object_or_404(AccountingCategory, pk=accounting_category_id)
             try:
-                WorkOrderTemplateService.bundle_associations(
+                WorkTemplateService.bundle_associations(
                     template.pk,
                     [int(i) for i in selected_ids],
                     bundle_name,
@@ -315,13 +315,13 @@ def work_order_template_detail(request, template_id):
             except ValidationError as e:
                 messages.error(request, str(e.message if hasattr(e, 'message') else e))
 
-        return redirect('estimates:work_order_template_detail', template_id=template_id)
+        return redirect('estimates:work_template_detail', template_id=template_id)
 
     # Get task template associations with bundle info
     from apps.core.models import AccountingCategory
 
     associations = TemplateTaskAssociation.objects.filter(
-        work_order_template=template,
+        work_template=template,
         task_template__is_active=True
     ).select_related('task_template', 'bundle').order_by('sort_order', 'task_template__template_name')
 
@@ -335,7 +335,7 @@ def work_order_template_detail(request, template_id):
     # Get line item types for bundle form
     accounting_categories = AccountingCategory.objects.all().order_by('name')
 
-    return render(request, 'jobs/work_order_template_detail.html', {
+    return render(request, 'jobs/work_template_detail.html', {
         'template': template,
         'container_items': container_items,
         'available_templates': available_templates,
@@ -523,7 +523,7 @@ def estworksheet_revise(request, worksheet_id):
 
 def task_template_list(request):
     """List all TaskTemplates with all fields"""
-    templates = TaskTemplate.objects.all().prefetch_related('work_order_templates').order_by('template_name')
+    templates = TaskTemplate.objects.all().prefetch_related('work_templates').order_by('template_name')
     return render(request, 'jobs/task_template_list.html', {'templates': templates})
 
 
@@ -532,7 +532,7 @@ def add_task_template_standalone(request):
     if request.method == 'POST':
         form = TaskTemplateForm(request.POST)
         if form.is_valid():
-            task_template = WorkOrderTemplateService.create_task_template(**form.cleaned_data)
+            task_template = WorkTemplateService.create_task_template(**form.cleaned_data)
             messages.success(request, f'Task Template "{task_template.template_name}" created successfully.')
             return redirect('estimates:task_template_list')
     else:
@@ -548,22 +548,22 @@ def task_template_edit(request, template_id):
     if request.method == 'POST':
         form = TaskTemplateForm(request.POST, instance=template)
         if form.is_valid():
-            WorkOrderTemplateService.update_task_template(template.pk, **form.cleaned_data)
+            WorkTemplateService.update_task_template(template.pk, **form.cleaned_data)
             messages.success(request, f'Task Template "{template.template_name}" updated successfully.')
             return redirect('estimates:task_template_list')
     else:
         form = TaskTemplateForm(instance=template)
 
-    # Get WorkOrderTemplates using this TaskTemplate
-    work_order_templates = WorkOrderTemplate.objects.filter(
+    # Get WorkTemplates using this TaskTemplate
+    work_templates = WorkTemplate.objects.filter(
         templatetaskassociation__task_template=template
     ).distinct()
 
     return render(request, 'jobs/task_template_edit.html', {
         'form': form,
         'template': template,
-        'work_order_templates': work_order_templates,
-        'can_delete': not work_order_templates.exists()
+        'work_templates': work_templates,
+        'can_delete': not work_templates.exists()
     })
 
 
@@ -573,7 +573,7 @@ def task_template_delete(request, template_id):
     template = get_object_or_404(TaskTemplate, template_id=template_id)
     try:
         template_name = template.template_name
-        WorkOrderTemplateService.delete_task_template(template.pk)
+        WorkTemplateService.delete_task_template(template.pk)
         messages.success(request, f'Task Template "{template_name}" deleted successfully.')
     except ValidationError as e:
         messages.error(request, str(e.message))
@@ -847,24 +847,24 @@ def estimate_reorder_line_item(request, estimate_id, line_item_id, direction):
 
 @require_POST
 def template_reorder_item(request, template_id, item_type, item_id, direction):
-    """Reorder items at the container level within a WorkOrderTemplate."""
-    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+    """Reorder items at the container level within a WorkTemplate."""
+    template = get_object_or_404(WorkTemplate, template_id=template_id)
     try:
-        WorkOrderTemplateService.reorder_items(template.pk, item_type, item_id, direction)
+        WorkTemplateService.reorder_items(template.pk, item_type, item_id, direction)
     except (NotFoundError, ValidationError) as e:
         messages.error(request, str(e))
-    return redirect('estimates:work_order_template_detail', template_id=template_id)
+    return redirect('estimates:work_template_detail', template_id=template_id)
 
 
 @require_POST
 def template_reorder_in_bundle(request, template_id, association_id, direction):
     """Reorder a task within its bundle."""
-    template = get_object_or_404(WorkOrderTemplate, template_id=template_id)
+    template = get_object_or_404(WorkTemplate, template_id=template_id)
     try:
-        WorkOrderTemplateService.reorder_in_bundle(template.pk, association_id, direction)
+        WorkTemplateService.reorder_in_bundle(template.pk, association_id, direction)
     except (NotFoundError, ValidationError) as e:
         messages.error(request, str(e))
-    return redirect('estimates:work_order_template_detail', template_id=template_id)
+    return redirect('estimates:work_template_detail', template_id=template_id)
 
 
 @require_POST
@@ -889,64 +889,3 @@ def worksheet_reorder_in_bundle(request, worksheet_id, task_id, direction):
     return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
 
-def work_order_create_from_estimate(request, estimate_id):
-    """Create a WorkOrder from an accepted Estimate"""
-    from django.db import transaction
-
-    estimate = get_object_or_404(Estimate, estimate_id=estimate_id)
-
-    # Only allow creation from accepted estimates
-    if estimate.status != Estimate.STATUS_ACCEPTED:
-        messages.error(request, 'Work Orders can only be created from accepted estimates.')
-        return redirect('estimates:estimate_detail', estimate_id=estimate_id)
-
-    if request.method == 'POST':
-        from apps.jobs.services import WorkOrderService
-        with transaction.atomic():
-            worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
-
-            # Create the WorkOrder
-            work_order = WorkOrderService.create_direct(
-                estimate.job,
-                template=worksheet.template if worksheet else None,
-            )
-
-            if worksheet:
-                # Copy worksheet tasks, bundles, and materials directly
-                WorkOrderService.copy_from_worksheet(work_order.pk, worksheet.pk)
-            else:
-                # No worksheet — generate tasks from estimate line items
-                from apps.jobs.services import TaskService
-                line_items = estimate.estimatelineitem_set.all().order_by('line_number', 'pk')
-                for line_item in line_items:
-                    TaskService.create_from_line_item(line_item, work_order)
-
-            messages.success(request, f'Work Order {work_order.work_order_id} created successfully from Estimate {estimate.estimate_number}.')
-            return redirect('jobs:work_order_detail', work_order_id=work_order.work_order_id)
-
-    # GET request - show confirmation page
-    worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
-    line_items = estimate.estimatelineitem_set.all().order_by('line_number', 'pk')
-
-    # Categorize line items by source
-    worksheet_items = []
-    catalog_items = []
-    manual_items = []
-
-    for line_item in line_items:
-        if line_item.task:
-            worksheet_items.append(line_item)
-        elif line_item.price_list_item:
-            catalog_items.append(line_item)
-        else:
-            manual_items.append(line_item)
-
-    return render(request, 'jobs/work_order_create_confirm.html', {
-        'estimate': estimate,
-        'worksheet': worksheet,
-        'line_items': line_items,
-        'worksheet_items': worksheet_items,
-        'catalog_items': catalog_items,
-        'manual_items': manual_items,
-        'total_line_items': line_items.count()
-    })

@@ -116,7 +116,7 @@ class JobEditForm(forms.ModelForm):
                 # Draft: Can edit everything except job_number and completed_date
                 pass  # All fields already available
 
-            elif current_status in ['submitted', 'approved']:
+            elif current_status in ['submitted', 'approved', 'work_complete']:
                 # Can't change contact or created_date
                 self.fields['contact'].disabled = True
                 self.fields['contact'].help_text = 'Contact cannot be changed in this status'
@@ -173,35 +173,6 @@ class TaskFromTemplateForm(forms.Form):
         initial=1.0,
         widget=forms.NumberInput(attrs={'step': '0.01'})
     )
-
-
-class WorkOrderStatusForm(forms.Form):
-    """Form for changing WorkOrder status"""
-    VALID_TRANSITIONS = {
-        'draft': ['incomplete', 'blocked'],
-        'incomplete': ['blocked', 'complete'],
-        'blocked': ['incomplete', 'complete'],
-        'complete': []
-    }
-
-    status = forms.ChoiceField(choices=[], required=True)
-
-    def __init__(self, *args, **kwargs):
-        current_status = kwargs.pop('current_status', 'draft')
-        super().__init__(*args, **kwargs)
-
-        # Set valid status choices based on current status
-        valid_statuses = self.VALID_TRANSITIONS.get(current_status, [])
-        choices = [(current_status, f'{current_status.title()} (current)')]
-        choices.extend([(s, s.title()) for s in valid_statuses])
-
-        self.fields['status'].choices = choices
-        self.fields['status'].initial = current_status
-
-    def clean_status(self):
-        status = self.cleaned_data['status']
-        # Additional validation if needed
-        return status
 
 
 class MaterialForm(forms.ModelForm):

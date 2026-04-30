@@ -4,11 +4,11 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet,
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Job, Task, PlanTask, PlanBundle, WorkOrder
-from apps.jobs.services import WorkOrderService
+from apps.jobs.models import Job, Task, PlanTask, PlanBundle
+from apps.jobs.services import JobService
 from apps.inventory.models import Material, PlanMaterial
 from apps.core.services import NotFoundError
 from apps.core.models import AccountingCategory
@@ -37,66 +37,66 @@ class EstimatesTestBase(TestCase):
         self.job = JobService.create_job(name='Test Job', contact=self.contact)
 
 
-# --- WorkOrderTemplate CRUD ---
+# --- WorkTemplate CRUD ---
 
-class WorkOrderTemplateServiceCreateTest(EstimatesTestBase):
-    """Tests for WorkOrderTemplateService.create_template."""
+class WorkTemplateServiceCreateTest(EstimatesTestBase):
+    """Tests for WorkTemplateService.create_template."""
 
     def test_create_template(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tmpl = WorkOrderTemplateService.create_template(
+        from apps.estimates.services import WorkTemplateService
+        tmpl = WorkTemplateService.create_template(
             template_name='Test Template', description='A template',
         )
         self.assertIsNotNone(tmpl.pk)
         self.assertEqual(tmpl.template_name, 'Test Template')
 
     def test_create_template_minimal(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tmpl = WorkOrderTemplateService.create_template(template_name='Min')
+        from apps.estimates.services import WorkTemplateService
+        tmpl = WorkTemplateService.create_template(template_name='Min')
         self.assertIsNotNone(tmpl.pk)
 
 
-class WorkOrderTemplateServiceUpdateTest(EstimatesTestBase):
-    """Tests for WorkOrderTemplateService.update_template."""
+class WorkTemplateServiceUpdateTest(EstimatesTestBase):
+    """Tests for WorkTemplateService.update_template."""
 
     def test_update_template(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tmpl = WorkOrderTemplateService.create_template(template_name='Old')
-        updated = WorkOrderTemplateService.update_template(
+        from apps.estimates.services import WorkTemplateService
+        tmpl = WorkTemplateService.create_template(template_name='Old')
+        updated = WorkTemplateService.update_template(
             tmpl.pk, template_name='New',
         )
         self.assertEqual(updated.template_name, 'New')
 
     def test_update_template_not_found(self):
-        from apps.estimates.services import WorkOrderTemplateService
+        from apps.estimates.services import WorkTemplateService
         with self.assertRaises(NotFoundError):
-            WorkOrderTemplateService.update_template(99999, template_name='X')
+            WorkTemplateService.update_template(99999, template_name='X')
 
 
-class WorkOrderTemplateServiceDeleteTest(EstimatesTestBase):
-    """Tests for WorkOrderTemplateService.delete_template."""
+class WorkTemplateServiceDeleteTest(EstimatesTestBase):
+    """Tests for WorkTemplateService.delete_template."""
 
     def test_delete_template(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tmpl = WorkOrderTemplateService.create_template(template_name='Del')
+        from apps.estimates.services import WorkTemplateService
+        tmpl = WorkTemplateService.create_template(template_name='Del')
         pk = tmpl.pk
-        WorkOrderTemplateService.delete_template(pk)
-        self.assertFalse(WorkOrderTemplate.objects.filter(pk=pk).exists())
+        WorkTemplateService.delete_template(pk)
+        self.assertFalse(WorkTemplate.objects.filter(pk=pk).exists())
 
     def test_delete_template_not_found(self):
-        from apps.estimates.services import WorkOrderTemplateService
+        from apps.estimates.services import WorkTemplateService
         with self.assertRaises(NotFoundError):
-            WorkOrderTemplateService.delete_template(99999)
+            WorkTemplateService.delete_template(99999)
 
 
 # --- TaskTemplate CRUD ---
 
 class TaskTemplateServiceCreateTest(EstimatesTestBase):
-    """Tests for WorkOrderTemplateService.create_task_template."""
+    """Tests for WorkTemplateService.create_task_template."""
 
     def test_create_task_template(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tt = WorkOrderTemplateService.create_task_template(
+        from apps.estimates.services import WorkTemplateService
+        tt = WorkTemplateService.create_task_template(
             template_name='Welding', units='hours',
             rate=Decimal('85.00'), accounting_category=self.lit,
         )
@@ -106,48 +106,48 @@ class TaskTemplateServiceCreateTest(EstimatesTestBase):
 
 
 class TaskTemplateServiceUpdateTest(EstimatesTestBase):
-    """Tests for WorkOrderTemplateService.update_task_template."""
+    """Tests for WorkTemplateService.update_task_template."""
 
     def test_update_task_template(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tt = WorkOrderTemplateService.create_task_template(
+        from apps.estimates.services import WorkTemplateService
+        tt = WorkTemplateService.create_task_template(
             template_name='Old', accounting_category=self.lit,
         )
-        updated = WorkOrderTemplateService.update_task_template(
+        updated = WorkTemplateService.update_task_template(
             tt.pk, template_name='New',
         )
         self.assertEqual(updated.template_name, 'New')
 
     def test_update_task_template_not_found(self):
-        from apps.estimates.services import WorkOrderTemplateService
+        from apps.estimates.services import WorkTemplateService
         with self.assertRaises(NotFoundError):
-            WorkOrderTemplateService.update_task_template(99999, template_name='X')
+            WorkTemplateService.update_task_template(99999, template_name='X')
 
 
 class TaskTemplateServiceDeleteTest(EstimatesTestBase):
-    """Tests for WorkOrderTemplateService.delete_task_template."""
+    """Tests for WorkTemplateService.delete_task_template."""
 
     def test_delete_unused_task_template(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tt = WorkOrderTemplateService.create_task_template(
+        from apps.estimates.services import WorkTemplateService
+        tt = WorkTemplateService.create_task_template(
             template_name='Del', accounting_category=self.lit,
         )
         pk = tt.pk
-        WorkOrderTemplateService.delete_task_template(pk)
+        WorkTemplateService.delete_task_template(pk)
         self.assertFalse(TaskTemplate.objects.filter(pk=pk).exists())
 
     def test_delete_used_task_template_raises(self):
         """Cannot delete a task template used in a work order template."""
-        from apps.estimates.services import WorkOrderTemplateService
-        wo_tmpl = WorkOrderTemplateService.create_template(template_name='WO')
-        tt = WorkOrderTemplateService.create_task_template(
+        from apps.estimates.services import WorkTemplateService
+        wo_tmpl = WorkTemplateService.create_template(template_name='WO')
+        tt = WorkTemplateService.create_task_template(
             template_name='Used', accounting_category=self.lit,
         )
         TemplateTaskAssociation.objects.create(
-            work_order_template=wo_tmpl, task_template=tt,
+            work_template=wo_tmpl, task_template=tt,
         )
         with self.assertRaises(ValidationError):
-            WorkOrderTemplateService.delete_task_template(tt.pk)
+            WorkTemplateService.delete_task_template(tt.pk)
 
 
 # --- EstimateService CRUD/status ---
@@ -363,8 +363,8 @@ class WorksheetServiceCreateTest(EstimatesTestBase):
         self.assertEqual(ws.status, EstWorksheet.STATUS_DRAFT)
 
     def test_create_worksheet_from_template(self):
-        from apps.estimates.services import WorksheetService, WorkOrderTemplateService
-        tmpl = WorkOrderTemplateService.create_template(template_name='Tmpl')
+        from apps.estimates.services import WorksheetService, WorkTemplateService
+        tmpl = WorkTemplateService.create_template(template_name='Tmpl')
         ws = WorksheetService.create_worksheet(self.job.pk, template=tmpl)
         self.assertEqual(ws.template, tmpl)
 
@@ -407,8 +407,8 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         self.ws = WorksheetService.create_worksheet(self.job.pk)
 
     def test_add_task_from_template(self):
-        from apps.estimates.services import WorksheetService, WorkOrderTemplateService
-        tt = WorkOrderTemplateService.create_task_template(
+        from apps.estimates.services import WorksheetService, WorkTemplateService
+        tt = WorkTemplateService.create_task_template(
             template_name='Welding', units='hours',
             rate=Decimal('85.00'), accounting_category=self.lit,
         )
@@ -438,44 +438,44 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
             )
 
 
-# --- WorkOrderTemplateService.delete_association ---
+# --- WorkTemplateService.delete_association ---
 
-class WorkOrderTemplateServiceDeleteAssociationTest(EstimatesTestBase):
-    """Tests for WorkOrderTemplateService.delete_association."""
+class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
+    """Tests for WorkTemplateService.delete_association."""
 
     def test_delete_unbundled_association(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tmpl = WorkOrderTemplateService.create_template(template_name='T')
-        tt = WorkOrderTemplateService.create_task_template(
+        from apps.estimates.services import WorkTemplateService
+        tmpl = WorkTemplateService.create_template(template_name='T')
+        tt = WorkTemplateService.create_task_template(
             template_name='Task', accounting_category=self.lit,
         )
         assoc = TemplateTaskAssociation.objects.create(
-            work_order_template=tmpl, task_template=tt,
+            work_template=tmpl, task_template=tt,
             mapping_strategy='direct', sort_order=1,
         )
         pk = assoc.pk
-        WorkOrderTemplateService.delete_association(tmpl.pk, pk)
+        WorkTemplateService.delete_association(tmpl.pk, pk)
         self.assertFalse(TemplateTaskAssociation.objects.filter(pk=pk).exists())
 
     def test_delete_association_not_found(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tmpl = WorkOrderTemplateService.create_template(template_name='T')
+        from apps.estimates.services import WorkTemplateService
+        tmpl = WorkTemplateService.create_template(template_name='T')
         with self.assertRaises(NotFoundError):
-            WorkOrderTemplateService.delete_association(tmpl.pk, 99999)
+            WorkTemplateService.delete_association(tmpl.pk, 99999)
 
     def test_delete_association_wrong_template(self):
-        from apps.estimates.services import WorkOrderTemplateService
-        tmpl1 = WorkOrderTemplateService.create_template(template_name='T1')
-        tmpl2 = WorkOrderTemplateService.create_template(template_name='T2')
-        tt = WorkOrderTemplateService.create_task_template(
+        from apps.estimates.services import WorkTemplateService
+        tmpl1 = WorkTemplateService.create_template(template_name='T1')
+        tmpl2 = WorkTemplateService.create_template(template_name='T2')
+        tt = WorkTemplateService.create_task_template(
             template_name='Task', accounting_category=self.lit,
         )
         assoc = TemplateTaskAssociation.objects.create(
-            work_order_template=tmpl1, task_template=tt,
+            work_template=tmpl1, task_template=tt,
             mapping_strategy='direct', sort_order=1,
         )
         with self.assertRaises(NotFoundError):
-            WorkOrderTemplateService.delete_association(tmpl2.pk, assoc.pk)
+            WorkTemplateService.delete_association(tmpl2.pk, assoc.pk)
 
 
 # --- WorksheetService.finalize ---
@@ -503,10 +503,10 @@ class WorksheetServiceFinalizeTest(EstimatesTestBase):
             WorksheetService.finalize(99999)
 
 
-# --- WorkOrderService.copy_from_worksheet ---
+# --- JobService.copy_from_worksheet ---
 
-class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
-    """Tests for WorkOrderService.copy_from_worksheet."""
+class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
+    """Tests for JobService.copy_from_worksheet."""
 
     def test_copy_tasks(self):
         from apps.estimates.services import WorksheetService
@@ -514,9 +514,8 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
         PlanTask.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
         PlanTask.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
 
-        wo = WorkOrder.objects.create(job=self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
-        self.assertEqual(Task.objects.filter(work_order=wo).count(), 2)
+        JobService.copy_from_worksheet(self.job.pk, ws.pk)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 2)
 
     def test_copy_bundles_drops_bundle_info(self):
         """PlanBundles on the worksheet are NOT copied; bundled PlanTasks become flat Tasks."""
@@ -531,10 +530,8 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
             mapping_strategy='bundle', bundle=bundle,
         )
 
-        wo = WorkOrder.objects.create(job=self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
-        # Task is copied flat; no bundle info survives
-        tasks = Task.objects.filter(work_order=wo)
+        JobService.copy_from_worksheet(self.job.pk, ws.pk)
+        tasks = Task.objects.filter(job=self.job)
         self.assertEqual(tasks.count(), 1)
         self.assertEqual(tasks.first().name, 'Bundled')
 
@@ -543,11 +540,20 @@ class WorkOrderServiceCopyFromWorksheetTest(EstimatesTestBase):
         ws = WorksheetService.create_worksheet(self.job.pk)
         task = PlanTask.objects.create(est_worksheet=ws, name='Task', sort_order=1)
         PlanMaterial.objects.create(
+            est_worksheet=ws,
             plan_task=task, description='Steel', quantity=Decimal('5.00'),
         )
 
-        wo = WorkOrder.objects.create(job=self.job)
-        WorkOrderService.copy_from_worksheet(wo.pk, ws.pk)
-        wo_task = Task.objects.get(work_order=wo)
-        self.assertEqual(wo_task.materials.count(), 1)
-        self.assertEqual(wo_task.materials.first().description, 'Steel')
+        JobService.copy_from_worksheet(self.job.pk, ws.pk)
+        job_task = Task.objects.get(job=self.job)
+        self.assertEqual(job_task.materials.count(), 1)
+        self.assertEqual(job_task.materials.first().description, 'Steel')
+
+    def test_copy_with_template_sets_template(self):
+        """Template arg should be linked onto the job."""
+        from apps.estimates.services import WorksheetService, WorkTemplateService
+        tmpl = WorkTemplateService.create_template(template_name='Tmpl')
+        ws = WorksheetService.create_worksheet(self.job.pk, template=tmpl)
+        JobService.copy_from_worksheet(self.job.pk, ws.pk, template=tmpl)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.template, tmpl)

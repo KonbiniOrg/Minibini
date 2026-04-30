@@ -14,11 +14,11 @@
   let jobQuery = $state('');
   let jobResults = $state([]);
   let selectedJob = $state(null);
-  let materials = $state([]);        // flattened across all WOs of selected job
+  let materials = $state([]);        // flattened across tasks of selected job
   let loadingMaterials = $state(false);
   let materialsError = $state('');
 
-  let newMatWorkOrderId = $state(null); // the WO on selected job; auto-picked or chosen
+  let newMatJobId = $state(null); // the selected job id
 
   function jobDisplayLabel(j) {
     let label = j.job_number || '';
@@ -52,42 +52,31 @@
     loadingMaterials = true;
     materialsError = '';
     try {
-      // Pull work orders on the job
-      const wos = await api.get(`/api/work-orders/?job=${jobId}`);
-      const list = wos.results || wos;
+      // Fetch the job with its nested tasks
+      const job = await api.get(`/api/jobs/${jobId}/`);
+      newMatJobId = job.job_id || jobId;
 
-      // Set WO id immediately so "+ Add new material" works even if detail fetches fail
-      newMatWorkOrderId = list.length > 0 ? (list[0].work_order_id || list[0].id) : null;
-
-      // Flatten materials across all WOs. Task materials aren't embedded in the WO
-      // detail serializer, so fetch them per-task via /api/tasks/{id}/materials/.
+      // Flatten materials across the job's tasks. Task materials aren't embedded
+      // in the job serializer, so fetch them per-task via /api/tasks/{id}/materials/.
       const flat = [];
-      for (const wo of list) {
-        const woId = wo.work_order_id || wo.id;
+      for (const t of (job.tasks || [])) {
+        const taskId = t.task_id || t.id;
+        const taskName = t.name || t.description || `Task #${taskId}`;
         try {
-          const detail = await api.get(`/api/work-orders/${woId}/`);
-          for (const t of (detail.tasks || [])) {
-            const taskId = t.task_id || t.id;
-            const taskName = t.name || t.description || `Task #${taskId}`;
-            try {
-              const mats = await api.get(`/api/tasks/${taskId}/materials/`);
-              const matList = mats.results || mats;
-              for (const m of matList) {
-                flat.push({
-                  id: m.material_id || m.id,
-                  description: m.description,
-                  task_name: taskName,
-                  quantity: m.quantity,
-                  unit: m.units,
-                  work_order_id: woId,
-                });
-              }
-            } catch (e) {
-              console.warn(`Could not fetch materials for task ${taskId}:`, e.message);
-            }
+          const mats = await api.get(`/api/tasks/${taskId}/materials/`);
+          const matList = mats.results || mats;
+          for (const m of matList) {
+            flat.push({
+              id: m.material_id || m.id,
+              description: m.description,
+              task_name: taskName,
+              quantity: m.quantity,
+              unit: m.units,
+              job_id: newMatJobId,
+            });
           }
         } catch (e) {
-          console.warn(`Could not fetch WO ${woId} details:`, e.message);
+          console.warn(`Could not fetch materials for task ${taskId}:`, e.message);
         }
       }
       materials = flat;
@@ -106,7 +95,7 @@
   function addNewMaterial() {
     materialId = null;
     newMaterial = {
-      work_order_id: newMatWorkOrderId,
+      job_id: newMatJobId,
       description: defaultDescription || '',
       quantity: 1,
       price: defaultAmount || '',

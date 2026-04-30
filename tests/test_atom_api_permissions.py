@@ -88,11 +88,10 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/jobs/',
         '/api/estimates/',
         '/api/est-worksheets/',
-        '/api/work-orders/',
         '/api/contacts/',
         '/api/businesses/',
         '/api/payment-terms/',
-        '/api/work-order-templates/',
+        '/api/work-templates/',
         '/api/task-templates/',
         '/api/accounting-categories/',
         '/api/price-list-items/',
@@ -108,13 +107,12 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
     DETAIL_ENDPOINTS = [
         '/api/jobs/1/',
         '/api/jobs/1/history/',
+        '/api/jobs/1/tasks/',
         '/api/estimates/1/',
         '/api/estimates/1/line-items/',
         '/api/est-worksheets/1/',
         '/api/est-worksheets/1/tasks/',
         '/api/est-worksheets/1/bundles/',
-        '/api/work-orders/1/',
-        '/api/work-orders/1/tasks/',
         '/api/bleps/1/',
         '/api/contacts/1/',
         '/api/contacts/1/history/',
@@ -136,7 +134,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         ('post', '/api/jobs/1/notes/', {'text': 'test note'}),
         ('post', '/api/contacts/1/notes/', {'text': 'test note'}),
         ('post', '/api/businesses/1/notes/', {'text': 'test note'}),
-        ('post', '/api/work-orders/1/tasks/', {'name': 'Test'}),
+        ('post', '/api/jobs/1/add-from-template/', {'task_template_id': 1}),
     ]
 
     def test_bare_user_can_list(self):
@@ -160,7 +158,6 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
             '/api/jobs/',
             '/api/contacts/',
             '/api/estimates/',
-            '/api/work-orders/',
             '/api/price-list-items/',
             '/api/search/?q=test',
         ]
@@ -233,16 +230,16 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         ('post', '/api/est-worksheets/1/revise/', {}),
     ]
 
-    # ── Work order writes ───────────────────────────────────────────
+    # ── Job task sub-resource + population writes (replaces WO endpoints) ──
     WORK_ORDER_WRITE_ENDPOINTS = [
-        ('post', '/api/work-orders/', {'job': 1}),
-        ('patch', '/api/work-orders/1/', {'notes': 'test'}),
-        ('delete', '/api/work-orders/1/', None),
-        ('patch', '/api/work-orders/1/tasks/1/', {'name': 'Updated'}),
-        ('delete', '/api/work-orders/1/tasks/1/', None),
-        ('post', '/api/work-orders/1/complete/', {}),
-        ('post', '/api/work-orders/1/block/', {'reason': 'test'}),
-        ('post', '/api/work-orders/1/reopen/', {'reason': 'test'}),
+        ('post', '/api/jobs/1/tasks/', {'name': 'New'}),
+        ('patch', '/api/jobs/1/tasks/1/', {'name': 'Updated'}),
+        ('delete', '/api/jobs/1/tasks/1/', None),
+        ('post', '/api/jobs/1/work-complete/', {}),
+        ('post', '/api/jobs/1/populate-from-template/', {'template_id': 1}),
+        ('post', '/api/jobs/1/populate-from-estimate/', {'estimate_id': 1}),
+        ('post', '/api/jobs/1/copy-from-worksheet/', {'worksheet_id': 1}),
+        ('post', '/api/jobs/1/reorder-tasks/', {'task_id': 1, 'direction': 'up'}),
     ]
 
     # ── Email action writes ─────────────────────────────────────────
@@ -453,9 +450,9 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
     ]
 
     TEMPLATE_WRITE_ENDPOINTS = [
-        ('post', '/api/work-order-templates/', {'template_name': 'Test'}),
-        ('patch', '/api/work-order-templates/1/', {'template_name': 'Updated'}),
-        ('delete', '/api/work-order-templates/1/', None),
+        ('post', '/api/work-templates/', {'template_name': 'Test'}),
+        ('patch', '/api/work-templates/1/', {'template_name': 'Updated'}),
+        ('delete', '/api/work-templates/1/', None),
         ('post', '/api/task-templates/', {'template_name': 'Test'}),
         ('patch', '/api/task-templates/1/', {'template_name': 'Updated'}),
         ('delete', '/api/task-templates/1/', None),
@@ -494,7 +491,7 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
     def test_wrong_atom_manage_jobs_denied_template_writes(self):
         user = self.users['can_manage_jobs']
         sample = [
-            ('post', '/api/work-order-templates/', {'template_name': 'Test'}),
+            ('post', '/api/work-templates/', {'template_name': 'Test'}),
             ('post', '/api/task-templates/', {'template_name': 'Test'}),
             ('post', '/api/accounting-categories/', {'name': 'Test'}),
         ]

@@ -527,7 +527,7 @@ class BundlingService:
 
     Works with any item model that has `mapping_strategy`, `bundle` (FK), and
     `sort_order` fields, and any bundle model with `sort_order`. Domain services
-    (WorksheetService, WorkOrderTemplateService) call BundlingService after
+    (WorksheetService, WorkTemplateService) call BundlingService after
     handling domain-specific validation (e.g. status checks).
     """
 

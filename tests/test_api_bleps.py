@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.jobs.models import Job, WorkOrder, Task, Blep
+from apps.jobs.models import Job, Task, Blep
 
 
 class BlepListAndRetrieveTest(BaseTestCase):
@@ -15,8 +15,7 @@ class BlepListAndRetrieveTest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='T', work_order=self.wo)
+        self.task = Task.objects.create(name='T', job=self.job)
         self.blep = Blep.objects.create(
             task=self.task, user=self.user, start_time=timezone.now(),
         )
@@ -33,6 +32,14 @@ class BlepListAndRetrieveTest(BaseTestCase):
         self.assertEqual(resp.data['blep_id'], self.blep.blep_id)
         self.assertEqual(resp.data['task'], self.task.pk)
 
+    def test_retrieve_blep_includes_job_info(self):
+        """Serializer exposes job_id, job_number, job_name via task.job."""
+        resp = self.client.get(f'/api/bleps/{self.blep.blep_id}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['job_id'], self.job.pk)
+        self.assertEqual(resp.data['job_number'], self.job.job_number)
+        self.assertEqual(resp.data['job_name'], self.job.name)
+
     def test_list_requires_auth(self):
         self.client.force_authenticate(user=None)
         resp = self.client.get('/api/bleps/')
@@ -47,9 +54,8 @@ class BlepListFiltersTest(BaseTestCase):
         self.worker = User.objects.create_user(username='worker', password='x')
         self.client.force_authenticate(user=self.admin)
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task_a = Task.objects.create(name='A', work_order=self.wo)
-        self.task_b = Task.objects.create(name='B', work_order=self.wo)
+        self.task_a = Task.objects.create(name='A', job=self.job)
+        self.task_b = Task.objects.create(name='B', job=self.job)
         now = timezone.now()
         self.old = Blep.objects.create(
             task=self.task_a, user=self.admin,
@@ -101,8 +107,7 @@ class BlepCreateAPITest(BaseTestCase):
         self.other = User.objects.create_user(username='worker2', password='x')
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='T', work_order=self.wo)
+        self.task = Task.objects.create(name='T', job=self.job)
 
     def _payload(self, hours_ago=2, duration_hours=1, user=None, task=None):
         now = timezone.now()
@@ -163,8 +168,7 @@ class BlepUpdateAPITest(BaseTestCase):
         self.manager.user_permissions.add(perm)
         self.manager = User.objects.get(pk=self.manager.pk)
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='T', work_order=self.wo)
+        self.task = Task.objects.create(name='T', job=self.job)
 
     def _blep(self, user, hours_ago_start=2, hours_ago_end=1):
         now = timezone.now()
@@ -212,8 +216,7 @@ class BlepDeleteAPITest(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.create_user(username='worker1_delete_api', password='x')
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
-        self.task = Task.objects.create(name='T', work_order=self.wo)
+        self.task = Task.objects.create(name='T', job=self.job)
 
     def test_delete_own_recent_blep(self):
         now = timezone.now()
@@ -246,9 +249,8 @@ class TaskRetrieveAPITest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.wo = WorkOrder.objects.create(job=self.job, status=WorkOrder.STATUS_INCOMPLETE)
         self.task = Task.objects.create(
-            name='T', description='desc', work_order=self.wo,
+            name='T', description='desc', job=self.job,
             units='hours', rate='10.00', est_qty='1',
         )
 
@@ -257,6 +259,5 @@ class TaskRetrieveAPITest(BaseTestCase):
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertEqual(resp.data['task_id'], self.task.pk)
         self.assertEqual(resp.data['name'], 'T')
-        self.assertIn('work_order', resp.data)
-        self.assertEqual(resp.data['work_order']['id'], self.wo.pk)
-        self.assertEqual(resp.data['work_order']['job']['id'], self.job.pk)
+        self.assertIn('job', resp.data)
+        self.assertEqual(resp.data['job']['id'], self.job.pk)

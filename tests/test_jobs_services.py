@@ -1,12 +1,13 @@
 """Tests for jobs app service methods (service-mediated saves)."""
 from decimal import Decimal
+from unittest.mock import patch
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, WorkOrder, Task, PlanTask, PlanBundle
-from apps.jobs.services import JobService, WorkOrderService, TaskService
+from apps.jobs.models import Job, Task, PlanTask, PlanBundle
+from apps.jobs.services import JobService, TaskService
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet,
-    WorkOrderTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, PlanMaterial, PriceListItem
 from apps.inventory.services import InventoryService
@@ -39,17 +40,13 @@ class JobServiceCreateTest(JobsTestBase):
     """Tests for JobService.create_job."""
 
     def test_create_job(self):
-        """Create a job with auto-generated number."""
-        job = JobService.create_job(
-            name='Test Job', contact=self.contact,
-        )
+        job = JobService.create_job(name='Test Job', contact=self.contact)
         self.assertIsNotNone(job.pk)
         self.assertTrue(job.job_number.startswith('JOB'))
         self.assertEqual(job.status, Job.STATUS_DRAFT)
         self.assertEqual(job.contact, self.contact)
 
     def test_create_job_with_description(self):
-        """Create a job with optional fields."""
         job = JobService.create_job(
             name='Full Job', contact=self.contact,
             description='Some work', customer_po_number='CPO-123',
@@ -62,43 +59,81 @@ class JobServiceUpdateTest(JobsTestBase):
     """Tests for JobService.update_job."""
 
     def test_update_job(self):
-        """Update job fields."""
         job = JobService.create_job(name='Old Name', contact=self.contact)
         updated = JobService.update_job(job.pk, name='New Name')
         self.assertEqual(updated.name, 'New Name')
 
     def test_update_job_persists(self):
-        """Update should persist to database."""
         job = JobService.create_job(name='Old', contact=self.contact)
         JobService.update_job(job.pk, name='New')
         refreshed = Job.objects.get(pk=job.pk)
         self.assertEqual(refreshed.name, 'New')
 
     def test_update_job_not_found(self):
-        """Nonexistent job raises NotFoundError."""
         with self.assertRaises(NotFoundError):
             JobService.update_job(99999, name='Nope')
 
 
-class WorkOrderServiceStatusTest(JobsTestBase):
-    """Tests for WorkOrderService.update_status."""
+def _walk_to(job, target_status):
+    """Walk a job through its state machine to reach target_status."""
+    path = {
+        Job.STATUS_DRAFT: [Job.STATUS_DRAFT],
+        Job.STATUS_SUBMITTED: [Job.STATUS_SUBMITTED],
+        Job.STATUS_APPROVED: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED],
+        Job.STATUS_WORK_COMPLETE: [
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE,
+        ],
+        Job.STATUS_COMPLETED: [
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+            Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED,
+        ],
+    }[target_status]
+    for step in path:
+        if job.status != step:
+            job.status = step
+            job.save()
+
+
+class JobServiceUpdateStatusTest(JobsTestBase):
+    """Tests for JobService.update_status (Phase B behavior)."""
 
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.wo = WorkOrder.objects.create(
-            job=self.job,
-        )
 
-    def test_update_status(self):
-        """Update work order status."""
-        updated = WorkOrderService.update_status(self.wo.pk, WorkOrder.STATUS_BLOCKED)
-        self.assertEqual(updated.status, WorkOrder.STATUS_BLOCKED)
+    def test_update_status_changes_value(self):
+        updated = JobService.update_status(self.job.pk, Job.STATUS_SUBMITTED)
+        self.assertEqual(updated.status, Job.STATUS_SUBMITTED)
 
     def test_update_status_not_found(self):
-        """Nonexistent WO raises NotFoundError."""
         with self.assertRaises(NotFoundError):
-            WorkOrderService.update_status(99999, WorkOrder.STATUS_INCOMPLETE)
+            JobService.update_status(99999, Job.STATUS_SUBMITTED)
+
+    def test_update_status_noop_short_circuits(self):
+        """Setting a job to its current status returns unchanged without
+        saving or firing side-effects."""
+        _walk_to(self.job, Job.STATUS_WORK_COMPLETE)
+
+        with patch(
+            'apps.inventory.services.InventoryService.release_earmarks_for_job'
+        ) as mock_release, patch.object(
+            Job, 'save', autospec=True,
+        ) as mock_save:
+            result = JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
+
+        self.assertEqual(result.status, Job.STATUS_WORK_COMPLETE)
+        mock_release.assert_not_called()
+        mock_save.assert_not_called()
+
+    def test_update_status_fires_release_on_transition_into_work_complete(self):
+        _walk_to(self.job, Job.STATUS_APPROVED)
+
+        with patch(
+            'apps.inventory.services.InventoryService.release_earmarks_for_job'
+        ) as mock_release:
+            JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
+
+        mock_release.assert_called_once()
 
 
 class TaskServiceUpdateTest(JobsTestBase):
@@ -107,20 +142,15 @@ class TaskServiceUpdateTest(JobsTestBase):
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.wo = WorkOrder.objects.create(
-            job=self.job,
-        )
         self.task = Task.objects.create(
-            work_order=self.wo, name='Task 1', sort_order=1,
+            job=self.job, name='Task 1', sort_order=1,
         )
 
     def test_update_task(self):
-        """Update task fields."""
         updated = TaskService.update_task(self.task.pk, name='Updated Task')
         self.assertEqual(updated.name, 'Updated Task')
 
     def test_update_task_not_found(self):
-        """Nonexistent task raises NotFoundError."""
         with self.assertRaises(NotFoundError):
             TaskService.update_task(99999, name='Nope')
 
@@ -131,18 +161,14 @@ class TaskServiceReorderTest(JobsTestBase):
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.wo = WorkOrder.objects.create(
-            job=self.job,
-        )
         self.t1 = Task.objects.create(
-            work_order=self.wo, name='Task 1', sort_order=1,
+            job=self.job, name='Task 1', sort_order=1,
         )
         self.t2 = Task.objects.create(
-            work_order=self.wo, name='Task 2', sort_order=2,
+            job=self.job, name='Task 2', sort_order=2,
         )
 
     def test_reorder_down(self):
-        """Move task 1 down — swap with task 2."""
         TaskService.reorder_tasks(self.t1.pk, 'down')
         self.t1.refresh_from_db()
         self.t2.refresh_from_db()
@@ -150,7 +176,6 @@ class TaskServiceReorderTest(JobsTestBase):
         self.assertEqual(self.t2.sort_order, 1)
 
     def test_reorder_up(self):
-        """Move task 2 up — swap with task 1."""
         TaskService.reorder_tasks(self.t2.pk, 'up')
         self.t1.refresh_from_db()
         self.t2.refresh_from_db()
@@ -170,7 +195,6 @@ class MaterialServiceTest(JobsTestBase):
         )
 
     def test_create_material(self):
-        """Create a plan material on a plan task."""
         mat = InventoryService.create_plan_material(
             self.plan_task.pk, description='Steel plate',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'),
@@ -181,8 +205,8 @@ class MaterialServiceTest(JobsTestBase):
         self.assertEqual(mat.description, 'Steel plate')
 
     def test_update_material(self):
-        """Update a plan material."""
         mat = PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.plan_task, description='Old', quantity=Decimal('1.00'),
         )
         updated = InventoryService.update_plan_material(
@@ -192,8 +216,8 @@ class MaterialServiceTest(JobsTestBase):
         self.assertEqual(updated.quantity, Decimal('3.00'))
 
     def test_delete_material(self):
-        """Delete a plan material."""
         mat = PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=self.plan_task, description='Delete me', quantity=Decimal('1.00'),
         )
         pk = mat.pk
@@ -201,29 +225,22 @@ class MaterialServiceTest(JobsTestBase):
         self.assertFalse(PlanMaterial.objects.filter(pk=pk).exists())
 
     def test_delete_material_not_found(self):
-        """Nonexistent material raises NotFoundError."""
         with self.assertRaises(NotFoundError):
             InventoryService.delete_plan_material(99999)
 
 
-class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
-    """Tests for WorkOrderService.create_from_estimate."""
+class JobServicePopulateFromEstimateTest(JobsTestBase):
+    """Tests for JobService.populate_from_estimate."""
 
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-001', status=Estimate.STATUS_ACCEPTED)
-
-    def test_creates_work_order(self):
-        """Creates a work order linked to the estimate's job."""
-        wo = WorkOrderService.create_from_estimate(self.estimate)
-        self.assertIsNotNone(wo.pk)
-        self.assertEqual(wo.job, self.job)
-        self.assertEqual(wo.status, WorkOrder.STATUS_INCOMPLETE)
+            job=self.job, estimate_number='EST-001',
+            status=Estimate.STATUS_ACCEPTED,
+        )
 
     def test_converts_line_items_to_tasks(self):
-        """Each estimate line item becomes a task on the work order."""
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Cut steel',
             qty=Decimal('2.00'), units='hours', price=Decimal('50.00'),
@@ -233,20 +250,19 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
             qty=Decimal('3.00'), units='hours', price=Decimal('60.00'),
             accounting_category=self.lit)
 
-        wo = WorkOrderService.create_from_estimate(self.estimate)
+        JobService.populate_from_estimate(self.job, self.estimate)
 
-        tasks = Task.objects.filter(work_order=wo)
+        tasks = Task.objects.filter(job=self.job)
         self.assertEqual(tasks.count(), 2)
 
     def test_task_fields_from_manual_line_item(self):
-        """Manual line item task gets description, qty, units, price."""
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Custom fabrication',
             qty=Decimal('4.00'), units='pcs', price=Decimal('100.00'),
             accounting_category=self.lit)
 
-        wo = WorkOrderService.create_from_estimate(self.estimate)
-        task = Task.objects.get(work_order=wo)
+        JobService.populate_from_estimate(self.job, self.estimate)
+        task = Task.objects.get(job=self.job)
 
         self.assertEqual(task.name, 'Custom fabrication')
         self.assertEqual(task.est_qty, Decimal('4.00'))
@@ -254,7 +270,6 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
         self.assertEqual(task.rate, Decimal('100.00'))
 
     def test_task_from_catalog_line_item(self):
-        """Catalog line item task gets PLI code in name and falls back to PLI fields."""
         pli = PriceListItem.objects.create(
             code='STL-001', description='Steel plate',
             units='sheets', selling_price=Decimal('75.00'),
@@ -266,51 +281,50 @@ class WorkOrderServiceCreateFromEstimateTest(JobsTestBase):
             qty=Decimal('10.00'), units='none', price=Decimal('0.00'),
             accounting_category=self.lit)
 
-        wo = WorkOrderService.create_from_estimate(self.estimate)
-        task = Task.objects.get(work_order=wo)
+        JobService.populate_from_estimate(self.job, self.estimate)
+        task = Task.objects.get(job=self.job)
 
         self.assertIn('STL-001', task.name)
-        self.assertEqual(task.units, 'sheets')  # fell back to PLI
-        self.assertEqual(task.rate, Decimal('75.00'))  # fell back to PLI
+        self.assertEqual(task.units, 'sheets')
+        self.assertEqual(task.rate, Decimal('75.00'))
 
-    def test_empty_estimate_creates_empty_work_order(self):
-        """Estimate with no line items creates a work order with no tasks."""
-        wo = WorkOrderService.create_from_estimate(self.estimate)
-        self.assertEqual(Task.objects.filter(work_order=wo).count(), 0)
+    def test_empty_estimate_populates_no_tasks(self):
+        JobService.populate_from_estimate(self.job, self.estimate)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
 
     def test_rejects_draft_estimate(self):
-        """Draft estimate cannot create a work order."""
         draft_estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-DRAFT', status=Job.STATUS_DRAFT)
-
+            job=self.job, estimate_number='EST-DRAFT',
+            status=Estimate.STATUS_DRAFT,
+        )
         with self.assertRaises(ValidationError):
-            WorkOrderService.create_from_estimate(draft_estimate)
+            JobService.populate_from_estimate(self.job, draft_estimate)
 
     def test_rejects_rejected_estimate(self):
-        """Rejected estimate cannot create a work order."""
         rejected_estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-REJ', status=Job.STATUS_REJECTED)
-
+            job=self.job, estimate_number='EST-REJ',
+            status=Estimate.STATUS_REJECTED,
+        )
         with self.assertRaises(ValidationError):
-            WorkOrderService.create_from_estimate(rejected_estimate)
+            JobService.populate_from_estimate(self.job, rejected_estimate)
 
     def test_accepts_open_estimate(self):
-        """Open estimate can create a work order."""
         open_estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-OPEN', status=Estimate.STATUS_OPEN)
+            job=self.job, estimate_number='EST-OPEN',
+            status=Estimate.STATUS_OPEN,
+        )
+        JobService.populate_from_estimate(self.job, open_estimate)
+        # No line items, so 0 tasks
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
 
-        wo = WorkOrderService.create_from_estimate(open_estimate)
-        self.assertIsNotNone(wo.pk)
 
-
-class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
-    """Tests for WorkOrderService.create_from_template."""
+class JobServicePopulateFromTemplateTest(JobsTestBase):
+    """Tests for JobService.populate_from_template."""
 
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.template = WorkOrderTemplate.objects.create(
-            template_name='Standard Build')
+        self.template = WorkTemplate.objects.create(template_name='Standard Build')
         self.task_tmpl_1 = TaskTemplate.objects.create(
             template_name='Cut', units='hours', rate=Decimal('50.00'),
             accounting_category=self.lit)
@@ -318,30 +332,25 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
             template_name='Weld', units='hours', rate=Decimal('60.00'),
             accounting_category=self.lit)
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template, task_template=self.task_tmpl_1,
+            work_template=self.template, task_template=self.task_tmpl_1,
             est_qty=Decimal('2.00'), sort_order=1)
         TemplateTaskAssociation.objects.create(
-            work_order_template=self.template, task_template=self.task_tmpl_2,
+            work_template=self.template, task_template=self.task_tmpl_2,
             est_qty=Decimal('3.00'), sort_order=2)
 
-    def test_creates_work_order(self):
-        """Creates a work order linked to job and template."""
-        wo = WorkOrderService.create_from_template(self.template, self.job)
-        self.assertIsNotNone(wo.pk)
-        self.assertEqual(wo.job, self.job)
-        self.assertEqual(wo.template, self.template)
-        self.assertEqual(wo.status, WorkOrder.STATUS_INCOMPLETE)
+    def test_links_template_to_job(self):
+        JobService.populate_from_template(self.job, self.template)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.template, self.template)
 
     def test_generates_tasks_from_template(self):
-        """Each active template association generates a task."""
-        wo = WorkOrderService.create_from_template(self.template, self.job)
-        tasks = Task.objects.filter(work_order=wo).order_by('sort_order')
+        JobService.populate_from_template(self.job, self.template)
+        tasks = Task.objects.filter(job=self.job).order_by('sort_order')
         self.assertEqual(tasks.count(), 2)
 
     def test_task_fields_from_template(self):
-        """Generated tasks inherit fields from the task template."""
-        wo = WorkOrderService.create_from_template(self.template, self.job)
-        tasks = Task.objects.filter(work_order=wo).order_by('sort_order')
+        JobService.populate_from_template(self.job, self.template)
+        tasks = Task.objects.filter(job=self.job).order_by('sort_order')
 
         cut_task = tasks[0]
         self.assertEqual(cut_task.name, 'Cut')
@@ -355,56 +364,40 @@ class WorkOrderServiceCreateFromTemplateTest(JobsTestBase):
         self.assertEqual(weld_task.est_qty, Decimal('3.00'))
 
     def test_skips_inactive_task_templates(self):
-        """Inactive task templates are not generated."""
         self.task_tmpl_2.is_active = False
         self.task_tmpl_2.save()
 
-        wo = WorkOrderService.create_from_template(self.template, self.job)
-        tasks = Task.objects.filter(work_order=wo)
+        JobService.populate_from_template(self.job, self.template)
+        tasks = Task.objects.filter(job=self.job)
         self.assertEqual(tasks.count(), 1)
         self.assertEqual(tasks[0].name, 'Cut')
 
     def test_rejects_inactive_template(self):
-        """Inactive work order template raises ValidationError."""
         self.template.is_active = False
         self.template.save()
 
         with self.assertRaises(ValidationError):
-            WorkOrderService.create_from_template(self.template, self.job)
+            JobService.populate_from_template(self.job, self.template)
 
     def test_template_with_no_associations(self):
-        """Template with no task associations creates empty work order."""
-        empty_template = WorkOrderTemplate.objects.create(
-            template_name='Empty Template')
+        empty_template = WorkTemplate.objects.create(template_name='Empty Template')
+        JobService.populate_from_template(self.job, empty_template)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
 
-        wo = WorkOrderService.create_from_template(empty_template, self.job)
-        self.assertEqual(Task.objects.filter(work_order=wo).count(), 0)
-
-
-class WorkOrderServiceCreateDirectTest(JobsTestBase):
-    """Tests for WorkOrderService.create_direct."""
-
-    def setUp(self):
-        super().setUp()
-        self.job = JobService.create_job(name='Test', contact=self.contact)
-
-    def test_creates_incomplete_work_order(self):
-        """Creates a work order in incomplete status."""
-        wo = WorkOrderService.create_direct(self.job)
-        self.assertIsNotNone(wo.pk)
-        self.assertEqual(wo.job, self.job)
-        self.assertEqual(wo.status, WorkOrder.STATUS_INCOMPLETE)
-
-    def test_accepts_kwargs(self):
-        """Passes extra kwargs through to WorkOrder.create."""
-        template = WorkOrderTemplate.objects.create(
-            template_name='Test Template')
-        wo = WorkOrderService.create_direct(self.job, template=template)
-        self.assertEqual(wo.template, template)
+    def test_populate_on_approved_job_does_not_validate_status(self):
+        """populate_from_template saves via update_fields=['template'] so
+        it does not trigger status-transition validation even on a job
+        past draft."""
+        _walk_to(self.job, Job.STATUS_APPROVED)
+        # Should not raise
+        JobService.populate_from_template(self.job, self.template)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.template, self.template)
+        self.assertEqual(self.job.status, Job.STATUS_APPROVED)
 
 
-class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
-    """Tests for WorkOrderService.copy_from_worksheet."""
+class JobServiceCopyFromWorksheetTest(JobsTestBase):
+    """Tests for JobService.copy_from_worksheet."""
 
     def setUp(self):
         super().setUp()
@@ -413,10 +406,8 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
             job=self.job, estimate_number='EST-001', status=Estimate.STATUS_ACCEPTED)
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, estimate=self.estimate)
-        self.wo = WorkOrder.objects.create(job=self.job, status=Job.STATUS_DRAFT)
 
     def test_copies_tasks(self):
-        """PlanTasks are copied from worksheet to work order as Tasks."""
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', units='hours',
             rate=Decimal('50.00'), est_qty=Decimal('2.00'),
@@ -426,49 +417,47 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
             rate=Decimal('60.00'), est_qty=Decimal('3.00'),
             accounting_category=self.lit, sort_order=2)
 
-        WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
-        wo_tasks = Task.objects.filter(work_order=self.wo).order_by('sort_order')
-        self.assertEqual(wo_tasks.count(), 2)
-        self.assertEqual(wo_tasks[0].name, 'Cut')
-        self.assertEqual(wo_tasks[0].rate, Decimal('50.00'))
-        self.assertEqual(wo_tasks[1].name, 'Weld')
-        self.assertEqual(wo_tasks[1].est_qty, Decimal('3.00'))
+        job_tasks = Task.objects.filter(job=self.job).order_by('sort_order')
+        self.assertEqual(job_tasks.count(), 2)
+        self.assertEqual(job_tasks[0].name, 'Cut')
+        self.assertEqual(job_tasks[0].rate, Decimal('50.00'))
+        self.assertEqual(job_tasks[1].name, 'Weld')
+        self.assertEqual(job_tasks[1].est_qty, Decimal('3.00'))
 
     def test_copies_task_fields(self):
-        """All task fields are copied faithfully."""
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Paint',
             description='Apply primer and topcoat',
             units='sq ft', rate=Decimal('5.00'), est_qty=Decimal('100.00'),
             accounting_category=self.lit, mapping_strategy='direct', sort_order=1)
 
-        WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
-        task = Task.objects.get(work_order=self.wo)
+        task = Task.objects.get(job=self.job)
         self.assertEqual(task.name, 'Paint')
         self.assertEqual(task.description, 'Apply primer and topcoat')
         self.assertEqual(task.units, 'sq ft')
         self.assertEqual(task.accounting_category, self.lit)
 
     def test_copies_materials(self):
-        """PlanMaterials on PlanTasks are copied as Materials to the new tasks."""
         ws_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut',
-            sort_order=1)
+            est_worksheet=self.worksheet, name='Cut', sort_order=1)
         pli = PriceListItem.objects.create(
             code='STL-001', description='Steel plate',
             purchase_price=Decimal('50.00'),
             accounting_category=self.lit)
         PlanMaterial(
-            plan_task=ws_task, price_list_item=pli,
+            plan_task=ws_task, est_worksheet=self.worksheet,
+            price_list_item=pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'), sell_price=Decimal('75.00')).save()
 
-        WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
-        wo_task = Task.objects.get(work_order=self.wo)
-        materials = Material.objects.filter(task=wo_task)
+        job_task = Task.objects.get(job=self.job)
+        materials = Material.objects.filter(task=job_task)
         self.assertEqual(materials.count(), 1)
         mat = materials[0]
         self.assertEqual(mat.description, 'Steel plate')
@@ -489,31 +478,25 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
             est_worksheet=self.worksheet, name='Assemble part B',
             bundle=bundle, mapping_strategy='bundle', sort_order=2)
 
-        WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
-        wo_tasks = Task.objects.filter(work_order=self.wo).order_by('sort_order')
-        self.assertEqual(wo_tasks.count(), 2)
-        # Tasks on WO have no bundle field
-        for t in wo_tasks:
-            self.assertFalse(hasattr(t, 'bundle'))
+        job_tasks = Task.objects.filter(job=self.job).order_by('sort_order')
+        self.assertEqual(job_tasks.count(), 2)
 
     def test_empty_worksheet(self):
-        """Empty worksheet copies nothing."""
-        WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
-        self.assertEqual(Task.objects.filter(work_order=self.wo).count(), 0)
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
 
     def test_copy_flat_no_parent_task(self):
-        """Tasks copied from the worksheet are flat (PlanTask has no hierarchy)."""
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Alpha', sort_order=1)
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Beta', sort_order=2)
-        WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
-        for task in Task.objects.filter(work_order=self.wo):
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
+        for task in Task.objects.filter(job=self.job):
             self.assertIsNone(task.parent_task)
 
     def test_copy_preserves_plan_material_pli_linkage(self):
-        """PlanMaterial with a PLI is copied to a Material with the same PLI."""
         plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', sort_order=1)
         pli = PriceListItem.objects.create(
@@ -521,19 +504,32 @@ class WorkOrderServiceCopyFromWorksheetTest(JobsTestBase):
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
             accounting_category=self.lit)
         PlanMaterial.objects.create(
+            est_worksheet=self.worksheet,
             plan_task=plan_task, price_list_item=pli,
             description='Linked', quantity=Decimal('2.00'))
-        WorkOrderService.copy_from_worksheet(self.wo.pk, self.worksheet.pk)
-        wo_task = Task.objects.get(work_order=self.wo)
-        material = wo_task.materials.get()
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
+        job_task = Task.objects.get(job=self.job)
+        material = job_task.materials.get()
         self.assertEqual(material.price_list_item, pli)
 
-    def test_work_order_not_found(self):
-        """Nonexistent work order raises NotFoundError."""
+    def test_job_not_found(self):
         with self.assertRaises(NotFoundError):
-            WorkOrderService.copy_from_worksheet(99999, self.worksheet.pk)
+            JobService.copy_from_worksheet(99999, self.worksheet.pk)
 
     def test_worksheet_not_found(self):
-        """Nonexistent worksheet raises NotFoundError."""
         with self.assertRaises(NotFoundError):
-            WorkOrderService.copy_from_worksheet(self.wo.pk, 99999)
+            JobService.copy_from_worksheet(self.job.pk, 99999)
+
+    def test_template_arg_sets_job_template(self):
+        """Optional template arg is linked onto the job."""
+        template = WorkTemplate.objects.create(template_name='Used')
+        JobService.copy_from_worksheet(
+            self.job.pk, self.worksheet.pk, template=template,
+        )
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.template, template)
+
+    def test_no_template_arg_leaves_job_template_none(self):
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
+        self.job.refresh_from_db()
+        self.assertIsNone(self.job.template)

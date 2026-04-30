@@ -146,7 +146,7 @@ class PriceListItemViewsTest(TestCase):
                      kwargs={'item_id': self.item1.price_list_item_id})
         data = {
             'code': 'TEST001',  # Keep same code
-            'units': 'pcs',  # Changed
+            'units': 'ea',  # Changed
             'description': 'Updated test item description',  # Changed
             'purchase_price': '12.00',  # Changed
             'selling_price': '18.00',  # Changed
@@ -164,7 +164,7 @@ class PriceListItemViewsTest(TestCase):
 
         # Check item was updated
         self.item1.refresh_from_db()
-        self.assertEqual(self.item1.units, 'pcs')
+        self.assertEqual(self.item1.units, 'ea')
         self.assertEqual(self.item1.description, 'Updated test item description')
         self.assertEqual(self.item1.purchase_price, Decimal('12.00'))
         self.assertEqual(self.item1.selling_price, Decimal('18.00'))

@@ -7,10 +7,11 @@ from apps.core.history import history
 
 
 @history(exclude=['job_id'])
-class Job(models.Model):
+class Job(AbstractWorkContainer):
     STATUS_DRAFT = 'draft'
     STATUS_SUBMITTED = 'submitted'
     STATUS_APPROVED = 'approved'
+    STATUS_WORK_COMPLETE = 'work_complete'
     STATUS_REJECTED = 'rejected'
     STATUS_COMPLETED = 'completed'
     STATUS_CANCELLED = 'cancelled'
@@ -19,6 +20,7 @@ class Job(models.Model):
         (STATUS_DRAFT, 'Draft'),
         (STATUS_SUBMITTED, 'Submitted'),
         (STATUS_APPROVED, 'Approved'),
+        (STATUS_WORK_COMPLETE, 'Work Complete'),
         (STATUS_REJECTED, 'Rejected'),
         (STATUS_COMPLETED, 'Completed'),
         (STATUS_CANCELLED, 'Cancelled'),
@@ -44,7 +46,8 @@ class Job(models.Model):
         VALID_TRANSITIONS = {
             Job.STATUS_DRAFT: [Job.STATUS_SUBMITTED, Job.STATUS_REJECTED],
             Job.STATUS_SUBMITTED: [Job.STATUS_APPROVED, Job.STATUS_REJECTED],
-            Job.STATUS_APPROVED: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED],
+            Job.STATUS_APPROVED: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],
+            Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED],
             Job.STATUS_REJECTED: [],  # Terminal state
             Job.STATUS_COMPLETED: [],  # Terminal state
             Job.STATUS_CANCELLED: [],  # Terminal state
@@ -115,51 +118,6 @@ class Job(models.Model):
 
     def __str__(self):
         return f"{self.job_number}"
-
-
-@history(exclude=['work_order_id'])
-class WorkOrder(AbstractWorkContainer):
-    STATUS_INCOMPLETE = 'incomplete'
-    STATUS_BLOCKED = 'blocked'
-    STATUS_COMPLETE = 'complete'
-
-    WORK_ORDER_STATUS_CHOICES = [
-        (STATUS_INCOMPLETE, 'Incomplete'),
-        (STATUS_BLOCKED, 'Blocked'),
-        (STATUS_COMPLETE, 'Complete'),
-    ]
-
-    VALID_TRANSITIONS = {
-        STATUS_INCOMPLETE: [STATUS_BLOCKED, STATUS_COMPLETE],
-        STATUS_BLOCKED: [STATUS_INCOMPLETE],
-        STATUS_COMPLETE: [],
-    }
-
-    work_order_id = models.AutoField(primary_key=True)
-    status = models.CharField(max_length=20, choices=WORK_ORDER_STATUS_CHOICES, default=STATUS_INCOMPLETE)
-
-    def clean(self):
-        super().clean()
-        if self.pk:
-            try:
-                old_wo = WorkOrder.objects.get(pk=self.pk)
-                old_status = old_wo.status
-                if old_status != self.status:
-                    valid_next = self.VALID_TRANSITIONS.get(old_status, [])
-                    if self.status not in valid_next:
-                        from django.core.exceptions import ValidationError
-                        raise ValidationError(
-                            f'Cannot transition WorkOrder from {old_status} to {self.status}. '
-                            f'Valid transitions: {", ".join(valid_next) if valid_next else "none (terminal state)"}'
-                        )
-            except WorkOrder.DoesNotExist:
-                pass
-
-    class Meta:
-        db_table = 'workorders'
-
-    def __str__(self):
-        return f"Work Order {self.pk}"
 
 
 class TaskBase(models.Model):
@@ -239,7 +197,7 @@ class PlanTask(TaskBase):
 
 
 class Task(TaskBase):
-    """Work task on a WorkOrder. Has lifecycle, hierarchy, bleps."""
+    """Work task on a Job. Has lifecycle, hierarchy, bleps."""
     STATUS_PENDING = 'pending'
     STATUS_IN_PROGRESS = 'in_progress'
     STATUS_BLOCKED = 'blocked'
@@ -267,7 +225,7 @@ class Task(TaskBase):
         'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks'
     )
     assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
-    work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, related_name='tasks')
+    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
     blocked_reason = models.TextField(blank=True, default='')
     worker_queue = models.PositiveIntegerField(
@@ -294,7 +252,7 @@ class Task(TaskBase):
         if self.sort_order is None:
             with transaction.atomic():
                 max_order = Task.objects.filter(
-                    work_order=self.work_order
+                    job=self.job
                 ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
                 self.sort_order = max_order + 1
         self.full_clean()

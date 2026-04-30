@@ -23,13 +23,12 @@ class FullURLTreeTest(BaseTestCase):
             '/api/payment-terms/',
             '/api/est-worksheets/',
             '/api/estimates/',
-            '/api/work-orders/',
             '/api/invoices/',
             '/api/purchase-orders/',
             '/api/bills/',
             '/api/price-list-items/',
             '/api/emails/',
-            '/api/work-order-templates/',
+            '/api/work-templates/',
             '/api/task-templates/',
             '/api/accounting-categories/',
             '/api/settings/',
@@ -49,7 +48,6 @@ class FullURLTreeTest(BaseTestCase):
             ('POST', '/api/shifts/clock-out/'),
             ('GET', '/api/time-tracking/status/'),
             ('GET', '/api/time-tracking/active/'),
-            ('POST', '/api/expenses/'),
             ('POST', '/api/emails/send/'),
         ]
         for method, url in stubs:

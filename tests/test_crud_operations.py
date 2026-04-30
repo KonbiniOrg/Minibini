@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import Job, Task, PlanTask
-from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate, EstimateLineItem, WorkOrderTemplate
+from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate, EstimateLineItem, WorkTemplate
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 
@@ -37,8 +37,8 @@ class EstWorksheetCRUDTests(TestCase):
             units='hours'
         )
 
-        # Create WorkOrderTemplate for the from-template tests
-        self.work_order_template = WorkOrderTemplate.objects.create(
+        # Create WorkTemplate for the from-template tests
+        self.work_template = WorkTemplate.objects.create(
             template_name='Test Work Order Template',
             description='Test template for work orders'
         )
