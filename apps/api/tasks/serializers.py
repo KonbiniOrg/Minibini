@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.jobs.models import Task
+from apps.jobs.models import Task, TaskCharge
 from apps.inventory.models import Material
 from apps.core.units import UnitsField
 
@@ -35,6 +35,42 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
         read_only_fields = ['material_id']
 
 
+class TaskChargeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskCharge
+        fields = [
+            'task_charge_id', 'rate_scheme', 'active_modifiers', 'actuals',
+        ]
+        read_only_fields = ['task_charge_id']
+
+
+class TaskChargeReadSerializer(serializers.ModelSerializer):
+    """Nested read-only representation for task detail."""
+    scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True)
+    scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True)
+    scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True)
+    effective_rate = serializers.SerializerMethodField()
+    computed_charge = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TaskCharge
+        fields = [
+            'task_charge_id', 'rate_scheme', 'active_modifiers', 'actuals',
+            'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
+            'effective_rate', 'computed_charge',
+        ]
+        read_only_fields = fields
+
+    def get_effective_rate(self, obj):
+        return str(obj.effective_rate())
+
+    def get_computed_charge(self, obj):
+        try:
+            return str(obj.compute())
+        except Exception:
+            return None
+
+
 class TaskSerializer(serializers.ModelSerializer):
     """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
     assignee_name = serializers.SerializerMethodField()
@@ -60,6 +96,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
     assignee_name = serializers.SerializerMethodField()
     units = UnitsField()
     job = serializers.SerializerMethodField()
+    charge = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -67,7 +104,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'task_id', 'name', 'description', 'status',
             'blocked_reason', 'units', 'rate', 'est_qty', 'accounting_category',
             'parent_task', 'assignee', 'assignee_name',
-            'worker_queue', 'job',
+            'worker_queue', 'job', 'charge',
         ]
         read_only_fields = fields
 
@@ -84,3 +121,10 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'name': job.name,
             'status': job.status,
         }
+
+    def get_charge(self, obj):
+        try:
+            charge = obj.charge
+        except TaskCharge.DoesNotExist:
+            return None
+        return TaskChargeReadSerializer(charge).data

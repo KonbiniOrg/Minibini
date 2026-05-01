@@ -27,6 +27,8 @@ class OpenForJobTest(TestCase):
         self.completed_job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0004'
         )
+        self.completed_job.status = Job.STATUS_IN_PROGRESS
+        self.completed_job.save()
         self.completed_job.status = Job.STATUS_WORK_COMPLETE
         self.completed_job.save()
         self.completed_job.status = Job.STATUS_COMPLETED
@@ -61,6 +63,20 @@ class OpenForJobTest(TestCase):
     def test_refuses_rejected_job(self):
         with self.assertRaises(ValidationError):
             InvoiceWizardService.open_for_job(self.rejected_job)
+
+    def test_allows_in_progress_job(self):
+        in_progress_job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0099',
+        )
+        in_progress_job.status = Job.STATUS_SUBMITTED
+        in_progress_job.save()
+        in_progress_job.status = Job.STATUS_APPROVED
+        in_progress_job.save()
+        in_progress_job.status = Job.STATUS_IN_PROGRESS
+        in_progress_job.save()
+
+        invoice = InvoiceWizardService.open_for_job(in_progress_job)
+        self.assertEqual(invoice.status, Invoice.STATUS_DRAFT)
 
 
 class GetSourcePoolTest(TestCase):

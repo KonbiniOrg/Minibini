@@ -280,37 +280,6 @@ class JobService:
         return job
 
     @staticmethod
-    def populate_from_estimate(job, estimate):
-        """Populate a Job's tasks from an Estimate's line items.
-
-        Only OPEN and ACCEPTED estimates are allowed.
-        """
-        if estimate.status not in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED]:
-            raise ValidationError(
-                f"Only Open and Accepted estimates can populate jobs. "
-                f"Estimate {estimate.estimate_number} is {estimate.status}."
-            )
-        from apps.inventory.services import InventoryService, MaterialService
-        for line_item in estimate.estimatelineitem_set.all():
-            pm = getattr(line_item, 'material', None)
-            if pm is not None and pm.plan_task_id is None:
-                # task-less PlanMaterial → task-less Material
-                MaterialService.create_on_job(
-                    job=job, task=None,
-                    description=pm.description,
-                    quantity=pm.quantity,
-                    unit_cost=pm.unit_cost,
-                    sell_price=pm.sell_price,
-                    price_list_item=pm.price_list_item,
-                    accounting_category=pm.accounting_category,
-                )
-            else:
-                TaskService.create_from_line_item(line_item, job)
-
-        InventoryService.create_earmarks_for_job(job)
-        return job
-
-    @staticmethod
     def populate_from_template(job, template):
         """Populate a Job from a WorkTemplate's task associations."""
         if not template.is_active:
@@ -371,6 +340,18 @@ class JobService:
                 accounting_category=plan_task.accounting_category,
                 sort_order=plan_task.sort_order,
             )
+            # Copy PlanCharge → TaskCharge if one exists
+            from apps.jobs.models import PlanCharge, TaskCharge
+            try:
+                plan_charge = plan_task.charge
+                TaskCharge.objects.create(
+                    task=new_task,
+                    rate_scheme=plan_charge.rate_scheme,
+                    active_modifiers=plan_charge.active_modifiers,
+                    actuals={},
+                )
+            except PlanCharge.DoesNotExist:
+                pass
             for pm in plan_task.plan_materials.all():
                 MaterialService.create_on_job(
                     job=job, task=new_task,
@@ -398,86 +379,6 @@ class JobService:
 
 class TaskService:
     """Service class for Task creation workflows."""
-
-    @staticmethod
-    def create_from_line_item(line_item, job):
-        """
-        Generate appropriate Task(s) for a LineItem on a Job.
-
-        Dispatches to the right strategy based on line item source:
-        - Worksheet task: copies the source task with all fields
-        - Catalog PLI: creates task from PriceListItem data
-        - Manual: creates task from line item fields
-
-        Returns:
-            List[Task]: Tasks created for this LineItem
-        """
-        if line_item.task:
-            return TaskService._copy_worksheet_tasks(line_item, job)
-        elif line_item.price_list_item:
-            return TaskService._create_task_from_catalog_item(line_item, job)
-        else:
-            return TaskService._create_generic_task(line_item, job)
-
-    @staticmethod
-    def _copy_worksheet_tasks(line_item, job):
-        """Copy the PlanTask that contributed to this EstimateLineItem into a Task on the Job.
-
-        Note: after the spec 2026-04-05 model split, this function copies exactly one
-        PlanTask to one Task. The prior "multi-task with parent relationships" logic was
-        dead code (the source list was always a single element) and is removed.
-        """
-        plan_task = line_item.task  # now a PlanTask FK
-        new_task = Task.objects.create(
-            job=job,
-            name=plan_task.name,
-            description=plan_task.description,
-            units=plan_task.units,
-            rate=plan_task.rate,
-            est_qty=plan_task.est_qty,
-            accounting_category=plan_task.accounting_category,
-            # assignee and status use defaults; parent_task is None
-        )
-        return [new_task]
-
-    @staticmethod
-    def _create_task_from_catalog_item(line_item, job):
-        """Create a task from PriceListItem data."""
-        task_name = f"{line_item.price_list_item.code} - {line_item.price_list_item.description[:50]}"
-        if len(line_item.price_list_item.description) > 50:
-            task_name += "..."
-
-        task = Task.objects.create(
-            job=job,
-            name=task_name,
-            units=line_item.units if line_item.units not in ('', 'none') else line_item.price_list_item.units,
-            rate=line_item.price or line_item.price_list_item.selling_price,
-            est_qty=line_item.qty,
-            assignee=None,
-            parent_task=None
-        )
-        return [task]
-
-    @staticmethod
-    def _create_generic_task(line_item, job):
-        """Create a generic task from manual LineItem data."""
-        if line_item.description:
-            task_name = line_item.description[:255]
-        elif line_item.line_number:
-            task_name = f"Line Item {line_item.line_number}"
-        else:
-            task_name = f"Line Item {line_item.pk}"
-
-        task = Task.objects.create(
-            job=job,
-            name=task_name,
-            units=line_item.units,
-            rate=line_item.price,
-            est_qty=line_item.qty,
-            assignee=None,
-            parent_task=None
-        )
-        return [task]
 
     @staticmethod
     def create_from_template(template, job, assignee=None):
@@ -587,10 +488,12 @@ class TaskLifecycleService:
     def _check_job_work_complete(task):
         """Auto-advance Job to work_complete if all its tasks are terminal.
 
-        Only fires when the Job is currently in APPROVED status.
+        Fires when the Job is currently in APPROVED or IN_PROGRESS status.
+        When the job is APPROVED, it walks approved → in_progress → work_complete
+        so that the state machine is respected.
         """
         job = task.job
-        if job.status != Job.STATUS_APPROVED:
+        if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
             return
         terminal = {Task.STATUS_COMPLETE, Task.STATUS_CANCELLED}
         all_terminal = not Task.objects.filter(
@@ -598,6 +501,8 @@ class TaskLifecycleService:
         ).exclude(status__in=terminal).exists()
         if all_terminal:
             try:
+                if job.status == Job.STATUS_APPROVED:
+                    JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
                 JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
             except ValidationError:
                 pass  # Pending task-less materials block auto-advance; task completion itself succeeds.
@@ -767,15 +672,15 @@ class BoardService:
 
         cutoff = timezone.now() - timedelta(days=retention_days)
 
-        # Pipeline: draft + submitted
+        # Pipeline: draft + submitted + approved (estimate accepted, awaiting prep)
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted']
+            status__in=['draft', 'submitted', 'approved']
         ).select_related('contact').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
-        # Approved
+        # In Progress (board column key kept as 'approved' for URL stability)
         approved_jobs = Job.objects.filter(
-            status='approved'
+            status='in_progress'
         ).select_related('contact').order_by('due_date')
         approved_list = []
         for i, job in enumerate(approved_jobs):
@@ -843,10 +748,10 @@ class BoardService:
 
     @staticmethod
     def get_pipeline_data():
-        """Return pipeline jobs (draft + submitted) with worksheet/estimate info."""
+        """Return pipeline jobs (draft + submitted + approved) with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted']
+            status__in=['draft', 'submitted', 'approved']
         ).select_related('contact').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
@@ -854,13 +759,18 @@ class BoardService:
 
     @staticmethod
     def get_approved_data():
-        """Return approved jobs where work is still active (not unpaid)."""
+        """Return in_progress jobs where work is still active (not unpaid).
+
+        Method name kept for URL/view stability. Conceptually this is now the
+        "In Progress" column — jobs that have been released to the floor.
+        Follow-up: rename to get_in_progress_data.
+        """
         from apps.jobs.models import Job, Task
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
         approved_jobs = Job.objects.filter(
-            status='approved'
+            status='in_progress'
         ).select_related('contact').order_by('due_date')
 
         approved_list = []
@@ -1119,7 +1029,10 @@ class BoardService:
         if job.status in ('draft', 'submitted'):
             return BoardService._pipeline_sub_status(job)
         elif job.status == Job.STATUS_APPROVED:
-            return BoardService._approved_sub_status(job)
+            # approved = estimate accepted, awaiting prep / release to floor
+            return 'awaiting-prep'
+        elif job.status == Job.STATUS_IN_PROGRESS:
+            return BoardService._in_progress_sub_status(job)
         elif job.status == Job.STATUS_WORK_COMPLETE:
             return BoardService._work_complete_sub_status(job)
         return None
@@ -1150,14 +1063,14 @@ class BoardService:
     UNPAID_SUB_STATUSES = {'invoice-sent', 'invoice-prepped', 'needs-invoice'}
 
     @staticmethod
-    def _approved_sub_status(job):
-        """Sub-status for Approved jobs.
+    def _in_progress_sub_status(job):
+        """Sub-status for In Progress jobs (status='in_progress').
 
-        Post-WorkOrder-removal: tasks live directly on the job. The
-        previous "needs-work-order" sub-status (no WO existed yet) is
-        now "needs-tasks" (no task has been created yet). Approved jobs
-        with all tasks terminal are auto-advanced to work_complete, so
-        invoice-related sub-statuses live on _work_complete_sub_status.
+        Tasks live directly on the job. Jobs with all tasks terminal are
+        auto-advanced to work_complete, so invoice-related sub-statuses
+        live on _work_complete_sub_status.
+
+        Renamed from _approved_sub_status — follow-up: remove the old name.
         """
         all_tasks = job.tasks.all()
         if not all_tasks.exists():

@@ -69,7 +69,12 @@ class PipelineSubStatusTest(FixtureTestCase):
 
 
 class ApprovedSubStatusTest(FixtureTestCase):
-    """Test sub-status derivation for Approved jobs (tasks live on job)."""
+    """Test sub-status derivation for Approved and In Progress jobs.
+
+    'approved' jobs now have the fixed sub-status 'awaiting-prep' (estimate
+    accepted, not yet released to floor). 'in_progress' jobs carry the
+    task-derived sub-statuses that used to belong to 'approved'.
+    """
 
     def setUp(self):
         super().setUp()
@@ -78,36 +83,48 @@ class ApprovedSubStatusTest(FixtureTestCase):
             defaults={'value': '14'}
         )
         self.contact = Contact.objects.first()
-        self.job = Job.objects.create(
+        self.approved_job = Job.objects.create(
             job_number='JOB-TEST-0001',
             name='Approved Job',
             status=Job.STATUS_APPROVED,
             contact=self.contact,
         )
+        self.in_progress_job = Job.objects.create(
+            job_number='JOB-TEST-0002',
+            name='In Progress Job',
+            status=Job.STATUS_IN_PROGRESS,
+            contact=self.contact,
+        )
+
+    def test_approved_job_has_awaiting_prep_sub_status(self):
+        """Approved job (estimate accepted, not yet released) → 'awaiting-prep'."""
+        from apps.jobs.services import BoardService
+        result = BoardService.compute_sub_status(self.approved_job)
+        self.assertEqual(result, 'awaiting-prep')
 
     def test_needs_tasks_when_no_tasks_exist(self):
-        """Approved Job with no tasks has sub-status 'needs-tasks'."""
+        """In Progress Job with no tasks has sub-status 'needs-tasks'."""
         from apps.jobs.services import BoardService
-        result = BoardService.compute_sub_status(self.job)
+        result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'needs-tasks')
 
     def test_work_ready_when_tasks_pending(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.job, status='pending')
-        result = BoardService.compute_sub_status(self.job)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='pending')
+        result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'work-ready')
 
     def test_in_progress_when_tasks_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.job, status='in_progress')
-        result = BoardService.compute_sub_status(self.job)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress')
+        result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'in-progress')
 
     def test_blocked_takes_priority_over_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.job, status='in_progress')
-        Task.objects.create(name='Task 2', job=self.job, status='blocked')
-        result = BoardService.compute_sub_status(self.job)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress')
+        Task.objects.create(name='Task 2', job=self.in_progress_job, status='blocked')
+        result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'blocked')
 
 
@@ -213,15 +230,27 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertIn('draft', statuses)
         self.assertIn('submitted', statuses)
 
-    def test_approved_jobs_in_approved_section(self):
+    def test_in_progress_jobs_in_approved_section(self):
+        """in_progress jobs appear in the 'approved' board section (In Progress column)."""
+        from apps.jobs.services import BoardService
+        Job.objects.create(
+            job_number='JOB-INP-001', name='In Progress Job',
+            status='in_progress', contact=self.contact,
+        )
+        data = BoardService.get_board_data()
+        approved_names = [j['name'] for j in data['approved']['jobs']]
+        self.assertIn('In Progress Job', approved_names)
+
+    def test_approved_jobs_in_pipeline_section(self):
+        """approved jobs now appear in the pipeline column."""
         from apps.jobs.services import BoardService
         Job.objects.create(
             job_number='JOB-APP-001', name='Approved Job',
             status='approved', contact=self.contact,
         )
         data = BoardService.get_board_data()
-        approved_names = [j['name'] for j in data['approved']['jobs']]
-        self.assertIn('Approved Job', approved_names)
+        pipeline_statuses = [j['status'] for j in data['pipeline']]
+        self.assertIn('approved', pipeline_statuses)
 
     def test_closed_excludes_old_jobs(self):
         from apps.jobs.services import BoardService
@@ -247,7 +276,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         from apps.jobs.services import BoardService
         job = Job.objects.create(
             job_number='JOB-APP-WRK', name='Job',
-            status='approved', contact=self.contact,
+            status='in_progress', contact=self.contact,
         )
         Task.objects.create(
             name='Assigned task', job=job,
@@ -268,7 +297,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         )
         job = Job.objects.create(
             job_number='JOB-APP-AV', name='Job',
-            status='approved', contact=self.contact,
+            status='in_progress', contact=self.contact,
         )
         Task.objects.create(
             name='Assigned task', job=job,
@@ -311,7 +340,8 @@ class LazyBoardMethodsTest(FixtureTestCase):
             **kwargs,
         )
 
-    def test_get_pipeline_data_returns_draft_and_submitted(self):
+    def test_get_pipeline_data_returns_draft_submitted_and_approved(self):
+        """Pipeline now includes draft, submitted, AND approved jobs."""
         from apps.jobs.services import BoardService
         self._make_job(status='draft')
         self._make_job(status='submitted')
@@ -320,16 +350,26 @@ class LazyBoardMethodsTest(FixtureTestCase):
         statuses = [j['status'] for j in data['jobs']]
         self.assertIn('draft', statuses)
         self.assertIn('submitted', statuses)
-        self.assertNotIn('approved', statuses)
+        self.assertIn('approved', statuses)
 
-    def test_get_approved_data_only_includes_approved(self):
-        """Approved section returns only approved jobs (work_complete goes to unpaid)."""
+    def test_get_pipeline_data_excludes_in_progress(self):
+        """in_progress jobs belong in the In Progress (approved) column, not pipeline."""
+        from apps.jobs.services import BoardService
+        self._make_job(status='in_progress')
+        data = BoardService.get_pipeline_data()
+        statuses = [j['status'] for j in data['jobs']]
+        self.assertNotIn('in_progress', statuses)
+
+    def test_get_approved_data_only_includes_in_progress(self):
+        """In Progress column (get_approved_data) returns only in_progress jobs."""
         from apps.jobs.services import BoardService
         approved_job = self._make_job(status=Job.STATUS_APPROVED)
+        in_progress_job = self._make_job(status=Job.STATUS_IN_PROGRESS)
         wc_job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
         data = BoardService.get_approved_data()
         job_ids = [j['job_id'] for j in data['jobs']]
-        self.assertIn(approved_job.job_id, job_ids)
+        self.assertIn(in_progress_job.job_id, job_ids)
+        self.assertNotIn(approved_job.job_id, job_ids)
         self.assertNotIn(wc_job.job_id, job_ids)
 
     def test_get_unpaid_data_only_returns_work_complete_jobs(self):

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from apps.estimates.models import (
-    WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle,
+    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.units import UnitsField
@@ -15,17 +15,9 @@ class TaskTemplateSerializer(serializers.ModelSerializer):
         fields = [
             'template_id', 'template_name', 'description',
             'units', 'rate', 'accounting_category', 'is_active',
+            'rate_scheme', 'default_active_modifiers', 'default_billable_qty',
         ]
         read_only_fields = ['template_id']
-
-
-class TemplateBundleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TemplateBundle
-        fields = [
-            'id', 'name', 'accounting_category', 'sort_order',
-        ]
-        read_only_fields = ['id']
 
 
 class TemplateAssociationSerializer(serializers.ModelSerializer):
@@ -34,8 +26,7 @@ class TemplateAssociationSerializer(serializers.ModelSerializer):
     class Meta:
         model = TemplateTaskAssociation
         fields = [
-            'id', 'task_template', 'est_qty',
-            'sort_order', 'mapping_strategy', 'bundle',
+            'id', 'task_template', 'est_qty', 'sort_order',
         ]
         read_only_fields = ['id']
 
@@ -44,13 +35,12 @@ class WorkTemplateSerializer(serializers.ModelSerializer):
     associations = TemplateAssociationSerializer(
         source='templatetaskassociation_set', many=True, read_only=True
     )
-    bundles = TemplateBundleSerializer(many=True, read_only=True)
 
     class Meta:
         model = WorkTemplate
         fields = [
             'template_id', 'template_name', 'description',
-            'is_active', 'associations', 'bundles',
+            'is_active', 'associations',
         ]
         read_only_fields = ['template_id']
 

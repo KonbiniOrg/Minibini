@@ -48,6 +48,8 @@ class SignalHistoryTest(BaseTestCase):
         job.save()
         job.status = Job.STATUS_APPROVED
         job.save()
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
         job.status = Job.STATUS_WORK_COMPLETE
         job.save()
         job.status = Job.STATUS_COMPLETED

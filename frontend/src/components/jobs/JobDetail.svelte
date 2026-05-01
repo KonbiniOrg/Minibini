@@ -30,7 +30,9 @@
   const VALID_TRANSITIONS = {
     draft: ['submitted', 'rejected'],
     submitted: ['approved', 'rejected'],
-    approved: ['completed', 'cancelled'],
+    approved: ['cancelled'],
+    in_progress: ['work_complete', 'cancelled'],
+    work_complete: [],
     rejected: [],
     completed: [],
     cancelled: [],
@@ -48,6 +50,21 @@
       // Revert select on failure
       e.target.value = job.status;
       alert(err.message || 'Status change failed');
+    }
+  }
+
+  let releasingToFloor = $state(false);
+
+  async function releaseToFloor() {
+    if (!confirm('Release this job to the floor? Workers will see it as In Progress.')) return;
+    releasingToFloor = true;
+    try {
+      await api.patch(`/api/jobs/${job.job_id}/`, { status: 'in_progress' });
+      if (onStatusChange) onStatusChange();
+    } catch (e) {
+      alert(e.message || 'Failed to release to floor.');
+    } finally {
+      releasingToFloor = false;
     }
   }
 
@@ -88,6 +105,25 @@
     (job.status === 'approved' || job.status === 'work_complete' || job.status === 'completed')
   );
 
+  let populating = $state(false);
+  let populateError = $state('');
+
+  async function copyFromWorksheet() {
+    if (!currentWorksheet) return;
+    populating = true;
+    populateError = '';
+    try {
+      await api.post(`/api/jobs/${job.job_id}/copy-from-worksheet/`, {
+        worksheet_id: currentWorksheet.est_worksheet_id,
+      });
+      if (onStatusChange) onStatusChange();
+    } catch (e) {
+      populateError = e.data?.detail || e.message || 'Could not copy tasks from worksheet.';
+    } finally {
+      populating = false;
+    }
+  }
+
   // All materials on this job (for the Materials section)
   let jobMaterials = $derived(job.materials || []);
 </script>
@@ -119,6 +155,13 @@
       {#if job.customer_po_number}{(job.start_date || job.due_date || job.completed_date) ? ' · ' : ''}PO: {job.customer_po_number}{/if}
     </span>
   </div>
+  {#if job.status === 'approved' && canManageJobs}
+    <p>
+      <button onclick={releaseToFloor} disabled={releasingToFloor}>
+        {releasingToFloor ? 'Releasing…' : 'Release to floor'}
+      </button>
+    </p>
+  {/if}
 </div>
 
 <div class="desc-history">
@@ -162,7 +205,7 @@
       <a href="#/jobs/{job.job_id}/create-worksheet">Create Worksheet</a>
     {/if}
     {#if canManageJobs && currentWorksheet && !currentEstimate && (currentWorksheet.status === 'draft' || currentWorksheet.status === 'final')}
-      <a href="#/worksheets/{currentWorksheet.est_worksheet_id}/generate-estimate">Generate Estimate</a>
+      <a href={`#/worksheets/${currentWorksheet.est_worksheet_id}`}>Open worksheet to send atoms</a>
     {/if}
   </div>
 </Accordion>
@@ -220,9 +263,12 @@
     {#if canManageJobs && currentEstimate && (currentEstimate.status === 'open' || currentEstimate.status === 'accepted')}
       <a href="#/estimates/{currentEstimate.estimate_id}/revise">Revise Estimate</a>
     {/if}
-    {#if canManageJobs && currentEstimate?.status === 'accepted' && !hasTasks}
-      <a href="#/jobs/{job.job_id}/populate-from-estimate">Populate tasks from estimate</a>
+    {#if canManageJobs && currentWorksheet && !hasTasks}
+      <button type="button" onclick={copyFromWorksheet} disabled={populating}>
+        {populating ? 'Copying...' : 'Copy tasks from worksheet'}
+      </button>
     {/if}
+    {#if populateError}<em>{populateError}</em>{/if}
     {#if canManageJobs && !currentEstimate}
       <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
     {/if}

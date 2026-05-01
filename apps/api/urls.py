@@ -10,8 +10,8 @@ from apps.api.worksheets.views import EstWorksheetViewSet
 from apps.api.invoicing.views import InvoiceViewSet
 from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
 from apps.api.inventory.views import PriceListItemViewSet, MaterialViewSet
-from apps.api.tasks.views import TaskViewSet
-from apps.api.plan_tasks.views import PlanTaskViewSet
+from apps.api.tasks.views import TaskViewSet, task_charge_view
+from apps.api.plan_tasks.views import PlanTaskViewSet, plan_charge_view
 from apps.api.bleps.views import BlepViewSet
 from apps.api.search.views import search_view
 from apps.api.jobs.board_views import (
@@ -24,6 +24,7 @@ from apps.api.templates_config.views import (
     WorkTemplateViewSet, TaskTemplateViewSet,
     AccountingCategoryViewSet, settings_view, units_view,
 )
+from apps.api.rate_schemes.views import RateSchemeViewSet
 
 
 @api_view(['GET'])
@@ -50,6 +51,7 @@ def api_root(request):
         'task-templates': '/api/task-templates/',
         'settings': '/api/settings/',
         'accounting-categories': '/api/accounting-categories/',
+        'rate-schemes': '/api/rate-schemes/',
     })
 
 
@@ -73,6 +75,7 @@ router.register(r'bleps', BlepViewSet, basename='blep')
 router.register(r'work-templates', WorkTemplateViewSet, basename='work-template')
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
+router.register(r'rate-schemes', RateSchemeViewSet, basename='rate-scheme')
 
 urlpatterns = [
     path('', api_root, name='api-root'),
@@ -95,6 +98,8 @@ urlpatterns = [
     path('bleps/current/', current_blep_view, name='bleps-current'),
     path('tasks/reorder/', task_reorder_view, name='task-reorder'),
     path('tasks/<int:task_pk>/assign/', task_assign_view, name='task-assign'),
+    path('jobs/<int:job_pk>/tasks/<int:task_pk>/charge/', task_charge_view, name='task-charge'),
+    path('est-worksheets/<int:ws_pk>/plan-tasks/<int:pt_pk>/charge/', plan_charge_view, name='plan-charge'),
     path('time-tracking/status/', stub_501('GET /api/time-tracking/status/'), name='time-tracking-status'),
     path('time-tracking/active/', stub_501('GET /api/time-tracking/active/'), name='time-tracking-active'),
 ] + router.urls

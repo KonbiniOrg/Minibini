@@ -11,6 +11,7 @@ class Job(AbstractWorkContainer):
     STATUS_DRAFT = 'draft'
     STATUS_SUBMITTED = 'submitted'
     STATUS_APPROVED = 'approved'
+    STATUS_IN_PROGRESS = 'in_progress'
     STATUS_WORK_COMPLETE = 'work_complete'
     STATUS_REJECTED = 'rejected'
     STATUS_COMPLETED = 'completed'
@@ -20,6 +21,7 @@ class Job(AbstractWorkContainer):
         (STATUS_DRAFT, 'Draft'),
         (STATUS_SUBMITTED, 'Submitted'),
         (STATUS_APPROVED, 'Approved'),
+        (STATUS_IN_PROGRESS, 'In Progress'),  # NEW — between approved and work_complete
         (STATUS_WORK_COMPLETE, 'Work Complete'),
         (STATUS_REJECTED, 'Rejected'),
         (STATUS_COMPLETED, 'Completed'),
@@ -46,7 +48,8 @@ class Job(AbstractWorkContainer):
         VALID_TRANSITIONS = {
             Job.STATUS_DRAFT: [Job.STATUS_SUBMITTED, Job.STATUS_REJECTED],
             Job.STATUS_SUBMITTED: [Job.STATUS_APPROVED, Job.STATUS_REJECTED],
-            Job.STATUS_APPROVED: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],
+            Job.STATUS_APPROVED: [Job.STATUS_IN_PROGRESS, Job.STATUS_CANCELLED],
+            Job.STATUS_IN_PROGRESS: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],  # NEW
             Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED],
             Job.STATUS_REJECTED: [],  # Terminal state
             Job.STATUS_COMPLETED: [],  # Terminal state
@@ -125,6 +128,10 @@ class TaskBase(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default='')
     sort_order = models.PositiveIntegerField(blank=True, null=True)
+    est_worker_time = models.DurationField(
+        null=True, blank=True,
+        help_text="Estimated worker time for scheduling"
+    )
     units = models.CharField(max_length=50, default='none')
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -150,47 +157,17 @@ class PlanTask(TaskBase):
         'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_tasks'
     )
 
-    MAPPING_CHOICES = [
-        ('direct', 'Direct'),
-        ('bundle', 'Bundle'),
-        ('exclude', 'Exclude'),
-    ]
-    mapping_strategy = models.CharField(max_length=20, choices=MAPPING_CHOICES, default='direct')
-    bundle = models.ForeignKey(
-        'PlanBundle',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='plan_tasks'
-    )
-
     class Meta:
         db_table = 'plan_tasks'
 
-    def clean(self):
-        from django.core.exceptions import ValidationError
-        if self.mapping_strategy == 'bundle' and not self.bundle:
-            raise ValidationError("Bundled plan tasks must have a bundle assigned")
-        if self.bundle and self.mapping_strategy != 'bundle':
-            raise ValidationError("Plan tasks with a bundle must use 'bundle' mapping strategy")
-
     def save(self, *args, **kwargs):
-        """Auto-assign sort_order at the worksheet level (tasks + bundles share the ordering space)."""
+        """Auto-assign sort_order at the worksheet level."""
         from django.db import transaction
         if self.sort_order is None:
             with transaction.atomic():
-                if self.bundle:
-                    max_order = PlanTask.objects.filter(bundle=self.bundle).aggregate(
-                        models.Max('sort_order')
-                    )['sort_order__max'] or 0
-                else:
-                    max_task = PlanTask.objects.filter(
-                        bundle__isnull=True, est_worksheet=self.est_worksheet
-                    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-                    max_bundle = PlanBundle.objects.filter(
-                        est_worksheet=self.est_worksheet
-                    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-                    max_order = max(max_task, max_bundle)
+                max_order = PlanTask.objects.filter(
+                    est_worksheet=self.est_worksheet
+                ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
                 self.sort_order = max_order + 1
         self.full_clean()
         super().save(*args, **kwargs)
@@ -225,6 +202,19 @@ class Task(TaskBase):
         'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks'
     )
     assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
+    source_template = models.ForeignKey(
+        'estimates.TaskTemplate',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        help_text="TaskTemplate this task was created from"
+    )
+    source_plan_charge = models.OneToOneField(
+        'jobs.PlanCharge',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='carried_task',
+        help_text="PlanCharge this task was carried over from (carry-over idempotency)"
+    )
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
     blocked_reason = models.TextField(blank=True, default='')
@@ -258,35 +248,6 @@ class Task(TaskBase):
         self.full_clean()
         super().save(*args, **kwargs)
 
-
-class PlanBundle(models.Model):
-    """Instance-level grouping of PlanTasks within a worksheet.
-
-    Parallel to TemplateBundle, but lives on the worksheet instance.
-    PlanTasks with mapping_strategy='bundle' point to a PlanBundle, and
-    the bundle becomes a single line item on the estimate.
-    """
-    plan_bundle_id = models.AutoField(primary_key=True)
-    est_worksheet = models.ForeignKey(
-        'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_bundles'
-    )
-    name = models.CharField(max_length=100)
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
-        on_delete=models.PROTECT
-    )
-    sort_order = models.IntegerField(default=0)
-    source_template_bundle = models.ForeignKey(
-        'estimates.TemplateBundle', on_delete=models.SET_NULL,
-        null=True, blank=True
-    )
-
-    class Meta:
-        db_table = 'plan_bundles'
-        ordering = ['sort_order', 'name']
-
-    def __str__(self):
-        return f"{self.est_worksheet} - {self.name}"
 
 
 class Blep(models.Model):
@@ -322,3 +283,129 @@ class Blep(models.Model):
 
     def __str__(self):
         return f"Blep {self.pk} for Task {self.task.pk}"
+
+
+class RateScheme(models.Model):
+    ELAPSED_TIME = 'elapsed_time'
+    ENTERED_QTY = 'entered_qty'
+    FLAT_FEE = 'flat_fee'
+
+    ALGORITHM_CHOICES = [
+        (ELAPSED_TIME, 'Based on time worked'),
+        (ENTERED_QTY, 'Worker enters quantity'),
+        (FLAT_FEE, 'Fixed charge'),
+    ]
+
+    rate_scheme_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, default='')
+    algorithm = models.CharField(max_length=20, choices=ALGORITHM_CHOICES)
+    rate = models.DecimalField(max_digits=10, decimal_places=2)
+    unit_label = models.CharField(max_length=50)
+    minimum_charge = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    modifiers = models.JSONField(default=list, blank=True)
+    accounting_category = models.ForeignKey(
+        'core.AccountingCategory', on_delete=models.PROTECT, null=True, blank=True,
+    )
+
+    class Meta:
+        db_table = 'rate_schemes'
+
+    def effective_rate(self, active_modifiers=None):
+        """Compute rate with additive modifier surcharges."""
+        modifier_percent = sum(
+            m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
+        )
+        return self.rate * (1 + Decimal(modifier_percent) / 100)
+
+    def compute_charge(self, qty, active_modifiers=None):
+        """Compute total charge for the given quantity."""
+        total = qty * self.effective_rate(active_modifiers)
+        if self.minimum_charge:
+            total = max(total, self.minimum_charge)
+        return total
+
+    def get_actual_qty(self, task):
+        """Resolve actual quantity based on algorithm."""
+        if self.algorithm == self.ELAPSED_TIME:
+            total_seconds = sum(
+                b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
+            )
+            return Decimal(total_seconds) / 3600
+        elif self.algorithm == self.ENTERED_QTY:
+            return task.charge.actuals.get('qty', 0)
+        else:  # FLAT_FEE
+            return Decimal('1')
+
+    def get_modifier_inputs(self):
+        """Return modifiers list for UI rendering."""
+        return list(self.modifiers)
+
+    def __str__(self):
+        return self.name
+
+
+class TaskCharge(models.Model):
+    """The filled-in billing form for a Task. One per Task (OneToOne)."""
+    task_charge_id = models.AutoField(primary_key=True)
+    task = models.OneToOneField(Task, on_delete=models.CASCADE, related_name='charge')
+    rate_scheme = models.ForeignKey(RateScheme, on_delete=models.PROTECT)
+    active_modifiers = models.JSONField(default=list, blank=True)
+    actuals = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = 'task_charges'
+
+    def __str__(self):
+        return f"Charge for {self.task}"
+
+    def compute(self):
+        """Compute charge using scheme's algorithm and this charge's specifics."""
+        qty = self.rate_scheme.get_actual_qty(self.task)
+        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
+
+    def compute_amount(self, active_modifiers=None):
+        """Uniform atom interface: total billable amount for this charge.
+
+        Ignores the active_modifiers argument (uses self.active_modifiers).
+        Parameter is accepted to match the BillableAtom interface shared with
+        Material/PlanMaterial.
+        """
+        return self.compute()
+
+    def effective_rate(self):
+        return self.rate_scheme.effective_rate(self.active_modifiers)
+
+    def has_actuals(self):
+        if self.rate_scheme.algorithm == RateScheme.ENTERED_QTY:
+            return bool(self.actuals.get('qty'))
+        return True  # elapsed_time and flat_fee don't need manual entry
+
+
+class PlanCharge(models.Model):
+    """Same shape as TaskCharge but for PlanTask (worksheet/estimate stage). No actuals."""
+    plan_charge_id = models.AutoField(primary_key=True)
+    plan_task = models.OneToOneField(PlanTask, on_delete=models.CASCADE, related_name='charge')
+    rate_scheme = models.ForeignKey(RateScheme, on_delete=models.PROTECT)
+    active_modifiers = models.JSONField(default=list, blank=True)
+    estimated_billable_qty = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        db_table = 'plan_charges'
+
+    def __str__(self):
+        return f"Charge for {self.plan_task}"
+
+    def compute(self):
+        return self.rate_scheme.compute_charge(self.estimated_billable_qty, self.active_modifiers)
+
+    def compute_amount(self, active_modifiers=None):
+        """Uniform atom interface: total billable amount for this charge.
+
+        Ignores the active_modifiers argument (uses self.active_modifiers).
+        Parameter is accepted to match the BillableAtom interface.
+        """
+        return self.compute()
+
+    def effective_rate(self):
+        return self.rate_scheme.effective_rate(self.active_modifiers)

@@ -152,34 +152,6 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
 
-class EarmarkOnCreateFromEstimateTest(TestCase):
-    """Earmarks created (if any materials copy over) after create_from_estimate."""
-
-    def setUp(self):
-        self.contact = Contact.objects.create(
-            first_name='Test', last_name='Contact',
-            email='test@example.com', work_number='555-0100',
-        )
-        self.job = Job.objects.create(
-            job_number='J-AEM-003', contact=self.contact,
-        )
-        self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-AEM-001', version=1,
-        )
-
-    def test_no_earmarks_from_estimate_with_no_materials(self):
-        """Estimate -> WO with no task materials produces no earmarks."""
-        EstimateLineItem.objects.create(
-            estimate=self.estimate, description='Manual item',
-            price=Decimal('100.00'),
-        )
-        self.estimate.status = Estimate.STATUS_OPEN
-        self.estimate.save()
-
-        JobService.populate_from_estimate(self.job, self.estimate)
-        self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
-
-
 class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
     """Verify that the old estimate_accepted signal no longer creates earmarks."""
 

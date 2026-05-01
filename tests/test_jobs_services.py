@@ -3,10 +3,10 @@ from decimal import Decimal
 from unittest.mock import patch
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, Task, PlanTask, PlanBundle
+from apps.jobs.models import Job, Task, PlanTask
 from apps.jobs.services import JobService, TaskService
 from apps.estimates.models import (
-    Estimate, EstimateLineItem, EstWorksheet,
+    Estimate, EstWorksheet,
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, PlanMaterial, PriceListItem
@@ -80,12 +80,13 @@ def _walk_to(job, target_status):
         Job.STATUS_DRAFT: [Job.STATUS_DRAFT],
         Job.STATUS_SUBMITTED: [Job.STATUS_SUBMITTED],
         Job.STATUS_APPROVED: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED],
+        Job.STATUS_IN_PROGRESS: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS],
         Job.STATUS_WORK_COMPLETE: [
-            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE,
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
         ],
         Job.STATUS_COMPLETED: [
             Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
-            Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED,
+            Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED,
         ],
     }[target_status]
     for step in path:
@@ -126,7 +127,7 @@ class JobServiceUpdateStatusTest(JobsTestBase):
         mock_save.assert_not_called()
 
     def test_update_status_fires_release_on_transition_into_work_complete(self):
-        _walk_to(self.job, Job.STATUS_APPROVED)
+        _walk_to(self.job, Job.STATUS_IN_PROGRESS)
 
         with patch(
             'apps.inventory.services.InventoryService.release_earmarks_for_job'
@@ -227,95 +228,6 @@ class MaterialServiceTest(JobsTestBase):
     def test_delete_material_not_found(self):
         with self.assertRaises(NotFoundError):
             InventoryService.delete_plan_material(99999)
-
-
-class JobServicePopulateFromEstimateTest(JobsTestBase):
-    """Tests for JobService.populate_from_estimate."""
-
-    def setUp(self):
-        super().setUp()
-        self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-001',
-            status=Estimate.STATUS_ACCEPTED,
-        )
-
-    def test_converts_line_items_to_tasks(self):
-        EstimateLineItem.objects.create(
-            estimate=self.estimate, description='Cut steel',
-            qty=Decimal('2.00'), units='hours', price=Decimal('50.00'),
-            accounting_category=self.lit)
-        EstimateLineItem.objects.create(
-            estimate=self.estimate, description='Weld frame',
-            qty=Decimal('3.00'), units='hours', price=Decimal('60.00'),
-            accounting_category=self.lit)
-
-        JobService.populate_from_estimate(self.job, self.estimate)
-
-        tasks = Task.objects.filter(job=self.job)
-        self.assertEqual(tasks.count(), 2)
-
-    def test_task_fields_from_manual_line_item(self):
-        EstimateLineItem.objects.create(
-            estimate=self.estimate, description='Custom fabrication',
-            qty=Decimal('4.00'), units='pcs', price=Decimal('100.00'),
-            accounting_category=self.lit)
-
-        JobService.populate_from_estimate(self.job, self.estimate)
-        task = Task.objects.get(job=self.job)
-
-        self.assertEqual(task.name, 'Custom fabrication')
-        self.assertEqual(task.est_qty, Decimal('4.00'))
-        self.assertEqual(task.units, 'pcs')
-        self.assertEqual(task.rate, Decimal('100.00'))
-
-    def test_task_from_catalog_line_item(self):
-        pli = PriceListItem.objects.create(
-            code='STL-001', description='Steel plate',
-            units='sheets', selling_price=Decimal('75.00'),
-            accounting_category=self.lit)
-
-        EstimateLineItem.objects.create(
-            estimate=self.estimate, description='Steel plate',
-            price_list_item=pli,
-            qty=Decimal('10.00'), units='none', price=Decimal('0.00'),
-            accounting_category=self.lit)
-
-        JobService.populate_from_estimate(self.job, self.estimate)
-        task = Task.objects.get(job=self.job)
-
-        self.assertIn('STL-001', task.name)
-        self.assertEqual(task.units, 'sheets')
-        self.assertEqual(task.rate, Decimal('75.00'))
-
-    def test_empty_estimate_populates_no_tasks(self):
-        JobService.populate_from_estimate(self.job, self.estimate)
-        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
-
-    def test_rejects_draft_estimate(self):
-        draft_estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-DRAFT',
-            status=Estimate.STATUS_DRAFT,
-        )
-        with self.assertRaises(ValidationError):
-            JobService.populate_from_estimate(self.job, draft_estimate)
-
-    def test_rejects_rejected_estimate(self):
-        rejected_estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-REJ',
-            status=Estimate.STATUS_REJECTED,
-        )
-        with self.assertRaises(ValidationError):
-            JobService.populate_from_estimate(self.job, rejected_estimate)
-
-    def test_accepts_open_estimate(self):
-        open_estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-OPEN',
-            status=Estimate.STATUS_OPEN,
-        )
-        JobService.populate_from_estimate(self.job, open_estimate)
-        # No line items, so 0 tasks
-        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
 
 
 class JobServicePopulateFromTemplateTest(JobsTestBase):
@@ -431,7 +343,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
             est_worksheet=self.worksheet, name='Paint',
             description='Apply primer and topcoat',
             units='sq ft', rate=Decimal('5.00'), est_qty=Decimal('100.00'),
-            accounting_category=self.lit, mapping_strategy='direct', sort_order=1)
+            accounting_category=self.lit, sort_order=1)
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
@@ -465,23 +377,6 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         self.assertEqual(mat.unit_cost, Decimal('50.00'))
         self.assertEqual(mat.sell_price, Decimal('75.00'))
         self.assertEqual(mat.price_list_item, pli)
-
-    def test_bundles_are_dropped_on_copy(self):
-        """PlanBundles on the worksheet are NOT copied; bundled PlanTasks become flat Tasks."""
-        bundle = PlanBundle.objects.create(
-            est_worksheet=self.worksheet, name='Assembly',
-            sort_order=1, accounting_category=self.lit)
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Assemble part A',
-            bundle=bundle, mapping_strategy='bundle', sort_order=1)
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Assemble part B',
-            bundle=bundle, mapping_strategy='bundle', sort_order=2)
-
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-
-        job_tasks = Task.objects.filter(job=self.job).order_by('sort_order')
-        self.assertEqual(job_tasks.count(), 2)
 
     def test_empty_worksheet(self):
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)

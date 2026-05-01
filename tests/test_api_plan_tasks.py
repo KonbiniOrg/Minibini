@@ -1,7 +1,7 @@
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import User
-from apps.jobs.models import Job, PlanTask, PlanBundle
+from apps.jobs.models import Job, PlanTask
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet
 

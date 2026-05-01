@@ -33,6 +33,9 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             job_number='JOB-WC-1', contact=self.contact,
             status=Job.STATUS_APPROVED,
         )
+        # Walk to in_progress so tests can transition directly to work_complete.
+        self.job.status = Job.STATUS_IN_PROGRESS
+        self.job.save()
 
     def test_taskless_pending_inventoried_material_blocks_transition(self):
         """A pending task-less inventoried material prevents work_complete."""
@@ -105,7 +108,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
 
     def test_last_task_completion_autoadvance_blocked_by_loose_material(self):
-        """Auto-advance from last task completion does not fire when loose materials are pending."""
+        """Auto-advance to work_complete does not fire when loose materials are pending."""
         MaterialService.create_on_job(
             job=self.job, task=None, description='blocking mat',
             quantity=Decimal('2'), price_list_item=self.pli,
@@ -115,5 +118,6 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         TaskLifecycleService.complete_task(t.pk)
         self.job.refresh_from_db()
         self.assertNotEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
-        # Job should still be approved
-        self.assertEqual(self.job.status, Job.STATUS_APPROVED)
+        # Job should be in_progress (setUp walks to in_progress; loose materials
+        # block the auto-advance to work_complete, so it stops here).
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)

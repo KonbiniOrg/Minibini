@@ -36,7 +36,6 @@ class PlanTaskDetailSerializer(serializers.ModelSerializer):
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
             'units', 'rate', 'est_qty', 'accounting_category',
-            'mapping_strategy', 'bundle',
             'plan_materials', 'est_worksheet',
         ]
         read_only_fields = fields

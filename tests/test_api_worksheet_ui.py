@@ -5,7 +5,7 @@ from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import User, AccountingCategory
-from apps.jobs.models import Job, PlanTask, PlanBundle
+from apps.jobs.models import Job, PlanTask
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.inventory.models import PlanMaterial, PriceListItem
@@ -205,27 +205,6 @@ class ReorderTest(TestCase):
         self.task2.refresh_from_db()
         self.assertLess(self.task2.sort_order, self.task1.sort_order)
 
-    def test_reorder_bundle(self):
-        bundle = PlanBundle.objects.create(
-            est_worksheet=self.worksheet, name='Bundle A',
-            accounting_category=self.category, sort_order=3,
-        )
-        # Bundle needs member tasks to appear in the container item list
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Bundled X',
-            bundle=bundle, mapping_strategy='bundle', sort_order=1,
-        )
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Bundled Y',
-            bundle=bundle, mapping_strategy='bundle', sort_order=2,
-        )
-        response = self.client.post(
-            f'/api/est-worksheets/{self.worksheet.pk}/reorder/',
-            {'item_type': 'bundle', 'item_id': bundle.pk, 'direction': 'up'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-
     def test_reorder_invalid_direction(self):
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/reorder/',
@@ -250,47 +229,6 @@ class ReorderTest(TestCase):
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/reorder/',
             {'item_type': 'task', 'item_id': self.task1.pk, 'direction': 'down'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 403)
-
-    def test_reorder_in_bundle(self):
-        bundle = PlanBundle.objects.create(
-            est_worksheet=self.worksheet, name='Bundle B',
-            accounting_category=self.category, sort_order=1,
-        )
-        bt1 = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Bundled 1',
-            bundle=bundle, mapping_strategy='bundle', sort_order=1,
-        )
-        bt2 = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Bundled 2',
-            bundle=bundle, mapping_strategy='bundle', sort_order=2,
-        )
-        response = self.client.post(
-            f'/api/est-worksheets/{self.worksheet.pk}/reorder-in-bundle/',
-            {'task_id': bt2.pk, 'direction': 'up'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-        bt1.refresh_from_db()
-        bt2.refresh_from_db()
-        self.assertLess(bt2.sort_order, bt1.sort_order)
-
-    def test_reorder_in_bundle_invalid_direction(self):
-        response = self.client.post(
-            f'/api/est-worksheets/{self.worksheet.pk}/reorder-in-bundle/',
-            {'task_id': 1, 'direction': 'sideways'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_reorder_in_bundle_requires_can_manage_jobs(self):
-        viewer = User.objects.create_user(username='bundleviewer', password='testpass')
-        self.client.force_authenticate(user=viewer)
-        response = self.client.post(
-            f'/api/est-worksheets/{self.worksheet.pk}/reorder-in-bundle/',
-            {'task_id': self.task1.pk, 'direction': 'up'},
             format='json',
         )
         self.assertEqual(response.status_code, 403)

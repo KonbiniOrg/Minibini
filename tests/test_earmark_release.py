@@ -22,6 +22,9 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
             job_number='J-REL-001', contact=self.contact,
             status=Job.STATUS_APPROVED,
         )
+        # Walk to in_progress so tests can transition directly to work_complete.
+        self.job.status = Job.STATUS_IN_PROGRESS
+        self.job.save()
         self.category = AccountingCategory.objects.get_or_create(
             code='SVC',
             defaults={'name': 'Service', 'taxable': False},
@@ -94,9 +97,12 @@ class EarmarkReleaseTransitionTest(TestCase):
             job_number='J-REL-T-001', contact=self.contact,
             status=Job.STATUS_APPROVED,
         )
+        # Walk to in_progress (valid step before work_complete).
+        self.job.status = Job.STATUS_IN_PROGRESS
+        self.job.save()
 
     def test_release_called_on_approved_to_work_complete(self):
-        """Transitioning APPROVED -> WORK_COMPLETE releases earmarks exactly once."""
+        """Transitioning IN_PROGRESS -> WORK_COMPLETE releases earmarks exactly once."""
         with patch(
             'apps.inventory.services.InventoryService.release_earmarks_for_job'
         ) as mock_release:

@@ -2,6 +2,8 @@
   import QBOConnectionCard from '../components/QBOConnectionCard.svelte';
   import AccountingCategories from '../components/settings/AccountingCategories.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
+  import RateSchemeManager from '../components/RateSchemeManager.svelte';
+  import TaskTemplateManager from '../components/TaskTemplateManager.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
   let tab = $state('accounting');
@@ -60,13 +62,17 @@
 
   <AccountingCategories />
 
-  <h3>Payment accounts</h3>
-  <p>
-    <button type="button" onclick={refreshFromQBO} disabled={loadingQBO}>
-      {loadingQBO ? 'Loading...' : 'Refresh from QBO'}
-    </button>
-    {#if qboError}<em>{qboError}</em>{/if}
-  </p>
+<RateSchemeManager />
+
+<TaskTemplateManager />
+
+<h3>Payment accounts</h3>
+<p>
+  <button type="button" onclick={refreshFromQBO} disabled={loadingQBO}>
+    {loadingQBO ? 'Loading...' : 'Refresh from QBO'}
+  </button>
+  {#if qboError}<em>{qboError}</em>{/if}
+</p>
 
   {#if qboAccounts.length > 0}
     <table border="1">

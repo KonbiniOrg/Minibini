@@ -104,7 +104,6 @@ class EstimateLineItemAdditionTests(TestCase):
         self.assertEqual(line_item.units, 'hours')
         self.assertEqual(line_item.price, Decimal('75.50'))
         self.assertEqual(line_item.accounting_category, self.service_type)
-        self.assertIsNone(line_item.task)
         self.assertIsNone(line_item.price_list_item)
 
     def test_add_pricelist_line_item(self):
@@ -137,9 +136,6 @@ class EstimateLineItemAdditionTests(TestCase):
 
         # Verify price_list_item reference is set
         self.assertEqual(line_item.price_list_item, self.price_list_item)
-
-        # Verify task is not set
-        self.assertIsNone(line_item.task)
 
     def test_add_manual_line_item_missing_required_fields(self):
         """Test adding a manual line item with missing required fields shows errors."""

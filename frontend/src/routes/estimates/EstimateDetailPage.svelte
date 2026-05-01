@@ -144,7 +144,7 @@
   }
 
   function sourceLabel(li) {
-    if (li.task) return `Task #${li.task}`;
+    if (li.sources?.length) return `${li.sources.length} atom${li.sources.length === 1 ? '' : 's'}`;
     if (li.price_list_item) return `PLI #${li.price_list_item}`;
     return 'No source';
   }
@@ -269,7 +269,10 @@
 
   <h3>Line Items</h3>
   {#if canEdit}
-    <p><button type="button" onclick={openAddItem}>Add Line Item</button></p>
+    <p>
+      <button type="button" onclick={openAddItem}>Add Line Item</button>
+      <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Open atoms wizard</a>
+    </p>
   {/if}
   {#if lineItems.length > 0}
     <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 10px;">
@@ -312,12 +315,12 @@
       </tbody>
       <tfoot>
         <tr style="background-color: #f5f5f5;">
-          <td colspan={canEdit ? 8 : 8} style="text-align: right;"><strong>Subtotal:</strong></td>
+          <td colspan="8" style="text-align: right;"><strong>Subtotal:</strong></td>
           <td>{fmtMoney(subtotal)}</td>
           {#if canEdit}<td></td>{/if}
         </tr>
         <tr style="background-color: #e8e8e8;">
-          <td colspan={canEdit ? 8 : 8} style="text-align: right;"><strong>Total:</strong></td>
+          <td colspan="8" style="text-align: right;"><strong>Total:</strong></td>
           <td><strong>{fmtMoney(subtotal)}</strong></td>
           {#if canEdit}<td></td>{/if}
         </tr>

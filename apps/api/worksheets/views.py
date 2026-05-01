@@ -3,31 +3,30 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.estimates.models import EstWorksheet
-from apps.estimates.services import WorksheetService, EstimateGenerationService
+from apps.estimates.services import WorksheetService
 from django.core.exceptions import ValidationError
 from apps.core.services import ServiceError, NotFoundError
-from apps.api.mixins import StatusTransitionMixin, PlanTaskBundleMixin
+from apps.api.mixins import StatusTransitionMixin, PlanTaskMixin
 from apps.api.permissions import CanManageJobs
-from .serializers import EstWorksheetSerializer, PlanTaskSerializer, PlanBundleSerializer, PlanMaterialWriteSerializer
+from .serializers import EstWorksheetSerializer, PlanTaskSerializer, PlanMaterialWriteSerializer
 
 
-class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.ModelViewSet):
+class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelViewSet):
     queryset = EstWorksheet.objects.all().order_by('-created_date')
     serializer_class = EstWorksheetSerializer
     lookup_field = 'pk'
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve')
-        mixed_actions = ('tasks', 'bundles', 'plan_materials', 'plan_material_detail')
+        mixed_actions = ('tasks', 'plan_materials', 'plan_material_detail')
         if self.action in read_actions:
             return [IsAuthenticated()]
         if self.action in mixed_actions and self.request.method == 'GET':
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
-    # PlanTaskBundleMixin config
+    # PlanTaskMixin config
     plan_task_serializer_class = PlanTaskSerializer
-    plan_bundle_serializer_class = PlanBundleSerializer
 
     status_actions = {
         'revise': {'service': WorksheetService.revise_worksheet},
@@ -60,8 +59,8 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.M
         item_id = request.data.get('item_id')
         direction = request.data.get('direction')
         errors = {}
-        if item_type not in ('task', 'bundle'):
-            errors['item_type'] = ['Must be "task" or "bundle".']
+        if item_type not in ('task',):
+            errors['item_type'] = ['Must be "task".']
         if not item_id:
             errors['item_id'] = ['This field is required.']
         if direction not in ('up', 'down'):
@@ -70,24 +69,6 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.M
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
         try:
             WorksheetService.reorder_items(worksheet.pk, item_type, item_id, direction)
-        except (ServiceError, ValidationError) as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({'detail': 'Reordered.'})
-
-    @action(detail=True, methods=['post'], url_path='reorder-in-bundle')
-    def reorder_in_bundle(self, request, pk=None):
-        worksheet = self.get_object()
-        task_id = request.data.get('task_id')
-        direction = request.data.get('direction')
-        errors = {}
-        if not task_id:
-            errors['task_id'] = ['This field is required.']
-        if direction not in ('up', 'down'):
-            errors['direction'] = ['Must be "up" or "down".']
-        if errors:
-            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            WorksheetService.reorder_in_bundle(worksheet.pk, task_id, direction)
         except (ServiceError, ValidationError) as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'detail': 'Reordered.'})
@@ -158,18 +139,19 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskBundleMixin, viewsets.M
         serializer.save()
         return Response(serializer.data)
 
-    @action(detail=True, methods=['post'], url_path='generate-estimate')
-    def generate_estimate(self, request, pk=None):
+    @action(detail=True, methods=['post'], url_path='send-all-atoms-to-estimate')
+    def send_all_atoms_to_estimate(self, request, pk=None):
+        """Bulk 1:1 conversion of unclaimed atoms to EstimateLineItems."""
+        from apps.estimates.services import EstimateWizardService
+
         worksheet = self.get_object()
         try:
-            service = EstimateGenerationService()
-            estimate = service.generate_estimate_from_worksheet(worksheet)
-        except ServiceError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            result = EstimateWizardService.send_all_atoms_to_estimate(worksheet)
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
         return Response({
-            'detail': 'Estimate generated.',
-            'estimate_id': estimate.pk,
-            'estimate_number': estimate.estimate_number,
+            'estimate_id': result['estimate'].pk,
+            'estimate_number': result['estimate'].estimate_number,
+            'created_count': result['created_count'],
         })
+

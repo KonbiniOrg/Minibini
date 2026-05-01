@@ -1,16 +1,71 @@
 from rest_framework import status
+from rest_framework import serializers as drf_serializers
 from rest_framework.exceptions import MethodNotAllowed, NotFound
 from rest_framework.mixins import RetrieveModelMixin, ListModelMixin, CreateModelMixin
 from rest_framework import viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.jobs.models import PlanTask
+from rest_framework import status as http_status
+from apps.jobs.models import PlanTask, PlanCharge
 from apps.inventory.models import PlanMaterial
 from apps.inventory.services import InventoryService
 from apps.core.services import ServiceError, NotFoundError
 from apps.api.permissions import CanManageJobs
 from .serializers import PlanTaskDetailSerializer, PlanMaterialSerializer, PlanMaterialWriteSerializer
+
+
+class PlanChargeSerializer(drf_serializers.ModelSerializer):
+    class Meta:
+        model = PlanCharge
+        fields = [
+            'plan_charge_id', 'rate_scheme', 'active_modifiers',
+            'estimated_billable_qty',
+        ]
+        read_only_fields = ['plan_charge_id']
+
+
+@api_view(['GET', 'POST', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def plan_charge_view(request, ws_pk, pt_pk):
+    try:
+        plan_task = PlanTask.objects.get(pk=pt_pk, est_worksheet_id=ws_pk)
+    except PlanTask.DoesNotExist:
+        return Response({'detail': 'Plan task not found.'}, status=404)
+
+    if request.method == 'GET':
+        try:
+            charge = plan_task.charge
+        except PlanCharge.DoesNotExist:
+            return Response(None)
+        return Response(PlanChargeSerializer(charge).data)
+
+    if not request.user.has_perm('core.can_manage_jobs'):
+        return Response(status=403)
+
+    if request.method == 'POST':
+        try:
+            plan_task.charge
+            return Response(
+                {'detail': 'Charge already exists. Use PATCH to update.'},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        except PlanCharge.DoesNotExist:
+            pass
+        serializer = PlanChargeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(plan_task=plan_task)
+        return Response(serializer.data, status=http_status.HTTP_201_CREATED)
+
+    # PATCH
+    try:
+        charge = plan_task.charge
+    except PlanCharge.DoesNotExist:
+        return Response({'detail': 'No charge to update.'}, status=404)
+    serializer = PlanChargeSerializer(charge, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(serializer.data)
 
 
 class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,

@@ -174,7 +174,12 @@ class InvoiceWizardService:
     """
 
     # Job statuses that allow invoicing
-    BILLABLE_JOB_STATUSES = {Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED}
+    BILLABLE_JOB_STATUSES = {
+        Job.STATUS_APPROVED,
+        Job.STATUS_IN_PROGRESS,  # NEW
+        Job.STATUS_WORK_COMPLETE,
+        Job.STATUS_COMPLETED,
+    }
 
     @staticmethod
     def open_for_job(job):

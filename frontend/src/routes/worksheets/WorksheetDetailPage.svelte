@@ -1,5 +1,5 @@
 <script>
-  import { link } from 'svelte-spa-router';
+  import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import WorksheetTaskTable from '../../components/WorksheetTaskTable.svelte';
@@ -166,20 +166,30 @@
     }
   }
 
-  let generating = $state(false);
-  async function generateEstimate() {
-    if (!confirm('Generate an estimate from this worksheet?')) return;
-    generating = true;
+  let sendingAll = $state(false);
+
+  async function sendAllAtoms() {
+    if (!confirm('Send all unclaimed atoms to the estimate as 1:1 line items?')) return;
+    sendingAll = true;
     try {
-      const resp = await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/generate-estimate/`);
-      if (resp?.estimate_id) {
-        window.location.hash = `/estimates/${resp.estimate_id}`;
-      } else {
-        window.location.hash = `/jobs/${worksheet.job}`;
-      }
+      const result = await api.post(
+        `/api/est-worksheets/${params.id}/send-all-atoms-to-estimate/`
+      );
+      push(`/estimates/${result.estimate_id}`);
     } catch (e) {
-      alert(e.message || 'Could not generate estimate.');
-      generating = false;
+      alert(e.message || 'Failed to send atoms');
+      sendingAll = false;
+    }
+  }
+
+  async function openWizard() {
+    try {
+      const result = await api.post(
+        `/api/est-worksheets/${params.id}/send-all-atoms-to-estimate/`
+      );
+      push(`/estimates/${result.estimate_id}/wizard`);
+    } catch (e) {
+      alert(e.message || 'Failed to open wizard');
     }
   }
 </script>
@@ -206,11 +216,10 @@
     <div class="action-bar">
       <button type="button" onclick={openAddTask}>Add Task</button>
       <button type="button" onclick={openAddMaterial}>Add Material</button>
-      {#if worksheet.status === 'draft' || worksheet.status === 'final'}
-        <button type="button" onclick={generateEstimate} disabled={generating}>
-          {generating ? 'Generating...' : 'Generate Estimate'}
-        </button>
-      {/if}
+      <button type="button" onclick={sendAllAtoms} disabled={sendingAll}>
+        {sendingAll ? 'Sending…' : 'Send all atoms to estimate'}
+      </button>
+      <button type="button" onclick={openWizard}>Open wizard to group atoms</button>
     </div>
   {/if}
 

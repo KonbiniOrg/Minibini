@@ -491,7 +491,6 @@
         "pk": 1,
         "fields": {
             "estimate": 1,
-            "task": null,
             "price_list_item": 1,
             "line_number": 1,
             "qty": "50.00",
@@ -505,7 +504,6 @@
         "pk": 2,
         "fields": {
             "estimate": 1,
-            "task": null,
             "price_list_item": null,
             "line_number": 2,
             "qty": "8.00",
@@ -586,6 +584,51 @@
             "description": "Template for routine maintenance work",
             "is_active": true,
             "created_date": "2023-02-20T14:30:00Z"
+        }
+    },
+    {
+        "model": "jobs.ratescheme",
+        "pk": 1,
+        "fields": {
+            "name": "Std Hourly",
+            "description": "Standard hourly rate for bench work",
+            "algorithm": "elapsed_time",
+            "rate": "45.00",
+            "unit_label": "hour",
+            "minimum_charge": null,
+            "modifiers": [],
+            "accounting_category": null
+        }
+    },
+    {
+        "model": "jobs.ratescheme",
+        "pk": 2,
+        "fields": {
+            "name": "Std CNC Router",
+            "description": "Per-minute CNC charge with optional modifiers",
+            "algorithm": "entered_qty",
+            "rate": "4.00",
+            "unit_label": "minute",
+            "minimum_charge": "20.00",
+            "modifiers": [
+                {"key": "messy", "label": "Messy materials", "percent": 10},
+                {"key": "doublestick", "label": "Doublestick tape", "percent": 5}
+            ],
+            "accounting_category": null
+        }
+    },
+    {
+        "model": "jobs.ratescheme",
+        "pk": 3,
+        "fields": {
+            "name": "Std Setup Fee",
+            "description": "Flat setup charge",
+            "algorithm": "flat_fee",
+            "rate": "50.00",
+            "unit_label": "job",
+            "minimum_charge": null,
+            "modifiers": [],
+            "accounting_category": null
         }
     },
     {

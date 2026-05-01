@@ -202,18 +202,16 @@ class LineItemMixin:
             raise NotFound()
 
 
-class PlanTaskBundleMixin:
+class PlanTaskMixin:
     """
-    Adds plan-task and plan-bundle CRUD actions to the EstWorksheet viewset.
+    Adds plan-task CRUD actions to the EstWorksheet viewset.
 
-    Works against PlanTask and PlanBundle (worksheet-side models).
+    Works against PlanTask (worksheet-side model).
 
     Subclasses declare:
         plan_task_serializer_class = SomePlanTaskSerializer
-        plan_bundle_serializer_class = SomePlanBundleSerializer
     """
     plan_task_serializer_class = None
-    plan_bundle_serializer_class = None
 
     @action(detail=True, methods=['get', 'post'], url_path='tasks', url_name='tasks')
     def tasks(self, request, pk=None):
@@ -244,69 +242,6 @@ class PlanTaskBundleMixin:
         serializer.save()
         return Response(serializer.data)
 
-    @action(detail=True, methods=['get', 'post'], url_path='bundles', url_name='bundles')
-    def bundles(self, request, pk=None):
-        worksheet = self.get_object()
-        if request.method == 'GET':
-            from apps.jobs.models import PlanBundle
-            bundles = PlanBundle.objects.filter(est_worksheet=worksheet).order_by('sort_order')
-            serializer = self.plan_bundle_serializer_class(bundles, many=True)
-            return Response(serializer.data)
-
-        serializer = self.plan_bundle_serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(est_worksheet=worksheet)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['patch', 'delete'],
-            url_path='bundles/(?P<bundle_id>[0-9]+)', url_name='bundle-detail')
-    def bundle_detail(self, request, pk=None, bundle_id=None):
-        worksheet = self.get_object()
-        bundle = self._get_plan_bundle_or_404(worksheet, bundle_id)
-
-        if request.method == 'DELETE':
-            from apps.jobs.models import PlanTask
-            PlanTask.objects.filter(bundle=bundle).update(
-                bundle=None, mapping_strategy='direct'
-            )
-            bundle.delete()
-            return Response({'message': 'Bundle deleted.'})
-
-        serializer = self.plan_bundle_serializer_class(bundle, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'],
-            url_path='bundles/(?P<bundle_id>[0-9]+)/add-tasks', url_name='bundle-add-tasks')
-    def add_tasks_to_bundle(self, request, pk=None, bundle_id=None):
-        worksheet = self.get_object()
-        bundle = self._get_plan_bundle_or_404(worksheet, bundle_id)
-        task_ids = request.data.get('task_ids', [])
-        if not task_ids:
-            return Response({'task_ids': ['This field is required.']}, status=status.HTTP_400_BAD_REQUEST)
-        from apps.jobs.models import PlanTask
-        PlanTask.objects.filter(pk__in=task_ids, est_worksheet=worksheet).update(
-            bundle=bundle, mapping_strategy='bundle'
-        )
-        serializer = self.plan_bundle_serializer_class(bundle)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'],
-            url_path='bundles/(?P<bundle_id>[0-9]+)/remove-tasks', url_name='bundle-remove-tasks')
-    def remove_tasks_from_bundle(self, request, pk=None, bundle_id=None):
-        worksheet = self.get_object()
-        bundle = self._get_plan_bundle_or_404(worksheet, bundle_id)
-        task_ids = request.data.get('task_ids', [])
-        if not task_ids:
-            return Response({'task_ids': ['This field is required.']}, status=status.HTTP_400_BAD_REQUEST)
-        from apps.jobs.models import PlanTask
-        PlanTask.objects.filter(pk__in=task_ids, bundle=bundle).update(
-            bundle=None, mapping_strategy='direct'
-        )
-        serializer = self.plan_bundle_serializer_class(bundle)
-        return Response(serializer.data)
-
     def _get_plan_task_or_404(self, worksheet, task_id):
         from apps.jobs.models import PlanTask
         try:
@@ -315,13 +250,9 @@ class PlanTaskBundleMixin:
             from rest_framework.exceptions import NotFound
             raise NotFound()
 
-    def _get_plan_bundle_or_404(self, worksheet, bundle_id):
-        from apps.jobs.models import PlanBundle
-        try:
-            return PlanBundle.objects.get(pk=bundle_id, est_worksheet=worksheet)
-        except PlanBundle.DoesNotExist:
-            from rest_framework.exceptions import NotFound
-            raise NotFound()
+
+# Backwards-compat alias — remove after all callers updated
+PlanTaskBundleMixin = PlanTaskMixin
 
 
 class JobTaskMixin:

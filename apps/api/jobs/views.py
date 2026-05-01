@@ -25,7 +25,6 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
             Prefetch('tasks', queryset=Task.objects.select_related('assignee').order_by('sort_order')),
             Prefetch('materials', queryset=Material.objects.select_related('price_list_item')),
             'template__templatetaskassociation_set__task_template',
-            'template__bundles',
         ) \
         .all().order_by('-created_date')
     serializer_class = JobSerializer
@@ -146,6 +145,9 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     def work_complete(self, request, pk=None):
         job = self.get_object()
         try:
+            # Walk approved → in_progress → work_complete if needed.
+            if job.status == Job.STATUS_APPROVED:
+                job = JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
             job = JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
         except ValidationError as e:
             return Response(
@@ -174,32 +176,6 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
             )
         try:
             JobService.populate_from_template(job, template)
-        except ValidationError as e:
-            return Response(
-                {'detail': e.message if hasattr(e, 'message') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        job.refresh_from_db()
-        return Response(self.get_serializer(job).data)
-
-    @action(detail=True, methods=['post'], url_path='populate-from-estimate')
-    def populate_from_estimate(self, request, pk=None):
-        job = self.get_object()
-        estimate_pk = request.data.get('estimate_id')
-        if not estimate_pk:
-            return Response(
-                {'estimate_id': ['This field is required.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            estimate = Estimate.objects.get(pk=estimate_pk)
-        except Estimate.DoesNotExist:
-            return Response(
-                {'estimate_id': ['Estimate not found.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            JobService.populate_from_estimate(job, estimate)
         except ValidationError as e:
             return Response(
                 {'detail': e.message if hasattr(e, 'message') else str(e)},

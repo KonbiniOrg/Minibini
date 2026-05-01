@@ -36,35 +36,6 @@ class WorksheetAPITest(BaseTestCase):
             response = self.client.get(f'/api/est-worksheets/{ws.pk}/tasks/')
             self.assertEqual(response.status_code, 200)
 
-    def test_generate_estimate(self):
-        ws = EstWorksheet.objects.filter(status=EstWorksheet.STATUS_DRAFT).first()
-        if ws:
-            response = self.client.post(f'/api/est-worksheets/{ws.pk}/generate-estimate/')
-            self.assertIn(response.status_code, [200, 400])
-
-    def test_generate_estimate_finalizes_worksheet(self):
-        """Generating an estimate via API should finalize the worksheet."""
-        from apps.core.models import AccountingCategory
-        from apps.jobs.models import PlanTask
-        from decimal import Decimal
-
-        job = Job.objects.first()
-        ws = EstWorksheet.objects.create(job=job, status=EstWorksheet.STATUS_DRAFT, version=1)
-        category, _ = AccountingCategory.objects.get_or_create(
-            code='LBR', defaults={'name': 'Labor'}
-        )
-        PlanTask.objects.create(
-            est_worksheet=ws, name='Test Task', units='hours',
-            rate=Decimal('50.00'), est_qty=Decimal('2.0'),
-            accounting_category=category,
-        )
-
-        response = self.client.post(f'/api/est-worksheets/{ws.pk}/generate-estimate/')
-        self.assertEqual(response.status_code, 200)
-
-        ws.refresh_from_db()
-        self.assertEqual(ws.status, EstWorksheet.STATUS_FINAL)
-
     def test_revise_worksheet(self):
         ws = EstWorksheet.objects.filter(status=EstWorksheet.STATUS_FINAL).first()
         if ws:
