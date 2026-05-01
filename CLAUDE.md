@@ -133,7 +133,7 @@ value = config.value  # always a string
 Configuration.objects.update_or_create(key='your_key', defaults={'value': 'val'})
 ```
 
-**Current keys:** `job_number_sequence`, `job_counter`, `estimate_number_sequence`, `estimate_counter`, `invoice_number_sequence`, `invoice_counter`, `po_number_sequence`, `po_counter`, `email_retention_days`, `latest_email_date`, `email_display_limit`
+**Current keys:** `job_number_sequence`, `job_counter`, `estimate_number_sequence`, `estimate_counter`, `invoice_number_sequence`, `invoice_counter`, `po_number_sequence`, `po_counter`, `est_expire_days`, `email_retention_days`, `latest_email_date`, `email_display_limit`
 
 When adding new keys, also add to test setUp() methods and fixture files.
 

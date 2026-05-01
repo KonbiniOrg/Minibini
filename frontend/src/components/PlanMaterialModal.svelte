@@ -7,6 +7,7 @@
     mode = 'create', // 'create' | 'edit'
     material = null,
     planTaskId = null,
+    worksheetId = null,
     categories = [],
     onSaved = () => {},
     onClose = () => {},
@@ -75,9 +76,15 @@
     };
     try {
       if (mode === 'edit' && material) {
-        await api.patch(`/api/plan-tasks/${planTaskId}/materials/${material.plan_material_id}/`, payload);
-      } else {
+        if (planTaskId) {
+          await api.patch(`/api/plan-tasks/${planTaskId}/materials/${material.plan_material_id}/`, payload);
+        } else {
+          await api.patch(`/api/est-worksheets/${worksheetId}/plan-materials/${material.plan_material_id}/`, payload);
+        }
+      } else if (planTaskId) {
         await api.post(`/api/plan-tasks/${planTaskId}/materials/`, payload);
+      } else {
+        await api.post(`/api/est-worksheets/${worksheetId}/plan-materials/`, payload);
       }
       onSaved();
     } catch (e) {

@@ -1,191 +1,379 @@
 <script>
+  import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
-  import CatalogPicker from '../../components/CatalogPicker.svelte';
+  import EstimateLineItemModal from '../../components/EstimateLineItemModal.svelte';
 
   let { params = {} } = $props();
 
   let estimate = $state(null);
-  let lineItems = $state([]);
+  let job = $state(null);
   let categories = $state([]);
   let loading = $state(true);
   let error = $state('');
 
-  // Add-line-item form state
-  let addOpen = $state(false);
-  let newDescription = $state('');
-  let newQty = $state('1');
-  let newUnits = $state('each');
-  let newPrice = $state('0.00');
-  let newCategoryId = $state('');
-  let newSourceTemplateId = $state(null);
-  let newPliId = $state(null);
-  let busy = $state(false);
+  let modalOpen = $state(false);
+  let modalMode = $state('create');
+  let modalItem = $state(null);
 
   const canManageJobs = $derived(
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
-  const isDraft = $derived(estimate?.status === 'draft');
-  const canEdit = $derived(canManageJobs && isDraft);
 
-  async function load() {
+  // Send Estimate (draft → open) is handled by the mark-open action, not the dropdown.
+  const VALID_TRANSITIONS = {
+    draft: ['rejected'],
+    open: ['accepted', 'rejected', 'expired', 'superseded'],
+    accepted: [],
+    rejected: [],
+    expired: [],
+    superseded: [],
+  };
+  let validNextStatuses = $derived(VALID_TRANSITIONS[estimate?.status] || []);
+
+  let marking = $state(false);
+  let revising = $state(false);
+
+  async function handleRevise() {
+    if (!confirm('Revise this estimate? This will mark the current version superseded and open a new draft.')) return;
+    revising = true;
+    try {
+      const newEst = await api.post(`/api/estimates/${estimate.estimate_id}/revise/`);
+      window.location.hash = `/estimates/${newEst.estimate_id}`;
+    } catch (e) {
+      alert(e.message || 'Could not revise estimate.');
+      revising = false;
+    }
+  }
+
+  async function handleMarkAsSent() {
+    if (!confirm('Mark this estimate as sent? This will set the sent/expiration dates and finalize the worksheet.')) return;
+    marking = true;
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/mark-open/`);
+      await loadEstimate();
+    } catch (e) {
+      alert(e.message || 'Could not mark estimate as sent.');
+    } finally {
+      marking = false;
+    }
+  }
+
+  async function handleStatusChange(e) {
+    const newStatus = e.target.value;
+    if (newStatus === estimate.status) return;
+    try {
+      await api.patch(`/api/estimates/${estimate.estimate_id}/`, { status: newStatus });
+      await loadEstimate();
+    } catch (err) {
+      e.target.value = estimate.status;
+      alert(err.message || 'Status change failed');
+    }
+  }
+
+  let lineItems = $derived(
+    (estimate?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
+  );
+  let subtotal = $derived(
+    lineItems.reduce((s, li) => s + Number(li.qty) * Number(li.price), 0)
+  );
+  let categoryById = $derived(
+    Object.fromEntries(categories.map(c => [c.id, c]))
+  );
+  let isSuperseded = $derived(estimate?.status === 'superseded');
+  let isDraft = $derived(estimate?.status === 'draft');
+  let canEdit = $derived(canManageJobs && isDraft);
+
+  async function loadEstimate() {
     loading = true;
     error = '';
     try {
-      const [est, items, cats] = await Promise.all([
-        api.get(`/api/estimates/${params.id}/`),
-        api.get(`/api/estimates/${params.id}/line-items/`),
-        api.get('/api/accounting-categories/?page_size=100'),
-      ]);
-      estimate = est;
-      lineItems = items.results || items;
-      categories = cats.results || cats;
+      estimate = await api.get(`/api/estimates/${params.id}/`);
+      if (estimate?.job) {
+        try {
+          job = await api.get(`/api/jobs/${estimate.job}/`);
+        } catch (_) {
+          job = null;
+        }
+      }
     } catch (e) {
-      error = e.message || 'Failed to load estimate.';
+      error = e.message || 'Could not load estimate.';
     } finally {
       loading = false;
     }
   }
 
+  async function loadCategories() {
+    try {
+      const resp = await api.get('/api/accounting-categories/?page_size=100');
+      categories = resp.results || resp;
+    } catch (_) {
+      categories = [];
+    }
+  }
+
   $effect(() => {
-    if (params.id) load();
+    if (params.id) {
+      loadEstimate();
+      loadCategories();
+    }
   });
 
-  function resetForm() {
-    newDescription = '';
-    newQty = '1';
-    newUnits = 'each';
-    newPrice = '0.00';
-    newCategoryId = '';
-    newSourceTemplateId = null;
-    newPliId = null;
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleString();
   }
 
-  function onCatalogSelect({kind, item}) {
-    resetForm();
-    if (kind === 'task_template') {
-      newDescription = item.template_name;
-      newUnits = item.units || 'each';
-      newPrice = item.rate?.toString() || '0.00';
-      newCategoryId = item.accounting_category || '';
-      newSourceTemplateId = item.template_id;
-    } else if (kind === 'price_list_item') {
-      newDescription = item.description || item.code;
-      newUnits = item.units || 'each';
-      newPrice = item.selling_price?.toString() || '0.00';
-      newCategoryId = item.accounting_category || '';
-      newPliId = item.price_list_item_id;
-    }
-    // kind === 'manual': open blank form
-    addOpen = true;
+  function fmtMoney(n) {
+    return `$${Number(n).toFixed(2)}`;
   }
 
-  async function submitNewLineItem() {
-    busy = true;
+  function lineTotal(li) {
+    return Number(li.qty) * Number(li.price);
+  }
+
+  function categoryName(id) {
+    return categoryById[id]?.name || '—';
+  }
+
+  function categoryTaxable(id) {
+    const c = categoryById[id];
+    if (!c) return '—';
+    return c.taxable ? 'Yes' : 'No';
+  }
+
+  function sourceLabel(li) {
+    if (li.sources?.length) return `${li.sources.length} atom${li.sources.length === 1 ? '' : 's'}`;
+    if (li.price_list_item) return `PLI #${li.price_list_item}`;
+    return 'No source';
+  }
+
+  function openAddItem() {
+    modalItem = null;
+    modalMode = 'create';
+    modalOpen = true;
+  }
+
+  function openEditItem(li) {
+    modalItem = li;
+    modalMode = 'edit';
+    modalOpen = true;
+  }
+
+  function handleSaved() {
+    modalOpen = false;
+    modalItem = null;
+    loadEstimate();
+  }
+
+  async function handleDeleteItem(li) {
+    if (!confirm(`Delete line item "${li.description || 'No description'}"?`)) return;
     try {
-      const payload = {
-        description: newDescription,
-        qty: newQty,
-        units: newUnits,
-        price: newPrice,
-        accounting_category: newCategoryId || null,
-      };
-      if (newSourceTemplateId) payload.source_template = newSourceTemplateId;
-      if (newPliId) payload.price_list_item = newPliId;
-      await api.post(`/api/estimates/${params.id}/line-items/`, payload);
-      addOpen = false;
-      resetForm();
-      await load();
+      await api.delete(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/`);
+      await loadEstimate();
     } catch (e) {
-      alert(e.message || 'Failed to create line item.');
-    } finally {
-      busy = false;
+      alert(e.message || 'Could not delete line item.');
     }
   }
 
-  async function deleteLineItem(li) {
-    if (!confirm('Delete this line item?')) return;
+  async function handleReorder(itemIds) {
     try {
-      await api.delete(`/api/estimates/${params.id}/line-items/${li.line_item_id}/`);
-      await load();
+      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/reorder/`, {
+        item_ids: itemIds,
+      });
+      await loadEstimate();
     } catch (e) {
-      alert(e.message || 'Delete failed.');
+      alert(e.message || 'Could not reorder line items.');
     }
+  }
+
+  function moveUp(index) {
+    if (index === 0) return;
+    const ids = lineItems.map(li => li.line_item_id);
+    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+    handleReorder(ids);
+  }
+
+  function moveDown(index) {
+    if (index >= lineItems.length - 1) return;
+    const ids = lineItems.map(li => li.line_item_id);
+    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
+    handleReorder(ids);
   }
 </script>
 
 {#if loading}
-  <p>Loading…</p>
+  <p>Loading...</p>
 {:else if error}
-  <p style="color: red;">{error}</p>
+  <p class="error">{error}</p>
 {:else if estimate}
-  <h2>Estimate {estimate.estimate_number}</h2>
-  <p>Status: {estimate.status} · Version {estimate.version}</p>
+  <h2 class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</h2>
 
-  <h3>Line items</h3>
-  {#if lineItems.length === 0}
-    <p><em>No line items yet.</em></p>
-  {:else}
-    <table border="1">
+  <div class="status-line">
+    {#if canManageJobs && validNextStatuses.length > 0}
+      <span class="status-select-wrapper">
+        <select class="status-select status-{estimate.status}" onchange={handleStatusChange}>
+          <option value={estimate.status} selected>{estimate.status}</option>
+          {#each validNextStatuses as nextStatus}
+            <option value={nextStatus}>{nextStatus}</option>
+          {/each}
+        </select>
+      </span>
+    {:else}
+      <span class="status-badge status-{estimate.status}">{estimate.status}</span>
+    {/if}
+    {#if canManageJobs && estimate.status === 'draft'}
+      <button type="button" disabled title="Coming soon: render PDF and email to customer">Send Estimate</button>
+      <button type="button" onclick={handleMarkAsSent} disabled={marking}>
+        {marking ? 'Marking...' : 'Mark as Sent'}
+      </button>
+    {/if}
+    {#if canManageJobs && estimate.status === 'open'}
+      <button type="button" onclick={handleRevise} disabled={revising}>
+        {revising ? 'Revising...' : 'Revise Estimate'}
+      </button>
+    {/if}
+  </div>
+
+  <table border="1" class:superseded={isSuperseded}>
+    <tbody>
+      <tr><th>Field</th><th>Value</th></tr>
+      <tr><td>Estimate Number</td><td>{estimate.estimate_number}</td></tr>
+      <tr>
+        <td>Job</td>
+        <td>
+          {#if job}
+            <a href={`/jobs/${estimate.job}`} use:link>{job.job_number}{job.name ? `: ${job.name}` : ''}</a>
+          {:else}
+            <a href={`/jobs/${estimate.job}`} use:link>Job #{estimate.job}</a>
+          {/if}
+        </td>
+      </tr>
+      <tr><td>Version</td><td>{estimate.version}</td></tr>
+      <tr><td>Status</td><td>{estimate.status}</td></tr>
+      <tr><td>Created Date</td><td>{fmtDate(estimate.created_date)}</td></tr>
+      <tr><td>Sent Date</td><td>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'Not sent yet'}</td></tr>
+      <tr><td>Expiration Date</td><td>{estimate.expiration_date ? fmtDate(estimate.expiration_date) : 'Not set'}</td></tr>
+      <tr><td>Closed Date</td><td>{estimate.closed_date ? fmtDate(estimate.closed_date) : 'Not closed yet'}</td></tr>
+    </tbody>
+  </table>
+
+  {#if estimate.parent}
+    <p><strong>Parent Estimate:</strong> <a href={`/estimates/${estimate.parent}`} use:link>#{estimate.parent}</a></p>
+  {/if}
+
+  {#if isSuperseded}
+    <p><em>This estimate has been superseded and cannot be modified.</em></p>
+  {/if}
+
+  <h3>Line Items</h3>
+  {#if canEdit}
+    <p>
+      <button type="button" onclick={openAddItem}>Add Line Item</button>
+      <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Open atoms wizard</a>
+    </p>
+  {/if}
+  {#if lineItems.length > 0}
+    <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 10px;">
       <thead>
         <tr>
-          <th>#</th><th>Description</th><th>Qty</th><th>Units</th>
-          <th>Price</th><th>Category</th><th></th>
+          <th>Line #</th>
+          <th>Type</th>
+          <th>Taxable</th>
+          <th>Description</th>
+          <th>Source</th>
+          <th>Quantity</th>
+          <th>Unit</th>
+          <th>Price</th>
+          <th>Total</th>
+          {#if canEdit}<th>Actions</th>{/if}
         </tr>
       </thead>
       <tbody>
-        {#each lineItems as li (li.line_item_id)}
+        {#each lineItems as li, i}
           <tr>
             <td>{li.line_number}</td>
-            <td>{li.description}</td>
+            <td>{categoryName(li.accounting_category)}</td>
+            <td>{categoryTaxable(li.accounting_category)}</td>
+            <td>{li.description || 'No description'}</td>
+            <td>{sourceLabel(li)}</td>
             <td>{li.qty}</td>
-            <td>{li.units}</td>
-            <td>${li.price}</td>
-            <td>{li.accounting_category || '—'}</td>
-            <td>
-              {#if canEdit}
-                <button onclick={() => deleteLineItem(li)}>Delete</button>
-              {/if}
-            </td>
+            <td>{li.units || '—'}</td>
+            <td>{fmtMoney(li.price)}</td>
+            <td>{fmtMoney(lineTotal(li))}</td>
+            {#if canEdit}
+              <td>
+                <button type="button" onclick={() => openEditItem(li)}>Edit</button>
+                <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
+                <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
+                <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
+              </td>
+            {/if}
           </tr>
         {/each}
       </tbody>
+      <tfoot>
+        <tr style="background-color: #f5f5f5;">
+          <td colspan="8" style="text-align: right;"><strong>Subtotal:</strong></td>
+          <td>{fmtMoney(subtotal)}</td>
+          {#if canEdit}<td></td>{/if}
+        </tr>
+        <tr style="background-color: #e8e8e8;">
+          <td colspan="8" style="text-align: right;"><strong>Total:</strong></td>
+          <td><strong>{fmtMoney(subtotal)}</strong></td>
+          {#if canEdit}<td></td>{/if}
+        </tr>
+      </tfoot>
     </table>
+  {:else}
+    <p>No line items found for this estimate.</p>
   {/if}
 
-  {#if canEdit}
-    <h3>Add line item</h3>
-    <CatalogPicker onSelect={onCatalogSelect} />
+  <p>
+    <a href={`/jobs/${estimate.job}`} use:link>View Job Details</a>
+  </p>
 
-    {#if addOpen}
-      <fieldset>
-        <legend><strong>New line item</strong></legend>
-        <p><label for="new-desc"><strong>Description</strong></label><br>
-          <input id="new-desc" type="text" bind:value={newDescription}></p>
-        <p><label for="new-qty"><strong>Qty</strong></label><br>
-          <input id="new-qty" type="number" step="0.01" bind:value={newQty}></p>
-        <p><label for="new-units"><strong>Units</strong></label><br>
-          <input id="new-units" type="text" bind:value={newUnits}></p>
-        <p><label for="new-price"><strong>Price</strong></label><br>
-          <input id="new-price" type="number" step="0.01" bind:value={newPrice}></p>
-        <p><label for="new-cat"><strong>Accounting category</strong></label><br>
-          <select id="new-cat" bind:value={newCategoryId}>
-            <option value="">— None —</option>
-            {#each categories as c}
-              <option value={c.accounting_category_id}>{c.name}</option>
-            {/each}
-          </select></p>
-        <p>
-          <button onclick={submitNewLineItem} disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-          <button onclick={() => { addOpen = false; resetForm(); }}>Cancel</button>
-        </p>
-      </fieldset>
-    {/if}
-
-    <p>
-      <a href={`#/estimates/${estimate.estimate_id}/wizard`}>Open wizard to group atoms</a>
-    </p>
-  {/if}
+  <EstimateLineItemModal
+    open={modalOpen}
+    mode={modalMode}
+    estimateId={estimate.estimate_id}
+    item={modalItem}
+    {categories}
+    onSaved={handleSaved}
+    onClose={() => { modalOpen = false; }}
+  />
 {/if}
+
+<style>
+  .error { color: #a8071a; }
+  .superseded { opacity: 0.6; }
+  table { border-collapse: collapse; }
+  th, td { padding: 6px 10px; }
+
+  .status-line { margin: 8px 0 16px; display: flex; align-items: center; gap: 12px; }
+  .status-badge {
+    padding: 4px 12px; border-radius: 12px; font-size: 13px;
+    font-weight: 600; text-transform: capitalize;
+  }
+  .status-select-wrapper { position: relative; display: inline-block; }
+  .status-select {
+    appearance: none; -webkit-appearance: none;
+    padding: 4px 28px 4px 12px; border-radius: 12px;
+    font-size: 13px; font-weight: 600; text-transform: capitalize;
+    border: 2px solid transparent; cursor: pointer; outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .status-select:hover { border-color: rgba(0,0,0,0.15); }
+  .status-select:focus { border-color: rgba(0,0,0,0.3); }
+  .status-select-wrapper::after {
+    content: '\25BE'; position: absolute; right: 10px; top: 50%;
+    transform: translateY(-50%); font-size: 11px; pointer-events: none; opacity: 0.6;
+  }
+  .status-draft { background: #f3f4f6; color: #374151; }
+  .status-open { background: #dbeafe; color: #1e40af; }
+  .status-accepted { background: #dcfce7; color: #166534; }
+  .status-rejected { background: #fee2e2; color: #991b1b; }
+  .status-expired { background: #fef3c7; color: #92400e; }
+  .status-superseded { background: #fed7aa; color: #9a3412; }
+</style>

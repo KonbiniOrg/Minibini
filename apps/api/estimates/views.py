@@ -1,12 +1,22 @@
-from rest_framework import viewsets
+from decimal import Decimal
+
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.estimates.models import Estimate
-from apps.estimates.services import EstimateService
-from apps.api.mixins import StatusTransitionMixin, LineItemMixin
+
+from apps.api.mixins import LineItemMixin, StatusTransitionMixin
 from apps.api.permissions import CanManageJobs
-from .serializers import EstimateSerializer, EstimateLineItemSerializer
+from apps.core.services import NotFoundError, ServiceError
+from apps.estimates.models import Estimate, EstimateLineItem
+from apps.estimates.services import (
+    EstimateClaimConflict,
+    EstimateService,
+    EstimateWizardService,
+)
+
+from .serializers import EstimateLineItemSerializer, EstimateSerializer
 
 
 class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
@@ -31,7 +41,6 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
     # Status actions
     status_actions = {
         'mark-open': {'service': EstimateService.mark_open},
-        'revise': {'service': EstimateService.revise_estimate},
     }
 
     def get_queryset(self):
@@ -51,10 +60,21 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
     def perform_update(self, serializer):
         serializer.save()
 
+    @action(detail=True, methods=['post'], url_path='revise')
+    def revise(self, request, pk=None):
+        try:
+            new_estimate = EstimateService.revise_estimate(pk)
+        except NotFoundError:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        except (ServiceError, DjangoValidationError) as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(new_estimate)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['get'], url_path='source-pool')
     def source_pool(self, request, pk=None):
         """Return the source pool for the wizard, drawn from this estimate's worksheet."""
-        from apps.estimates.services import EstimateWizardService
         estimate = self.get_object()
         worksheet = estimate.worksheets.first()
         if not worksheet:
@@ -65,9 +85,6 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
     @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
     def line_items_from_atoms(self, request, pk=None):
         """Create a new estimate line item from a list of atoms."""
-        from django.core.exceptions import ValidationError
-        from apps.estimates.services import EstimateWizardService, EstimateClaimConflict
-
         estimate = self.get_object()
         atoms = request.data.get('atoms', [])
         try:
@@ -75,12 +92,12 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
         except EstimateClaimConflict as e:
             return Response(
                 {'error': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
-                status=409,
+                status=status.HTTP_409_CONFLICT,
             )
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=400)
+        except DjangoValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         serializer = EstimateLineItemSerializer(line_item)
-        return Response(serializer.data, status=201)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(
         detail=True, methods=['post'],
@@ -88,15 +105,11 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
     )
     def add_atoms(self, request, pk=None, line_item_pk=None):
         """Append atoms to an existing line item."""
-        from django.core.exceptions import ValidationError
-        from apps.estimates.models import EstimateLineItem
-        from apps.estimates.services import EstimateWizardService, EstimateClaimConflict
-
         estimate = self.get_object()
         try:
             line_item = EstimateLineItem.objects.get(pk=line_item_pk, estimate=estimate)
         except EstimateLineItem.DoesNotExist:
-            return Response({'error': 'Line item not found'}, status=404)
+            return Response({'error': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
 
         atoms = request.data.get('atoms', [])
         try:
@@ -104,14 +117,14 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
         except EstimateClaimConflict as e:
             return Response(
                 {'error': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
-                status=409,
+                status=status.HTTP_409_CONFLICT,
             )
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=400)
+        except DjangoValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         line_item.refresh_from_db()
         serializer = EstimateLineItemSerializer(line_item)
-        return Response(serializer.data, status=200)
+        return Response(serializer.data)
 
     @action(
         detail=True, methods=['post'],
@@ -119,21 +132,17 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
     )
     def remove_atoms(self, request, pk=None, line_item_pk=None):
         """Remove atoms from an existing line item."""
-        from django.core.exceptions import ValidationError
-        from apps.estimates.models import EstimateLineItem
-        from apps.estimates.services import EstimateWizardService
-
         estimate = self.get_object()
         try:
             line_item = EstimateLineItem.objects.get(pk=line_item_pk, estimate=estimate)
         except EstimateLineItem.DoesNotExist:
-            return Response({'error': 'Line item not found'}, status=404)
+            return Response({'error': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
 
         source_ids = request.data.get('source_ids', [])
         try:
             result = EstimateWizardService.remove_atoms_from_line_item(line_item, source_ids)
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=400)
+        except DjangoValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         if result['line_item_deleted']:
             return Response({'line_item_deleted': True, 'line_item': None})
@@ -147,8 +156,6 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
 
 def _serialize_pool(pool):
     """Convert Decimals in the pool to strings for JSON serialization."""
-    from decimal import Decimal
-
     def _s(value):
         if isinstance(value, Decimal):
             return str(value)

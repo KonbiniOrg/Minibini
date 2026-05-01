@@ -61,10 +61,19 @@
 <style>
   .column-header { padding: 14px 16px 10px; display: flex; align-items: center; justify-content: center; gap: 10px; border-bottom: 3px solid #60a5fa; flex-shrink: 0; }
   .count { font-size: 12px; color: #999; }
-  .column-body { flex: 1; overflow-y: auto; padding: 12px; background: #dde6f7; columns: 3; column-gap: 10px; }
-  .card-link { text-decoration: none; color: inherit; display: block; break-inside: avoid; margin-bottom: 10px; }
+  .column-body {
+    flex: 1; overflow-y: auto; padding: 12px; background: #dde6f7;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+    align-content: start;
+  }
+  .card-link { text-decoration: none; color: inherit; display: block; }
   .card-link--approved { filter: drop-shadow(0 0 3px rgba(202, 138, 4, 0.25)); }
-  .section-divider { break-inside: avoid; column-span: all; display: flex; align-items: center; gap: 8px; margin: 8px 0 6px; }
+  .section-divider {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 8px; margin: 8px 0 6px;
+  }
   .section-divider::before,
   .section-divider::after { content: ''; flex: 1; height: 1px; background: #ca8a04; opacity: 0.4; }
   .section-label { font-size: 10px; font-weight: 700; color: #854d0e; letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap; }
