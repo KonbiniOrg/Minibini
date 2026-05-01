@@ -10,9 +10,19 @@ class PurchaseOrderSummarySerializer(serializers.ModelSerializer):
 
 
 class BillSummarySerializer(serializers.ModelSerializer):
+    contact_name = serializers.SerializerMethodField()
+    po_number = serializers.SerializerMethodField()
+
+    def get_contact_name(self, obj):
+        return obj.contact.name if obj.contact else None
+
+    def get_po_number(self, obj):
+        return obj.purchase_order.po_number if obj.purchase_order else None
+
     class Meta:
         model = Bill
-        fields = ['bill_id', 'bill_number', 'status', 'vendor_invoice_number', 'created_date']
+        fields = ['bill_id', 'bill_number', 'status', 'vendor_invoice_number', 'created_date',
+                  'contact_name', 'po_number']
 
 
 class POLineItemSerializer(serializers.ModelSerializer):

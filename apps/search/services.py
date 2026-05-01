@@ -459,18 +459,26 @@ class SearchService:
         # BILLS (with line items grouped by parent)
         bill_groups = cls.search_bills_with_line_items(query)
         if bill_groups:
-            # Extract parent bills for items
+            parents_with_line_items = []
+            for group in bill_groups:
+                parent = group['parent']
+                parent.matching_line_items = group['line_items']
+                parents_with_line_items.append(parent)
             categories['bills'] = {
-                'items': list({group['parent'] for group in bill_groups}),
+                'items': parents_with_line_items,
                 'subcategories': {}
             }
 
         # PURCHASE ORDERS (with line items grouped by parent)
         po_groups = cls.search_purchase_orders_with_line_items(query)
         if po_groups:
-            # Extract parent POs for items
+            parents_with_line_items = []
+            for group in po_groups:
+                parent = group['parent']
+                parent.matching_line_items = group['line_items']
+                parents_with_line_items.append(parent)
             categories['purchase_orders'] = {
-                'items': list({group['parent'] for group in po_groups}),
+                'items': parents_with_line_items,
                 'subcategories': {}
             }
 
@@ -592,6 +600,96 @@ class SearchService:
                         filtered_categories[category_name] = category_data
 
         return filtered_categories
+
+    @classmethod
+    def apply_price_filter(cls, categories, price_min, price_max):
+        """Filter results by price range.
+        - price_list_items: filters by selling_price.
+        - invoices/estimates/bills/purchase_orders: keeps the entity if any matching line item
+          is in range; if no matching line items exist (entity matched on header fields), it passes through.
+        - All other categories pass through unchanged.
+        """
+        if price_min is None and price_max is None:
+            return categories
+
+        filtered = {}
+        for key, data in categories.items():
+            if key == 'price_list_items':
+                kept = [
+                    item for item in data.get('items', [])
+                    if cls._price_in_range(item.selling_price, price_min, price_max)
+                ]
+                if kept:
+                    filtered[key] = {'items': kept, 'subcategories': data.get('subcategories', {})}
+
+            elif key in ('invoices', 'estimates'):
+                kept = []
+                for item in data.get('grouped_items', []):
+                    line_items = getattr(item, 'matching_line_items', [])
+                    if not line_items or any(
+                        cls._price_in_range(li.price, price_min, price_max) for li in line_items
+                    ):
+                        kept.append(item)
+                if kept:
+                    filtered[key] = {'grouped_items': kept}
+
+            elif key in ('bills', 'purchase_orders'):
+                kept = []
+                for item in data.get('items', []):
+                    line_items = getattr(item, 'matching_line_items', [])
+                    if not line_items or any(
+                        cls._price_in_range(li.price, price_min, price_max) for li in line_items
+                    ):
+                        kept.append(item)
+                if kept:
+                    filtered[key] = {'items': kept, 'subcategories': data.get('subcategories', {})}
+
+            else:
+                filtered[key] = data
+
+        return filtered
+
+    @staticmethod
+    def _price_in_range(price, price_min, price_max):
+        if price is None:
+            return True
+        if price_min is not None and price < price_min:
+            return False
+        if price_max is not None and price > price_max:
+            return False
+        return True
+
+    @classmethod
+    def apply_job_status_filter(cls, categories, job_statuses):
+        """Filter job results to only those whose status is in job_statuses. Non-job categories are unchanged."""
+        if not job_statuses or 'jobs' not in categories:
+            return categories
+
+        filtered = {k: v for k, v in categories.items() if k != 'jobs'}
+        groups = categories['jobs'].get('grouped_items', [])
+        kept = [g for g in groups if g['parent'].status in job_statuses]
+        if kept:
+            filtered['jobs'] = {'grouped_items': kept}
+        return filtered
+
+    @classmethod
+    def apply_start_date_filter(cls, categories, start_date_from, start_date_to):
+        """Filter job results by start_date range. Jobs with no start_date are excluded when a range is active. Non-job categories are unchanged."""
+        if (not start_date_from and not start_date_to) or 'jobs' not in categories:
+            return categories
+
+        filtered = {k: v for k, v in categories.items() if k != 'jobs'}
+        groups = categories['jobs'].get('grouped_items', [])
+        kept = []
+        for g in groups:
+            start_date = getattr(g['parent'], 'start_date', None)
+            if start_date is None:
+                continue
+            if cls.apply_date_filter(start_date, start_date_from, start_date_to):
+                kept.append(g)
+        if kept:
+            filtered['jobs'] = {'grouped_items': kept}
+        return filtered
 
     @staticmethod
     def calculate_total_count(categories):
@@ -781,10 +879,32 @@ class SearchService:
                 Q(job__customer_po_number__icontains=within_query)
             ).select_related('job')
 
-            if invoices.exists():
+            invoice_line_items = InvoiceLineItem.objects.annotate(
+                price_text=Cast('price', CharField()),
+                qty_text=Cast('qty', CharField()),
+                total_amount_text=Cast(F('qty') * F('price'), CharField())
+            ).filter(invoice_id__in=result_ids['Invoice']).filter(
+                Q(description__icontains=within_query) |
+                Q(price_text__icontains=within_query) |
+                Q(qty_text__icontains=within_query) |
+                Q(units__icontains=within_query) |
+                Q(total_amount_text__icontains=within_query)
+            ).select_related('invoice', 'invoice__job')
+
+            invoice_dict = {inv.pk: inv for inv in invoices}
+            for inv in invoice_dict.values():
+                inv.matching_line_items = []
+            for li in invoice_line_items:
+                if li.invoice_id not in invoice_dict:
+                    invoice_dict[li.invoice_id] = li.invoice
+                    li.invoice.matching_line_items = []
+                invoice_dict[li.invoice_id].matching_line_items.append(li)
+
+            if invoice_dict:
+                result_invoices = list(invoice_dict.values())
                 categories['invoices'] = {
-                    'grouped_items': list(invoices),
-                    'items': list(invoices)
+                    'grouped_items': result_invoices,
+                    'items': result_invoices,
                 }
 
         # ESTIMATES
@@ -796,10 +916,32 @@ class SearchService:
                 Q(job__job_number__icontains=within_query)
             ).select_related('job')
 
-            if estimates.exists():
+            estimate_line_items = EstimateLineItem.objects.annotate(
+                price_text=Cast('price', CharField()),
+                qty_text=Cast('qty', CharField()),
+                total_amount_text=Cast(F('qty') * F('price'), CharField())
+            ).filter(estimate_id__in=result_ids['Estimate']).filter(
+                Q(description__icontains=within_query) |
+                Q(price_text__icontains=within_query) |
+                Q(qty_text__icontains=within_query) |
+                Q(units__icontains=within_query) |
+                Q(total_amount_text__icontains=within_query)
+            ).select_related('estimate', 'estimate__job')
+
+            estimate_dict = {est.pk: est for est in estimates}
+            for est in estimate_dict.values():
+                est.matching_line_items = []
+            for li in estimate_line_items:
+                if li.estimate_id not in estimate_dict:
+                    estimate_dict[li.estimate_id] = li.estimate
+                    li.estimate.matching_line_items = []
+                estimate_dict[li.estimate_id].matching_line_items.append(li)
+
+            if estimate_dict:
+                result_estimates = list(estimate_dict.values())
                 categories['estimates'] = {
-                    'grouped_items': list(estimates),
-                    'items': list(estimates)
+                    'grouped_items': result_estimates,
+                    'items': result_estimates,
                 }
 
         # EST WORKSHEETS
@@ -826,9 +968,31 @@ class SearchService:
                 Q(contact__last_name__icontains=within_query)
             ).select_related('purchase_order', 'contact')
 
-            if bills.exists():
+            bill_line_items = BillLineItem.objects.annotate(
+                price_text=Cast('price', CharField()),
+                qty_text=Cast('qty', CharField()),
+                total_amount_text=Cast(F('qty') * F('price'), CharField())
+            ).filter(bill_id__in=result_ids['Bill']).filter(
+                Q(description__icontains=within_query) |
+                Q(price_text__icontains=within_query) |
+                Q(qty_text__icontains=within_query) |
+                Q(units__icontains=within_query) |
+                Q(total_amount_text__icontains=within_query)
+            ).select_related('bill', 'bill__purchase_order', 'bill__contact')
+
+            bill_dict = {b.pk: b for b in bills}
+            for b in bill_dict.values():
+                b.matching_line_items = []
+            for li in bill_line_items:
+                if li.bill_id not in bill_dict:
+                    bill_dict[li.bill_id] = li.bill
+                    li.bill.matching_line_items = []
+                bill_dict[li.bill_id].matching_line_items.append(li)
+
+            if bill_dict:
+                result_bills = list(bill_dict.values())
                 categories['bills'] = {
-                    'items': list(bills),
+                    'items': result_bills,
                     'subcategories': {}
                 }
 
@@ -848,9 +1012,31 @@ class SearchService:
                 Q(purchaseorderlineitem__in=material_line_ids)
             ).distinct()
 
-            if purchase_orders.exists():
+            po_line_items = PurchaseOrderLineItem.objects.annotate(
+                price_text=Cast('price', CharField()),
+                qty_text=Cast('qty', CharField()),
+                total_amount_text=Cast(F('qty') * F('price'), CharField())
+            ).filter(purchase_order_id__in=result_ids['PurchaseOrder']).filter(
+                Q(description__icontains=within_query) |
+                Q(price_text__icontains=within_query) |
+                Q(qty_text__icontains=within_query) |
+                Q(units__icontains=within_query) |
+                Q(total_amount_text__icontains=within_query)
+            ).select_related('purchase_order')
+
+            po_dict = {po.pk: po for po in purchase_orders}
+            for po in po_dict.values():
+                po.matching_line_items = []
+            for li in po_line_items:
+                if li.purchase_order_id not in po_dict:
+                    po_dict[li.purchase_order_id] = li.purchase_order
+                    li.purchase_order.matching_line_items = []
+                po_dict[li.purchase_order_id].matching_line_items.append(li)
+
+            if po_dict:
+                result_pos = list(po_dict.values())
                 categories['purchase_orders'] = {
-                    'items': list(purchase_orders),
+                    'items': result_pos,
                     'subcategories': {}
                 }
 
