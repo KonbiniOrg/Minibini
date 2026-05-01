@@ -156,6 +156,13 @@ class PlanTask(TaskBase):
     est_worksheet = models.ForeignKey(
         'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_tasks'
     )
+    rate_scheme = models.ForeignKey(
+        'jobs.RateScheme', on_delete=models.PROTECT, null=True, blank=True,
+    )
+    active_modifiers = models.JSONField(default=list, blank=True)
+    estimated_billable_qty = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+    )
 
     class Meta:
         db_table = 'plan_tasks'
@@ -171,6 +178,19 @@ class PlanTask(TaskBase):
                 self.sort_order = max_order + 1
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def compute_amount(self, active_modifiers=None):
+        from decimal import Decimal
+        if not self.rate_scheme_id or self.estimated_billable_qty is None:
+            return Decimal('0.00')
+        return self.rate_scheme.compute_charge(
+            self.estimated_billable_qty, self.active_modifiers,
+        )
+
+    def effective_rate(self):
+        if not self.rate_scheme_id:
+            return None
+        return self.rate_scheme.effective_rate(self.active_modifiers)
 
 
 class Task(TaskBase):

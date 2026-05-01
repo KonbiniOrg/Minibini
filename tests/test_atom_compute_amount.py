@@ -5,7 +5,8 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import Material, PlanMaterial
-from apps.jobs.models import Job
+from apps.jobs.models import Job, RateScheme
+from tests.base import FixtureTestCase
 
 
 class MaterialComputeAmountTest(TestCase):
@@ -119,3 +120,27 @@ class PlanChargeComputeAmountTest(TestCase):
         )
         # 2 hours × $100 = $200
         self.assertEqual(pt.charge.compute_amount(), Decimal('200.00'))
+
+
+class PlanTaskComputeAmountTests(FixtureTestCase):
+    def setUp(self):
+        super().setUp()
+        job = Job.objects.first()
+        self.ws = EstWorksheet.objects.create(job=job)
+
+    def test_compute_amount_with_scheme(self):
+        scheme = RateScheme.objects.create(
+            name='Test Hourly', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('60.00'), unit_label='hour',
+        )
+        pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='Test',
+            rate_scheme=scheme,
+            active_modifiers=[],
+            estimated_billable_qty=Decimal('2.5'),
+        )
+        self.assertEqual(pt.compute_amount(), Decimal('150.00'))
+
+    def test_compute_amount_without_scheme_returns_zero(self):
+        pt = PlanTask.objects.create(est_worksheet=self.ws, name='Bare')
+        self.assertEqual(pt.compute_amount(), Decimal('0.00'))
