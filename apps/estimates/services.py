@@ -387,7 +387,7 @@ class WorksheetService:
             units=tt.units,
             rate=tt.rate,
             # New atom billing fields — fall back to template defaults when not provided.
-            rate_scheme_id=rate_scheme_id if rate_scheme_id else tt.rate_scheme_id,
+            rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
             active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
             estimated_billable_qty=estimated_billable_qty if estimated_billable_qty is not None else tt.default_billable_qty,
         )

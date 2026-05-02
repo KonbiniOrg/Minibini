@@ -353,3 +353,32 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn('detail', response.data)
+
+    def test_add_from_template_inherits_template_defaults_when_request_omits_billing(self):
+        """When the caller doesn't send billing fields, template defaults are inherited."""
+        from apps.jobs.models import RateScheme
+
+        scheme = RateScheme.objects.create(
+            name='Default Inheritance Test', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('45.00'), unit_label='hour',
+        )
+        template_with_defaults = TaskTemplate.objects.create(
+            template_name='Template With Defaults',
+            description='Has billing defaults',
+            units='hr',
+            rate=Decimal('45.00'),
+            accounting_category=self.category,
+            rate_scheme=scheme,
+            default_billable_qty=Decimal('3.0'),
+            default_active_modifiers=['rush'],
+        )
+
+        response = self.client.post(
+            f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
+            {'task_template_id': template_with_defaults.pk},  # NO billing fields
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['rate_scheme'], scheme.rate_scheme_id)
+        self.assertEqual(response.data['estimated_billable_qty'], '3.00')
+        self.assertEqual(response.data['active_modifiers'], ['rush'])

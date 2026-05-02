@@ -70,9 +70,6 @@
   );
 
   const selectedScheme = $derived.by(() => {
-    if (createMode === 'template' && selectedTemplate?.rate_scheme) {
-      return schemes.find(s => s.rate_scheme_id === selectedTemplate.rate_scheme) || null;
-    }
     if (rateSchemeId) {
       return schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null;
     }

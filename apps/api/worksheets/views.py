@@ -100,8 +100,12 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
                 task_template_id,
                 Decimal(str(est_qty)),
                 rate_scheme_id=int(rate_scheme) if rate_scheme else None,
-                active_modifiers=active_modifiers if active_modifiers is not None else None,
-                estimated_billable_qty=Decimal(str(estimated_billable_qty)) if estimated_billable_qty else None,
+                active_modifiers=active_modifiers,
+                estimated_billable_qty=(
+                    Decimal(str(estimated_billable_qty))
+                    if estimated_billable_qty is not None and estimated_billable_qty != ''
+                    else None
+                ),
             )
         except (ServiceError, NotFoundError) as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
