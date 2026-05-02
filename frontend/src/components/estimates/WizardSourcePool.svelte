@@ -29,7 +29,7 @@
               checked={isSelected(atom.type, atom.id)}
               onchange={() => toggleAtom(atom.type, atom.id)}
             >
-            <small>[{atom.type === 'plan_charge' ? 'task' : 'material'}]</small>
+            <small>[{atom.type === 'plan_task' ? 'task' : 'material'}]</small>
             {atom.description}
             &mdash; ${atom.amount}
           </label>
