@@ -112,6 +112,19 @@ class TaskChargeModelTest(BaseTestCase):
         task = Task.objects.get(pk=self.task.pk)
         self.assertEqual(task.charge.actuals, {'qty': 42})
 
+    def test_get_actual_qty_returns_decimal_when_actuals_qty_is_string(self):
+        """Carry-over stores qty as str(Decimal); compute() must still work."""
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=[],
+            actuals={'qty': '2.5'},  # string, not number — what carry-over writes
+        )
+        # The bug: compute() raised TypeError before the fix because
+        # str * Decimal is invalid.
+        self.assertEqual(charge.compute(), Decimal('10.00'))  # 2.5 × $4.00
+
 
 class TaskChargeElapsedTimeTest(BaseTestCase):
     """Test compute() for elapsed_time algorithm via real Bleps."""

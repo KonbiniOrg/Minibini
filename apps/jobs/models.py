@@ -366,7 +366,12 @@ class RateScheme(models.Model):
             )
             return Decimal(total_seconds) / 3600
         elif self.algorithm == self.ENTERED_QTY:
-            return task.charge.actuals.get('qty', 0)
+            raw = task.charge.actuals.get('qty', 0)
+            # actuals is JSON; qty may have been stored as int (UI), str (carry-over
+            # preserves Decimal precision through JSON), or Decimal-as-str by other
+            # writers. Normalize to Decimal at the read boundary so callers can do
+            # arithmetic.
+            return Decimal(str(raw))
         else:  # FLAT_FEE
             return Decimal('1')
 
