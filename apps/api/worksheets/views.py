@@ -33,7 +33,14 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
     }
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        from django.db.models import Prefetch
+        from apps.jobs.models import PlanTask
+        qs = super().get_queryset().prefetch_related(
+            Prefetch(
+                'plan_tasks',
+                queryset=PlanTask.objects.select_related('rate_scheme', 'accounting_category').order_by('sort_order'),
+            )
+        )
         job = self.request.query_params.get('job')
         if job:
             qs = qs.filter(job_id=job)

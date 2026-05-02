@@ -218,7 +218,9 @@ class PlanTaskMixin:
         worksheet = self.get_object()
         if request.method == 'GET':
             from apps.jobs.models import PlanTask
-            tasks = PlanTask.objects.filter(est_worksheet=worksheet).order_by('sort_order')
+            tasks = PlanTask.objects.filter(
+                est_worksheet=worksheet,
+            ).select_related('rate_scheme', 'accounting_category').order_by('sort_order')
             serializer = self.plan_task_serializer_class(tasks, many=True)
             return Response(serializer.data)
 

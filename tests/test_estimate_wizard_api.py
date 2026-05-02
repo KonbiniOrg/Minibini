@@ -184,3 +184,4 @@ class SendAllAtomsAPITest(TestCase):
         )
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.json()['estimated_billable_qty'], '4.50')
+        self.assertEqual(resp.json()['amount'], '135.00')

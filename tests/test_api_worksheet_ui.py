@@ -270,11 +270,14 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['name'], 'Standard Sanding')
-        # New serializer exposes billing atom fields; rate_scheme is null when
-        # created from a legacy TaskTemplate that has no RateScheme attached.
-        self.assertIn('rate_scheme', response.data)
-        self.assertIn('estimated_billable_qty', response.data)
-        self.assertIn('amount', response.data)
+        # Note: add_task_from_template currently does not propagate rate_scheme or
+        # estimated_billable_qty from the TaskTemplate. Task 9 will close this gap
+        # (the modal sends the user's chosen billing values to add-from-template, and
+        # the service must accept them). Until Task 9 lands, template-created PlanTasks
+        # have null billing.
+        self.assertIsNone(response.data['rate_scheme'])
+        self.assertIsNone(response.data['estimated_billable_qty'])
+        self.assertEqual(response.data['amount'], '0.00')
         # Verify it was created in the DB
         self.assertTrue(
             PlanTask.objects.filter(
