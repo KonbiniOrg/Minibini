@@ -489,16 +489,16 @@ class EstimateWizardService:
 
     @staticmethod
     def _resolve_atom(atom_ref):
-        """Convert {'type': 'plan_charge'|'plan_material', 'id': N} to a model instance."""
-        from apps.jobs.models import PlanCharge
+        """Convert {'type': 'plan_task'|'plan_material', 'id': N} to a model instance."""
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
         atom_type = atom_ref.get('type')
         atom_id = atom_ref.get('id')
-        if atom_type == 'plan_charge':
+        if atom_type == 'plan_task':
             try:
-                return PlanCharge.objects.get(pk=atom_id)
-            except PlanCharge.DoesNotExist:
-                raise ValidationError(f'PlanCharge {atom_id} not found')
+                return PlanTask.objects.get(pk=atom_id)
+            except PlanTask.DoesNotExist:
+                raise ValidationError(f'PlanTask {atom_id} not found')
         if atom_type == 'plan_material':
             try:
                 return PlanMaterial.objects.get(pk=atom_id)
@@ -508,41 +508,43 @@ class EstimateWizardService:
 
     @staticmethod
     def _atom_source_type(atom_instance):
-        from apps.jobs.models import PlanCharge
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
         from apps.estimates.models import EstimateLineItemSource
-        if isinstance(atom_instance, PlanCharge):
-            return EstimateLineItemSource.SOURCE_PLAN_CHARGE
+        if isinstance(atom_instance, PlanTask):
+            return EstimateLineItemSource.SOURCE_PLAN_TASK
         if isinstance(atom_instance, PlanMaterial):
             return EstimateLineItemSource.SOURCE_PLAN_MATERIAL
         raise ValueError(f'Unknown atom instance type: {type(atom_instance)}')
 
     @staticmethod
     def _atom_category(atom_instance):
-        from apps.jobs.models import PlanCharge
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
-        if isinstance(atom_instance, PlanCharge):
-            return atom_instance.plan_task.accounting_category
+        if isinstance(atom_instance, PlanTask):
+            return atom_instance.accounting_category
         if isinstance(atom_instance, PlanMaterial):
             return atom_instance.accounting_category
         return None
 
     @staticmethod
     def _atom_description(atom_instance):
-        from apps.jobs.models import PlanCharge
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
-        if isinstance(atom_instance, PlanCharge):
-            return atom_instance.plan_task.name
+        if isinstance(atom_instance, PlanTask):
+            return atom_instance.name
         if isinstance(atom_instance, PlanMaterial):
             return atom_instance.description
         return ''
 
     @staticmethod
     def _atom_units(atom_instance):
-        from apps.jobs.models import PlanCharge
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
-        if isinstance(atom_instance, PlanCharge):
-            return atom_instance.plan_task.units
+        if isinstance(atom_instance, PlanTask):
+            if atom_instance.rate_scheme_id:
+                return atom_instance.rate_scheme.unit_label
+            return 'each'
         if isinstance(atom_instance, PlanMaterial):
             return 'each'
         return 'each'
@@ -552,13 +554,13 @@ class EstimateWizardService:
         """Walk the worksheet's atoms and return a flat pool with claim state.
 
         Returns: {'atoms': [
-            {'type': 'plan_charge'|'plan_material', 'id': N, 'description': str,
+            {'type': 'plan_task'|'plan_material', 'id': N, 'description': str,
              'amount': Decimal, 'state': 'available'|'claimed_by_current'|'claimed_by_other',
              'category_id': N or None, 'units': str}
         ]}
         """
         from apps.estimates.models import EstimateLineItemSource
-        from apps.jobs.models import PlanCharge
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
 
         # Build the claim lookup: (source_type, source_pk) -> state info
@@ -598,16 +600,18 @@ class EstimateWizardService:
 
         atoms = []
 
-        for pc in PlanCharge.objects.filter(plan_task__est_worksheet=worksheet).select_related('plan_task', 'plan_task__accounting_category', 'rate_scheme'):
-            key = (EstimateLineItemSource.SOURCE_PLAN_CHARGE, pc.pk)
+        for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
+            'accounting_category', 'rate_scheme',
+        ):
+            key = (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk)
             state_info = claims.get(key, default_state)
             atoms.append({
-                'type': 'plan_charge',
-                'id': pc.pk,
-                'description': pc.plan_task.name,
-                'amount': pc.compute_amount().quantize(Decimal('0.01')),
-                'units': pc.plan_task.units,
-                'category_id': pc.plan_task.accounting_category_id,
+                'type': 'plan_task',
+                'id': pt.pk,
+                'description': pt.name,
+                'amount': pt.compute_amount().quantize(Decimal('0.01')),
+                'units': pt.rate_scheme.unit_label if pt.rate_scheme_id else 'each',
+                'category_id': pt.accounting_category_id,
                 **state_info,
             })
 
@@ -770,7 +774,7 @@ class EstimateWizardService:
     def send_all_atoms_to_estimate(worksheet):
         """Bulk 1:1 conversion of unclaimed atoms on the worksheet to EstimateLineItems.
 
-        Iterates all PlanCharges and PlanMaterials on the worksheet that aren't yet
+        Iterates all PlanTasks and PlanMaterials on the worksheet that aren't yet
         claimed by any EstimateLineItemSource, and creates one EstimateLineItem per
         atom (with one source row pointing at the atom).
 
@@ -780,7 +784,7 @@ class EstimateWizardService:
         Returns: {'estimate': Estimate, 'created_count': int}
         """
         from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
-        from apps.jobs.models import PlanCharge
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
 
         estimate = EstimateWizardService.open_for_worksheet(worksheet)
@@ -795,22 +799,24 @@ class EstimateWizardService:
 
         created_count = 0
 
-        # PlanCharges
-        for pc in PlanCharge.objects.filter(plan_task__est_worksheet=worksheet).select_related('plan_task', 'plan_task__accounting_category'):
-            if (EstimateLineItemSource.SOURCE_PLAN_CHARGE, pc.pk) in claimed:
+        # PlanTasks
+        for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
+            'accounting_category', 'rate_scheme',
+        ):
+            if (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk) in claimed:
                 continue
             li = EstimateLineItem.objects.create(
                 estimate=estimate,
-                description=pc.plan_task.name,
+                description=pt.name,
                 qty=Decimal('1'),
-                units=pc.plan_task.units,
-                price=pc.compute_amount().quantize(Decimal('0.01')),
-                accounting_category=pc.plan_task.accounting_category,
+                units=pt.rate_scheme.unit_label if pt.rate_scheme_id else 'each',
+                price=pt.compute_amount().quantize(Decimal('0.01')),
+                accounting_category=pt.accounting_category,
             )
             EstimateLineItemSource.objects.create(
                 estimate_line_item=li,
-                source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE,
-                source_pk=pc.pk,
+                source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+                source_pk=pt.pk,
             )
             created_count += 1
 
