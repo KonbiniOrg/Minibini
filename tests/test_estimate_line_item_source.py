@@ -6,7 +6,7 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration
 from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource, EstWorksheet
 from apps.inventory.models import PlanMaterial
-from apps.jobs.models import Job, PlanTask, PlanCharge, RateScheme
+from apps.jobs.models import Job, PlanTask, RateScheme
 
 
 class EstimateLineItemSourceTest(TestCase):
@@ -31,10 +31,6 @@ class EstimateLineItemSourceTest(TestCase):
             est_worksheet=self.worksheet, name='Setup', units='hours',
             est_qty=Decimal('1'), accounting_category=self.cat,
         )
-        self.plan_charge = PlanCharge.objects.create(
-            plan_task=self.plan_task, rate_scheme=self.scheme,
-            estimated_billable_qty=Decimal('1'),
-        )
         self.plan_material = PlanMaterial.objects.create(
             est_worksheet=self.worksheet, description='steel', quantity=Decimal('2'),
             sell_price=Decimal('5'), accounting_category=self.cat,
@@ -44,11 +40,11 @@ class EstimateLineItemSourceTest(TestCase):
             price=Decimal('95'), description='', accounting_category=self.cat,
         )
 
-    def test_create_source_for_plan_charge(self):
+    def test_create_source_for_plan_task(self):
         src = EstimateLineItemSource.objects.create(
             estimate_line_item=self.line_item,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE,
-            source_pk=self.plan_charge.pk,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=self.plan_task.pk,
         )
         self.assertEqual(src.estimate_line_item, self.line_item)
 
@@ -63,8 +59,8 @@ class EstimateLineItemSourceTest(TestCase):
     def test_unique_constraint_blocks_double_claim(self):
         EstimateLineItemSource.objects.create(
             estimate_line_item=self.line_item,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE,
-            source_pk=self.plan_charge.pk,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=self.plan_task.pk,
         )
         other_li = EstimateLineItem.objects.create(
             estimate=self.estimate, qty=Decimal('1'), units='each',
@@ -73,17 +69,17 @@ class EstimateLineItemSourceTest(TestCase):
         with self.assertRaises(IntegrityError):
             EstimateLineItemSource.objects.create(
                 estimate_line_item=other_li,
-                source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE,
-                source_pk=self.plan_charge.pk,
+                source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+                source_pk=self.plan_task.pk,
             )
 
-    def test_resolve_returns_plan_charge(self):
+    def test_resolve_returns_plan_task(self):
         src = EstimateLineItemSource.objects.create(
             estimate_line_item=self.line_item,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE,
-            source_pk=self.plan_charge.pk,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=self.plan_task.pk,
         )
-        self.assertEqual(src.resolve(), self.plan_charge)
+        self.assertEqual(src.resolve(), self.plan_task)
 
     def test_resolve_returns_plan_material(self):
         src = EstimateLineItemSource.objects.create(
@@ -96,9 +92,17 @@ class EstimateLineItemSourceTest(TestCase):
     def test_cascade_on_line_item_delete(self):
         EstimateLineItemSource.objects.create(
             estimate_line_item=self.line_item,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE,
-            source_pk=self.plan_charge.pk,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=self.plan_task.pk,
         )
         li_pk = self.line_item.pk
         self.line_item.delete()
         self.assertFalse(EstimateLineItemSource.objects.filter(estimate_line_item_id=li_pk).exists())
+
+    def test_source_resolves_to_plan_task(self):
+        src = EstimateLineItemSource.objects.create(
+            estimate_line_item=self.line_item,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=self.plan_task.pk,
+        )
+        self.assertEqual(src.resolve(), self.plan_task)

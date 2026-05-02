@@ -13,7 +13,9 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
 
     def get_description(self, obj):
         instance = obj.resolve()
-        from apps.jobs.models import PlanCharge
+        from apps.jobs.models import PlanTask, PlanCharge
+        if isinstance(instance, PlanTask):
+            return instance.name
         if isinstance(instance, PlanCharge):
             return instance.plan_task.name
         return instance.description  # PlanMaterial

@@ -493,7 +493,7 @@ class EstimateLineItem(BaseLineItem):
 
 
 class EstimateLineItemSource(models.Model):
-    """Polymorphic join between an EstimateLineItem and its source atom (PlanCharge or PlanMaterial).
+    """Polymorphic join between an EstimateLineItem and its source atom (PlanTask or PlanMaterial).
 
     The unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level: an atom can be referenced by at most one estimate line item.
@@ -502,10 +502,13 @@ class EstimateLineItemSource(models.Model):
     on the plan side. Worksheet revisions copy atoms (creating new instances), so the
     constraint never needs to fire across revisions in practice.
     """
-    SOURCE_PLAN_CHARGE = 'plan_charge'
+    SOURCE_PLAN_TASK = 'plan_task'
     SOURCE_PLAN_MATERIAL = 'plan_material'
+    # Backward-compat alias — remove in Task 6 cleanup once wizard service and
+    # carry-over service have been rewritten to iterate PlanTask directly.
+    SOURCE_PLAN_CHARGE = 'plan_charge'
     SOURCE_TYPE_CHOICES = [
-        (SOURCE_PLAN_CHARGE, 'PlanCharge'),
+        (SOURCE_PLAN_TASK, 'PlanTask'),
         (SOURCE_PLAN_MATERIAL, 'PlanMaterial'),
     ]
 
@@ -523,7 +526,14 @@ class EstimateLineItemSource(models.Model):
         unique_together = [('source_type', 'source_pk')]
 
     def resolve(self):
-        """Return the concrete atom instance (PlanCharge or PlanMaterial) referenced by this source."""
+        """Return the concrete atom instance (PlanTask or PlanMaterial) referenced by this source.
+
+        SOURCE_PLAN_CHARGE ('plan_charge') rows written by the wizard service (Tasks 4/6 not
+        yet complete) still resolve via PlanCharge — removed in Task 6 cleanup.
+        """
+        if self.source_type == self.SOURCE_PLAN_TASK:
+            from apps.jobs.models import PlanTask
+            return PlanTask.objects.get(pk=self.source_pk)
         if self.source_type == self.SOURCE_PLAN_CHARGE:
             from apps.jobs.models import PlanCharge
             return PlanCharge.objects.get(pk=self.source_pk)
