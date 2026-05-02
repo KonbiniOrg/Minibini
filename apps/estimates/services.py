@@ -610,7 +610,7 @@ class EstimateWizardService:
                 'id': pt.pk,
                 'description': pt.name,
                 'amount': pt.compute_amount().quantize(Decimal('0.01')),
-                'units': pt.rate_scheme.unit_label if pt.rate_scheme_id else 'each',
+                'units': EstimateWizardService._atom_units(pt),
                 'category_id': pt.accounting_category_id,
                 **state_info,
             })
@@ -634,7 +634,7 @@ class EstimateWizardService:
     def add_atoms_to_new_line_item(estimate, atoms):
         """Create a new EstimateLineItem on `estimate` with the given atoms as sources.
 
-        atoms: list of {'type': 'plan_charge'|'plan_material', 'id': N} dicts.
+        atoms: list of {'type': 'plan_task'|'plan_material', 'id': N} dicts.
         """
         from django.db import IntegrityError
         from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
@@ -809,7 +809,7 @@ class EstimateWizardService:
                 estimate=estimate,
                 description=pt.name,
                 qty=Decimal('1'),
-                units=pt.rate_scheme.unit_label if pt.rate_scheme_id else 'each',
+                units=EstimateWizardService._atom_units(pt),
                 price=pt.compute_amount().quantize(Decimal('0.01')),
                 accounting_category=pt.accounting_category,
             )

@@ -42,13 +42,13 @@ class OpenForWorksheetTest(TestCase):
 
 class ClaimConflictExceptionTest(TestCase):
     def test_exception_carries_atom_ids(self):
-        exc = EstimateClaimConflict(atom_ids=[{'type': 'plan_charge', 'id': 1}])
-        self.assertEqual(exc.atom_ids, [{'type': 'plan_charge', 'id': 1}])
+        exc = EstimateClaimConflict(atom_ids=[{'type': 'plan_task', 'id': 1}])
+        self.assertEqual(exc.atom_ids, [{'type': 'plan_task', 'id': 1}])
 
 
 from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
 from apps.inventory.models import PlanMaterial
-from apps.jobs.models import PlanCharge, PlanTask, RateScheme
+from apps.jobs.models import PlanTask, RateScheme
 
 
 class GetSourcePoolTest(TestCase):
@@ -134,6 +134,23 @@ class GetSourcePoolTest(TestCase):
         self.assertIn(pt.pk, plan_task_ids)
         pt_atom = next(a for a in pool['atoms'] if a['type'] == 'plan_task' and a['id'] == pt.pk)
         self.assertEqual(pt_atom['amount'], Decimal('150.00'))
+
+    def test_source_pool_includes_plan_tasks_with_no_rate_scheme(self):
+        """PlanTasks with no rate_scheme set still appear in the pool with $0 amount and 'each' units."""
+        pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='Unbilled Task',
+        )
+
+        pool = EstimateWizardService.get_source_pool(self.ws)
+
+        pt_atom = next(
+            (a for a in pool['atoms'] if a['type'] == 'plan_task' and a['id'] == pt.pk),
+            None,
+        )
+        self.assertIsNotNone(pt_atom)
+        self.assertEqual(pt_atom['amount'], Decimal('0.00'))
+        self.assertEqual(pt_atom['units'], 'each')
+        self.assertEqual(pt_atom['state'], 'available')
 
 
 class AddAtomsToNewLineItemTest(TestCase):
