@@ -46,7 +46,7 @@ Minibini/
 ├── apps/
 │   ├── api/        # REST API (DRF viewsets, serializers, permissions, mixins)
 │   ├── core/       # User, Configuration, BaseLineItem, AccountingCategory, HistoryEntry, Email
-│   ├── jobs/       # Job, Task, PlanTask, PlanBundle, Blep
+│   ├── jobs/       # Job, Task, PlanTask, Blep
 │   ├── estimates/  # Estimate, EstWorksheet, EstimateLineItem, Templates
 │   ├── contacts/   # Contact, Business, PaymentTerms
 │   ├── invoicing/  # Invoice, InvoiceLineItem
@@ -89,8 +89,7 @@ Minibini/
 ### Jobs (`apps.jobs`)
 - **Job** - Central entity (extends AbstractWorkContainer). Status: draft → submitted → approved → work_complete → completed (terminal). Also rejected, cancelled (terminals). 'work_complete' means work is done; 'completed' means fully closed (invoiced/paid).
 - **Task** - Work items belonging directly to a Job (FK `Task.job`). Hierarchical with parent_task
-- **PlanTask** - Task template nodes used in worksheet planning
-- **PlanBundle** - Groups related tasks together
+- **PlanTask** - Task template nodes used in worksheet planning; carries billing fields directly (`rate_scheme`, `active_modifiers`, `estimated_billable_qty`)
 - **Blep** - Time tracking (start/end times for task work)
 
 ### Estimates (`apps.estimates`)
