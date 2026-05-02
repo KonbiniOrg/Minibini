@@ -7,7 +7,7 @@ from apps.estimates.carry_over import AtomCarryOverService
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, TaskTemplate
 from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import Material, PlanMaterial, PriceListItem
-from apps.jobs.models import Job, PlanTask, RateScheme, Task, TaskCharge
+from apps.jobs.models import Job, PlanTask, RateScheme, Task
 
 
 class CarryOverFromWorksheetAtomsTest(TestCase):
@@ -166,8 +166,6 @@ class CarryOverUsesPlanTaskDirectlyTest(TestCase):
         self.estimate = EstimateWizardService.open_for_worksheet(self.worksheet)
 
     def test_carry_over_uses_plan_task_directly(self):
-        from apps.jobs.models import RateScheme
-
         scheme = RateScheme.objects.create(
             name='Carry Hourly', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('40.00'), unit_label='hour',
@@ -182,3 +180,18 @@ class CarryOverUsesPlanTaskDirectlyTest(TestCase):
         task = Task.objects.get(source_plan_task=pt)
         self.assertEqual(task.charge.rate_scheme_id, scheme.pk)
         self.assertEqual(task.charge.actuals.get('qty'), '2')
+
+    def test_carry_over_creates_bare_task_when_plan_task_has_no_rate_scheme(self):
+        """PlanTask without billing config carries over as a Task with no TaskCharge."""
+        from apps.jobs.models import PlanTask, Task, TaskCharge
+        from apps.estimates.carry_over import AtomCarryOverService
+
+        pt = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='No-scheme Task',
+        )
+
+        AtomCarryOverService.carry_over_for_estimate(self.estimate)
+
+        task = Task.objects.get(source_plan_task=pt)
+        self.assertEqual(task.name, 'No-scheme Task')
+        self.assertFalse(TaskCharge.objects.filter(task=task).exists())
