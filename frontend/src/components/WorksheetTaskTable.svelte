@@ -17,9 +17,7 @@
   );
 
   function taskTotal(task) {
-    const qty = Number(task.est_qty) || 0;
-    const rate = Number(task.rate) || 0;
-    return qty * rate;
+    return Number(task.amount) || 0;
   }
 
   function materialTotal(mat) {
@@ -48,9 +46,7 @@
   <thead>
     <tr>
       <th>Name / Description</th>
-      <th class="text-right">Units</th>
       <th class="text-right">Qty</th>
-      <th class="text-right">Rate</th>
       <th class="text-right">Total</th>
       {#if !readonly}<th>Actions</th>{/if}
     </tr>
@@ -59,9 +55,7 @@
     {#each tasks as task, i}
       <tr class="task-row">
         <td>{task.name}{#if task.description}<br><span class="dim">{task.description}</span>{/if}</td>
-        <td class="text-right">{task.units || '-'}</td>
-        <td class="text-right">{task.est_qty ?? '-'}</td>
-        <td class="text-right">{fmt(task.rate)}</td>
+        <td class="text-right">{task.estimated_billable_qty ?? '-'}</td>
         <td class="text-right">{fmt(taskTotal(task))}</td>
         {#if !readonly}
           <td class="actions-cell">
@@ -76,9 +70,7 @@
       {#each (task.plan_materials || []) as mat}
         <tr class="material-row">
           <td class="indent"><span class="material-marker">&#9679;</span> {mat.description || '(no description)'}</td>
-          <td class="text-right">-</td>
           <td class="text-right">{mat.quantity ?? '-'}</td>
-          <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
           {#if !readonly}
             <td class="actions-cell">
@@ -92,7 +84,7 @@
   </tbody>
   <tfoot>
     <tr class="grand-total-row">
-      <td colspan="4" class="text-right"><strong>Grand Total</strong></td>
+      <td colspan="2" class="text-right"><strong>Grand Total</strong></td>
       <td class="text-right"><strong>{fmt(grandTotal)}</strong></td>
       {#if !readonly}<td></td>{/if}
     </tr>
