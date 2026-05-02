@@ -270,8 +270,11 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['name'], 'Standard Sanding')
-        self.assertEqual(response.data['units'], 'sqft')
-        self.assertEqual(Decimal(str(response.data['rate'])), Decimal('2.50'))
+        # New serializer exposes billing atom fields; rate_scheme is null when
+        # created from a legacy TaskTemplate that has no RateScheme attached.
+        self.assertIn('rate_scheme', response.data)
+        self.assertIn('estimated_billable_qty', response.data)
+        self.assertIn('amount', response.data)
         # Verify it was created in the DB
         self.assertTrue(
             PlanTask.objects.filter(

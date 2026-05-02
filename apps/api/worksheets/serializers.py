@@ -1,8 +1,8 @@
+from decimal import Decimal
 from rest_framework import serializers
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
-from apps.core.units import UnitsField
 
 
 class PlanMaterialSerializer(serializers.ModelSerializer):
@@ -28,17 +28,21 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
 
 
 class PlanTaskSerializer(serializers.ModelSerializer):
-    units = UnitsField()
     plan_materials = PlanMaterialSerializer(many=True, read_only=True)
+    amount = serializers.SerializerMethodField()
 
     class Meta:
         model = PlanTask
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
-            'units', 'rate', 'est_qty', 'accounting_category',
-            'plan_materials',
+            'accounting_category',
+            'rate_scheme', 'active_modifiers', 'estimated_billable_qty',
+            'amount', 'plan_materials',
         ]
-        read_only_fields = ['plan_task_id', 'sort_order']
+        read_only_fields = ['plan_task_id', 'sort_order', 'amount']
+
+    def get_amount(self, obj):
+        return str(obj.compute_amount().quantize(Decimal('0.01')))
 
 
 class EstWorksheetSerializer(serializers.ModelSerializer):

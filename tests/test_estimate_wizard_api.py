@@ -163,3 +163,24 @@ class SendAllAtomsAPITest(TestCase):
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()['created_count'], 0)
+
+    def test_plan_task_create_via_api_includes_billing(self):
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='Test', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('30.00'), unit_label='hour',
+        )
+        resp = self.client.post(
+            f'/api/est-worksheets/{self.ws.pk}/tasks/',
+            {
+                'name': 'Test Task',
+                'description': '',
+                'accounting_category': None,
+                'rate_scheme': scheme.pk,
+                'active_modifiers': [],
+                'estimated_billable_qty': '4.5',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.json()['estimated_billable_qty'], '4.50')
