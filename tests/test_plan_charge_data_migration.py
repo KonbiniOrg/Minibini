@@ -43,6 +43,7 @@ class PlanChargeDataMigrationTests(TransactionTestCase):
         pt.refresh_from_db()
         self.assertIsNone(pt.rate_scheme_id, "rate_scheme should be NULL before migration")
         self.assertIsNone(pt.estimated_billable_qty, "estimated_billable_qty should be NULL before migration")
+        self.assertEqual(pt.active_modifiers, [])
 
         # --- Call copy_forward directly (simulates what the migration does) ---
         import importlib

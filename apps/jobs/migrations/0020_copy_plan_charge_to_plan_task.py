@@ -12,9 +12,15 @@ def copy_forward(apps, schema_editor):
 
 
 def copy_back(apps, schema_editor):
-    # Reverse: clear fields on PlanTask. PlanCharge rows are untouched.
+    """Reverse: clear fields ONLY on PlanTasks that have a linked PlanCharge.
+
+    Scoped to mirror copy_forward — we don't want to wipe billing data on
+    PlanTasks that were populated independently after this migration ran.
+    """
+    PlanCharge = apps.get_model('jobs', 'PlanCharge')
     PlanTask = apps.get_model('jobs', 'PlanTask')
-    PlanTask.objects.update(
+    linked_ids = list(PlanCharge.objects.values_list('plan_task_id', flat=True))
+    PlanTask.objects.filter(plan_task_id__in=linked_ids).update(
         rate_scheme=None, active_modifiers=[], estimated_billable_qty=None,
     )
 
