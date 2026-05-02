@@ -39,7 +39,7 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
 
-    def test_creates_task_for_each_plan_charge(self):
+    def test_creates_task_for_each_plan_task(self):
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
         tasks = Task.objects.filter(job=self.job)
         self.assertEqual(tasks.count(), 1)
@@ -148,7 +148,7 @@ class CarryOverFromDirectLineItemsTest(TestCase):
 
 
 class CarryOverUsesPlanTaskDirectlyTest(TestCase):
-    """Verifies that AtomCarryOverService walks PlanTask atoms directly (not PlanCharge)."""
+    """Verifies that AtomCarryOverService walks PlanTask atoms directly."""
 
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
