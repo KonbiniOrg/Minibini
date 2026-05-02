@@ -246,6 +246,7 @@ class Task(TaskBase):
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='carried_task_new',  # temporary; renamed to 'carried_task' after old field is dropped in Task 12
+        help_text="PlanTask this task was carried over from (carry-over idempotency; replaces source_plan_charge in Task 12)",
     )
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
