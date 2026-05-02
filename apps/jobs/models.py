@@ -241,6 +241,12 @@ class Task(TaskBase):
         related_name='carried_task',
         help_text="PlanCharge this task was carried over from (carry-over idempotency)"
     )
+    source_plan_task = models.OneToOneField(
+        'jobs.PlanTask',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='carried_task_new',  # temporary; renamed to 'carried_task' after old field is dropped in Task 12
+    )
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
     blocked_reason = models.TextField(blank=True, default='')
