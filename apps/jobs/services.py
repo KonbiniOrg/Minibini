@@ -334,9 +334,6 @@ class JobService:
                 job=job,
                 name=plan_task.name,
                 description=plan_task.description,
-                units=plan_task.units,
-                rate=plan_task.rate,
-                est_qty=plan_task.est_qty,
                 accounting_category=plan_task.accounting_category,
                 sort_order=plan_task.sort_order,
             )

@@ -413,17 +413,16 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
             rate=Decimal('85.00'), accounting_category=self.lit,
         )
         task = WorksheetService.add_task_from_template(
-            self.ws.pk, tt.pk, est_qty=Decimal('4.00'),
+            self.ws.pk, tt.pk, estimated_billable_qty=Decimal('4.00'),
         )
         self.assertEqual(task.name, 'Welding')
-        self.assertEqual(task.est_qty, Decimal('4.00'))
+        self.assertEqual(task.estimated_billable_qty, Decimal('4.00'))
         self.assertEqual(task.est_worksheet, self.ws)
 
     def test_add_task_manual(self):
         from apps.estimates.services import WorksheetService
         task = WorksheetService.add_task_manual(
-            self.ws.pk, name='Custom task', units='ea',
-            rate=Decimal('50.00'), est_qty=Decimal('1.00'),
+            self.ws.pk, name='Custom task',
         )
         self.assertEqual(task.name, 'Custom task')
         self.assertEqual(task.est_worksheet, self.ws)
@@ -434,7 +433,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         self.ws.save()
         with self.assertRaises(ValidationError):
             WorksheetService.add_task_manual(
-                self.ws.pk, name='X', units='ea',
+                self.ws.pk, name='X',
             )
 
 

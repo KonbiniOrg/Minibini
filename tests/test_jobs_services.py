@@ -321,12 +321,10 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
 
     def test_copies_tasks(self):
         PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut', units='hours',
-            rate=Decimal('50.00'), est_qty=Decimal('2.00'),
+            est_worksheet=self.worksheet, name='Cut',
             accounting_category=self.lit, sort_order=1)
         PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Weld', units='hours',
-            rate=Decimal('60.00'), est_qty=Decimal('3.00'),
+            est_worksheet=self.worksheet, name='Weld',
             accounting_category=self.lit, sort_order=2)
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
@@ -334,15 +332,12 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         job_tasks = Task.objects.filter(job=self.job).order_by('sort_order')
         self.assertEqual(job_tasks.count(), 2)
         self.assertEqual(job_tasks[0].name, 'Cut')
-        self.assertEqual(job_tasks[0].rate, Decimal('50.00'))
         self.assertEqual(job_tasks[1].name, 'Weld')
-        self.assertEqual(job_tasks[1].est_qty, Decimal('3.00'))
 
     def test_copies_task_fields(self):
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Paint',
             description='Apply primer and topcoat',
-            units='sq ft', rate=Decimal('5.00'), est_qty=Decimal('100.00'),
             accounting_category=self.lit, sort_order=1)
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
@@ -350,7 +345,6 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         task = Task.objects.get(job=self.job)
         self.assertEqual(task.name, 'Paint')
         self.assertEqual(task.description, 'Apply primer and topcoat')
-        self.assertEqual(task.units, 'sq ft')
         self.assertEqual(task.accounting_category, self.lit)
 
     def test_copies_materials(self):

@@ -40,11 +40,9 @@ class TaskDetailViewTests(TestCase):
 
         self.draft_task = PlanTask.objects.create(
             name='Draft Task', est_worksheet=self.draft_worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00')
         )
         self.final_task = PlanTask.objects.create(
             name='Final Task', est_worksheet=self.final_worksheet,
-            units='sq ft', rate=Decimal('10.00'), est_qty=Decimal('100.00')
         )
 
     def test_detail_shows_edit_link_for_draft_worksheet_task(self):
@@ -101,7 +99,6 @@ class TaskEditViewTests(TestCase):
 
         self.task = PlanTask.objects.create(
             name='Editable Task', est_worksheet=self.draft_worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00')
         )
 
     def test_edit_get_shows_form_with_current_values(self):
@@ -110,17 +107,12 @@ class TaskEditViewTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Editable Task')
-        self.assertContains(response, '50.00')
-        self.assertContains(response, '2.00')
 
     def test_edit_post_updates_task_fields(self):
-        """POST on task edit should update the task's name, units, rate, and est_qty."""
+        """POST on task edit should update the task's name."""
         url = reverse('jobs:task_edit', args=[self.task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Updated Task',
-            'units': 'sq ft',
-            'rate': '75.00',
-            'est_qty': '10.00',
         })
 
         # Should redirect to task detail
@@ -132,18 +124,12 @@ class TaskEditViewTests(TestCase):
         # Verify task was updated
         self.task.refresh_from_db()
         self.assertEqual(self.task.name, 'Updated Task')
-        self.assertEqual(self.task.units, 'sq ft')
-        self.assertEqual(self.task.rate, Decimal('75.00'))
-        self.assertEqual(self.task.est_qty, Decimal('10.00'))
 
     def test_edit_post_shows_success_message(self):
         """POST on task edit should show a success message."""
         url = reverse('jobs:task_edit', args=[self.task.plan_task_id])
         response = self.client.post(url, {
             'name': 'Updated Task',
-            'units': 'hours',
-            'rate': '50.00',
-            'est_qty': '3.00',
         }, follow=True)
 
         msgs = list(response.context['messages'])
@@ -154,9 +140,6 @@ class TaskEditViewTests(TestCase):
         url = reverse('jobs:task_edit', args=[self.task.plan_task_id])
         response = self.client.post(url, {
             'name': '',  # required field
-            'units': 'hours',
-            'rate': '50.00',
-            'est_qty': '2.00',
         })
         self.assertEqual(response.status_code, 200)
         # Task should NOT be changed
@@ -191,11 +174,9 @@ class TaskEditRestrictionTests(TestCase):
 
         self.final_task = PlanTask.objects.create(
             name='Final Task', est_worksheet=self.final_worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00')
         )
         self.superseded_task = PlanTask.objects.create(
             name='Superseded Task', est_worksheet=self.superseded_worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00')
         )
 
     def test_edit_get_blocked_for_final_worksheet(self):

@@ -28,8 +28,8 @@ class EstimateLineItemSourceTest(TestCase):
             unit_label='hour', accounting_category=self.cat,
         )
         self.plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Setup', units='hours',
-            est_qty=Decimal('1'), accounting_category=self.cat,
+            est_worksheet=self.worksheet, name='Setup',
+            accounting_category=self.cat,
         )
         self.plan_material = PlanMaterial.objects.create(
             est_worksheet=self.worksheet, description='steel', quantity=Decimal('2'),

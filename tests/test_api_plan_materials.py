@@ -28,9 +28,6 @@ class PlanMaterialsApiTest(APITestCase):
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Task 1',
-            units='each',
-            rate=Decimal('50.00'),
-            est_qty=Decimal('1.00'),
         )
 
     def test_post_without_plan_task_creates_worksheet_level(self):

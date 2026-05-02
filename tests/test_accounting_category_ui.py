@@ -40,7 +40,6 @@ class TaskDetailAccountingCategoryDisplayTests(TestCase):
         """Task detail should display the line item type name when set."""
         task = PlanTask.objects.create(
             name='Task With Type', est_worksheet=self.worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
             accounting_category=self.lit,
         )
         url = reverse('jobs:task_detail', args=[task.plan_task_id])
@@ -52,7 +51,6 @@ class TaskDetailAccountingCategoryDisplayTests(TestCase):
         """Task detail should always show the Accounting Category row, even when null."""
         task = PlanTask.objects.create(
             name='Task No Type', est_worksheet=self.worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
         )
         url = reverse('jobs:task_detail', args=[task.plan_task_id])
         response = self.client.get(url)
@@ -85,7 +83,6 @@ class TaskEditAccountingCategoryTests(TestCase):
         """Task edit form should include a accounting_category dropdown."""
         task = PlanTask.objects.create(
             name='Editable Task', est_worksheet=self.worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
         )
         url = reverse('jobs:task_edit', args=[task.plan_task_id])
         response = self.client.get(url)
@@ -96,7 +93,6 @@ class TaskEditAccountingCategoryTests(TestCase):
         """POST on task edit should be able to set accounting_category."""
         task = PlanTask.objects.create(
             name='Task', est_worksheet=self.worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
         )
         url = reverse('jobs:task_edit', args=[task.plan_task_id])
         response = self.client.post(url, {
@@ -114,7 +110,6 @@ class TaskEditAccountingCategoryTests(TestCase):
         """POST on task edit should be able to change accounting_category."""
         task = PlanTask.objects.create(
             name='Task', est_worksheet=self.worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
             accounting_category=self.lit_svc,
         )
         url = reverse('jobs:task_edit', args=[task.plan_task_id])
@@ -133,7 +128,6 @@ class TaskEditAccountingCategoryTests(TestCase):
         """POST on task edit should be able to clear accounting_category."""
         task = PlanTask.objects.create(
             name='Task', est_worksheet=self.worksheet,
-            units='hours', rate=Decimal('50.00'), est_qty=Decimal('2.00'),
             accounting_category=self.lit_svc,
         )
         url = reverse('jobs:task_edit', args=[task.plan_task_id])

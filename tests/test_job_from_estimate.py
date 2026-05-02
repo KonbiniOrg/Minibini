@@ -43,9 +43,6 @@ class JobCopyFromWorksheetEndToEndTest(TestCase):
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Assembly',
-            units='each',
-            rate=Decimal('150'),
-            est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet,

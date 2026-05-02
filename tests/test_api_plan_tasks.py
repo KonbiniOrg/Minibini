@@ -25,9 +25,9 @@ class PlanTaskAPITest(TestCase):
             est_worksheet=self.worksheet,
             name='Install shelves',
             description='Wall-mount 3 shelves',
-            units='each',
-            rate=50,
-            est_qty=3,
+
+
+
         )
 
     def test_retrieve_plan_task(self):
@@ -94,9 +94,9 @@ class WorksheetNestedPlanTaskTest(TestCase):
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Sand floor',
-            units='sqft',
-            rate=2,
-            est_qty=100,
+
+
+
         )
 
     def test_nested_task_list_includes_materials(self):

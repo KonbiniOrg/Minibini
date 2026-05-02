@@ -31,10 +31,11 @@ class UnitsDropdownFormTest(BaseTestCase):
         self.assertFalse(form.is_valid())
         self.assertIn('units', form.errors)
 
-    def test_task_edit_form_has_select_widget(self):
+    def test_task_edit_form_has_name_field(self):
+        """TaskEditForm (PlanTask) no longer has units; verify name field is present."""
         form = TaskEditForm()
-        widget = form.fields['units'].widget
-        self.assertEqual(widget.__class__.__name__, 'Select')
+        self.assertIn('name', form.fields)
+        self.assertNotIn('units', form.fields)
 
     def test_manual_line_item_form_has_select_widget(self):
         form = ManualLineItemForm()

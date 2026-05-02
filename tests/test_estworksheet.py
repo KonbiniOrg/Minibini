@@ -226,9 +226,6 @@ class EstWorksheetVersioningTest(TestCase):
         task1 = PlanTask.objects.create(
             est_worksheet=worksheet_v1,
             name="Task 1",
-            units="hours",
-            rate=Decimal('50.00'),
-            est_qty=Decimal('5.00')
         )
 
         task2 = PlanTask.objects.create(

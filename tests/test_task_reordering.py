@@ -55,23 +55,23 @@ class TaskReorderingTestCase(TestCase):
         self.task1 = PlanTask.objects.create(
             name='Task 1',
             est_worksheet=self.worksheet,
-            est_qty=1.0,
-            rate=100.00,
-            units='hours'
+
+
+
         )
         self.task2 = PlanTask.objects.create(
             name='Task 2',
             est_worksheet=self.worksheet,
-            est_qty=2.0,
-            rate=200.00,
-            units='hours'
+
+
+
         )
         self.task3 = PlanTask.objects.create(
             name='Task 3',
             est_worksheet=self.worksheet,
-            est_qty=3.0,
-            rate=300.00,
-            units='hours'
+
+
+
         )
 
         # Create tasks directly on the job (post-WorkOrder-removal)

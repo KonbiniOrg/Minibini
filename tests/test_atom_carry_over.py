@@ -29,8 +29,8 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Setup', units='hours',
-            est_qty=Decimal('2'), accounting_category=self.cat,
+            est_worksheet=self.ws, name='Setup',
+            accounting_category=self.cat,
             rate_scheme=self.scheme, estimated_billable_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(

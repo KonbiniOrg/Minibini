@@ -110,8 +110,8 @@ class CopyPointsPreserveAccountingCategoryTests(TestCase):
         """EstWorksheet.create_new_version() should copy accounting_category to new tasks."""
         ws = EstWorksheet.objects.create(job=self.job)
         PlanTask.objects.create(
-            est_worksheet=ws, name="Sand", rate=Decimal("50.00"),
-            est_qty=Decimal("2.00"), accounting_category=self.lit,
+            est_worksheet=ws, name="Sand",
+            accounting_category=self.lit,
         )
         # Finalize the worksheet directly so create_new_version() is allowed
         ws.status = EstWorksheet.STATUS_FINAL

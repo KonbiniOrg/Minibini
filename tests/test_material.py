@@ -34,8 +34,6 @@ class MaterialTestBase(TestCase):
         self.task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install shelving',
-            rate=Decimal('50.00'),
-            est_qty=Decimal('4.00'),
         )
         self.category = AccountingCategory.objects.create(
             name='Material', code='MAT',

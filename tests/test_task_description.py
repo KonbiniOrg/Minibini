@@ -38,9 +38,6 @@ class TaskDescriptionModelTests(TestCase):
             name='Described Task',
             description='This is a task description',
             est_worksheet=self.worksheet,
-            units='hours',
-            rate=Decimal('50.00'),
-            est_qty=Decimal('2.00'),
         )
         task.refresh_from_db()
         self.assertEqual(task.description, 'This is a task description')
@@ -50,9 +47,6 @@ class TaskDescriptionModelTests(TestCase):
         task = PlanTask.objects.create(
             name='No Description Task',
             est_worksheet=self.worksheet,
-            units='hours',
-            rate=Decimal('50.00'),
-            est_qty=Decimal('2.00'),
         )
         task.refresh_from_db()
         self.assertEqual(task.description, '')
@@ -130,9 +124,6 @@ class TaskDescriptionInViewsTests(TestCase):
             name='Detailed Task',
             description='Sand and finish hardwood floors',
             est_worksheet=self.worksheet,
-            units='sq ft',
-            rate=Decimal('5.00'),
-            est_qty=Decimal('200.00'),
         )
 
     def test_task_detail_shows_description(self):
@@ -189,9 +180,6 @@ class WorksheetDescriptionFromTaskTests(TestCase):
             name='Task With Own Desc',
             description='My own description',
             est_worksheet=self.worksheet,
-            units='hours',
-            rate=Decimal('50.00'),
-            est_qty=Decimal('2.00'),
         )
 
     def test_worksheet_detail_shows_task_own_description(self):

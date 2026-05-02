@@ -22,13 +22,13 @@ class SortOrderAutoGenerationTest(TestCase):
     def test_new_task_gets_sequential_sort_order(self):
         """Tasks without an explicit sort_order get next sequential value."""
         t1 = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Task 1', rate=10
+            est_worksheet=self.worksheet, name='Task 1'
         )
         t2 = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Task 2', rate=20
+            est_worksheet=self.worksheet, name='Task 2'
         )
         t3 = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Task 3', rate=30
+            est_worksheet=self.worksheet, name='Task 3'
         )
         self.assertEqual(t1.sort_order, 1)
         self.assertEqual(t2.sort_order, 2)
@@ -37,7 +37,7 @@ class SortOrderAutoGenerationTest(TestCase):
     def test_explicit_sort_order_preserved(self):
         """Tasks with explicit sort_order are not auto-reassigned."""
         t = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Task', rate=10, sort_order=42
+            est_worksheet=self.worksheet, name='Task', sort_order=42
         )
         self.assertEqual(t.sort_order, 42)
 

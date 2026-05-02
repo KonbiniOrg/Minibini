@@ -460,9 +460,6 @@ class TaskTemplate(models.Model):
                 est_worksheet=container,
                 name=self.template_name,
                 description=self.description,
-                units=self.units,
-                rate=self.rate,
-                est_qty=est_qty,
                 accounting_category=self.accounting_category,
                 sort_order=sort_order,
             )

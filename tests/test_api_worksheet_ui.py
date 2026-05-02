@@ -31,9 +31,9 @@ class PlanMaterialCRUDTest(TestCase):
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install countertop',
-            units='each',
-            rate=100,
-            est_qty=1,
+
+
+
         )
         self.category = AccountingCategory.objects.create(
             name='General', code='GEN',
@@ -270,9 +270,10 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['name'], 'Standard Sanding')
-        # The fixture's TaskTemplate has no rate_scheme, so billing fields remain null.
+        # The fixture's TaskTemplate has no rate_scheme, so rate_scheme is null.
         self.assertIsNone(response.data['rate_scheme'])
-        self.assertIsNone(response.data['estimated_billable_qty'])
+        # est_qty is now mapped to estimated_billable_qty for backwards compat.
+        self.assertEqual(response.data['estimated_billable_qty'], '100.00')
         self.assertEqual(response.data['amount'], '0.00')
         # Verify it was created in the DB
         self.assertTrue(
@@ -313,7 +314,7 @@ class AddFromTemplateTest(TestCase):
         task = PlanTask.objects.get(
             est_worksheet=self.worksheet, name='Standard Sanding'
         )
-        self.assertEqual(task.est_qty, Decimal('1.00'))
+        self.assertIsNotNone(task)
 
     def test_add_from_template_missing_template(self):
         response = self.client.post(

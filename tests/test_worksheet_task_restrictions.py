@@ -89,9 +89,6 @@ class WorksheetTaskRestrictionTests(TestCase):
         tasks = PlanTask.objects.filter(est_worksheet=self.draft_worksheet)
         self.assertEqual(tasks.count(), 1)
 
-        task = tasks.first()
-        self.assertEqual(task.est_qty, Decimal('2.0'))
-
     def test_cannot_add_task_from_template_to_final_worksheet(self):
         """Test that adding task from template to final worksheet is rejected."""
         url = reverse('estimates:task_add_from_template', args=[self.final_worksheet.est_worksheet_id])
@@ -295,8 +292,6 @@ class WorksheetTaskRestrictionTests(TestCase):
 
         task = tasks.first()
         self.assertEqual(task.name, 'Manual Task')
-        self.assertEqual(task.rate, Decimal('75.00'))
-        self.assertEqual(task.est_qty, Decimal('3.0'))
 
 
 class WorksheetTaskWorkflowTests(TestCase):

@@ -117,17 +117,11 @@ class SearchViewTests(TestCase):
         self.task1 = PlanTask.objects.create(
             name='Cut wood pieces',
             est_worksheet=self.worksheet1,
-            units='hours',
-            rate=Decimal('50.00'),
-            est_qty=Decimal('10.00')
         )
 
         self.task2 = PlanTask.objects.create(
             name='Assemble furniture',
             est_worksheet=self.worksheet1,
-            units='hours',
-            rate=Decimal('60.00'),
-            est_qty=Decimal('5.00')
         )
 
         # Create invoices

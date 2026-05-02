@@ -24,13 +24,7 @@
     {% for task in tasks %}
     <tr>
         <td>{{ task.name }}</td>
-        <td>
-            {% if task.rate and task.est_qty %}
-                ${{ task.rate|floatformat:2 }} x {{ task.est_qty|floatformat:2 }}
-            {% else %}
-                $0.00
-            {% endif %}
-        </td>
+        <td>${{ task.compute_amount|floatformat:2 }}</td>
         <td>{{ task.accounting_category|default:"-" }}</td>
         <td>Yes</td>
     </tr>

@@ -163,9 +163,9 @@ class EstWorksheetStateTests(TestCase):
         self.task = PlanTask.objects.create(
             name='Test Task',
             est_worksheet=self.worksheet,
-            est_qty=10.0,
-            rate=100.0,
-            units='hours'
+
+
+
         )
 
     def test_cannot_generate_estimate_from_non_draft_worksheet(self):

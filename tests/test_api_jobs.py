@@ -429,7 +429,7 @@ class JobCopyFromWorksheetTest(TestCase):
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build cabinet',
-            units='each', rate=200, est_qty=1,
+
         )
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet,
