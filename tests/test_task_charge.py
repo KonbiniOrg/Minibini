@@ -203,63 +203,6 @@ class TaskChargeFlatFeeTest(BaseTestCase):
         self.assertTrue(charge.has_actuals())
 
 
-class PlanChargeModelTest(BaseTestCase):
-    """Test PlanCharge model."""
-
-    def setUp(self):
-        super().setUp()
-        self.modifiers = [
-            {'key': 'messy', 'label': 'Messy job', 'percent': 10},
-        ]
-        self.scheme = RateScheme.objects.create(
-            name='Vinyl Application Plan',
-            algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('4.00'),
-            unit_label='sq ft',
-            modifiers=self.modifiers,
-        )
-        # Find a PlanTask from fixtures; skip if none exist
-        self.plan_task = PlanTask.objects.first()
-        if self.plan_task is None:
-            self.skipTest("No PlanTask in fixtures")
-
-    def test_create_plan_charge(self):
-        from apps.jobs.models import PlanCharge
-        charge = PlanCharge.objects.create(
-            plan_task=self.plan_task,
-            rate_scheme=self.scheme,
-            active_modifiers=['messy'],
-            estimated_billable_qty=Decimal('30'),
-        )
-        self.assertEqual(charge.plan_task, self.plan_task)
-        self.assertEqual(charge.rate_scheme, self.scheme)
-        self.assertEqual(charge.active_modifiers, ['messy'])
-        self.assertEqual(charge.estimated_billable_qty, Decimal('30'))
-
-    def test_plan_charge_compute(self):
-        """30 sq ft × $4.40 effective (with messy +10%) = $132"""
-        from apps.jobs.models import PlanCharge
-        charge = PlanCharge.objects.create(
-            plan_task=self.plan_task,
-            rate_scheme=self.scheme,
-            active_modifiers=['messy'],
-            estimated_billable_qty=Decimal('30'),
-        )
-        result = charge.compute()
-        self.assertEqual(result, Decimal('132.00'))
-
-    def test_plan_charge_effective_rate(self):
-        """With messy modifier: $4.00 + 10% = $4.40"""
-        from apps.jobs.models import PlanCharge
-        charge = PlanCharge.objects.create(
-            plan_task=self.plan_task,
-            rate_scheme=self.scheme,
-            active_modifiers=['messy'],
-            estimated_billable_qty=Decimal('30'),
-        )
-        result = charge.effective_rate()
-        self.assertEqual(result, Decimal('4.40'))
-
 
 class EstWorkerTimeTest(BaseTestCase):
 

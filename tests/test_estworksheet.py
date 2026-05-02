@@ -255,10 +255,6 @@ class EstWorksheetVersioningTest(TestCase):
         self.assertEqual(v2_tasks.count(), 2)
 
         self.assertEqual(v2_tasks[0].name, "Task 1")
-        self.assertEqual(v2_tasks[0].units, "hours")
-        self.assertEqual(v2_tasks[0].rate, Decimal('50.00'))
-        self.assertEqual(v2_tasks[0].est_qty, Decimal('5.00'))
-
         self.assertEqual(v2_tasks[1].name, "Task 2")
         
     def test_version_chain(self):

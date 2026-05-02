@@ -44,7 +44,7 @@ class MaterialComputeAmountTest(TestCase):
 
 
 from apps.jobs.models import (
-    Blep, PlanCharge, PlanTask, RateScheme, Task, TaskCharge,
+    Blep, PlanTask, RateScheme, Task, TaskCharge,
 )
 from django.utils import timezone
 from datetime import timedelta
@@ -93,33 +93,6 @@ class TaskChargeComputeAmountTest(TestCase):
         TaskCharge.objects.create(task=task, rate_scheme=self.scheme_flat)
         self.assertEqual(task.charge.compute_amount(), Decimal('250.00'))
 
-
-class PlanChargeComputeAmountTest(TestCase):
-    def setUp(self):
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
-        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
-        self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
-        )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
-        self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
-        )
-
-    def test_plan_charge_uses_estimated_qty(self):
-        pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='setup', units='hours',
-            est_qty=Decimal('2'), accounting_category=self.cat,
-        )
-        PlanCharge.objects.create(
-            plan_task=pt, rate_scheme=self.scheme,
-            estimated_billable_qty=Decimal('2'),
-        )
-        # 2 hours × $100 = $200
-        self.assertEqual(pt.charge.compute_amount(), Decimal('200.00'))
 
 
 class PlanTaskComputeAmountTests(FixtureTestCase):

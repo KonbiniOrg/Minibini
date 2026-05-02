@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import RateScheme, PlanCharge, PlanTask, Job, TaskCharge
+from apps.jobs.models import RateScheme, PlanTask, Job, TaskCharge
 from apps.jobs.services import JobService
 from apps.estimates.models import EstWorksheet
 from apps.core.models import AccountingCategory
@@ -33,14 +33,11 @@ class CopyFromWorksheetChargeTest(TestCase):
             ],
         )
 
-    def test_copy_creates_task_charge_from_plan_charge(self):
+    def test_copy_creates_task_charge_from_plan_task_billing(self):
         plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='CNC cut panels',
             accounting_category=self.category,
-        )
-        PlanCharge.objects.create(
-            plan_task=plan_task,
             rate_scheme=self.scheme,
             active_modifiers=['messy'],
             estimated_billable_qty=Decimal('30.00'),
@@ -55,7 +52,7 @@ class CopyFromWorksheetChargeTest(TestCase):
         self.assertEqual(charge.active_modifiers, ['messy'])
         self.assertEqual(charge.actuals, {})
 
-    def test_copy_without_plan_charge_creates_no_task_charge(self):
+    def test_copy_without_billing_creates_no_task_charge(self):
         PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Manual task',

@@ -234,19 +234,12 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text="TaskTemplate this task was created from"
     )
-    source_plan_charge = models.OneToOneField(
-        'jobs.PlanCharge',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='carried_task',
-        help_text="PlanCharge this task was carried over from (carry-over idempotency)"
-    )
     source_plan_task = models.OneToOneField(
         'jobs.PlanTask',
         on_delete=models.SET_NULL,
         null=True, blank=True,
-        related_name='carried_task_new',  # temporary; renamed to 'carried_task' after old field is dropped in Task 12
-        help_text="PlanTask this task was carried over from (carry-over idempotency; replaces source_plan_charge in Task 12)",
+        related_name='carried_task',
+        help_text="PlanTask this task was carried over from (carry-over idempotency)",
     )
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
@@ -420,30 +413,3 @@ class TaskCharge(models.Model):
         return True  # elapsed_time and flat_fee don't need manual entry
 
 
-class PlanCharge(models.Model):
-    """Same shape as TaskCharge but for PlanTask (worksheet/estimate stage). No actuals."""
-    plan_charge_id = models.AutoField(primary_key=True)
-    plan_task = models.OneToOneField(PlanTask, on_delete=models.CASCADE, related_name='charge')
-    rate_scheme = models.ForeignKey(RateScheme, on_delete=models.PROTECT)
-    active_modifiers = models.JSONField(default=list, blank=True)
-    estimated_billable_qty = models.DecimalField(max_digits=10, decimal_places=2)
-
-    class Meta:
-        db_table = 'plan_charges'
-
-    def __str__(self):
-        return f"Charge for {self.plan_task}"
-
-    def compute(self):
-        return self.rate_scheme.compute_charge(self.estimated_billable_qty, self.active_modifiers)
-
-    def compute_amount(self, active_modifiers=None):
-        """Uniform atom interface: total billable amount for this charge.
-
-        Ignores the active_modifiers argument (uses self.active_modifiers).
-        Parameter is accepted to match the BillableAtom interface.
-        """
-        return self.compute()
-
-    def effective_rate(self):
-        return self.rate_scheme.effective_rate(self.active_modifiers)

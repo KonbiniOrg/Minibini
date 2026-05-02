@@ -214,9 +214,6 @@ class EstWorksheetStateTests(TestCase):
 
         new_task = new_tasks.first()
         self.assertEqual(new_task.name, self.task.name)
-        self.assertEqual(new_task.est_qty, self.task.est_qty)
-        self.assertEqual(new_task.rate, self.task.rate)
-        self.assertEqual(new_task.units, self.task.units)
 
     def test_cannot_revise_draft_worksheet(self):
         """Test that draft worksheets cannot be revised."""

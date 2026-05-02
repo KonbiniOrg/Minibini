@@ -272,10 +272,10 @@ class EstWorksheet(AbstractWorkContainer):
                 est_worksheet=new_worksheet,
                 name=plan_task.name,
                 description=plan_task.description,
-                units=plan_task.units,
-                rate=plan_task.rate,
-                est_qty=plan_task.est_qty,
                 accounting_category=plan_task.accounting_category,
+                rate_scheme=plan_task.rate_scheme,
+                active_modifiers=list(plan_task.active_modifiers or []),
+                estimated_billable_qty=plan_task.estimated_billable_qty,
             )
 
             # Copy plan materials to the new plan task
@@ -504,10 +504,6 @@ class EstimateLineItemSource(models.Model):
     """
     SOURCE_PLAN_TASK = 'plan_task'
     SOURCE_PLAN_MATERIAL = 'plan_material'
-    # Backward-compat alias — remove after Task 6 (carry-over service rewrite).
-    # Wizard service was migrated in Task 4; carry-over still uses this constant
-    # until Task 6 completes.
-    SOURCE_PLAN_CHARGE = 'plan_charge'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_PLAN_TASK, 'PlanTask'),
         (SOURCE_PLAN_MATERIAL, 'PlanMaterial'),
@@ -527,17 +523,10 @@ class EstimateLineItemSource(models.Model):
         unique_together = [('source_type', 'source_pk')]
 
     def resolve(self):
-        """Return the concrete atom instance (PlanTask or PlanMaterial) referenced by this source.
-
-        SOURCE_PLAN_CHARGE ('plan_charge') rows written by the wizard service (Tasks 4/6 not
-        yet complete) still resolve via PlanCharge — removed in Task 6 cleanup.
-        """
+        """Return the concrete atom instance (PlanTask or PlanMaterial) referenced by this source."""
         if self.source_type == self.SOURCE_PLAN_TASK:
             from apps.jobs.models import PlanTask
             return PlanTask.objects.get(pk=self.source_pk)
-        if self.source_type == self.SOURCE_PLAN_CHARGE:
-            from apps.jobs.models import PlanCharge
-            return PlanCharge.objects.get(pk=self.source_pk)
         if self.source_type == self.SOURCE_PLAN_MATERIAL:
             from apps.inventory.models import PlanMaterial
             return PlanMaterial.objects.get(pk=self.source_pk)

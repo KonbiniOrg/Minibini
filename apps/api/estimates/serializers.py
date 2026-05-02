@@ -13,15 +13,9 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
 
     def get_description(self, obj):
         instance = obj.resolve()
-        from apps.jobs.models import PlanTask, PlanCharge
+        from apps.jobs.models import PlanTask
         if isinstance(instance, PlanTask):
             return instance.name
-        # Legacy path: EstimateLineItemSource.resolve() can still return PlanCharge
-        # instances during the transition (Tasks 4 and 6 in
-        # docs/plans/2026-05-01-merge-plancharge-into-plantask.md). Remove this branch
-        # once those tasks complete and no plan_charge source rows remain.
-        if isinstance(instance, PlanCharge):
-            return instance.plan_task.name
         return instance.description  # PlanMaterial
 
     def get_computed_amount(self, obj):
