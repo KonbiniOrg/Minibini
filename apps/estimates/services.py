@@ -355,7 +355,13 @@ class WorksheetService:
         return ws.create_new_version()
 
     @staticmethod
-    def add_task_from_template(worksheet_pk, template_pk, est_qty=Decimal('1.00')):
+    def add_task_from_template(
+        worksheet_pk, template_pk,
+        est_qty=Decimal('1.00'),
+        rate_scheme_id=None,
+        active_modifiers=None,
+        estimated_billable_qty=None,
+    ):
         """Add a PlanTask to a draft worksheet from a TaskTemplate."""
         from apps.jobs.models import PlanTask
         try:
@@ -376,9 +382,14 @@ class WorksheetService:
             description=tt.description,
             accounting_category=tt.accounting_category,
             est_worksheet=ws,
+            # Legacy fields — preserved while present (Task 13 removes them).
             est_qty=est_qty,
             units=tt.units,
             rate=tt.rate,
+            # New atom billing fields — fall back to template defaults when not provided.
+            rate_scheme_id=rate_scheme_id if rate_scheme_id else tt.rate_scheme_id,
+            active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
+            estimated_billable_qty=estimated_billable_qty if estimated_billable_qty is not None else tt.default_billable_qty,
         )
         return task
 

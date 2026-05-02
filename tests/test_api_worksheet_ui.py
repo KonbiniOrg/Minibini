@@ -270,11 +270,7 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['name'], 'Standard Sanding')
-        # Note: add_task_from_template currently does not propagate rate_scheme or
-        # estimated_billable_qty from the TaskTemplate. Task 9 will close this gap
-        # (the modal sends the user's chosen billing values to add-from-template, and
-        # the service must accept them). Until Task 9 lands, template-created PlanTasks
-        # have null billing.
+        # The fixture's TaskTemplate has no rate_scheme, so billing fields remain null.
         self.assertIsNone(response.data['rate_scheme'])
         self.assertIsNone(response.data['estimated_billable_qty'])
         self.assertEqual(response.data['amount'], '0.00')
@@ -284,6 +280,28 @@ class AddFromTemplateTest(TestCase):
                 est_worksheet=self.worksheet, name='Standard Sanding'
             ).exists()
         )
+
+    def test_add_from_template_explicit_billing_overrides_template_defaults(self):
+        """Passing billing fields to add-from-template uses the caller's values."""
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='Hourly', rate='75.00', unit_label='hr',
+            algorithm=RateScheme.ENTERED_QTY,
+        )
+        response = self.client.post(
+            f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
+            {
+                'task_template_id': self.task_template.pk,
+                'rate_scheme': scheme.rate_scheme_id,
+                'estimated_billable_qty': '8.00',
+                'active_modifiers': ['overtime'],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['rate_scheme'], scheme.rate_scheme_id)
+        self.assertEqual(response.data['estimated_billable_qty'], '8.00')
+        self.assertEqual(response.data['active_modifiers'], ['overtime'])
 
     def test_add_from_template_default_qty(self):
         response = self.client.post(

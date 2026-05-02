@@ -85,6 +85,9 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         worksheet = self.get_object()
         task_template_id = request.data.get('task_template_id')
         est_qty = request.data.get('est_qty', '1.00')
+        rate_scheme = request.data.get('rate_scheme')
+        active_modifiers = request.data.get('active_modifiers')
+        estimated_billable_qty = request.data.get('estimated_billable_qty')
         if not task_template_id:
             return Response(
                 {'task_template_id': ['This field is required.']},
@@ -93,7 +96,12 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         try:
             from decimal import Decimal
             task = WorksheetService.add_task_from_template(
-                worksheet.pk, task_template_id, Decimal(str(est_qty))
+                worksheet.pk,
+                task_template_id,
+                Decimal(str(est_qty)),
+                rate_scheme_id=int(rate_scheme) if rate_scheme else None,
+                active_modifiers=active_modifiers if active_modifiers is not None else None,
+                estimated_billable_qty=Decimal(str(estimated_billable_qty)) if estimated_billable_qty else None,
             )
         except (ServiceError, NotFoundError) as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
