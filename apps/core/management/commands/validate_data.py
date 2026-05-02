@@ -628,11 +628,29 @@ class Command(BaseCommand):
                 )
 
     def check_estimate_line_item_job_consistency(self):
-        """EstimateLineItemSource rows must point at atoms (PlanCharge or
+        """EstimateLineItemSource rows must point at atoms (PlanTask, PlanCharge, or
         PlanMaterial) belonging to the same job as the line item's estimate."""
         from apps.estimates.models import EstimateLineItemSource
-        from apps.jobs.models import PlanCharge
+        from apps.jobs.models import PlanTask, PlanCharge
         from apps.inventory.models import PlanMaterial
+
+        for source in EstimateLineItemSource.objects.filter(
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK
+        ).select_related('estimate_line_item__estimate__job'):
+            try:
+                pt = PlanTask.objects.select_related('est_worksheet').get(pk=source.source_pk)
+            except PlanTask.DoesNotExist:
+                self.errors.append(
+                    f'EstimateLineItemSource {source.pk}: dangling PlanTask ref pk={source.source_pk}'
+                )
+                continue
+            ws = pt.est_worksheet
+            li = source.estimate_line_item
+            if ws and ws.job_id != li.estimate.job_id:
+                self.errors.append(
+                    f'EstimateLineItem {li.pk}: estimate is for job {li.estimate.job_id} '
+                    f'but PlanTask {source.source_pk} belongs to job {ws.job_id}'
+                )
 
         for source in EstimateLineItemSource.objects.filter(
             source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE

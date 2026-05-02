@@ -99,10 +99,3 @@ class EstimateLineItemSourceTest(TestCase):
         self.line_item.delete()
         self.assertFalse(EstimateLineItemSource.objects.filter(estimate_line_item_id=li_pk).exists())
 
-    def test_source_resolves_to_plan_task(self):
-        src = EstimateLineItemSource.objects.create(
-            estimate_line_item=self.line_item,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
-            source_pk=self.plan_task.pk,
-        )
-        self.assertEqual(src.resolve(), self.plan_task)

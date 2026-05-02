@@ -504,8 +504,8 @@ class EstimateLineItemSource(models.Model):
     """
     SOURCE_PLAN_TASK = 'plan_task'
     SOURCE_PLAN_MATERIAL = 'plan_material'
-    # Backward-compat alias — remove in Task 6 cleanup once wizard service and
-    # carry-over service have been rewritten to iterate PlanTask directly.
+    # Backward-compat alias — remove after Tasks 4 and 6 (wizard service + carry-over
+    # service) have been rewritten to iterate PlanTask directly.
     SOURCE_PLAN_CHARGE = 'plan_charge'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_PLAN_TASK, 'PlanTask'),
