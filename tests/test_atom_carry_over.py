@@ -7,7 +7,7 @@ from apps.estimates.carry_over import AtomCarryOverService
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, TaskTemplate
 from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import Material, PlanMaterial, PriceListItem
-from apps.jobs.models import Job, PlanCharge, PlanTask, RateScheme, Task, TaskCharge
+from apps.jobs.models import Job, PlanTask, RateScheme, Task, TaskCharge
 
 
 class CarryOverFromWorksheetAtomsTest(TestCase):
@@ -32,10 +32,6 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
             est_worksheet=self.ws, name='Setup', units='hours',
             est_qty=Decimal('2'), accounting_category=self.cat,
             rate_scheme=self.scheme, estimated_billable_qty=Decimal('2'),
-        )
-        self.pc = PlanCharge.objects.create(
-            plan_task=self.pt, rate_scheme=self.scheme,
-            estimated_billable_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
