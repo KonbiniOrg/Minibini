@@ -1,4 +1,5 @@
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.api.permissions import CanManageConfig
@@ -48,3 +49,23 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
         if blocked:
             return blocked
         return super().partial_update(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], url_path='supersede',
+            permission_classes=[IsAuthenticated, CanManageConfig])
+    def supersede(self, request, pk=None):
+        old = self.get_object()
+        if old.replaced_by_id is not None:
+            return Response(
+                {'detail': 'Scheme is already superseded.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        # Validate the new scheme's payload using the standard serializer,
+        # but treat input as the supersede overrides.
+        serializer = RateSchemeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        overrides = {k: v for k, v in serializer.validated_data.items()}
+        new = old.supersede(**overrides)
+        return Response(
+            RateSchemeSerializer(new).data,
+            status=status.HTTP_201_CREATED,
+        )

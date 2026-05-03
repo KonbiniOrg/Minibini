@@ -159,3 +159,70 @@ class RateSchemeEditBlockTest(BaseTestCase):
             {'rate': '2'}, content_type='application/json',
         )
         self.assertEqual(resp.status_code, 200)
+
+
+class RateSchemeSupersedeEndpointTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import User, AccountingCategory
+        from django.contrib.auth.models import Permission
+        self.user = User.objects.create_user('admin-sup', 'admin-sup@x.test', 'pw')
+        perm = Permission.objects.get(codename='can_manage_config')
+        self.user.user_permissions.add(perm)
+        self.client.force_login(self.user)
+        self.ac = AccountingCategory.objects.create(code='Y-sup', name='Y-sup')
+
+    def test_supersede_creates_new_and_links_old(self):
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='O-sup', algorithm='flat_fee', rate=Decimal('5'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        resp = self.client.post(
+            f'/api/rate-schemes/{old.pk}/supersede/',
+            {
+                'name': 'O-sup v2', 'rate': '7', 'algorithm': 'flat_fee',
+                'unit_label': 'ea', 'accounting_category': self.ac.pk,
+                'modifiers': [], 'description': '',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        new_id = resp.json()['rate_scheme_id']
+        old.refresh_from_db()
+        self.assertEqual(old.replaced_by_id, new_id)
+        self.assertIsNotNone(old.replaced_at)
+
+    def test_supersede_requires_can_manage_config(self):
+        from apps.core.models import User
+        from apps.jobs.models import RateScheme
+        plain = User.objects.create_user('plain-sup', 'plain-sup@x.test', 'pw')
+        self.client.force_login(plain)
+        old = RateScheme.objects.create(
+            name='O-sup-perm', algorithm='flat_fee', rate=Decimal('5'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        resp = self.client.post(f'/api/rate-schemes/{old.pk}/supersede/', {})
+        self.assertEqual(resp.status_code, 403)
+
+    def test_supersede_already_superseded_returns_409(self):
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='O-sup-twice', algorithm='flat_fee', rate=Decimal('5'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        # First supersede via the model method
+        old.supersede(name='O-sup-twice v2')
+        # Second supersede via API should be rejected
+        resp = self.client.post(
+            f'/api/rate-schemes/{old.pk}/supersede/',
+            {
+                'name': 'O-sup-twice v3', 'rate': '9', 'algorithm': 'flat_fee',
+                'unit_label': 'ea', 'accounting_category': self.ac.pk,
+                'modifiers': [], 'description': '',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 409)
