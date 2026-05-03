@@ -165,9 +165,11 @@ class InvoiceLineItemSource(models.Model):
     """
     SOURCE_BLEP = 'blep'
     SOURCE_MATERIAL = 'material'
+    SOURCE_TASK = 'task'  # NEW: a whole task as one billing atom
     SOURCE_TYPE_CHOICES = [
         (SOURCE_BLEP, 'Blep'),
         (SOURCE_MATERIAL, 'Material'),
+        (SOURCE_TASK, 'Task'),
     ]
 
     source_id = models.AutoField(primary_key=True)
