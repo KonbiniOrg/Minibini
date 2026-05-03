@@ -166,6 +166,22 @@ class ClaimConflict(Exception):
         super().__init__(f'Atoms already claimed: {atom_ids}')
 
 
+class WizardAtomLabels:
+    """Helpers for rendering human-friendly labels for wizard atoms."""
+
+    @staticmethod
+    def qty_source_label(charge):
+        """Describe where the billable quantity came from for a TaskCharge."""
+        scheme = charge.rate_scheme
+        if scheme.algorithm == 'elapsed_time':
+            qty = scheme.get_actual_qty(charge.task)
+            return f'{qty:.2f} {scheme.unit_label} from bleps'
+        if scheme.algorithm == 'entered_qty':
+            qty = scheme.get_actual_qty(charge.task)
+            return f'{qty} {scheme.unit_label} entered'
+        return 'flat fee'
+
+
 class InvoiceWizardService:
     """Orchestration layer for the invoice wizard.
 
@@ -251,32 +267,34 @@ class InvoiceWizardService:
             'claiming_invoice_number': None,
         }
 
+        from apps.jobs.models import TaskCharge
+
         tasks = (
             Task.objects.filter(job=job)
             .exclude(status=Task.STATUS_CANCELLED)
+            .select_related('charge', 'charge__rate_scheme')
             .order_by('sort_order', 'pk')
         )
         task_list = []
         for task in tasks:
             atoms = []
 
-            # Blep atoms - exclude incomplete bleps (no end_time)
-            bleps = (
-                Blep.objects.filter(task=task)
-                .exclude(end_time__isnull=True)
-                .order_by('start_time', 'pk')
-            )
-            for blep in bleps:
-                elapsed = blep.end_time - blep.start_time
-                hours = Decimal(str(elapsed.total_seconds())) / Decimal('3600')
-                amount = (hours * (task.rate or Decimal('0.00'))).quantize(Decimal('0.01'))
-                key = (InvoiceLineItemSource.SOURCE_BLEP, blep.pk)
+            # Phase A tolerance: a task without a TaskCharge emits no 'task' atom
+            # but does not crash. Phase B will guarantee charges always exist.
+            try:
+                charge = task.charge
+            except TaskCharge.DoesNotExist:
+                charge = None
+
+            if charge is not None:
+                amount = charge.compute().quantize(Decimal('0.01'))
+                key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
                 state_info = claims.get(key, default_state)
                 atoms.append({
-                    'atom_type': 'blep',
-                    'atom_id': blep.pk,
-                    'description': f'Labor {hours:.2f}h',
-                    'sub_info': f"{blep.start_time.strftime('%m/%d')} \u00b7 {blep.user.username if blep.user else '\u2014'}",
+                    'atom_type': 'task',
+                    'atom_id': task.pk,
+                    'description': f'{task.name} ({charge.rate_scheme.name})',
+                    'sub_info': WizardAtomLabels.qty_source_label(charge),
                     'computed_amount': amount,
                     **state_info,
                 })
@@ -299,14 +317,37 @@ class InvoiceWizardService:
                     **state_info,
                 })
 
+            # Read-only blep detail for the UI - exclude incomplete bleps.
+            # Bleps no longer surface as billable atoms (the task's TaskCharge
+            # rolls them up); they appear here only for inspection.
+            bleps = (
+                Blep.objects.filter(task=task)
+                .exclude(end_time__isnull=True)
+                .select_related('user')
+                .order_by('start_time', 'pk')
+            )
+            blep_details = []
+            for blep in bleps:
+                elapsed = blep.end_time - blep.start_time
+                hours = (
+                    Decimal(str(elapsed.total_seconds())) / Decimal('3600')
+                ).quantize(Decimal('0.01'))
+                blep_details.append({
+                    'blep_id': blep.pk,
+                    'hours': hours,
+                    'when': blep.start_time.strftime('%m/%d'),
+                    'user': blep.user.username if blep.user else None,
+                })
+
             task_list.append({
                 'task_id': task.pk,
                 'name': task.name,
                 'has_billable_atoms': len(atoms) > 0,
                 'atoms': atoms,
+                'bleps': blep_details,
             })
 
-        # "Materials (no task)" group — task-less Materials with quantity > 0
+        # "Materials (no task)" group - task-less Materials with quantity > 0
         loose = (
             Material.objects.filter(job=job, task__isnull=True, quantity__gt=0)
             .order_by('pk')
@@ -329,6 +370,7 @@ class InvoiceWizardService:
             'name': 'Materials (no task)',
             'has_billable_atoms': len(loose_atoms) > 0,
             'atoms': loose_atoms,
+            'bleps': [],
         })
 
         return {'tasks': task_list}

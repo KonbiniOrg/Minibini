@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.invoicing.services import InvoiceWizardService, ClaimConflict
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme, TaskCharge
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
 from apps.inventory.models import Material, PriceListItem
@@ -93,14 +93,25 @@ class GetSourcePoolTest(TestCase):
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
 
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-gsp', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.category,
+        )
+
         self.task_billable = Task.objects.create(
             job=self.job, name='Site demo',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
+        # Task with a TaskCharge produces a per-task atom from charge.compute()
+        TaskCharge.objects.create(task=self.task_billable, rate_scheme=self.scheme)
+
         self.task_empty = Task.objects.create(
             job=self.job, name='Inspection',
             rate=Decimal('50.00'), accounting_category=self.category,
         )
+        # Inspection has no TaskCharge -> Phase A tolerance: no atom emitted
+
         self.task_cancelled = Task.objects.create(
             job=self.job, name='Cancelled work',
             rate=Decimal('25.00'), accounting_category=self.category,
@@ -108,13 +119,13 @@ class GetSourcePoolTest(TestCase):
         self.task_cancelled.status = Task.STATUS_CANCELLED
         self.task_cancelled.save()
 
-        # Complete blep (billable)
+        # Complete blep (informational only post-A16; the task atom is the billable unit)
         self.blep_complete = Blep.objects.create(
             task=self.task_billable,
             start_time=timezone.now() - timezone.timedelta(hours=2),
             end_time=timezone.now(),
         )
-        # Incomplete blep (should be filtered out)
+        # Incomplete blep (filtered out of the read-only blep detail array)
         self.blep_incomplete = Blep.objects.create(
             task=self.task_billable,
             start_time=timezone.now(),
@@ -147,13 +158,15 @@ class GetSourcePoolTest(TestCase):
         self.assertNotIn('Cancelled work', task_names)
 
     def test_incomplete_bleps_are_excluded(self):
+        # Bleps are no longer billable atoms; they only appear in the read-only
+        # `bleps` detail array, and incomplete ones (no end_time) are filtered out.
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
             t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
-        blep_atoms = [a for a in site_demo['atoms'] if a['atom_type'] == 'blep']
-        self.assertEqual(len(blep_atoms), 1)
-        self.assertEqual(blep_atoms[0]['atom_id'], self.blep_complete.pk)
+        blep_ids = [b['blep_id'] for b in site_demo['bleps']]
+        self.assertEqual(blep_ids, [self.blep_complete.pk])
+        self.assertNotIn(self.blep_incomplete.pk, blep_ids)
 
     def test_empty_task_has_flag_set(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
@@ -179,16 +192,20 @@ class GetSourcePoolTest(TestCase):
             price=Decimal('50.00'),
             accounting_category=self.category,
         )
+        # Claim the per-task atom for task_billable
         InvoiceLineItemSource.objects.create(
             invoice_line_item=line_item,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep_complete.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task_billable.pk,
         )
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
             t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
-        claimed = next(a for a in site_demo['atoms'] if a['atom_id'] == self.blep_complete.pk)
+        claimed = next(
+            a for a in site_demo['atoms']
+            if a['atom_type'] == 'task' and a['atom_id'] == self.task_billable.pk
+        )
         self.assertEqual(claimed['state'], 'claimed_by_current')
         self.assertEqual(claimed['claiming_line_item_id'], line_item.pk)
 
@@ -203,14 +220,17 @@ class GetSourcePoolTest(TestCase):
         )
         InvoiceLineItemSource.objects.create(
             invoice_line_item=other_li,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep_complete.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task_billable.pk,
         )
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
             t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
-        claimed = next(a for a in site_demo['atoms'] if a['atom_id'] == self.blep_complete.pk)
+        claimed = next(
+            a for a in site_demo['atoms']
+            if a['atom_type'] == 'task' and a['atom_id'] == self.task_billable.pk
+        )
         self.assertEqual(claimed['state'], 'claimed_by_other')
         self.assertEqual(claimed['claiming_invoice_id'], other_invoice.pk)
         self.assertEqual(claimed['claiming_invoice_number'], other_invoice.invoice_number)
@@ -226,15 +246,18 @@ class GetSourcePoolTest(TestCase):
         )
         InvoiceLineItemSource.objects.create(
             invoice_line_item=other_li,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep_complete.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task_billable.pk,
         )
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         site_demo = next(
             t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
-        claimed_blep = next(a for a in site_demo['atoms'] if a['atom_id'] == self.blep_complete.pk)
-        self.assertEqual(claimed_blep['state'], 'available')
+        claimed_atom = next(
+            a for a in site_demo['atoms']
+            if a['atom_type'] == 'task' and a['atom_id'] == self.task_billable.pk
+        )
+        self.assertEqual(claimed_atom['state'], 'available')
 
     def test_material_atoms_included(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
@@ -663,17 +686,31 @@ class DiscardDraftTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-dd', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
-        self.line_item = InvoiceWizardService.add_atoms_to_new_line_item(
-            self.invoice, [{'type': 'blep', 'id': self.blep.pk}],
+        # Claim the per-task atom directly (atom helper migration is A17)
+        self.line_item = InvoiceLineItem.objects.create(
+            invoice=self.invoice, description='Labor',
+            qty=Decimal('1'), price=Decimal('50.00'),
+            accounting_category=self.category,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=self.line_item,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
         )
 
     def test_deletes_draft_invoice(self):
@@ -690,14 +727,25 @@ class DiscardDraftTest(TestCase):
         )
 
     def test_atoms_become_available_again(self):
+        # Sanity: while the draft exists, the per-task atom is claimed.
+        pool_before = InvoiceWizardService.get_source_pool(self.invoice)
+        labor_before = next(t for t in pool_before['tasks'] if t['name'] == 'Labor')
+        atom_before = next(
+            a for a in labor_before['atoms']
+            if a['atom_type'] == 'task' and a['atom_id'] == self.task.pk
+        )
+        self.assertEqual(atom_before['state'], 'claimed_by_current')
+
         InvoiceWizardService.discard_draft(self.invoice)
         # Create a fresh draft and check the source pool
         fresh_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         pool = InvoiceWizardService.get_source_pool(fresh_invoice)
-        tasks = pool['tasks']
-        labor_task = next(t for t in tasks if t['name'] == 'Labor')
-        blep_atom = next(a for a in labor_task['atoms'] if a['atom_id'] == self.blep.pk)
-        self.assertEqual(blep_atom['state'], 'available')
+        labor_task = next(t for t in pool['tasks'] if t['name'] == 'Labor')
+        task_atom = next(
+            a for a in labor_task['atoms']
+            if a['atom_type'] == 'task' and a['atom_id'] == self.task.pk
+        )
+        self.assertEqual(task_atom['state'], 'available')
 
     def test_refuses_non_draft_invoice(self):
         self.invoice.status = Invoice.STATUS_OPEN

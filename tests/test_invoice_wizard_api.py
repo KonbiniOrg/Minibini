@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from apps.core.models import User, Configuration, AccountingCategory
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme, TaskCharge
 from apps.inventory.models import Material, PriceListItem
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 
@@ -85,10 +85,16 @@ class SourcePoolEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-spe', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
             rate=Decimal('25.00'), accounting_category=self.category,
         )
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -105,7 +111,9 @@ class SourcePoolEndpointTest(TestCase):
         self.assertTrue(task['has_billable_atoms'])
         self.assertEqual(len(task['atoms']), 1)
         atom = task['atoms'][0]
-        self.assertEqual(atom['atom_type'], 'blep')
+        # Per-task atom emitted from TaskCharge.compute() (post-A16)
+        self.assertEqual(atom['atom_type'], 'task')
+        self.assertEqual(atom['atom_id'], self.task.pk)
         self.assertEqual(atom['state'], 'available')
 
     def test_requires_authentication(self):
