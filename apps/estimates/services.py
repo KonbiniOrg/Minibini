@@ -379,7 +379,6 @@ class WorksheetService:
         task = PlanTask.objects.create(
             name=tt.template_name,
             description=tt.description,
-            accounting_category=tt.accounting_category,
             est_worksheet=ws,
             rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
             active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
@@ -398,6 +397,10 @@ class WorksheetService:
         if ws.status != EstWorksheet.STATUS_DRAFT:
             raise ValidationError(
                 f'Cannot add tasks to a {ws.get_status_display().lower()} worksheet.'
+            )
+        if not kwargs.get('rate_scheme_id') and not kwargs.get('rate_scheme'):
+            raise ValidationError(
+                {'rate_scheme': 'A RateScheme is required to add a task.'}
             )
         task = PlanTask(est_worksheet=ws, **kwargs)
         task.full_clean()

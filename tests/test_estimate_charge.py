@@ -159,3 +159,47 @@ class EffectiveACPropertyTest(BaseTestCase):
             default_billable_qty=Decimal('1'),
         )
         self.assertEqual(tt.effective_accounting_category, self.scheme_ac)
+
+
+class AddTaskManualRequiresSchemeTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import RateScheme, Job
+        from apps.estimates.models import EstWorksheet
+        from apps.contacts.models import Business, Contact
+        self.ac = AccountingCategory.objects.create(code='X-atm', name='X-atm')
+        self.scheme = RateScheme.objects.create(
+            name='S-atm', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f-atm@l.test',
+        )
+        biz = Business.objects.create(
+            business_name='B-atm', default_contact=contact,
+        )
+        contact.business = biz
+        contact.save()
+        job = Job.objects.create(job_number='J-atm', contact=contact)
+        self.ws = EstWorksheet.objects.create(job=job)
+
+    def test_add_task_manual_without_scheme_raises(self):
+        from apps.estimates.services import WorksheetService
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            WorksheetService.add_task_manual(
+                self.ws.pk, name='no scheme',
+                estimated_billable_qty=Decimal('1'),
+            )
+
+    def test_add_task_manual_with_scheme_succeeds(self):
+        from apps.estimates.services import WorksheetService
+        pt = WorksheetService.add_task_manual(
+            self.ws.pk, name='ok',
+            rate_scheme_id=self.scheme.pk,
+            estimated_billable_qty=Decimal('1'),
+        )
+        self.assertEqual(pt.rate_scheme_id, self.scheme.pk)
