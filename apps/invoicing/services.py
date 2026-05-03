@@ -382,26 +382,37 @@ class InvoiceWizardService:
 
     @staticmethod
     def _resolve_atom(atom_ref):
-        """Given {'type': 'blep'|'material', 'id': N}, return the concrete instance."""
-        from apps.jobs.models import Blep
+        """Given {'type': 'blep'|'material'|'task', 'id': N}, return the concrete instance."""
+        from apps.jobs.models import Blep, Task
         from apps.inventory.models import Material
         if atom_ref['type'] == 'blep':
             return Blep.objects.get(pk=atom_ref['id'])
         if atom_ref['type'] == 'material':
             return Material.objects.get(pk=atom_ref['id'])
+        if atom_ref['type'] == 'task':
+            return Task.objects.get(pk=atom_ref['id'])
         raise ValueError(f"Unknown atom type: {atom_ref['type']}")
 
     @staticmethod
     def _atom_computed_amount(atom_instance):
         """Compute the billable amount for an atom."""
-        from apps.jobs.models import Blep
+        from apps.jobs.models import Blep, Task, TaskCharge
         from apps.inventory.models import Material
+        if isinstance(atom_instance, Task):
+            try:
+                return atom_instance.charge.compute().quantize(Decimal('0.01'))
+            except TaskCharge.DoesNotExist:
+                return Decimal('0.00')  # Phase A tolerance; B7/B8 will guarantee charge exists
         if isinstance(atom_instance, Blep):
+            # Legacy path retained for any remaining InvoiceLineItemSource rows of type 'blep'
             if not atom_instance.end_time:
                 return Decimal('0.00')
             elapsed = atom_instance.end_time - atom_instance.start_time
             hours = Decimal(str(elapsed.total_seconds())) / Decimal('3600')
-            rate = atom_instance.task.rate or Decimal('0.00')
+            try:
+                rate = atom_instance.task.charge.rate_scheme.rate
+            except (TaskCharge.DoesNotExist, AttributeError):
+                rate = atom_instance.task.rate or Decimal('0.00')  # Phase A fallback
             return (hours * rate).quantize(Decimal('0.01'))
         if isinstance(atom_instance, Material):
             return (atom_instance.quantity * atom_instance.sell_price).quantize(Decimal('0.01'))
@@ -409,20 +420,28 @@ class InvoiceWizardService:
 
     @staticmethod
     def _atom_category(atom_instance):
-        """Return the accounting_category of an atom (via its task for bleps, direct for materials)."""
-        from apps.jobs.models import Blep
+        """Return the accounting_category of an atom.
+
+        For Tasks/Bleps, walks through TaskCharge → RateScheme when present (Phase A
+        adds the effective_accounting_category property). For Materials, direct.
+        """
+        from apps.jobs.models import Blep, Task
         from apps.inventory.models import Material
+        if isinstance(atom_instance, Task):
+            return atom_instance.effective_accounting_category
         if isinstance(atom_instance, Blep):
-            return atom_instance.task.accounting_category
+            return atom_instance.task.effective_accounting_category
         if isinstance(atom_instance, Material):
             return atom_instance.accounting_category
         return None
 
     @staticmethod
     def _atom_source_type(atom_instance):
-        from apps.jobs.models import Blep
+        from apps.jobs.models import Blep, Task
         from apps.inventory.models import Material
         from apps.invoicing.models import InvoiceLineItemSource
+        if isinstance(atom_instance, Task):
+            return InvoiceLineItemSource.SOURCE_TASK
         if isinstance(atom_instance, Blep):
             return InvoiceLineItemSource.SOURCE_BLEP
         if isinstance(atom_instance, Material):

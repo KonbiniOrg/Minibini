@@ -60,3 +60,26 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         task_entries = [t for t in pool['tasks'] if t['task_id'] == self.task.pk]
         self.assertIn('bleps', task_entries[0])
         self.assertEqual(len(task_entries[0]['bleps']), 1)
+
+
+class WizardTaskAtomHelpersTest(WizardPerTaskAtomsTest):
+    def test_resolve_task_atom(self):
+        from apps.invoicing.services import InvoiceWizardService
+        atom = InvoiceWizardService._resolve_atom({'type': 'task', 'id': self.task.pk})
+        self.assertEqual(atom, self.task)
+
+    def test_task_atom_computed_amount_uses_charge(self):
+        from apps.invoicing.services import InvoiceWizardService
+        amount = InvoiceWizardService._atom_computed_amount(self.task)
+        self.assertEqual(amount, Decimal('30.00'))
+
+    def test_task_atom_category_walks_through_charge_scheme(self):
+        from apps.invoicing.services import InvoiceWizardService
+        cat = InvoiceWizardService._atom_category(self.task)
+        self.assertEqual(cat, self.ac)
+
+    def test_task_atom_source_type_returns_source_task(self):
+        from apps.invoicing.services import InvoiceWizardService
+        from apps.invoicing.models import InvoiceLineItemSource
+        st = InvoiceWizardService._atom_source_type(self.task)
+        self.assertEqual(st, InvoiceLineItemSource.SOURCE_TASK)

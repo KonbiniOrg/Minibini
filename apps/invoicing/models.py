@@ -186,13 +186,16 @@ class InvoiceLineItemSource(models.Model):
         unique_together = [('source_type', 'source_pk')]
 
     def resolve(self):
-        """Return the concrete atom instance (Blep or Material) referenced by this source."""
+        """Return the concrete atom instance (Blep, Material, or Task) referenced by this source."""
         if self.source_type == self.SOURCE_BLEP:
             from apps.jobs.models import Blep
             return Blep.objects.get(pk=self.source_pk)
         if self.source_type == self.SOURCE_MATERIAL:
             from apps.inventory.models import Material
             return Material.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_TASK:
+            from apps.jobs.models import Task
+            return Task.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):
