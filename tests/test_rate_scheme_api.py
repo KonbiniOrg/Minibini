@@ -2,6 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from apps.jobs.models import RateScheme
+from tests.base import BaseTestCase
 
 User = get_user_model()
 
@@ -74,3 +75,87 @@ class RateSchemeAPITest(TestCase):
         resp = self.client.get(f'/api/rate-schemes/{self.scheme.pk}/')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()['name'], 'Hourly Labor')
+
+
+class RateSchemeEditBlockTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import Permission
+        self.user = User.objects.create_user('admin-edit', 'admin-edit@x.test', 'pw')
+        perm = Permission.objects.get(codename='can_manage_config')
+        self.user.user_permissions.add(perm)
+        self.client.force_login(self.user)
+
+    def _make_referenced_scheme(self):
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import RateScheme, PlanTask, Job
+        from apps.estimates.models import EstWorksheet
+        from apps.contacts.models import Contact, Business
+        # Real schema requires Business.business_name + default_contact FK,
+        # and Contact.email. Build pair: Contact first, then Business with
+        # default_contact, then attach business back to contact and save.
+        ac = AccountingCategory.objects.create(code='X-eb', name='X-eb')
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f-eb@l.test',
+        )
+        biz = Business.objects.create(
+            business_name='B-eb', default_contact=contact,
+        )
+        contact.business = biz
+        contact.save()
+        job = Job.objects.create(job_number='J-eb', contact=contact)
+        ws = EstWorksheet.objects.create(job=job)
+        s = RateScheme.objects.create(
+            name='S-eb', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=ac,
+        )
+        PlanTask.objects.create(
+            est_worksheet=ws, name='t', rate_scheme=s,
+            estimated_billable_qty=Decimal('1'),
+        )
+        return s
+
+    def test_patch_referenced_scheme_returns_409(self):
+        s = self._make_referenced_scheme()
+        resp = self.client.patch(
+            f'/api/rate-schemes/{s.pk}/',
+            {'rate': '99'}, content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 409)
+        body = resp.json()
+        self.assertIn('supersede_url', body)
+        self.assertIn('reference_counts', body)
+        self.assertEqual(body['reference_counts']['plan_task_count'], 1)
+
+    def test_put_referenced_scheme_returns_409(self):
+        # Verify the same behavior on PUT (full update), not just PATCH.
+        from apps.core.models import AccountingCategory
+        s = self._make_referenced_scheme()
+        ac = AccountingCategory.objects.get(code='X-eb')
+        resp = self.client.put(
+            f'/api/rate-schemes/{s.pk}/',
+            {
+                'name': 'S-eb-changed', 'algorithm': 'flat_fee',
+                'rate': '99', 'unit_label': 'ea',
+                'accounting_category': ac.pk,
+                'modifiers': [], 'description': '',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 409)
+
+    def test_patch_unreferenced_scheme_succeeds(self):
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import RateScheme
+        ac = AccountingCategory.objects.create(code='X-ok', name='X-ok')
+        s = RateScheme.objects.create(
+            name='S-ok', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=ac,
+        )
+        resp = self.client.patch(
+            f'/api/rate-schemes/{s.pk}/',
+            {'rate': '2'}, content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
