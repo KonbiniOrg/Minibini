@@ -353,7 +353,7 @@ class RateScheme(models.Model):
     minimum_charge = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     modifiers = models.JSONField(default=list, blank=True)
     accounting_category = models.ForeignKey(
-        'core.AccountingCategory', on_delete=models.PROTECT, null=True, blank=True,
+        'core.AccountingCategory', on_delete=models.PROTECT,
     )
     replaced_by = models.ForeignKey(
         'self', on_delete=models.PROTECT,

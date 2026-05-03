@@ -169,6 +169,7 @@ class SendAllAtomsAPITest(TestCase):
         scheme = RateScheme.objects.create(
             name='Test', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('30.00'), unit_label='hour',
+            accounting_category=self.cat,
         )
         resp = self.client.post(
             f'/api/est-worksheets/{self.ws.pk}/tasks/',

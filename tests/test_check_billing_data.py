@@ -13,21 +13,6 @@ class CheckBillingDataTest(BaseTestCase):
         text = out.getvalue()
         self.assertIn('All clear', text)
 
-    def test_reports_ratescheme_without_ac(self):
-        from apps.jobs.models import RateScheme
-        # Bypass clean() because that's the very condition we're checking.
-        # Use objects.create with full_clean off — but RateScheme.save() now
-        # invokes full_clean (per A4), so we use bulk_create to skip it.
-        RateScheme.objects.bulk_create([RateScheme(
-            name='NoAC', algorithm='flat_fee', rate=Decimal('1'),
-            unit_label='ea',
-        )])
-        out = StringIO()
-        call_command('check_billing_data', stdout=out)
-        text = out.getvalue()
-        self.assertIn('RateScheme', text)
-        self.assertIn('without accounting_category', text)
-
     def test_reports_planTask_without_scheme(self):
         from apps.jobs.models import PlanTask, Job
         from apps.estimates.models import EstWorksheet

@@ -169,6 +169,7 @@ class CarryOverUsesPlanTaskDirectlyTest(TestCase):
         scheme = RateScheme.objects.create(
             name='Carry Hourly', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('40.00'), unit_label='hour',
+            accounting_category=self.cat,
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Inline atom',

@@ -4,6 +4,7 @@ from django.db import IntegrityError
 from django.utils import timezone
 from tests.base import BaseTestCase
 from apps.jobs.models import Task, PlanTask, RateScheme, Blep
+from apps.core.models import AccountingCategory
 
 
 class TaskChargeModelTest(BaseTestCase):
@@ -12,6 +13,7 @@ class TaskChargeModelTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.task = Task.objects.get(pk=1)
+        self.ac = AccountingCategory.objects.get(pk=901)
         self.modifiers = [
             {'key': 'messy', 'label': 'Messy job', 'percent': 10},
             {'key': 'doublestick', 'label': 'Double-stick tape', 'percent': 5},
@@ -22,6 +24,7 @@ class TaskChargeModelTest(BaseTestCase):
             rate=Decimal('4.00'),
             unit_label='sq ft',
             modifiers=self.modifiers,
+            accounting_category=self.ac,
         )
 
     def test_create_task_charge(self):
@@ -132,11 +135,13 @@ class TaskChargeElapsedTimeTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.task = Task.objects.get(pk=1)
+        self.ac = AccountingCategory.objects.get(pk=901)
         self.scheme = RateScheme.objects.create(
             name='Labor Rate',
             algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('45.00'),
             unit_label='hour',
+            accounting_category=self.ac,
         )
         # Create 2 Bleps totaling 2 hours
         now = timezone.now()
@@ -172,11 +177,13 @@ class TaskChargeFlatFeeTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.task = Task.objects.get(pk=1)
+        self.ac = AccountingCategory.objects.get(pk=901)
         self.scheme = RateScheme.objects.create(
             name='Setup Fee',
             algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('50.00'),
             unit_label='job',
+            accounting_category=self.ac,
         )
 
     def test_flat_fee_compute(self):

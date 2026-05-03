@@ -32,6 +32,7 @@ class CopyFromWorksheetChargeTest(TestCase):
             modifiers=[
                 {'key': 'messy', 'label': 'Messy', 'percent': 10},
             ],
+            accounting_category=self.category,
         )
 
     def test_copy_creates_task_charge_from_plan_task_billing(self):

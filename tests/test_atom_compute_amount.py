@@ -102,9 +102,12 @@ class PlanTaskComputeAmountTests(FixtureTestCase):
         self.ws = EstWorksheet.objects.create(job=job)
 
     def test_compute_amount_with_scheme(self):
+        from apps.core.models import AccountingCategory
+        ac = AccountingCategory.objects.first()
         scheme = RateScheme.objects.create(
             name='Test Hourly', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('60.00'), unit_label='hour',
+            accounting_category=ac,
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Test',

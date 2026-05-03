@@ -18,13 +18,16 @@ class TaskChargeAPITest(TestCase):
         # Create a read-only worker user
         self.worker = User.objects.create_user(username='worker', password='testpass')
 
-        # Create a rate scheme with a modifier
+        # Create an accounting category and a rate scheme with a modifier
+        from apps.core.models import AccountingCategory
+        self.ac = AccountingCategory.objects.create(code='LAB', name='Labor')
         self.scheme = RateScheme.objects.create(
             name='CNC Router',
             algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('4.00'),
             unit_label='minute',
             modifiers=[{'key': 'messy', 'label': 'Messy', 'percent': 10}],
+            accounting_category=self.ac,
         )
 
         # Create a job and task

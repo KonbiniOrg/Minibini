@@ -122,6 +122,7 @@ class GetSourcePoolTest(TestCase):
         scheme = RateScheme.objects.create(
             name='Hourly Test', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
+            accounting_category=self.cat,
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Inline Task',

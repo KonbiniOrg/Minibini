@@ -287,6 +287,7 @@ class AddFromTemplateTest(TestCase):
         scheme = RateScheme.objects.create(
             name='Hourly', rate='75.00', unit_label='hr',
             algorithm=RateScheme.ENTERED_QTY,
+            accounting_category=self.category,
         )
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
@@ -361,6 +362,7 @@ class AddFromTemplateTest(TestCase):
         scheme = RateScheme.objects.create(
             name='Default Inheritance Test', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('45.00'), unit_label='hour',
+            accounting_category=self.category,
         )
         template_with_defaults = TaskTemplate.objects.create(
             template_name='Template With Defaults',

@@ -9,6 +9,10 @@ from apps.core.models import AccountingCategory
 class RateSchemeModelTest(BaseTestCase):
     """Test creation of RateScheme instances for all 3 algorithm types."""
 
+    def setUp(self):
+        super().setUp()
+        self.ac = AccountingCategory.objects.create(code='RSM', name='RSM')
+
     def test_create_elapsed_time_scheme(self):
         scheme = RateScheme.objects.create(
             name='Standard Labor',
@@ -16,6 +20,7 @@ class RateSchemeModelTest(BaseTestCase):
             algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('75.00'),
             unit_label='hour',
+            accounting_category=self.ac,
         )
         self.assertEqual(scheme.name, 'Standard Labor')
         self.assertEqual(scheme.algorithm, RateScheme.ELAPSED_TIME)
@@ -36,6 +41,7 @@ class RateSchemeModelTest(BaseTestCase):
             unit_label='sq ft',
             minimum_charge=Decimal('20.00'),
             modifiers=modifiers,
+            accounting_category=self.ac,
         )
         self.assertEqual(scheme.algorithm, RateScheme.ENTERED_QTY)
         self.assertEqual(len(scheme.modifiers), 2)
@@ -48,6 +54,7 @@ class RateSchemeModelTest(BaseTestCase):
             algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('50.00'),
             unit_label='job',
+            accounting_category=self.ac,
         )
         self.assertEqual(scheme.algorithm, RateScheme.FLAT_FEE)
         self.assertEqual(str(scheme), 'Setup Fee')
@@ -58,6 +65,7 @@ class RateSchemeModelTest(BaseTestCase):
             algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('10.00'),
             unit_label='job',
+            accounting_category=self.ac,
         )
         from django.db import IntegrityError
         with self.assertRaises(IntegrityError):
@@ -66,6 +74,7 @@ class RateSchemeModelTest(BaseTestCase):
                 algorithm=RateScheme.FLAT_FEE,
                 rate=Decimal('10.00'),
                 unit_label='job',
+                accounting_category=self.ac,
             )
 
 
@@ -74,6 +83,7 @@ class RateSchemeComputeTest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
+        self.ac = AccountingCategory.objects.create(code='RSC', name='RSC')
         self.modifiers = [
             {'key': 'messy', 'label': 'Messy job', 'percent': 10},
             {'key': 'doublestick', 'label': 'Double-stick tape', 'percent': 5},
@@ -85,12 +95,14 @@ class RateSchemeComputeTest(BaseTestCase):
             unit_label='sq ft',
             minimum_charge=Decimal('20.00'),
             modifiers=self.modifiers,
+            accounting_category=self.ac,
         )
         self.flat_scheme = RateScheme.objects.create(
             name='Setup Fee',
             algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('50.00'),
             unit_label='job',
+            accounting_category=self.ac,
         )
 
     def test_effective_rate_no_modifiers(self):
@@ -144,6 +156,7 @@ class RateSchemeComputeTest(BaseTestCase):
             algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('75.00'),
             unit_label='hour',
+            accounting_category=self.ac,
         )
 
         # Mock a task with bleps totaling 2 hours (7200 seconds)
@@ -182,12 +195,14 @@ class RateSchemeComputeTest(BaseTestCase):
 class TaskTemplateRateSchemeTest(BaseTestCase):
     def setUp(self):
         super().setUp()
+        self.ac = AccountingCategory.objects.create(code='TTRS', name='TTRS')
         self.scheme = RateScheme.objects.create(
             name='Hourly Labor Test',
             algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('45.00'),
             unit_label='hour',
             modifiers=[{'key': 'messy', 'label': 'Messy', 'percent': 10}],
+            accounting_category=self.ac,
         )
 
     def test_task_template_with_rate_scheme(self):

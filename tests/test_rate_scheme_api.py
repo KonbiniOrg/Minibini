@@ -44,6 +44,7 @@ class RateSchemeAPITest(TestCase):
         resp = self.client.post('/api/rate-schemes/', {
             'name': 'CNC Setup', 'algorithm': 'flat_fee',
             'rate': '50.00', 'unit_label': 'ea',
+            'accounting_category': self.ac.pk,
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.json()['name'], 'CNC Setup')
@@ -54,6 +55,7 @@ class RateSchemeAPITest(TestCase):
             'name': 'CNC Router', 'algorithm': 'entered_qty',
             'rate': '4.00', 'unit_label': 'min',
             'modifiers': [{'key': 'messy', 'label': 'Messy', 'percent': 10}],
+            'accounting_category': self.ac.pk,
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(len(resp.json()['modifiers']), 1)

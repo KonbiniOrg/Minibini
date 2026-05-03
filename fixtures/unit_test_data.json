@@ -597,7 +597,7 @@
       "unit_label": "hour",
       "minimum_charge": null,
       "modifiers": [],
-      "accounting_category": null
+      "accounting_category": 901
     }
   },
   {
@@ -622,7 +622,7 @@
           "percent": 5
         }
       ],
-      "accounting_category": null
+      "accounting_category": 901
     }
   },
   {
@@ -636,7 +636,7 @@
       "unit_label": "job",
       "minimum_charge": null,
       "modifiers": [],
-      "accounting_category": null
+      "accounting_category": 901
     }
   },
   {
