@@ -421,8 +421,14 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
 
     def test_add_task_manual(self):
         from apps.estimates.services import WorksheetService
+        from apps.jobs.models import RateScheme
+        ac = AccountingCategory.objects.create(code='X-atm', name='X-atm')
+        scheme = RateScheme.objects.create(
+            name='S-atm', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=ac,
+        )
         task = WorksheetService.add_task_manual(
-            self.ws.pk, name='Custom task',
+            self.ws.pk, name='Custom task', rate_scheme_id=scheme.pk,
         )
         self.assertEqual(task.name, 'Custom task')
         self.assertEqual(task.est_worksheet, self.ws)
