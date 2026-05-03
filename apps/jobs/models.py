@@ -380,6 +380,26 @@ class RateScheme(models.Model):
         """Return modifiers list for UI rendering."""
         return list(self.modifiers)
 
+    def is_referenced(self):
+        """True if any PlanTask, TaskCharge, or TaskTemplate points at this scheme."""
+        from apps.estimates.models import TaskTemplate
+        if PlanTask.objects.filter(rate_scheme=self).exists():
+            return True
+        if TaskCharge.objects.filter(rate_scheme=self).exists():
+            return True
+        if TaskTemplate.objects.filter(rate_scheme=self).exists():
+            return True
+        return False
+
+    def reference_counts(self):
+        """Return reference counts for the outdated-schemes UI."""
+        from apps.estimates.models import TaskTemplate
+        return {
+            'plan_task_count': PlanTask.objects.filter(rate_scheme=self).count(),
+            'task_charge_count': TaskCharge.objects.filter(rate_scheme=self).count(),
+            'task_template_count': TaskTemplate.objects.filter(rate_scheme=self).count(),
+        }
+
     def __str__(self):
         return self.name
 

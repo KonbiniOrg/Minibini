@@ -238,3 +238,70 @@ class RateSchemeSupersessionFieldsTest(BaseTestCase):
         # New nullable fields exist with sensible defaults
         self.assertIsNone(scheme.replaced_by)
         self.assertIsNone(scheme.replaced_at)
+
+
+class RateSchemeIsReferencedTest(BaseTestCase):
+    fixtures = []  # clean slate
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        self.ac = AccountingCategory.objects.create(code='X', name='X')
+
+    def test_unreferenced_scheme_is_not_referenced(self):
+        from apps.jobs.models import RateScheme
+        s = RateScheme.objects.create(
+            name='unref', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        self.assertFalse(s.is_referenced())
+
+    def test_scheme_with_planTask_is_referenced(self):
+        from apps.jobs.models import RateScheme, PlanTask
+        from apps.estimates.models import EstWorksheet
+        from apps.contacts.models import Contact, Business
+        from apps.jobs.models import Job
+        contact = Contact.objects.create(first_name='F', last_name='L', email='f@l.test')
+        biz = Business.objects.create(business_name='B', default_contact=contact)
+        contact.business = biz
+        contact.save()
+        job = Job.objects.create(job_number='J1', contact=contact)
+        ws = EstWorksheet.objects.create(job=job)
+        s = RateScheme.objects.create(
+            name='ref', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        PlanTask.objects.create(
+            est_worksheet=ws, name='t', rate_scheme=s,
+            estimated_billable_qty=Decimal('1'),
+        )
+        self.assertTrue(s.is_referenced())
+
+    def test_scheme_with_taskCharge_is_referenced(self):
+        from apps.jobs.models import RateScheme, Task, TaskCharge, Job
+        from apps.contacts.models import Contact, Business
+        contact = Contact.objects.create(first_name='F', last_name='L', email='f2@l.test')
+        biz = Business.objects.create(business_name='B', default_contact=contact)
+        contact.business = biz
+        contact.save()
+        job = Job.objects.create(job_number='J2', contact=contact)
+        s = RateScheme.objects.create(
+            name='refTC', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        t = Task.objects.create(job=job, name='t')
+        TaskCharge.objects.create(task=t, rate_scheme=s)
+        self.assertTrue(s.is_referenced())
+
+    def test_scheme_with_taskTemplate_is_referenced(self):
+        from apps.jobs.models import RateScheme
+        from apps.estimates.models import TaskTemplate
+        s = RateScheme.objects.create(
+            name='refTT', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        TaskTemplate.objects.create(
+            template_name='tt', rate_scheme=s,
+            default_billable_qty=Decimal('1'),
+        )
+        self.assertTrue(s.is_referenced())
