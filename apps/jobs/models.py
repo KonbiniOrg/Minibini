@@ -195,6 +195,12 @@ class PlanTask(TaskBase):
             return None
         return self.rate_scheme.effective_rate(self.active_modifiers)
 
+    @property
+    def effective_accounting_category(self):
+        if self.rate_scheme_id:
+            return self.rate_scheme.accounting_category
+        return self.accounting_category  # Phase A fallback to legacy field
+
 
 class Task(TaskBase):
     """Work task on a Job. Has lifecycle, hierarchy, bleps."""
@@ -275,6 +281,16 @@ class Task(TaskBase):
                 self.sort_order = max_order + 1
         self.full_clean()
         super().save(*args, **kwargs)
+
+    @property
+    def effective_accounting_category(self):
+        try:
+            charge = self.charge
+        except TaskCharge.DoesNotExist:
+            return self.accounting_category  # Phase A fallback
+        if charge.rate_scheme_id:
+            return charge.rate_scheme.accounting_category
+        return self.accounting_category
 
 
 

@@ -435,6 +435,12 @@ class TaskTemplate(models.Model):
     def __str__(self):
         return self.template_name
 
+    @property
+    def effective_accounting_category(self):
+        if self.rate_scheme_id:
+            return self.rate_scheme.accounting_category
+        return self.accounting_category  # Phase A fallback
+
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
                        assignee=None, sort_order=None):
         """Generate a PlanTask or Task from this template with specified quantity.

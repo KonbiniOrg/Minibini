@@ -104,3 +104,58 @@ class GenerateTaskEstWorksheetBranchTest(BaseTestCase):
         self.assertEqual(pt.rate_scheme, self.scheme)
         self.assertEqual(pt.active_modifiers, ['m1'])
         self.assertEqual(pt.estimated_billable_qty, Decimal('5'))
+
+
+class EffectiveACPropertyTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import RateScheme
+        self.scheme_ac = AccountingCategory.objects.create(code='S-eac', name='Scheme AC')
+        self.scheme = RateScheme.objects.create(
+            name='S-eac', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.scheme_ac,
+        )
+
+    def _make_job(self):
+        from apps.contacts.models import Business, Contact
+        from apps.jobs.models import Job
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f-eac@l.test',
+        )
+        biz = Business.objects.create(
+            business_name='B-eac', default_contact=contact,
+        )
+        contact.business = biz
+        contact.save()
+        return Job.objects.create(job_number='J-eac', contact=contact)
+
+    def test_planTask_effective_ac_comes_from_scheme(self):
+        from apps.jobs.models import PlanTask
+        from apps.estimates.models import EstWorksheet
+        job = self._make_job()
+        ws = EstWorksheet.objects.create(job=job)
+        pt = PlanTask.objects.create(
+            est_worksheet=ws, name='t',
+            rate_scheme=self.scheme,
+            estimated_billable_qty=Decimal('1'),
+        )
+        self.assertEqual(pt.effective_accounting_category, self.scheme_ac)
+
+    def test_task_effective_ac_comes_from_charge_scheme(self):
+        from apps.jobs.models import Task, TaskCharge
+        job = self._make_job()
+        t = Task.objects.create(job=job, name='t')
+        TaskCharge.objects.create(task=t, rate_scheme=self.scheme)
+        t.refresh_from_db()
+        self.assertEqual(t.effective_accounting_category, self.scheme_ac)
+
+    def test_taskTemplate_effective_ac_comes_from_scheme(self):
+        from apps.estimates.models import TaskTemplate
+        tt = TaskTemplate.objects.create(
+            template_name='tt-eac', rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1'),
+        )
+        self.assertEqual(tt.effective_accounting_category, self.scheme_ac)
