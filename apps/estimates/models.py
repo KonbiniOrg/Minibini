@@ -448,6 +448,13 @@ class TaskTemplate(models.Model):
         The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
         """
         from apps.jobs.models import Job, Task, PlanTask
+        from apps.core.services import SchemeSupersededError
+
+        if self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None:
+            raise SchemeSupersededError(
+                f'Template "{self.template_name}" references a superseded '
+                f'RateScheme. Update the template before adding tasks from it.'
+            )
 
         if isinstance(container, Job):
             return Task.objects.create(

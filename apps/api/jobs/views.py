@@ -10,7 +10,7 @@ from apps.jobs.models import Job, Task
 from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
 from apps.core.models import HistoryEntry
-from apps.core.services import NotFoundError, ServiceError
+from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
 from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
 from apps.api.mixins import StatusTransitionMixin, JobTaskMixin
 from apps.api.permissions import CanManageJobs
@@ -176,6 +176,8 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
             )
         try:
             JobService.populate_from_template(job, template)
+        except SchemeSupersededError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except ValidationError as e:
             return Response(
                 {'detail': e.message if hasattr(e, 'message') else str(e)},
@@ -297,6 +299,11 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                 {'est_qty': ['Invalid decimal value.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        task = template.generate_task(job, est_qty)
+        try:
+            task = template.generate_task(job, est_qty)
+        except SchemeSupersededError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
+        except ServiceError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         serializer = TaskSerializer(task)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

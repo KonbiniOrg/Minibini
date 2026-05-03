@@ -376,6 +376,16 @@ class WorksheetService:
         except TaskTemplate.DoesNotExist:
             raise NotFoundError(f'TaskTemplate {template_pk} not found')
 
+        # Guard: refuse to use a template whose RateScheme has been superseded.
+        # Only fires when the caller is relying on the template's rate_scheme
+        # (i.e. they didn't supply an explicit override).
+        if rate_scheme_id is None and tt.rate_scheme_id and tt.rate_scheme.replaced_by_id is not None:
+            from apps.core.services import SchemeSupersededError
+            raise SchemeSupersededError(
+                f'Template "{tt.template_name}" references a superseded '
+                f'RateScheme. Update the template before adding tasks from it.'
+            )
+
         task = PlanTask.objects.create(
             name=tt.template_name,
             description=tt.description,

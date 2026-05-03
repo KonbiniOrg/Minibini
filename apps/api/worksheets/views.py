@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from apps.estimates.models import EstWorksheet
 from apps.estimates.services import WorksheetService
 from django.core.exceptions import ValidationError
-from apps.core.services import ServiceError, NotFoundError
+from apps.core.services import ServiceError, NotFoundError, SchemeSupersededError
 from apps.api.mixins import StatusTransitionMixin, PlanTaskMixin
 from apps.api.permissions import CanManageJobs
 from .serializers import EstWorksheetSerializer, PlanTaskSerializer, PlanMaterialWriteSerializer
@@ -45,6 +45,12 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         if job:
             qs = qs.filter(job_id=job)
         return qs
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except SchemeSupersededError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
 
     def perform_create(self, serializer):
         data = serializer.validated_data
@@ -110,6 +116,8 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
                     else None
                 ),
             )
+        except SchemeSupersededError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except (ServiceError, NotFoundError) as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
