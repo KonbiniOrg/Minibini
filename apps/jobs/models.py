@@ -342,8 +342,36 @@ class RateScheme(models.Model):
     )
     replaced_at = models.DateTimeField(null=True, blank=True)
 
+    # Fields that, once any reference exists, may not be changed
+    # (replaced_by and replaced_at are the only allowed mutations).
+    FROZEN_FIELDS = (
+        'name', 'description', 'algorithm', 'rate', 'unit_label',
+        'minimum_charge', 'modifiers', 'accounting_category',
+    )
+
     class Meta:
         db_table = 'rate_schemes'
+
+    def clean(self):
+        super().clean()
+        if self.pk and self.is_referenced():
+            old = RateScheme.objects.get(pk=self.pk)
+            changed = [
+                f for f in self.FROZEN_FIELDS
+                if getattr(self, f) != getattr(old, f)
+            ]
+            if changed:
+                from django.core.exceptions import ValidationError
+                raise ValidationError({
+                    f: 'Scheme is referenced; create a new version instead of editing.'
+                    for f in changed
+                })
+
+    def save(self, *args, **kwargs):
+        # Belt-and-braces: ensure clean() runs even on bare .save() calls.
+        if self.pk:
+            self.full_clean()
+        super().save(*args, **kwargs)
 
     def effective_rate(self, active_modifiers=None):
         """Compute rate with additive modifier surcharges."""

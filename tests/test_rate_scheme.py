@@ -356,3 +356,65 @@ class RateSchemeSupersedeMethodTest(BaseTestCase):
         new = old.supersede(name='V2')
         new.modifiers.append({'key': 'm2', 'label': 'M2', 'percent': 5})
         self.assertEqual(len(old.modifiers), 1)
+
+
+class RateSchemeFreezeOnReferenceTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        self.ac = AccountingCategory.objects.create(code='X', name='X')
+
+    def _make_referenced_scheme(self):
+        from apps.jobs.models import RateScheme, PlanTask, Job
+        from apps.estimates.models import EstWorksheet
+        from apps.contacts.models import Contact, Business
+        # NOTE: real model schema requires Business.business_name + default_contact
+        # FK, and Contact.email. Build the pair in the order: Contact first
+        # (without business), then Business with default_contact, then attach
+        # business back to contact and save.
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f@l.test',
+        )
+        biz = Business.objects.create(
+            business_name='B-frz', default_contact=contact,
+        )
+        contact.business = biz
+        contact.save()
+        job = Job.objects.create(job_number='J-frz', contact=contact)
+        ws = EstWorksheet.objects.create(job=job)
+        s = RateScheme.objects.create(
+            name='S-frz', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        PlanTask.objects.create(
+            est_worksheet=ws, name='t', rate_scheme=s,
+            estimated_billable_qty=Decimal('1'),
+        )
+        return s
+
+    def test_unreferenced_scheme_can_be_edited(self):
+        from apps.jobs.models import RateScheme
+        s = RateScheme.objects.create(
+            name='U-frz', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        s.rate = Decimal('2')
+        s.save()  # no exception
+        s.refresh_from_db()
+        self.assertEqual(s.rate, Decimal('2'))
+
+    def test_referenced_scheme_rejects_edits(self):
+        from django.core.exceptions import ValidationError
+        s = self._make_referenced_scheme()
+        s.rate = Decimal('99')
+        with self.assertRaises(ValidationError):
+            s.full_clean()
+
+    def test_supersede_still_works_on_referenced_scheme(self):
+        s = self._make_referenced_scheme()
+        # Pass a new name to avoid the unique-name constraint on RateScheme.name.
+        new = s.supersede(name='S-frz-v2', rate=Decimal('99'))
+        s.refresh_from_db()
+        self.assertEqual(s.replaced_by, new)
