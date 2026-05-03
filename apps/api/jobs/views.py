@@ -22,7 +22,12 @@ from .serializers import JobSerializer
 class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     queryset = Job.objects.select_related('contact', 'template') \
         .prefetch_related(
-            Prefetch('tasks', queryset=Task.objects.select_related('assignee').order_by('sort_order')),
+            Prefetch(
+                'tasks',
+                queryset=Task.objects.select_related(
+                    'assignee', 'charge__rate_scheme',
+                ).order_by('sort_order'),
+            ),
             Prefetch('materials', queryset=Material.objects.select_related('price_list_item')),
             'template__templatetaskassociation_set__task_template',
         ) \

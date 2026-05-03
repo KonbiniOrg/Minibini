@@ -149,6 +149,12 @@ class JobTaskSubResourceTest(TestCase):
         self.job = Job.objects.create(
             job_number='C2-T-001', name='Task Job', contact=self.contact,
         )
+        from apps.jobs.models import RateScheme
+        ac = AccountingCategory.objects.create(code='JT-AC', name='Job Task AC')
+        self.scheme = RateScheme.objects.create(
+            name='Job Task Scheme', algorithm='flat_fee',
+            rate=Decimal('25.00'), unit_label='ea', accounting_category=ac,
+        )
 
     def test_list_tasks_on_job(self):
         Task.objects.create(job=self.job, name='First task')
@@ -160,13 +166,16 @@ class JobTaskSubResourceTest(TestCase):
     def test_create_task_on_job(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/tasks/',
-            {'name': 'New task', 'units': 'hours', 'rate': '25.00', 'est_qty': '3.00'},
+            {'name': 'New task', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data['name'], 'New task')
         t = Task.objects.get(pk=response.data['task_id'])
         self.assertEqual(t.job_id, self.job.pk)
+        # TaskCharge created in same transaction
+        self.assertTrue(hasattr(t, 'charge'))
+        self.assertEqual(t.charge.rate_scheme_id, self.scheme.pk)
 
     def test_update_task_on_job(self):
         task = Task.objects.create(job=self.job, name='Original')

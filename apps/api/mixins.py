@@ -278,16 +278,42 @@ class JobTaskMixin:
             serializer = self.task_serializer_class(tasks, many=True)
             return Response(serializer.data)
 
-        serializer = self.task_serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(job=job)
+        from apps.jobs.services import TaskService
+        from apps.jobs.models import RateScheme
+        data = request.data
+        try:
+            task = TaskService.create_direct(
+                job,
+                name=data.get('name', ''),
+                rate_scheme_id=data.get('rate_scheme'),
+                active_modifiers=data.get('active_modifiers') or [],
+                actuals=data.get('actuals') or {},
+                description=data.get('description', ''),
+                parent_task_id=data.get('parent_task'),
+                assignee_id=data.get('assignee'),
+            )
+        except RateScheme.DoesNotExist:
+            return Response(
+                {'detail': {'rate_scheme': 'RateScheme not found.'}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ValidationError as e:
+            detail = e.message_dict if hasattr(e, 'message_dict') else (
+                e.message if hasattr(e, 'message') else str(e)
+            )
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.task_serializer_class(task)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['patch', 'delete'],
+    @action(detail=True, methods=['get', 'patch', 'delete'],
             url_path='tasks/(?P<task_pk>[0-9]+)', url_name='task-detail')
     def task_detail(self, request, pk=None, task_pk=None):
         job = self.get_object()
         task = self._get_task_or_404(job, task_pk)
+
+        if request.method == 'GET':
+            serializer = self.task_serializer_class(task)
+            return Response(serializer.data)
 
         if request.method == 'DELETE':
             from django.core.exceptions import ValidationError

@@ -2,6 +2,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
+from tests.base import BaseTestCase
 from apps.jobs.models import RateScheme, TaskCharge, Task
 
 User = get_user_model()
@@ -145,3 +146,51 @@ class TaskChargeAPITest(TestCase):
     def test_task_not_found_returns_404(self):
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/99999/charge/')
         self.assertEqual(resp.status_code, 404)
+
+
+class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory, User
+        from django.contrib.auth.models import Permission
+        from apps.jobs.models import RateScheme, Job, Task, TaskCharge
+        from apps.contacts.models import Business, Contact
+        self.user = User.objects.create_user('u-tnf', 'u-tnf@x.test', 'pw')
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.user.user_permissions.add(perm)
+        self.client.force_login(self.user)
+        ac = AccountingCategory.objects.create(code='X-tnf', name='X-tnf')
+        self.scheme = RateScheme.objects.create(
+            name='S-tnf', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=ac,
+        )
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f-tnf@l.test',
+        )
+        biz = Business.objects.create(
+            business_name='B-tnf', default_contact=contact,
+        )
+        contact.business = biz
+        contact.save()
+        self.job = Job.objects.create(job_number='J-tnf', contact=contact)
+        self.task = Task.objects.create(job=self.job, name='T-tnf')
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
+
+    def test_task_list_omits_legacy_fields(self):
+        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
+        body = resp.json()
+        # The list endpoint may be paginated or unpaginated; handle both.
+        items = body.get('results', body) if isinstance(body, dict) else body
+        first = items[0]
+        for legacy in ('units', 'rate', 'est_qty', 'accounting_category'):
+            self.assertNotIn(legacy, first)
+        self.assertIn('charge', first)
+
+    def test_task_detail_omits_legacy_fields(self):
+        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/')
+        body = resp.json()
+        for legacy in ('units', 'rate', 'est_qty', 'accounting_category'):
+            self.assertNotIn(legacy, body)
+        self.assertIn('charge', body)
