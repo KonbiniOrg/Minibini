@@ -110,7 +110,7 @@ class PlanTaskComputeAmountTests(FixtureTestCase):
             est_worksheet=self.ws, name='Test',
             rate_scheme=scheme,
             active_modifiers=[],
-            estimated_billable_qty=Decimal('2.5'),
+            est_qty=Decimal('2.5'),
         )
         self.assertEqual(pt.compute_amount(), Decimal('150.00'))
 

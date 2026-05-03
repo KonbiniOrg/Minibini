@@ -68,8 +68,8 @@ class AtomCarryOverService:
                 source_plan_task=pt,
             )
             actuals = {}
-            if pt.rate_scheme.algorithm == RateScheme.ENTERED_QTY and pt.estimated_billable_qty is not None:
-                actuals = {'qty': str(pt.estimated_billable_qty.normalize())}
+            if pt.rate_scheme.algorithm == RateScheme.ENTERED_QTY and pt.est_qty is not None:
+                actuals = {'qty': str(pt.est_qty.normalize())}
             TaskCharge.objects.create(
                 task=task,
                 rate_scheme=pt.rate_scheme,

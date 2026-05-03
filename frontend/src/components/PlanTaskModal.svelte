@@ -33,7 +33,7 @@
         accountingCategory = task.accounting_category ?? '';
         rateSchemeId = task.rate_scheme ?? '';
         activeModifiers = [...(task.active_modifiers || [])];
-        estimatedBillableQty = task.estimated_billable_qty ?? '';
+        estimatedBillableQty = task.est_qty ?? '';
         templateId = '';
       } else if (mode === 'create-template') {
         createMode = 'template';
@@ -113,7 +113,7 @@
         accounting_category: accountingCategory || null,
         rate_scheme: rateSchemeId || null,
         active_modifiers: activeModifiers,
-        estimated_billable_qty: estimatedBillableQty || null,
+        est_qty: estimatedBillableQty || null,
       };
       if (isEdit && task) {
         await api.patch(
@@ -124,7 +124,7 @@
         if (!templateId) { error = 'Please select a template.'; busy = false; return; }
         await api.post(`/api/est-worksheets/${worksheetId}/add-from-template/`, {
           task_template_id: Number(templateId),
-          estimated_billable_qty: estimatedBillableQty || null,
+          est_qty: estimatedBillableQty || null,
           rate_scheme: rateSchemeId || null,
           active_modifiers: activeModifiers,
         });

@@ -37,7 +37,7 @@ class EstimateWizardAPITest(TestCase):
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('2'),
+            rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
@@ -145,7 +145,7 @@ class SendAllAtomsAPITest(TestCase):
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('1'),
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_send_all_creates_estimate_and_line_items(self):
@@ -178,10 +178,10 @@ class SendAllAtomsAPITest(TestCase):
                 'accounting_category': None,
                 'rate_scheme': scheme.pk,
                 'active_modifiers': [],
-                'estimated_billable_qty': '4.5',
+                'est_qty': '4.5',
             },
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(resp.json()['estimated_billable_qty'], '4.50')
+        self.assertEqual(resp.json()['est_qty'], '4.50')
         self.assertEqual(resp.json()['amount'], '135.00')

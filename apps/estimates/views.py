@@ -416,7 +416,7 @@ def task_add_from_template(request, worksheet_id):
 
             task = WorksheetService.add_task_from_template(
                 worksheet.pk, template.pk,
-                estimated_billable_qty=est_qty,
+                est_qty=est_qty,
             )
 
             messages.success(request, f'Task "{task.name}" added from template')

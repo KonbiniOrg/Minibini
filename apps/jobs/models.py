@@ -157,7 +157,7 @@ class PlanTask(TaskBase):
         'jobs.RateScheme', on_delete=models.PROTECT, null=True, blank=True,
     )
     active_modifiers = models.JSONField(default=list, blank=True)
-    estimated_billable_qty = models.DecimalField(
+    est_qty = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
     )
 
@@ -181,13 +181,13 @@ class PlanTask(TaskBase):
 
         Ignores the active_modifiers argument (uses self.active_modifiers).
         Parameter is accepted to match the BillableAtom interface.
-        Returns Decimal('0.00') when rate_scheme or estimated_billable_qty is unset
+        Returns Decimal('0.00') when rate_scheme or est_qty is unset
         — i.e., billing not yet configured.
         """
-        if not self.rate_scheme_id or self.estimated_billable_qty is None:
+        if not self.rate_scheme_id or self.est_qty is None:
             return Decimal('0.00')
         return self.rate_scheme.compute_charge(
-            self.estimated_billable_qty, self.active_modifiers,
+            self.est_qty, self.active_modifiers,
         )
 
     def effective_rate(self):

@@ -25,11 +25,11 @@ class Command(BaseCommand):
                 f'{list(planTask_no_scheme.values_list("plan_task_id", "name"))}'
             )
 
-        # PlanTask.estimated_billable_qty will be renamed to est_qty (and NOT NULL)
-        planTask_no_qty = PlanTask.objects.filter(estimated_billable_qty__isnull=True)
+        # PlanTask.est_qty will become NOT NULL
+        planTask_no_qty = PlanTask.objects.filter(est_qty__isnull=True)
         if planTask_no_qty.exists():
             issues.append(
-                f'{planTask_no_qty.count()} PlanTask(s) without estimated_billable_qty: '
+                f'{planTask_no_qty.count()} PlanTask(s) without est_qty: '
                 f'{list(planTask_no_qty.values_list("plan_task_id", "name"))}'
             )
 

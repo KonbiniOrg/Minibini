@@ -72,7 +72,7 @@ class GetSourcePoolTest(TestCase):
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('2'),
+            rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
 
         # PlanMaterial atom (task-less)
@@ -125,7 +125,7 @@ class GetSourcePoolTest(TestCase):
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Inline Task',
-            rate_scheme=scheme, estimated_billable_qty=Decimal('3.0'),
+            rate_scheme=scheme, est_qty=Decimal('3.0'),
         )
 
         pool = EstimateWizardService.get_source_pool(self.ws)
@@ -173,7 +173,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('2'),
+            rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
@@ -251,12 +251,12 @@ class AddAtomsToExistingLineItemTest(TestCase):
         self.pt1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='A',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('1'),
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         self.pt2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='B',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('1'),
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
         self.li = EstimateWizardService.add_atoms_to_new_line_item(
@@ -313,12 +313,12 @@ class RemoveAtomsFromLineItemTest(TestCase):
         self.pt1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='A',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('1'),
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         self.pt2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='B',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('1'),
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
         self.li = EstimateWizardService.add_atoms_to_new_line_item(
@@ -419,7 +419,7 @@ class SendAllAtomsTest(TestCase):
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='A',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('2'),
+            rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='steel', quantity=Decimal('3'),

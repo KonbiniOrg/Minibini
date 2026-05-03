@@ -41,7 +41,7 @@ class CopyFromWorksheetChargeTest(TestCase):
             accounting_category=self.category,
             rate_scheme=self.scheme,
             active_modifiers=['messy'],
-            estimated_billable_qty=Decimal('30.00'),
+            est_qty=Decimal('30.00'),
         )
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
@@ -103,7 +103,7 @@ class GenerateTaskEstWorksheetBranchTest(BaseTestCase):
         pt = self.template.generate_task(self.ws, est_qty=Decimal('5'))
         self.assertEqual(pt.rate_scheme, self.scheme)
         self.assertEqual(pt.active_modifiers, ['m1'])
-        self.assertEqual(pt.estimated_billable_qty, Decimal('5'))
+        self.assertEqual(pt.est_qty, Decimal('5'))
 
 
 class EffectiveACPropertyTest(BaseTestCase):
@@ -140,7 +140,7 @@ class EffectiveACPropertyTest(BaseTestCase):
         pt = PlanTask.objects.create(
             est_worksheet=ws, name='t',
             rate_scheme=self.scheme,
-            estimated_billable_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
         self.assertEqual(pt.effective_accounting_category, self.scheme_ac)
 
@@ -192,7 +192,7 @@ class AddTaskManualRequiresSchemeTest(BaseTestCase):
         with self.assertRaises(ValidationError):
             WorksheetService.add_task_manual(
                 self.ws.pk, name='no scheme',
-                estimated_billable_qty=Decimal('1'),
+                est_qty=Decimal('1'),
             )
 
     def test_add_task_manual_with_scheme_succeeds(self):
@@ -200,7 +200,7 @@ class AddTaskManualRequiresSchemeTest(BaseTestCase):
         pt = WorksheetService.add_task_manual(
             self.ws.pk, name='ok',
             rate_scheme_id=self.scheme.pk,
-            estimated_billable_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
         self.assertEqual(pt.rate_scheme_id, self.scheme.pk)
 
@@ -237,7 +237,7 @@ class PlanTaskSerializerNoACTest(BaseTestCase):
         pt = PlanTask.objects.create(
             est_worksheet=ws, name='t',
             rate_scheme=self.scheme,
-            estimated_billable_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
         resp = self.client.get(f'/api/plan-tasks/{pt.pk}/')
         body = resp.json()

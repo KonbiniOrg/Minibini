@@ -272,8 +272,7 @@ class AddFromTemplateTest(TestCase):
         self.assertEqual(response.data['name'], 'Standard Sanding')
         # The fixture's TaskTemplate has no rate_scheme, so rate_scheme is null.
         self.assertIsNone(response.data['rate_scheme'])
-        # est_qty is now mapped to estimated_billable_qty for backwards compat.
-        self.assertEqual(response.data['estimated_billable_qty'], '100.00')
+        self.assertEqual(response.data['est_qty'], '100.00')
         self.assertEqual(response.data['amount'], '0.00')
         # Verify it was created in the DB
         self.assertTrue(
@@ -294,14 +293,14 @@ class AddFromTemplateTest(TestCase):
             {
                 'task_template_id': self.task_template.pk,
                 'rate_scheme': scheme.rate_scheme_id,
-                'estimated_billable_qty': '8.00',
+                'est_qty': '8.00',
                 'active_modifiers': ['overtime'],
             },
             format='json',
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['rate_scheme'], scheme.rate_scheme_id)
-        self.assertEqual(response.data['estimated_billable_qty'], '8.00')
+        self.assertEqual(response.data['est_qty'], '8.00')
         self.assertEqual(response.data['active_modifiers'], ['overtime'])
 
     def test_add_from_template_default_qty(self):
@@ -381,5 +380,5 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['rate_scheme'], scheme.rate_scheme_id)
-        self.assertEqual(response.data['estimated_billable_qty'], '3.00')
+        self.assertEqual(response.data['est_qty'], '3.00')
         self.assertEqual(response.data['active_modifiers'], ['rush'])

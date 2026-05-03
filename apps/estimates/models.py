@@ -275,7 +275,7 @@ class EstWorksheet(AbstractWorkContainer):
                 accounting_category=plan_task.accounting_category,
                 rate_scheme=plan_task.rate_scheme,
                 active_modifiers=list(plan_task.active_modifiers or []),
-                estimated_billable_qty=plan_task.estimated_billable_qty,
+                est_qty=plan_task.est_qty,
             )
 
             # Copy plan materials to the new plan task
@@ -484,7 +484,7 @@ class TaskTemplate(models.Model):
                 accounting_category=self.accounting_category,  # legacy, dropped Phase B
                 rate_scheme=self.rate_scheme,
                 active_modifiers=list(self.default_active_modifiers or []),
-                estimated_billable_qty=est_qty,
+                est_qty=est_qty,
                 sort_order=sort_order,
             )
 

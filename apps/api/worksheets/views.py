@@ -90,12 +90,9 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
     def add_from_template(self, request, pk=None):
         worksheet = self.get_object()
         task_template_id = request.data.get('task_template_id')
-        # est_qty is a legacy field — only use it if explicitly sent and
-        # estimated_billable_qty is not also provided.
         est_qty = request.data.get('est_qty')
         rate_scheme = request.data.get('rate_scheme')
         active_modifiers = request.data.get('active_modifiers')
-        estimated_billable_qty = request.data.get('estimated_billable_qty')
         if not task_template_id:
             return Response(
                 {'task_template_id': ['This field is required.']},
@@ -103,16 +100,14 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
             )
         try:
             from decimal import Decimal
-            # Prefer explicit estimated_billable_qty; fall back to legacy est_qty if sent.
-            ebq = estimated_billable_qty if estimated_billable_qty is not None else est_qty
             task = WorksheetService.add_task_from_template(
                 worksheet.pk,
                 task_template_id,
                 rate_scheme_id=int(rate_scheme) if rate_scheme else None,
                 active_modifiers=active_modifiers,
-                estimated_billable_qty=(
-                    Decimal(str(ebq))
-                    if ebq is not None and ebq != ''
+                est_qty=(
+                    Decimal(str(est_qty))
+                    if est_qty is not None and est_qty != ''
                     else None
                 ),
             )

@@ -273,7 +273,7 @@ class RateSchemeIsReferencedTest(BaseTestCase):
         )
         PlanTask.objects.create(
             est_worksheet=ws, name='t', rate_scheme=s,
-            estimated_billable_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
         self.assertTrue(s.is_referenced())
 
@@ -390,7 +390,7 @@ class RateSchemeFreezeOnReferenceTest(BaseTestCase):
         )
         PlanTask.objects.create(
             est_worksheet=ws, name='t', rate_scheme=s,
-            estimated_billable_qty=Decimal('1'),
+            est_qty=Decimal('1'),
         )
         return s
 

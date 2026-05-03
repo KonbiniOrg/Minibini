@@ -31,7 +31,7 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
             accounting_category=self.cat,
-            rate_scheme=self.scheme, estimated_billable_qty=Decimal('2'),
+            rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
@@ -61,7 +61,7 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
             rate=Decimal('50'), unit_label='item', accounting_category=self.cat,
         )
         self.pt.rate_scheme = scheme_qty
-        self.pt.estimated_billable_qty = Decimal('2')
+        self.pt.est_qty = Decimal('2')
         self.pt.save()
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
         t = Task.objects.get(job=self.job)
@@ -172,7 +172,7 @@ class CarryOverUsesPlanTaskDirectlyTest(TestCase):
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Inline atom',
-            rate_scheme=scheme, estimated_billable_qty=Decimal('2.0'),
+            rate_scheme=scheme, est_qty=Decimal('2.0'),
         )
 
         AtomCarryOverService.carry_over_for_estimate(self.estimate)

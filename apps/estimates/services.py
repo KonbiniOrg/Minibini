@@ -359,7 +359,7 @@ class WorksheetService:
         worksheet_pk, template_pk,
         rate_scheme_id=None,
         active_modifiers=None,
-        estimated_billable_qty=None,
+        est_qty=None,
     ):
         """Add a PlanTask to a draft worksheet from a TaskTemplate."""
         from apps.jobs.models import PlanTask
@@ -392,7 +392,7 @@ class WorksheetService:
             est_worksheet=ws,
             rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
             active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
-            estimated_billable_qty=estimated_billable_qty if estimated_billable_qty is not None else tt.default_billable_qty,
+            est_qty=est_qty if est_qty is not None else tt.default_billable_qty,
         )
         return task
 

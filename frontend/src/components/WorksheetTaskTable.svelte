@@ -55,7 +55,7 @@
     {#each tasks as task, i}
       <tr class="task-row">
         <td>{task.name}{#if task.description}<br><span class="dim">{task.description}</span>{/if}</td>
-        <td class="text-right">{task.estimated_billable_qty ?? '-'}</td>
+        <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">{fmt(taskTotal(task))}</td>
         {#if !readonly}
           <td class="actions-cell">
