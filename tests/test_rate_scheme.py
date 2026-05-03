@@ -305,3 +305,33 @@ class RateSchemeIsReferencedTest(BaseTestCase):
             default_billable_qty=Decimal('1'),
         )
         self.assertTrue(s.is_referenced())
+
+
+class RateSchemeSupersedeMethodTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        self.ac = AccountingCategory.objects.create(code='X', name='X')
+
+    def test_supersede_creates_new_scheme_and_links_old(self):
+        from apps.jobs.models import RateScheme
+        from django.utils import timezone
+        old = RateScheme.objects.create(
+            name='Old', algorithm='flat_fee', rate=Decimal('10'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        before = timezone.now()
+        new = old.supersede(name='New', rate=Decimal('15'))
+        old.refresh_from_db()
+        self.assertEqual(old.replaced_by, new)
+        self.assertGreaterEqual(old.replaced_at, before)
+        self.assertEqual(new.name, 'New')
+        self.assertEqual(new.rate, Decimal('15'))
+        # New scheme inherits non-overridden fields
+        self.assertEqual(new.algorithm, 'flat_fee')
+        self.assertEqual(new.unit_label, 'ea')
+        self.assertEqual(new.accounting_category, self.ac)
+        self.assertIsNone(new.replaced_by)
+        self.assertIsNone(new.replaced_at)

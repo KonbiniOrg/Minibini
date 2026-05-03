@@ -400,6 +400,39 @@ class RateScheme(models.Model):
             'task_template_count': TaskTemplate.objects.filter(rate_scheme=self).count(),
         }
 
+    def supersede(self, **overrides):
+        """Create a new RateScheme inheriting this one's fields, set replaced_by/at."""
+        from django.db import transaction
+        from django.utils import timezone
+
+        if self.replaced_by is not None:
+            raise ValueError('Cannot supersede an already-superseded scheme.')
+
+        defaults = {
+            'name': self.name,
+            'description': self.description,
+            'algorithm': self.algorithm,
+            'rate': self.rate,
+            'unit_label': self.unit_label,
+            'minimum_charge': self.minimum_charge,
+            'modifiers': list(self.modifiers),
+            'accounting_category': self.accounting_category,
+        }
+        defaults.update(overrides)
+
+        with transaction.atomic():
+            new = RateScheme.objects.create(**defaults)
+            self.replaced_by = new
+            self.replaced_at = timezone.now()
+            # Use update() rather than save() to bypass the freeze check coming
+            # in Task A4 - replaced_by/at are the *only* allowed mutations on a
+            # frozen scheme, and we write them directly via update() to skip
+            # full_clean(). For now (pre-A4) save() would also work.
+            RateScheme.objects.filter(pk=self.pk).update(
+                replaced_by=new, replaced_at=self.replaced_at,
+            )
+        return new
+
     def __str__(self):
         return self.name
 
