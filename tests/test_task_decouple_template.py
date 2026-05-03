@@ -8,10 +8,17 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.db.models import ProtectedError
 
-from apps.jobs.models import Job, PlanTask
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation, EstWorksheet
 from apps.core.models import AccountingCategory, Configuration, User
 from apps.contacts.models import Contact
+
+
+def _make_scheme(suffix, ac):
+    return RateScheme.objects.create(
+        name=f'S-tdt-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class TaskAccountingCategoryFieldTests(TestCase):
@@ -22,6 +29,7 @@ class TaskAccountingCategoryFieldTests(TestCase):
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.lit = AccountingCategory.objects.create(name="Labor", code="LBR")
+        self.scheme = _make_scheme('tacf', self.lit)
 
     def test_task_can_have_accounting_category(self):
         """PlanTask should have a accounting_category FK field."""
@@ -29,6 +37,8 @@ class TaskAccountingCategoryFieldTests(TestCase):
             est_worksheet=self.worksheet,
             name="Sand Surface",
             accounting_category=self.lit,
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         task.refresh_from_db()
         self.assertEqual(task.accounting_category, self.lit)
@@ -38,6 +48,8 @@ class TaskAccountingCategoryFieldTests(TestCase):
         task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name="Manual PlanTask",
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         self.assertIsNone(task.accounting_category)
 
@@ -47,6 +59,8 @@ class TaskAccountingCategoryFieldTests(TestCase):
             est_worksheet=self.worksheet,
             name="Sand",
             accounting_category=self.lit,
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         with self.assertRaises(ProtectedError):
             self.lit.delete()
@@ -60,11 +74,13 @@ class GenerateTaskCopiesAccountingCategoryTests(TestCase):
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.lit = AccountingCategory.objects.create(name="Labor", code="LBR")
+        self.scheme = _make_scheme('gtca', self.lit)
 
     def test_generate_task_copies_accounting_category(self):
         """generate_task() should copy accounting_category from template to task."""
         tt = TaskTemplate.objects.create(
-            template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit
+            template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit,
+            rate_scheme=self.scheme,
         )
         task = tt.generate_task(self.worksheet, est_qty=Decimal("2.00"))
         self.assertEqual(task.accounting_category, self.lit)
@@ -72,7 +88,8 @@ class GenerateTaskCopiesAccountingCategoryTests(TestCase):
     def test_generate_task_null_accounting_category(self):
         """generate_task() with template having no accounting_category produces task with null."""
         tt = TaskTemplate.objects.create(
-            template_name="Check", rate=Decimal("0.00"), accounting_category=None
+            template_name="Check", rate=Decimal("0.00"), accounting_category=None,
+            rate_scheme=self.scheme,
         )
         task = tt.generate_task(self.worksheet, est_qty=Decimal("1.00"))
         self.assertIsNone(task.accounting_category)
@@ -81,7 +98,8 @@ class GenerateTaskCopiesAccountingCategoryTests(TestCase):
         """Full template generation copies accounting_category to each task."""
         wot = WorkTemplate.objects.create(template_name="Cabinet")
         tt = TaskTemplate.objects.create(
-            template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit
+            template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit,
+            rate_scheme=self.scheme,
         )
         TemplateTaskAssociation.objects.create(
             work_template=wot, task_template=tt,
@@ -105,6 +123,7 @@ class CopyPointsPreserveAccountingCategoryTests(TestCase):
         self.contact = Contact.objects.create(first_name="Test", last_name="User")
         self.job = Job.objects.create(job_number="J001", contact=self.contact)
         self.lit = AccountingCategory.objects.create(name="Labor", code="LBR")
+        self.scheme = _make_scheme('cnvc', self.lit)
 
     def test_create_new_version_copies_accounting_category(self):
         """EstWorksheet.create_new_version() should copy accounting_category to new tasks."""
@@ -112,6 +131,8 @@ class CopyPointsPreserveAccountingCategoryTests(TestCase):
         PlanTask.objects.create(
             est_worksheet=ws, name="Sand",
             accounting_category=self.lit,
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         # Finalize the worksheet directly so create_new_version() is allowed
         ws.status = EstWorksheet.STATUS_FINAL

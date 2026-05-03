@@ -118,5 +118,8 @@ class PlanTaskComputeAmountTests(FixtureTestCase):
         self.assertEqual(pt.compute_amount(), Decimal('150.00'))
 
     def test_compute_amount_without_scheme_returns_zero(self):
-        pt = PlanTask.objects.create(est_worksheet=self.ws, name='Bare')
+        # Build an unsaved instance — DB+full_clean now forbid persisting
+        # a PlanTask without rate_scheme/est_qty, but the helper still has
+        # a guard for the in-memory case.
+        pt = PlanTask(est_worksheet=self.ws, name='Bare')
         self.assertEqual(pt.compute_amount(), Decimal('0.00'))

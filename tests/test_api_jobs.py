@@ -6,7 +6,7 @@ from django.test import TestCase
 from tests.base import BaseTestCase
 from apps.core.models import User, HistoryEntry, AccountingCategory
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (
     EstWorksheet, WorkTemplate, TaskTemplate,
     TemplateTaskAssociation,
@@ -435,10 +435,16 @@ class JobCopyFromWorksheetTest(TestCase):
             job_number='C2-CW-001', name='CW Job', contact=self.contact,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        ac = AccountingCategory.objects.create(code='CWAJ-AC', name='cwaj-ac')
+        self.scheme = RateScheme.objects.create(
+            name='S-cwaj', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build cabinet',
-
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet,

@@ -5,7 +5,7 @@ from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import User, AccountingCategory
-from apps.jobs.models import Job, PlanTask
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.inventory.models import PlanMaterial, PriceListItem
@@ -28,12 +28,18 @@ class PlanMaterialCRUDTest(TestCase):
             job_number='MAT-001', name='Material Job', contact=self.contact,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.scheme_ac = AccountingCategory.objects.create(
+            name='Mat-scheme', code='MAT-SC-AWUI',
+        )
+        self.scheme = RateScheme.objects.create(
+            name='S-mat-awui', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.scheme_ac,
+        )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install countertop',
-
-
-
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         self.category = AccountingCategory.objects.create(
             name='General', code='GEN',
@@ -146,6 +152,7 @@ class PlanMaterialCRUDTest(TestCase):
     def test_material_on_wrong_task_returns_404(self):
         other_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Other task',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         response = self.client.patch(
             f'/api/plan-tasks/{other_task.pk}/materials/{self.material.pk}/',
@@ -175,12 +182,18 @@ class ReorderTest(TestCase):
         self.category = AccountingCategory.objects.create(
             name='Labor', code='LAB', is_active=True,
         )
+        self.scheme = RateScheme.objects.create(
+            name='S-reord-awui', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
 
         self.task1 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Task A', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         self.task2 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Task B', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_reorder_task_down(self):
@@ -254,12 +267,21 @@ class AddFromTemplateTest(TestCase):
             job_number='TMPL-001', name='Template Job', contact=self.contact,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        # Phase B requires PlanTask.rate_scheme; templates used by add-from-template
+        # must carry a default scheme so the created PlanTask inherits one.
+        self.template_scheme = RateScheme.objects.create(
+            name='Tmpl default scheme', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('2.50'), unit_label='sqft',
+            accounting_category=self.category,
+        )
         self.task_template = TaskTemplate.objects.create(
             template_name='Standard Sanding',
             description='Sand and prep surfaces',
             units='sqft',
             rate=Decimal('2.50'),
             accounting_category=self.category,
+            rate_scheme=self.template_scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_add_from_template_success(self):
@@ -270,10 +292,10 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['name'], 'Standard Sanding')
-        # The fixture's TaskTemplate has no rate_scheme, so rate_scheme is null.
-        self.assertIsNone(response.data['rate_scheme'])
+        self.assertEqual(response.data['rate_scheme'], self.template_scheme.pk)
         self.assertEqual(response.data['est_qty'], '100.00')
-        self.assertEqual(response.data['amount'], '0.00')
+        # 100 × $2.50 scheme rate = $250.00
+        self.assertEqual(response.data['amount'], '250.00')
         # Verify it was created in the DB
         self.assertTrue(
             PlanTask.objects.filter(

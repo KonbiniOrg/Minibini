@@ -6,7 +6,7 @@ from apps.jobs.models import Job, Task
 from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
 from apps.core.models import AccountingCategory
 from apps.estimates.models import EstWorksheet
-from apps.jobs.models import PlanTask
+from apps.jobs.models import PlanTask, RateScheme
 
 
 class MaterialFieldsTest(TestCase):
@@ -62,7 +62,16 @@ class PlanMaterialFieldsTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-PLAN-1', contact=self.contact)
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.pt = PlanTask.objects.create(est_worksheet=self.ws, name='pt1')
+        self.pmf_ac = AccountingCategory.objects.create(name='pmf-ac', code='PMF-AC')
+        self.pmf_scheme = RateScheme.objects.create(
+            name='S-pmf', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea',
+            accounting_category=self.pmf_ac,
+        )
+        self.pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='pt1',
+            rate_scheme=self.pmf_scheme, est_qty=Decimal('1'),
+        )
 
     def test_plan_material_has_est_worksheet(self):
         pm = PlanMaterial.objects.create(

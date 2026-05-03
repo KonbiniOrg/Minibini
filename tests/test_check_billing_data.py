@@ -1,3 +1,4 @@
+import unittest
 from io import StringIO
 from decimal import Decimal
 from django.core.management import call_command
@@ -13,22 +14,12 @@ class CheckBillingDataTest(BaseTestCase):
         text = out.getvalue()
         self.assertIn('All clear', text)
 
+    @unittest.skip(
+        "Phase B (migrations 0028/0029) made PlanTask.rate_scheme + est_qty "
+        "NOT NULL at both the model (full_clean) and DB layers, so the orphan "
+        "row this test relied on is impossible to create. The check_billing_data "
+        "management command's PlanTask-without-scheme branch is now dead code "
+        "kept for safety."
+    )
     def test_reports_planTask_without_scheme(self):
-        from apps.jobs.models import PlanTask, Job
-        from apps.estimates.models import EstWorksheet
-        from apps.contacts.models import Business, Contact
-        contact = Contact.objects.create(
-            first_name='F', last_name='L', email='f-cbd@l.test',
-        )
-        biz = Business.objects.create(
-            business_name='B-cbd', default_contact=contact,
-        )
-        contact.business = biz
-        contact.save()
-        job = Job.objects.create(job_number='J-cbd', contact=contact)
-        ws = EstWorksheet.objects.create(job=job)
-        # Direct create, bypassing service-layer guards
-        PlanTask.objects.create(est_worksheet=ws, name='no scheme')
-        out = StringIO()
-        call_command('check_billing_data', stdout=out)
-        self.assertIn('PlanTask', out.getvalue())
+        pass

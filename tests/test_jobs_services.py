@@ -3,7 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.jobs.services import JobService, TaskService
 from apps.estimates.models import (
     Estimate, EstWorksheet,
@@ -191,8 +191,10 @@ class MaterialServiceTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Task 1', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_create_material(self):
@@ -318,14 +320,17 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
             job=self.job, estimate_number='EST-001', status=Estimate.STATUS_ACCEPTED)
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, estimate=self.estimate)
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
 
     def test_copies_tasks(self):
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut',
-            accounting_category=self.lit, sort_order=1)
+            accounting_category=self.lit, sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Weld',
-            accounting_category=self.lit, sort_order=2)
+            accounting_category=self.lit, sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
@@ -338,7 +343,8 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Paint',
             description='Apply primer and topcoat',
-            accounting_category=self.lit, sort_order=1)
+            accounting_category=self.lit, sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
@@ -349,7 +355,8 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
 
     def test_copies_materials(self):
         ws_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut', sort_order=1)
+            est_worksheet=self.worksheet, name='Cut', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
         pli = PriceListItem.objects.create(
             code='STL-001', description='Steel plate',
             purchase_price=Decimal('50.00'),
@@ -378,16 +385,19 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
 
     def test_copy_flat_no_parent_task(self):
         PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Alpha', sort_order=1)
+            est_worksheet=self.worksheet, name='Alpha', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
         PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Beta', sort_order=2)
+            est_worksheet=self.worksheet, name='Beta', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
         for task in Task.objects.filter(job=self.job):
             self.assertIsNone(task.parent_task)
 
     def test_copy_preserves_plan_material_pli_linkage(self):
         plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut', sort_order=1)
+            est_worksheet=self.worksheet, name='Cut', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
         pli = PriceListItem.objects.create(
             code='LINK-001', description='Linked item',
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),

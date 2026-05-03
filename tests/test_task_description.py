@@ -9,11 +9,18 @@ description is independent of the template.
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, PlanTask
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet, TaskTemplate, WorkTemplate
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from decimal import Decimal
+
+
+def _make_scheme(suffix, ac):
+    return RateScheme.objects.create(
+        name=f'S-td-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 User = get_user_model()
 
@@ -31,6 +38,8 @@ class TaskDescriptionModelTests(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, status=Job.STATUS_DRAFT, version=1
         )
+        self.tdm_ac = AccountingCategory.objects.create(name='tdm-ac', code='TDM-AC')
+        self.scheme = _make_scheme('tdm', self.tdm_ac)
 
     def test_task_can_have_description(self):
         """Task should have a description field that can be set directly."""
@@ -38,6 +47,8 @@ class TaskDescriptionModelTests(TestCase):
             name='Described Task',
             description='This is a task description',
             est_worksheet=self.worksheet,
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         task.refresh_from_db()
         self.assertEqual(task.description, 'This is a task description')
@@ -47,6 +58,8 @@ class TaskDescriptionModelTests(TestCase):
         task = PlanTask.objects.create(
             name='No Description Task',
             est_worksheet=self.worksheet,
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         task.refresh_from_db()
         self.assertEqual(task.description, '')
@@ -66,12 +79,14 @@ class TaskDescriptionFromTemplateTests(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, status=Job.STATUS_DRAFT, version=1
         )
+        self.scheme = _make_scheme('dft', self.accounting_category)
         self.task_template = TaskTemplate.objects.create(
             template_name='Painting',
             description='Apply two coats of primer and paint',
             units='sq ft',
             rate=Decimal('3.50'),
             accounting_category=self.accounting_category,
+            rate_scheme=self.scheme,
         )
 
     def test_generate_task_copies_description_from_template(self):

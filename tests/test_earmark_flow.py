@@ -235,7 +235,7 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         any earmark rows."""
         from decimal import Decimal
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import Job, PlanTask
+        from apps.jobs.models import Job, PlanTask, RateScheme
         from apps.estimates.models import EstWorksheet
         from apps.inventory.models import PriceListItem, PlanMaterial, Earmark
         from apps.inventory.services import InventoryService
@@ -246,12 +246,20 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         biz = Business.objects.create(business_name='B', default_contact=contact)
         contact.business = biz; contact.save()
         cat = AccountingCategory.objects.create(name='c', code='NOP1')
+        scheme_ac = AccountingCategory.objects.create(name='nop-sc', code='NOP-SC')
+        scheme = RateScheme.objects.create(
+            name='S-nop', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=scheme_ac,
+        )
         pli = PriceListItem.objects.create(
             code='I-NOP', accounting_category=cat, is_inventoried=True,
         )
         src_job = Job.objects.create(job_number='JOB-NOP-SRC', contact=contact)
         ws = EstWorksheet.objects.create(job=src_job)
-        pt = PlanTask.objects.create(est_worksheet=ws, name='pt')
+        pt = PlanTask.objects.create(
+            est_worksheet=ws, name='pt',
+            rate_scheme=scheme, est_qty=Decimal('1'),
+        )
         PlanMaterial.objects.create(
             plan_task=pt, est_worksheet=ws,
             description='x', quantity=Decimal('3'), price_list_item=pli,
