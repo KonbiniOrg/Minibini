@@ -447,8 +447,9 @@ class TaskTemplate(models.Model):
 
         The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
         """
-        from apps.jobs.models import Job, Task, PlanTask
+        from apps.jobs.models import Job, Task, PlanTask, TaskCharge
         from apps.core.services import SchemeSupersededError
+        from django.db import transaction
 
         if self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None:
             raise SchemeSupersededError(
@@ -457,17 +458,24 @@ class TaskTemplate(models.Model):
             )
 
         if isinstance(container, Job):
-            return Task.objects.create(
-                job=container,
-                name=self.template_name,
-                description=self.description,
-                units=self.units,
-                rate=self.rate,
-                est_qty=est_qty,
-                accounting_category=self.accounting_category,
-                assignee=assignee,
-                sort_order=sort_order,
-            )
+            with transaction.atomic():
+                task = Task.objects.create(
+                    job=container,
+                    name=self.template_name,
+                    description=self.description,
+                    units=self.units,                # legacy, still in DB Phase A
+                    rate=self.rate,
+                    est_qty=est_qty,
+                    accounting_category=self.accounting_category,  # legacy, Phase A
+                    assignee=assignee,
+                    sort_order=sort_order,
+                )
+                if self.rate_scheme_id:
+                    TaskCharge.objects.create(
+                        task=task, rate_scheme=self.rate_scheme,
+                        active_modifiers=list(self.default_active_modifiers or []),
+                    )
+            return task
         else:  # EstWorksheet
             return PlanTask.objects.create(
                 est_worksheet=container,

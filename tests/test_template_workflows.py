@@ -10,8 +10,8 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 
 from apps.contacts.models import Contact
-from apps.core.models import Configuration
-from apps.jobs.models import Job, Task
+from apps.core.models import Configuration, AccountingCategory
+from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import Estimate, EstimateLineItem, WorkTemplate, TaskTemplate
 from apps.jobs.services import TaskService
 from apps.estimates.services import EstimateService
@@ -62,6 +62,11 @@ class TaskCreationWorkflowTest(TestCase):
             description="Test job"
         )
         self.user = User.objects.create_user(username="testuser")
+        self.ac = AccountingCategory.objects.create(code='X-tw', name='X-tw')
+        self.scheme = RateScheme.objects.create(
+            name='S-tw', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
 
     def test_direct_task_creation(self):
         """Test direct Task creation on a Job."""
@@ -69,6 +74,7 @@ class TaskCreationWorkflowTest(TestCase):
             job=self.job,
             name="Test Task",
             assignee=self.user,
+            rate_scheme_id=self.scheme.pk,
         )
 
         self.assertEqual(task.job, self.job)
@@ -79,6 +85,7 @@ class TaskCreationWorkflowTest(TestCase):
         """Test Task creation from active TaskTemplate."""
         template = TaskTemplate.objects.create(
             template_name="Test Task Template",
+            rate_scheme=self.scheme,
             is_active=True
         )
 
@@ -106,6 +113,7 @@ class TaskCreationWorkflowTest(TestCase):
             template_name="Labor Template",
             units="hours",
             rate=Decimal('85.00'),
+            rate_scheme=self.scheme,
             description="Standard labor template with pricing",
             is_active=True
         )

@@ -12,7 +12,7 @@ from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme, TaskCharge
 from apps.estimates.models import (
     Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
@@ -377,27 +377,52 @@ class TaskService:
     @staticmethod
     def create_from_template(template, job, assignee=None):
         """
-        Create Task from TaskTemplate.
+        Create Task from TaskTemplate. Creates a TaskCharge transactionally.
         """
+        from apps.core.services import SchemeSupersededError
+
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
-
-        task = Task.objects.create(
-            job=job,
-            accounting_category=template.accounting_category,
-            name=template.template_name,
-            assignee=assignee
-        )
+        if template.rate_scheme_id and template.rate_scheme.replaced_by_id is not None:
+            raise SchemeSupersededError(
+                f'Template "{template.template_name}" references a superseded RateScheme.'
+            )
+        if not template.rate_scheme_id:
+            raise ValidationError(
+                f'Template "{template.template_name}" has no rate_scheme.'
+            )
+        with transaction.atomic():
+            task = Task.objects.create(
+                job=job,
+                name=template.template_name,
+                assignee=assignee,
+            )
+            TaskCharge.objects.create(
+                task=task,
+                rate_scheme=template.rate_scheme,
+                active_modifiers=list(template.default_active_modifiers or []),
+            )
         return task
 
     @staticmethod
-    def create_direct(job, name, **kwargs):
-        """Create Task directly."""
-        return Task.objects.create(
-            job=job,
-            name=name,
-            **kwargs
-        )
+    def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
+                      actuals=None, **task_fields):
+        """Create Task directly. Requires rate_scheme_id and creates a TaskCharge transactionally."""
+        if not rate_scheme_id:
+            raise ValidationError({'rate_scheme': 'Required.'})
+        scheme = RateScheme.objects.get(pk=rate_scheme_id)
+        if scheme.replaced_by_id is not None:
+            raise ValidationError(
+                {'rate_scheme': 'Selected RateScheme is superseded.'}
+            )
+        with transaction.atomic():
+            task = Task.objects.create(job=job, name=name, **task_fields)
+            TaskCharge.objects.create(
+                task=task, rate_scheme=scheme,
+                active_modifiers=active_modifiers or [],
+                actuals=actuals or {},
+            )
+        return task
 
     @staticmethod
     def update_task(pk, **kwargs):
