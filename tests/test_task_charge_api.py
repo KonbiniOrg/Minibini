@@ -194,3 +194,30 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         for legacy in ('units', 'rate', 'est_qty', 'accounting_category'):
             self.assertNotIn(legacy, body)
         self.assertIn('charge', body)
+
+
+class TaskTemplateSerializerNoACTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory, User
+        from apps.jobs.models import RateScheme
+        from apps.estimates.models import TaskTemplate
+        self.user = User.objects.create_user('u-tts', 'u-tts@x.test', 'pw')
+        self.client.force_login(self.user)
+        ac = AccountingCategory.objects.create(code='X-tts', name='X-tts')
+        scheme = RateScheme.objects.create(
+            name='S-tts', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=ac,
+        )
+        self.template = TaskTemplate.objects.create(
+            template_name='T-tts', rate_scheme=scheme,
+            default_billable_qty=Decimal('1'),
+        )
+
+    def test_template_payload_omits_accounting_category(self):
+        resp = self.client.get(f'/api/task-templates/{self.template.pk}/')
+        body = resp.json()
+        self.assertNotIn('accounting_category', body)
+        self.assertIn('rate_scheme', body)
