@@ -648,7 +648,9 @@
       "units": "ea",
       "rate": "350.00",
       "is_active": true,
-      "created_date": "2023-01-15T10:30:00Z"
+      "created_date": "2023-01-15T10:30:00Z",
+      "rate_scheme": 3,
+      "default_billable_qty": "1.00"
     }
   },
   {
@@ -660,7 +662,9 @@
       "units": "ea",
       "rate": "125.00",
       "is_active": true,
-      "created_date": "2023-01-15T11:00:00Z"
+      "created_date": "2023-01-15T11:00:00Z",
+      "rate_scheme": 3,
+      "default_billable_qty": "1.00"
     }
   },
   {
@@ -672,7 +676,9 @@
       "units": "ln ft",
       "rate": "12.50",
       "is_active": true,
-      "created_date": "2023-01-15T11:30:00Z"
+      "created_date": "2023-01-15T11:30:00Z",
+      "rate_scheme": 1,
+      "default_billable_qty": "1.00"
     }
   },
   {
@@ -684,7 +690,9 @@
       "units": "sq ft",
       "rate": "25.75",
       "is_active": true,
-      "created_date": "2023-01-15T12:00:00Z"
+      "created_date": "2023-01-15T12:00:00Z",
+      "rate_scheme": 1,
+      "default_billable_qty": "1.00"
     }
   },
   {

@@ -86,6 +86,7 @@ class TaskCreationWorkflowTest(TestCase):
         template = TaskTemplate.objects.create(
             template_name="Test Task Template",
             rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
             is_active=True
         )
 
@@ -99,6 +100,8 @@ class TaskCreationWorkflowTest(TestCase):
         """Test Task creation from inactive template is rejected."""
         template = TaskTemplate.objects.create(
             template_name="Inactive Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
             is_active=False
         )
 
@@ -114,6 +117,7 @@ class TaskCreationWorkflowTest(TestCase):
             units="hours",
             rate=Decimal('85.00'),
             rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
             description="Standard labor template with pricing",
             is_active=True
         )
@@ -128,6 +132,8 @@ class TaskCreationWorkflowTest(TestCase):
         """Test TaskTemplate new fields are optional."""
         template = TaskTemplate.objects.create(
             template_name="Simple Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
             is_active=True
         )
 
@@ -140,6 +146,8 @@ class TaskCreationWorkflowTest(TestCase):
             template_name="Material Template",
             units="sq ft",
             rate=Decimal('12.75'),
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
             is_active=True
         )
 

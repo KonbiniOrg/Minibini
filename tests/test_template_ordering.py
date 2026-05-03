@@ -11,8 +11,11 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
+from decimal import Decimal
+
 from apps.estimates.models import WorkTemplate, TaskTemplate, TemplateTaskAssociation
 from apps.core.models import AccountingCategory
+from apps.jobs.models import RateScheme
 
 User = get_user_model()
 
@@ -35,6 +38,10 @@ class TemplateOrderingTestBase(TestCase):
         self.lit2, _ = AccountingCategory.objects.get_or_create(
             code="MAT", defaults={"name": "Material"}
         )
+        self.scheme = RateScheme.objects.create(
+            name='S-to', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.lit,
+        )
 
         self.wo_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
@@ -42,19 +49,24 @@ class TemplateOrderingTestBase(TestCase):
 
         # Create task templates
         self.task1 = TaskTemplate.objects.create(
-            template_name="Task 1", rate=50, accounting_category=self.lit
+            template_name="Task 1", rate=50, accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.task2 = TaskTemplate.objects.create(
-            template_name="Task 2", rate=75, accounting_category=self.lit
+            template_name="Task 2", rate=75, accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.task3 = TaskTemplate.objects.create(
-            template_name="Task 3", rate=100, accounting_category=self.lit
+            template_name="Task 3", rate=100, accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.task4 = TaskTemplate.objects.create(
-            template_name="Task 4", rate=60, accounting_category=self.lit
+            template_name="Task 4", rate=60, accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.task5 = TaskTemplate.objects.create(
-            template_name="Task 5", rate=80, accounting_category=self.lit
+            template_name="Task 5", rate=80, accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
 
     def _detail_url(self, template=None):
@@ -253,10 +265,12 @@ class EdgeCaseTests(TemplateOrderingTestBase):
             template_name="Second WO Template"
         )
         task_a = TaskTemplate.objects.create(
-            template_name="Task A", rate=10, accounting_category=self.lit
+            template_name="Task A", rate=10, accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         task_b = TaskTemplate.objects.create(
-            template_name="Task B", rate=20, accounting_category=self.lit
+            template_name="Task B", rate=20, accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
 
         # Create associations on template 1

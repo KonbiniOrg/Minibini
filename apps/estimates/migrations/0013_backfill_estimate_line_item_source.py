@@ -42,6 +42,11 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('estimates', '0012_estimateLineItemSource'),
+        ('jobs', '0014_taskcharge_plancharge'),
+    ]
+
+    run_before = [
+        ('jobs', '0024_drop_plan_charge_and_source_plan_charge'),
     ]
 
     operations = [

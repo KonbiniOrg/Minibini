@@ -4,6 +4,16 @@ from django.test import TestCase, Client
 from django.urls import reverse
 
 from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation
+from apps.jobs.models import RateScheme
+from apps.core.models import AccountingCategory
+
+
+def _make_scheme(suffix):
+    ac = AccountingCategory.objects.create(code=f'TT-{suffix}', name=f'tt-{suffix}')
+    return RateScheme.objects.create(
+        name=f'S-tt-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class TaskTemplateEditViewTest(TestCase):
@@ -11,11 +21,14 @@ class TaskTemplateEditViewTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.scheme = _make_scheme('edit')
         self.template = TaskTemplate.objects.create(
             template_name='Original Task',
             description='Original description',
             units='hours',
-            rate=Decimal('50.00')
+            rate=Decimal('50.00'),
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_edit_view_get_returns_form(self):
@@ -139,11 +152,14 @@ class TaskTemplateDeleteViewTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.scheme = _make_scheme('del')
         self.template = TaskTemplate.objects.create(
             template_name='Task to Delete',
             description='This will be deleted',
             units='hours',
-            rate=Decimal('25.00')
+            rate=Decimal('25.00'),
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_delete_view_removes_unused_template(self):
@@ -209,9 +225,12 @@ class TaskTemplateListTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.scheme = _make_scheme('list')
         self.template = TaskTemplate.objects.create(
             template_name='Test Task Template',
-            description='Test description'
+            description='Test description',
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_list_page_has_edit_link(self):

@@ -105,6 +105,7 @@ class CarryOverFromDirectLineItemsTest(TestCase):
         self.template = TaskTemplate.objects.create(
             template_name='Setup', units='hours', rate=Decimal('100'),
             accounting_category=self.cat, rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.pli = PriceListItem.objects.create(
             code='STEEL', description='steel rod', units='ft',

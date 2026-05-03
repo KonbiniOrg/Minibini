@@ -5,9 +5,10 @@ Test that tasks cannot be added to non-draft worksheets.
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from apps.jobs.models import Job, PlanTask
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.contacts.models import Contact
+from apps.core.models import AccountingCategory
 from decimal import Decimal
 
 User = get_user_model()
@@ -44,10 +45,17 @@ class WorksheetTaskRestrictionTests(TestCase):
 
         # Create task mapping for test
         # Create task template
+        ac = AccountingCategory.objects.create(code='WTR-AC', name='wtr-ac')
+        self.scheme = RateScheme.objects.create(
+            name='S-wtr', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
             units='hours',
-            rate=Decimal('50.00')
+            rate=Decimal('50.00'),
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
         # Create worksheets in different states
@@ -325,10 +333,17 @@ class WorksheetTaskWorkflowTests(TestCase):
 
         # Create task mapping
         # Create task template
+        ac = AccountingCategory.objects.create(code='WTW-AC', name='wtw-ac')
+        self.scheme = RateScheme.objects.create(
+            name='S-wtw', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
             units='hours',
-            rate=Decimal('50.00')
+            rate=Decimal('50.00'),
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_task_addition_blocked_after_worksheet_finalization(self):

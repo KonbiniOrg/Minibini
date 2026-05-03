@@ -87,6 +87,7 @@ class TaskDescriptionFromTemplateTests(TestCase):
             rate=Decimal('3.50'),
             accounting_category=self.accounting_category,
             rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_generate_task_copies_description_from_template(self):

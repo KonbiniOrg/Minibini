@@ -216,11 +216,11 @@ class TaskTemplateRateSchemeTest(BaseTestCase):
         self.assertEqual(tmpl.default_active_modifiers, ['messy'])
         self.assertEqual(tmpl.default_billable_qty, Decimal('4.00'))
 
-    def test_task_template_without_rate_scheme(self):
-        tmpl = TaskTemplate.objects.create(template_name='Legacy Template')
-        self.assertIsNone(tmpl.rate_scheme)
-        self.assertEqual(tmpl.default_active_modifiers, [])
-        self.assertIsNone(tmpl.default_billable_qty)
+    def test_task_template_without_rate_scheme_rejected(self):
+        """Phase B: rate_scheme and default_billable_qty are NOT NULL."""
+        from django.db import IntegrityError
+        with self.assertRaises(IntegrityError):
+            TaskTemplate.objects.create(template_name='Legacy Template')
 
     def test_task_template_api_includes_rate_scheme(self):
         tmpl = TaskTemplate.objects.create(

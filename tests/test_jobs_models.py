@@ -4,10 +4,19 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from datetime import timedelta
 from decimal import Decimal
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import Estimate, EstWorksheet, WorkTemplate, TaskTemplate
 from apps.contacts.models import Contact
-from apps.core.models import User
+from apps.core.models import User, AccountingCategory
+
+
+def _make_scheme(suffix):
+    """Helper: create a minimal RateScheme + AccountingCategory for tests."""
+    ac = AccountingCategory.objects.create(code=f'JM-{suffix}', name=f'jm-{suffix}')
+    return RateScheme.objects.create(
+        name=f'S-jm-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class JobModelTest(TestCase):
@@ -485,6 +494,7 @@ class TaskTemplateModelTest(TestCase):
         self.work_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
         )
+        self.scheme = _make_scheme('ttm')
 
     def test_task_template_creation(self):
         template = TaskTemplate.objects.create(
@@ -492,7 +502,9 @@ class TaskTemplateModelTest(TestCase):
             description="Standard electrical installation task",
             units="ea",
             rate=Decimal('45.00'),
-            is_active=True
+            is_active=True,
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
         from apps.estimates.models import TemplateTaskAssociation
@@ -513,13 +525,17 @@ class TaskTemplateModelTest(TestCase):
 
     def test_task_template_str_method(self):
         template = TaskTemplate.objects.create(
-            template_name="Plumbing Setup"
+            template_name="Plumbing Setup",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(str(template), "Plumbing Setup")
 
     def test_task_template_defaults(self):
         template = TaskTemplate.objects.create(
-            template_name="Default Template"
+            template_name="Default Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertTrue(template.is_active)
         self.assertEqual(template.description, "")
@@ -529,7 +545,9 @@ class TaskTemplateModelTest(TestCase):
 
     def test_task_template_new_fields_optional(self):
         template = TaskTemplate.objects.create(
-            template_name="Simple Template"
+            template_name="Simple Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(template.units, "none")
         self.assertIsNone(template.rate)
@@ -538,7 +556,9 @@ class TaskTemplateModelTest(TestCase):
         template = TaskTemplate.objects.create(
             template_name="Material Template",
             units="sq ft",
-            rate=Decimal('15.25')
+            rate=Decimal('15.25'),
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
         from apps.estimates.models import TemplateTaskAssociation
@@ -553,16 +573,30 @@ class TaskTemplateModelTest(TestCase):
 
     def test_task_template_without_work_template(self):
         template = TaskTemplate.objects.create(
-            template_name="Standalone Template"
+            template_name="Standalone Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(template.work_templates.count(), 0)
 
     def test_template_task_association_sort_order(self):
         from apps.estimates.models import TemplateTaskAssociation
 
-        task_template1 = TaskTemplate.objects.create(template_name="First Task")
-        task_template2 = TaskTemplate.objects.create(template_name="Second Task")
-        task_template3 = TaskTemplate.objects.create(template_name="Third Task")
+        task_template1 = TaskTemplate.objects.create(
+            template_name="First Task",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
+        task_template2 = TaskTemplate.objects.create(
+            template_name="Second Task",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
+        task_template3 = TaskTemplate.objects.create(
+            template_name="Third Task",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
 
         TemplateTaskAssociation.objects.create(
             work_template=self.work_template,
@@ -602,7 +636,9 @@ class TaskTemplateModelTest(TestCase):
         task_templates = []
         for i in range(5):
             template = TaskTemplate.objects.create(
-                template_name=f"Task {i+1}"
+                template_name=f"Task {i+1}",
+                rate_scheme=self.scheme,
+                default_billable_qty=Decimal('1.00'),
             )
             task_templates.append(template)
 

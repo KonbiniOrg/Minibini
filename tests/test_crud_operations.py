@@ -3,10 +3,18 @@
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import Job, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import Estimate, EstWorksheet, TaskTemplate, EstimateLineItem, WorkTemplate
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
+
+
+def _make_scheme(suffix):
+    ac = AccountingCategory.objects.create(code=f'CRD-{suffix}', name=f'crd-{suffix}')
+    return RateScheme.objects.create(
+        name=f'S-crd-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class EstWorksheetCRUDTests(TestCase):
@@ -31,10 +39,13 @@ class EstWorksheetCRUDTests(TestCase):
         )
 
         # Create task mapping and template for testing
+        self.scheme = _make_scheme('ews')
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
             rate=100.0,
-            units='hours'
+            units='hours',
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
         # Create WorkTemplate for the from-template tests
@@ -75,10 +86,13 @@ class TaskCRUDTests(TestCase):
         )
 
         # Create task mapping and template
+        self.scheme = _make_scheme('task')
         self.task_template = TaskTemplate.objects.create(
             template_name='Test Template',
             rate=100.0,
-            units='hours'
+            units='hours',
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_add_task_from_template_get(self):

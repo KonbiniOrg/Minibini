@@ -80,7 +80,7 @@ class GenerateTaskCopiesAccountingCategoryTests(TestCase):
         """generate_task() should copy accounting_category from template to task."""
         tt = TaskTemplate.objects.create(
             template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit,
-            rate_scheme=self.scheme,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         task = tt.generate_task(self.worksheet, est_qty=Decimal("2.00"))
         self.assertEqual(task.accounting_category, self.lit)
@@ -89,7 +89,7 @@ class GenerateTaskCopiesAccountingCategoryTests(TestCase):
         """generate_task() with template having no accounting_category produces task with null."""
         tt = TaskTemplate.objects.create(
             template_name="Check", rate=Decimal("0.00"), accounting_category=None,
-            rate_scheme=self.scheme,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         task = tt.generate_task(self.worksheet, est_qty=Decimal("1.00"))
         self.assertIsNone(task.accounting_category)
@@ -99,7 +99,7 @@ class GenerateTaskCopiesAccountingCategoryTests(TestCase):
         wot = WorkTemplate.objects.create(template_name="Cabinet")
         tt = TaskTemplate.objects.create(
             template_name="Sand", rate=Decimal("50.00"), accounting_category=self.lit,
-            rate_scheme=self.scheme,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=wot, task_template=tt,

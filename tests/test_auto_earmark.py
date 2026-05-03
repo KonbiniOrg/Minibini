@@ -146,12 +146,14 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         )
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.create(name='Labor')
+        scheme = _make_scheme('eoct')
         self.template = WorkTemplate.objects.create(
             template_name='Quick', is_active=True,
         )
         tt = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,
             units='each', rate=100, accounting_category=cat,
+            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,

@@ -400,8 +400,7 @@ class TaskTemplate(models.Model):
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     rate_scheme = models.ForeignKey(
         'jobs.RateScheme',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
+        on_delete=models.PROTECT,
         help_text="Default billing scheme for tasks from this template"
     )
     default_active_modifiers = models.JSONField(
@@ -409,7 +408,7 @@ class TaskTemplate(models.Model):
         help_text="Pre-checked modifier keys from the scheme"
     )
     default_billable_qty = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True,
+        max_digits=10, decimal_places=2,
         help_text="Typical estimated billable quantity"
     )
 

@@ -372,9 +372,14 @@ class JobPopulateFromTemplateTest(TestCase):
             template_name='Kitchen', is_active=True,
         )
         cat = AccountingCategory.objects.create(name='Labor')
+        self.scheme = RateScheme.objects.create(
+            name='S-poptpl', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=cat,
+        )
         self.task_template = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,
             units='each', rate=100, accounting_category=cat,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
@@ -558,12 +563,19 @@ class JobAddFromTemplateTest(TestCase):
         self.job = Job.objects.create(
             job_number='C2-AFT-001', name='AFT Job', contact=self.contact,
         )
+        ac = AccountingCategory.objects.create(code='AFT-AC', name='aft-ac')
+        self.scheme = RateScheme.objects.create(
+            name='S-aft', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         self.template = TaskTemplate.objects.create(
             template_name='Paint room',
             description='Paint all walls',
             units='sqft',
             rate=Decimal('2.50'),
             is_active=True,
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_add_from_template_success(self):

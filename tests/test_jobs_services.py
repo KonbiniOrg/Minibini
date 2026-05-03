@@ -239,12 +239,15 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.template = WorkTemplate.objects.create(template_name='Standard Build')
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
         self.task_tmpl_1 = TaskTemplate.objects.create(
             template_name='Cut', units='hours', rate=Decimal('50.00'),
-            accounting_category=self.lit)
+            accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
         self.task_tmpl_2 = TaskTemplate.objects.create(
             template_name='Weld', units='hours', rate=Decimal('60.00'),
-            accounting_category=self.lit)
+            accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
         TemplateTaskAssociation.objects.create(
             work_template=self.template, task_template=self.task_tmpl_1,
             est_qty=Decimal('2.00'), sort_order=1)

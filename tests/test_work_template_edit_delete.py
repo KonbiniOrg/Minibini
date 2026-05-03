@@ -1,8 +1,11 @@
 """Tests for WorkTemplate edit and delete functionality."""
+from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 
 from apps.estimates.models import WorkTemplate, TaskTemplate, TemplateTaskAssociation
+from apps.jobs.models import RateScheme
+from apps.core.models import AccountingCategory
 
 
 class WorkTemplateEditViewTest(TestCase):
@@ -101,9 +104,16 @@ class WorkTemplateDeleteViewTest(TestCase):
     def test_delete_view_cascades_to_associations(self):
         """Test that deleting template also deletes task associations."""
         # Create a task template and associate it
+        ac = AccountingCategory.objects.create(code='WTD-AC', name='wtd-ac')
+        scheme = RateScheme.objects.create(
+            name='S-wtd', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         task_template = TaskTemplate.objects.create(
             template_name='Test Task',
-            description='Test task description'
+            description='Test task description',
+            rate_scheme=scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         association = TemplateTaskAssociation.objects.create(
             work_template=self.template,

@@ -215,8 +215,15 @@ class ComprehensiveModelIntegrationTest(TestCase):
             job=job,
             name="Planning Task",
         )
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='S-cmtw', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
         task_template = TaskTemplate.objects.create(
-            template_name="Planning Task Template"
+            template_name="Planning Task Template",
+            rate_scheme=scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
         self.assertEqual(task.job, job)

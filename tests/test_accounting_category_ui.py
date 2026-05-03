@@ -220,9 +220,15 @@ class TaskTemplateFormAccountingCategoryTests(TestCase):
 
     def test_edit_form_shows_accounting_category(self):
         """TaskTemplate edit form should include accounting_category field."""
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='S-acu1', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.lit,
+        )
         tt = TaskTemplate.objects.create(
             template_name='Existing', units='hours', rate=Decimal('50.00'),
             accounting_category=self.lit,
+            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         url = reverse('estimates:task_template_edit', args=[tt.template_id])
         response = self.client.get(url)
@@ -231,9 +237,15 @@ class TaskTemplateFormAccountingCategoryTests(TestCase):
 
     def test_edit_post_can_change_accounting_category(self):
         """POST on TaskTemplate edit should update accounting_category."""
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='S-acu2', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.lit,
+        )
         tt = TaskTemplate.objects.create(
             template_name='Existing', units='hours', rate=Decimal('50.00'),
             accounting_category=self.lit,
+            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         url = reverse('estimates:task_template_edit', args=[tt.template_id])
         response = self.client.post(url, {
@@ -257,9 +269,15 @@ class TaskTemplateListAccountingCategoryTests(TestCase):
 
     def test_list_shows_accounting_category_column(self):
         """TaskTemplate list should have a Accounting Category column header."""
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='S-acu3', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.lit,
+        )
         TaskTemplate.objects.create(
             template_name='Test Template', units='hours',
             rate=Decimal('50.00'), accounting_category=self.lit,
+            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         url = reverse('estimates:task_template_list')
         response = self.client.get(url)
@@ -268,9 +286,15 @@ class TaskTemplateListAccountingCategoryTests(TestCase):
 
     def test_list_shows_accounting_category_value(self):
         """TaskTemplate list should display the line item type name."""
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='S-acu4', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.lit,
+        )
         TaskTemplate.objects.create(
             template_name='Test Template', units='hours',
             rate=Decimal('50.00'), accounting_category=self.lit,
+            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         url = reverse('estimates:task_template_list')
         response = self.client.get(url)

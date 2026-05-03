@@ -123,14 +123,17 @@ class TemplateServiceReorderTest(BundlingTestBase):
 
     def setUp(self):
         super().setUp()
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
         self.tmpl = WorkTemplateService.create_template(
             template_name='Test Template',
         )
         self.tt1 = WorkTemplateService.create_task_template(
             template_name='TT1', accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.tt2 = WorkTemplateService.create_task_template(
             template_name='TT2', accounting_category=self.lit,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.a1 = TemplateTaskAssociation.objects.create(
             work_template=self.tmpl, task_template=self.tt1, sort_order=1,

@@ -1,7 +1,8 @@
 # tests/test_units_model_defaults.py
+from decimal import Decimal
 from tests.base import BaseTestCase
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Task, Job
+from apps.jobs.models import Task, Job, RateScheme
 from apps.estimates.models import TaskTemplate
 from apps.inventory.models import PriceListItem
 from apps.invoicing.models import InvoiceLineItem
@@ -18,7 +19,12 @@ class UnitsDefaultTest(BaseTestCase):
         self.assertEqual(task.units, 'none')
 
     def test_task_template_defaults_to_none(self):
-        tt = TaskTemplate.objects.create(template_name='Test Template')
+        scheme = RateScheme.objects.get(pk=1)  # from fixture
+        tt = TaskTemplate.objects.create(
+            template_name='Test Template',
+            rate_scheme=scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
         self.assertEqual(tt.units, 'none')
 
     def test_price_list_item_defaults_to_none(self):

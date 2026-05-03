@@ -30,4 +30,7 @@ class Migration(migrations.Migration):
         ('estimates', '0016_alter_estimatelineitemsource_source_type'),
         ('jobs', '0020_copy_plan_charge_to_plan_task'),
     ]
+    run_before = [
+        ('jobs', '0024_drop_plan_charge_and_source_plan_charge'),
+    ]
     operations = [migrations.RunPython(rewrite_forward, rewrite_back)]
