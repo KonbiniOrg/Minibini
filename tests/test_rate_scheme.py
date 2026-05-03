@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from tests.base import BaseTestCase
 from apps.jobs.models import RateScheme
 from apps.estimates.models import TaskTemplate
+from apps.core.models import AccountingCategory
 
 
 class RateSchemeModelTest(BaseTestCase):
@@ -224,3 +225,16 @@ class TaskTemplateRateSchemeTest(BaseTestCase):
         self.assertEqual(data['rate_scheme'], self.scheme.pk)
         self.assertEqual(data['default_active_modifiers'], ['messy'])
         self.assertEqual(data['default_billable_qty'], '4.00')
+
+
+class RateSchemeSupersessionFieldsTest(BaseTestCase):
+    def test_scheme_has_replaced_by_and_replaced_at_fields(self):
+        from apps.jobs.models import RateScheme
+        ac = AccountingCategory.objects.first()
+        scheme = RateScheme.objects.create(
+            name='X', algorithm='flat_fee', rate=Decimal('10'),
+            unit_label='ea', accounting_category=ac,
+        )
+        # New nullable fields exist with sensible defaults
+        self.assertIsNone(scheme.replaced_by)
+        self.assertIsNone(scheme.replaced_at)

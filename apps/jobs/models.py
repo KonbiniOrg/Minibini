@@ -335,6 +335,12 @@ class RateScheme(models.Model):
     accounting_category = models.ForeignKey(
         'core.AccountingCategory', on_delete=models.PROTECT, null=True, blank=True,
     )
+    replaced_by = models.ForeignKey(
+        'self', on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='replaces',
+    )
+    replaced_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'rate_schemes'
