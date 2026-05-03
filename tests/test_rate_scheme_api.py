@@ -226,3 +226,51 @@ class RateSchemeSupersedeEndpointTest(BaseTestCase):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 409)
+
+
+class RateSchemeListFilterTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import User, AccountingCategory
+        from apps.jobs.models import RateScheme
+        self.user = User.objects.create_user('u-lf', 'u-lf@x.test', 'pw')
+        self.client.force_login(self.user)
+        self.ac = AccountingCategory.objects.create(code='Z-lf', name='Z-lf')
+        self.active = RateScheme.objects.create(
+            name='A-lf', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        self.old = RateScheme.objects.create(
+            name='O-lf', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        self.new = self.old.supersede(name='N-lf')
+
+    def test_default_list_excludes_superseded(self):
+        resp = self.client.get('/api/rate-schemes/')
+        body = resp.json()
+        items = body.get('results', body)
+        ids = [r['rate_scheme_id'] for r in items]
+        self.assertIn(self.active.pk, ids)
+        self.assertIn(self.new.pk, ids)
+        self.assertNotIn(self.old.pk, ids)
+
+    def test_include_superseded_returns_all(self):
+        resp = self.client.get('/api/rate-schemes/?include_superseded=true')
+        body = resp.json()
+        items = body.get('results', body)
+        ids = [r['rate_scheme_id'] for r in items]
+        self.assertIn(self.old.pk, ids)
+        self.assertIn(self.active.pk, ids)
+        self.assertIn(self.new.pk, ids)
+
+    def test_only_superseded_returns_just_old(self):
+        resp = self.client.get('/api/rate-schemes/?only_superseded=true')
+        body = resp.json()
+        items = body.get('results', body)
+        ids = [r['rate_scheme_id'] for r in items]
+        self.assertIn(self.old.pk, ids)
+        self.assertNotIn(self.active.pk, ids)
+        self.assertNotIn(self.new.pk, ids)

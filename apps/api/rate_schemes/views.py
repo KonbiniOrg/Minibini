@@ -12,6 +12,17 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
     serializer_class = RateSchemeSerializer
     lookup_field = 'pk'
 
+    def get_queryset(self):
+        qs = RateScheme.objects.all().order_by('name')
+        if self.action == 'list':
+            include = self.request.query_params.get('include_superseded') == 'true'
+            only = self.request.query_params.get('only_superseded') == 'true'
+            if only:
+                qs = qs.filter(replaced_by__isnull=False)
+            elif not include:
+                qs = qs.filter(replaced_by__isnull=True)
+        return qs
+
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
