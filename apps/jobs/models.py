@@ -354,6 +354,11 @@ class RateScheme(models.Model):
 
     def clean(self):
         super().clean()
+        if self.accounting_category_id is None:
+            from django.core.exceptions import ValidationError
+            raise ValidationError({
+                'accounting_category': 'Required: every RateScheme must have an AccountingCategory.',
+            })
         if self.pk and self.is_referenced():
             old = RateScheme.objects.get(pk=self.pk)
             changed = [

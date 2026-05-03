@@ -418,3 +418,18 @@ class RateSchemeFreezeOnReferenceTest(BaseTestCase):
         new = s.supersede(name='S-frz-v2', rate=Decimal('99'))
         s.refresh_from_db()
         self.assertEqual(s.replaced_by, new)
+
+
+class RateSchemeRequiresACTest(BaseTestCase):
+    fixtures = []
+
+    def test_full_clean_rejects_missing_ac(self):
+        from django.core.exceptions import ValidationError
+        from apps.jobs.models import RateScheme
+        s = RateScheme(
+            name='NoAC', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea',
+        )
+        with self.assertRaises(ValidationError) as cm:
+            s.full_clean()
+        self.assertIn('accounting_category', cm.exception.message_dict)

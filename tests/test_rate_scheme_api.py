@@ -8,14 +8,17 @@ User = get_user_model()
 
 class RateSchemeAPITest(TestCase):
     def setUp(self):
+        from apps.core.models import AccountingCategory
         self.admin = User.objects.create_user(username='admin', password='testpass', is_staff=True)
         from django.contrib.auth.models import Permission
         perm = Permission.objects.get(codename='can_manage_config')
         self.admin.user_permissions.add(perm)
         self.worker = User.objects.create_user(username='worker', password='testpass')
+        self.ac = AccountingCategory.objects.create(code='LAB', name='Labor')
         self.scheme = RateScheme.objects.create(
             name='Hourly Labor', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('45.00'), unit_label='hours',
+            accounting_category=self.ac,
         )
 
     def test_list_requires_auth(self):
