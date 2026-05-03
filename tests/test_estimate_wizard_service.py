@@ -136,22 +136,6 @@ class GetSourcePoolTest(TestCase):
         pt_atom = next(a for a in pool['atoms'] if a['type'] == 'plan_task' and a['id'] == pt.pk)
         self.assertEqual(pt_atom['amount'], Decimal('150.00'))
 
-    def test_source_pool_includes_plan_tasks_with_no_rate_scheme(self):
-        """PlanTasks with no rate_scheme set still appear in the pool with $0 amount and 'each' units."""
-        pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Unbilled Task',
-        )
-
-        pool = EstimateWizardService.get_source_pool(self.ws)
-
-        pt_atom = next(
-            (a for a in pool['atoms'] if a['type'] == 'plan_task' and a['id'] == pt.pk),
-            None,
-        )
-        self.assertIsNotNone(pt_atom)
-        self.assertEqual(pt_atom['amount'], Decimal('0.00'))
-        self.assertEqual(pt_atom['units'], 'each')
-        self.assertEqual(pt_atom['state'], 'available')
 
 
 class AddAtomsToNewLineItemTest(TestCase):

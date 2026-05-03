@@ -1,7 +1,8 @@
+from decimal import Decimal
 from rest_framework.test import APIClient
 from django.test import TestCase
-from apps.core.models import User
-from apps.jobs.models import Job, PlanTask
+from apps.core.models import AccountingCategory, User
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet
 
@@ -21,13 +22,18 @@ class PlanTaskAPITest(TestCase):
             job_number='TEST-001', name='Test Job', contact=self.contact,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.cat = AccountingCategory.objects.create(code='LAB-pt', name='Labor PT')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly PT', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install shelves',
             description='Wall-mount 3 shelves',
-
-
-
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
 
     def test_retrieve_plan_task(self):
@@ -91,12 +97,17 @@ class WorksheetNestedPlanTaskTest(TestCase):
             job_number='TEST-002', name='Test Job 2', contact=self.contact,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.cat = AccountingCategory.objects.create(code='LAB-pt2', name='Labor PT2')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly PT2', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Sand floor',
-
-
-
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
 
     def test_nested_task_list_includes_materials(self):

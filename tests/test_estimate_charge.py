@@ -54,18 +54,6 @@ class CopyFromWorksheetChargeTest(TestCase):
         self.assertEqual(charge.active_modifiers, ['messy'])
         self.assertEqual(charge.actuals, {})
 
-    def test_copy_without_billing_creates_no_task_charge(self):
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet,
-            name='Manual task',
-            accounting_category=self.category,
-        )
-
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-
-        task = self.job.tasks.get(name='Manual task')
-        self.assertFalse(TaskCharge.objects.filter(task=task).exists())
-
 
 class GenerateTaskEstWorksheetBranchTest(BaseTestCase):
     fixtures = []

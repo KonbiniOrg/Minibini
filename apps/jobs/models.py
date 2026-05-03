@@ -154,12 +154,10 @@ class PlanTask(TaskBase):
         'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_tasks'
     )
     rate_scheme = models.ForeignKey(
-        'jobs.RateScheme', on_delete=models.PROTECT, null=True, blank=True,
+        'jobs.RateScheme', on_delete=models.PROTECT,
     )
     active_modifiers = models.JSONField(default=list, blank=True)
-    est_qty = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True,
-    )
+    est_qty = models.DecimalField(max_digits=10, decimal_places=2)
 
     class Meta:
         db_table = 'plan_tasks'

@@ -7,7 +7,7 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Job, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.jobs.services import JobService
 from apps.inventory.models import Material, PlanMaterial
 from apps.core.services import NotFoundError
@@ -32,6 +32,13 @@ class EstimatesTestBase(TestCase):
         self.contact.save()
         self.lit, _ = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': True},
+        )
+        self.scheme, _ = RateScheme.objects.get_or_create(
+            name='Test Hourly Default', defaults={
+                'algorithm': RateScheme.ENTERED_QTY,
+                'rate': Decimal('50.00'), 'unit_label': 'hour',
+                'accounting_category': self.lit,
+            },
         )
         from apps.jobs.services import JobService
         self.job = JobService.create_job(name='Test Job', contact=self.contact)
@@ -381,7 +388,10 @@ class WorksheetServiceReviseTest(EstimatesTestBase):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
         # Add a task to make it non-empty
-        PlanTask.objects.create(est_worksheet=ws, name='Task 1', sort_order=1)
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task 1', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
         new_ws = WorksheetService.revise_worksheet(ws.pk)
         self.assertEqual(new_ws.version, 2)
         self.assertEqual(new_ws.status, EstWorksheet.STATUS_DRAFT)
@@ -391,8 +401,14 @@ class WorksheetServiceReviseTest(EstimatesTestBase):
     def test_revise_copies_tasks(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        PlanTask.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
-        PlanTask.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task A', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task B', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
         new_ws = WorksheetService.revise_worksheet(ws.pk)
         new_tasks = PlanTask.objects.filter(est_worksheet=new_ws)
         self.assertEqual(new_tasks.count(), 2)
@@ -411,6 +427,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         tt = WorkTemplateService.create_task_template(
             template_name='Welding', units='hours',
             rate=Decimal('85.00'), accounting_category=self.lit,
+            rate_scheme=self.scheme,
         )
         task = WorksheetService.add_task_from_template(
             self.ws.pk, tt.pk, est_qty=Decimal('4.00'),
@@ -429,6 +446,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         )
         task = WorksheetService.add_task_manual(
             self.ws.pk, name='Custom task', rate_scheme_id=scheme.pk,
+            est_qty=Decimal('1.00'),
         )
         self.assertEqual(task.name, 'Custom task')
         self.assertEqual(task.est_worksheet, self.ws)
@@ -516,8 +534,14 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
     def test_copy_tasks(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        PlanTask.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
-        PlanTask.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task A', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task B', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
 
         JobService.copy_from_worksheet(self.job.pk, ws.pk)
         self.assertEqual(Task.objects.filter(job=self.job).count(), 2)
@@ -525,7 +549,10 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
     def test_copy_materials(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        task = PlanTask.objects.create(est_worksheet=ws, name='Task', sort_order=1)
+        task = PlanTask.objects.create(
+            est_worksheet=ws, name='Task', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
         PlanMaterial.objects.create(
             est_worksheet=ws,
             plan_task=task, description='Steel', quantity=Decimal('5.00'),

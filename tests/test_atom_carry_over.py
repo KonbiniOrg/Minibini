@@ -182,17 +182,3 @@ class CarryOverUsesPlanTaskDirectlyTest(TestCase):
         self.assertEqual(task.charge.rate_scheme_id, scheme.pk)
         self.assertEqual(task.charge.actuals.get('qty'), '2')
 
-    def test_carry_over_creates_bare_task_when_plan_task_has_no_rate_scheme(self):
-        """PlanTask without billing config carries over as a Task with no TaskCharge."""
-        from apps.jobs.models import PlanTask, Task, TaskCharge
-        from apps.estimates.carry_over import AtomCarryOverService
-
-        pt = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='No-scheme Task',
-        )
-
-        AtomCarryOverService.carry_over_for_estimate(self.estimate)
-
-        task = Task.objects.get(source_plan_task=pt)
-        self.assertEqual(task.name, 'No-scheme Task')
-        self.assertFalse(TaskCharge.objects.filter(task=task).exists())
