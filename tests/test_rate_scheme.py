@@ -335,3 +335,24 @@ class RateSchemeSupersedeMethodTest(BaseTestCase):
         self.assertEqual(new.accounting_category, self.ac)
         self.assertIsNone(new.replaced_by)
         self.assertIsNone(new.replaced_at)
+
+    def test_supersede_on_already_superseded_raises(self):
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='Old', algorithm='flat_fee', rate=Decimal('10'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        old.supersede(name='V2')
+        with self.assertRaises(ValueError):
+            old.supersede(name='V3')
+
+    def test_supersede_does_not_share_modifiers_list_with_new_scheme(self):
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='Old', algorithm='flat_fee', rate=Decimal('10'),
+            unit_label='ea', accounting_category=self.ac,
+            modifiers=[{'key': 'm1', 'label': 'M1', 'percent': 10}],
+        )
+        new = old.supersede(name='V2')
+        new.modifiers.append({'key': 'm2', 'label': 'M2', 'percent': 5})
+        self.assertEqual(len(old.modifiers), 1)
