@@ -5,6 +5,7 @@ from apps.jobs.services import JobService
 from apps.estimates.models import EstWorksheet
 from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact
+from tests.base import BaseTestCase
 
 
 class CopyFromWorksheetChargeTest(TestCase):
@@ -63,3 +64,43 @@ class CopyFromWorksheetChargeTest(TestCase):
 
         task = self.job.tasks.get(name='Manual task')
         self.assertFalse(TaskCharge.objects.filter(task=task).exists())
+
+
+class GenerateTaskEstWorksheetBranchTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import RateScheme, Job
+        from apps.estimates.models import TaskTemplate, EstWorksheet
+        from apps.contacts.models import Business, Contact
+        ac = AccountingCategory.objects.create(code='X', name='X')
+        self.scheme = RateScheme.objects.create(
+            name='S-gtw', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=ac,
+        )
+        self.template = TaskTemplate.objects.create(
+            template_name='T-gtw', rate_scheme=self.scheme,
+            default_active_modifiers=['m1'],
+            default_billable_qty=Decimal('5'),
+        )
+        # NOTE: actual schema requires Business.business_name + default_contact FK,
+        # and Contact.email. Build pair: Contact first, then Business with
+        # default_contact, then attach business back to contact and save.
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f@l.test',
+        )
+        biz = Business.objects.create(
+            business_name='B-gtw', default_contact=contact,
+        )
+        contact.business = biz
+        contact.save()
+        job = Job.objects.create(job_number='J-gtw', contact=contact)
+        self.ws = EstWorksheet.objects.create(job=job)
+
+    def test_generate_task_for_worksheet_propagates_scheme(self):
+        pt = self.template.generate_task(self.ws, est_qty=Decimal('5'))
+        self.assertEqual(pt.rate_scheme, self.scheme)
+        self.assertEqual(pt.active_modifiers, ['m1'])
+        self.assertEqual(pt.estimated_billable_qty, Decimal('5'))

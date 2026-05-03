@@ -460,7 +460,10 @@ class TaskTemplate(models.Model):
                 est_worksheet=container,
                 name=self.template_name,
                 description=self.description,
-                accounting_category=self.accounting_category,
+                accounting_category=self.accounting_category,  # legacy, dropped Phase B
+                rate_scheme=self.rate_scheme,
+                active_modifiers=list(self.default_active_modifiers or []),
+                estimated_billable_qty=est_qty,
                 sort_order=sort_order,
             )
 
