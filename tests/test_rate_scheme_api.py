@@ -15,7 +15,7 @@ class RateSchemeAPITest(TestCase):
         self.worker = User.objects.create_user(username='worker', password='testpass')
         self.scheme = RateScheme.objects.create(
             name='Hourly Labor', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('45.00'), unit_label='hour',
+            rate=Decimal('45.00'), unit_label='hours',
         )
 
     def test_list_requires_auth(self):
@@ -32,7 +32,7 @@ class RateSchemeAPITest(TestCase):
         self.client.login(username='worker', password='testpass')
         resp = self.client.post('/api/rate-schemes/', {
             'name': 'New Scheme', 'algorithm': 'flat_fee',
-            'rate': '50.00', 'unit_label': 'job',
+            'rate': '50.00', 'unit_label': 'ea',
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 403)
 
@@ -40,7 +40,7 @@ class RateSchemeAPITest(TestCase):
         self.client.login(username='admin', password='testpass')
         resp = self.client.post('/api/rate-schemes/', {
             'name': 'CNC Setup', 'algorithm': 'flat_fee',
-            'rate': '50.00', 'unit_label': 'job',
+            'rate': '50.00', 'unit_label': 'ea',
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.json()['name'], 'CNC Setup')
@@ -49,7 +49,7 @@ class RateSchemeAPITest(TestCase):
         self.client.login(username='admin', password='testpass')
         resp = self.client.post('/api/rate-schemes/', {
             'name': 'CNC Router', 'algorithm': 'entered_qty',
-            'rate': '4.00', 'unit_label': 'minute',
+            'rate': '4.00', 'unit_label': 'min',
             'modifiers': [{'key': 'messy', 'label': 'Messy', 'percent': 10}],
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 201)
@@ -274,3 +274,48 @@ class RateSchemeListFilterTest(BaseTestCase):
         self.assertIn(self.old.pk, ids)
         self.assertNotIn(self.active.pk, ids)
         self.assertNotIn(self.new.pk, ids)
+
+
+class RateSchemeSerializerExtraFieldsTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import User, AccountingCategory
+        from apps.jobs.models import RateScheme
+        self.user = User.objects.create_user('u-sef', 'u-sef@x.test', 'pw')
+        self.client.force_login(self.user)
+        self.ac = AccountingCategory.objects.create(code='X-sef', name='X-sef')
+        self.s = RateScheme.objects.create(
+            name='S-sef', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+
+    def test_serializer_includes_replaced_fields_and_counts(self):
+        resp = self.client.get(f'/api/rate-schemes/{self.s.pk}/')
+        body = resp.json()
+        self.assertIn('replaced_by', body)
+        self.assertIn('replaced_at', body)
+        self.assertIn('superseded', body)
+        self.assertFalse(body['superseded'])
+        self.assertIn('reference_counts', body)
+        self.assertEqual(body['reference_counts']['plan_task_count'], 0)
+        self.assertEqual(body['reference_counts']['task_charge_count'], 0)
+        self.assertEqual(body['reference_counts']['task_template_count'], 0)
+
+    def test_unit_label_must_be_in_configured_units(self):
+        from apps.core.models import User
+        from django.contrib.auth.models import Permission
+        admin = User.objects.create_user('a-sef', 'a-sef@x.test', 'pw')
+        perm = Permission.objects.get(codename='can_manage_config')
+        admin.user_permissions.add(perm)
+        self.client.force_login(admin)
+        resp = self.client.post('/api/rate-schemes/', {
+            'name': 'BadUnits', 'algorithm': 'flat_fee', 'rate': '1',
+            'unit_label': 'frobnitz-not-a-unit',
+            'accounting_category': self.ac.pk,
+            'modifiers': [], 'description': '',
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400)
+        body = resp.json()
+        self.assertIn('unit_label', body)
