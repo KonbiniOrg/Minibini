@@ -203,3 +203,43 @@ class AddTaskManualRequiresSchemeTest(BaseTestCase):
             estimated_billable_qty=Decimal('1'),
         )
         self.assertEqual(pt.rate_scheme_id, self.scheme.pk)
+
+
+class PlanTaskSerializerNoACTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory, User
+        from apps.jobs.models import RateScheme
+        self.user = User.objects.create_user('u-pts', 'u-pts@x.test', 'pw')
+        self.client.force_login(self.user)
+        self.ac = AccountingCategory.objects.create(code='X-pts', name='X-pts')
+        self.scheme = RateScheme.objects.create(
+            name='S-pts', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+
+    def test_plan_task_detail_omits_accounting_category(self):
+        from apps.jobs.models import Job, PlanTask
+        from apps.estimates.models import EstWorksheet
+        from apps.contacts.models import Business, Contact
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f-pts@l.test',
+        )
+        biz = Business.objects.create(
+            business_name='B-pts', default_contact=contact,
+        )
+        contact.business = biz
+        contact.save()
+        job = Job.objects.create(job_number='J-pts', contact=contact)
+        ws = EstWorksheet.objects.create(job=job)
+        pt = PlanTask.objects.create(
+            est_worksheet=ws, name='t',
+            rate_scheme=self.scheme,
+            estimated_billable_qty=Decimal('1'),
+        )
+        resp = self.client.get(f'/api/plan-tasks/{pt.pk}/')
+        body = resp.json()
+        self.assertNotIn('accounting_category', body)
+        self.assertIn('rate_scheme', body)
