@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
   import WizardSourcePool from '../../components/invoices/WizardSourcePool.svelte';
-  import WizardLineItemCard from '../../components/invoices/WizardLineItemCard.svelte';
+  import WizardLineItemCard from '../../components/wizards/WizardLineItemCard.svelte';
   import WizardFooter from '../../components/invoices/WizardFooter.svelte';
 
   const { params = {} } = $props();
@@ -142,7 +142,7 @@
       {#each lineItems as lineItem}
         <WizardLineItemCard
           {lineItem}
-          invoiceId={invoice.invoice_id}
+          apiBase={`/api/invoices/${invoice.invoice_id}`}
           {canAddHere}
           onAddHere={addAtomsToLineItem}
           onchange={reloadLineItems}

@@ -2,7 +2,7 @@
   import { api } from '../../lib/api.js';
   import UnitsSelect from '../UnitsSelect.svelte';
 
-  let { lineItem, invoiceId, canAddHere = false, onAddHere, onchange } = $props();
+  let { lineItem, apiBase, canAddHere = false, onAddHere, onchange } = $props();
 
   let nameValue = $state(lineItem.description);
   let qtyValue = $state(lineItem.qty);
@@ -60,7 +60,7 @@
     saving = true;
     try {
       const updated = await api.patch(
-        `/api/invoices/${invoiceId}/line-items/${lineItem.line_item_id}/`,
+        `${apiBase}/line-items/${lineItem.line_item_id}/`,
         {
           description: nameValue,
           qty: qtyValue,
@@ -85,7 +85,7 @@
 
   async function removeSource(sourceId) {
     await api.post(
-      `/api/invoices/${invoiceId}/line-items/${lineItem.line_item_id}/remove-atoms/`,
+      `${apiBase}/line-items/${lineItem.line_item_id}/remove-atoms/`,
       {source_ids: [sourceId]},
     );
     onchange?.();
@@ -93,7 +93,7 @@
 
   async function deleteLineItem() {
     if (!confirm('Delete this line item?')) return;
-    await api.delete(`/api/invoices/${invoiceId}/line-items/${lineItem.line_item_id}/`);
+    await api.delete(`${apiBase}/line-items/${lineItem.line_item_id}/`);
     onchange?.();
   }
 
