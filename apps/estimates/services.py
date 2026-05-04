@@ -598,6 +598,7 @@ class EstimateWizardService:
                 claims[key] = {
                     'state': 'claimed_by_current',
                     'claiming_line_item_id': li.pk,
+                    'claiming_line_number': li.line_number,
                     'claiming_estimate_id': None,
                     'claiming_estimate_number': None,
                 }
@@ -605,6 +606,7 @@ class EstimateWizardService:
                 claims[key] = {
                     'state': 'claimed_by_other',
                     'claiming_line_item_id': None,
+                    'claiming_line_number': None,
                     'claiming_estimate_id': est.pk,
                     'claiming_estimate_number': est.estimate_number,
                 }
@@ -612,6 +614,7 @@ class EstimateWizardService:
         default_state = {
             'state': 'available',
             'claiming_line_item_id': None,
+            'claiming_line_number': None,
             'claiming_estimate_id': None,
             'claiming_estimate_number': None,
         }

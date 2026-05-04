@@ -500,3 +500,18 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         ]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.description, '')
+
+    def test_claiming_line_number_exposed_for_current_estimate_claim(self):
+        """Source pool atoms claimed by the current estimate's line items
+        should expose claiming_line_number (not just claiming_line_item_id)
+        so the frontend can show the user-facing line number."""
+        from apps.estimates.services import EstimateWizardService
+        # self.pt is a PlanTask on self.ws; claim it on a new line item.
+        atoms = [{'type': 'plan_task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        pool = EstimateWizardService.get_source_pool(self.ws)
+        claimed = next(a for a in pool['atoms'] if a['id'] == self.pt.pk)
+        self.assertEqual(claimed['state'], 'claimed_by_current')
+        self.assertEqual(claimed['claiming_line_number'], li.line_number)
+        # Existing claiming_line_item_id stays for any callers that use it.
+        self.assertEqual(claimed['claiming_line_item_id'], li.pk)
