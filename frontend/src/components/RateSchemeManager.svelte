@@ -22,7 +22,7 @@
   function emptyForm() {
     return {
       name: '', description: '', algorithm: 'elapsed_time',
-      rate: '', unit_label: '', minimum_charge: '',
+      rate: '', unit_label: '',
       modifiers: [], accounting_category: '',
     };
   }
@@ -68,7 +68,6 @@
       algorithm: scheme.algorithm,
       rate: scheme.rate,
       unit_label: scheme.unit_label,
-      minimum_charge: scheme.minimum_charge || '',
       modifiers: [...(scheme.modifiers || [])],
       accounting_category: scheme.accounting_category || '',
     };
@@ -84,7 +83,6 @@
       algorithm: scheme.algorithm,
       rate: scheme.rate,
       unit_label: scheme.unit_label,
-      minimum_charge: scheme.minimum_charge || '',
       modifiers: [...(scheme.modifiers || [])],
       accounting_category: scheme.accounting_category || '',
     };
@@ -121,7 +119,6 @@
         algorithm: form.algorithm,
         rate: form.rate,
         unit_label: form.unit_label,
-        minimum_charge: form.minimum_charge || null,
         modifiers: form.modifiers.map(m => ({
           key: m.key || slugify(m.label),
           label: m.label,
@@ -260,9 +257,6 @@
           <option value={u}>{u}</option>
         {/each}
       </select>
-    </label></p>
-    <p><label><strong>Minimum charge</strong><br>
-      <input type="number" step="0.01" bind:value={form.minimum_charge}>
     </label></p>
     <p><label><strong>Accounting Category *</strong><br>
       <select bind:value={form.accounting_category} required>
