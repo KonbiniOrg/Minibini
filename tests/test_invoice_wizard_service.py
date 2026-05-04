@@ -694,6 +694,41 @@ class RemoveAtomsFromLineItemTest(TestCase):
         self.line_item.refresh_from_db()
         self.assertEqual(self.line_item.price, Decimal('100.00'))
 
+    def test_renumbers_siblings_when_auto_delete_fires(self):
+        """When all atoms are removed and the line item auto-deletes, the
+        remaining siblings must be renumbered to close the gap."""
+        # self.line_item is line 1 (from setUp). Add two more line items.
+        start = timezone.now() - timezone.timedelta(hours=12)
+        blep4 = Blep.objects.create(
+            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=1),
+        )
+        blep5 = Blep.objects.create(
+            task=self.task,
+            start_time=start + timezone.timedelta(hours=2),
+            end_time=start + timezone.timedelta(hours=3),
+        )
+        li2 = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'blep', 'id': blep4.pk}],
+        )
+        li3 = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'blep', 'id': blep5.pk}],
+        )
+        self.assertEqual(self.line_item.line_number, 1)
+        self.assertEqual(li2.line_number, 2)
+        self.assertEqual(li3.line_number, 3)
+
+        # Remove all atoms from line 1 → auto-delete fires
+        all_ids = list(self.line_item.sources.values_list('source_id', flat=True))
+        result = InvoiceWizardService.remove_atoms_from_line_item(
+            self.line_item, all_ids,
+        )
+        self.assertTrue(result['line_item_deleted'])
+
+        li2.refresh_from_db()
+        li3.refresh_from_db()
+        self.assertEqual(li2.line_number, 1)
+        self.assertEqual(li3.line_number, 2)
+
 
 class DiscardDraftTest(TestCase):
     def setUp(self):

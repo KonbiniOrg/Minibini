@@ -378,6 +378,38 @@ class RemoveAtomsFromLineItemTest(TestCase):
         # After removal: remaining sum = $100, qty=2, expected = 50.00
         self.assertEqual(self.li.price, Decimal('50.00'))
 
+    def test_renumbers_siblings_when_auto_delete_fires(self):
+        """When all atoms are removed and the line item auto-deletes, the
+        remaining siblings must be renumbered to close the gap."""
+        # self.li is line 1 (from setUp). Add two more line items so we have 1, 2, 3.
+        pt3 = PlanTask.objects.create(
+            est_worksheet=self.ws, name='C',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        pt4 = PlanTask.objects.create(
+            est_worksheet=self.ws, name='D',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        li2 = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'plan_task', 'id': pt3.pk}],
+        )
+        li3 = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'plan_task', 'id': pt4.pk}],
+        )
+        self.assertEqual(self.li.line_number, 1)
+        self.assertEqual(li2.line_number, 2)
+        self.assertEqual(li3.line_number, 3)
+
+        # Remove all atoms from line 1 → auto-delete fires
+        all_ids = list(self.li.sources.values_list('source_id', flat=True))
+        result = EstimateWizardService.remove_atoms_from_line_item(self.li, all_ids)
+        self.assertTrue(result['line_item_deleted'])
+
+        li2.refresh_from_db()
+        li3.refresh_from_db()
+        self.assertEqual(li2.line_number, 1)
+        self.assertEqual(li3.line_number, 2)
+
 
 class SendAllAtomsTest(TestCase):
     def setUp(self):

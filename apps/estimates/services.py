@@ -784,12 +784,14 @@ class EstimateWizardService:
         old_sum = EstimateWizardService._sum_sources(line_item)
         was_in_sync = EstimateWizardService._is_in_sync(line_item, old_sum)
 
+        from apps.core.services import LineItemService
+
         with transaction.atomic():
             line_item.sources.filter(source_id__in=source_ids).delete()
             remaining = line_item.sources.count()
 
             if remaining == 0:
-                line_item.delete()
+                LineItemService.delete_line_item_with_renumber(line_item)
                 return {'line_item_deleted': True}
 
             if was_in_sync:

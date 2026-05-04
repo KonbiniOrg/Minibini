@@ -522,6 +522,7 @@ class InvoiceWizardService:
         Returns: {'line_item_deleted': bool}
         """
         from django.db import transaction
+        from apps.core.services import LineItemService
 
         InvoiceWizardService._validate_draft(line_item.invoice)
 
@@ -533,7 +534,7 @@ class InvoiceWizardService:
             remaining = line_item.sources.count()
 
             if remaining == 0:
-                line_item.delete()
+                LineItemService.delete_line_item_with_renumber(line_item)
                 return {'line_item_deleted': True}
 
             if was_in_sync:
