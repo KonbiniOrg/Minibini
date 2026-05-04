@@ -26,7 +26,6 @@ class RateSchemeModelTest(BaseTestCase):
         self.assertEqual(scheme.algorithm, RateScheme.ELAPSED_TIME)
         self.assertEqual(scheme.rate, Decimal('75.00'))
         self.assertEqual(scheme.unit_label, 'hour')
-        self.assertIsNone(scheme.minimum_charge)
         self.assertEqual(scheme.modifiers, [])
 
     def test_create_entered_qty_scheme_with_modifiers(self):
@@ -39,14 +38,12 @@ class RateSchemeModelTest(BaseTestCase):
             algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('4.00'),
             unit_label='sq ft',
-            minimum_charge=Decimal('20.00'),
             modifiers=modifiers,
             accounting_category=self.ac,
         )
         self.assertEqual(scheme.algorithm, RateScheme.ENTERED_QTY)
         self.assertEqual(len(scheme.modifiers), 2)
         self.assertEqual(scheme.modifiers[0]['key'], 'messy')
-        self.assertEqual(scheme.minimum_charge, Decimal('20.00'))
 
     def test_create_flat_fee_scheme(self):
         scheme = RateScheme.objects.create(
@@ -93,7 +90,6 @@ class RateSchemeComputeTest(BaseTestCase):
             algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('4.00'),
             unit_label='sq ft',
-            minimum_charge=Decimal('20.00'),
             modifiers=self.modifiers,
             accounting_category=self.ac,
         )
@@ -120,7 +116,7 @@ class RateSchemeComputeTest(BaseTestCase):
         self.assertEqual(result, Decimal('4.60'))
 
     def test_compute_charge_basic(self):
-        # 30 sq ft × $4.00 = $120.00 (above minimum of $20)
+        # 30 sq ft × $4.00 = $120.00
         result = self.scheme.compute_charge(Decimal('30'))
         self.assertEqual(result, Decimal('120.00'))
 
@@ -128,16 +124,6 @@ class RateSchemeComputeTest(BaseTestCase):
         # 30 × $4.60 = $138.00
         result = self.scheme.compute_charge(Decimal('30'), active_modifiers=['messy', 'doublestick'])
         self.assertEqual(result, Decimal('138.00'))
-
-    def test_compute_charge_minimum_applies(self):
-        # 1 × $4.00 = $4.00, but minimum is $20.00
-        result = self.scheme.compute_charge(Decimal('1'))
-        self.assertEqual(result, Decimal('20.00'))
-
-    def test_compute_charge_minimum_not_applied_when_exceeded(self):
-        # 10 × $4.00 = $40.00, minimum is $20.00 → $40.00
-        result = self.scheme.compute_charge(Decimal('10'))
-        self.assertEqual(result, Decimal('40.00'))
 
     def test_flat_fee_effective_rate(self):
         result = self.flat_scheme.effective_rate()
