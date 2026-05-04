@@ -37,7 +37,7 @@
           <span style="color: #777;">
             <input type="checkbox" checked disabled>
             <em>{atom.description} &mdash; ${atom.amount}</em>
-            <small>&rarr; line {atom.claiming_line_item_id}</small>
+            <small>&rarr; line {atom.claiming_line_number}</small>
           </span>
         {:else if atom.state === 'claimed_by_other'}
           <span style="color: #999;">
