@@ -11,7 +11,7 @@ class RateSchemeSerializer(serializers.ModelSerializer):
         model = RateScheme
         fields = [
             'rate_scheme_id', 'name', 'description', 'algorithm',
-            'rate', 'unit_label', 'minimum_charge',
+            'rate', 'unit_label',
             'modifiers', 'accounting_category',
             'replaced_by', 'replaced_at', 'superseded', 'reference_counts',
         ]
