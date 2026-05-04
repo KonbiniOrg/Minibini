@@ -340,6 +340,8 @@ class RateSchemeSupersedeMethodTest(BaseTestCase):
         before = timezone.now()
         new = old.supersede(name='New', rate=Decimal('15'))
         old.refresh_from_db()
+        # Old row gets the (v1) suffix even though the new row was renamed.
+        self.assertEqual(old.name, 'Old (v1)')
         self.assertEqual(old.replaced_by, new)
         self.assertGreaterEqual(old.replaced_at, before)
         self.assertEqual(new.name, 'New')
