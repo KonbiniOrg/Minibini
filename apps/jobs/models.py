@@ -327,7 +327,6 @@ class RateScheme(models.Model):
     algorithm = models.CharField(max_length=20, choices=ALGORITHM_CHOICES)
     rate = models.DecimalField(max_digits=10, decimal_places=2)
     unit_label = models.CharField(max_length=50)
-    minimum_charge = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     modifiers = models.JSONField(default=list, blank=True)
     accounting_category = models.ForeignKey(
         'core.AccountingCategory', on_delete=models.PROTECT,
@@ -343,7 +342,7 @@ class RateScheme(models.Model):
     # (replaced_by and replaced_at are the only allowed mutations).
     FROZEN_FIELDS = (
         'name', 'description', 'algorithm', 'rate', 'unit_label',
-        'minimum_charge', 'modifiers', 'accounting_category',
+        'modifiers', 'accounting_category',
     )
 
     class Meta:
@@ -384,10 +383,7 @@ class RateScheme(models.Model):
 
     def compute_charge(self, qty, active_modifiers=None):
         """Compute total charge for the given quantity."""
-        total = qty * self.effective_rate(active_modifiers)
-        if self.minimum_charge:
-            total = max(total, self.minimum_charge)
-        return total
+        return qty * self.effective_rate(active_modifiers)
 
     def get_actual_qty(self, task):
         """Resolve actual quantity based on algorithm."""
@@ -459,7 +455,6 @@ class RateScheme(models.Model):
             'algorithm': self.algorithm,
             'rate': self.rate,
             'unit_label': self.unit_label,
-            'minimum_charge': self.minimum_charge,
             'modifiers': list(self.modifiers),
             'accounting_category': self.accounting_category,
         }
