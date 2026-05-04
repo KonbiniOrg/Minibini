@@ -373,6 +373,40 @@ class RateSchemeSupersedeMethodTest(BaseTestCase):
         self.assertEqual(len(old.modifiers), 1)
 
 
+class RateSchemeVersionedSupersedeTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        self.ac = AccountingCategory.objects.create(code='V', name='V')
+
+    def test_first_supersede_renames_old_to_v1_and_new_keeps_name(self):
+        """
+        Calling supersede() with no name override:
+          - old row is renamed to "<orig> (v1)"
+          - new row is created with the original name
+          - the unique constraint on name is preserved at the DB level.
+        """
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='Standard Labor', algorithm='flat_fee', rate=Decimal('10'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        new = old.supersede()
+        old.refresh_from_db()
+        self.assertEqual(old.name, 'Standard Labor (v1)')
+        self.assertEqual(new.name, 'Standard Labor')
+        self.assertEqual(old.replaced_by_id, new.pk)
+        # Name stays globally unique — verify the row count for each name is 1.
+        self.assertEqual(
+            RateScheme.objects.filter(name='Standard Labor').count(), 1,
+        )
+        self.assertEqual(
+            RateScheme.objects.filter(name='Standard Labor (v1)').count(), 1,
+        )
+
+
 class RateSchemeFreezeOnReferenceTest(BaseTestCase):
     fixtures = []
 

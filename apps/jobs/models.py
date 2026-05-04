@@ -431,12 +431,27 @@ class RateScheme(models.Model):
         }
 
     def supersede(self, **overrides):
-        """Create a new RateScheme inheriting this one's fields, set replaced_by/at."""
+        """Create a new RateScheme inheriting this one's fields, set replaced_by/at.
+
+        The old row is renamed in place to "<orig> (v{N})" where N is the count
+        of pre-existing predecessors + 1. The new row takes the original name
+        (or whatever the caller overrides). This preserves the DB-level unique
+        constraint on `name` without needing a partial-unique index.
+        """
         from django.db import transaction
         from django.utils import timezone
 
         if self.replaced_by is not None:
             raise ValueError('Cannot supersede an already-superseded scheme.')
+
+        # Count predecessors (the chain leading to self). Each scheme has at
+        # most one direct replacement, so the chain is linear.
+        version = 1
+        pred = self.replaces.first()
+        while pred is not None:
+            version += 1
+            pred = pred.replaces.first()
+        retired_name = f'{self.name} (v{version})'
 
         defaults = {
             'name': self.name,
@@ -451,16 +466,19 @@ class RateScheme(models.Model):
         defaults.update(overrides)
 
         with transaction.atomic():
+            # Rename old first to free the unique name slot for the new row.
+            # update() bypasses full_clean(), which is what we want — `name`
+            # is in FROZEN_FIELDS, but renaming during supersede is the one
+            # exception, alongside replaced_by/replaced_at.
+            RateScheme.objects.filter(pk=self.pk).update(name=retired_name)
+            self.name = retired_name  # keep the in-memory instance in sync
             new = RateScheme.objects.create(**defaults)
-            self.replaced_by = new
-            self.replaced_at = timezone.now()
-            # Use update() rather than save() to bypass the freeze check coming
-            # in Task A4 - replaced_by/at are the *only* allowed mutations on a
-            # frozen scheme, and we write them directly via update() to skip
-            # full_clean(). For now (pre-A4) save() would also work.
+            replaced_at = timezone.now()
             RateScheme.objects.filter(pk=self.pk).update(
-                replaced_by=new, replaced_at=self.replaced_at,
+                replaced_by=new, replaced_at=replaced_at,
             )
+            self.replaced_by = new
+            self.replaced_at = replaced_at
         return new
 
     def __str__(self):
