@@ -7,6 +7,8 @@
   let loading = $state(true);
   let error = $state('');
   let editingId = $state(null);
+  let supersedingId = $state(null);
+  let showSuperseded = $state(false);
   let form = $state(emptyForm());
   let saving = $state(false);
   let saveError = $state('');
@@ -29,8 +31,11 @@
     loading = true;
     error = '';
     try {
+      const url = showSuperseded
+        ? '/api/rate-schemes/?only_superseded=true'
+        : '/api/rate-schemes/';
       const [schemeResp, catResp, unitsResp] = await Promise.all([
-        api.get('/api/rate-schemes/'),
+        api.get(url),
         api.get('/api/accounting-categories/'),
         api.get('/api/settings/units/'),
       ]);
@@ -44,9 +49,15 @@
     }
   }
 
+  function isReferenced(s) {
+    const c = s.reference_counts || {};
+    return ((c.plan_task_count || 0) + (c.task_charge_count || 0) + (c.task_template_count || 0)) > 0;
+  }
+
   function startCreate() {
     form = emptyForm();
     editingId = 'new';
+    supersedingId = null;
     saveError = '';
   }
 
@@ -62,11 +73,29 @@
       accounting_category: scheme.accounting_category || '',
     };
     editingId = scheme.rate_scheme_id;
+    supersedingId = null;
+    saveError = '';
+  }
+
+  function startSupersede(scheme) {
+    form = {
+      name: scheme.name,
+      description: scheme.description || '',
+      algorithm: scheme.algorithm,
+      rate: scheme.rate,
+      unit_label: scheme.unit_label,
+      minimum_charge: scheme.minimum_charge || '',
+      modifiers: [...(scheme.modifiers || [])],
+      accounting_category: scheme.accounting_category || '',
+    };
+    supersedingId = scheme.rate_scheme_id;
+    editingId = null;
     saveError = '';
   }
 
   function cancelEdit() {
     editingId = null;
+    supersedingId = null;
     saveError = '';
   }
 
@@ -101,12 +130,15 @@
         accounting_category: form.accounting_category,
       };
 
-      if (editingId === 'new') {
+      if (supersedingId) {
+        await api.post(`/api/rate-schemes/${supersedingId}/supersede/`, payload);
+      } else if (editingId === 'new') {
         await api.post('/api/rate-schemes/', payload);
       } else {
         await api.patch(`/api/rate-schemes/${editingId}/`, payload);
       }
       editingId = null;
+      supersedingId = null;
       await load();
     } catch (e) {
       if (e.data && typeof e.data === 'object') {
@@ -148,7 +180,13 @@
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}
 
-{#if !loading && editingId === null}
+{#if !loading && editingId === null && supersedingId === null}
+  <p>
+    <label>
+      <input type="checkbox" bind:checked={showSuperseded} onchange={load} />
+      Show superseded schemes
+    </label>
+  </p>
   <table border="1">
     <thead>
       <tr>
@@ -165,19 +203,33 @@
           <td>{s.unit_label}</td>
           <td>{(s.modifiers || []).length}</td>
           <td>
-            <button type="button" onclick={() => startEdit(s)}>Edit</button>
-            <button type="button" onclick={() => remove(s)}>Delete</button>
+            {#if s.superseded}
+              <small>
+                Replaced by: scheme {s.replaced_by}
+                {#if s.replaced_at}| Replaced at: {new Date(s.replaced_at).toLocaleString()}{/if}
+                | References: {s.reference_counts?.plan_task_count || 0} plan tasks,
+                {s.reference_counts?.task_charge_count || 0} task charges,
+                {s.reference_counts?.task_template_count || 0} templates
+              </small>
+            {:else if isReferenced(s)}
+              <button type="button" onclick={() => startSupersede(s)}>Create new version</button>
+            {:else}
+              <button type="button" onclick={() => startEdit(s)}>Edit</button>
+              <button type="button" onclick={() => remove(s)}>Delete</button>
+            {/if}
           </td>
         </tr>
       {/each}
     </tbody>
   </table>
-  <p><button type="button" onclick={startCreate}>Add Rate Scheme</button></p>
+  {#if !showSuperseded}
+    <p><button type="button" onclick={startCreate}>Add Rate Scheme</button></p>
+  {/if}
 {/if}
 
-{#if editingId !== null}
+{#if editingId !== null || supersedingId !== null}
   <fieldset>
-    <legend><strong>{editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme'}</strong></legend>
+    <legend><strong>{supersedingId ? 'New Version of Rate Scheme' : (editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme')}</strong></legend>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.name} style="width:100%;box-sizing:border-box;">
     </label></p>
