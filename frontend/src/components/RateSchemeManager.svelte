@@ -232,7 +232,14 @@
     <legend><strong>{supersedingId ? 'New Version of Rate Scheme' : (editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme')}</strong></legend>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.name} style="width:100%;box-sizing:border-box;">
-    </label></p>
+    </label>
+    {#if supersedingId}
+      <small>
+        You can keep this name. The retired version will be renamed
+        automatically (e.g. "(v1)").
+      </small>
+    {/if}
+    </p>
     <p><label><strong>Description</strong><br>
       <textarea bind:value={form.description} style="width:100%;box-sizing:border-box;"></textarea>
     </label></p>
