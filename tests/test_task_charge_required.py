@@ -56,3 +56,28 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         self.scheme.supersede(name='S-tcr v2')
         with self.assertRaises(SchemeSupersededError):
             TaskService.create_from_template(self.template, self.job)
+
+
+class TaskCleanRequiresChargeTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.jobs.models import Job
+        from apps.contacts.models import Business, Contact
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f-tcrc@l.test',
+        )
+        biz = Business.objects.create(
+            business_name='B-tcrc', default_contact=contact,
+        )
+        contact.business = biz
+        contact.save()
+        self.job = Job.objects.create(job_number='J-tcrc', contact=contact)
+
+    def test_task_full_clean_raises_when_no_charge(self):
+        from django.core.exceptions import ValidationError
+        from apps.jobs.models import Task
+        t = Task.objects.create(job=self.job, name='no charge')
+        with self.assertRaises(ValidationError):
+            t.full_clean()

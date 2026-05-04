@@ -254,10 +254,9 @@ class Task(TaskBase):
                     raise ValidationError(
                         {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
                     )
-        # Phase B: enable hard requirement that every Task has a TaskCharge.
-        # Phase A keeps this soft to tolerate legacy data during the manual-fix window.
-        # if self.pk and not hasattr(self, 'charge'):
-        #     raise ValidationError({'charge': 'Required: every Task must have a TaskCharge.'})
+        # Phase B: every Task must have a TaskCharge.
+        if self.pk and not hasattr(self, 'charge'):
+            raise ValidationError({'charge': 'Required: every Task must have a TaskCharge.'})
 
     def save(self, *args, **kwargs):
         from django.db import transaction

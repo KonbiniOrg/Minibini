@@ -142,9 +142,19 @@ class TaskServiceUpdateTest(JobsTestBase):
 
     def setUp(self):
         super().setUp()
+        from apps.jobs.models import TaskCharge
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.task = Task.objects.create(
             job=self.job, name='Task 1', sort_order=1,
+        )
+        scheme = RateScheme.objects.create(
+            name='TSU scheme', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1.00'), unit_label='ea',
+            accounting_category=self.lit,
+        )
+        TaskCharge.objects.create(
+            task=self.task, rate_scheme=scheme,
+            active_modifiers=[], actuals={},
         )
 
     def test_update_task(self):
@@ -161,6 +171,7 @@ class TaskServiceReorderTest(JobsTestBase):
 
     def setUp(self):
         super().setUp()
+        from apps.jobs.models import TaskCharge
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.t1 = Task.objects.create(
             job=self.job, name='Task 1', sort_order=1,
@@ -168,6 +179,16 @@ class TaskServiceReorderTest(JobsTestBase):
         self.t2 = Task.objects.create(
             job=self.job, name='Task 2', sort_order=2,
         )
+        scheme = RateScheme.objects.create(
+            name='TSR scheme', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1.00'), unit_label='ea',
+            accounting_category=self.lit,
+        )
+        for t in (self.t1, self.t2):
+            TaskCharge.objects.create(
+                task=t, rate_scheme=scheme,
+                active_modifiers=[], actuals={},
+            )
 
     def test_reorder_down(self):
         TaskService.reorder_tasks(self.t1.pk, 'down')

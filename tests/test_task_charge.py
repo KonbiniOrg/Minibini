@@ -213,6 +213,20 @@ class TaskChargeFlatFeeTest(BaseTestCase):
 
 class EstWorkerTimeTest(BaseTestCase):
 
+    def setUp(self):
+        super().setUp()
+        from apps.jobs.models import TaskCharge
+        ac = AccountingCategory.objects.get(pk=901)
+        scheme = RateScheme.objects.create(
+            name='EWT scheme', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1.00'), unit_label='ea',
+            accounting_category=ac,
+        )
+        TaskCharge.objects.get_or_create(
+            task=Task.objects.get(pk=1),
+            defaults={'rate_scheme': scheme, 'active_modifiers': [], 'actuals': {}},
+        )
+
     def test_task_has_est_worker_time(self):
         task = Task.objects.get(pk=1)
         self.assertIsNone(task.est_worker_time)
