@@ -267,8 +267,6 @@ class InvoiceWizardService:
             'claiming_invoice_number': None,
         }
 
-        from apps.jobs.models import TaskCharge
-
         tasks = (
             Task.objects.filter(job=job)
             .exclude(status=Task.STATUS_CANCELLED)
@@ -279,25 +277,18 @@ class InvoiceWizardService:
         for task in tasks:
             atoms = []
 
-            # Phase A tolerance: a task without a TaskCharge emits no 'task' atom
-            # but does not crash. Phase B will guarantee charges always exist.
-            try:
-                charge = task.charge
-            except TaskCharge.DoesNotExist:
-                charge = None
-
-            if charge is not None:
-                amount = charge.compute().quantize(Decimal('0.01'))
-                key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
-                state_info = claims.get(key, default_state)
-                atoms.append({
-                    'atom_type': 'task',
-                    'atom_id': task.pk,
-                    'description': f'{task.name} ({charge.rate_scheme.name})',
-                    'sub_info': WizardAtomLabels.qty_source_label(charge),
-                    'computed_amount': amount,
-                    **state_info,
-                })
+            charge = task.charge
+            amount = charge.compute().quantize(Decimal('0.01'))
+            key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
+            state_info = claims.get(key, default_state)
+            atoms.append({
+                'atom_type': 'task',
+                'atom_id': task.pk,
+                'description': f'{task.name} ({charge.rate_scheme.name})',
+                'sub_info': WizardAtomLabels.qty_source_label(charge),
+                'computed_amount': amount,
+                **state_info,
+            })
 
             # Material atoms
             materials = (
@@ -396,23 +387,17 @@ class InvoiceWizardService:
     @staticmethod
     def _atom_computed_amount(atom_instance):
         """Compute the billable amount for an atom."""
-        from apps.jobs.models import Blep, Task, TaskCharge
+        from apps.jobs.models import Blep, Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            try:
-                return atom_instance.charge.compute().quantize(Decimal('0.01'))
-            except TaskCharge.DoesNotExist:
-                return Decimal('0.00')  # Phase A tolerance; B7/B8 will guarantee charge exists
+            return atom_instance.charge.compute().quantize(Decimal('0.01'))
         if isinstance(atom_instance, Blep):
             # Legacy path retained for any remaining InvoiceLineItemSource rows of type 'blep'
             if not atom_instance.end_time:
                 return Decimal('0.00')
             elapsed = atom_instance.end_time - atom_instance.start_time
             hours = Decimal(str(elapsed.total_seconds())) / Decimal('3600')
-            try:
-                rate = atom_instance.task.charge.rate_scheme.rate
-            except (TaskCharge.DoesNotExist, AttributeError):
-                rate = Decimal('0.00')
+            rate = atom_instance.task.charge.rate_scheme.rate
             return (hours * rate).quantize(Decimal('0.01'))
         if isinstance(atom_instance, Material):
             return (atom_instance.quantity * atom_instance.sell_price).quantize(Decimal('0.01'))

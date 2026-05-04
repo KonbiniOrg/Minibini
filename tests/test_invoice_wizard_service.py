@@ -864,7 +864,13 @@ class TaskAttachedPartialRestockTest(TestCase):
             contact=self.contact, status=Job.STATUS_APPROVED,
             job_number='JOB-TAPR-1',
         )
+        scheme = RateScheme.objects.create(
+            name='Hourly-tapr', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.cat,
+        )
         task = Task.objects.create(job=job, name='work')
+        TaskCharge.objects.create(task=task, rate_scheme=scheme)
         pli = PriceListItem.objects.create(
             code='I-TAPR', accounting_category=self.cat,
             is_inventoried=True, selling_price=Decimal('3.00'),
