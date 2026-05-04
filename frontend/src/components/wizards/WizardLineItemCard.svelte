@@ -13,6 +13,52 @@
   let priceManuallyEdited = $state(false);
   let saving = $state(false);
 
+  // Snapshot of the lineItem prop's saved fields the last time we treated the
+  // local form state as "clean and in sync with the server". Used by the
+  // re-sync effect below to distinguish a parent-driven prop refresh (e.g.
+  // after add-atoms or remove-atoms) from user edits.
+  let lastSyncedSnapshot = $state({
+    description: lineItem.description,
+    qty: lineItem.qty,
+    units: lineItem.units,
+    price: lineItem.price,
+  });
+
+  // When the lineItem prop refreshes externally (e.g. parent reloaded after
+  // add-atoms / remove-atoms / a sibling action), follow the new server
+  // values — but only if the user had no unsaved edits when the refresh
+  // arrived. Without this, the local priceValue would stay at its
+  // mount-time value while the displayed sources list and the saved price
+  // both move forward, surfacing as a spurious "overridden" warning.
+  $effect(() => {
+    const snap = {
+      description: lineItem.description,
+      qty: lineItem.qty,
+      units: lineItem.units,
+      price: lineItem.price,
+    };
+    const propChanged =
+      snap.description !== lastSyncedSnapshot.description ||
+      parseFloat(snap.qty) !== parseFloat(lastSyncedSnapshot.qty) ||
+      snap.units !== lastSyncedSnapshot.units ||
+      parseFloat(snap.price) !== parseFloat(lastSyncedSnapshot.price);
+    if (!propChanged) return;
+
+    const wasClean =
+      nameValue === lastSyncedSnapshot.description &&
+      parseFloat(qtyValue) === parseFloat(lastSyncedSnapshot.qty) &&
+      unitsValue === lastSyncedSnapshot.units &&
+      parseFloat(priceValue) === parseFloat(lastSyncedSnapshot.price);
+    if (wasClean) {
+      nameValue = snap.description;
+      qtyValue = snap.qty;
+      unitsValue = snap.units;
+      priceValue = snap.price;
+      priceManuallyEdited = false;
+    }
+    lastSyncedSnapshot = snap;
+  });
+
   // Sum of source atom computed amounts (the "computed total")
   const computedSum = $derived(
     lineItem.sources.reduce((sum, s) => sum + parseFloat(s.computed_amount), 0)
@@ -75,6 +121,15 @@
       unitsValue = updated.units;
       priceValue = updated.price;
       priceManuallyEdited = false;
+      // Advance the prop snapshot too, so the re-sync effect treats the
+      // post-save prop refresh as a non-event rather than a "we should follow
+      // the new prop" event.
+      lastSyncedSnapshot = {
+        description: updated.description,
+        qty: updated.qty,
+        units: updated.units,
+        price: updated.price,
+      };
       onchange?.();
     } catch (e) {
       alert(e.message || 'Save failed');
