@@ -427,6 +427,57 @@ class RateSchemeVersionedSupersedeTest(BaseTestCase):
         self.assertEqual(b.replaced_by_id, c.pk)
         self.assertIsNone(c.replaced_by_id)
 
+    def test_supersede_with_name_override_renames_old_anyway(self):
+        """
+        Even when the caller gives the new scheme a different name, the
+        old row still gets the (vN) suffix — consistency wins over
+        cosmetics, per spec.
+        """
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='Hourly', algorithm='flat_fee', rate=Decimal('5'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        new = old.supersede(name='Premium Hourly')
+        old.refresh_from_db()
+        self.assertEqual(old.name, 'Hourly (v1)')
+        self.assertEqual(new.name, 'Premium Hourly')
+
+    def test_supersede_appends_suffix_to_already_suffixed_name(self):
+        """
+        If a row was hand-created (or otherwise ended up) with a name
+        that already looks like "...(v1)", a supersede operation just
+        appends another suffix. No smart-stripping; the chain history
+        is the source of truth, the suffix is a label.
+        """
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='Quirky (v1)', algorithm='flat_fee', rate=Decimal('5'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        new = old.supersede()
+        old.refresh_from_db()
+        self.assertEqual(old.name, 'Quirky (v1) (v1)')
+        self.assertEqual(new.name, 'Quirky (v1)')
+
+    def test_supersede_does_not_share_modifiers_list_with_new_scheme(self):
+        """
+        Belt-and-braces: confirm the modifier-list copy still doesn't
+        alias after the algorithm change. (Mirrors a pre-existing test
+        in RateSchemeSupersedeMethodTest, but worth keeping for the
+        new code path.)
+        """
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='Mod', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+            modifiers=[{'key': 'm1', 'label': 'M1', 'percent': 10}],
+        )
+        new = old.supersede()
+        new.modifiers.append({'key': 'm2', 'label': 'M2', 'percent': 5})
+        old.refresh_from_db()
+        self.assertEqual(len(old.modifiers), 1)
+
 
 class RateSchemeFreezeOnReferenceTest(BaseTestCase):
     fixtures = []
