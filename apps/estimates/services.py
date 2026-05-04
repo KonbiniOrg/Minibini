@@ -669,11 +669,18 @@ class EstimateWizardService:
         categories = {EstimateWizardService._atom_category(i) for i in instances}
         category = categories.pop() if len(categories) == 1 else None
 
+        # Pre-fill description from the single source atom; blank for multi.
+        description = (
+            EstimateWizardService._atom_description(instances[0])
+            if len(instances) == 1
+            else ''
+        )
+
         try:
             with transaction.atomic():
                 line_item = EstimateLineItem.objects.create(
                     estimate=estimate,
-                    description='',
+                    description=description,
                     qty=Decimal('1'),
                     units='each',
                     price=total_price,

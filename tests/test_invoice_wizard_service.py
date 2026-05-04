@@ -340,10 +340,14 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(line_item.qty, Decimal('1'))
         self.assertEqual(line_item.units, 'each')
 
-    def test_default_description_is_blank(self):
+    def test_default_description_pre_filled_for_single_atom(self):
+        # Single blep atom: description is pre-filled as "Labor Xh"
         atoms = [{'type': 'blep', 'id': self.blep1.pk}]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
-        self.assertEqual(line_item.description, '')
+        self.assertTrue(
+            line_item.description.startswith('Labor '),
+            f'Expected pre-filled description starting with "Labor ", got {line_item.description!r}',
+        )
 
     def test_category_set_when_all_atoms_share_one(self):
         atoms = [
@@ -900,3 +904,64 @@ class TaskAttachedPartialRestockTest(TestCase):
             mat_atoms[0]['computed_amount'], Decimal('6.00'),
             'computed_amount should be quantity(3) * sell_price(2) = 6.00',
         )
+
+
+class AddAtomsToNewLineItemDescriptionTest(TestCase):
+    """Description is pre-filled from the source atom when exactly one atom is added."""
+
+    def setUp(self):
+        super().setUp()
+        from django.utils import timezone
+
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        self.cat = AccountingCategory.objects.create(code='ID', name='ID')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-id', algorithm='elapsed_time', rate=Decimal('60'),
+            unit_label='hour', accounting_category=self.cat,
+        )
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f-id@l.test',
+            mobile_number='555-2',
+        )
+        self.job = Job.objects.create(job_number='J-id', contact=contact)
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        self.task = Task.objects.create(
+            job=self.job, name='Setup',
+        )
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
+        now = timezone.now()
+        self.blep = Blep.objects.create(
+            task=self.task,
+            start_time=now - timezone.timedelta(hours=1),
+            end_time=now,
+        )
+        self.material = Material.objects.create(
+            job=self.job, description='Acrylic 1/4"',
+            quantity=Decimal('1'), unit_cost=Decimal('20'),
+            sell_price=Decimal('40'), accounting_category=self.cat,
+        )
+
+    def test_single_blep_atom_seeds_description(self):
+        atoms = [{'type': 'blep', 'id': self.blep.pk}]
+        li = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertTrue(
+            li.description.startswith('Labor '),
+            f'Expected blep-derived description to start with "Labor ", got {li.description!r}',
+        )
+
+    def test_single_material_atom_seeds_description(self):
+        atoms = [{'type': 'material', 'id': self.material.pk}]
+        li = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(li.description, 'Acrylic 1/4"')
+
+    def test_multiple_atoms_leaves_description_blank(self):
+        atoms = [
+            {'type': 'blep', 'id': self.blep.pk},
+            {'type': 'material', 'id': self.material.pk},
+        ]
+        li = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(li.description, '')

@@ -440,3 +440,63 @@ class SendAllAtomsTest(TestCase):
         result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
         self.assertEqual(result['estimate'].job, self.job)
         self.assertEqual(result['estimate'].status, Estimate.STATUS_DRAFT)
+
+
+class AddAtomsToNewLineItemDescriptionTest(TestCase):
+    """Description is pre-filled from the source atom when exactly one atom is added."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job, PlanTask, RateScheme
+        from apps.inventory.models import PlanMaterial
+        from apps.estimates.models import EstWorksheet
+        from apps.core.models import AccountingCategory, Configuration
+
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='job_counter', value='0')
+
+        contact = Contact.objects.create(
+            first_name='F', last_name='L', email='f-d@l.test',
+            mobile_number='555-1',
+        )
+        self.job = Job.objects.create(job_number='J-desc', contact=contact)
+        self.ws = EstWorksheet.objects.create(job=self.job)
+        self.cat = AccountingCategory.objects.create(code='D', name='D')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-d', algorithm='flat_fee', rate=Decimal('10'),
+            unit_label='ea', accounting_category=self.cat,
+        )
+        self.pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='Cut sign blank',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        self.pm = PlanMaterial.objects.create(
+            est_worksheet=self.ws, description='3/4" plywood',
+            quantity=Decimal('2'), unit_cost=Decimal('5'),
+            sell_price=Decimal('10'), accounting_category=self.cat,
+        )
+        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+
+    def test_single_plan_task_atom_seeds_description_from_name(self):
+        from apps.estimates.services import EstimateWizardService
+        atoms = [{'type': 'plan_task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.description, 'Cut sign blank')
+
+    def test_single_plan_material_atom_seeds_description(self):
+        from apps.estimates.services import EstimateWizardService
+        atoms = [{'type': 'plan_material', 'id': self.pm.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.description, '3/4" plywood')
+
+    def test_multiple_atoms_leaves_description_blank(self):
+        from apps.estimates.services import EstimateWizardService
+        atoms = [
+            {'type': 'plan_task', 'id': self.pt.pk},
+            {'type': 'plan_material', 'id': self.pm.pk},
+        ]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.description, '')

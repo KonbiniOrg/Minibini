@@ -434,6 +434,18 @@ class InvoiceWizardService:
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
 
     @staticmethod
+    def _atom_description(atom_instance):
+        from apps.jobs.models import Blep
+        from apps.inventory.models import Material
+        if isinstance(atom_instance, Blep):
+            elapsed = atom_instance.end_time - atom_instance.start_time
+            hours = elapsed.total_seconds() / 3600
+            return f'Labor {hours:.2f}h'
+        if isinstance(atom_instance, Material):
+            return atom_instance.description
+        return ''
+
+    @staticmethod
     def _sum_sources(line_item):
         """Sum the computed amounts of all source atoms on a line item."""
         total = Decimal('0.00')
@@ -554,11 +566,18 @@ class InvoiceWizardService:
         # Uniform category -> use it; mixed -> leave null
         category = categories.pop() if len(categories) == 1 else None
 
+        # Pre-fill description from the single source atom; blank for multi.
+        description = (
+            InvoiceWizardService._atom_description(instances[0])
+            if len(instances) == 1
+            else ''
+        )
+
         try:
             with transaction.atomic():
                 line_item = InvoiceLineItem.objects.create(
                     invoice=invoice,
-                    description='',
+                    description=description,
                     qty=Decimal('1'),
                     units='each',
                     price=total_price,
