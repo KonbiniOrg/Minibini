@@ -52,6 +52,22 @@
   const isEdit = $derived(mode === 'edit');
   const title = $derived(isEdit ? 'Edit Task' : 'Add Task');
 
+  const selectedTemplate = $derived(
+    templates.find(t => String(t.template_id) === String(templateId)) || null
+  );
+
+  $effect(() => {
+    if (selectedTemplate) {
+      activeModifiers = [...(selectedTemplate.default_active_modifiers || [])];
+      if (selectedTemplate.default_billable_qty && !estQty) {
+        estQty = selectedTemplate.default_billable_qty;
+      }
+      // Sync rateSchemeId to the selected template so the fieldset's
+      // modifier list and locked summary reflect the *current* template.
+      rateSchemeId = selectedTemplate.rate_scheme ?? '';
+    }
+  });
+
   async function save() {
     busy = true;
     error = '';
@@ -69,9 +85,7 @@
         if (!templateId) { error = 'Please select a template.'; busy = false; return; }
         await api.post(`/api/jobs/${jobId}/add-from-template/`, {
           task_template_id: Number(templateId),
-          rate_scheme: rateSchemeId,
-          active_modifiers: activeModifiers,
-          actuals: estQty ? { qty: estQty } : {},
+          est_qty: estQty,
         });
       } else {
         await api.post(`/api/jobs/${jobId}/tasks/`, payload);
@@ -135,6 +149,7 @@
         bind:rateSchemeId
         bind:activeModifiers
         bind:estQty
+        lockSchemeChoice={createMode === 'template' && !isEdit}
       />
 
       <div class="buttons">

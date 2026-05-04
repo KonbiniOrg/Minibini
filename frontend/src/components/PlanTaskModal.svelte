@@ -62,9 +62,12 @@
       if (selectedTemplate.default_billable_qty && !estQty) {
         estQty = selectedTemplate.default_billable_qty;
       }
-      if (selectedTemplate.rate_scheme && !rateSchemeId) {
-        rateSchemeId = selectedTemplate.rate_scheme;
-      }
+      // Always sync rateSchemeId to the selected template's scheme so the
+      // fieldset's modifier list and summary reflect the *current* template.
+      // Without this, switching to a different template would leave the
+      // previous template's scheme stuck and the user would toggle modifiers
+      // that don't belong to the scheme the API will actually use.
+      rateSchemeId = selectedTemplate.rate_scheme ?? '';
     }
   });
 
@@ -89,7 +92,6 @@
         await api.post(`/api/est-worksheets/${worksheetId}/add-from-template/`, {
           task_template_id: Number(templateId),
           est_qty: estQty,
-          rate_scheme: rateSchemeId,
           active_modifiers: activeModifiers,
         });
       } else {
@@ -150,6 +152,7 @@
         bind:rateSchemeId
         bind:activeModifiers
         bind:estQty
+        lockSchemeChoice={createMode === 'template' && !isEdit}
       />
 
       <div class="buttons">

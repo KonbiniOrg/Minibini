@@ -32,7 +32,7 @@
     error = '';
     try {
       const url = showSuperseded
-        ? '/api/rate-schemes/?only_superseded=true'
+        ? '/api/rate-schemes/?include_superseded=true'
         : '/api/rate-schemes/';
       const [schemeResp, catResp, unitsResp] = await Promise.all([
         api.get(url),

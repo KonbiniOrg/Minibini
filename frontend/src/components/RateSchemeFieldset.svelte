@@ -2,7 +2,12 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
 
-  let { rateSchemeId = $bindable(''), activeModifiers = $bindable([]), estQty = $bindable('') } = $props();
+  let {
+    rateSchemeId = $bindable(''),
+    activeModifiers = $bindable([]),
+    estQty = $bindable(''),
+    lockSchemeChoice = false,
+  } = $props();
 
   let schemes = $state([]);
   let loading = $state(true);
@@ -39,19 +44,23 @@
 {:else if error}
   <p style="color: red;">{error}</p>
 {:else}
-  <p>
-    <label for="rate-scheme"><strong>Rate scheme *</strong></label><br>
-    <select id="rate-scheme" bind:value={rateSchemeId} required>
-      <option value="">-- select --</option>
-      {#each schemes as s (s.rate_scheme_id)}
-        <option value={s.rate_scheme_id}>{s.name}</option>
-      {/each}
-    </select>
-  </p>
+  {#if !lockSchemeChoice}
+    <p>
+      <label for="rate-scheme"><strong>Rate scheme *</strong></label><br>
+      <select id="rate-scheme" bind:value={rateSchemeId} required>
+        <option value="">-- select --</option>
+        {#each schemes as s (s.rate_scheme_id)}
+          <option value={s.rate_scheme_id}>{s.name}</option>
+        {/each}
+      </select>
+    </p>
+  {/if}
 
   {#if selectedScheme}
     <p>
-      <strong>{selectedScheme.name}</strong> — ${selectedScheme.rate}/{selectedScheme.unit_label}
+      <strong>Rate scheme:</strong>
+      {selectedScheme.name} — ${selectedScheme.rate}/{selectedScheme.unit_label}
+      {#if lockSchemeChoice}<small>(from template)</small>{/if}
     </p>
 
     {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
@@ -82,5 +91,7 @@
         required
       />
     </p>
+  {:else if lockSchemeChoice}
+    <p><em>Rate scheme will come from the selected template.</em></p>
   {/if}
 {/if}
