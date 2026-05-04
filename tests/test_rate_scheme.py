@@ -406,6 +406,27 @@ class RateSchemeVersionedSupersedeTest(BaseTestCase):
             RateScheme.objects.filter(name='Standard Labor (v1)').count(), 1,
         )
 
+    def test_second_supersede_increments_to_v2(self):
+        """
+        Superseding a chain of length 1 (i.e. there's already a (v1)
+        predecessor) tags the next retired row (v2).
+        """
+        from apps.jobs.models import RateScheme
+        a = RateScheme.objects.create(
+            name='Job A', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        b = a.supersede()  # a -> "Job A (v1)", b -> "Job A"
+        c = b.supersede()  # b -> "Job A (v2)", c -> "Job A"
+        a.refresh_from_db()
+        b.refresh_from_db()
+        self.assertEqual(a.name, 'Job A (v1)')
+        self.assertEqual(b.name, 'Job A (v2)')
+        self.assertEqual(c.name, 'Job A')
+        self.assertEqual(a.replaced_by_id, b.pk)
+        self.assertEqual(b.replaced_by_id, c.pk)
+        self.assertIsNone(c.replaced_by_id)
+
 
 class RateSchemeFreezeOnReferenceTest(BaseTestCase):
     fixtures = []
