@@ -1,6 +1,6 @@
 <script>
   import { api } from '../lib/api.js';
-  import UnitsSelect from './UnitsSelect.svelte';
+  import RateSchemeFieldset from './RateSchemeFieldset.svelte';
 
   let {
     open = false,
@@ -11,8 +11,8 @@
 
   let name = $state('');
   let description = $state('');
-  let units = $state('none');
-  let rate = $state('');
+  let rateSchemeId = $state('');
+  let activeModifiers = $state([]);
   let estQty = $state('');
   let busy = $state(false);
   let error = $state('');
@@ -21,8 +21,8 @@
     if (open) {
       name = '';
       description = '';
-      units = 'none';
-      rate = '';
+      rateSchemeId = '';
+      activeModifiers = [];
       estQty = '';
       error = '';
     }
@@ -35,9 +35,9 @@
       await api.post(`/api/tasks/${parentTaskId}/subtasks/`, {
         name,
         description,
-        units,
-        rate: rate || null,
-        est_qty: estQty || null,
+        rate_scheme: rateSchemeId,
+        active_modifiers: activeModifiers,
+        actuals: estQty ? { qty: estQty } : {},
       });
       onSaved();
     } catch (e) {
@@ -71,23 +71,11 @@
         </label>
       </p>
 
-      <p>
-        <label><strong>Units</strong><br>
-          <UnitsSelect bind:value={units} />
-        </label>
-      </p>
-
-      <p>
-        <label><strong>Rate</strong><br>
-          <input type="number" step="0.01" bind:value={rate}>
-        </label>
-      </p>
-
-      <p>
-        <label><strong>Estimated Quantity</strong><br>
-          <input type="number" step="0.01" bind:value={estQty}>
-        </label>
-      </p>
+      <RateSchemeFieldset
+        bind:rateSchemeId
+        bind:activeModifiers
+        bind:estQty
+      />
 
       <div class="buttons">
         <button type="button" onclick={save} disabled={busy}>Save</button>
