@@ -324,3 +324,75 @@ class RateSchemeSerializerExtraFieldsTest(BaseTestCase):
         self.assertEqual(resp.status_code, 400)
         body = resp.json()
         self.assertIn('unit_label', body)
+
+
+class RateSchemeSupersedeSameNameTest(BaseTestCase):
+    """
+    The SPA always sends a `name` (it's a pre-populated form field).
+    When the user leaves it untouched, the payload's name equals the
+    old scheme's name — which used to collide on the unique constraint.
+    The model rename-old-first algorithm now handles this; verify it
+    end-to-end via the API.
+    """
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import User, AccountingCategory
+        from django.contrib.auth.models import Permission
+        self.user = User.objects.create_user('admin-same', 'admin-same@x.test', 'pw')
+        perm = Permission.objects.get(codename='can_manage_config')
+        self.user.user_permissions.add(perm)
+        self.client.force_login(self.user)
+        self.ac = AccountingCategory.objects.create(code='SN', name='SN')
+
+    def test_supersede_with_same_name_as_old_succeeds(self):
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='SN-Hourly', algorithm='flat_fee', rate=Decimal('5'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        resp = self.client.post(
+            f'/api/rate-schemes/{old.pk}/supersede/',
+            {
+                'name': 'SN-Hourly',  # unchanged from old
+                'rate': '7', 'algorithm': 'flat_fee',
+                'unit_label': 'ea', 'accounting_category': self.ac.pk,
+                'modifiers': [], 'description': '',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        body = resp.json()
+        self.assertEqual(body['name'], 'SN-Hourly')
+        old.refresh_from_db()
+        self.assertEqual(old.name, 'SN-Hourly (v1)')
+        # Both rows still in the DB, names unique.
+        self.assertEqual(
+            RateScheme.objects.filter(name='SN-Hourly').count(), 1,
+        )
+        self.assertEqual(
+            RateScheme.objects.filter(name='SN-Hourly (v1)').count(), 1,
+        )
+
+    def test_supersede_with_changed_name_still_renames_old(self):
+        """Old row gets (v1) regardless of whether the new name was changed."""
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
+            name='SN-Setup', algorithm='flat_fee', rate=Decimal('5'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+        resp = self.client.post(
+            f'/api/rate-schemes/{old.pk}/supersede/',
+            {
+                'name': 'SN-Setup Premium',
+                'rate': '8', 'algorithm': 'flat_fee',
+                'unit_label': 'ea', 'accounting_category': self.ac.pk,
+                'modifiers': [], 'description': '',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.json()['name'], 'SN-Setup Premium')
+        old.refresh_from_db()
+        self.assertEqual(old.name, 'SN-Setup (v1)')

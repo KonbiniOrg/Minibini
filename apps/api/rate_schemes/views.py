@@ -70,9 +70,13 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
                 {'detail': 'Scheme is already superseded.'},
                 status=status.HTTP_409_CONFLICT,
             )
-        # Validate the new scheme's payload using the standard serializer,
-        # but treat input as the supersede overrides.
-        serializer = RateSchemeSerializer(data=request.data)
+        # Validate the new scheme's payload using the standard serializer.
+        # Pass instance=old so DRF's UniqueValidator excludes the old row
+        # from the name-uniqueness check — the model's supersede() renames
+        # the old row before inserting the new one, so the DB won't collide,
+        # but without instance= the serializer would reject same-name payloads
+        # before reaching the model.
+        serializer = RateSchemeSerializer(old, data=request.data)
         serializer.is_valid(raise_exception=True)
         overrides = {k: v for k, v in serializer.validated_data.items()}
         new = old.supersede(**overrides)
