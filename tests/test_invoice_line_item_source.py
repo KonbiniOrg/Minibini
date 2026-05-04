@@ -36,7 +36,6 @@ class InvoiceLineItemSourceTest(TestCase):
         self.task = Task.objects.create(
             job=self.job,
             name='Labor',
-            accounting_category=self.category,
         )
         self.blep = Blep.objects.create(
             task=self.task,

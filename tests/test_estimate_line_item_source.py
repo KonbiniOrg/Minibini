@@ -29,7 +29,6 @@ class EstimateLineItemSourceTest(TestCase):
         )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Setup',
-            accounting_category=self.cat,
             rate_scheme=self.scheme,
             est_qty=Decimal('1'),
         )

@@ -128,11 +128,11 @@ class TemplateServiceReorderTest(BundlingTestBase):
             template_name='Test Template',
         )
         self.tt1 = WorkTemplateService.create_task_template(
-            template_name='TT1', accounting_category=self.lit,
+            template_name='TT1',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.tt2 = WorkTemplateService.create_task_template(
-            template_name='TT2', accounting_category=self.lit,
+            template_name='TT2',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.a1 = TemplateTaskAssociation.objects.create(

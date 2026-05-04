@@ -29,7 +29,6 @@ class CarryOverSignalTest(TestCase):
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
-            accounting_category=self.cat,
             rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)

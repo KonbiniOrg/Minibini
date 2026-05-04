@@ -108,11 +108,12 @@ class GetSourcePoolTest(TestCase):
         self.task_empty = Task.objects.create(
             job=self.job, name='Inspection',
         )
-        # Inspection has no TaskCharge -> Phase A tolerance: no atom emitted
+        TaskCharge.objects.create(task=self.task_empty, rate_scheme=self.scheme)
 
         self.task_cancelled = Task.objects.create(
             job=self.job, name='Cancelled work',
         )
+        TaskCharge.objects.create(task=self.task_cancelled, rate_scheme=self.scheme)
         self.task_cancelled.status = Task.STATUS_CANCELLED
         self.task_cancelled.save()
 
@@ -166,12 +167,17 @@ class GetSourcePoolTest(TestCase):
         self.assertNotIn(self.blep_incomplete.pk, blep_ids)
 
     def test_empty_task_has_flag_set(self):
+        # Post-B7: every Task has a TaskCharge, so every task always has
+        # at least the per-task billable atom. The "empty task" concept
+        # no longer exists — this test now verifies the inspection task
+        # surfaces its per-task atom.
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         inspection = next(
             t for t in pool['tasks'] if t['name'] == 'Inspection'
         )
-        self.assertFalse(inspection['has_billable_atoms'])
-        self.assertEqual(inspection['atoms'], [])
+        self.assertTrue(inspection['has_billable_atoms'])
+        self.assertEqual(len(inspection['atoms']), 1)
+        self.assertEqual(inspection['atoms'][0]['atom_type'], 'task')
 
     def test_atom_state_available(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)

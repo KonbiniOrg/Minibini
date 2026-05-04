@@ -277,9 +277,6 @@ class AddFromTemplateTest(TestCase):
         self.task_template = TaskTemplate.objects.create(
             template_name='Standard Sanding',
             description='Sand and prep surfaces',
-            units='sqft',
-            rate=Decimal('2.50'),
-            accounting_category=self.category,
             rate_scheme=self.template_scheme,
             default_billable_qty=Decimal('1.00'),
         )
@@ -389,9 +386,6 @@ class AddFromTemplateTest(TestCase):
         template_with_defaults = TaskTemplate.objects.create(
             template_name='Template With Defaults',
             description='Has billing defaults',
-            units='hr',
-            rate=Decimal('45.00'),
-            accounting_category=self.category,
             rate_scheme=scheme,
             default_billable_qty=Decimal('3.0'),
             default_active_modifiers=['rush'],

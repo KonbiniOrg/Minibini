@@ -148,8 +148,6 @@ class TaskTemplateDeleteViewTest(TestCase):
         self.template = TaskTemplate.objects.create(
             template_name='Task to Delete',
             description='This will be deleted',
-            units='hours',
-            rate=Decimal('25.00'),
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )

@@ -178,7 +178,9 @@ class JobTaskSubResourceTest(TestCase):
         self.assertEqual(t.charge.rate_scheme_id, self.scheme.pk)
 
     def test_update_task_on_job(self):
+        from apps.jobs.models import TaskCharge
         task = Task.objects.create(job=self.job, name='Original')
+        TaskCharge.objects.create(task=task, rate_scheme=self.scheme)
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'Renamed'},
@@ -378,7 +380,6 @@ class JobPopulateFromTemplateTest(TestCase):
         )
         self.task_template = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,
-            units='each', rate=100, accounting_category=cat,
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
@@ -502,6 +503,7 @@ class JobReorderTasksTest(TestCase):
     """Phase C2: POST /api/jobs/{id}/reorder-tasks/."""
 
     def setUp(self):
+        from apps.jobs.models import TaskCharge
         self.client = APIClient()
         self.user = _make_admin('reord_admin')
         self.client.force_authenticate(user=self.user)
@@ -509,9 +511,17 @@ class JobReorderTasksTest(TestCase):
         self.job = Job.objects.create(
             job_number='C2-R-001', name='R Job', contact=self.contact,
         )
+        ac = AccountingCategory.objects.create(code='REORD-AC', name='reord-ac')
+        self.scheme = RateScheme.objects.create(
+            name='S-reord', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         self.a = Task.objects.create(job=self.job, name='A', sort_order=0)
         self.b = Task.objects.create(job=self.job, name='B', sort_order=1)
         self.c = Task.objects.create(job=self.job, name='C', sort_order=2)
+        TaskCharge.objects.create(task=self.a, rate_scheme=self.scheme)
+        TaskCharge.objects.create(task=self.b, rate_scheme=self.scheme)
+        TaskCharge.objects.create(task=self.c, rate_scheme=self.scheme)
 
     def test_reorder_down(self):
         response = self.client.post(
@@ -571,8 +581,6 @@ class JobAddFromTemplateTest(TestCase):
         self.template = TaskTemplate.objects.create(
             template_name='Paint room',
             description='Paint all walls',
-            units='sqft',
-            rate=Decimal('2.50'),
             is_active=True,
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),

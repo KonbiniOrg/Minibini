@@ -24,8 +24,7 @@ class EstimateLineItemSourceTemplateTest(TestCase):
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
         self.template = TaskTemplate.objects.create(
-            template_name='Setup', units='hours', rate=Decimal('95.00'),
-            accounting_category=self.category,
+            template_name='Setup',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
 

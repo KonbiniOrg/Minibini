@@ -40,8 +40,7 @@
             "job": 1,
             "name": "Kitchen demolition",
             "description": "",
-            "sort_order": null,
-            "accounting_category": null
+            "sort_order": null
         }
     },
     {
@@ -52,8 +51,7 @@
             "job": 1,
             "name": "Electrical rough-in",
             "description": "",
-            "sort_order": null,
-            "accounting_category": null
+            "sort_order": null
         }
     },
     {

@@ -152,7 +152,6 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         )
         tt = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,
-            units='each', rate=100, accounting_category=cat,
             rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(

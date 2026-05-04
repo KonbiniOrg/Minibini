@@ -8,28 +8,9 @@ from apps.core.models import AccountingCategory
 
 class UnitsDropdownFormTest(BaseTestCase):
 
-    def test_task_template_form_has_select_widget(self):
-        form = TaskTemplateForm()
-        widget = form.fields['units'].widget
-        self.assertEqual(widget.__class__.__name__, 'Select')
-
-    def test_task_template_form_valid_unit(self):
-        cat = AccountingCategory.objects.first()
-        form = TaskTemplateForm(data={
-            'template_name': 'Test',
-            'units': 'hours',
-            'rate': '10.00',
-            'accounting_category': cat.pk if cat else '',
-        })
-        self.assertTrue(form.is_valid(), form.errors)
-
-    def test_task_template_form_invalid_unit(self):
-        form = TaskTemplateForm(data={
-            'template_name': 'Test',
-            'units': 'invalid_xyz',
-        })
-        self.assertFalse(form.is_valid())
-        self.assertIn('units', form.errors)
+    # NOTE: TaskTemplateForm no longer exposes a 'units' field — TaskTemplate
+    # dropped 'units' and 'rate' in B6. The previous units widget/validation
+    # tests for this form have been removed accordingly.
 
     def test_task_edit_form_has_name_field(self):
         """TaskEditForm (PlanTask) no longer has units; verify name field is present."""

@@ -68,11 +68,11 @@ class GenerateTaskSortOrderTest(TestCase):
         """Tasks should get the association's sort_order."""
         wot = WorkTemplate.objects.create(template_name='Test Template')
         tt1 = TaskTemplate.objects.create(
-            template_name='Sand', rate=50, accounting_category=self.lit_labor,
+            template_name='Sand',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         tt2 = TaskTemplate.objects.create(
-            template_name='Clean', rate=25, accounting_category=self.lit_labor,
+            template_name='Clean',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         # Use non-sequential sort_orders to verify they pass through

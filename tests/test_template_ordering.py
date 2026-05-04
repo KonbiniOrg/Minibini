@@ -49,23 +49,23 @@ class TemplateOrderingTestBase(TestCase):
 
         # Create task templates
         self.task1 = TaskTemplate.objects.create(
-            template_name="Task 1", rate=50, accounting_category=self.lit,
+            template_name="Task 1",
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.task2 = TaskTemplate.objects.create(
-            template_name="Task 2", rate=75, accounting_category=self.lit,
+            template_name="Task 2",
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.task3 = TaskTemplate.objects.create(
-            template_name="Task 3", rate=100, accounting_category=self.lit,
+            template_name="Task 3",
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.task4 = TaskTemplate.objects.create(
-            template_name="Task 4", rate=60, accounting_category=self.lit,
+            template_name="Task 4",
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.task5 = TaskTemplate.objects.create(
-            template_name="Task 5", rate=80, accounting_category=self.lit,
+            template_name="Task 5",
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
 
@@ -265,11 +265,11 @@ class EdgeCaseTests(TemplateOrderingTestBase):
             template_name="Second WO Template"
         )
         task_a = TaskTemplate.objects.create(
-            template_name="Task A", rate=10, accounting_category=self.lit,
+            template_name="Task A",
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         task_b = TaskTemplate.objects.create(
-            template_name="Task B", rate=20, accounting_category=self.lit,
+            template_name="Task B",
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
 
