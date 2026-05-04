@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
   import WizardSourcePool from '../../components/estimates/WizardSourcePool.svelte';
-  import WizardLineItemCard from '../../components/estimates/WizardLineItemCard.svelte';
+  import WizardLineItemCard from '../../components/wizards/WizardLineItemCard.svelte';
   import WizardFooter from '../../components/estimates/WizardFooter.svelte';
 
   const { params = {} } = $props();
@@ -45,18 +45,6 @@
       } else {
         alert(e.message || 'Failed to create line item');
       }
-    }
-  }
-
-  async function removeSource(lineItemId, sourceId) {
-    try {
-      await api.post(
-        `/api/estimates/${estimate.estimate_id}/line-items/${lineItemId}/remove-atoms/`,
-        {source_ids: [sourceId]},
-      );
-      await reloadAfterAction();
-    } catch (e) {
-      alert(e.message || 'Failed to remove source');
     }
   }
 
@@ -155,9 +143,10 @@
       {#each lineItems as li (li.line_item_id)}
         <WizardLineItemCard
           lineItem={li}
-          onAddSelected={addAtomsToLineItem}
-          onRemoveSource={(srcId) => removeSource(li.line_item_id, srcId)}
+          apiBase={`/api/estimates/${estimate.estimate_id}`}
           {canAddHere}
+          onAddHere={addAtomsToLineItem}
+          onchange={reloadAfterAction}
         />
       {/each}
     </div>
