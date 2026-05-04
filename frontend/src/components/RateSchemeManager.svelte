@@ -2,6 +2,8 @@
   import { api } from '../lib/api.js';
 
   let schemes = $state([]);
+  let categories = $state([]);
+  let unitsList = $state([]);
   let loading = $state(true);
   let error = $state('');
   let editingId = $state(null);
@@ -18,7 +20,7 @@
   function emptyForm() {
     return {
       name: '', description: '', algorithm: 'elapsed_time',
-      rate: '', unit_label: 'hour', minimum_charge: '',
+      rate: '', unit_label: '', minimum_charge: '',
       modifiers: [], accounting_category: '',
     };
   }
@@ -27,8 +29,14 @@
     loading = true;
     error = '';
     try {
-      const resp = await api.get('/api/rate-schemes/');
-      schemes = resp.results || resp;
+      const [schemeResp, catResp, unitsResp] = await Promise.all([
+        api.get('/api/rate-schemes/'),
+        api.get('/api/accounting-categories/'),
+        api.get('/api/settings/units/'),
+      ]);
+      schemes = schemeResp.results || schemeResp;
+      categories = catResp.results || catResp;
+      unitsList = unitsResp;
     } catch (e) {
       error = e.message || 'Could not load rate schemes.';
     } finally {
@@ -90,7 +98,7 @@
           label: m.label,
           percent: Number(m.percent),
         })),
-        accounting_category: form.accounting_category || null,
+        accounting_category: form.accounting_category,
       };
 
       if (editingId === 'new') {
@@ -187,10 +195,23 @@
       <input type="number" step="0.01" bind:value={form.rate}>
     </label>
     <label><strong>Unit label *</strong><br>
-      <input type="text" bind:value={form.unit_label} placeholder="hour, minute, piece, job">
+      <select bind:value={form.unit_label} required>
+        <option value="">-- select --</option>
+        {#each unitsList as u}
+          <option value={u}>{u}</option>
+        {/each}
+      </select>
     </label></p>
     <p><label><strong>Minimum charge</strong><br>
       <input type="number" step="0.01" bind:value={form.minimum_charge}>
+    </label></p>
+    <p><label><strong>Accounting Category *</strong><br>
+      <select bind:value={form.accounting_category} required>
+        <option value="">-- select --</option>
+        {#each categories as cat (cat.id)}
+          <option value={cat.id}>{cat.code} — {cat.name}</option>
+        {/each}
+      </select>
     </label></p>
 
     <fieldset>
