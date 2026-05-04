@@ -269,12 +269,8 @@ class SearchService:
             Q(contact__last_name__icontains=query)
         ).select_related('contact').prefetch_related('tasks')
 
-        tasks = Task.objects.annotate(
-            rate_text=Cast('rate', CharField())
-        ).filter(
+        tasks = Task.objects.filter(
             Q(name__icontains=query) |
-            Q(units__icontains=query) |
-            Q(rate_text__icontains=query) |
             Q(job__job_number__icontains=query)
         ).select_related('assignee', 'job')
 
@@ -825,14 +821,10 @@ class SearchService:
                 Q(contact__last_name__icontains=within_query)
             ).select_related('contact').prefetch_related('tasks')
 
-            tasks = Task.objects.annotate(
-                rate_text=Cast('rate', CharField())
-            ).filter(
+            tasks = Task.objects.filter(
                 job_id__in=result_ids['Job']
             ).filter(
                 Q(name__icontains=within_query) |
-                Q(units__icontains=within_query) |
-                Q(rate_text__icontains=within_query) |
                 Q(job__job_number__icontains=within_query)
             ).select_related('assignee', 'job')
 

@@ -973,18 +973,22 @@ class BoardService:
             total=models.Sum(models.F('qty') * models.F('price'))
         )['total'] or Decimal('0.00')
 
-        # TODO: Replace task.rate / 2 with actual User.pay_rate once that
+        # TODO: Replace charge rate / 2 with actual User.pay_rate once that
         # field exists. Using half the billing rate as a temporary proxy.
         labor_cost = Decimal('0.00')
         bleps = Blep.objects.filter(
             task__job=job,
             start_time__isnull=False,
             end_time__isnull=False,
-        ).select_related('task')
+        ).select_related('task__charge__rate_scheme')
         for blep in bleps:
-            if blep.task.rate:
+            try:
+                rate = blep.task.charge.rate_scheme.rate
+            except (TaskCharge.DoesNotExist, AttributeError):
+                rate = None
+            if rate:
                 elapsed_hours = Decimal(str(blep.elapsed.total_seconds() / 3600))
-                labor_cost += elapsed_hours * (blep.task.rate / 2)
+                labor_cost += elapsed_hours * (rate / 2)
 
         spent = material_cost + labor_cost
         return {'billed': billed, 'spent': spent, 'profit': billed - spent}

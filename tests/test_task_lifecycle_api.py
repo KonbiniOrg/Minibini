@@ -15,7 +15,6 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.job = Job.objects.first()
         self.task = Task.objects.create(
             job=self.job, name="Test task",
-            units="hours", rate="10.00", est_qty="1",
         )
 
     def _create_user(self, username):
@@ -152,7 +151,6 @@ class TaskSerializerStatusTest(BaseTestCase):
         self.job = Job.objects.first()
         self.task = Task.objects.create(
             job=self.job, name="Test task",
-            units="hours", rate="10.00", est_qty="1",
         )
 
     def test_task_list_includes_status(self):

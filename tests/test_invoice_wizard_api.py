@@ -33,7 +33,7 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
@@ -92,7 +92,7 @@ class SourcePoolEndpointTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -149,10 +149,16 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-lifa', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -227,10 +233,16 @@ class AddAtomsEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-aae', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
         self.blep1 = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -297,10 +309,16 @@ class RemoveAtomsEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-rae', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
         self.blep1 = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),

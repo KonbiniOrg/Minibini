@@ -89,21 +89,15 @@ class SearchViewTests(TestCase):
         self.job_task1 = Task.objects.create(
             name='Install fixtures',
             job=self.job1,
-            units='hours',
-            rate=Decimal('45.00')
         )
         self.job_task2 = Task.objects.create(
             name='Paint walls',
             job=self.job1,
-            units='hours',
-            rate=Decimal('40.00')
         )
         # A task on job2 for cross-job isolation checks
         self.job2_task = Task.objects.create(
             name='Deliver chairs',
             job=self.job2,
-            units='ea',
-            rate=Decimal('20.00')
         )
 
         # Create est worksheets

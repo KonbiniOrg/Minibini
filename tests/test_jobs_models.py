@@ -354,38 +354,6 @@ class TaskModelTest(TestCase):
         self.assertIsNone(task.parent_task)
         self.assertIsNone(task.assignee)
 
-    def test_task_new_fields(self):
-        task = Task.objects.create(
-            job=self.job,
-            name="Labor Task",
-            units="hours",
-            rate=Decimal('75.50'),
-            est_qty=Decimal('8.00')
-        )
-        self.assertEqual(task.units, "hours")
-        self.assertEqual(task.rate, Decimal('75.50'))
-        self.assertEqual(task.est_qty, Decimal('8.00'))
-
-    def test_task_new_fields_optional(self):
-        task = Task.objects.create(
-            job=self.job,
-            name="Simple Task"
-        )
-        self.assertEqual(task.units, "none")
-        self.assertIsNone(task.rate)
-        self.assertIsNone(task.est_qty)
-
-    def test_task_calculated_total(self):
-        task = Task.objects.create(
-            job=self.job,
-            name="Material Task",
-            units="sheets",
-            rate=Decimal('45.00'),
-            est_qty=Decimal('10.00')
-        )
-        expected_total = task.rate * task.est_qty if task.rate and task.est_qty else Decimal('0.00')
-        self.assertEqual(expected_total, Decimal('450.00'))
-
     def test_task_requires_job(self):
         """Task.job is non-nullable. Creating without job raises."""
         with self.assertRaises(Exception):  # ValidationError (full_clean in save) or IntegrityError

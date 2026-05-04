@@ -78,23 +78,14 @@ class TaskReorderingTestCase(TestCase):
         self.wo_task1 = Task.objects.create(
             name='WO Task 1',
             job=self.job,
-            est_qty=1.0,
-            rate=50.00,
-            units='hours'
         )
         self.wo_task2 = Task.objects.create(
             name='WO Task 2',
             job=self.job,
-            est_qty=2.0,
-            rate=75.00,
-            units='hours'
         )
         self.wo_task3 = Task.objects.create(
             name='WO Task 3',
             job=self.job,
-            est_qty=3.0,
-            rate=100.00,
-            units='hours'
         )
 
     def test_worksheet_tasks_have_sort_orders(self):

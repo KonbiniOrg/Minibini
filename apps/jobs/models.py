@@ -250,11 +250,6 @@ class Task(TaskBase):
         help_text="Position in assignee's work queue on the board"
     )
 
-    # Legacy fields — kept on the real side for now; cleanup tracked separately.
-    units = models.CharField(max_length=50, default='none')
-    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-
     class Meta:
         db_table = 'tasks'
 

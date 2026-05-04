@@ -412,7 +412,7 @@ class InvoiceWizardService:
             try:
                 rate = atom_instance.task.charge.rate_scheme.rate
             except (TaskCharge.DoesNotExist, AttributeError):
-                rate = atom_instance.task.rate or Decimal('0.00')  # Phase A fallback
+                rate = Decimal('0.00')
             return (hours * rate).quantize(Decimal('0.01'))
         if isinstance(atom_instance, Material):
             return (atom_instance.quantity * atom_instance.sell_price).quantize(Decimal('0.01'))

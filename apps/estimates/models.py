@@ -462,9 +462,6 @@ class TaskTemplate(models.Model):
                     job=container,
                     name=self.template_name,
                     description=self.description,
-                    units=self.units,                # legacy, still in DB Phase A
-                    rate=self.rate,
-                    est_qty=est_qty,
                     accounting_category=self.accounting_category,  # legacy, Phase A
                     assignee=assignee,
                     sort_order=sort_order,

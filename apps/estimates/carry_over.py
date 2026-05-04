@@ -117,9 +117,6 @@ class AtomCarryOverService:
             job=job,
             name=template.template_name,
             description=template.description or '',
-            units=template.units,
-            rate=template.rate,
-            est_qty=line_item.qty,
             accounting_category=template.accounting_category,
             source_template=template,
         )

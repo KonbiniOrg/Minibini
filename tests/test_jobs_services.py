@@ -271,14 +271,12 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
 
         cut_task = tasks[0]
         self.assertEqual(cut_task.name, 'Cut')
-        self.assertEqual(cut_task.units, 'hours')
-        self.assertEqual(cut_task.rate, Decimal('50.00'))
-        self.assertEqual(cut_task.est_qty, Decimal('2.00'))
         self.assertEqual(cut_task.accounting_category, self.lit)
+        self.assertEqual(cut_task.charge.rate_scheme, self.scheme)
 
         weld_task = tasks[1]
         self.assertEqual(weld_task.name, 'Weld')
-        self.assertEqual(weld_task.est_qty, Decimal('3.00'))
+        self.assertEqual(weld_task.charge.rate_scheme, self.scheme)
 
     def test_skips_inactive_task_templates(self):
         self.task_tmpl_2.is_active = False

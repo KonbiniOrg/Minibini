@@ -611,10 +611,17 @@ class UnpaidDataTest(FixtureTestCase):
         InvoiceLineItem.objects.create(
             invoice=inv, qty=Decimal('1'), price=Decimal('500.00'),
         )
-        task = Task.objects.create(
-            job=job, name='Labor task',
-            status='in_progress', rate=Decimal('50.00'),
+        from apps.jobs.models import RateScheme, TaskCharge
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.create(code='LBR-bs', name='lbr-bs')
+        scheme = RateScheme.objects.create(
+            name='Hourly-bs', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50.00'), unit_label='hours', accounting_category=cat,
         )
+        task = Task.objects.create(
+            job=job, name='Labor task', status='in_progress',
+        )
+        TaskCharge.objects.create(task=task, rate_scheme=scheme)
         start = timezone.now() - timedelta(hours=2)
         Blep.objects.create(
             task=task, user=worker,

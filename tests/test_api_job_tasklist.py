@@ -31,9 +31,6 @@ class MaterialCRUDTest(TestCase):
         self.task = Task.objects.create(
             job=self.job,
             name='Install countertop',
-            units='each',
-            rate=100,
-            est_qty=1,
         )
         self.category = AccountingCategory.objects.create(
             name='General', code='GEN',
@@ -156,7 +153,7 @@ class MaterialCRUDTest(TestCase):
     def test_material_wrong_task(self):
         """Material on a different task should not be accessible."""
         task2 = Task.objects.create(
-            job=self.job, name='Other task', units='each', rate=50, est_qty=1,
+            job=self.job, name='Other task',
         )
         response = self.client.patch(
             f'/api/tasks/{task2.pk}/materials/{self.material.pk}/',
@@ -183,9 +180,6 @@ class SubtaskCRUDTest(TestCase):
         self.parent_task = Task.objects.create(
             job=self.job,
             name='Parent task',
-            units='each',
-            rate=100,
-            est_qty=1,
         )
 
     def test_list_subtasks_empty(self):
@@ -198,9 +192,6 @@ class SubtaskCRUDTest(TestCase):
             job=self.job,
             parent_task=self.parent_task,
             name='Child task',
-            units='hr',
-            rate=50,
-            est_qty=2,
         )
         response = self.client.get(f'/api/tasks/{self.parent_task.pk}/subtasks/')
         self.assertEqual(response.status_code, 200)
@@ -254,8 +245,7 @@ class TerminalTaskGuardTest(TestCase):
 
     def _make_task(self, task_status):
         return Task.objects.create(
-            job=self.job, name='A task', units='each',
-            rate=10, est_qty=1, status=task_status,
+            job=self.job, name='A task', status=task_status,
         )
 
     def test_cannot_add_material_to_complete_task(self):

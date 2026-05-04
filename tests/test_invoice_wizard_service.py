@@ -101,20 +101,20 @@ class GetSourcePoolTest(TestCase):
 
         self.task_billable = Task.objects.create(
             job=self.job, name='Site demo',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
         # Task with a TaskCharge produces a per-task atom from charge.compute()
         TaskCharge.objects.create(task=self.task_billable, rate_scheme=self.scheme)
 
         self.task_empty = Task.objects.create(
             job=self.job, name='Inspection',
-            rate=Decimal('50.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
         # Inspection has no TaskCharge -> Phase A tolerance: no atom emitted
 
         self.task_cancelled = Task.objects.create(
             job=self.job, name='Cancelled work',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
         self.task_cancelled.status = Task.STATUS_CANCELLED
         self.task_cancelled.save()
@@ -284,10 +284,16 @@ class AddAtomsToNewLineItemTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-aatn', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.cat_labor,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            rate=Decimal('25.00'), accounting_category=self.cat_labor,
+            accounting_category=self.cat_labor,
         )
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep1 = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -430,10 +436,16 @@ class AddAtomsToExistingLineItemTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-aate', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
         self.blep1 = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -533,10 +545,16 @@ class RemoveAtomsFromLineItemTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-rafl', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('25.00'), unit_label='hours',
+            accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
+        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=6)
         self.blep1 = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -693,7 +711,7 @@ class DiscardDraftTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            rate=Decimal('25.00'), accounting_category=self.category,
+            accounting_category=self.category,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)

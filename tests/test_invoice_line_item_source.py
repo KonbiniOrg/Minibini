@@ -36,7 +36,6 @@ class InvoiceLineItemSourceTest(TestCase):
         self.task = Task.objects.create(
             job=self.job,
             name='Labor',
-            rate=Decimal('25.00'),
             accounting_category=self.category,
         )
         self.blep = Blep.objects.create(
