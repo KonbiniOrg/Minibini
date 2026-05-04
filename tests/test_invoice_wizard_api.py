@@ -33,7 +33,6 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            accounting_category=self.category,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
@@ -92,7 +91,6 @@ class SourcePoolEndpointTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            accounting_category=self.category,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -156,7 +154,6 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            accounting_category=self.category,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -240,7 +237,6 @@ class AddAtomsEndpointTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            accounting_category=self.category,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
@@ -316,7 +312,6 @@ class RemoveAtomsEndpointTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            accounting_category=self.category,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)

@@ -241,12 +241,10 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         self.template = WorkTemplate.objects.create(template_name='Standard Build')
         self.scheme = RateScheme.objects.get(pk=1)  # from fixture
         self.task_tmpl_1 = TaskTemplate.objects.create(
-            template_name='Cut', units='hours', rate=Decimal('50.00'),
-            accounting_category=self.lit,
+            template_name='Cut',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
         self.task_tmpl_2 = TaskTemplate.objects.create(
-            template_name='Weld', units='hours', rate=Decimal('60.00'),
-            accounting_category=self.lit,
+            template_name='Weld',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
         TemplateTaskAssociation.objects.create(
             work_template=self.template, task_template=self.task_tmpl_1,
@@ -271,7 +269,6 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
 
         cut_task = tasks[0]
         self.assertEqual(cut_task.name, 'Cut')
-        self.assertEqual(cut_task.accounting_category, self.lit)
         self.assertEqual(cut_task.charge.rate_scheme, self.scheme)
 
         weld_task = tasks[1]
@@ -325,12 +322,10 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
 
     def test_copies_tasks(self):
         PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut',
-            accounting_category=self.lit, sort_order=1,
+            est_worksheet=self.worksheet, name='Cut', sort_order=1,
             rate_scheme=self.scheme, est_qty=Decimal('1'))
         PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Weld',
-            accounting_category=self.lit, sort_order=2,
+            est_worksheet=self.worksheet, name='Weld', sort_order=2,
             rate_scheme=self.scheme, est_qty=Decimal('1'))
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
@@ -344,7 +339,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Paint',
             description='Apply primer and topcoat',
-            accounting_category=self.lit, sort_order=1,
+            sort_order=1,
             rate_scheme=self.scheme, est_qty=Decimal('1'))
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
@@ -352,7 +347,6 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         task = Task.objects.get(job=self.job)
         self.assertEqual(task.name, 'Paint')
         self.assertEqual(task.description, 'Apply primer and topcoat')
-        self.assertEqual(task.accounting_category, self.lit)
 
     def test_copies_materials(self):
         ws_task = PlanTask.objects.create(

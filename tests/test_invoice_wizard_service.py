@@ -101,20 +101,17 @@ class GetSourcePoolTest(TestCase):
 
         self.task_billable = Task.objects.create(
             job=self.job, name='Site demo',
-            accounting_category=self.category,
         )
         # Task with a TaskCharge produces a per-task atom from charge.compute()
         TaskCharge.objects.create(task=self.task_billable, rate_scheme=self.scheme)
 
         self.task_empty = Task.objects.create(
             job=self.job, name='Inspection',
-            accounting_category=self.category,
         )
         # Inspection has no TaskCharge -> Phase A tolerance: no atom emitted
 
         self.task_cancelled = Task.objects.create(
             job=self.job, name='Cancelled work',
-            accounting_category=self.category,
         )
         self.task_cancelled.status = Task.STATUS_CANCELLED
         self.task_cancelled.save()
@@ -291,7 +288,6 @@ class AddAtomsToNewLineItemTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            accounting_category=self.cat_labor,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -443,7 +439,6 @@ class AddAtomsToExistingLineItemTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            accounting_category=self.category,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
@@ -552,7 +547,6 @@ class RemoveAtomsFromLineItemTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            accounting_category=self.category,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=6)
@@ -711,7 +705,6 @@ class DiscardDraftTest(TestCase):
         )
         self.task = Task.objects.create(
             job=self.job, name='Labor',
-            accounting_category=self.category,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -871,7 +864,7 @@ class TaskAttachedPartialRestockTest(TestCase):
             contact=self.contact, status=Job.STATUS_APPROVED,
             job_number='JOB-TAPR-1',
         )
-        task = Task.objects.create(job=job, name='work', accounting_category=self.cat)
+        task = Task.objects.create(job=job, name='work')
         pli = PriceListItem.objects.create(
             code='I-TAPR', accounting_category=self.cat,
             is_inventoried=True, selling_price=Decimal('3.00'),

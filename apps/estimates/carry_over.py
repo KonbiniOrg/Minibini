@@ -49,7 +49,7 @@ class AtomCarryOverService:
         count = 0
         for pt in PlanTask.objects.filter(
             est_worksheet=worksheet,
-        ).select_related('rate_scheme', 'accounting_category'):
+        ).select_related('rate_scheme'):
             # Idempotency: skip if a Task already exists that came from this PlanTask
             if Task.objects.filter(job=job, source_plan_task=pt).exists():
                 continue
@@ -57,14 +57,12 @@ class AtomCarryOverService:
                 # Plan task with no billing config — carry as a Task without a TaskCharge.
                 Task.objects.create(
                     job=job, name=pt.name, description=pt.description,
-                    accounting_category=pt.accounting_category,
                     source_plan_task=pt,
                 )
                 count += 1
                 continue
             task = Task.objects.create(
                 job=job, name=pt.name, description=pt.description,
-                accounting_category=pt.accounting_category,
                 source_plan_task=pt,
             )
             actuals = {}
@@ -117,7 +115,6 @@ class AtomCarryOverService:
             job=job,
             name=template.template_name,
             description=template.description or '',
-            accounting_category=template.accounting_category,
             source_template=template,
         )
         if template.rate_scheme_id:

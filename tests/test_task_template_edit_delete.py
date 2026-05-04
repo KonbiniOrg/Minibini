@@ -25,8 +25,6 @@ class TaskTemplateEditViewTest(TestCase):
         self.template = TaskTemplate.objects.create(
             template_name='Original Task',
             description='Original description',
-            units='hours',
-            rate=Decimal('50.00'),
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
@@ -47,8 +45,6 @@ class TaskTemplateEditViewTest(TestCase):
             {
                 'template_name': 'Updated Task',
                 'description': 'Updated description',
-                'units': 'ea',
-                'rate': '75.00',
             }
         )
         self.assertRedirects(response, reverse('estimates:task_template_list'))
@@ -56,8 +52,6 @@ class TaskTemplateEditViewTest(TestCase):
         self.template.refresh_from_db()
         self.assertEqual(self.template.template_name, 'Updated Task')
         self.assertEqual(self.template.description, 'Updated description')
-        self.assertEqual(self.template.units, 'ea')
-        self.assertEqual(self.template.rate, Decimal('75.00'))
 
     def test_edit_view_shows_success_message(self):
         """Test that success message is shown after edit."""
@@ -66,8 +60,6 @@ class TaskTemplateEditViewTest(TestCase):
             {
                 'template_name': 'Updated Task',
                 'description': 'Updated description',
-                'units': 'hours',
-                'rate': '50.00',
             },
             follow=True
         )

@@ -30,7 +30,6 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
-            accounting_category=self.cat,
             rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
@@ -103,8 +102,7 @@ class CarryOverFromDirectLineItemsTest(TestCase):
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.template = TaskTemplate.objects.create(
-            template_name='Setup', units='hours', rate=Decimal('100'),
-            accounting_category=self.cat, rate_scheme=self.scheme,
+            template_name='Setup', rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
         self.pli = PriceListItem.objects.create(

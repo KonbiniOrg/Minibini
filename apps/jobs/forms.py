@@ -153,7 +153,7 @@ class TaskEditForm(forms.ModelForm):
     """
     class Meta:
         model = PlanTask
-        fields = ['name', 'description', 'accounting_category']
+        fields = ['name', 'description']
 
 
 class TaskFromTemplateForm(forms.Form):

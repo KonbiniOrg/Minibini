@@ -334,7 +334,6 @@ class JobService:
                 job=job,
                 name=plan_task.name,
                 description=plan_task.description,
-                accounting_category=plan_task.accounting_category,
                 sort_order=plan_task.sort_order,
             )
             # Copy PlanTask billing fields → TaskCharge if billing is configured

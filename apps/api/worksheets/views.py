@@ -38,7 +38,7 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         qs = super().get_queryset().prefetch_related(
             Prefetch(
                 'plan_tasks',
-                queryset=PlanTask.objects.select_related('rate_scheme', 'accounting_category').order_by('sort_order'),
+                queryset=PlanTask.objects.select_related('rate_scheme').order_by('sort_order'),
             )
         )
         job = self.request.query_params.get('job')

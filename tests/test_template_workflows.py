@@ -110,26 +110,23 @@ class TaskCreationWorkflowTest(TestCase):
 
         self.assertIn("is not active", str(context.exception))
 
-    def test_task_template_new_fields(self):
-        """Test TaskTemplate with new units and rate fields."""
+    def test_task_template_with_scheme(self):
+        """Test TaskTemplate carries billing via rate_scheme."""
         template = TaskTemplate.objects.create(
             template_name="Labor Template",
-            units="hours",
-            rate=Decimal('85.00'),
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
             description="Standard labor template with pricing",
             is_active=True
         )
 
-        self.assertEqual(template.units, "hours")
-        self.assertEqual(template.rate, Decimal('85.00'))
+        self.assertEqual(template.rate_scheme, self.scheme)
 
         # Sanity check: can create task from this template
         TaskService.create_from_template(template, self.job, self.user)
 
-    def test_task_template_new_fields_optional(self):
-        """Test TaskTemplate new fields are optional."""
+    def test_task_template_minimal_fields(self):
+        """TaskTemplate requires only name, rate_scheme, and default_billable_qty."""
         template = TaskTemplate.objects.create(
             template_name="Simple Template",
             rate_scheme=self.scheme,
@@ -137,27 +134,5 @@ class TaskCreationWorkflowTest(TestCase):
             is_active=True
         )
 
-        self.assertEqual(template.units, "none")
-        self.assertIsNone(template.rate)
-
-    def test_task_template_calculation_example(self):
-        """Test using TaskTemplate fields with association for calculations."""
-        template = TaskTemplate.objects.create(
-            template_name="Material Template",
-            units="sq ft",
-            rate=Decimal('12.75'),
-            rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
-            is_active=True
-        )
-
-        from apps.estimates.models import TemplateTaskAssociation, WorkTemplate
-        work_template = WorkTemplate.objects.create(template_name="Test WO Template")
-        association = TemplateTaskAssociation.objects.create(
-            work_template=work_template,
-            task_template=template,
-            est_qty=Decimal('150.00')
-        )
-
-        estimated_cost = template.rate * association.est_qty if template.rate and association.est_qty else Decimal('0.00')
-        self.assertEqual(estimated_cost, Decimal('1912.50'))
+        self.assertEqual(template.rate_scheme, self.scheme)
+        self.assertEqual(template.default_billable_qty, Decimal('1.00'))

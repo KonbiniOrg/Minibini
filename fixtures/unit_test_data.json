@@ -311,7 +311,6 @@
       "name": "Kitchen demolition",
       "description": "",
       "sort_order": null,
-      "accounting_category": null,
       "job": 1
     }
   },
@@ -323,7 +322,6 @@
       "name": "Electrical rough-in",
       "description": "",
       "sort_order": null,
-      "accounting_category": null,
       "job": 1
     }
   },
@@ -639,8 +637,6 @@
     "fields": {
       "template_name": "Site Preparation",
       "description": "Standard site preparation and safety setup",
-      "units": "ea",
-      "rate": "350.00",
       "is_active": true,
       "created_date": "2023-01-15T10:30:00Z",
       "rate_scheme": 3,
@@ -653,8 +649,6 @@
     "fields": {
       "template_name": "Material Delivery",
       "description": "Material procurement and delivery setup",
-      "units": "ea",
-      "rate": "125.00",
       "is_active": true,
       "created_date": "2023-01-15T11:00:00Z",
       "rate_scheme": 3,
@@ -667,8 +661,6 @@
     "fields": {
       "template_name": "Electrical Installation",
       "description": "Standard electrical rough-in work",
-      "units": "ln ft",
-      "rate": "12.50",
       "is_active": true,
       "created_date": "2023-01-15T11:30:00Z",
       "rate_scheme": 1,
@@ -681,8 +673,6 @@
     "fields": {
       "template_name": "Construction Work",
       "description": "General construction and installation",
-      "units": "sq ft",
-      "rate": "25.75",
       "is_active": true,
       "created_date": "2023-01-15T12:00:00Z",
       "rate_scheme": 1,

@@ -10,15 +10,6 @@ from apps.invoicing.models import InvoiceLineItem
 
 class UnitsDefaultTest(BaseTestCase):
 
-    def test_task_template_defaults_to_none(self):
-        scheme = RateScheme.objects.get(pk=1)  # from fixture
-        tt = TaskTemplate.objects.create(
-            template_name='Test Template',
-            rate_scheme=scheme,
-            default_billable_qty=Decimal('1.00'),
-        )
-        self.assertEqual(tt.units, 'none')
-
     def test_price_list_item_defaults_to_none(self):
         category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         pli = PriceListItem.objects.create(code='TEST-UNIT-PLI', accounting_category=category)

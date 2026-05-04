@@ -16,13 +16,12 @@ class WorkTemplateForm(forms.ModelForm):
         }
 
 
-class TaskTemplateForm(UnitsFieldMixin, forms.ModelForm):
+class TaskTemplateForm(forms.ModelForm):
     class Meta:
         model = TaskTemplate
-        fields = ['template_name', 'description', 'units', 'rate', 'accounting_category']
+        fields = ['template_name', 'description']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
-            'rate': forms.NumberInput(attrs={'step': '0.01', 'placeholder': '0.00'}),
         }
 
 

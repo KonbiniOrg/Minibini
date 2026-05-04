@@ -39,7 +39,6 @@ class CopyFromWorksheetChargeTest(TestCase):
         plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='CNC cut panels',
-            accounting_category=self.category,
             rate_scheme=self.scheme,
             active_modifiers=['messy'],
             est_qty=Decimal('30.00'),

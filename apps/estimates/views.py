@@ -31,8 +31,6 @@ def _build_container_items_from_associations(associations):
             'id': assoc.pk,
             'name': assoc.task_template.template_name,
             'description': assoc.task_template.description,
-            'units': assoc.task_template.units,
-            'rate': assoc.task_template.rate,
             'est_qty': assoc.est_qty,
             'remove_id': assoc.task_template.template_id,
             'sort_order': assoc.sort_order,

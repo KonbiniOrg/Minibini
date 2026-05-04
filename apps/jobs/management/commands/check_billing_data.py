@@ -57,14 +57,6 @@ class Command(BaseCommand):
                 f'{sample}{ellipsis}'
             )
 
-        # AC mismatches between work item and scheme (informational)
-        for pt in PlanTask.objects.filter(rate_scheme__isnull=False):
-            if pt.accounting_category_id and pt.accounting_category_id != pt.rate_scheme.accounting_category_id:
-                issues.append(
-                    f'PlanTask {pt.pk} ({pt.name}): AC differs from scheme — '
-                    f'pt.AC={pt.accounting_category_id}, scheme.AC={pt.rate_scheme.accounting_category_id}'
-                )
-
         if not issues:
             self.stdout.write(self.style.SUCCESS('All clear — dev DB is ready for Phase B.'))
         else:

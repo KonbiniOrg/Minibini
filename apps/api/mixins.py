@@ -220,7 +220,7 @@ class PlanTaskMixin:
             from apps.jobs.models import PlanTask
             tasks = PlanTask.objects.filter(
                 est_worksheet=worksheet,
-            ).select_related('rate_scheme', 'accounting_category').order_by('sort_order')
+            ).select_related('rate_scheme').order_by('sort_order')
             serializer = self.plan_task_serializer_class(tasks, many=True)
             return Response(serializer.data)
 

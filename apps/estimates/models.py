@@ -272,7 +272,6 @@ class EstWorksheet(AbstractWorkContainer):
                 est_worksheet=new_worksheet,
                 name=plan_task.name,
                 description=plan_task.description,
-                accounting_category=plan_task.accounting_category,
                 rate_scheme=plan_task.rate_scheme,
                 active_modifiers=list(plan_task.active_modifiers or []),
                 est_qty=plan_task.est_qty,
@@ -396,8 +395,6 @@ class TaskTemplate(models.Model):
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    units = models.CharField(max_length=50, default='none')
-    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     rate_scheme = models.ForeignKey(
         'jobs.RateScheme',
         on_delete=models.PROTECT,
@@ -410,15 +407,6 @@ class TaskTemplate(models.Model):
     default_billable_qty = models.DecimalField(
         max_digits=10, decimal_places=2,
         help_text="Typical estimated billable quantity"
-    )
-
-    # AccountingCategory determines what type of line item this task produces when mapped directly
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
-        on_delete=models.PROTECT,
-        null=True,  # Temporarily nullable for migration
-        blank=True,
-        help_text="Type of line item this task produces when mapped directly"
     )
 
     # Relationships
@@ -436,9 +424,7 @@ class TaskTemplate(models.Model):
 
     @property
     def effective_accounting_category(self):
-        if self.rate_scheme_id:
-            return self.rate_scheme.accounting_category
-        return self.accounting_category  # Phase A fallback
+        return self.rate_scheme.accounting_category
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
                        assignee=None, sort_order=None):
@@ -462,7 +448,6 @@ class TaskTemplate(models.Model):
                     job=container,
                     name=self.template_name,
                     description=self.description,
-                    accounting_category=self.accounting_category,  # legacy, Phase A
                     assignee=assignee,
                     sort_order=sort_order,
                 )
@@ -477,7 +462,6 @@ class TaskTemplate(models.Model):
                 est_worksheet=container,
                 name=self.template_name,
                 description=self.description,
-                accounting_category=self.accounting_category,  # legacy, dropped Phase B
                 rate_scheme=self.rate_scheme,
                 active_modifiers=list(self.default_active_modifiers or []),
                 est_qty=est_qty,

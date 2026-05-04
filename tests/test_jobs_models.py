@@ -468,8 +468,6 @@ class TaskTemplateModelTest(TestCase):
         template = TaskTemplate.objects.create(
             template_name="Electrical Installation",
             description="Standard electrical installation task",
-            units="ea",
-            rate=Decimal('45.00'),
             is_active=True,
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
@@ -484,8 +482,6 @@ class TaskTemplateModelTest(TestCase):
 
         self.assertEqual(template.template_name, "Electrical Installation")
         self.assertEqual(template.description, "Standard electrical installation task")
-        self.assertEqual(template.units, "ea")
-        self.assertEqual(template.rate, Decimal('45.00'))
         self.assertIn(self.work_template, template.work_templates.all())
         self.assertEqual(association.est_qty, Decimal('12.00'))
         self.assertTrue(template.is_active)
@@ -507,8 +503,6 @@ class TaskTemplateModelTest(TestCase):
         )
         self.assertTrue(template.is_active)
         self.assertEqual(template.description, "")
-        self.assertEqual(template.units, "none")
-        self.assertIsNone(template.rate)
         self.assertEqual(template.work_templates.count(), 0)
 
     def test_task_template_new_fields_optional(self):
@@ -517,27 +511,8 @@ class TaskTemplateModelTest(TestCase):
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
-        self.assertEqual(template.units, "none")
-        self.assertIsNone(template.rate)
-
-    def test_task_template_pricing_calculation(self):
-        template = TaskTemplate.objects.create(
-            template_name="Material Template",
-            units="sq ft",
-            rate=Decimal('15.25'),
-            rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
-        )
-
-        from apps.estimates.models import TemplateTaskAssociation
-        association = TemplateTaskAssociation.objects.create(
-            work_template=self.work_template,
-            task_template=template,
-            est_qty=Decimal('200.00')
-        )
-
-        estimated_cost = template.rate * association.est_qty if template.rate and association.est_qty else Decimal('0.00')
-        self.assertEqual(estimated_cost, Decimal('3050.00'))
+        # units/rate dropped from TaskTemplate; billing now lives on rate_scheme
+        self.assertEqual(template.rate_scheme, self.scheme)
 
     def test_task_template_without_work_template(self):
         template = TaskTemplate.objects.create(

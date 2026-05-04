@@ -540,7 +540,7 @@ class EstimateWizardService:
         from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
         if isinstance(atom_instance, PlanTask):
-            return atom_instance.accounting_category
+            return atom_instance.effective_accounting_category
         if isinstance(atom_instance, PlanMaterial):
             return atom_instance.accounting_category
         return None
@@ -619,17 +619,18 @@ class EstimateWizardService:
         atoms = []
 
         for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
-            'accounting_category', 'rate_scheme',
+            'rate_scheme', 'rate_scheme__accounting_category',
         ):
             key = (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk)
             state_info = claims.get(key, default_state)
+            eff_cat = pt.effective_accounting_category
             atoms.append({
                 'type': 'plan_task',
                 'id': pt.pk,
                 'description': pt.name,
                 'amount': pt.compute_amount().quantize(Decimal('0.01')),
                 'units': EstimateWizardService._atom_units(pt),
-                'category_id': pt.accounting_category_id,
+                'category_id': eff_cat.pk if eff_cat else None,
                 **state_info,
             })
 
@@ -819,7 +820,7 @@ class EstimateWizardService:
 
         # PlanTasks
         for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
-            'accounting_category', 'rate_scheme',
+            'rate_scheme', 'rate_scheme__accounting_category',
         ):
             if (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk) in claimed:
                 continue
@@ -829,7 +830,7 @@ class EstimateWizardService:
                 qty=Decimal('1'),
                 units=EstimateWizardService._atom_units(pt),
                 price=pt.compute_amount().quantize(Decimal('0.01')),
-                accounting_category=pt.accounting_category,
+                accounting_category=pt.effective_accounting_category,
             )
             EstimateLineItemSource.objects.create(
                 estimate_line_item=li,

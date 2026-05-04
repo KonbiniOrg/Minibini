@@ -132,13 +132,6 @@ class TaskBase(models.Model):
         null=True, blank=True,
         help_text="Estimated worker time for scheduling"
     )
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        help_text="Type of line item this task produces when mapped directly"
-    )
 
     class Meta:
         abstract = True
@@ -195,9 +188,7 @@ class PlanTask(TaskBase):
 
     @property
     def effective_accounting_category(self):
-        if self.rate_scheme_id:
-            return self.rate_scheme.accounting_category
-        return self.accounting_category  # Phase A fallback to legacy field
+        return self.rate_scheme.accounting_category
 
 
 class Task(TaskBase):
@@ -281,13 +272,7 @@ class Task(TaskBase):
 
     @property
     def effective_accounting_category(self):
-        try:
-            charge = self.charge
-        except TaskCharge.DoesNotExist:
-            return self.accounting_category  # Phase A fallback
-        if charge.rate_scheme_id:
-            return charge.rate_scheme.accounting_category
-        return self.accounting_category
+        return self.charge.rate_scheme.accounting_category
 
 
 
