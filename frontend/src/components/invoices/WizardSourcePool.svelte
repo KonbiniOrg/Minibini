@@ -56,18 +56,6 @@
           </div>
         {/each}
       {/if}
-      {#if task.bleps && task.bleps.length > 0}
-        <div style="margin-left: 16px;">
-          <details>
-            <summary><small>Bleps ({task.bleps.length})</small></summary>
-            <ul>
-              {#each task.bleps as b (b.blep_id)}
-                <li><small>{b.when} &mdash; {b.hours}h &mdash; {b.user || '—'}</small></li>
-              {/each}
-            </ul>
-          </details>
-        </div>
-      {/if}
     </div>
   {/each}
 {/if}

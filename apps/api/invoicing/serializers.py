@@ -12,13 +12,9 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
     computed_amount = serializers.SerializerMethodField()
 
     def get_description(self, obj):
+        from apps.invoicing.services import InvoiceWizardService
         instance = obj.resolve()
-        from apps.jobs.models import Blep
-        if isinstance(instance, Blep):
-            elapsed = instance.end_time - instance.start_time
-            hours = elapsed.total_seconds() / 3600
-            return f'Labor {hours:.2f}h'
-        return instance.description
+        return InvoiceWizardService._atom_description(instance)
 
     def get_computed_amount(self, obj):
         from apps.invoicing.services import InvoiceWizardService
@@ -54,6 +50,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     )
     default_send_to = serializers.SerializerMethodField()
     job_number = serializers.SerializerMethodField()
+    job_name = serializers.SerializerMethodField()
     job_description = serializers.SerializerMethodField()
 
     class Meta:
@@ -62,7 +59,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'invoice_id', 'job', 'invoice_number', 'status',
             'created_date', 'sent_date', 'closed_date',
             'qbo_id', 'qbo_payment_status', 'qbo_amount_paid',
-            'line_items', 'default_send_to', 'job_number', 'job_description',
+            'line_items', 'default_send_to',
+            'job_number', 'job_name', 'job_description',
         ]
         read_only_fields = [
             'invoice_id', 'invoice_number', 'created_date',
@@ -81,6 +79,12 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if obj.job:
             return obj.job.job_number
         return None
+
+    def get_job_name(self, obj):
+        """Return the job's short name for display."""
+        if obj.job:
+            return obj.job.name
+        return ''
 
     def get_job_description(self, obj):
         """Return the job description for display."""

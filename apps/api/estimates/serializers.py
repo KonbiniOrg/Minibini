@@ -43,11 +43,14 @@ class EstimateSerializer(serializers.ModelSerializer):
     line_items = EstimateLineItemSerializer(
         source='estimatelineitem_set', many=True, read_only=True
     )
+    job_number = serializers.SerializerMethodField()
+    job_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Estimate
         fields = [
-            'estimate_id', 'job', 'estimate_number', 'version', 'status',
+            'estimate_id', 'job', 'job_number', 'job_name',
+            'estimate_number', 'version', 'status',
             'parent', 'created_date', 'sent_date', 'closed_date',
             'expiration_date', 'line_items',
         ]
@@ -55,3 +58,9 @@ class EstimateSerializer(serializers.ModelSerializer):
             'estimate_id', 'estimate_number', 'version',
             'created_date', 'sent_date', 'closed_date',
         ]
+
+    def get_job_number(self, obj):
+        return obj.job.job_number if obj.job_id else None
+
+    def get_job_name(self, obj):
+        return obj.job.name if obj.job_id else ''

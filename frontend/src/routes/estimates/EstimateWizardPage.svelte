@@ -3,7 +3,7 @@
   import { api } from '../../lib/api.js';
   import WizardSourcePool from '../../components/estimates/WizardSourcePool.svelte';
   import WizardLineItemCard from '../../components/wizards/WizardLineItemCard.svelte';
-  import WizardFooter from '../../components/estimates/WizardFooter.svelte';
+  import WizardActions from '../../components/wizards/WizardActions.svelte';
 
   const { params = {} } = $props();
 
@@ -45,6 +45,17 @@
       } else {
         alert(e.message || 'Failed to create line item');
       }
+    }
+  }
+
+  async function addManualLineItem() {
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/`, {
+        description: '', qty: '1', units: 'each', price: '0.00',
+      });
+      await reloadAfterAction();
+    } catch (e) {
+      alert(e.message || 'Failed to add manual line item');
     }
   }
 
@@ -127,7 +138,7 @@
 {:else if estimate}
   <h2>Estimate Wizard — {estimate.estimate_number}</h2>
   <p>
-    <a href={`#/estimates/${estimate.estimate_id}`}>← Back to estimate</a>
+    <a href={`#/jobs/${estimate.job}`}>&laquo; Back to Job {estimate.job_number}{estimate.job_name ? ` - ${estimate.job_name}` : ''}</a>
   </p>
 
   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
@@ -137,9 +148,6 @@
     </div>
     <div>
       <h3>Line items</h3>
-      {#if lineItems.length === 0}
-        <p><em>No line items yet. Select atoms and "Create new line item from selected" below.</em></p>
-      {/if}
       {#each lineItems as li (li.line_item_id)}
         <WizardLineItemCard
           lineItem={li}
@@ -149,12 +157,22 @@
           onchange={reloadAfterAction}
         />
       {/each}
+      <div style="border: 1px dashed #aaa; padding: 8px; margin-bottom: 8px; color: #777;">
+        <em>New line item</em>
+        <button
+          onclick={createNewLineItem}
+          disabled={!canAddHere}
+          style="float: right;"
+          title={canAddHere ? 'Create a new line item from selected atoms' : 'Select atoms first'}
+        >Add Here</button>
+      </div>
+      <button type="button" onclick={addManualLineItem}>+ Manual</button>
     </div>
   </div>
 
-  <WizardFooter
-    selectedCount={selectedAtoms.length}
-    onCreateNew={createNewLineItem}
-    canAct={canAddHere}
+  <WizardActions
+    apiBase={`/api/estimates/${estimate.estimate_id}`}
+    detailRoute={`/estimates/${estimate.estimate_id}`}
+    discardConfirm="Delete this draft estimate and release all atoms?"
   />
 {/if}

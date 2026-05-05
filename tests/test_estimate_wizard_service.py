@@ -39,6 +39,19 @@ class OpenForWorksheetTest(TestCase):
         with self.assertRaises(ValidationError):
             EstimateWizardService.open_for_worksheet(self.ws)
 
+    def test_refuses_when_linked_estimate_is_non_draft(self):
+        """A draft worksheet linked to a non-draft estimate is an
+        inconsistent state — the worksheet should already be FINAL.
+        Refuse rather than silently creating a new estimate (which
+        would orphan the existing one)."""
+        est = EstimateWizardService.open_for_worksheet(self.ws)
+        # Force estimate to non-draft via update() to bypass transition validation
+        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
+        self.ws.refresh_from_db()
+        with self.assertRaises(ValidationError) as cm:
+            EstimateWizardService.open_for_worksheet(self.ws)
+        self.assertIn('inconsistent', str(cm.exception).lower())
+
 
 class ClaimConflictExceptionTest(TestCase):
     def test_exception_carries_atom_ids(self):
@@ -205,6 +218,31 @@ class AddAtomsToNewLineItemTest(TestCase):
         EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         with self.assertRaises(EstimateClaimConflict):
             EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+
+    def test_single_plan_task_atom_copy_over(self):
+        # pt has est_qty=2, scheme rate=100, no modifiers -> qty=2, price=100, units=hour
+        atoms = [{'type': 'plan_task', 'id': self.pt.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.qty, Decimal('2'))
+        self.assertEqual(li.price, Decimal('100'))
+        self.assertEqual(li.units, 'hour')
+
+    def test_single_plan_material_atom_copy_over(self):
+        # pm has quantity=3, sell_price=5 -> qty=3, price=5, units=each
+        atoms = [{'type': 'plan_material', 'id': self.pm.pk}]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.qty, Decimal('3'))
+        self.assertEqual(li.price, Decimal('5'))
+        self.assertEqual(li.units, 'each')
+
+    def test_multi_atom_line_qty_1_units_none(self):
+        atoms = [
+            {'type': 'plan_task', 'id': self.pt.pk},
+            {'type': 'plan_material', 'id': self.pm.pk},
+        ]
+        li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
+        self.assertEqual(li.qty, Decimal('1'))
+        self.assertEqual(li.units, 'none')
 
     def test_refuses_non_draft_estimate(self):
         # Use update() to bypass model-level transition validation

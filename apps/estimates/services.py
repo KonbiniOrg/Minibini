@@ -486,13 +486,21 @@ class EstimateWizardService:
     def open_for_worksheet(worksheet):
         """Return the worksheet's draft Estimate, creating one if none exists.
 
-        Raises ValidationError if the worksheet is not in draft.
+        Raises ValidationError if the worksheet is not in draft, or if the
+        worksheet is linked to a non-draft estimate (which should not be
+        possible — the worksheet should have been promoted to FINAL when its
+        estimate moved out of draft).
         """
         from apps.estimates.models import Estimate
         EstimateWizardService._validate_draft_worksheet(worksheet)
 
-        if worksheet.estimate and worksheet.estimate.status == Estimate.STATUS_DRAFT:
-            return worksheet.estimate
+        if worksheet.estimate is not None:
+            if worksheet.estimate.status == Estimate.STATUS_DRAFT:
+                return worksheet.estimate
+            raise ValidationError(
+                'Worksheet is in an inconsistent state — please reload the '
+                'worksheet and try again.'
+            )
 
         with transaction.atomic():
             estimate_number = NumberGenerationService.generate_next_number('estimate')
@@ -566,6 +574,19 @@ class EstimateWizardService:
         if isinstance(atom_instance, PlanMaterial):
             return 'each'
         return 'each'
+
+    @staticmethod
+    def _atom_qty_and_price(atom_instance, total_price):
+        """Return (qty, price) for a single-atom copy-over so qty * price = total."""
+        from apps.jobs.models import PlanTask
+        from apps.inventory.models import PlanMaterial
+        if isinstance(atom_instance, PlanMaterial):
+            return atom_instance.quantity, atom_instance.sell_price
+        if isinstance(atom_instance, PlanTask):
+            if atom_instance.rate_scheme_id and atom_instance.est_qty is not None:
+                return atom_instance.est_qty, atom_instance.effective_rate()
+            return Decimal('1'), total_price
+        return Decimal('1'), total_price
 
     @staticmethod
     def get_source_pool(worksheet):
@@ -672,21 +693,28 @@ class EstimateWizardService:
         categories = {EstimateWizardService._atom_category(i) for i in instances}
         category = categories.pop() if len(categories) == 1 else None
 
-        # Pre-fill description from the single source atom; blank for multi.
-        description = (
-            EstimateWizardService._atom_description(instances[0])
-            if len(instances) == 1
-            else ''
-        )
+        # Single atom: copy over description, units, qty, price from the atom.
+        # Multi-atom: blank description, units='none', qty=1, price=total.
+        if len(instances) == 1:
+            description = EstimateWizardService._atom_description(instances[0])
+            units = EstimateWizardService._atom_units(instances[0])
+            qty, price = EstimateWizardService._atom_qty_and_price(
+                instances[0], total_price,
+            )
+        else:
+            description = ''
+            units = 'none'
+            qty = Decimal('1')
+            price = total_price
 
         try:
             with transaction.atomic():
                 line_item = EstimateLineItem.objects.create(
                     estimate=estimate,
                     description=description,
-                    qty=Decimal('1'),
-                    units='each',
-                    price=total_price,
+                    qty=qty,
+                    units=units,
+                    price=price,
                     accounting_category=category,
                 )
                 for instance in instances:

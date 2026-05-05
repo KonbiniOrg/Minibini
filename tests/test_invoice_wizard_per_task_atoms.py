@@ -54,14 +54,6 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         self.assertEqual(atom['atom_id'], self.task.pk)
         self.assertEqual(atom['computed_amount'], Decimal('30.00'))
 
-    def test_blep_visible_as_read_only_detail(self):
-        from apps.invoicing.services import InvoiceWizardService
-        pool = InvoiceWizardService.get_source_pool(self.invoice)
-        task_entries = [t for t in pool['tasks'] if t['task_id'] == self.task.pk]
-        self.assertIn('bleps', task_entries[0])
-        self.assertEqual(len(task_entries[0]['bleps']), 1)
-
-
 class WizardTaskAtomHelpersTest(WizardPerTaskAtomsTest):
     def test_resolve_task_atom(self):
         from apps.invoicing.services import InvoiceWizardService

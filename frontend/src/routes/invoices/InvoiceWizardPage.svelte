@@ -3,7 +3,7 @@
   import { api } from '../../lib/api.js';
   import WizardSourcePool from '../../components/invoices/WizardSourcePool.svelte';
   import WizardLineItemCard from '../../components/wizards/WizardLineItemCard.svelte';
-  import WizardFooter from '../../components/invoices/WizardFooter.svelte';
+  import WizardActions from '../../components/wizards/WizardActions.svelte';
 
   const { params = {} } = $props();
 
@@ -45,6 +45,17 @@
       } else {
         alert(e.message || 'Failed to create line item');
       }
+    }
+  }
+
+  async function addManualLineItem() {
+    try {
+      await api.post(`/api/invoices/${invoice.invoice_id}/line-items/`, {
+        description: '', qty: '1', units: 'each', price: '0.00',
+      });
+      await reloadLineItems();
+    } catch (e) {
+      alert(e.message || 'Failed to add manual line item');
     }
   }
 
@@ -127,6 +138,9 @@
   <p><strong>Error:</strong> {error}</p>
 {:else if invoice}
   <h2>Build Invoice — {invoice.job_number}</h2>
+  <p>
+    <a href={`#/jobs/${invoice.job}`}>&laquo; Back to Job {invoice.job_number}{invoice.job_name ? ` - ${invoice.job_name}` : ''}</a>
+  </p>
   {#if invoice.job_description}
     <p>{invoice.job_description}</p>
   {/if}
@@ -157,11 +171,13 @@
           title={canAddHere ? 'Create a new line item from selected atoms' : 'Select atoms first'}
         >Add Here</button>
       </div>
+      <button type="button" onclick={addManualLineItem}>+ Manual</button>
     </div>
   </div>
 
-  <WizardFooter
-    invoiceId={invoice.invoice_id}
-    onchange={reloadLineItems}
+  <WizardActions
+    apiBase={`/api/invoices/${invoice.invoice_id}`}
+    detailRoute={`/invoices/${invoice.invoice_id}`}
+    discardConfirm="Delete this draft invoice and release all atoms?"
   />
 {/if}

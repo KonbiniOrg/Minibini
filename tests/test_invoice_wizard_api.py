@@ -41,7 +41,7 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
-        self.blep = Blep.objects.create(
+        Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
@@ -52,8 +52,8 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         )
         InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
         )
 
     def test_get_line_items_includes_sources(self):
@@ -64,10 +64,34 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.assertIn('sources', data[0])
         self.assertEqual(len(data[0]['sources']), 1)
         source = data[0]['sources'][0]
-        self.assertEqual(source['source_type'], 'blep')
-        self.assertEqual(source['source_pk'], self.blep.pk)
+        self.assertEqual(source['source_type'], 'task')
+        self.assertEqual(source['source_pk'], self.task.pk)
         self.assertIn('description', source)
         self.assertIn('computed_amount', source)
+
+    def test_task_source_renders_task_name_as_description(self):
+        """A Task-typed source should render the task's name (not its blank
+        long-form description) so the wizard line item card shows something
+        between the arrow and the X."""
+        # setUp already claims self.task; create a second task for this test.
+        other_task = Task.objects.create(job=self.job, name='Cleanup')
+        TaskCharge.objects.create(task=other_task, rate_scheme=self.scheme)
+        task_li = InvoiceLineItem.objects.create(
+            invoice=self.invoice,
+            description='', qty=Decimal('1'), price=Decimal('0.00'),
+            line_number=2,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=task_li,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=other_task.pk,
+        )
+        response = self.client.get(f'/api/invoices/{self.invoice.pk}/line-items/')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        task_li_data = next(li for li in data if li['line_item_id'] == task_li.pk)
+        self.assertEqual(len(task_li_data['sources']), 1)
+        self.assertEqual(task_li_data['sources'][0]['description'], 'Cleanup')
 
 
 class SourcePoolEndpointTest(TestCase):
@@ -171,34 +195,36 @@ class LineItemsFromAtomsEndpointTest(TestCase):
     def test_creates_line_item_with_sources(self):
         response = self.client.post(
             f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
-            {'atoms': [{'type': 'blep', 'id': self.blep.pk}]},
+            {'atoms': [{'type': 'task', 'id': self.task.pk}]},
             format='json',
         )
         self.assertEqual(response.status_code, 201)
         data = response.json()
+        # Single task-atom copy-over: qty=1, price=total ($50), units track scheme.
+        self.assertEqual(data['qty'], '1.00')
         self.assertEqual(data['price'], '50.00')
         self.assertEqual(len(data['sources']), 1)
 
     def test_returns_409_on_claim_conflict(self):
-        # Pre-claim the blep
+        # Pre-claim the task atom
         prior_li = InvoiceLineItem.objects.create(
             invoice=self.invoice, description='Prior', qty=Decimal('1'),
             price=Decimal('50.00'), accounting_category=self.category,
         )
         InvoiceLineItemSource.objects.create(
             invoice_line_item=prior_li,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
         )
         response = self.client.post(
             f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
-            {'atoms': [{'type': 'blep', 'id': self.blep.pk}]},
+            {'atoms': [{'type': 'task', 'id': self.task.pk}]},
             format='json',
         )
         self.assertEqual(response.status_code, 409)
         data = response.json()
         self.assertEqual(data['error'], 'atoms_already_claimed')
-        self.assertIn({'type': 'blep', 'id': self.blep.pk}, data['atom_ids'])
+        self.assertIn({'type': 'task', 'id': self.task.pk}, data['atom_ids'])
 
     def test_returns_400_on_non_draft_invoice(self):
         # Need a line item to transition out of draft
@@ -210,7 +236,7 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.invoice.save()
         response = self.client.post(
             f'/api/invoices/{self.invoice.pk}/line-items-from-atoms/',
-            {'atoms': [{'type': 'blep', 'id': self.blep.pk}]},
+            {'atoms': [{'type': 'task', 'id': self.task.pk}]},
             format='json',
         )
         self.assertEqual(response.status_code, 400)
@@ -241,16 +267,22 @@ class AddAtomsEndpointTest(TestCase):
             rate=Decimal('25.00'), unit_label='hours',
             accounting_category=self.category,
         )
+        # task1 with a 2h blep — task atom = $50
         self.task = Task.objects.create(
             job=self.job, name='Labor',
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
-        self.blep1 = Blep.objects.create(
+        Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
-        self.blep2 = Blep.objects.create(
-            task=self.task,
+        # task2 with a 1h blep — task atom = $25
+        self.task2 = Task.objects.create(
+            job=self.job, name='Cleanup',
+        )
+        TaskCharge.objects.create(task=self.task2, rate_scheme=self.scheme)
+        Blep.objects.create(
+            task=self.task2,
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
@@ -258,34 +290,36 @@ class AddAtomsEndpointTest(TestCase):
 
         from apps.invoicing.services import InvoiceWizardService
         self.line_item = InvoiceWizardService.add_atoms_to_new_line_item(
-            self.invoice, [{'type': 'blep', 'id': self.blep1.pk}],
+            self.invoice, [{'type': 'task', 'id': self.task.pk}],
         )
 
     def test_adds_atoms_and_returns_updated_line_item(self):
         response = self.client.post(
             f'/api/invoices/{self.invoice.pk}/line-items/{self.line_item.pk}/add-atoms/',
-            {'atoms': [{'type': 'blep', 'id': self.blep2.pk}]},
+            {'atoms': [{'type': 'task', 'id': self.task2.pk}]},
             format='json',
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data['sources']), 2)
+        # Single task-atom copy-over set qty=1, price=$50. Adding task2 atom
+        # keeps qty=1 and recomputes per-unit price: ($50 + $25) / 1 = $75.00.
         self.assertEqual(data['price'], '75.00')
 
     def test_returns_409_on_claim_conflict(self):
-        # Claim blep2 on a different line item first
+        # Claim task2 on a different line item first
         other_li = InvoiceLineItem.objects.create(
             invoice=self.invoice, description='Other', qty=Decimal('1'),
             price=Decimal('25.00'), accounting_category=self.category,
         )
         InvoiceLineItemSource.objects.create(
             invoice_line_item=other_li,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep2.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task2.pk,
         )
         response = self.client.post(
             f'/api/invoices/{self.invoice.pk}/line-items/{self.line_item.pk}/add-atoms/',
-            {'atoms': [{'type': 'blep', 'id': self.blep2.pk}]},
+            {'atoms': [{'type': 'task', 'id': self.task2.pk}]},
             format='json',
         )
         self.assertEqual(response.status_code, 409)
@@ -316,16 +350,18 @@ class RemoveAtomsEndpointTest(TestCase):
             rate=Decimal('25.00'), unit_label='hours',
             accounting_category=self.category,
         )
-        self.task = Task.objects.create(
-            job=self.job, name='Labor',
-        )
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
+        # task1 with a 2h blep — task atom = $50
+        self.task1 = Task.objects.create(job=self.job, name='Labor 1')
+        TaskCharge.objects.create(task=self.task1, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
-        self.blep1 = Blep.objects.create(
-            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+        Blep.objects.create(
+            task=self.task1, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
-        self.blep2 = Blep.objects.create(
-            task=self.task,
+        # task2 with a 1h blep — task atom = $25
+        self.task2 = Task.objects.create(job=self.job, name='Labor 2')
+        TaskCharge.objects.create(task=self.task2, rate_scheme=self.scheme)
+        Blep.objects.create(
+            task=self.task2,
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
@@ -335,15 +371,15 @@ class RemoveAtomsEndpointTest(TestCase):
         self.line_item = InvoiceWizardService.add_atoms_to_new_line_item(
             self.invoice,
             [
-                {'type': 'blep', 'id': self.blep1.pk},
-                {'type': 'blep', 'id': self.blep2.pk},
+                {'type': 'task', 'id': self.task1.pk},
+                {'type': 'task', 'id': self.task2.pk},
             ],
         )
 
     def test_removes_partial_sources(self):
         source_ids = list(
             self.line_item.sources
-            .filter(source_pk=self.blep1.pk)
+            .filter(source_pk=self.task1.pk)
             .values_list('source_id', flat=True)
         )
         response = self.client.post(

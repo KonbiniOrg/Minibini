@@ -158,16 +158,14 @@ class InvoiceLineItem(BaseLineItem):
 
 
 class InvoiceLineItemSource(models.Model):
-    """Polymorphic join between an InvoiceLineItem and its source atom (Blep or Material).
+    """Polymorphic join between an InvoiceLineItem and its source atom (Task or Material).
 
     The unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level: an atom can be referenced by at most one line item.
     """
-    SOURCE_BLEP = 'blep'
     SOURCE_MATERIAL = 'material'
-    SOURCE_TASK = 'task'  # NEW: a whole task as one billing atom
+    SOURCE_TASK = 'task'
     SOURCE_TYPE_CHOICES = [
-        (SOURCE_BLEP, 'Blep'),
         (SOURCE_MATERIAL, 'Material'),
         (SOURCE_TASK, 'Task'),
     ]
@@ -186,10 +184,7 @@ class InvoiceLineItemSource(models.Model):
         unique_together = [('source_type', 'source_pk')]
 
     def resolve(self):
-        """Return the concrete atom instance (Blep, Material, or Task) referenced by this source."""
-        if self.source_type == self.SOURCE_BLEP:
-            from apps.jobs.models import Blep
-            return Blep.objects.get(pk=self.source_pk)
+        """Return the concrete atom instance (Material or Task) referenced by this source."""
         if self.source_type == self.SOURCE_MATERIAL:
             from apps.inventory.models import Material
             return Material.objects.get(pk=self.source_pk)

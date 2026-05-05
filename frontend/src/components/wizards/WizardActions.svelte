@@ -1,0 +1,29 @@
+<script>
+  import { api } from '../../lib/api.js';
+  import { push } from 'svelte-spa-router';
+
+  let {
+    apiBase,         // e.g. '/api/invoices/123' or '/api/estimates/123'
+    detailRoute,     // e.g. '/invoices/123' or '/estimates/123'
+    discardConfirm = 'Delete this draft and release all claimed atoms?',
+  } = $props();
+
+  async function discard() {
+    if (!confirm(discardConfirm)) return;
+    try {
+      await api.delete(`${apiBase}/?confirm=true`);
+      push('/');
+    } catch (e) {
+      alert(e.message || 'Failed to discard');
+    }
+  }
+
+  function done() {
+    push(detailRoute);
+  }
+</script>
+
+<div style="display: flex; justify-content: space-between; margin-top: 12px;">
+  <button onclick={discard} style="color: #a00;">Discard draft</button>
+  <button onclick={done}>Done</button>
+</div>

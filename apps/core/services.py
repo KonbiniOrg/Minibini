@@ -70,6 +70,27 @@ class NumberGenerationService:
         'bill': 'bill_counter',
     }
 
+    # Per-document-type model and number-field used for collision detection.
+    # The service advances the counter past any pre-existing row that already
+    # uses the candidate number — this lets a fresh data load with a reset
+    # counter still produce unique numbers.
+    NUMBER_OWNERS = {
+        'job': ('apps.jobs.models', 'Job', 'job_number'),
+        'estimate': ('apps.estimates.models', 'Estimate', 'estimate_number'),
+        'invoice': ('apps.invoicing.models', 'Invoice', 'invoice_number'),
+        'po': ('apps.purchasing.models', 'PurchaseOrder', 'po_number'),
+        'bill': ('apps.purchasing.models', 'Bill', 'bill_number'),
+    }
+
+    MAX_COLLISION_ATTEMPTS = 1000
+
+    @classmethod
+    def _model_for(cls, document_type: str):
+        import importlib
+        module_path, model_name, field_name = cls.NUMBER_OWNERS[document_type]
+        module = importlib.import_module(module_path)
+        return getattr(module, model_name), field_name
+
     @classmethod
     def generate_next_number(cls, document_type: str) -> str:
         """
@@ -120,14 +141,26 @@ class NumberGenerationService:
                     "Please create it in the admin interface."
                 )
 
+            # Walk forward until we find a counter value that doesn't collide
+            # with an existing row. Self-heals after data reloads that reset
+            # the counter while keeping existing rows.
+            Model, field_name = cls._model_for(document_type)
             next_counter = current_counter + 1
+            for _ in range(cls.MAX_COLLISION_ATTEMPTS):
+                candidate = cls._format_number(pattern, next_counter)
+                if not Model.objects.filter(**{field_name: candidate}).exists():
+                    break
+                next_counter += 1
+            else:
+                raise ValidationError(
+                    f"Could not find an unused {document_type} number after "
+                    f"{cls.MAX_COLLISION_ATTEMPTS} attempts."
+                )
+
             counter_config.value = str(next_counter)
             counter_config.save()
 
-            # Generate the number using the pattern
-            number = cls._format_number(pattern, next_counter)
-
-            return number
+            return candidate
 
     @classmethod
     def _format_number(cls, pattern: str, counter: int) -> str:
