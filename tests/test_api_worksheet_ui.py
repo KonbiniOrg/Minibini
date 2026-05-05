@@ -400,3 +400,91 @@ class AddFromTemplateTest(TestCase):
         self.assertEqual(response.data['rate_scheme'], scheme.rate_scheme_id)
         self.assertEqual(response.data['est_qty'], '3.00')
         self.assertEqual(response.data['active_modifiers'], ['rush'])
+
+
+class PlanMaterialAssignTaskApiTest(TestCase):
+    """Tests for the worksheet plan-materials assign-task action."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='asgnuser', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_jobs', content_type__app_label='core',
+        )
+        self.user.user_permissions.add(perm)
+        self.client.force_authenticate(user=self.user)
+
+        self.contact = Contact.objects.create(first_name='Asgn', last_name='User')
+        self.job = Job.objects.create(
+            job_number='ASGN-001', name='Assign Job', contact=self.contact,
+        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.cat = AccountingCategory.objects.create(name='c', code='ASGN-C')
+        self.scheme = RateScheme.objects.create(
+            name='asgn-scheme', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
+        )
+        self.task_a = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='A',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        self.task_b = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='B',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        self.other_ws = EstWorksheet.objects.create(job=self.job)
+        self.other_task = PlanTask.objects.create(
+            est_worksheet=self.other_ws, name='Other',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        self.material = PlanMaterial.objects.create(
+            est_worksheet=self.worksheet, plan_task=self.task_a,
+            description='m', quantity=Decimal('1'),
+        )
+
+    def _url(self):
+        return (
+            f'/api/est-worksheets/{self.worksheet.pk}/'
+            f'plan-materials/{self.material.pk}/assign-task/'
+        )
+
+    def test_assign_to_other_plan_task(self):
+        resp = self.client.post(
+            self._url(), {'plan_task': self.task_b.pk}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.material.refresh_from_db()
+        self.assertEqual(self.material.plan_task_id, self.task_b.pk)
+
+    def test_assign_to_null_makes_taskless(self):
+        resp = self.client.post(
+            self._url(), {'plan_task': None}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.material.refresh_from_db()
+        self.assertIsNone(self.material.plan_task_id)
+
+    def test_reject_cross_worksheet_plan_task(self):
+        resp = self.client.post(
+            self._url(), {'plan_task': self.other_task.pk}, format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.material.refresh_from_db()
+        self.assertEqual(self.material.plan_task_id, self.task_a.pk)
+
+
+class EstWorksheetSerializerJobFieldsTest(TestCase):
+    """Serializer should expose job_number and job_name on the worksheet."""
+
+    def test_serializer_includes_job_number_and_name(self):
+        from apps.api.worksheets.serializers import EstWorksheetSerializer
+        contact = Contact.objects.create(first_name='J', last_name='F')
+        job = Job.objects.create(
+            job_number='JF-001', name='Job Field Job', contact=contact,
+        )
+        ws = EstWorksheet.objects.create(job=job)
+        data = EstWorksheetSerializer(ws).data
+        self.assertIn('job_number', data)
+        self.assertIn('job_name', data)
+        self.assertEqual(data['job_number'], 'JF-001')
+        self.assertEqual(data['job_name'], 'Job Field Job')

@@ -154,6 +154,7 @@
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, task)}>draw more</button>
               {/if}
               <button type="button" onclick={() => onEditMaterial(mat, task)}>edit desc</button>
+              <button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>
             </td>
           {:else if !readonly}
             <td class="actions-cell"></td>
@@ -217,6 +218,7 @@
                   <button type="button" onclick={() => onDrawMoreMaterial(mat, sub)}>draw more</button>
                 {/if}
                 <button type="button" onclick={() => onEditMaterial(mat, sub)}>edit desc</button>
+                <button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>
               </td>
             {:else if !readonly}
               <td class="actions-cell"></td>

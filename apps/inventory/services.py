@@ -144,6 +144,20 @@ class InventoryService:
         mat.save()
         return mat
 
+    @staticmethod
+    def assign_plan_task(plan_material, plan_task):
+        """Move a PlanMaterial to a different PlanTask (or make it taskless with plan_task=None).
+
+        Validates that plan_task (if given) belongs to the same worksheet as the material.
+        Raises ValidationError on mismatch.
+        """
+        from django.core.exceptions import ValidationError
+        if plan_task is not None:
+            if plan_task.est_worksheet_id != plan_material.est_worksheet_id:
+                raise ValidationError('PlanTask must belong to the same worksheet as the material')
+        plan_material.plan_task = plan_task
+        plan_material.save(update_fields=['plan_task_id'])
+
     # --- Thin wrappers for legacy HTML view call sites (to be removed in Phase 4) ---
 
     @staticmethod

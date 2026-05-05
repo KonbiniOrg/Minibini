@@ -44,13 +44,28 @@ class PlanTaskSerializer(serializers.ModelSerializer):
         return str(obj.compute_amount().quantize(Decimal('0.01')))
 
 
+class PlanMaterialAssignTaskSerializer(serializers.Serializer):
+    plan_task = serializers.PrimaryKeyRelatedField(
+        queryset=PlanTask.objects.all(), allow_null=True,
+    )
+
+
 class EstWorksheetSerializer(serializers.ModelSerializer):
     tasks = PlanTaskSerializer(source='plan_tasks', many=True, read_only=True)
+    job_number = serializers.SerializerMethodField()
+    job_name = serializers.SerializerMethodField()
 
     class Meta:
         model = EstWorksheet
         fields = [
-            'est_worksheet_id', 'job', 'template', 'estimate',
+            'est_worksheet_id', 'job', 'job_number', 'job_name',
+            'template', 'estimate',
             'status', 'version', 'parent', 'created_date', 'tasks',
         ]
         read_only_fields = ['est_worksheet_id', 'created_date', 'status']
+
+    def get_job_number(self, obj):
+        return obj.job.job_number if obj.job_id else None
+
+    def get_job_name(self, obj):
+        return obj.job.name if obj.job_id else ''

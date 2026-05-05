@@ -24,6 +24,7 @@
   let materialModalTaskId = $state(null);
 
   let materials = $state([]);
+  let selectedTaskId = $state(null);
 
   const canManageJobs = $derived(
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
@@ -153,6 +154,19 @@
     reload();
   }
 
+  async function handleMoveMaterial(material, planTaskId) {
+    try {
+      await api.post(
+        `/api/est-worksheets/${worksheet.est_worksheet_id}/plan-materials/${material.plan_material_id}/assign-task/`,
+        { plan_task: planTaskId },
+      );
+      selectedTaskId = null;
+      await reload();
+    } catch (e) {
+      alert(e.message || 'Could not move material.');
+    }
+  }
+
   async function handleReorder(taskId, direction) {
     try {
       await api.post(`/api/est-worksheets/${worksheet.est_worksheet_id}/reorder/`, {
@@ -202,7 +216,7 @@
   <h2>Worksheet v{worksheet.version}</h2>
 
   <p>
-    <a href={`/jobs/${worksheet.job}`} use:link>&laquo; Back to Job</a>
+    <a href={`/jobs/${worksheet.job}`} use:link>&laquo; Back to Job {worksheet.job_number}{worksheet.job_name ? ` - ${worksheet.job_name}` : ''}</a>
   </p>
 
   <div class="status-line">
@@ -232,6 +246,8 @@
     onAddMaterial={openAddTaskMaterial}
     onEditMaterial={openEditMaterial}
     onDeleteMaterial={handleDeleteMaterial}
+    onMoveMaterial={handleMoveMaterial}
+    bind:selectedTaskId
   />
 
   {#if materials.length > 0 || canEdit}
@@ -242,6 +258,7 @@
       <table border="1" class="mat-table">
         <thead>
           <tr>
+            {#if canEdit}<th>Move target</th>{/if}
             <th>Description</th>
             <th class="text-right">Qty</th>
             <th class="text-right">Unit Cost</th>
@@ -252,6 +269,9 @@
         <tbody>
           {#each materials as mat}
             <tr>
+              {#if canEdit}
+                <td class="move-cell">{#if selectedTaskId != null}<button type="button" class="small-btn" onclick={() => handleMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
+              {/if}
               <td>{mat.description || '(no description)'}</td>
               <td class="text-right">{mat.quantity ?? '-'}</td>
               <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
@@ -320,5 +340,11 @@
     cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
   }
   .mat-table .actions-cell button:hover { background: #f0f0f0; }
+  .mat-table .move-cell { text-align: center; width: 90px; }
+  .small-btn {
+    font-size: 11px; padding: 2px 6px;
+    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
+  }
+  .small-btn:hover { background: #f0f0f0; }
   .empty-msg { color: #888; }
 </style>

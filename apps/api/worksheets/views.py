@@ -8,7 +8,10 @@ from django.core.exceptions import ValidationError
 from apps.core.services import ServiceError, NotFoundError, SchemeSupersededError
 from apps.api.mixins import StatusTransitionMixin, PlanTaskMixin
 from apps.api.permissions import CanManageJobs
-from .serializers import EstWorksheetSerializer, PlanTaskSerializer, PlanMaterialWriteSerializer
+from .serializers import (
+    EstWorksheetSerializer, PlanTaskSerializer,
+    PlanMaterialWriteSerializer, PlanMaterialAssignTaskSerializer,
+)
 
 
 class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelViewSet):
@@ -163,6 +166,28 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'],
+            url_path='plan-materials/(?P<mat_id>[0-9]+)/assign-task',
+            url_name='plan-material-assign-task')
+    def plan_material_assign_task(self, request, pk=None, mat_id=None):
+        from apps.inventory.models import PlanMaterial
+        from apps.inventory.services import InventoryService
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from rest_framework.exceptions import NotFound
+        worksheet = self.get_object()
+        try:
+            mat = PlanMaterial.objects.get(pk=mat_id, est_worksheet=worksheet)
+        except PlanMaterial.DoesNotExist:
+            raise NotFound()
+        s = PlanMaterialAssignTaskSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        try:
+            InventoryService.assign_plan_task(mat, s.validated_data['plan_task'])
+        except DjangoValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        mat.refresh_from_db()
+        return Response(PlanMaterialWriteSerializer(mat).data)
 
     @action(detail=True, methods=['post'], url_path='send-all-atoms-to-estimate')
     def send_all_atoms_to_estimate(self, request, pk=None):

@@ -8,6 +8,8 @@
     onAddMaterial = () => {},
     onEditMaterial = () => {},
     onDeleteMaterial = () => {},
+    onMoveMaterial = () => {},
+    selectedTaskId = $bindable(null),
   } = $props();
 
   const tasks = $derived(
@@ -45,6 +47,7 @@
 <table border="1" class="ws-task-table">
   <thead>
     <tr>
+      {#if !readonly}<th>Move target</th>{/if}
       <th>Name / Description</th>
       <th class="text-right">Qty</th>
       <th class="text-right">Total</th>
@@ -54,6 +57,9 @@
   <tbody>
     {#each tasks as task, i}
       <tr class="task-row">
+        {#if !readonly}
+          <td class="move-cell"><input type="radio" name="ws-move-target" value={task.plan_task_id} bind:group={selectedTaskId}></td>
+        {/if}
         <td>{task.name}{#if task.description}<br><span class="dim">{task.description}</span>{/if}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">{fmt(taskTotal(task))}</td>
@@ -69,6 +75,9 @@
       </tr>
       {#each (task.plan_materials || []) as mat}
         <tr class="material-row">
+          {#if !readonly}
+            <td class="move-cell">{#if selectedTaskId != null && selectedTaskId !== (task.plan_task_id ?? null)}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
+          {/if}
           <td class="indent"><span class="material-marker">&#9679;</span> {mat.description || '(no description)'}</td>
           <td class="text-right">{mat.quantity ?? '-'}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
@@ -76,6 +85,7 @@
             <td class="actions-cell">
               <button type="button" onclick={() => onEditMaterial(mat, task)}>edit</button>
               <button type="button" onclick={() => onDeleteMaterial(mat, task)}>del</button>
+              <button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>
             </td>
           {/if}
         </tr>
@@ -84,6 +94,7 @@
   </tbody>
   <tfoot>
     <tr class="grand-total-row">
+      {#if !readonly}<td></td>{/if}
       <td colspan="2" class="text-right"><strong>Grand Total</strong></td>
       <td class="text-right"><strong>{fmt(grandTotal)}</strong></td>
       {#if !readonly}<td></td>{/if}
@@ -109,4 +120,10 @@
   }
   .actions-cell button:hover { background: #f0f0f0; }
   .actions-cell button:disabled { opacity: 0.4; cursor: default; }
+  .move-cell { text-align: center; width: 90px; }
+  .small-btn {
+    font-size: 11px; padding: 2px 6px;
+    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
+  }
+  .small-btn:hover { background: #f0f0f0; }
 </style>
