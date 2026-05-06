@@ -77,25 +77,36 @@ Work measurement and billing identity are distinct concerns that share a model. 
 
 | Model | Add | Remove | Change |
 |---|---|---|---|
-| `Task` | `rate_scheme: FK(RateScheme, on_delete=PROTECT)`, `active_modifiers: JSONField(default=list, blank=True)`, `est_qty: Decimal(null=True, blank=True)`, `actual_qty: Decimal(null=True, blank=True)` | reverse `charge` relationship (drops with TaskCharge) | `rate_scheme` is `NOT NULL` (replaces "Task must have a TaskCharge" rule) |
-| `PlanTask` | — | — | `est_qty` becomes nullable (was `NOT NULL`); see "Plan-side nullability" below |
+| `TaskBase` | `est_qty: Decimal(null=True, blank=True)` | — | est_qty promoted from PlanTask onto the abstract base (nullable at DB level so Task can leave it unset; see "est_qty placement" below) |
+| `Task` | `rate_scheme: FK(RateScheme, on_delete=PROTECT)`, `active_modifiers: JSONField(default=list, blank=True)`, `actual_qty: Decimal(null=True, blank=True)` | reverse `charge` relationship (drops with TaskCharge) | `rate_scheme` is `NOT NULL` (replaces "Task must have a TaskCharge" rule); `est_qty` inherited from TaskBase, left nullable |
+| `PlanTask` | — | the model's own `est_qty` field declaration (now inherited from TaskBase) | `clean()` enforces `est_qty is not None` at the application layer; see "est_qty placement" |
 | `TaskCharge` | — | **dropped entirely** | the `task_charges` table goes away |
-| `TaskBase` | — | — | unchanged; `est_worker_time` continues to live here |
 | `RateScheme` | — | — | reference checks update from `TaskCharge` to `Task` (see RateScheme Effects); model fields unchanged |
 | `TaskTemplate` | — | — | unchanged |
 
-### Plan-side nullability
+### `est_qty` placement
 
-`PlanTask.est_qty` becomes nullable, deliberately relaxing the 2026-05-02 NOT NULL constraint. Reasons:
+`est_qty` lives on `TaskBase` (abstract) so PlanTask and Task share one declaration. The DB column is nullable on both subclasses — but **only because Task needs it to be**. PlanTask requires `est_qty` to be set; the requirement is enforced in code, not in the schema:
 
-1. **Symmetry** with the new `Task.est_qty` (nullable).
-2. **Partial planning** — an estimator may add a "polish step" PlanTask before knowing the qty.
-3. `PlanTask.compute_amount` already handles `est_qty is None` (returns `Decimal('0.00')`).
-4. The estimate wizard (2026-04-19) already tolerates atoms left out of the estimate.
+```python
+class PlanTask(TaskBase):
+    def clean(self):
+        super().clean()
+        if self.est_qty is None:
+            raise ValidationError({
+                'est_qty': 'Required: every PlanTask must have an estimated quantity.',
+            })
+```
 
-Tasks/PlanTasks with `est_qty = NULL` simply contribute 0 to atom totals. Wizards and line item generation already handle the zero case.
+This is the same two-layer pattern Task uses today for "every Task must have a TaskCharge" (DB allows the missing relationship; `Task.clean()` rejects it). Service-layer paths that create PlanTasks (worksheet add-task, add-from-template, copy-from-worksheet, supersede-worksheet) must supply `est_qty`. Defensive `clean()` catches any code path that forgets.
 
-`PlanTask.rate_scheme` stays `NOT NULL`. `Task.rate_scheme` is `NOT NULL`. Every work item must reference a scheme — that part of 2026-05-02 stands.
+`Task.est_qty` is genuinely optional. A Task created mid-job ("make a phone call to the customer") may have no meaningful estimate; it stays `None` and contributes 0 to atom totals.
+
+`PlanTask.rate_scheme` stays DB-level `NOT NULL`. `Task.rate_scheme` is DB-level `NOT NULL`. Every work item must reference a scheme — that part of 2026-05-02 stands. Only `est_qty` shifts from schema-enforced to code-enforced on the plan side, and only because the Task side needs the column nullable.
+
+### Why not declare `est_qty` separately on each subclass
+
+Considered. The alternative is keeping the field declaration off TaskBase and writing it twice — `NOT NULL` on PlanTask, nullable on Task. That preserves the database-level constraint on PlanTask but duplicates the field declaration and breaks the principle that TaskBase carries the shared work-item shape (which is why `est_worker_time` lives there too). The two-layer (schema + clean()) pattern is already in use on Task today; using it consistently keeps TaskBase cohesive.
 
 ### `actual_qty` semantics
 
@@ -243,7 +254,7 @@ Both flat dropdowns. Templates and rate schemes are not categorized in the picke
 
 - `name`: required (always).
 - `rate_scheme`: required (always; in template mode, locked to the template's scheme).
-- `est_qty`: optional (relaxed from today's hard-required).
+- `est_qty`: **required on the worksheet (plan) side, optional on the job (real) side.** The form enforces this client-side based on context. Server-side, `PlanTask.clean()` rejects null and `Task` accepts it. Today's `RateSchemeFieldset` hard-requires the field everywhere; that gets relaxed for the Task context.
 - `est_worker_time`: optional (new field, no current UI).
 - `active_modifiers`: optional, defaults from template in template mode.
 
@@ -315,7 +326,7 @@ Pre-production: correctness over preservation. The existing dev DB can be hand-f
 - Update `RateScheme.is_referenced()` and `reference_counts()` to query Task instead of TaskCharge.
 - Update `RateScheme.get_actual_qty()` to read `task.actual_qty`.
 - Move `compute_amount` from TaskCharge to Task. Update wizard atom callsites.
-- Relax `PlanTask.est_qty` to nullable (data-only migration; existing PlanTask rows already have non-null values, so no backfill needed).
+- Move `est_qty` field declaration from `PlanTask` to `TaskBase` (nullable). DB-level effect: `PlanTask.est_qty` constraint relaxes from `NOT NULL` to nullable. Existing PlanTask rows already have non-null values, so no data backfill needed. **Add `PlanTask.clean()` enforcement** rejecting null at the application layer — this preserves the worksheet-side requirement without depending on a DB constraint that Task can't honor.
 - Ship the `WorkItemForm.svelte` modal redesign and delete TaskModal / SubtaskModal / PlanTaskModal.
 - Update `TaskTemplate.generate_task` to actually store the `est_qty` argument when the container is a Job.
 - Update `AtomCarryOverService` paths (`_carry_over_plan_tasks`, `_create_task_from_line_item`) to set `est_qty` on Task directly instead of stuffing into actuals.
@@ -332,7 +343,8 @@ Following the project's TDD convention. New / updated tests at minimum:
 - `test_carry_over.py` — `est_qty` carries from PlanTask to Task for all algorithms (not just ENTERED_QTY). `actual_qty` left null on carry-over.
 - `test_task_template_generate_task.py` — `generate_task(job, est_qty)` actually stores the est_qty.
 - `test_invoice_wizard_per_task_atoms.py` — atom is the Task, not the TaskCharge. `InvoiceLineItemSource` points to Task.
-- `test_work_item_form.svelte` (frontend) — template mode pre-fills name/scheme/qty/modifiers from template; manual mode allows free entry; `est_qty` and `est_worker_time` optional; `rate_scheme` always required.
+- `test_plan_task_est_qty_required.py` — `PlanTask.clean()` rejects null `est_qty` (covers worksheet add-task, add-from-template, copy-from-worksheet, supersede). `Task.clean()` accepts null `est_qty`. Confirms the asymmetric application-layer enforcement holds across every PlanTask creation path.
+- `test_work_item_form.svelte` (frontend) — template mode pre-fills name/scheme/qty/modifiers from template; manual mode allows free entry; on a Worksheet context `est_qty` is required (form refuses save), on a Job context it's optional; `est_worker_time` optional in both contexts; `rate_scheme` always required.
 - Migration tests confirm Phase A backfill copies fields correctly and Phase B drops the table without orphaning data.
 
 Detailed test enumeration is the implementation plan's job.
