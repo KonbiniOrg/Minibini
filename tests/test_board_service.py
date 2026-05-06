@@ -47,7 +47,7 @@ class PipelineSubStatusTest(FixtureTestCase):
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'estimating')
 
-    def test_estimate_ready_when_worksheet_final_estimate_draft(self):
+    def test_estimating_when_worksheet_final_estimate_draft(self):
         from apps.jobs.services import BoardService
         job = self._make_job()
         estimate = Estimate.objects.create(
@@ -56,7 +56,7 @@ class PipelineSubStatusTest(FixtureTestCase):
         ws = EstWorksheet.objects.create(job=job, estimate=estimate)
         EstWorksheet.objects.filter(pk=ws.pk).update(status='final')
         result = BoardService.compute_sub_status(job)
-        self.assertEqual(result, 'estimate-ready')
+        self.assertEqual(result, 'estimating')
 
     def test_awaiting_response_when_estimate_open(self):
         from apps.jobs.services import BoardService
@@ -66,6 +66,50 @@ class PipelineSubStatusTest(FixtureTestCase):
         )
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'awaiting-response')
+
+    def test_estimating_when_draft_estimate_no_worksheet(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', status='draft'
+        )
+        result = BoardService.compute_sub_status(job)
+        self.assertEqual(result, 'estimating')
+
+    def test_estimating_when_draft_estimate_with_superseded_sibling(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        old = Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', status='draft'
+        )
+        Estimate.objects.filter(pk=old.pk).update(status='superseded')
+        Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', version=2, status='draft'
+        )
+        result = BoardService.compute_sub_status(job)
+        self.assertEqual(result, 'estimating')
+
+    def test_needs_scoping_when_only_terminal_estimate_no_worksheet(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        est = Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', status='draft'
+        )
+        Estimate.objects.filter(pk=est.pk).update(status='rejected')
+        result = BoardService.compute_sub_status(job)
+        self.assertEqual(result, 'needs-scoping')
+
+    def test_needs_scoping_when_only_terminal_estimate_with_worksheet(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        est = Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', status='draft'
+        )
+        ws = EstWorksheet.objects.create(job=job, estimate=est)
+        EstWorksheet.objects.filter(pk=ws.pk).update(status='final')
+        Estimate.objects.filter(pk=est.pk).update(status='rejected')
+        result = BoardService.compute_sub_status(job)
+        self.assertEqual(result, 'needs-scoping')
 
 
 class ApprovedSubStatusTest(FixtureTestCase):

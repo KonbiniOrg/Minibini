@@ -1063,22 +1063,15 @@ class BoardService:
     def _pipeline_sub_status(job):
         """Sub-status for Draft/Submitted jobs."""
         estimates = job.estimate_set.all()
-        open_estimate = estimates.filter(status='open').first()
-        if open_estimate:
+
+        if estimates.filter(status='open').exists():
             return 'awaiting-response'
 
-        worksheets = job.estworksheet_set.all()
-        if not worksheets.exists():
-            return 'needs-scoping'
-
-        latest_ws = worksheets.order_by('-pk').first()
-        if latest_ws.status == 'draft':
+        if estimates.filter(status='draft').exists():
             return 'estimating'
 
-        if latest_ws.status == 'final':
-            draft_estimate = estimates.filter(status='draft').first()
-            if draft_estimate:
-                return 'estimate-ready'
+        if not estimates.exists() and job.estworksheet_set.exists():
+            return 'estimating'
 
         return 'needs-scoping'
 

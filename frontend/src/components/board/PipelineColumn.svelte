@@ -5,14 +5,23 @@
   let preJobs = $derived(jobs.filter(j => j.status !== 'approved'));
   let approvedJobs = $derived(jobs.filter(j => j.status === 'approved'));
 
+  const ESTIMATE_LABELS = {
+    draft: 'Draft',
+    open: 'Sent',
+    accepted: 'Accepted',
+    rejected: 'Rejected',
+    expired: 'Expired',
+  };
+
   function buildDocs(job) {
     const docs = [];
     if (job.worksheets) {
       for (const ws of job.worksheets) {
+        if (ws.status === 'superseded' || ws.status === 'final') continue;
         docs.push({
           type: 'Worksheet',
-          status: ws.status,
-          statusLabel: ws.status === 'final' ? 'Final' : 'Draft',
+          status: 'draft',
+          statusLabel: 'Draft',
           created_date: ws.created_date,
           total: null,
         });
@@ -20,10 +29,11 @@
     }
     if (job.estimates) {
       for (const est of job.estimates) {
+        if (est.status === 'superseded') continue;
         docs.push({
           type: 'Estimate',
-          status: est.status === 'open' ? 'open' : 'draft',
-          statusLabel: est.status === 'open' ? 'Sent' : 'Draft',
+          status: est.status,
+          statusLabel: ESTIMATE_LABELS[est.status] || est.status,
           created_date: est.created_date,
           total: est.total,
         });
