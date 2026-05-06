@@ -222,6 +222,8 @@ This removes the toggle and makes each path's "first thing you do" obvious. The 
 
 #### `WorkItemForm.svelte` shape
 
+The primary picker — Template in one mode, RateScheme in the other — sits at the top in both modes. The modes are structurally parallel: the top picker drives downstream defaults, name/description follow, modifiers (which depend on the chosen scheme) sit below, then qty and worker-time at the bottom.
+
 ```
 TEMPLATE MODE
 ─────────────
@@ -238,9 +240,9 @@ Estimated worker time   [__h __m]                (NEW input; OPTIONAL)
 
 MANUAL MODE
 ───────────
+Rate scheme *        [ Hourly Labor  ▼ ]
 Name *               [____________________________]
 Description          [____________________________]
-Rate scheme *        [ Hourly Labor  ▼ ]
 Modifiers            ☐ messy  ☐ rush
 Estimated qty        [____]                      (in scheme units; OPTIONAL)
 Estimated worker time   [__h __m]                (OPTIONAL)
@@ -249,6 +251,8 @@ Estimated worker time   [__h __m]                (OPTIONAL)
 ```
 
 Both flat dropdowns. Templates and rate schemes are not categorized in the picker — until the count grows enough to warrant it, the flat list is faster to use.
+
+The Template picker (template mode) and the Rate scheme picker (manual mode) occupy the same top slot — they are the equivalent "primary pick that drives downstream defaults" in their respective modes. Putting them in the same position avoids the user feeling like they're filling out two structurally different forms.
 
 #### Field requirements
 
