@@ -25,10 +25,15 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
             Prefetch(
                 'tasks',
                 queryset=Task.objects.select_related(
-                    'assignee', 'charge__rate_scheme',
-                ).order_by('sort_order'),
+                    'assignee', 'charge__rate_scheme', 'source_plan_task',
+                ).prefetch_related('blep_set').order_by('sort_order'),
             ),
-            Prefetch('materials', queryset=Material.objects.select_related('price_list_item')),
+            Prefetch(
+                'materials',
+                queryset=Material.objects.select_related(
+                    'price_list_item', 'po_line_item__purchase_order',
+                ),
+            ),
             'template__templatetaskassociation_set__task_template',
         ) \
         .all().order_by('-created_date')

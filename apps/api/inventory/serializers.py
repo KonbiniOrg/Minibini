@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from apps.inventory.models import PriceListItem, Material
 from apps.core.units import UnitsField
@@ -29,6 +30,9 @@ class MaterialSerializer(serializers.ModelSerializer):
     po_id = serializers.SerializerMethodField()
     po_number = serializers.SerializerMethodField()
     po_status = serializers.SerializerMethodField()
+    units = serializers.SerializerMethodField()
+    qty_on_order = serializers.SerializerMethodField()
+    qty_on_hand = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
@@ -39,12 +43,14 @@ class MaterialSerializer(serializers.ModelSerializer):
             'consumption_state', 'restocked_qty',
             'is_expense_bound', 'price_list_item_is_inventoried',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
+            'units', 'qty_on_order', 'qty_on_hand',
         ]
         read_only_fields = [
             'material_id', 'job', 'task',
             'consumption_state', 'restocked_qty', 'is_expense_bound',
             'price_list_item_is_inventoried',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
+            'units', 'qty_on_order', 'qty_on_hand',
         ]
 
     def get_price_list_item_is_inventoried(self, obj):
@@ -67,6 +73,25 @@ class MaterialSerializer(serializers.ModelSerializer):
         if obj.po_line_item_id and obj.po_line_item:
             return obj.po_line_item.purchase_order.status
         return None
+
+    def get_units(self, obj):
+        return obj.price_list_item.units if obj.price_list_item_id else 'none'
+
+    def get_qty_on_order(self, obj):
+        if not obj.po_line_item_id:
+            return '0'
+        pol = obj.po_line_item
+        outstanding = pol.qty - pol.qty_received - pol.qty_cancelled
+        return str(max(outstanding, Decimal('0')))
+
+    def get_qty_on_hand(self, obj):
+        if obj.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
+            return '0'
+        if obj.po_line_item_id:
+            return str(obj.po_line_item.qty_received)
+        if obj.price_list_item_id and obj.price_list_item.is_inventoried:
+            return str(obj.quantity)
+        return '0'
 
     def update(self, instance, validated_data):
         allowed = {'description'}

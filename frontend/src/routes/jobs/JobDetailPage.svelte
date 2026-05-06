@@ -96,6 +96,4 @@
     onStatusChange={loadJob}
     onStartWizard={startWizard}
   />
-
-  <p><a href="#/jobs">Back to list</a></p>
 {/if}

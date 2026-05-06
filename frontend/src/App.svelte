@@ -115,6 +115,5 @@
 <style>
   .page-content {
     transition: margin-left 0.25s ease;
-    padding-top: 8px;
   }
 </style>

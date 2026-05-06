@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.jobs.models import Task, TaskCharge
+from apps.jobs.models import Task, TaskCharge, RateScheme
 from apps.inventory.models import Material
 
 
@@ -79,10 +79,34 @@ def _serialize_charge(obj):
     return TaskChargeReadSerializer(charge).data
 
 
+def _actual_hours(task):
+    """Sum of blep durations on this task, in hours."""
+    total_seconds = sum(
+        b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
+    )
+    return round(total_seconds / 3600.0, 2)
+
+
+def _estimated_hours(task):
+    """Estimated hours for this task — only meaningful when the rate scheme is elapsed_time."""
+    if not task.source_plan_task_id:
+        return None
+    try:
+        charge = task.charge
+    except TaskCharge.DoesNotExist:
+        return None
+    if charge.rate_scheme.algorithm != RateScheme.ELAPSED_TIME:
+        return None
+    est = task.source_plan_task.est_qty
+    return float(est) if est is not None else None
+
+
 class TaskSerializer(serializers.ModelSerializer):
     """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
     assignee_name = serializers.SerializerMethodField()
     charge = serializers.SerializerMethodField()
+    actual_hours = serializers.SerializerMethodField()
+    estimated_hours = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -90,7 +114,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
             'parent_task', 'assignee', 'assignee_name', 'worker_queue',
-            'charge',
+            'charge', 'actual_hours', 'estimated_hours',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
@@ -102,6 +126,12 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def get_charge(self, obj):
         return _serialize_charge(obj)
+
+    def get_actual_hours(self, obj):
+        return _actual_hours(obj)
+
+    def get_estimated_hours(self, obj):
+        return _estimated_hours(obj)
 
 
 class TaskDetailSerializer(serializers.ModelSerializer):

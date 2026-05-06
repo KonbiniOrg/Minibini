@@ -1,6 +1,21 @@
+from datetime import timedelta
+from decimal import Decimal
+from django.utils import timezone
 from rest_framework import serializers
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.core.units import UnitsField
+
+
+# Net days for invoice due-date calculation. Hardcoded for now; revisit when
+# PaymentTerms grows a configurable net-days field or a Configuration key is added.
+DEFAULT_INVOICE_NET_DAYS = 30
+
+# Invoice statuses where outstanding balance is owed.
+UNPAID_STATUSES = {
+    Invoice.STATUS_OPEN,
+    Invoice.STATUS_PARTLY_PAID,
+    Invoice.STATUS_DEFAULTED,
+}
 
 
 class InvoiceLineItemSourceSerializer(serializers.Serializer):
@@ -52,6 +67,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
     job_description = serializers.SerializerMethodField()
+    due_date = serializers.SerializerMethodField()
+    is_late = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -61,12 +78,26 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'qbo_id', 'qbo_payment_status', 'qbo_amount_paid',
             'line_items', 'default_send_to',
             'job_number', 'job_name', 'job_description',
+            'due_date', 'is_late',
         ]
         read_only_fields = [
             'invoice_id', 'invoice_number', 'created_date',
             'sent_date', 'closed_date',
             'qbo_id', 'qbo_payment_status', 'qbo_amount_paid',
+            'due_date', 'is_late',
         ]
+
+    def get_due_date(self, obj):
+        if not obj.sent_date:
+            return None
+        due = obj.sent_date + timedelta(days=DEFAULT_INVOICE_NET_DAYS)
+        return due.date().isoformat()
+
+    def get_is_late(self, obj):
+        if not obj.sent_date or obj.status not in UNPAID_STATUSES:
+            return False
+        due = obj.sent_date + timedelta(days=DEFAULT_INVOICE_NET_DAYS)
+        return due < timezone.now()
 
     def get_default_send_to(self, obj):
         """Return the job contact's email for pre-filling Send To."""

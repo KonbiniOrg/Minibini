@@ -6,14 +6,19 @@ from apps.inventory.models import PlanMaterial
 
 
 class PlanMaterialSerializer(serializers.ModelSerializer):
+    units = serializers.SerializerMethodField()
+
     class Meta:
         model = PlanMaterial
         fields = [
             'plan_material_id', 'description', 'quantity',
             'unit_cost', 'sell_price', 'price_list_item',
-            'accounting_category',
+            'accounting_category', 'units',
         ]
         read_only_fields = fields
+
+    def get_units(self, obj):
+        return obj.price_list_item.units if obj.price_list_item_id else 'none'
 
 
 class PlanMaterialWriteSerializer(serializers.ModelSerializer):
@@ -30,18 +35,22 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
 class PlanTaskSerializer(serializers.ModelSerializer):
     plan_materials = PlanMaterialSerializer(many=True, read_only=True)
     amount = serializers.SerializerMethodField()
+    units = serializers.SerializerMethodField()
 
     class Meta:
         model = PlanTask
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
             'rate_scheme', 'active_modifiers', 'est_qty',
-            'amount', 'plan_materials',
+            'amount', 'units', 'plan_materials',
         ]
-        read_only_fields = ['plan_task_id', 'sort_order', 'amount']
+        read_only_fields = ['plan_task_id', 'sort_order', 'amount', 'units']
 
     def get_amount(self, obj):
         return str(obj.compute_amount().quantize(Decimal('0.01')))
+
+    def get_units(self, obj):
+        return obj.rate_scheme.unit_label if obj.rate_scheme_id else ''
 
 
 class PlanMaterialAssignTaskSerializer(serializers.Serializer):
@@ -52,6 +61,7 @@ class PlanMaterialAssignTaskSerializer(serializers.Serializer):
 
 class EstWorksheetSerializer(serializers.ModelSerializer):
     tasks = PlanTaskSerializer(source='plan_tasks', many=True, read_only=True)
+    taskless_materials = serializers.SerializerMethodField()
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
 
@@ -60,9 +70,16 @@ class EstWorksheetSerializer(serializers.ModelSerializer):
         fields = [
             'est_worksheet_id', 'job', 'job_number', 'job_name',
             'template', 'estimate',
-            'status', 'version', 'parent', 'created_date', 'tasks',
+            'status', 'version', 'parent', 'created_date',
+            'tasks', 'taskless_materials',
         ]
         read_only_fields = ['est_worksheet_id', 'created_date', 'status']
+
+    def get_taskless_materials(self, obj):
+        materials = PlanMaterial.objects.filter(
+            est_worksheet=obj, plan_task__isnull=True,
+        )
+        return PlanMaterialSerializer(materials, many=True).data
 
     def get_job_number(self, obj):
         return obj.job.job_number if obj.job_id else None
