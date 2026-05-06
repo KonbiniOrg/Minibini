@@ -399,6 +399,10 @@ Many real shops want milestone tasks ("polish must be done by Tuesday so packagi
 
 Today's flat dropdowns are deliberate per this design. As shops accumulate schemes, grouping by AC or recently-used signal becomes worth the complexity. Revisit if real-world use shows the lists getting long.
 
+### Auto-fill `est_worker_time` when scheme units are hours
+
+When the chosen rate scheme's `unit_label` represents hours, `est_qty` and `est_worker_time` are typically the same number. The form could pre-fill `est_worker_time` from `est_qty` automatically in that case, with the user free to override. Tricky because `unit_label` is a configured value (per `2026-03-30-configurable-units.md`) rather than a hard-coded `"hour"` string — the form would need to know which configured unit, if any, represents hours-worth-of-work. Possible shapes: a dedicated config key (`hours_unit_label`) listing the unit label(s) that mean "hour"; or a flag on the unit definitions themselves marking which is the canonical hour unit. Worth a small design pass on its own when picked up.
+
 ### Multiple kinds of time
 
 Beyond `est_worker_time` (operator attention) and billable qty, a third axis exists for jobs with unattended work: **wall-clock lead time** ("the laser runs for 90 min unattended"). Scheduling that uses both worker-attention capacity and wall-clock-lead-time for due-date promising would want a third estimate field. Not now.
