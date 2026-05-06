@@ -417,6 +417,29 @@ class WorksheetServiceReviseTest(EstimatesTestBase):
         self.assertEqual(new_tasks.count(), 2)
 
 
+class WorksheetServiceDeleteTest(EstimatesTestBase):
+    """Tests for WorksheetService.delete_worksheet."""
+
+    def test_deletes_worksheet_with_no_estimate(self):
+        from apps.estimates.services import WorksheetService
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        ws_pk = ws.pk
+        WorksheetService.delete_worksheet(ws)
+        self.assertFalse(EstWorksheet.objects.filter(pk=ws_pk).exists())
+
+    def test_refuses_when_estimate_linked(self):
+        from apps.estimates.services import WorksheetService, EstimateWizardService
+        from django.core.exceptions import ValidationError
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        EstimateWizardService.open_for_worksheet(ws)
+        ws.refresh_from_db()
+        self.assertIsNotNone(ws.estimate_id)
+        with self.assertRaises(ValidationError):
+            WorksheetService.delete_worksheet(ws)
+        # Worksheet survives
+        self.assertTrue(EstWorksheet.objects.filter(pk=ws.pk).exists())
+
+
 class WorksheetServiceAddTaskTest(EstimatesTestBase):
     """Tests for WorksheetService task-adding methods."""
 

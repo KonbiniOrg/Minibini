@@ -55,6 +55,17 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         except SchemeSupersededError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
 
+    def destroy(self, request, *args, **kwargs):
+        worksheet = self.get_object()
+        try:
+            WorksheetService.delete_worksheet(worksheet)
+        except ValidationError as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({'message': 'Worksheet deleted.'})
+
     def perform_create(self, serializer):
         data = serializer.validated_data
         job = data.get('job')

@@ -45,6 +45,7 @@ class EstimateSerializer(serializers.ModelSerializer):
     )
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
+    worksheet = serializers.SerializerMethodField()
 
     class Meta:
         model = Estimate
@@ -52,7 +53,7 @@ class EstimateSerializer(serializers.ModelSerializer):
             'estimate_id', 'job', 'job_number', 'job_name',
             'estimate_number', 'version', 'status',
             'parent', 'created_date', 'sent_date', 'closed_date',
-            'expiration_date', 'line_items',
+            'expiration_date', 'line_items', 'worksheet',
         ]
         read_only_fields = [
             'estimate_id', 'estimate_number', 'version',
@@ -64,3 +65,7 @@ class EstimateSerializer(serializers.ModelSerializer):
 
     def get_job_name(self, obj):
         return obj.job.name if obj.job_id else ''
+
+    def get_worksheet(self, obj):
+        ws = obj.worksheets.first()
+        return ws.pk if ws else None

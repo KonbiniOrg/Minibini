@@ -355,6 +355,19 @@ class WorksheetService:
         return ws.create_new_version()
 
     @staticmethod
+    def delete_worksheet(worksheet):
+        """Delete a worksheet. Refuses if an estimate is linked — the
+        estimate must be deleted first so its line items and source rows
+        don't outlive the plan_tasks/plan_materials they reference.
+        """
+        if worksheet.estimate_id is not None:
+            raise ValidationError(
+                'Cannot delete a worksheet with an associated estimate. '
+                'Delete the estimate first.'
+            )
+        worksheet.delete()
+
+    @staticmethod
     def add_task_from_template(
         worksheet_pk, template_pk,
         rate_scheme_id=None,
