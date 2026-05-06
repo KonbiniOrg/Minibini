@@ -69,7 +69,7 @@ Cross-model relationship checks:
   Worksheet ver.   E  parent version must be lower than child
                    E  parent must belong to same job
                    W  parent should be 'superseded'
-  EstLineItem/Job  E  PlanCharge/PlanMaterial source row's job must match estimate's job
+  EstLineItem/Job  E  PlanTask/PlanMaterial source row's job must match estimate's job
   PO contact/biz   E  contact's business must match PO's business
   Bill/PO biz      E  bill's business must match linked PO's business
   Earmark/Job      W  earmark on completed/cancelled/rejected job
@@ -628,30 +628,28 @@ class Command(BaseCommand):
                 )
 
     def check_estimate_line_item_job_consistency(self):
-        """EstimateLineItemSource rows must point at atoms (PlanCharge or
-        PlanMaterial) belonging to the same job as the line item's estimate."""
+        """EstimateLineItemSource rows must point at atoms (PlanTask or PlanMaterial)
+        belonging to the same job as the line item's estimate."""
         from apps.estimates.models import EstimateLineItemSource
-        from apps.jobs.models import PlanCharge
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
 
         for source in EstimateLineItemSource.objects.filter(
-            source_type=EstimateLineItemSource.SOURCE_PLAN_CHARGE
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK
         ).select_related('estimate_line_item__estimate__job'):
             try:
-                charge = PlanCharge.objects.select_related(
-                    'plan_task__est_worksheet'
-                ).get(pk=source.source_pk)
-            except PlanCharge.DoesNotExist:
+                pt = PlanTask.objects.select_related('est_worksheet').get(pk=source.source_pk)
+            except PlanTask.DoesNotExist:
                 self.errors.append(
-                    f'EstimateLineItemSource {source.pk}: dangling PlanCharge ref pk={source.source_pk}'
+                    f'EstimateLineItemSource {source.pk}: dangling PlanTask ref pk={source.source_pk}'
                 )
                 continue
-            ws = charge.plan_task.est_worksheet
+            ws = pt.est_worksheet
             li = source.estimate_line_item
             if ws and ws.job_id != li.estimate.job_id:
                 self.errors.append(
                     f'EstimateLineItem {li.pk}: estimate is for job {li.estimate.job_id} '
-                    f'but PlanCharge {source.source_pk} belongs to job {ws.job_id}'
+                    f'but PlanTask {source.source_pk} belongs to job {ws.job_id}'
                 )
 
         for source in EstimateLineItemSource.objects.filter(

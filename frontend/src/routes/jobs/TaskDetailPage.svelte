@@ -285,7 +285,6 @@
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.units || ''}</td></tr>
       <tr><td>Rate</td><td>{task.rate ? `$${task.rate}` : '-'}</td></tr>
-      <tr><td>Accounting category</td><td>{task.accounting_category || '-'}</td></tr>
     </tbody>
   </table>
 

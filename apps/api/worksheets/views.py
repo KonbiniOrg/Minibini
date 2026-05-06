@@ -5,10 +5,13 @@ from rest_framework.response import Response
 from apps.estimates.models import EstWorksheet
 from apps.estimates.services import WorksheetService
 from django.core.exceptions import ValidationError
-from apps.core.services import ServiceError, NotFoundError
+from apps.core.services import ServiceError, NotFoundError, SchemeSupersededError
 from apps.api.mixins import StatusTransitionMixin, PlanTaskMixin
 from apps.api.permissions import CanManageJobs
-from .serializers import EstWorksheetSerializer, PlanTaskSerializer, PlanMaterialWriteSerializer
+from .serializers import (
+    EstWorksheetSerializer, PlanTaskSerializer,
+    PlanMaterialWriteSerializer, PlanMaterialAssignTaskSerializer,
+)
 
 
 class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelViewSet):
@@ -33,11 +36,35 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
     }
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        from django.db.models import Prefetch
+        from apps.jobs.models import PlanTask
+        qs = super().get_queryset().prefetch_related(
+            Prefetch(
+                'plan_tasks',
+                queryset=PlanTask.objects.select_related('rate_scheme').order_by('sort_order'),
+            )
+        )
         job = self.request.query_params.get('job')
         if job:
             qs = qs.filter(job_id=job)
         return qs
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except SchemeSupersededError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
+
+    def destroy(self, request, *args, **kwargs):
+        worksheet = self.get_object()
+        try:
+            WorksheetService.delete_worksheet(worksheet)
+        except ValidationError as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({'message': 'Worksheet deleted.'})
 
     def perform_create(self, serializer):
         data = serializer.validated_data
@@ -77,7 +104,9 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
     def add_from_template(self, request, pk=None):
         worksheet = self.get_object()
         task_template_id = request.data.get('task_template_id')
-        est_qty = request.data.get('est_qty', '1.00')
+        est_qty = request.data.get('est_qty')
+        rate_scheme = request.data.get('rate_scheme')
+        active_modifiers = request.data.get('active_modifiers')
         if not task_template_id:
             return Response(
                 {'task_template_id': ['This field is required.']},
@@ -86,8 +115,18 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         try:
             from decimal import Decimal
             task = WorksheetService.add_task_from_template(
-                worksheet.pk, task_template_id, Decimal(str(est_qty))
+                worksheet.pk,
+                task_template_id,
+                rate_scheme_id=int(rate_scheme) if rate_scheme else None,
+                active_modifiers=active_modifiers,
+                est_qty=(
+                    Decimal(str(est_qty))
+                    if est_qty is not None and est_qty != ''
+                    else None
+                ),
             )
+        except SchemeSupersededError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except (ServiceError, NotFoundError) as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
@@ -139,6 +178,28 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         serializer.save()
         return Response(serializer.data)
 
+    @action(detail=True, methods=['post'],
+            url_path='plan-materials/(?P<mat_id>[0-9]+)/assign-task',
+            url_name='plan-material-assign-task')
+    def plan_material_assign_task(self, request, pk=None, mat_id=None):
+        from apps.inventory.models import PlanMaterial
+        from apps.inventory.services import InventoryService
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from rest_framework.exceptions import NotFound
+        worksheet = self.get_object()
+        try:
+            mat = PlanMaterial.objects.get(pk=mat_id, est_worksheet=worksheet)
+        except PlanMaterial.DoesNotExist:
+            raise NotFound()
+        s = PlanMaterialAssignTaskSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        try:
+            InventoryService.assign_plan_task(mat, s.validated_data['plan_task'])
+        except DjangoValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        mat.refresh_from_db()
+        return Response(PlanMaterialWriteSerializer(mat).data)
+
     @action(detail=True, methods=['post'], url_path='send-all-atoms-to-estimate')
     def send_all_atoms_to_estimate(self, request, pk=None):
         """Bulk 1:1 conversion of unclaimed atoms to EstimateLineItems."""
@@ -153,5 +214,25 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
             'estimate_id': result['estimate'].pk,
             'estimate_number': result['estimate'].estimate_number,
             'created_count': result['created_count'],
+        })
+
+    @action(detail=True, methods=['post'], url_path='open-estimate')
+    def open_estimate(self, request, pk=None):
+        """Return (creating if needed) the worksheet's draft estimate.
+
+        Does NOT auto-claim atoms — used by the "Open wizard to group atoms"
+        button to land in the wizard with a fresh estimate the user can
+        populate manually.
+        """
+        from apps.estimates.services import EstimateWizardService
+
+        worksheet = self.get_object()
+        try:
+            estimate = EstimateWizardService.open_for_worksheet(worksheet)
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
+        return Response({
+            'estimate_id': estimate.pk,
+            'estimate_number': estimate.estimate_number,
         })
 

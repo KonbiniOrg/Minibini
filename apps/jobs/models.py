@@ -132,16 +132,6 @@ class TaskBase(models.Model):
         null=True, blank=True,
         help_text="Estimated worker time for scheduling"
     )
-    units = models.CharField(max_length=50, default='none')
-    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    est_qty = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        help_text="Type of line item this task produces when mapped directly"
-    )
 
     class Meta:
         abstract = True
@@ -156,6 +146,11 @@ class PlanTask(TaskBase):
     est_worksheet = models.ForeignKey(
         'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_tasks'
     )
+    rate_scheme = models.ForeignKey(
+        'jobs.RateScheme', on_delete=models.PROTECT,
+    )
+    active_modifiers = models.JSONField(default=list, blank=True)
+    est_qty = models.DecimalField(max_digits=10, decimal_places=2)
 
     class Meta:
         db_table = 'plan_tasks'
@@ -171,6 +166,29 @@ class PlanTask(TaskBase):
                 self.sort_order = max_order + 1
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def compute_amount(self, active_modifiers=None):
+        """Uniform atom interface: total billable amount for this plan task.
+
+        Ignores the active_modifiers argument (uses self.active_modifiers).
+        Parameter is accepted to match the BillableAtom interface.
+        Returns Decimal('0.00') when rate_scheme or est_qty is unset
+        — i.e., billing not yet configured.
+        """
+        if not self.rate_scheme_id or self.est_qty is None:
+            return Decimal('0.00')
+        return self.rate_scheme.compute_charge(
+            self.est_qty, self.active_modifiers,
+        )
+
+    def effective_rate(self):
+        if not self.rate_scheme_id:
+            return None
+        return self.rate_scheme.effective_rate(self.active_modifiers)
+
+    @property
+    def effective_accounting_category(self):
+        return self.rate_scheme.accounting_category
 
 
 class Task(TaskBase):
@@ -208,12 +226,12 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text="TaskTemplate this task was created from"
     )
-    source_plan_charge = models.OneToOneField(
-        'jobs.PlanCharge',
+    source_plan_task = models.OneToOneField(
+        'jobs.PlanTask',
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='carried_task',
-        help_text="PlanCharge this task was carried over from (carry-over idempotency)"
+        help_text="PlanTask this task was carried over from (carry-over idempotency)",
     )
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
@@ -236,6 +254,9 @@ class Task(TaskBase):
                     raise ValidationError(
                         {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
                     )
+        # Phase B: every Task must have a TaskCharge.
+        if self.pk and not hasattr(self, 'charge'):
+            raise ValidationError({'charge': 'Required: every Task must have a TaskCharge.'})
 
     def save(self, *args, **kwargs):
         from django.db import transaction
@@ -247,6 +268,10 @@ class Task(TaskBase):
                 self.sort_order = max_order + 1
         self.full_clean()
         super().save(*args, **kwargs)
+
+    @property
+    def effective_accounting_category(self):
+        return self.charge.rate_scheme.accounting_category
 
 
 
@@ -302,14 +327,52 @@ class RateScheme(models.Model):
     algorithm = models.CharField(max_length=20, choices=ALGORITHM_CHOICES)
     rate = models.DecimalField(max_digits=10, decimal_places=2)
     unit_label = models.CharField(max_length=50)
-    minimum_charge = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     modifiers = models.JSONField(default=list, blank=True)
     accounting_category = models.ForeignKey(
-        'core.AccountingCategory', on_delete=models.PROTECT, null=True, blank=True,
+        'core.AccountingCategory', on_delete=models.PROTECT,
+    )
+    replaced_by = models.ForeignKey(
+        'self', on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='replaces',
+    )
+    replaced_at = models.DateTimeField(null=True, blank=True)
+
+    # Fields that, once any reference exists, may not be changed
+    # (replaced_by and replaced_at are the only allowed mutations).
+    FROZEN_FIELDS = (
+        'name', 'description', 'algorithm', 'rate', 'unit_label',
+        'modifiers', 'accounting_category',
     )
 
     class Meta:
         db_table = 'rate_schemes'
+
+    def clean(self):
+        super().clean()
+        if self.accounting_category_id is None:
+            from django.core.exceptions import ValidationError
+            raise ValidationError({
+                'accounting_category': 'Required: every RateScheme must have an AccountingCategory.',
+            })
+        if self.pk and self.is_referenced():
+            old = RateScheme.objects.get(pk=self.pk)
+            changed = [
+                f for f in self.FROZEN_FIELDS
+                if getattr(self, f) != getattr(old, f)
+            ]
+            if changed:
+                from django.core.exceptions import ValidationError
+                raise ValidationError({
+                    f: 'Scheme is referenced; create a new version instead of editing.'
+                    for f in changed
+                })
+
+    def save(self, *args, **kwargs):
+        # Belt-and-braces: ensure clean() runs even on bare .save() calls.
+        if self.pk:
+            self.full_clean()
+        super().save(*args, **kwargs)
 
     def effective_rate(self, active_modifiers=None):
         """Compute rate with additive modifier surcharges."""
@@ -320,10 +383,7 @@ class RateScheme(models.Model):
 
     def compute_charge(self, qty, active_modifiers=None):
         """Compute total charge for the given quantity."""
-        total = qty * self.effective_rate(active_modifiers)
-        if self.minimum_charge:
-            total = max(total, self.minimum_charge)
-        return total
+        return qty * self.effective_rate(active_modifiers)
 
     def get_actual_qty(self, task):
         """Resolve actual quantity based on algorithm."""
@@ -333,13 +393,88 @@ class RateScheme(models.Model):
             )
             return Decimal(total_seconds) / 3600
         elif self.algorithm == self.ENTERED_QTY:
-            return task.charge.actuals.get('qty', 0)
+            raw = task.charge.actuals.get('qty', 0)
+            # actuals is JSON; qty may have been stored as int (UI), str (carry-over
+            # preserves Decimal precision through JSON), or Decimal-as-str by other
+            # writers. Normalize to Decimal at the read boundary so callers can do
+            # arithmetic.
+            return Decimal(str(raw))
         else:  # FLAT_FEE
             return Decimal('1')
 
     def get_modifier_inputs(self):
         """Return modifiers list for UI rendering."""
         return list(self.modifiers)
+
+    def is_referenced(self):
+        """True if any PlanTask, TaskCharge, or TaskTemplate points at this scheme."""
+        from apps.estimates.models import TaskTemplate
+        if PlanTask.objects.filter(rate_scheme=self).exists():
+            return True
+        if TaskCharge.objects.filter(rate_scheme=self).exists():
+            return True
+        if TaskTemplate.objects.filter(rate_scheme=self).exists():
+            return True
+        return False
+
+    def reference_counts(self):
+        """Return reference counts for the outdated-schemes UI."""
+        from apps.estimates.models import TaskTemplate
+        return {
+            'plan_task_count': PlanTask.objects.filter(rate_scheme=self).count(),
+            'task_charge_count': TaskCharge.objects.filter(rate_scheme=self).count(),
+            'task_template_count': TaskTemplate.objects.filter(rate_scheme=self).count(),
+        }
+
+    def supersede(self, **overrides):
+        """Create a new RateScheme inheriting this one's fields, set replaced_by/at.
+
+        The old row is renamed in place to "<orig> (v{N})" where N is the count
+        of pre-existing predecessors + 1. The new row takes the original name
+        (or whatever the caller overrides). This preserves the DB-level unique
+        constraint on `name` without needing a partial-unique index.
+        """
+        from django.db import transaction
+        from django.utils import timezone
+
+        if self.replaced_by is not None:
+            raise ValueError('Cannot supersede an already-superseded scheme.')
+
+        # Count predecessors (the chain leading to self). Each scheme has at
+        # most one direct replacement, so the chain is linear.
+        version = 1
+        pred = self.replaces.first()
+        while pred is not None:
+            version += 1
+            pred = pred.replaces.first()
+        retired_name = f'{self.name} (v{version})'
+
+        defaults = {
+            'name': self.name,
+            'description': self.description,
+            'algorithm': self.algorithm,
+            'rate': self.rate,
+            'unit_label': self.unit_label,
+            'modifiers': list(self.modifiers),
+            'accounting_category': self.accounting_category,
+        }
+        defaults.update(overrides)
+
+        with transaction.atomic():
+            # Rename old first to free the unique name slot for the new row.
+            # update() bypasses full_clean(), which is what we want — `name`
+            # is in FROZEN_FIELDS, but renaming during supersede is the one
+            # exception, alongside replaced_by/replaced_at.
+            RateScheme.objects.filter(pk=self.pk).update(name=retired_name)
+            self.name = retired_name  # keep the in-memory instance in sync
+            new = RateScheme.objects.create(**defaults)
+            replaced_at = timezone.now()
+            RateScheme.objects.filter(pk=self.pk).update(
+                replaced_by=new, replaced_at=replaced_at,
+            )
+            self.replaced_by = new
+            self.replaced_at = replaced_at
+        return new
 
     def __str__(self):
         return self.name
@@ -382,30 +517,3 @@ class TaskCharge(models.Model):
         return True  # elapsed_time and flat_fee don't need manual entry
 
 
-class PlanCharge(models.Model):
-    """Same shape as TaskCharge but for PlanTask (worksheet/estimate stage). No actuals."""
-    plan_charge_id = models.AutoField(primary_key=True)
-    plan_task = models.OneToOneField(PlanTask, on_delete=models.CASCADE, related_name='charge')
-    rate_scheme = models.ForeignKey(RateScheme, on_delete=models.PROTECT)
-    active_modifiers = models.JSONField(default=list, blank=True)
-    estimated_billable_qty = models.DecimalField(max_digits=10, decimal_places=2)
-
-    class Meta:
-        db_table = 'plan_charges'
-
-    def __str__(self):
-        return f"Charge for {self.plan_task}"
-
-    def compute(self):
-        return self.rate_scheme.compute_charge(self.estimated_billable_qty, self.active_modifiers)
-
-    def compute_amount(self, active_modifiers=None):
-        """Uniform atom interface: total billable amount for this charge.
-
-        Ignores the active_modifiers argument (uses self.active_modifiers).
-        Parameter is accepted to match the BillableAtom interface.
-        """
-        return self.compute()
-
-    def effective_rate(self):
-        return self.rate_scheme.effective_rate(self.active_modifiers)

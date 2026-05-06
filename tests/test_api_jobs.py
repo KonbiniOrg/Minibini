@@ -6,7 +6,7 @@ from django.test import TestCase
 from tests.base import BaseTestCase
 from apps.core.models import User, HistoryEntry, AccountingCategory
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (
     EstWorksheet, WorkTemplate, TaskTemplate,
     TemplateTaskAssociation,
@@ -149,6 +149,12 @@ class JobTaskSubResourceTest(TestCase):
         self.job = Job.objects.create(
             job_number='C2-T-001', name='Task Job', contact=self.contact,
         )
+        from apps.jobs.models import RateScheme
+        ac = AccountingCategory.objects.create(code='JT-AC', name='Job Task AC')
+        self.scheme = RateScheme.objects.create(
+            name='Job Task Scheme', algorithm='flat_fee',
+            rate=Decimal('25.00'), unit_label='ea', accounting_category=ac,
+        )
 
     def test_list_tasks_on_job(self):
         Task.objects.create(job=self.job, name='First task')
@@ -160,16 +166,21 @@ class JobTaskSubResourceTest(TestCase):
     def test_create_task_on_job(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/tasks/',
-            {'name': 'New task', 'units': 'hours', 'rate': '25.00', 'est_qty': '3.00'},
+            {'name': 'New task', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data['name'], 'New task')
         t = Task.objects.get(pk=response.data['task_id'])
         self.assertEqual(t.job_id, self.job.pk)
+        # TaskCharge created in same transaction
+        self.assertTrue(hasattr(t, 'charge'))
+        self.assertEqual(t.charge.rate_scheme_id, self.scheme.pk)
 
     def test_update_task_on_job(self):
+        from apps.jobs.models import TaskCharge
         task = Task.objects.create(job=self.job, name='Original')
+        TaskCharge.objects.create(task=task, rate_scheme=self.scheme)
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'Renamed'},
@@ -363,9 +374,13 @@ class JobPopulateFromTemplateTest(TestCase):
             template_name='Kitchen', is_active=True,
         )
         cat = AccountingCategory.objects.create(name='Labor')
+        self.scheme = RateScheme.objects.create(
+            name='S-poptpl', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=cat,
+        )
         self.task_template = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,
-            units='each', rate=100, accounting_category=cat,
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
@@ -426,10 +441,16 @@ class JobCopyFromWorksheetTest(TestCase):
             job_number='C2-CW-001', name='CW Job', contact=self.contact,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        ac = AccountingCategory.objects.create(code='CWAJ-AC', name='cwaj-ac')
+        self.scheme = RateScheme.objects.create(
+            name='S-cwaj', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build cabinet',
-            units='each', rate=200, est_qty=1,
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet,
@@ -482,6 +503,7 @@ class JobReorderTasksTest(TestCase):
     """Phase C2: POST /api/jobs/{id}/reorder-tasks/."""
 
     def setUp(self):
+        from apps.jobs.models import TaskCharge
         self.client = APIClient()
         self.user = _make_admin('reord_admin')
         self.client.force_authenticate(user=self.user)
@@ -489,9 +511,17 @@ class JobReorderTasksTest(TestCase):
         self.job = Job.objects.create(
             job_number='C2-R-001', name='R Job', contact=self.contact,
         )
+        ac = AccountingCategory.objects.create(code='REORD-AC', name='reord-ac')
+        self.scheme = RateScheme.objects.create(
+            name='S-reord', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         self.a = Task.objects.create(job=self.job, name='A', sort_order=0)
         self.b = Task.objects.create(job=self.job, name='B', sort_order=1)
         self.c = Task.objects.create(job=self.job, name='C', sort_order=2)
+        TaskCharge.objects.create(task=self.a, rate_scheme=self.scheme)
+        TaskCharge.objects.create(task=self.b, rate_scheme=self.scheme)
+        TaskCharge.objects.create(task=self.c, rate_scheme=self.scheme)
 
     def test_reorder_down(self):
         response = self.client.post(
@@ -543,12 +573,17 @@ class JobAddFromTemplateTest(TestCase):
         self.job = Job.objects.create(
             job_number='C2-AFT-001', name='AFT Job', contact=self.contact,
         )
+        ac = AccountingCategory.objects.create(code='AFT-AC', name='aft-ac')
+        self.scheme = RateScheme.objects.create(
+            name='S-aft', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         self.template = TaskTemplate.objects.create(
             template_name='Paint room',
             description='Paint all walls',
-            units='sqft',
-            rate=Decimal('2.50'),
             is_active=True,
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_add_from_template_success(self):

@@ -4,6 +4,7 @@ from django.db import IntegrityError
 from django.utils import timezone
 from tests.base import BaseTestCase
 from apps.jobs.models import Task, PlanTask, RateScheme, Blep
+from apps.core.models import AccountingCategory
 
 
 class TaskChargeModelTest(BaseTestCase):
@@ -12,6 +13,7 @@ class TaskChargeModelTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.task = Task.objects.get(pk=1)
+        self.ac = AccountingCategory.objects.get(pk=901)
         self.modifiers = [
             {'key': 'messy', 'label': 'Messy job', 'percent': 10},
             {'key': 'doublestick', 'label': 'Double-stick tape', 'percent': 5},
@@ -22,6 +24,7 @@ class TaskChargeModelTest(BaseTestCase):
             rate=Decimal('4.00'),
             unit_label='sq ft',
             modifiers=self.modifiers,
+            accounting_category=self.ac,
         )
 
     def test_create_task_charge(self):
@@ -112,6 +115,19 @@ class TaskChargeModelTest(BaseTestCase):
         task = Task.objects.get(pk=self.task.pk)
         self.assertEqual(task.charge.actuals, {'qty': 42})
 
+    def test_get_actual_qty_returns_decimal_when_actuals_qty_is_string(self):
+        """Carry-over stores qty as str(Decimal); compute() must still work."""
+        from apps.jobs.models import TaskCharge
+        charge = TaskCharge.objects.create(
+            task=self.task,
+            rate_scheme=self.scheme,
+            active_modifiers=[],
+            actuals={'qty': '2.5'},  # string, not number — what carry-over writes
+        )
+        # The bug: compute() raised TypeError before the fix because
+        # str * Decimal is invalid.
+        self.assertEqual(charge.compute(), Decimal('10.00'))  # 2.5 × $4.00
+
 
 class TaskChargeElapsedTimeTest(BaseTestCase):
     """Test compute() for elapsed_time algorithm via real Bleps."""
@@ -119,11 +135,13 @@ class TaskChargeElapsedTimeTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.task = Task.objects.get(pk=1)
+        self.ac = AccountingCategory.objects.get(pk=901)
         self.scheme = RateScheme.objects.create(
             name='Labor Rate',
             algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('45.00'),
             unit_label='hour',
+            accounting_category=self.ac,
         )
         # Create 2 Bleps totaling 2 hours
         now = timezone.now()
@@ -159,11 +177,13 @@ class TaskChargeFlatFeeTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.task = Task.objects.get(pk=1)
+        self.ac = AccountingCategory.objects.get(pk=901)
         self.scheme = RateScheme.objects.create(
             name='Setup Fee',
             algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('50.00'),
             unit_label='job',
+            accounting_category=self.ac,
         )
 
     def test_flat_fee_compute(self):
@@ -190,65 +210,22 @@ class TaskChargeFlatFeeTest(BaseTestCase):
         self.assertTrue(charge.has_actuals())
 
 
-class PlanChargeModelTest(BaseTestCase):
-    """Test PlanCharge model."""
+
+class EstWorkerTimeTest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.modifiers = [
-            {'key': 'messy', 'label': 'Messy job', 'percent': 10},
-        ]
-        self.scheme = RateScheme.objects.create(
-            name='Vinyl Application Plan',
-            algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('4.00'),
-            unit_label='sq ft',
-            modifiers=self.modifiers,
+        from apps.jobs.models import TaskCharge
+        ac = AccountingCategory.objects.get(pk=901)
+        scheme = RateScheme.objects.create(
+            name='EWT scheme', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1.00'), unit_label='ea',
+            accounting_category=ac,
         )
-        # Find a PlanTask from fixtures; skip if none exist
-        self.plan_task = PlanTask.objects.first()
-        if self.plan_task is None:
-            self.skipTest("No PlanTask in fixtures")
-
-    def test_create_plan_charge(self):
-        from apps.jobs.models import PlanCharge
-        charge = PlanCharge.objects.create(
-            plan_task=self.plan_task,
-            rate_scheme=self.scheme,
-            active_modifiers=['messy'],
-            estimated_billable_qty=Decimal('30'),
+        TaskCharge.objects.get_or_create(
+            task=Task.objects.get(pk=1),
+            defaults={'rate_scheme': scheme, 'active_modifiers': [], 'actuals': {}},
         )
-        self.assertEqual(charge.plan_task, self.plan_task)
-        self.assertEqual(charge.rate_scheme, self.scheme)
-        self.assertEqual(charge.active_modifiers, ['messy'])
-        self.assertEqual(charge.estimated_billable_qty, Decimal('30'))
-
-    def test_plan_charge_compute(self):
-        """30 sq ft × $4.40 effective (with messy +10%) = $132"""
-        from apps.jobs.models import PlanCharge
-        charge = PlanCharge.objects.create(
-            plan_task=self.plan_task,
-            rate_scheme=self.scheme,
-            active_modifiers=['messy'],
-            estimated_billable_qty=Decimal('30'),
-        )
-        result = charge.compute()
-        self.assertEqual(result, Decimal('132.00'))
-
-    def test_plan_charge_effective_rate(self):
-        """With messy modifier: $4.00 + 10% = $4.40"""
-        from apps.jobs.models import PlanCharge
-        charge = PlanCharge.objects.create(
-            plan_task=self.plan_task,
-            rate_scheme=self.scheme,
-            active_modifiers=['messy'],
-            estimated_billable_qty=Decimal('30'),
-        )
-        result = charge.effective_rate()
-        self.assertEqual(result, Decimal('4.40'))
-
-
-class EstWorkerTimeTest(BaseTestCase):
 
     def test_task_has_est_worker_time(self):
         task = Task.objects.get(pk=1)

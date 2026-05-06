@@ -41,3 +41,23 @@ class WorksheetAPITest(BaseTestCase):
         if ws:
             response = self.client.post(f'/api/est-worksheets/{ws.pk}/revise/')
             self.assertEqual(response.status_code, 200)
+
+    def test_delete_worksheet_without_estimate(self):
+        job = Job.objects.first()
+        ws = EstWorksheet.objects.create(job=job)
+        response = self.client.delete(f'/api/est-worksheets/{ws.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('message', response.json())
+        self.assertFalse(EstWorksheet.objects.filter(pk=ws.pk).exists())
+
+    def test_delete_worksheet_refused_when_estimate_linked(self):
+        from apps.estimates.services import EstimateWizardService
+        job = Job.objects.first()
+        ws = EstWorksheet.objects.create(job=job)
+        EstimateWizardService.open_for_worksheet(ws)
+        ws.refresh_from_db()
+        self.assertIsNotNone(ws.estimate_id)
+        response = self.client.delete(f'/api/est-worksheets/{ws.pk}/')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('detail', response.json())
+        self.assertTrue(EstWorksheet.objects.filter(pk=ws.pk).exists())

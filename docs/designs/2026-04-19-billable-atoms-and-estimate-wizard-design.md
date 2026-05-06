@@ -223,3 +223,11 @@ Existing Jobs in `approved` status remain in `approved` (no automatic move to `i
 - A separate "LineItem catalog." Not needed — the existing two catalogs (TaskTemplate, PriceListItem) feed both atoms and line items via the shared catalog picker.
 - **Adding a `TaskTemplate ↔ TemplateMaterial` association** so a TaskTemplate can carry default attached materials. Future capability; deferred. When added, the picker behavior in line-item context will be: produce one combined `EstimateLineItem` (description aggregates task + material; price = task amount + material amount; `source_template` preserved). Carry-over to Job at acceptance reconstructs the proper Task + Material atoms with their association intact via the source_template.
 - Including `WorkTemplate` in the catalog picker. WorkTemplates remain a separate worksheet-creation tool; that UX path is unchanged.
+
+## Implementation delta — 2026-05-01
+
+`PlanCharge` was merged into `PlanTask`. The OneToOne split was gratuitous on the
+plan side (no `actuals` analog, no per-charge lifecycle), and the dual-create
+pattern was the proximate cause of plan tasks being invisible to the wizard
+source pool. `Task` / `TaskCharge` remain split on the real side because
+`TaskCharge.actuals` legitimately needs its own home.

@@ -31,8 +31,6 @@ def _build_container_items_from_associations(associations):
             'id': assoc.pk,
             'name': assoc.task_template.template_name,
             'description': assoc.task_template.description,
-            'units': assoc.task_template.units,
-            'rate': assoc.task_template.rate,
             'est_qty': assoc.est_qty,
             'remove_id': assoc.task_template.template_id,
             'sort_order': assoc.sort_order,
@@ -63,9 +61,6 @@ def _build_container_items_from_tasks(worksheet):
             'id': task.plan_task_id,
             'name': task.name,
             'description': task.description,
-            'units': task.units,
-            'rate': task.rate,
-            'est_qty': task.est_qty,
             'remove_id': task.plan_task_id,
             'sort_order': task.sort_order or 0,
             'detail_url': reverse('jobs:task_detail', args=[task.plan_task_id]),
@@ -269,10 +264,8 @@ def estworksheet_detail(request, worksheet_id):
     container_items = _build_container_items_from_tasks(worksheet)
 
     # Calculate total cost from all tasks
-    all_tasks = PlanTask.objects.filter(est_worksheet=worksheet)
-    total_cost = sum(
-        (t.rate * t.est_qty) for t in all_tasks if t.rate and t.est_qty
-    )
+    all_tasks = PlanTask.objects.filter(est_worksheet=worksheet).select_related('rate_scheme')
+    total_cost = sum(t.compute_amount() for t in all_tasks)
 
     return render(request, 'jobs/estworksheet_detail.html', {
         'worksheet': worksheet,
@@ -420,7 +413,8 @@ def task_add_from_template(request, worksheet_id):
             est_qty = form.cleaned_data['est_qty']
 
             task = WorksheetService.add_task_from_template(
-                worksheet.pk, template.pk, est_qty=est_qty,
+                worksheet.pk, template.pk,
+                est_qty=est_qty,
             )
 
             messages.success(request, f'Task "{task.name}" added from template')

@@ -215,8 +215,15 @@ class ComprehensiveModelIntegrationTest(TestCase):
             job=job,
             name="Planning Task",
         )
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='S-cmtw', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
         task_template = TaskTemplate.objects.create(
-            template_name="Planning Task Template"
+            template_name="Planning Task Template",
+            rate_scheme=scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
         self.assertEqual(task.job, job)
@@ -378,11 +385,19 @@ class LineItemValidationTest(TestCase):
         )
         # EstimateLineItem.task targets PlanTask, not Task
         from apps.estimates.models import EstWorksheet
-        from apps.jobs.models import PlanTask
+        from apps.jobs.models import PlanTask, RateScheme
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.cm_ac = AccountingCategory.objects.create(code='CM-AC', name='cm-ac')
+        self.cm_scheme = RateScheme.objects.create(
+            name='S-cm', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea',
+            accounting_category=self.cm_ac,
+        )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name="Plan Test Task",
+            rate_scheme=self.cm_scheme,
+            est_qty=Decimal('1'),
         )
 
         # Create price list item

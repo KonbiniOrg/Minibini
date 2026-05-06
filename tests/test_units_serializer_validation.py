@@ -14,27 +14,11 @@ class TaskSerializerUnitsValidationTest(BaseTestCase):
         self.user = User.objects.filter(is_superuser=True).first()
         self.client.force_authenticate(user=self.user)
 
-    def test_create_task_with_valid_unit(self):
-        job = Job.objects.first()
-        if not job:
-            self.skipTest('No job in fixture')
-        response = self.client.post(
-            f'/api/jobs/{job.pk}/tasks/',
-            {'name': 'Test Task', 'units': 'hours'},
-            format='json',
-        )
-        self.assertIn(response.status_code, [200, 201])
-
-    def test_create_task_with_invalid_unit(self):
-        job = Job.objects.first()
-        if not job:
-            self.skipTest('No job in fixture')
-        response = self.client.post(
-            f'/api/jobs/{job.pk}/tasks/',
-            {'name': 'Test Task', 'units': 'invalid_xyz'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
+    # NOTE: Task serializer no longer carries a `units` field — billing identity
+    # (units, rate, accounting category) lives on RateScheme via TaskCharge after
+    # the rate-scheme-billing-identity migration. Unit validation for Tasks is
+    # therefore not tested here. Unit validation for TaskTemplate (which still
+    # has a `units` field on the templates side) remains below.
 
     def test_task_template_serializer_rejects_invalid_unit(self):
         response = self.client.post(

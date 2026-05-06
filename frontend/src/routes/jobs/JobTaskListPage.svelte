@@ -1,5 +1,5 @@
 <script>
-  import { link } from 'svelte-spa-router';
+  import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import TaskTree from '../../components/TaskTree.svelte';
@@ -43,9 +43,17 @@
   const canManageJobs = $derived(
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
+  const canManageFinancials = $derived(
+    $userStore?.permissions?.includes('can_manage_financials') ?? false
+  );
 
   const jobLocked = $derived(
     job && ['completed', 'cancelled', 'rejected'].includes(job.status)
+  );
+
+  const canBuildInvoice = $derived(
+    (canManageJobs || canManageFinancials) &&
+    job && ['approved', 'work_complete', 'completed'].includes(job.status)
   );
 
   async function loadJob() {
@@ -283,6 +291,15 @@
     }
   }
 
+  async function startInvoiceWizard() {
+    try {
+      const { invoice_id } = await api.post(`/api/jobs/${job.job_id}/start-invoice-wizard/`);
+      push(`/invoices/${invoice_id}/wizard`);
+    } catch (e) {
+      alert(e.message || 'Failed to start invoice wizard.');
+    }
+  }
+
   // Mark all work complete
   async function handleWorkComplete() {
     if (!confirm('Mark all work complete on this job?')) return;
@@ -326,6 +343,9 @@
     <div class="action-bar">
       <button type="button" onclick={openAddTask}>Add Task</button>
       <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+      {#if canBuildInvoice}
+        <button type="button" onclick={startInvoiceWizard}>Open invoice wizard</button>
+      {/if}
     </div>
   {/if}
 

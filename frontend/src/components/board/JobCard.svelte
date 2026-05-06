@@ -4,7 +4,6 @@
   const SUB_STATUS_STYLES = {
     'needs-scoping':     { bg: '#f1f5f9', color: '#64748b' },
     'estimating':        { bg: '#dbeafe', color: '#2563eb' },
-    'estimate-ready':    { bg: '#e0e7ff', color: '#4338ca' },
     'awaiting-response': { bg: '#fef3c7', color: '#b45309' },
     'awaiting-prep':     { bg: '#fef9c3', color: '#854d0e' },
     'needs-tasks':       { bg: '#dcfce7', color: '#15803d' },
@@ -15,19 +14,14 @@
     'invoice-sent':      { bg: '#fce7f3', color: '#be185d' },
     'needs-invoice':     { bg: '#f1f5f9', color: '#64748b' },
     'completed':         { bg: '#f3e8ff', color: '#7c3aed' },
-    'rejected':          { bg: '#fee2e2', color: '#b91c1c' },
-    'cancelled':         { bg: '#f1f5f9', color: '#64748b' },
   };
 
   const BORDER_COLORS = {
     'needs-scoping': '#64748b',
     'estimating': '#2563eb',
-    'estimate-ready': '#4338ca',
     'awaiting-response': '#b45309',
     'awaiting-prep': '#ca8a04',
     'completed': '#7c3aed',
-    'rejected': '#b91c1c',
-    'cancelled': '#64748b',
   };
 
   function pillLabel(subStatus) {
@@ -65,11 +59,7 @@
     }
     if (!job.due_date) return '';
     const due = new Date(job.due_date);
-    const now = new Date();
-    if (due < now) {
-      return `Overdue — was ${due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-    }
-    return `Due ${due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    return `Due: ${due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
   }
 
   function formatDate(isoDate) {
@@ -84,8 +74,10 @@
 
   const DOC_PILL_STYLES = {
     'draft': 'doc-pill-draft',
-    'final': 'doc-pill-final',
     'open': 'doc-pill-open',
+    'accepted': 'doc-pill-accepted',
+    'rejected': 'doc-pill-rejected',
+    'expired': 'doc-pill-expired',
   };
 </script>
 
@@ -102,11 +94,15 @@
             <a class="card-customer" href="#/contacts/{job.contact_id}">{job.contact_name}</a>
           {/if}
         </div>
-        {#if !showProgress && (job.sub_status || job.status)}
-          <span class="card-substatus" style={pillStyle(job.sub_status)}>{pillLabel(job.sub_status)}</span>
-        {/if}
-        {#if deadlineText()}
-          <div class="card-deadline {deadlineClass()}">{deadlineText()}</div>
+        {#if (!showProgress && (job.sub_status || job.status)) || deadlineText()}
+          <div class="card-status-row">
+            {#if !showProgress && (job.sub_status || job.status)}
+              <span class="card-substatus" style={pillStyle(job.sub_status)}>{pillLabel(job.sub_status)}</span>
+            {/if}
+            {#if deadlineText()}
+              <div class="card-deadline {deadlineClass()}">{deadlineText()}</div>
+            {/if}
+          </div>
         {/if}
       </div>
     </div>
@@ -173,8 +169,9 @@
   .card-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
   .card-customer { font-size: 11px; color: #2563eb; text-decoration: none; }
   .card-customer:hover { text-decoration: underline; }
-  .card-substatus { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; display: inline-block; margin-top: 4px; }
-  .card-deadline { font-size: 11px; color: #888; margin-top: 4px; }
+  .card-status-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .card-substatus { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; display: inline-block; }
+  .card-deadline { font-size: 11px; color: #888; margin-left: auto; }
   .card-deadline.overdue { color: #dc2626; font-weight: 600; }
   .card-deadline.soon { color: #d97706; }
 
@@ -185,8 +182,10 @@
   .doc-type { font-weight: 600; color: #555; min-width: 62px; }
   .doc-pill { font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
   .doc-pill-draft { background: #f1f5f9; color: #64748b; }
-  .doc-pill-final { background: #dcfce7; color: #15803d; }
   .doc-pill-open { background: #fef3c7; color: #b45309; }
+  .doc-pill-accepted { background: #dcfce7; color: #15803d; }
+  .doc-pill-rejected { background: #fee2e2; color: #b91c1c; }
+  .doc-pill-expired { background: #f1f5f9; color: #64748b; }
   .doc-date { font-size: 10px; color: #999; }
   .doc-amount { margin-left: auto; font-weight: 600; font-family: 'SF Mono', 'Fira Code', monospace; color: #333; }
 

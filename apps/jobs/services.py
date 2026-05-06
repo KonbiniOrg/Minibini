@@ -12,7 +12,7 @@ from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme, TaskCharge
 from apps.estimates.models import (
     Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
@@ -334,24 +334,17 @@ class JobService:
                 job=job,
                 name=plan_task.name,
                 description=plan_task.description,
-                units=plan_task.units,
-                rate=plan_task.rate,
-                est_qty=plan_task.est_qty,
-                accounting_category=plan_task.accounting_category,
                 sort_order=plan_task.sort_order,
             )
-            # Copy PlanCharge → TaskCharge if one exists
-            from apps.jobs.models import PlanCharge, TaskCharge
-            try:
-                plan_charge = plan_task.charge
+            # Copy PlanTask billing fields → TaskCharge if billing is configured
+            from apps.jobs.models import TaskCharge
+            if plan_task.rate_scheme_id:
                 TaskCharge.objects.create(
                     task=new_task,
-                    rate_scheme=plan_charge.rate_scheme,
-                    active_modifiers=plan_charge.active_modifiers,
+                    rate_scheme=plan_task.rate_scheme,
+                    active_modifiers=list(plan_task.active_modifiers or []),
                     actuals={},
                 )
-            except PlanCharge.DoesNotExist:
-                pass
             for pm in plan_task.plan_materials.all():
                 MaterialService.create_on_job(
                     job=job, task=new_task,
@@ -383,27 +376,52 @@ class TaskService:
     @staticmethod
     def create_from_template(template, job, assignee=None):
         """
-        Create Task from TaskTemplate.
+        Create Task from TaskTemplate. Creates a TaskCharge transactionally.
         """
+        from apps.core.services import SchemeSupersededError
+
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
-
-        task = Task.objects.create(
-            job=job,
-            accounting_category=template.accounting_category,
-            name=template.template_name,
-            assignee=assignee
-        )
+        if template.rate_scheme_id and template.rate_scheme.replaced_by_id is not None:
+            raise SchemeSupersededError(
+                f'Template "{template.template_name}" references a superseded RateScheme.'
+            )
+        if not template.rate_scheme_id:
+            raise ValidationError(
+                f'Template "{template.template_name}" has no rate_scheme.'
+            )
+        with transaction.atomic():
+            task = Task.objects.create(
+                job=job,
+                name=template.template_name,
+                assignee=assignee,
+            )
+            TaskCharge.objects.create(
+                task=task,
+                rate_scheme=template.rate_scheme,
+                active_modifiers=list(template.default_active_modifiers or []),
+            )
         return task
 
     @staticmethod
-    def create_direct(job, name, **kwargs):
-        """Create Task directly."""
-        return Task.objects.create(
-            job=job,
-            name=name,
-            **kwargs
-        )
+    def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
+                      actuals=None, **task_fields):
+        """Create Task directly. Requires rate_scheme_id and creates a TaskCharge transactionally."""
+        if not rate_scheme_id:
+            raise ValidationError({'rate_scheme': 'Required.'})
+        scheme = RateScheme.objects.get(pk=rate_scheme_id)
+        if scheme.replaced_by_id is not None:
+            raise ValidationError(
+                {'rate_scheme': 'Selected RateScheme is superseded.'}
+            )
+        with transaction.atomic():
+            task = Task.objects.create(job=job, name=name, **task_fields)
+            TaskCharge.objects.create(
+                task=task, rate_scheme=scheme,
+                active_modifiers=active_modifiers or [],
+                actuals=actuals or {},
+            )
+        return task
 
     @staticmethod
     def update_task(pk, **kwargs):
@@ -954,18 +972,22 @@ class BoardService:
             total=models.Sum(models.F('qty') * models.F('price'))
         )['total'] or Decimal('0.00')
 
-        # TODO: Replace task.rate / 2 with actual User.pay_rate once that
+        # TODO: Replace charge rate / 2 with actual User.pay_rate once that
         # field exists. Using half the billing rate as a temporary proxy.
         labor_cost = Decimal('0.00')
         bleps = Blep.objects.filter(
             task__job=job,
             start_time__isnull=False,
             end_time__isnull=False,
-        ).select_related('task')
+        ).select_related('task__charge__rate_scheme')
         for blep in bleps:
-            if blep.task.rate:
+            try:
+                rate = blep.task.charge.rate_scheme.rate
+            except (TaskCharge.DoesNotExist, AttributeError):
+                rate = None
+            if rate:
                 elapsed_hours = Decimal(str(blep.elapsed.total_seconds() / 3600))
-                labor_cost += elapsed_hours * (blep.task.rate / 2)
+                labor_cost += elapsed_hours * (rate / 2)
 
         spent = material_cost + labor_cost
         return {'billed': billed, 'spent': spent, 'profit': billed - spent}
@@ -1041,22 +1063,15 @@ class BoardService:
     def _pipeline_sub_status(job):
         """Sub-status for Draft/Submitted jobs."""
         estimates = job.estimate_set.all()
-        open_estimate = estimates.filter(status='open').first()
-        if open_estimate:
+
+        if estimates.filter(status='open').exists():
             return 'awaiting-response'
 
-        worksheets = job.estworksheet_set.all()
-        if not worksheets.exists():
-            return 'needs-scoping'
-
-        latest_ws = worksheets.order_by('-pk').first()
-        if latest_ws.status == 'draft':
+        if estimates.filter(status='draft').exists():
             return 'estimating'
 
-        if latest_ws.status == 'final':
-            draft_estimate = estimates.filter(status='draft').first()
-            if draft_estimate:
-                return 'estimate-ready'
+        if not estimates.exists() and job.estworksheet_set.exists():
+            return 'estimating'
 
         return 'needs-scoping'
 

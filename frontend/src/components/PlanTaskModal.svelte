@@ -1,6 +1,6 @@
 <script>
   import { api } from '../lib/api.js';
-  import UnitsSelect from './UnitsSelect.svelte';
+  import RateSchemeFieldset from './RateSchemeFieldset.svelte';
 
   let {
     open = false,
@@ -8,22 +8,17 @@
     task = null,
     worksheetId = null,
     templates = [],
-    categories = [],
     onSaved = () => {},
     onClose = () => {},
   } = $props();
 
-  let createMode = $state('freeform'); // 'freeform' | 'template'
+  let createMode = $state('freeform');
   let name = $state('');
   let description = $state('');
-  let units = $state('none');
-  let rate = $state('');
-  let estQty = $state('');
-  let accountingCategory = $state('');
   let templateId = $state('');
-  let freeformSchemeId = $state('');
-  let activeModifiers = $state([]);
-  let schemes = $state([]);
+  let rateSchemeId = $state(task?.rate_scheme ?? '');
+  let activeModifiers = $state(task?.active_modifiers ?? []);
+  let estQty = $state(task?.est_qty ?? '');
   let busy = $state(false);
   let error = $state('');
 
@@ -33,48 +28,25 @@
         createMode = 'freeform';
         name = task.name || '';
         description = task.description || '';
-        units = task.units || 'none';
-        rate = task.rate ?? '';
+        rateSchemeId = task.rate_scheme ?? '';
+        activeModifiers = [...(task.active_modifiers || [])];
         estQty = task.est_qty ?? '';
-        accountingCategory = task.accounting_category ?? '';
         templateId = '';
-        freeformSchemeId = '';
-        activeModifiers = [];
       } else if (mode === 'create-template') {
         createMode = 'template';
-        name = '';
-        description = '';
-        units = 'none';
-        rate = '';
-        estQty = '';
-        accountingCategory = '';
-        templateId = '';
-        freeformSchemeId = '';
-        activeModifiers = [];
+        resetFields();
       } else {
         createMode = 'freeform';
-        name = '';
-        description = '';
-        units = 'none';
-        rate = '';
-        estQty = '';
-        accountingCategory = '';
-        templateId = '';
-        freeformSchemeId = '';
-        activeModifiers = [];
+        resetFields();
       }
       error = '';
-      loadSchemes();
     }
   });
 
-  async function loadSchemes() {
-    try {
-      const data = await api.get('/api/rate-schemes/');
-      schemes = data.results ?? data;
-    } catch (e) {
-      // non-fatal: scheme features just won't show
-    }
+  function resetFields() {
+    name = ''; description = '';
+    rateSchemeId = ''; estQty = '';
+    activeModifiers = []; templateId = '';
   }
 
   const isEdit = $derived(mode === 'edit');
@@ -84,89 +56,46 @@
     templates.find(t => String(t.template_id) === String(templateId)) || null
   );
 
-  const selectedScheme = $derived.by(() => {
-    if (createMode === 'template' && selectedTemplate?.rate_scheme) {
-      return schemes.find(s => s.rate_scheme_id === selectedTemplate.rate_scheme) || null;
-    }
-    if (createMode === 'freeform' && freeformSchemeId) {
-      return schemes.find(s => s.rate_scheme_id === Number(freeformSchemeId)) || null;
-    }
-    return null;
-  });
-
-  const chargePreview = $derived.by(() => {
-    if (!selectedScheme || !estQty) return null;
-    const rate_val = Number(selectedScheme.rate);
-    const modifiers = selectedScheme.modifiers || [];
-    const modPct = modifiers
-      .filter(m => activeModifiers.includes(m.key))
-      .reduce((sum, m) => sum + m.percent, 0);
-    const effRate = rate_val * (1 + modPct / 100);
-    return (Number(estQty) * effRate).toFixed(2);
-  });
-
-  // When template selection changes, pre-fill modifiers and qty
   $effect(() => {
     if (selectedTemplate) {
       activeModifiers = [...(selectedTemplate.default_active_modifiers || [])];
       if (selectedTemplate.default_billable_qty && !estQty) {
         estQty = selectedTemplate.default_billable_qty;
       }
+      // Always sync rateSchemeId to the selected template's scheme so the
+      // fieldset's modifier list and summary reflect the *current* template.
+      // Without this, switching to a different template would leave the
+      // previous template's scheme stuck and the user would toggle modifiers
+      // that don't belong to the scheme the API will actually use.
+      rateSchemeId = selectedTemplate.rate_scheme ?? '';
     }
   });
-
-  function toggleModifier(key) {
-    if (activeModifiers.includes(key)) {
-      activeModifiers = activeModifiers.filter(k => k !== key);
-    } else {
-      activeModifiers = [...activeModifiers, key];
-    }
-  }
 
   async function save() {
     busy = true;
     error = '';
     try {
+      const payload = {
+        name,
+        description,
+        rate_scheme: rateSchemeId,
+        active_modifiers: activeModifiers,
+        est_qty: estQty,
+      };
       if (isEdit && task) {
-        await api.patch(`/api/est-worksheets/${worksheetId}/tasks/${task.plan_task_id}/`, {
-          name, description, units,
-          rate: rate || null,
-          est_qty: estQty || null,
-          accounting_category: accountingCategory || null,
-        });
+        await api.patch(
+          `/api/est-worksheets/${worksheetId}/tasks/${task.plan_task_id}/`,
+          payload,
+        );
       } else if (createMode === 'template') {
         if (!templateId) { error = 'Please select a template.'; busy = false; return; }
-        const created = await api.post(`/api/est-worksheets/${worksheetId}/add-from-template/`, {
+        await api.post(`/api/est-worksheets/${worksheetId}/add-from-template/`, {
           task_template_id: Number(templateId),
-          est_qty: estQty || null,
+          est_qty: estQty,
+          active_modifiers: activeModifiers,
         });
-        if (selectedScheme && created?.plan_task_id) {
-          await api.post(
-            `/api/est-worksheets/${worksheetId}/plan-tasks/${created.plan_task_id}/charge/`,
-            {
-              rate_scheme: selectedScheme.rate_scheme_id,
-              active_modifiers: activeModifiers,
-              estimated_billable_qty: estQty || '1.00',
-            }
-          );
-        }
       } else {
-        const created = await api.post(`/api/est-worksheets/${worksheetId}/tasks/`, {
-          name, description, units,
-          rate: rate || null,
-          est_qty: estQty || null,
-          accounting_category: accountingCategory || null,
-        });
-        if (selectedScheme && created?.plan_task_id) {
-          await api.post(
-            `/api/est-worksheets/${worksheetId}/plan-tasks/${created.plan_task_id}/charge/`,
-            {
-              rate_scheme: selectedScheme.rate_scheme_id,
-              active_modifiers: activeModifiers,
-              estimated_billable_qty: estQty || '1.00',
-            }
-          );
-        }
+        await api.post(`/api/est-worksheets/${worksheetId}/tasks/`, payload);
       }
       onSaved();
     } catch (e) {
@@ -190,12 +119,8 @@
 
       {#if !isEdit}
         <div class="mode-toggle">
-          <label>
-            <input type="radio" bind:group={createMode} value="freeform"> Freeform
-          </label>
-          <label>
-            <input type="radio" bind:group={createMode} value="template"> From Template
-          </label>
+          <label><input type="radio" bind:group={createMode} value="freeform"> Freeform</label>
+          <label><input type="radio" bind:group={createMode} value="template"> From Template</label>
         </div>
       {/if}
 
@@ -210,30 +135,6 @@
             </select>
           </label>
         </p>
-        <p>
-          <label><strong>Estimated Quantity</strong><br>
-            <input type="number" step="0.01" bind:value={estQty}>
-          </label>
-        </p>
-        {#if selectedScheme}
-          <p><strong>{selectedScheme.name}</strong> — ${selectedScheme.rate}/{selectedScheme.unit_label}</p>
-          {#if (selectedScheme.modifiers || []).length > 0}
-            <fieldset>
-              <legend><strong>Modifiers</strong></legend>
-              {#each selectedScheme.modifiers as mod}
-                <label>
-                  <input type="checkbox"
-                    checked={activeModifiers.includes(mod.key)}
-                    onchange={() => toggleModifier(mod.key)}>
-                  {mod.label} (+{mod.percent}%)
-                </label><br>
-              {/each}
-            </fieldset>
-          {/if}
-          {#if chargePreview !== null}
-            <p><strong>Estimated charge:</strong> ${chargePreview}</p>
-          {/if}
-        {/if}
       {:else}
         <p>
           <label><strong>Name *</strong><br>
@@ -245,63 +146,14 @@
             <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
           </label>
         </p>
-        <p>
-          <label><strong>Units</strong><br>
-            <UnitsSelect bind:value={units} />
-          </label>
-        </p>
-        <p>
-          <label><strong>Rate</strong><br>
-            <input type="number" step="0.01" bind:value={rate}>
-          </label>
-        </p>
-        <p>
-          <label><strong>Estimated Quantity</strong><br>
-            <input type="number" step="0.01" bind:value={estQty}>
-          </label>
-        </p>
-        <p>
-          <label><strong>Accounting Category</strong><br>
-            <select bind:value={accountingCategory}>
-              <option value="">-- None --</option>
-              {#each categories as cat}
-                <option value={cat.id}>{cat.code} — {cat.name}</option>
-              {/each}
-            </select>
-          </label>
-        </p>
-        {#if !isEdit && schemes.length > 0}
-          <p>
-            <label><strong>Rate Scheme</strong><br>
-              <select bind:value={freeformSchemeId}>
-                <option value="">-- None --</option>
-                {#each schemes as scheme}
-                  <option value={scheme.rate_scheme_id}>{scheme.name}</option>
-                {/each}
-              </select>
-            </label>
-          </p>
-          {#if selectedScheme}
-            <p><strong>{selectedScheme.name}</strong> — ${selectedScheme.rate}/{selectedScheme.unit_label}</p>
-            {#if (selectedScheme.modifiers || []).length > 0}
-              <fieldset>
-                <legend><strong>Modifiers</strong></legend>
-                {#each selectedScheme.modifiers as mod}
-                  <label>
-                    <input type="checkbox"
-                      checked={activeModifiers.includes(mod.key)}
-                      onchange={() => toggleModifier(mod.key)}>
-                    {mod.label} (+{mod.percent}%)
-                  </label><br>
-                {/each}
-              </fieldset>
-            {/if}
-            {#if chargePreview !== null}
-              <p><strong>Estimated charge:</strong> ${chargePreview}</p>
-            {/if}
-          {/if}
-        {/if}
       {/if}
+
+      <RateSchemeFieldset
+        bind:rateSchemeId
+        bind:activeModifiers
+        bind:estQty
+        lockSchemeChoice={createMode === 'template' && !isEdit}
+      />
 
       <div class="buttons">
         <button type="button" onclick={save} disabled={busy}>Save</button>

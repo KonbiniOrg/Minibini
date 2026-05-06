@@ -6,7 +6,7 @@ from apps.core.models import AccountingCategory, Configuration
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import PlanMaterial
-from apps.jobs.models import Job, PlanCharge, PlanTask, RateScheme, Task
+from apps.jobs.models import Job, PlanTask, RateScheme, Task
 
 
 class CarryOverSignalTest(TestCase):
@@ -28,12 +28,8 @@ class CarryOverSignalTest(TestCase):
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Setup', units='hours',
-            est_qty=Decimal('2'), accounting_category=self.cat,
-        )
-        self.pc = PlanCharge.objects.create(
-            plan_task=self.pt, rate_scheme=self.scheme,
-            estimated_billable_qty=Decimal('2'),
+            est_worksheet=self.ws, name='Setup',
+            rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
         EstimateLineItem.objects.create(

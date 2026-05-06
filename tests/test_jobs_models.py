@@ -4,10 +4,19 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from datetime import timedelta
 from decimal import Decimal
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import Estimate, EstWorksheet, WorkTemplate, TaskTemplate
 from apps.contacts.models import Contact
-from apps.core.models import User
+from apps.core.models import User, AccountingCategory
+
+
+def _make_scheme(suffix):
+    """Helper: create a minimal RateScheme + AccountingCategory for tests."""
+    ac = AccountingCategory.objects.create(code=f'JM-{suffix}', name=f'jm-{suffix}')
+    return RateScheme.objects.create(
+        name=f'S-jm-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class JobModelTest(TestCase):
@@ -345,38 +354,6 @@ class TaskModelTest(TestCase):
         self.assertIsNone(task.parent_task)
         self.assertIsNone(task.assignee)
 
-    def test_task_new_fields(self):
-        task = Task.objects.create(
-            job=self.job,
-            name="Labor Task",
-            units="hours",
-            rate=Decimal('75.50'),
-            est_qty=Decimal('8.00')
-        )
-        self.assertEqual(task.units, "hours")
-        self.assertEqual(task.rate, Decimal('75.50'))
-        self.assertEqual(task.est_qty, Decimal('8.00'))
-
-    def test_task_new_fields_optional(self):
-        task = Task.objects.create(
-            job=self.job,
-            name="Simple Task"
-        )
-        self.assertEqual(task.units, "none")
-        self.assertIsNone(task.rate)
-        self.assertIsNone(task.est_qty)
-
-    def test_task_calculated_total(self):
-        task = Task.objects.create(
-            job=self.job,
-            name="Material Task",
-            units="sheets",
-            rate=Decimal('45.00'),
-            est_qty=Decimal('10.00')
-        )
-        expected_total = task.rate * task.est_qty if task.rate and task.est_qty else Decimal('0.00')
-        self.assertEqual(expected_total, Decimal('450.00'))
-
     def test_task_requires_job(self):
         """Task.job is non-nullable. Creating without job raises."""
         with self.assertRaises(Exception):  # ValidationError (full_clean in save) or IntegrityError
@@ -485,14 +462,15 @@ class TaskTemplateModelTest(TestCase):
         self.work_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
         )
+        self.scheme = _make_scheme('ttm')
 
     def test_task_template_creation(self):
         template = TaskTemplate.objects.create(
             template_name="Electrical Installation",
             description="Standard electrical installation task",
-            units="ea",
-            rate=Decimal('45.00'),
-            is_active=True
+            is_active=True,
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
         from apps.estimates.models import TemplateTaskAssociation
@@ -504,8 +482,6 @@ class TaskTemplateModelTest(TestCase):
 
         self.assertEqual(template.template_name, "Electrical Installation")
         self.assertEqual(template.description, "Standard electrical installation task")
-        self.assertEqual(template.units, "ea")
-        self.assertEqual(template.rate, Decimal('45.00'))
         self.assertIn(self.work_template, template.work_templates.all())
         self.assertEqual(association.est_qty, Decimal('12.00'))
         self.assertTrue(template.is_active)
@@ -513,56 +489,57 @@ class TaskTemplateModelTest(TestCase):
 
     def test_task_template_str_method(self):
         template = TaskTemplate.objects.create(
-            template_name="Plumbing Setup"
+            template_name="Plumbing Setup",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(str(template), "Plumbing Setup")
 
     def test_task_template_defaults(self):
         template = TaskTemplate.objects.create(
-            template_name="Default Template"
+            template_name="Default Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertTrue(template.is_active)
         self.assertEqual(template.description, "")
-        self.assertEqual(template.units, "none")
-        self.assertIsNone(template.rate)
         self.assertEqual(template.work_templates.count(), 0)
 
     def test_task_template_new_fields_optional(self):
         template = TaskTemplate.objects.create(
-            template_name="Simple Template"
+            template_name="Simple Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
-        self.assertEqual(template.units, "none")
-        self.assertIsNone(template.rate)
-
-    def test_task_template_pricing_calculation(self):
-        template = TaskTemplate.objects.create(
-            template_name="Material Template",
-            units="sq ft",
-            rate=Decimal('15.25')
-        )
-
-        from apps.estimates.models import TemplateTaskAssociation
-        association = TemplateTaskAssociation.objects.create(
-            work_template=self.work_template,
-            task_template=template,
-            est_qty=Decimal('200.00')
-        )
-
-        estimated_cost = template.rate * association.est_qty if template.rate and association.est_qty else Decimal('0.00')
-        self.assertEqual(estimated_cost, Decimal('3050.00'))
+        # units/rate dropped from TaskTemplate; billing now lives on rate_scheme
+        self.assertEqual(template.rate_scheme, self.scheme)
 
     def test_task_template_without_work_template(self):
         template = TaskTemplate.objects.create(
-            template_name="Standalone Template"
+            template_name="Standalone Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(template.work_templates.count(), 0)
 
     def test_template_task_association_sort_order(self):
         from apps.estimates.models import TemplateTaskAssociation
 
-        task_template1 = TaskTemplate.objects.create(template_name="First Task")
-        task_template2 = TaskTemplate.objects.create(template_name="Second Task")
-        task_template3 = TaskTemplate.objects.create(template_name="Third Task")
+        task_template1 = TaskTemplate.objects.create(
+            template_name="First Task",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
+        task_template2 = TaskTemplate.objects.create(
+            template_name="Second Task",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
+        task_template3 = TaskTemplate.objects.create(
+            template_name="Third Task",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
 
         TemplateTaskAssociation.objects.create(
             work_template=self.work_template,
@@ -602,7 +579,9 @@ class TaskTemplateModelTest(TestCase):
         task_templates = []
         for i in range(5):
             template = TaskTemplate.objects.create(
-                template_name=f"Task {i+1}"
+                template_name=f"Task {i+1}",
+                rate_scheme=self.scheme,
+                default_billable_qty=Decimal('1.00'),
             )
             task_templates.append(template)
 

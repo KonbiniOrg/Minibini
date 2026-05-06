@@ -2,7 +2,6 @@ from rest_framework import serializers
 
 from apps.jobs.models import Task, TaskCharge
 from apps.inventory.models import Material
-from apps.core.units import UnitsField
 
 
 class MaterialSerializer(serializers.ModelSerializer):
@@ -71,17 +70,27 @@ class TaskChargeReadSerializer(serializers.ModelSerializer):
             return None
 
 
+def _serialize_charge(obj):
+    """Return nested TaskCharge data for a Task, or None if absent."""
+    try:
+        charge = obj.charge
+    except TaskCharge.DoesNotExist:
+        return None
+    return TaskChargeReadSerializer(charge).data
+
+
 class TaskSerializer(serializers.ModelSerializer):
     """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
     assignee_name = serializers.SerializerMethodField()
-    units = UnitsField()
+    charge = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
         fields = [
             'task_id', 'name', 'description', 'sort_order', 'status',
-            'blocked_reason', 'units', 'rate', 'est_qty', 'accounting_category',
+            'blocked_reason',
             'parent_task', 'assignee', 'assignee_name', 'worker_queue',
+            'charge',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
@@ -91,10 +100,12 @@ class TaskSerializer(serializers.ModelSerializer):
             return name if name else obj.assignee.username
         return None
 
+    def get_charge(self, obj):
+        return _serialize_charge(obj)
+
 
 class TaskDetailSerializer(serializers.ModelSerializer):
     assignee_name = serializers.SerializerMethodField()
-    units = UnitsField()
     job = serializers.SerializerMethodField()
     charge = serializers.SerializerMethodField()
 
@@ -102,7 +113,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
         model = Task
         fields = [
             'task_id', 'name', 'description', 'status',
-            'blocked_reason', 'units', 'rate', 'est_qty', 'accounting_category',
+            'blocked_reason',
             'parent_task', 'assignee', 'assignee_name',
             'worker_queue', 'job', 'charge',
         ]
@@ -123,8 +134,4 @@ class TaskDetailSerializer(serializers.ModelSerializer):
         }
 
     def get_charge(self, obj):
-        try:
-            charge = obj.charge
-        except TaskCharge.DoesNotExist:
-            return None
-        return TaskChargeReadSerializer(charge).data
+        return _serialize_charge(obj)

@@ -8,13 +8,22 @@ InventoryService.create_earmarks_for_job().
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
     TaskTemplate, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
 from apps.jobs.services import JobService
+
+
+def _make_scheme(suffix):
+    from apps.core.models import AccountingCategory
+    ac = AccountingCategory.objects.create(code=f'AEM-{suffix}', name=f'aem-{suffix}')
+    return RateScheme.objects.create(
+        name=f'S-aem-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class EarmarkOnCopyFromWorksheetTest(TestCase):
@@ -49,9 +58,11 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
             is_inventoried=True, accounting_category=self.category,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.scheme = _make_scheme('cfw')
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build cabinets', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_earmarks_created_on_copy_from_worksheet(self):
@@ -84,6 +95,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
         plan_task_b = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install trim', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,
@@ -134,12 +146,13 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         )
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.create(name='Labor')
+        scheme = _make_scheme('eoct')
         self.template = WorkTemplate.objects.create(
             template_name='Quick', is_active=True,
         )
         tt = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,
-            units='each', rate=100, accounting_category=cat,
+            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
@@ -177,9 +190,11 @@ class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, estimate=self.estimate, version=1,
         )
+        self.eanc_scheme = _make_scheme('eanc')
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build stuff', sort_order=1,
+            rate_scheme=self.eanc_scheme, est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,

@@ -3,7 +3,7 @@
 
   let templates = $state([]);
   let schemes = $state([]);
-  let categories = $state([]);
+  let allSchemes = $state([]);
   let loading = $state(true);
   let error = $state('');
   let editingId = $state(null);
@@ -15,7 +15,7 @@
     return {
       template_name: '', description: '', rate_scheme: '',
       default_active_modifiers: [], default_billable_qty: '',
-      accounting_category: '', is_active: true,
+      is_active: true,
     };
   }
 
@@ -23,14 +23,14 @@
     loading = true;
     error = '';
     try {
-      const [tmplResp, schemeResp, catResp] = await Promise.all([
+      const [tmplResp, schemeResp, allSchemeResp] = await Promise.all([
         api.get('/api/task-templates/'),
         api.get('/api/rate-schemes/'),
-        api.get('/api/accounting-categories/'),
+        api.get('/api/rate-schemes/?include_superseded=true'),
       ]);
       templates = tmplResp.results || tmplResp;
       schemes = schemeResp.results || schemeResp;
-      categories = catResp.results || catResp;
+      allSchemes = allSchemeResp.results || allSchemeResp;
     } catch (e) {
       error = e.message || 'Could not load.';
     } finally {
@@ -41,6 +41,15 @@
   const selectedScheme = $derived(
     schemes.find(s => s.rate_scheme_id === Number(form.rate_scheme)) || null
   );
+
+  function schemeFor(id) {
+    return allSchemes.find(s => s.rate_scheme_id === id);
+  }
+
+  function isSuperseded(template) {
+    const s = schemeFor(template.rate_scheme);
+    return !!(s && s.superseded);
+  }
 
   function startCreate() {
     form = emptyForm();
@@ -55,7 +64,6 @@
       rate_scheme: tmpl.rate_scheme || '',
       default_active_modifiers: [...(tmpl.default_active_modifiers || [])],
       default_billable_qty: tmpl.default_billable_qty || '',
-      accounting_category: tmpl.accounting_category || '',
       is_active: tmpl.is_active,
     };
     editingId = tmpl.template_id;
@@ -82,7 +90,6 @@
         rate_scheme: form.rate_scheme || null,
         default_active_modifiers: form.default_active_modifiers,
         default_billable_qty: form.default_billable_qty || null,
-        accounting_category: form.accounting_category || null,
         is_active: form.is_active,
       };
       if (editingId === 'new') {
@@ -130,10 +137,15 @@
     </thead>
     <tbody>
       {#each templates as t (t.template_id)}
-        {@const scheme = schemes.find(s => s.rate_scheme_id === t.rate_scheme)}
+        {@const scheme = schemeFor(t.rate_scheme)}
         <tr>
           <td>{t.template_name}</td>
-          <td>{scheme ? scheme.name : '—'}</td>
+          <td>
+            {scheme ? scheme.name : '—'}
+            {#if isSuperseded(t)}
+              <br><strong style="color:#a8071a">WARNING: Scheme is superseded — update before next use</strong>
+            {/if}
+          </td>
           <td>{t.default_billable_qty || '—'}</td>
           <td>{t.is_active ? 'Yes' : 'No'}</td>
           <td>
@@ -184,15 +196,6 @@
         <input type="number" step="0.01" bind:value={form.default_billable_qty}>
       </label></p>
     {/if}
-
-    <p><label><strong>Accounting Category</strong><br>
-      <select bind:value={form.accounting_category}>
-        <option value="">-- None --</option>
-        {#each categories as cat (cat.id)}
-          <option value={cat.id}>{cat.code} — {cat.name}</option>
-        {/each}
-      </select>
-    </label></p>
 
     <p><label>
       <input type="checkbox" bind:checked={form.is_active}> Active

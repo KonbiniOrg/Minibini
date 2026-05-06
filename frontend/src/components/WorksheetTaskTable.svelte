@@ -8,6 +8,8 @@
     onAddMaterial = () => {},
     onEditMaterial = () => {},
     onDeleteMaterial = () => {},
+    onMoveMaterial = () => {},
+    selectedTaskId = $bindable(null),
   } = $props();
 
   const tasks = $derived(
@@ -17,9 +19,7 @@
   );
 
   function taskTotal(task) {
-    const qty = Number(task.est_qty) || 0;
-    const rate = Number(task.rate) || 0;
-    return qty * rate;
+    return Number(task.amount) || 0;
   }
 
   function materialTotal(mat) {
@@ -47,10 +47,9 @@
 <table border="1" class="ws-task-table">
   <thead>
     <tr>
+      {#if !readonly}<th>Move target</th>{/if}
       <th>Name / Description</th>
-      <th class="text-right">Units</th>
       <th class="text-right">Qty</th>
-      <th class="text-right">Rate</th>
       <th class="text-right">Total</th>
       {#if !readonly}<th>Actions</th>{/if}
     </tr>
@@ -58,10 +57,11 @@
   <tbody>
     {#each tasks as task, i}
       <tr class="task-row">
+        {#if !readonly}
+          <td class="move-cell"><input type="radio" name="ws-move-target" value={task.plan_task_id} bind:group={selectedTaskId}></td>
+        {/if}
         <td>{task.name}{#if task.description}<br><span class="dim">{task.description}</span>{/if}</td>
-        <td class="text-right">{task.units || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
-        <td class="text-right">{fmt(task.rate)}</td>
         <td class="text-right">{fmt(taskTotal(task))}</td>
         {#if !readonly}
           <td class="actions-cell">
@@ -75,15 +75,17 @@
       </tr>
       {#each (task.plan_materials || []) as mat}
         <tr class="material-row">
+          {#if !readonly}
+            <td class="move-cell">{#if selectedTaskId != null && selectedTaskId !== (task.plan_task_id ?? null)}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
+          {/if}
           <td class="indent"><span class="material-marker">&#9679;</span> {mat.description || '(no description)'}</td>
-          <td class="text-right">-</td>
           <td class="text-right">{mat.quantity ?? '-'}</td>
-          <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
           {#if !readonly}
             <td class="actions-cell">
               <button type="button" onclick={() => onEditMaterial(mat, task)}>edit</button>
               <button type="button" onclick={() => onDeleteMaterial(mat, task)}>del</button>
+              <button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>
             </td>
           {/if}
         </tr>
@@ -92,7 +94,8 @@
   </tbody>
   <tfoot>
     <tr class="grand-total-row">
-      <td colspan="4" class="text-right"><strong>Grand Total</strong></td>
+      {#if !readonly}<td></td>{/if}
+      <td colspan="2" class="text-right"><strong>Grand Total</strong></td>
       <td class="text-right"><strong>{fmt(grandTotal)}</strong></td>
       {#if !readonly}<td></td>{/if}
     </tr>
@@ -117,4 +120,10 @@
   }
   .actions-cell button:hover { background: #f0f0f0; }
   .actions-cell button:disabled { opacity: 0.4; cursor: default; }
+  .move-cell { text-align: center; width: 90px; }
+  .small-btn {
+    font-size: 11px; padding: 2px 6px;
+    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
+  }
+  .small-btn:hover { background: #f0f0f0; }
 </style>

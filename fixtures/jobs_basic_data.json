@@ -39,12 +39,8 @@
             "assignee": 2,
             "job": 1,
             "name": "Kitchen demolition",
-            "units": "hours",
-            "rate": "75.00",
-            "est_qty": "8.00",
             "description": "",
-            "sort_order": null,
-            "accounting_category": null
+            "sort_order": null
         }
     },
     {
@@ -54,12 +50,8 @@
             "assignee": 2,
             "job": 1,
             "name": "Electrical rough-in",
-            "units": "ln ft",
-            "rate": "12.50",
-            "est_qty": "150.00",
             "description": "",
-            "sort_order": null,
-            "accounting_category": null
+            "sort_order": null
         }
     },
     {

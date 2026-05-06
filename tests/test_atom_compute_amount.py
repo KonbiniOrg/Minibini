@@ -5,7 +5,8 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import Material, PlanMaterial
-from apps.jobs.models import Job
+from apps.jobs.models import Job, RateScheme
+from tests.base import FixtureTestCase
 
 
 class MaterialComputeAmountTest(TestCase):
@@ -43,7 +44,7 @@ class MaterialComputeAmountTest(TestCase):
 
 
 from apps.jobs.models import (
-    Blep, PlanCharge, PlanTask, RateScheme, Task, TaskCharge,
+    Blep, PlanTask, RateScheme, Task, TaskCharge,
 )
 from django.utils import timezone
 from datetime import timedelta
@@ -72,7 +73,7 @@ class TaskChargeComputeAmountTest(TestCase):
         )
 
     def test_task_charge_elapsed_time(self):
-        task = Task.objects.create(job=self.job, name='t', units='hours')
+        task = Task.objects.create(job=self.job, name='t')
         TaskCharge.objects.create(task=task, rate_scheme=self.scheme_time)
         now = timezone.now()
         Blep.objects.create(task=task, start_time=now - timedelta(hours=2), end_time=now)
@@ -80,7 +81,7 @@ class TaskChargeComputeAmountTest(TestCase):
         self.assertEqual(task.charge.compute_amount(), Decimal('200.00'))
 
     def test_task_charge_entered_qty(self):
-        task = Task.objects.create(job=self.job, name='t', units='item')
+        task = Task.objects.create(job=self.job, name='t')
         TaskCharge.objects.create(
             task=task, rate_scheme=self.scheme_qty, actuals={'qty': 3},
         )
@@ -88,34 +89,37 @@ class TaskChargeComputeAmountTest(TestCase):
         self.assertEqual(task.charge.compute_amount(), Decimal('150.00'))
 
     def test_task_charge_flat_fee(self):
-        task = Task.objects.create(job=self.job, name='t', units='each')
+        task = Task.objects.create(job=self.job, name='t')
         TaskCharge.objects.create(task=task, rate_scheme=self.scheme_flat)
         self.assertEqual(task.charge.compute_amount(), Decimal('250.00'))
 
 
-class PlanChargeComputeAmountTest(TestCase):
-    def setUp(self):
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
-        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
-        self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
-        )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
-        self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
-        )
 
-    def test_plan_charge_uses_estimated_qty(self):
+class PlanTaskComputeAmountTests(FixtureTestCase):
+    def setUp(self):
+        super().setUp()
+        job = Job.objects.first()
+        self.ws = EstWorksheet.objects.create(job=job)
+
+    def test_compute_amount_with_scheme(self):
+        from apps.core.models import AccountingCategory
+        ac = AccountingCategory.objects.first()
+        scheme = RateScheme.objects.create(
+            name='Test Hourly', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('60.00'), unit_label='hour',
+            accounting_category=ac,
+        )
         pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='setup', units='hours',
-            est_qty=Decimal('2'), accounting_category=self.cat,
+            est_worksheet=self.ws, name='Test',
+            rate_scheme=scheme,
+            active_modifiers=[],
+            est_qty=Decimal('2.5'),
         )
-        PlanCharge.objects.create(
-            plan_task=pt, rate_scheme=self.scheme,
-            estimated_billable_qty=Decimal('2'),
-        )
-        # 2 hours × $100 = $200
-        self.assertEqual(pt.charge.compute_amount(), Decimal('200.00'))
+        self.assertEqual(pt.compute_amount(), Decimal('150.00'))
+
+    def test_compute_amount_without_scheme_returns_zero(self):
+        # Build an unsaved instance — DB+full_clean now forbid persisting
+        # a PlanTask without rate_scheme/est_qty, but the helper still has
+        # a guard for the in-memory case.
+        pt = PlanTask(est_worksheet=self.ws, name='Bare')
+        self.assertEqual(pt.compute_amount(), Decimal('0.00'))

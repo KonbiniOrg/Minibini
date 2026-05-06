@@ -3,18 +3,14 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.core.models import Configuration, AccountingCategory
-from apps.core.units import UnitsField
 from apps.inventory.models import TemplateMaterial
 
 
 class TaskTemplateSerializer(serializers.ModelSerializer):
-    units = UnitsField()
-
     class Meta:
         model = TaskTemplate
         fields = [
-            'template_id', 'template_name', 'description',
-            'units', 'rate', 'accounting_category', 'is_active',
+            'template_id', 'template_name', 'description', 'is_active',
             'rate_scheme', 'default_active_modifiers', 'default_billable_qty',
         ]
         read_only_fields = ['template_id']

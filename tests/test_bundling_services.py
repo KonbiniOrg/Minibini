@@ -7,7 +7,7 @@ from apps.estimates.models import (
     EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.estimates.services import WorkTemplateService, WorksheetService
-from apps.jobs.models import Job, PlanTask
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.jobs.services import JobService
 from apps.core.services import NotFoundError, BundlingService
 from apps.core.models import AccountingCategory
@@ -41,12 +41,22 @@ class ReorderServiceTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
 
     def test_unbundled_only_swap(self):
         """Simple swap with no bundles present."""
-        a = PlanTask.objects.create(est_worksheet=self.ws, name='A', sort_order=1)
-        b = PlanTask.objects.create(est_worksheet=self.ws, name='B', sort_order=2)
-        c = PlanTask.objects.create(est_worksheet=self.ws, name='C', sort_order=3)
+        a = PlanTask.objects.create(
+            est_worksheet=self.ws, name='A', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        b = PlanTask.objects.create(
+            est_worksheet=self.ws, name='B', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        c = PlanTask.objects.create(
+            est_worksheet=self.ws, name='C', sort_order=3,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
 
         items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
         BundlingService.reorder_container_items(
@@ -61,7 +71,10 @@ class ReorderServiceTest(BundlingTestBase):
 
     def test_cannot_move_past_boundary(self):
         """Moving beyond boundaries raises ValidationError."""
-        t1 = PlanTask.objects.create(est_worksheet=self.ws, name='Only', sort_order=1)
+        t1 = PlanTask.objects.create(
+            est_worksheet=self.ws, name='Only', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
         items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
         with self.assertRaises(ValidationError):
             BundlingService.reorder_container_items(
@@ -75,11 +88,14 @@ class WorksheetServiceReorderTest(BundlingTestBase):
     def setUp(self):
         super().setUp()
         self.ws = WorksheetService.create_worksheet(self.job.pk)
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
         self.t1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 1', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         self.t2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='Task 2', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_reorder_items(self):
@@ -107,14 +123,17 @@ class TemplateServiceReorderTest(BundlingTestBase):
 
     def setUp(self):
         super().setUp()
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
         self.tmpl = WorkTemplateService.create_template(
             template_name='Test Template',
         )
         self.tt1 = WorkTemplateService.create_task_template(
-            template_name='TT1', accounting_category=self.lit,
+            template_name='TT1',
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.tt2 = WorkTemplateService.create_task_template(
-            template_name='TT2', accounting_category=self.lit,
+            template_name='TT2',
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.a1 = TemplateTaskAssociation.objects.create(
             work_template=self.tmpl, task_template=self.tt1, sort_order=1,

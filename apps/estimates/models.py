@@ -272,10 +272,9 @@ class EstWorksheet(AbstractWorkContainer):
                 est_worksheet=new_worksheet,
                 name=plan_task.name,
                 description=plan_task.description,
-                units=plan_task.units,
-                rate=plan_task.rate,
+                rate_scheme=plan_task.rate_scheme,
+                active_modifiers=list(plan_task.active_modifiers or []),
                 est_qty=plan_task.est_qty,
-                accounting_category=plan_task.accounting_category,
             )
 
             # Copy plan materials to the new plan task
@@ -396,12 +395,9 @@ class TaskTemplate(models.Model):
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    units = models.CharField(max_length=50, default='none')
-    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     rate_scheme = models.ForeignKey(
         'jobs.RateScheme',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
+        on_delete=models.PROTECT,
         help_text="Default billing scheme for tasks from this template"
     )
     default_active_modifiers = models.JSONField(
@@ -409,17 +405,8 @@ class TaskTemplate(models.Model):
         help_text="Pre-checked modifier keys from the scheme"
     )
     default_billable_qty = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True,
+        max_digits=10, decimal_places=2,
         help_text="Typical estimated billable quantity"
-    )
-
-    # AccountingCategory determines what type of line item this task produces when mapped directly
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
-        on_delete=models.PROTECT,
-        null=True,  # Temporarily nullable for migration
-        blank=True,
-        help_text="Type of line item this task produces when mapped directly"
     )
 
     # Relationships
@@ -435,35 +422,49 @@ class TaskTemplate(models.Model):
     def __str__(self):
         return self.template_name
 
+    @property
+    def effective_accounting_category(self):
+        return self.rate_scheme.accounting_category
+
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
                        assignee=None, sort_order=None):
         """Generate a PlanTask or Task from this template with specified quantity.
 
         The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
         """
-        from apps.jobs.models import Job, Task, PlanTask
+        from apps.jobs.models import Job, Task, PlanTask, TaskCharge
+        from apps.core.services import SchemeSupersededError
+        from django.db import transaction
+
+        if self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None:
+            raise SchemeSupersededError(
+                f'Template "{self.template_name}" references a superseded '
+                f'RateScheme. Update the template before adding tasks from it.'
+            )
 
         if isinstance(container, Job):
-            return Task.objects.create(
-                job=container,
-                name=self.template_name,
-                description=self.description,
-                units=self.units,
-                rate=self.rate,
-                est_qty=est_qty,
-                accounting_category=self.accounting_category,
-                assignee=assignee,
-                sort_order=sort_order,
-            )
+            with transaction.atomic():
+                task = Task.objects.create(
+                    job=container,
+                    name=self.template_name,
+                    description=self.description,
+                    assignee=assignee,
+                    sort_order=sort_order,
+                )
+                if self.rate_scheme_id:
+                    TaskCharge.objects.create(
+                        task=task, rate_scheme=self.rate_scheme,
+                        active_modifiers=list(self.default_active_modifiers or []),
+                    )
+            return task
         else:  # EstWorksheet
             return PlanTask.objects.create(
                 est_worksheet=container,
                 name=self.template_name,
                 description=self.description,
-                units=self.units,
-                rate=self.rate,
+                rate_scheme=self.rate_scheme,
+                active_modifiers=list(self.default_active_modifiers or []),
                 est_qty=est_qty,
-                accounting_category=self.accounting_category,
                 sort_order=sort_order,
             )
 
@@ -493,7 +494,7 @@ class EstimateLineItem(BaseLineItem):
 
 
 class EstimateLineItemSource(models.Model):
-    """Polymorphic join between an EstimateLineItem and its source atom (PlanCharge or PlanMaterial).
+    """Polymorphic join between an EstimateLineItem and its source atom (PlanTask or PlanMaterial).
 
     The unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level: an atom can be referenced by at most one estimate line item.
@@ -502,10 +503,10 @@ class EstimateLineItemSource(models.Model):
     on the plan side. Worksheet revisions copy atoms (creating new instances), so the
     constraint never needs to fire across revisions in practice.
     """
-    SOURCE_PLAN_CHARGE = 'plan_charge'
+    SOURCE_PLAN_TASK = 'plan_task'
     SOURCE_PLAN_MATERIAL = 'plan_material'
     SOURCE_TYPE_CHOICES = [
-        (SOURCE_PLAN_CHARGE, 'PlanCharge'),
+        (SOURCE_PLAN_TASK, 'PlanTask'),
         (SOURCE_PLAN_MATERIAL, 'PlanMaterial'),
     ]
 
@@ -523,10 +524,10 @@ class EstimateLineItemSource(models.Model):
         unique_together = [('source_type', 'source_pk')]
 
     def resolve(self):
-        """Return the concrete atom instance (PlanCharge or PlanMaterial) referenced by this source."""
-        if self.source_type == self.SOURCE_PLAN_CHARGE:
-            from apps.jobs.models import PlanCharge
-            return PlanCharge.objects.get(pk=self.source_pk)
+        """Return the concrete atom instance (PlanTask or PlanMaterial) referenced by this source."""
+        if self.source_type == self.SOURCE_PLAN_TASK:
+            from apps.jobs.models import PlanTask
+            return PlanTask.objects.get(pk=self.source_pk)
         if self.source_type == self.SOURCE_PLAN_MATERIAL:
             from apps.inventory.models import PlanMaterial
             return PlanMaterial.objects.get(pk=self.source_pk)

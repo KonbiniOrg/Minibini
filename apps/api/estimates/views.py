@@ -60,6 +60,15 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
     def perform_update(self, serializer):
         serializer.save()
 
+    def destroy(self, request, *args, **kwargs):
+        estimate = self.get_object()
+        try:
+            EstimateService.discard_draft(estimate)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'message': 'Estimate discarded'})
+
     @action(detail=True, methods=['post'], url_path='revise')
     def revise(self, request, pk=None):
         try:

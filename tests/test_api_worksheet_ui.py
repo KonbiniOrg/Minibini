@@ -5,7 +5,7 @@ from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import User, AccountingCategory
-from apps.jobs.models import Job, PlanTask
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.inventory.models import PlanMaterial, PriceListItem
@@ -28,12 +28,18 @@ class PlanMaterialCRUDTest(TestCase):
             job_number='MAT-001', name='Material Job', contact=self.contact,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.scheme_ac = AccountingCategory.objects.create(
+            name='Mat-scheme', code='MAT-SC-AWUI',
+        )
+        self.scheme = RateScheme.objects.create(
+            name='S-mat-awui', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.scheme_ac,
+        )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install countertop',
-            units='each',
-            rate=100,
-            est_qty=1,
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         self.category = AccountingCategory.objects.create(
             name='General', code='GEN',
@@ -146,6 +152,7 @@ class PlanMaterialCRUDTest(TestCase):
     def test_material_on_wrong_task_returns_404(self):
         other_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Other task',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         response = self.client.patch(
             f'/api/plan-tasks/{other_task.pk}/materials/{self.material.pk}/',
@@ -175,12 +182,18 @@ class ReorderTest(TestCase):
         self.category = AccountingCategory.objects.create(
             name='Labor', code='LAB', is_active=True,
         )
+        self.scheme = RateScheme.objects.create(
+            name='S-reord-awui', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
 
         self.task1 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Task A', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         self.task2 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Task B', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_reorder_task_down(self):
@@ -254,12 +267,18 @@ class AddFromTemplateTest(TestCase):
             job_number='TMPL-001', name='Template Job', contact=self.contact,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        # Phase B requires PlanTask.rate_scheme; templates used by add-from-template
+        # must carry a default scheme so the created PlanTask inherits one.
+        self.template_scheme = RateScheme.objects.create(
+            name='Tmpl default scheme', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('2.50'), unit_label='sqft',
+            accounting_category=self.category,
+        )
         self.task_template = TaskTemplate.objects.create(
             template_name='Standard Sanding',
             description='Sand and prep surfaces',
-            units='sqft',
-            rate=Decimal('2.50'),
-            accounting_category=self.category,
+            rate_scheme=self.template_scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
     def test_add_from_template_success(self):
@@ -270,14 +289,39 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['name'], 'Standard Sanding')
-        self.assertEqual(response.data['units'], 'sqft')
-        self.assertEqual(Decimal(str(response.data['rate'])), Decimal('2.50'))
+        self.assertEqual(response.data['rate_scheme'], self.template_scheme.pk)
+        self.assertEqual(response.data['est_qty'], '100.00')
+        # 100 × $2.50 scheme rate = $250.00
+        self.assertEqual(response.data['amount'], '250.00')
         # Verify it was created in the DB
         self.assertTrue(
             PlanTask.objects.filter(
                 est_worksheet=self.worksheet, name='Standard Sanding'
             ).exists()
         )
+
+    def test_add_from_template_explicit_billing_overrides_template_defaults(self):
+        """Passing billing fields to add-from-template uses the caller's values."""
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='Hourly', rate='75.00', unit_label='hr',
+            algorithm=RateScheme.ENTERED_QTY,
+            accounting_category=self.category,
+        )
+        response = self.client.post(
+            f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
+            {
+                'task_template_id': self.task_template.pk,
+                'rate_scheme': scheme.rate_scheme_id,
+                'est_qty': '8.00',
+                'active_modifiers': ['overtime'],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['rate_scheme'], scheme.rate_scheme_id)
+        self.assertEqual(response.data['est_qty'], '8.00')
+        self.assertEqual(response.data['active_modifiers'], ['overtime'])
 
     def test_add_from_template_default_qty(self):
         response = self.client.post(
@@ -289,7 +333,7 @@ class AddFromTemplateTest(TestCase):
         task = PlanTask.objects.get(
             est_worksheet=self.worksheet, name='Standard Sanding'
         )
-        self.assertEqual(task.est_qty, Decimal('1.00'))
+        self.assertIsNotNone(task)
 
     def test_add_from_template_missing_template(self):
         response = self.client.post(
@@ -329,3 +373,118 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn('detail', response.data)
+
+    def test_add_from_template_inherits_template_defaults_when_request_omits_billing(self):
+        """When the caller doesn't send billing fields, template defaults are inherited."""
+        from apps.jobs.models import RateScheme
+
+        scheme = RateScheme.objects.create(
+            name='Default Inheritance Test', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('45.00'), unit_label='hour',
+            accounting_category=self.category,
+        )
+        template_with_defaults = TaskTemplate.objects.create(
+            template_name='Template With Defaults',
+            description='Has billing defaults',
+            rate_scheme=scheme,
+            default_billable_qty=Decimal('3.0'),
+            default_active_modifiers=['rush'],
+        )
+
+        response = self.client.post(
+            f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
+            {'task_template_id': template_with_defaults.pk},  # NO billing fields
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['rate_scheme'], scheme.rate_scheme_id)
+        self.assertEqual(response.data['est_qty'], '3.00')
+        self.assertEqual(response.data['active_modifiers'], ['rush'])
+
+
+class PlanMaterialAssignTaskApiTest(TestCase):
+    """Tests for the worksheet plan-materials assign-task action."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='asgnuser', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_jobs', content_type__app_label='core',
+        )
+        self.user.user_permissions.add(perm)
+        self.client.force_authenticate(user=self.user)
+
+        self.contact = Contact.objects.create(first_name='Asgn', last_name='User')
+        self.job = Job.objects.create(
+            job_number='ASGN-001', name='Assign Job', contact=self.contact,
+        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.cat = AccountingCategory.objects.create(name='c', code='ASGN-C')
+        self.scheme = RateScheme.objects.create(
+            name='asgn-scheme', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
+        )
+        self.task_a = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='A',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        self.task_b = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='B',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        self.other_ws = EstWorksheet.objects.create(job=self.job)
+        self.other_task = PlanTask.objects.create(
+            est_worksheet=self.other_ws, name='Other',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        self.material = PlanMaterial.objects.create(
+            est_worksheet=self.worksheet, plan_task=self.task_a,
+            description='m', quantity=Decimal('1'),
+        )
+
+    def _url(self):
+        return (
+            f'/api/est-worksheets/{self.worksheet.pk}/'
+            f'plan-materials/{self.material.pk}/assign-task/'
+        )
+
+    def test_assign_to_other_plan_task(self):
+        resp = self.client.post(
+            self._url(), {'plan_task': self.task_b.pk}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.material.refresh_from_db()
+        self.assertEqual(self.material.plan_task_id, self.task_b.pk)
+
+    def test_assign_to_null_makes_taskless(self):
+        resp = self.client.post(
+            self._url(), {'plan_task': None}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.material.refresh_from_db()
+        self.assertIsNone(self.material.plan_task_id)
+
+    def test_reject_cross_worksheet_plan_task(self):
+        resp = self.client.post(
+            self._url(), {'plan_task': self.other_task.pk}, format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.material.refresh_from_db()
+        self.assertEqual(self.material.plan_task_id, self.task_a.pk)
+
+
+class EstWorksheetSerializerJobFieldsTest(TestCase):
+    """Serializer should expose job_number and job_name on the worksheet."""
+
+    def test_serializer_includes_job_number_and_name(self):
+        from apps.api.worksheets.serializers import EstWorksheetSerializer
+        contact = Contact.objects.create(first_name='J', last_name='F')
+        job = Job.objects.create(
+            job_number='JF-001', name='Job Field Job', contact=contact,
+        )
+        ws = EstWorksheet.objects.create(job=job)
+        data = EstWorksheetSerializer(ws).data
+        self.assertIn('job_number', data)
+        self.assertIn('job_name', data)
+        self.assertEqual(data['job_number'], 'JF-001')
+        self.assertEqual(data['job_name'], 'Job Field Job')

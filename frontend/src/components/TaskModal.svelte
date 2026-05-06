@@ -1,6 +1,6 @@
 <script>
   import { api } from '../lib/api.js';
-  import UnitsSelect from './UnitsSelect.svelte';
+  import RateSchemeFieldset from './RateSchemeFieldset.svelte';
 
   let {
     open = false,
@@ -8,7 +8,6 @@
     task = null,
     jobId = null,
     templates = [],
-    categories = [],
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -16,11 +15,10 @@
   let createMode = $state('freeform'); // 'freeform' | 'template'
   let name = $state('');
   let description = $state('');
-  let units = $state('none');
-  let rate = $state('');
-  let estQty = $state('');
-  let accountingCategory = $state('');
   let templateId = $state('');
+  let rateSchemeId = $state(task?.charge?.rate_scheme ?? task?.rate_scheme ?? '');
+  let activeModifiers = $state(task?.charge?.active_modifiers ?? task?.active_modifiers ?? []);
+  let estQty = $state(task?.est_qty ?? '');
   let busy = $state(false);
   let error = $state('');
 
@@ -30,61 +28,67 @@
         createMode = 'freeform';
         name = task.name || '';
         description = task.description || '';
-        units = task.units || 'none';
-        rate = task.rate ?? '';
+        rateSchemeId = task.charge?.rate_scheme ?? task.rate_scheme ?? '';
+        activeModifiers = [...(task.charge?.active_modifiers ?? task.active_modifiers ?? [])];
         estQty = task.est_qty ?? '';
-        accountingCategory = task.accounting_category ?? '';
         templateId = '';
       } else if (mode === 'create-template') {
         createMode = 'template';
-        name = '';
-        description = '';
-        units = 'none';
-        rate = '';
-        estQty = '';
-        accountingCategory = '';
-        templateId = '';
+        resetFields();
       } else {
         createMode = 'freeform';
-        name = '';
-        description = '';
-        units = 'none';
-        rate = '';
-        estQty = '';
-        accountingCategory = '';
-        templateId = '';
+        resetFields();
       }
       error = '';
     }
   });
 
+  function resetFields() {
+    name = ''; description = '';
+    rateSchemeId = ''; estQty = '';
+    activeModifiers = []; templateId = '';
+  }
+
   const isEdit = $derived(mode === 'edit');
   const title = $derived(isEdit ? 'Edit Task' : 'Add Task');
+
+  const selectedTemplate = $derived(
+    templates.find(t => String(t.template_id) === String(templateId)) || null
+  );
+
+  $effect(() => {
+    if (selectedTemplate) {
+      activeModifiers = [...(selectedTemplate.default_active_modifiers || [])];
+      if (selectedTemplate.default_billable_qty && !estQty) {
+        estQty = selectedTemplate.default_billable_qty;
+      }
+      // Sync rateSchemeId to the selected template so the fieldset's
+      // modifier list and locked summary reflect the *current* template.
+      rateSchemeId = selectedTemplate.rate_scheme ?? '';
+    }
+  });
 
   async function save() {
     busy = true;
     error = '';
     try {
+      const payload = {
+        name,
+        description,
+        rate_scheme: rateSchemeId,
+        active_modifiers: activeModifiers,
+        actuals: estQty ? { qty: estQty } : {},
+      };
       if (isEdit && task) {
-        await api.patch(`/api/jobs/${jobId}/tasks/${task.task_id}/`, {
-          name, description, units,
-          rate: rate || null,
-          est_qty: estQty || null,
-          accounting_category: accountingCategory || null,
-        });
+        await api.patch(`/api/jobs/${jobId}/tasks/${task.task_id}/`, payload);
       } else if (createMode === 'template') {
         if (!templateId) { error = 'Please select a template.'; busy = false; return; }
         await api.post(`/api/jobs/${jobId}/add-from-template/`, {
           task_template_id: Number(templateId),
-          est_qty: estQty || null,
+          est_qty: estQty,
         });
       } else {
-        await api.post(`/api/jobs/${jobId}/tasks/`, {
-          name, description, units,
-          rate: rate || null,
-          est_qty: estQty || null,
-          accounting_category: accountingCategory || null,
-        });
+        await api.post(`/api/jobs/${jobId}/tasks/`, payload);
       }
       onSaved();
     } catch (e) {
@@ -128,11 +132,6 @@
             </select>
           </label>
         </p>
-        <p>
-          <label><strong>Estimated Quantity</strong><br>
-            <input type="number" step="0.01" bind:value={estQty}>
-          </label>
-        </p>
       {:else}
         <p>
           <label><strong>Name *</strong><br>
@@ -144,32 +143,14 @@
             <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
           </label>
         </p>
-        <p>
-          <label><strong>Units</strong><br>
-            <UnitsSelect bind:value={units} />
-          </label>
-        </p>
-        <p>
-          <label><strong>Rate</strong><br>
-            <input type="number" step="0.01" bind:value={rate}>
-          </label>
-        </p>
-        <p>
-          <label><strong>Estimated Quantity</strong><br>
-            <input type="number" step="0.01" bind:value={estQty}>
-          </label>
-        </p>
-        <p>
-          <label><strong>Accounting Category</strong><br>
-            <select bind:value={accountingCategory}>
-              <option value="">-- None --</option>
-              {#each categories as cat}
-                <option value={cat.id}>{cat.code} - {cat.name}</option>
-              {/each}
-            </select>
-          </label>
-        </p>
       {/if}
+
+      <RateSchemeFieldset
+        bind:rateSchemeId
+        bind:activeModifiers
+        bind:estQty
+        lockSchemeChoice={createMode === 'template' && !isEdit}
+      />
 
       <div class="buttons">
         <button type="button" onclick={save} disabled={busy}>Save</button>

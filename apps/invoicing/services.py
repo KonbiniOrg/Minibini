@@ -105,6 +105,12 @@ class InvoiceService:
         return LineItemService.reorder_line_item(line_item, direction)
 
     @staticmethod
+    def discard_draft(invoice):
+        """Hard-delete a draft invoice; cascades to line items and sources."""
+        InvoiceService._validate_draft(invoice)
+        invoice.delete()
+
+    @staticmethod
     def delete_line_item(line_item_id):
         """Delete an invoice line item and renumber — validates draft status."""
         from apps.core.services import LineItemService
@@ -166,6 +172,22 @@ class ClaimConflict(Exception):
         super().__init__(f'Atoms already claimed: {atom_ids}')
 
 
+class WizardAtomLabels:
+    """Helpers for rendering human-friendly labels for wizard atoms."""
+
+    @staticmethod
+    def qty_source_label(charge):
+        """Describe where the billable quantity came from for a TaskCharge."""
+        scheme = charge.rate_scheme
+        if scheme.algorithm == 'elapsed_time':
+            qty = scheme.get_actual_qty(charge.task)
+            return f'{qty:.2f} {scheme.unit_label} from bleps'
+        if scheme.algorithm == 'entered_qty':
+            qty = scheme.get_actual_qty(charge.task)
+            return f'{qty} {scheme.unit_label} entered'
+        return 'flat fee'
+
+
 class InvoiceWizardService:
     """Orchestration layer for the invoice wizard.
 
@@ -207,7 +229,7 @@ class InvoiceWizardService:
 
         Atoms are annotated with state: 'available', 'claimed_by_current', or 'claimed_by_other'.
         """
-        from apps.jobs.models import Task, Blep
+        from apps.jobs.models import Task
         from apps.inventory.models import Material
         from apps.invoicing.models import InvoiceLineItemSource
 
@@ -254,32 +276,25 @@ class InvoiceWizardService:
         tasks = (
             Task.objects.filter(job=job)
             .exclude(status=Task.STATUS_CANCELLED)
+            .select_related('charge', 'charge__rate_scheme')
             .order_by('sort_order', 'pk')
         )
         task_list = []
         for task in tasks:
             atoms = []
 
-            # Blep atoms - exclude incomplete bleps (no end_time)
-            bleps = (
-                Blep.objects.filter(task=task)
-                .exclude(end_time__isnull=True)
-                .order_by('start_time', 'pk')
-            )
-            for blep in bleps:
-                elapsed = blep.end_time - blep.start_time
-                hours = Decimal(str(elapsed.total_seconds())) / Decimal('3600')
-                amount = (hours * (task.rate or Decimal('0.00'))).quantize(Decimal('0.01'))
-                key = (InvoiceLineItemSource.SOURCE_BLEP, blep.pk)
-                state_info = claims.get(key, default_state)
-                atoms.append({
-                    'atom_type': 'blep',
-                    'atom_id': blep.pk,
-                    'description': f'Labor {hours:.2f}h',
-                    'sub_info': f"{blep.start_time.strftime('%m/%d')} \u00b7 {blep.user.username if blep.user else '\u2014'}",
-                    'computed_amount': amount,
-                    **state_info,
-                })
+            charge = task.charge
+            amount = charge.compute().quantize(Decimal('0.01'))
+            key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
+            state_info = claims.get(key, default_state)
+            atoms.append({
+                'atom_type': 'task',
+                'atom_id': task.pk,
+                'description': f'{task.name} ({charge.rate_scheme.name})',
+                'sub_info': WizardAtomLabels.qty_source_label(charge),
+                'computed_amount': amount,
+                **state_info,
+            })
 
             # Material atoms
             materials = (
@@ -306,7 +321,7 @@ class InvoiceWizardService:
                 'atoms': atoms,
             })
 
-        # "Materials (no task)" group — task-less Materials with quantity > 0
+        # "Materials (no task)" group - task-less Materials with quantity > 0
         loose = (
             Material.objects.filter(job=job, task__isnull=True, quantity__gt=0)
             .order_by('pk')
@@ -340,52 +355,92 @@ class InvoiceWizardService:
 
     @staticmethod
     def _resolve_atom(atom_ref):
-        """Given {'type': 'blep'|'material', 'id': N}, return the concrete instance."""
-        from apps.jobs.models import Blep
+        """Given {'type': 'material'|'task', 'id': N}, return the concrete instance."""
+        from apps.jobs.models import Task
         from apps.inventory.models import Material
-        if atom_ref['type'] == 'blep':
-            return Blep.objects.get(pk=atom_ref['id'])
         if atom_ref['type'] == 'material':
             return Material.objects.get(pk=atom_ref['id'])
+        if atom_ref['type'] == 'task':
+            return Task.objects.get(pk=atom_ref['id'])
         raise ValueError(f"Unknown atom type: {atom_ref['type']}")
 
     @staticmethod
     def _atom_computed_amount(atom_instance):
         """Compute the billable amount for an atom."""
-        from apps.jobs.models import Blep
+        from apps.jobs.models import Task
         from apps.inventory.models import Material
-        if isinstance(atom_instance, Blep):
-            if not atom_instance.end_time:
-                return Decimal('0.00')
-            elapsed = atom_instance.end_time - atom_instance.start_time
-            hours = Decimal(str(elapsed.total_seconds())) / Decimal('3600')
-            rate = atom_instance.task.rate or Decimal('0.00')
-            return (hours * rate).quantize(Decimal('0.01'))
+        if isinstance(atom_instance, Task):
+            return atom_instance.charge.compute().quantize(Decimal('0.01'))
         if isinstance(atom_instance, Material):
             return (atom_instance.quantity * atom_instance.sell_price).quantize(Decimal('0.01'))
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
 
     @staticmethod
     def _atom_category(atom_instance):
-        """Return the accounting_category of an atom (via its task for bleps, direct for materials)."""
-        from apps.jobs.models import Blep
+        """Return the accounting_category of an atom.
+
+        For Tasks, walks through TaskCharge → RateScheme via
+        effective_accounting_category. For Materials, direct.
+        """
+        from apps.jobs.models import Task
         from apps.inventory.models import Material
-        if isinstance(atom_instance, Blep):
-            return atom_instance.task.accounting_category
+        if isinstance(atom_instance, Task):
+            return atom_instance.effective_accounting_category
         if isinstance(atom_instance, Material):
             return atom_instance.accounting_category
         return None
 
     @staticmethod
     def _atom_source_type(atom_instance):
-        from apps.jobs.models import Blep
+        from apps.jobs.models import Task
         from apps.inventory.models import Material
         from apps.invoicing.models import InvoiceLineItemSource
-        if isinstance(atom_instance, Blep):
-            return InvoiceLineItemSource.SOURCE_BLEP
+        if isinstance(atom_instance, Task):
+            return InvoiceLineItemSource.SOURCE_TASK
         if isinstance(atom_instance, Material):
             return InvoiceLineItemSource.SOURCE_MATERIAL
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
+
+    @staticmethod
+    def _atom_description(atom_instance):
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
+        if isinstance(atom_instance, Task):
+            return atom_instance.name
+        if isinstance(atom_instance, Material):
+            return atom_instance.description
+        return ''
+
+    @staticmethod
+    def _atom_units(atom_instance):
+        """Return the units label for an atom, sourced from related rate
+        scheme or price list item. Falls back to 'none' (the only literal
+        unit guaranteed to exist in the configured units list)."""
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
+        if isinstance(atom_instance, Task):
+            charge = getattr(atom_instance, 'charge', None)
+            if charge and charge.rate_scheme_id:
+                return charge.rate_scheme.unit_label
+            return 'none'
+        if isinstance(atom_instance, Material):
+            if atom_instance.price_list_item_id:
+                return atom_instance.price_list_item.units
+            return 'none'
+        return 'none'
+
+    @staticmethod
+    def _atom_qty_and_price(atom_instance, total_price):
+        """Return (qty, price) for a single-atom copy-over so qty * price = total.
+
+        Materials decompose cleanly into intrinsic qty/price. Tasks roll up
+        bleps via TaskCharge — there is no single qty/price per Task that's
+        meaningful across all rate algorithms, so default to qty=1.
+        """
+        from apps.inventory.models import Material
+        if isinstance(atom_instance, Material):
+            return atom_instance.quantity, atom_instance.sell_price
+        return Decimal('1'), total_price  # Task or unknown
 
     @staticmethod
     def _sum_sources(line_item):
@@ -464,6 +519,7 @@ class InvoiceWizardService:
         Returns: {'line_item_deleted': bool}
         """
         from django.db import transaction
+        from apps.core.services import LineItemService
 
         InvoiceWizardService._validate_draft(line_item.invoice)
 
@@ -475,7 +531,7 @@ class InvoiceWizardService:
             remaining = line_item.sources.count()
 
             if remaining == 0:
-                line_item.delete()
+                LineItemService.delete_line_item_with_renumber(line_item)
                 return {'line_item_deleted': True}
 
             if was_in_sync:
@@ -489,7 +545,7 @@ class InvoiceWizardService:
     def add_atoms_to_new_line_item(invoice, atoms):
         """Create a new InvoiceLineItem on `invoice` with the given atoms as sources.
 
-        atoms: list of {'type': 'blep'|'material', 'id': N} dicts.
+        atoms: list of {'type': 'task'|'material', 'id': N} dicts.
         """
         from django.db import transaction, IntegrityError
         from apps.invoicing.models import InvoiceLineItemSource
@@ -508,14 +564,28 @@ class InvoiceWizardService:
         # Uniform category -> use it; mixed -> leave null
         category = categories.pop() if len(categories) == 1 else None
 
+        # Single atom: copy over description, units, qty, price from the atom.
+        # Multi-atom: blank description, units='none', qty=1, price=total.
+        if len(instances) == 1:
+            description = InvoiceWizardService._atom_description(instances[0])
+            units = InvoiceWizardService._atom_units(instances[0])
+            qty, price = InvoiceWizardService._atom_qty_and_price(
+                instances[0], total_price,
+            )
+        else:
+            description = ''
+            units = 'none'
+            qty = Decimal('1')
+            price = total_price
+
         try:
             with transaction.atomic():
                 line_item = InvoiceLineItem.objects.create(
                     invoice=invoice,
-                    description='',
-                    qty=Decimal('1'),
-                    units='each',
-                    price=total_price,
+                    description=description,
+                    qty=qty,
+                    units=units,
+                    price=price,
                     accounting_category=category,
                 )
                 for atom_ref, instance in zip(atoms, instances):
@@ -539,8 +609,3 @@ class InvoiceWizardService:
 
         return line_item
 
-    @staticmethod
-    def discard_draft(invoice):
-        """Hard-delete a draft invoice. Cascades to line items and source rows."""
-        InvoiceWizardService._validate_draft(invoice)
-        invoice.delete()

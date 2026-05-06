@@ -46,7 +46,7 @@ Minibini/
 ├── apps/
 │   ├── api/        # REST API (DRF viewsets, serializers, permissions, mixins)
 │   ├── core/       # User, Configuration, BaseLineItem, AccountingCategory, HistoryEntry, Email
-│   ├── jobs/       # Job, Task, PlanTask, PlanBundle, Blep
+│   ├── jobs/       # Job, Task, PlanTask, Blep
 │   ├── estimates/  # Estimate, EstWorksheet, EstimateLineItem, Templates
 │   ├── contacts/   # Contact, Business, PaymentTerms
 │   ├── invoicing/  # Invoice, InvoiceLineItem
@@ -89,8 +89,7 @@ Minibini/
 ### Jobs (`apps.jobs`)
 - **Job** - Central entity (extends AbstractWorkContainer). Status: draft → submitted → approved → work_complete → completed (terminal). Also rejected, cancelled (terminals). 'work_complete' means work is done; 'completed' means fully closed (invoiced/paid).
 - **Task** - Work items belonging directly to a Job (FK `Task.job`). Hierarchical with parent_task
-- **PlanTask** - Task template nodes used in worksheet planning
-- **PlanBundle** - Groups related tasks together
+- **PlanTask** - Task template nodes used in worksheet planning; carries billing fields directly (`rate_scheme`, `active_modifiers`, `estimated_billable_qty`)
 - **Blep** - Time tracking (start/end times for task work)
 
 ### Estimates (`apps.estimates`)
@@ -246,6 +245,8 @@ for contact in Contact.objects.filter(...):
     contact.delete()
 ```
 
+**Line item deletion:** NEVER call `.delete()` directly on a line item (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`, `BillLineItem`). Always go through `LineItemService.delete_line_item_with_renumber(line_item)` — `BaseLineItem.delete()` does NOT renumber survivors, so a direct call leaves gaps in `line_number` (e.g. lines 2, 3, 5, 7). The only legitimate exception is the implementation of `delete_line_item_with_renumber` itself. Cascade deletes from the parent container (Estimate/Invoice/PO/Bill) are fine because Django uses bulk-delete and skips per-instance `.delete()` entirely. If you need to delete a line item from a new code path, route it through the service.
+
 **Transactions:** Wrap multi-model operations:
 ```python
 with transaction.atomic():
@@ -368,6 +369,7 @@ QBO integration requires OAuth credentials and a `.env` file. One-time setup per
 5. **QuerySet.delete() bypasses Model.delete()** - Iterate and call delete() individually
 6. **Missing transaction wrapping** - Multi-model ops need `transaction.atomic()`
 7. **Type coercion** - Pass correct types to ORM fields
+8. **Direct `.delete()` on a line item** - Leaves `line_number` gaps. Always go through `LineItemService.delete_line_item_with_renumber(line_item)`
 
 ### Code Review Checklist
 - [ ] Status values match model choice definitions
@@ -376,6 +378,7 @@ QBO integration requires OAuth credentials and a `.env` file. One-time setup per
 - [ ] Field names match current model (no old renamed fields)
 - [ ] Integer fields receive integers, not strings
 - [ ] Custom delete() methods are respected (no QuerySet.delete())
+- [ ] Line item deletes go through `LineItemService.delete_line_item_with_renumber`
 - [ ] Multi-model operations are wrapped in transactions
 
 ## Key File Locations

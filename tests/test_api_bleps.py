@@ -251,7 +251,6 @@ class TaskRetrieveAPITest(BaseTestCase):
         self.job = Job.objects.first()
         self.task = Task.objects.create(
             name='T', description='desc', job=self.job,
-            units='hours', rate='10.00', est_qty='1',
         )
 
     def test_retrieve_task(self):

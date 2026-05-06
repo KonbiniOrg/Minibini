@@ -122,7 +122,7 @@ class MaterialBase(models.Model):
         """Uniform atom interface: total billable amount for this material.
 
         Materials have no modifier concept; the parameter is accepted to match
-        the BillableAtom interface shared with TaskCharge/PlanCharge.
+        the BillableAtom interface shared with TaskCharge/PlanTask.
         """
         return self.quantity * self.sell_price
 

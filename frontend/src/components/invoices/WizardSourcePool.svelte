@@ -19,13 +19,13 @@
 {#if !sourcePool}
   <p>No source data.</p>
 {:else}
-  {#each sourcePool.tasks as task}
+  {#each sourcePool.tasks as task (task.task_id ?? 'loose')}
     <div>
       {#if !task.has_billable_atoms}
         <em style="color: #999;">{task.name} (no billable items)</em>
       {:else}
         <strong>{task.name}</strong>
-        {#each task.atoms as atom}
+        {#each task.atoms as atom (atom.atom_type + ':' + atom.atom_id)}
           <div style="margin-left: 16px;">
             {#if atom.state === 'available'}
               <label>

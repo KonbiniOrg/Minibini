@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
-from apps.core.units import UnitsField
 
 
 class PlanMaterialSerializer(serializers.ModelSerializer):
@@ -27,7 +26,6 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
 
 
 class PlanTaskDetailSerializer(serializers.ModelSerializer):
-    units = UnitsField()
     plan_materials = PlanMaterialSerializer(many=True, read_only=True)
     est_worksheet = serializers.SerializerMethodField()
 
@@ -35,7 +33,7 @@ class PlanTaskDetailSerializer(serializers.ModelSerializer):
         model = PlanTask
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
-            'units', 'rate', 'est_qty', 'accounting_category',
+            'rate_scheme', 'active_modifiers', 'est_qty',
             'plan_materials', 'est_worksheet',
         ]
         read_only_fields = fields

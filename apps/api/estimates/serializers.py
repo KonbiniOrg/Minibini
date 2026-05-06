@@ -13,9 +13,9 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
 
     def get_description(self, obj):
         instance = obj.resolve()
-        from apps.jobs.models import PlanCharge
-        if isinstance(instance, PlanCharge):
-            return instance.plan_task.name
+        from apps.jobs.models import PlanTask
+        if isinstance(instance, PlanTask):
+            return instance.name
         return instance.description  # PlanMaterial
 
     def get_computed_amount(self, obj):
@@ -43,15 +43,29 @@ class EstimateSerializer(serializers.ModelSerializer):
     line_items = EstimateLineItemSerializer(
         source='estimatelineitem_set', many=True, read_only=True
     )
+    job_number = serializers.SerializerMethodField()
+    job_name = serializers.SerializerMethodField()
+    worksheet = serializers.SerializerMethodField()
 
     class Meta:
         model = Estimate
         fields = [
-            'estimate_id', 'job', 'estimate_number', 'version', 'status',
+            'estimate_id', 'job', 'job_number', 'job_name',
+            'estimate_number', 'version', 'status',
             'parent', 'created_date', 'sent_date', 'closed_date',
-            'expiration_date', 'line_items',
+            'expiration_date', 'line_items', 'worksheet',
         ]
         read_only_fields = [
             'estimate_id', 'estimate_number', 'version',
             'created_date', 'sent_date', 'closed_date',
         ]
+
+    def get_job_number(self, obj):
+        return obj.job.job_number if obj.job_id else None
+
+    def get_job_name(self, obj):
+        return obj.job.name if obj.job_id else ''
+
+    def get_worksheet(self, obj):
+        ws = obj.worksheets.first()
+        return ws.pk if ws else None

@@ -1,11 +1,11 @@
 """Atom carry-over from Worksheet/Estimate to Job at acceptance time.
 
 Triggered automatically when an Estimate transitions to ACCEPTED. Walks the
-worksheet's atoms (PlanCharges, PlanMaterials) and creates matching atoms on
+worksheet's atoms (PlanTasks, PlanMaterials) and creates matching atoms on
 the Job (Tasks/TaskCharges, Materials). For direct-estimate line items with
 template refs (no worksheet), creates equivalent atoms from the templates.
 Idempotent:
-  - Worksheet path: keyed on Task.source_plan_charge (OneToOne FK)
+  - Worksheet path: keyed on Task.source_plan_task (OneToOne FK)
   - Direct line item path: keyed on Task.source_template / Material.price_list_item
 """
 from django.db import transaction
@@ -29,7 +29,7 @@ class AtomCarryOverService:
         # Phase A: walk worksheet atoms (if a worksheet exists)
         worksheet = estimate.worksheets.first()
         if worksheet:
-            tasks_created += AtomCarryOverService._carry_over_plan_charges(worksheet, job)
+            tasks_created += AtomCarryOverService._carry_over_plan_tasks(worksheet, job)
             materials_created += AtomCarryOverService._carry_over_plan_materials(worksheet, job)
 
         # Phase B: walk direct-estimate line items with template refs
@@ -44,32 +44,34 @@ class AtomCarryOverService:
         return {'tasks_created': tasks_created, 'materials_created': materials_created}
 
     @staticmethod
-    def _carry_over_plan_charges(worksheet, job):
-        from apps.jobs.models import PlanCharge, RateScheme, Task, TaskCharge
+    def _carry_over_plan_tasks(worksheet, job):
+        from apps.jobs.models import PlanTask, RateScheme, Task, TaskCharge
         count = 0
-        for pc in PlanCharge.objects.filter(
-            plan_task__est_worksheet=worksheet
-        ).select_related('plan_task', 'rate_scheme'):
-            # Idempotency: skip if a Task already exists that came from this PlanCharge
-            if Task.objects.filter(job=job, source_plan_charge=pc).exists():
+        for pt in PlanTask.objects.filter(
+            est_worksheet=worksheet,
+        ).select_related('rate_scheme'):
+            # Idempotency: skip if a Task already exists that came from this PlanTask
+            if Task.objects.filter(job=job, source_plan_task=pt).exists():
+                continue
+            if not pt.rate_scheme_id:
+                # Plan task with no billing config — carry as a Task without a TaskCharge.
+                Task.objects.create(
+                    job=job, name=pt.name, description=pt.description,
+                    source_plan_task=pt,
+                )
+                count += 1
                 continue
             task = Task.objects.create(
-                job=job,
-                name=pc.plan_task.name,
-                description=pc.plan_task.description,
-                units=pc.plan_task.units,
-                rate=pc.plan_task.rate,
-                est_qty=pc.plan_task.est_qty,
-                accounting_category=pc.plan_task.accounting_category,
-                source_plan_charge=pc,
+                job=job, name=pt.name, description=pt.description,
+                source_plan_task=pt,
             )
             actuals = {}
-            if pc.rate_scheme.algorithm == RateScheme.ENTERED_QTY:
-                actuals = {'qty': str(pc.estimated_billable_qty.normalize())}
+            if pt.rate_scheme.algorithm == RateScheme.ENTERED_QTY and pt.est_qty is not None:
+                actuals = {'qty': str(pt.est_qty.normalize())}
             TaskCharge.objects.create(
                 task=task,
-                rate_scheme=pc.rate_scheme,
-                active_modifiers=pc.active_modifiers,
+                rate_scheme=pt.rate_scheme,
+                active_modifiers=pt.active_modifiers,
                 actuals=actuals,
             )
             count += 1
@@ -87,7 +89,7 @@ class AtomCarryOverService:
             # If the PlanMaterial was attached to a PlanTask, find the corresponding Task on the job
             task = None
             if pm.plan_task_id:
-                task = Task.objects.filter(job=job, source_plan_charge__plan_task=pm.plan_task).first()
+                task = Task.objects.filter(job=job, source_plan_task=pm.plan_task).first()
             Material.objects.create(
                 job=job,
                 task=task,
@@ -113,10 +115,6 @@ class AtomCarryOverService:
             job=job,
             name=template.template_name,
             description=template.description or '',
-            units=template.units,
-            rate=template.rate,
-            est_qty=line_item.qty,
-            accounting_category=template.accounting_category,
             source_template=template,
         )
         if template.rate_scheme_id:

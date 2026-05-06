@@ -15,7 +15,8 @@ from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from apps.core.models import User
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.core.models import AccountingCategory
 from apps.estimates.models import EstWorksheet, WorkTemplate
 from apps.inventory.models import PlanMaterial
 
@@ -40,11 +41,15 @@ class JobCopyFromWorksheetEndToEndTest(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, template=self.template,
         )
+        ac = AccountingCategory.objects.create(code='E2E-AC', name='e2e')
+        self.scheme = RateScheme.objects.create(
+            name='S-e2e', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Assembly',
-            units='each',
-            rate=Decimal('150'),
+            rate_scheme=self.scheme,
             est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
