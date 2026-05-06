@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-from apps.invoicing.services import InvoiceWizardService, ClaimConflict
+from apps.invoicing.services import InvoiceService, InvoiceWizardService, ClaimConflict
 from apps.jobs.models import Job, Task, Blep, RateScheme, TaskCharge
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
@@ -824,12 +824,12 @@ class DiscardDraftTest(TestCase):
 
     def test_deletes_draft_invoice(self):
         invoice_pk = self.invoice.pk
-        InvoiceWizardService.discard_draft(self.invoice)
+        InvoiceService.discard_draft(self.invoice)
         self.assertFalse(Invoice.objects.filter(pk=invoice_pk).exists())
 
     def test_cascades_to_line_items_and_sources(self):
         line_item_pk = self.line_item.pk
-        InvoiceWizardService.discard_draft(self.invoice)
+        InvoiceService.discard_draft(self.invoice)
         self.assertFalse(InvoiceLineItem.objects.filter(pk=line_item_pk).exists())
         self.assertFalse(
             InvoiceLineItemSource.objects.filter(invoice_line_item_id=line_item_pk).exists()
@@ -845,7 +845,7 @@ class DiscardDraftTest(TestCase):
         )
         self.assertEqual(atom_before['state'], 'claimed_by_current')
 
-        InvoiceWizardService.discard_draft(self.invoice)
+        InvoiceService.discard_draft(self.invoice)
         # Create a fresh draft and check the source pool
         fresh_invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         pool = InvoiceWizardService.get_source_pool(fresh_invoice)
@@ -860,7 +860,7 @@ class DiscardDraftTest(TestCase):
         self.invoice.status = Invoice.STATUS_OPEN
         self.invoice.save()
         with self.assertRaises(ValidationError):
-            InvoiceWizardService.discard_draft(self.invoice)
+            InvoiceService.discard_draft(self.invoice)
 
 
 class SourcePoolLooseMaterialsTest(TestCase):

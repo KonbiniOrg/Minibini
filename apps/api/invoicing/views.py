@@ -1,4 +1,5 @@
-from rest_framework import viewsets
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -42,6 +43,15 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
 
     def perform_create(self, serializer):
         serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        invoice = self.get_object()
+        try:
+            InvoiceService.discard_draft(invoice)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'message': 'Invoice discarded'})
 
     @action(detail=True, methods=['get'], url_path='source-pool')
     def source_pool(self, request, pk=None):

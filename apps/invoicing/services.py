@@ -105,6 +105,12 @@ class InvoiceService:
         return LineItemService.reorder_line_item(line_item, direction)
 
     @staticmethod
+    def discard_draft(invoice):
+        """Hard-delete a draft invoice; cascades to line items and sources."""
+        InvoiceService._validate_draft(invoice)
+        invoice.delete()
+
+    @staticmethod
     def delete_line_item(line_item_id):
         """Delete an invoice line item and renumber — validates draft status."""
         from apps.core.services import LineItemService
@@ -603,8 +609,3 @@ class InvoiceWizardService:
 
         return line_item
 
-    @staticmethod
-    def discard_draft(invoice):
-        """Hard-delete a draft invoice. Cascades to line items and source rows."""
-        InvoiceWizardService._validate_draft(invoice)
-        invoice.delete()

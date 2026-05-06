@@ -2,6 +2,7 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, HistoryEntry
 from apps.invoicing.models import Invoice, InvoiceLineItem
+from apps.jobs.models import Job
 
 
 class InvoiceAPITest(BaseTestCase):
@@ -55,3 +56,24 @@ class InvoiceAPITest(BaseTestCase):
             self.assertIsNotNone(entry)
             self.assertEqual(entry.text, 'Billed in error')
             self.assertEqual(entry.user, self.user)
+
+    def test_discard_draft_returns_200_with_message(self):
+        job = Job.objects.first()
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-DISCARD-001', status=Invoice.STATUS_DRAFT,
+        )
+        pk = invoice.pk
+        response = self.client.delete(f'/api/invoices/{pk}/?confirm=true')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('message', response.data)
+        self.assertFalse(Invoice.objects.filter(pk=pk).exists())
+
+    def test_discard_non_draft_returns_400(self):
+        job = Job.objects.first()
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-DISCARD-002', status=Invoice.STATUS_DRAFT,
+        )
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_OPEN)
+        response = self.client.delete(f'/api/invoices/{invoice.pk}/?confirm=true')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Invoice.objects.filter(pk=invoice.pk).exists())

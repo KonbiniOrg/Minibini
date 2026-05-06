@@ -198,6 +198,16 @@ class EstimateService:
         return LineItemService.delete_line_item_with_renumber(li)
 
     @staticmethod
+    def discard_draft(estimate):
+        """Hard-delete a draft estimate; cascades to line items and sources."""
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError(
+                f'Cannot discard estimate in status "{estimate.status}". '
+                f'Estimate must be in draft.'
+            )
+        estimate.delete()
+
+    @staticmethod
     def add_line_item_from_pli(estimate_pk, pli_pk, qty):
         """Add a line item from a PriceListItem to a draft estimate."""
         try:

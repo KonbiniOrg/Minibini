@@ -598,3 +598,55 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
         JobService.copy_from_worksheet(self.job.pk, ws.pk, template=tmpl)
         self.job.refresh_from_db()
         self.assertEqual(self.job.template, tmpl)
+
+class EstimateServiceDiscardDraftTest(EstimatesTestBase):
+    """Tests for EstimateService.discard_draft."""
+
+    def _make_estimate_with_sources(self):
+        from apps.estimates.models import EstimateLineItemSource
+        worksheet = EstWorksheet.objects.create(job=self.job)
+        plan_task = PlanTask.objects.create(
+            est_worksheet=worksheet, name='T1',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        plan_material = PlanMaterial.objects.create(
+            est_worksheet=worksheet, description='steel',
+            quantity=Decimal('2'), sell_price=Decimal('5'),
+            accounting_category=self.lit,
+        )
+        estimate = EstimateService.create_for_job(self.job.pk)
+        line_item = EstimateLineItem.objects.create(
+            estimate=estimate, qty=Decimal('1'), units='each',
+            price=Decimal('10'), description='', accounting_category=self.lit,
+        )
+        src1 = EstimateLineItemSource.objects.create(
+            estimate_line_item=line_item,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=plan_task.pk,
+        )
+        src2 = EstimateLineItemSource.objects.create(
+            estimate_line_item=line_item,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL,
+            source_pk=plan_material.pk,
+        )
+        return estimate, line_item, src1, src2
+
+    def test_discard_draft_cascades_estimate_line_items_and_sources(self):
+        from apps.estimates.models import EstimateLineItemSource
+        estimate, line_item, src1, src2 = self._make_estimate_with_sources()
+
+        EstimateService.discard_draft(estimate)
+
+        self.assertFalse(Estimate.objects.filter(pk=estimate.pk).exists())
+        self.assertFalse(EstimateLineItem.objects.filter(pk=line_item.pk).exists())
+        self.assertFalse(
+            EstimateLineItemSource.objects.filter(pk__in=[src1.pk, src2.pk]).exists()
+        )
+
+    def test_discard_draft_rejects_non_draft(self):
+        estimate = EstimateService.create_for_job(self.job.pk)
+        Estimate.objects.filter(pk=estimate.pk).update(status=Estimate.STATUS_OPEN)
+        estimate.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            EstimateService.discard_draft(estimate)
+        self.assertTrue(Estimate.objects.filter(pk=estimate.pk).exists())
