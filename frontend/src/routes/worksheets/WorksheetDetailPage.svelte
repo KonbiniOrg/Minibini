@@ -199,7 +199,7 @@
   async function openWizard() {
     try {
       const result = await api.post(
-        `/api/est-worksheets/${params.id}/send-all-atoms-to-estimate/`
+        `/api/est-worksheets/${params.id}/open-estimate/`
       );
       push(`/estimates/${result.estimate_id}/wizard`);
     } catch (e) {

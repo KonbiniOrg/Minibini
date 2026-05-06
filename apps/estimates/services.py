@@ -578,15 +578,20 @@ class EstimateWizardService:
 
     @staticmethod
     def _atom_units(atom_instance):
+        """Return the units label for an atom, sourced from related rate
+        scheme or price list item. Falls back to 'none' (the only literal
+        unit guaranteed to exist in the configured units list)."""
         from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
         if isinstance(atom_instance, PlanTask):
             if atom_instance.rate_scheme_id:
                 return atom_instance.rate_scheme.unit_label
-            return 'each'
+            return 'none'
         if isinstance(atom_instance, PlanMaterial):
-            return 'each'
-        return 'each'
+            if atom_instance.price_list_item_id:
+                return atom_instance.price_list_item.units
+            return 'none'
+        return 'none'
 
     @staticmethod
     def _atom_qty_and_price(atom_instance, total_price):
@@ -671,7 +676,9 @@ class EstimateWizardService:
                 **state_info,
             })
 
-        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related('accounting_category'):
+        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
+            'accounting_category', 'price_list_item',
+        ):
             key = (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk)
             state_info = claims.get(key, default_state)
             atoms.append({
@@ -679,7 +686,7 @@ class EstimateWizardService:
                 'id': pm.pk,
                 'description': pm.description,
                 'amount': pm.compute_amount().quantize(Decimal('0.01')),
-                'units': 'each',
+                'units': EstimateWizardService._atom_units(pm),
                 'category_id': pm.accounting_category_id,
                 **state_info,
             })
@@ -893,14 +900,16 @@ class EstimateWizardService:
             created_count += 1
 
         # PlanMaterials
-        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related('accounting_category'):
+        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
+            'accounting_category', 'price_list_item',
+        ):
             if (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk) in claimed:
                 continue
             li = EstimateLineItem.objects.create(
                 estimate=estimate,
                 description=pm.description,
                 qty=Decimal('1'),
-                units='each',
+                units=EstimateWizardService._atom_units(pm),
                 price=pm.compute_amount().quantize(Decimal('0.01')),
                 accounting_category=pm.accounting_category,
             )

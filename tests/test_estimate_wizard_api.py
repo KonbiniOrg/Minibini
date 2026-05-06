@@ -162,6 +162,27 @@ class SendAllAtomsAPITest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()['created_count'], 0)
 
+    def test_open_estimate_does_not_claim_atoms(self):
+        """The 'Open wizard' button uses this endpoint — it must NOT
+        auto-convert atoms into line items the way send-all does."""
+        from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
+        url = f'/api/est-worksheets/{self.ws.pk}/open-estimate/'
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('estimate_id', data)
+        self.assertEqual(
+            EstimateLineItem.objects.filter(estimate_id=data['estimate_id']).count(),
+            0,
+        )
+        self.assertEqual(EstimateLineItemSource.objects.count(), 0)
+
+    def test_open_estimate_returns_existing_draft(self):
+        url = f'/api/est-worksheets/{self.ws.pk}/open-estimate/'
+        first = self.client.post(url).json()
+        second = self.client.post(url).json()
+        self.assertEqual(first['estimate_id'], second['estimate_id'])
+
     def test_plan_task_create_via_api_includes_billing(self):
         from apps.jobs.models import RateScheme
         scheme = RateScheme.objects.create(

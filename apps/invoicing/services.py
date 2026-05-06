@@ -407,14 +407,21 @@ class InvoiceWizardService:
 
     @staticmethod
     def _atom_units(atom_instance):
+        """Return the units label for an atom, sourced from related rate
+        scheme or price list item. Falls back to 'none' (the only literal
+        unit guaranteed to exist in the configured units list)."""
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
             charge = getattr(atom_instance, 'charge', None)
             if charge and charge.rate_scheme_id:
                 return charge.rate_scheme.unit_label
-            return 'each'
-        return 'each'  # Material and any unknown
+            return 'none'
+        if isinstance(atom_instance, Material):
+            if atom_instance.price_list_item_id:
+                return atom_instance.price_list_item.units
+            return 'none'
+        return 'none'
 
     @staticmethod
     def _atom_qty_and_price(atom_instance, total_price):

@@ -344,12 +344,13 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(line_item.units, 'hours')
 
     def test_single_material_atom_copy_over(self):
-        # material has quantity=1.00, sell_price=25.00 -> qty=1, price=25
+        # material has quantity=1.00, sell_price=25.00, linked to a PriceListItem
+        # whose units default to 'none' -> qty=1, price=25, units='none'
         atoms = [{'type': 'material', 'id': self.material.pk}]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         self.assertEqual(line_item.qty, Decimal('1.00'))
         self.assertEqual(line_item.price, Decimal('25.00'))
-        self.assertEqual(line_item.units, 'each')
+        self.assertEqual(line_item.units, 'none')
 
     def test_single_material_atom_with_qty_3_copy_over(self):
         # Explicit non-1 quantity case

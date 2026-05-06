@@ -216,3 +216,23 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
             'created_count': result['created_count'],
         })
 
+    @action(detail=True, methods=['post'], url_path='open-estimate')
+    def open_estimate(self, request, pk=None):
+        """Return (creating if needed) the worksheet's draft estimate.
+
+        Does NOT auto-claim atoms — used by the "Open wizard to group atoms"
+        button to land in the wizard with a fresh estimate the user can
+        populate manually.
+        """
+        from apps.estimates.services import EstimateWizardService
+
+        worksheet = self.get_object()
+        try:
+            estimate = EstimateWizardService.open_for_worksheet(worksheet)
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=400)
+        return Response({
+            'estimate_id': estimate.pk,
+            'estimate_number': estimate.estimate_number,
+        })
+

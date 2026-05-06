@@ -228,12 +228,12 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(li.units, 'hour')
 
     def test_single_plan_material_atom_copy_over(self):
-        # pm has quantity=3, sell_price=5 -> qty=3, price=5, units=each
+        # pm has quantity=3, sell_price=5, no price_list_item -> qty=3, price=5, units='none'
         atoms = [{'type': 'plan_material', 'id': self.pm.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.qty, Decimal('3'))
         self.assertEqual(li.price, Decimal('5'))
-        self.assertEqual(li.units, 'each')
+        self.assertEqual(li.units, 'none')
 
     def test_multi_atom_line_qty_1_units_none(self):
         atoms = [
