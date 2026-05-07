@@ -118,7 +118,7 @@
       {#if !readonly && !jobLocked}<th>Move Material</th>{/if}
       <th>Name</th>
       {#if showAssignee}<th>Assignee</th>{/if}
-      <th class="text-right">Est Worker</th>
+      <th class="text-right">Scheduled Time</th>
       {#if showStatus}<th>Status</th>{/if}
       <th class="text-right">Units</th>
       <th class="text-right">Est Qty</th>
