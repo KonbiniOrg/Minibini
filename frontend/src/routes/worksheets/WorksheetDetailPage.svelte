@@ -5,10 +5,13 @@
   import WorksheetTaskTable from '../../components/WorksheetTaskTable.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   let { params = {} } = $props();
 
   let worksheet = $state(null);
+  let job = $state(null);
+  let contact = $state(null);
   let templates = $state([]);
   let categories = $state([]);
   let loading = $state(true);
@@ -38,10 +41,29 @@
     try {
       worksheet = await api.get(`/api/est-worksheets/${params.id}/`);
       await loadMaterials();
+      if (worksheet.job) {
+        await loadJobContext(worksheet.job);
+      }
     } catch (e) {
       error = e.message || 'Could not load worksheet.';
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadJobContext(jobId) {
+    try {
+      job = await api.get(`/api/jobs/${jobId}/`);
+      if (job.contact) {
+        try {
+          contact = await api.get(`/api/contacts/${job.contact}/`);
+        } catch (e) {
+          contact = null;
+        }
+      }
+    } catch (e) {
+      job = null;
+      contact = null;
     }
   }
 
@@ -219,30 +241,25 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if worksheet}
-  <h2>Worksheet v{worksheet.version}</h2>
+  {#if job}
+    <JobHeader {job} {contact} onStatusChange={reload} />
+  {/if}
 
-  <p>
-    <a href={`/jobs/${worksheet.job}`} use:link>&laquo; Back to Job {worksheet.job_number}{worksheet.job_name ? ` - ${worksheet.job_name}` : ''}</a>
-  </p>
-
-  <div class="status-line">
+  <div class="toolbar">
+    <a href={`/jobs/${worksheet.job}`} use:link class="back-link">&laquo; back to overview</a>
+    <span class="ws-title">Worksheet v{worksheet.version}</span>
     <span class="status-badge status-{worksheet.status}">{worksheet.status}</span>
-    <span class="meta">
-      Created {new Date(worksheet.created_date).toLocaleDateString()}
-    </span>
-  </div>
-
-  {#if canEdit}
-    <div class="action-bar">
-      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
+    {#if canEdit}
       <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
+      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
       <button type="button" onclick={openAddMaterial}>Add Material</button>
       <button type="button" onclick={sendAllAtoms} disabled={sendingAll}>
         {sendingAll ? 'Sending…' : 'Send all atoms to estimate'}
       </button>
       <button type="button" onclick={openWizard}>Open wizard to group atoms</button>
-    </div>
-  {/if}
+    {/if}
+    <span class="meta">Created {new Date(worksheet.created_date).toLocaleDateString()}</span>
+  </div>
 
   <WorksheetTaskTable
     {worksheet}
@@ -322,7 +339,12 @@
 
 <style>
   .error { color: #a8071a; }
-  .status-line { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 24px;
+  }
+  .back-link { font-size: 13px; }
+  .ws-title { font-size: 18px; font-weight: 600; }
   .status-badge {
     padding: 4px 12px; border-radius: 12px; font-size: 13px;
     font-weight: 600; text-transform: capitalize;
@@ -330,14 +352,13 @@
   .status-draft { background: #f3f4f6; color: #374151; }
   .status-final { background: #e0e7ff; color: #4338ca; }
   .status-superseded { background: #fef3c7; color: #92400e; }
-  .meta { color: #888; font-size: 13px; }
-  .action-bar { display: flex; gap: 8px; margin-bottom: 16px; }
-  .action-bar button {
+  .meta { color: #888; font-size: 13px; margin-left: auto; }
+  .toolbar button {
     padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;
     background: #fff; cursor: pointer; font-size: 13px;
   }
-  .action-bar button:hover { background: #f3f4f6; }
-  .action-bar button:disabled { opacity: 0.5; cursor: default; }
+  .toolbar button:hover { background: #f3f4f6; }
+  .toolbar button:disabled { opacity: 0.5; cursor: default; }
 
   .mat-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
   .mat-table th { padding: 8px 10px; text-align: left; background: #fef3c7; color: #78350f; }
