@@ -79,12 +79,12 @@
   }
 
   async function saveActualQty(value) {
-    if (!charge || !task) return;
+    if (!task) return;
     try {
-      await api.patch(`/api/jobs/${task.job.id}/tasks/${task.task_id}/charge/`, {
-        actuals: { qty: Number(value) },
+      await api.patch(`/api/jobs/${task.job.id}/tasks/${task.task_id}/`, {
+        actual_qty: Number(value),
       });
-      await loadCharge();
+      await loadTask();
     } catch (e) {
       // silently fail for now
     }
@@ -302,7 +302,7 @@
         <tr><td><strong>Actual {charge.scheme_unit_label}s</strong></td>
           <td>
             <input type="number" step="0.01"
-              value={charge.actuals?.qty || ''}
+              value={task.actual_qty || ''}
               onchange={(e) => saveActualQty(e.target.value)}>
           </td></tr>
       {/if}
