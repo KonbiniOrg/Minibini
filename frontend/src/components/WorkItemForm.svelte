@@ -15,6 +15,7 @@
   } = $props();
 
   let templateId = $state('');
+  let lastFilledTemplateId = $state('');
   let rateSchemeId = $state('');
   let name = $state('');
   let description = $state('');
@@ -54,6 +55,7 @@
       rateSchemeId = ''; activeModifiers = [];
       estQty = ''; estWorkerTime = '';
       templateId = '';
+      lastFilledTemplateId = '';
     }
     error = '';
   });
@@ -65,10 +67,14 @@
   $effect(() => {
     if (mode !== 'template') return;
     if (!selectedTemplate) return;
-    if (!name) name = selectedTemplate.template_name || '';
-    if (!description) description = selectedTemplate.description || '';
+    if (templateId === lastFilledTemplateId) return;
+    lastFilledTemplateId = templateId;
+    // User just picked (or switched) the template — overwrite fields with its defaults.
+    // The user is free to delete or edit any field afterward; we won't refill.
+    name = selectedTemplate.template_name || '';
+    description = selectedTemplate.description || '';
     activeModifiers = [...(selectedTemplate.default_active_modifiers || [])];
-    if (!estQty && selectedTemplate.default_billable_qty) {
+    if (selectedTemplate.default_billable_qty) {
       estQty = selectedTemplate.default_billable_qty;
     }
     rateSchemeId = selectedTemplate.rate_scheme ?? '';
@@ -133,6 +139,10 @@
   }
 
   async function save() {
+    if (!name || !name.trim()) {
+      error = 'Name is required.';
+      return;
+    }
     if (estQtyRequired && !estQty) {
       error = 'Estimated qty is required on the worksheet.';
       return;
