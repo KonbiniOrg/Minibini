@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.jobs.models import Task, TaskCharge, RateScheme
+from apps.jobs.models import Task, TaskCharge
 from apps.inventory.models import Material
 
 
@@ -68,37 +68,6 @@ class TaskChargeReadSerializer(serializers.ModelSerializer):
             return str(obj.compute())
         except Exception:
             return None
-
-
-def _serialize_charge(obj):
-    """Return nested TaskCharge data for a Task, or None if absent."""
-    try:
-        charge = obj.charge
-    except TaskCharge.DoesNotExist:
-        return None
-    return TaskChargeReadSerializer(charge).data
-
-
-def _actual_hours(task):
-    """Sum of blep durations on this task, in hours."""
-    total_seconds = sum(
-        b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
-    )
-    return round(total_seconds / 3600.0, 2)
-
-
-def _estimated_hours(task):
-    """Estimated hours for this task — only meaningful when the rate scheme is elapsed_time."""
-    if not task.source_plan_task_id:
-        return None
-    try:
-        charge = task.charge
-    except TaskCharge.DoesNotExist:
-        return None
-    if charge.rate_scheme.algorithm != RateScheme.ELAPSED_TIME:
-        return None
-    est = task.source_plan_task.est_qty
-    return float(est) if est is not None else None
 
 
 class TaskSerializer(serializers.ModelSerializer):
