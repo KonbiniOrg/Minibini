@@ -336,29 +336,23 @@
 {:else if job}
   <JobHeader {job} {contact} onStatusChange={reload} />
 
-  <p class="back-overview">
-    <a href={`/jobs/${job.job_id}`} use:link>&laquo; back to overview</a>
-    {#if job.template?.name}
-      <span class="meta">· Template: {job.template.name}</span>
-    {/if}
-  </p>
-
-  {#if canManageJobs}
-    <div class="action-bar">
-      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
-    </div>
-  {/if}
-
-  {#if !jobLocked}
-    <div class="action-bar">
+  <div class="toolbar">
+    <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
+    {#if !jobLocked}
       <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
       <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
       <button type="button" onclick={openAddJobMaterial}>Add Material</button>
       {#if canBuildInvoice}
         <button type="button" onclick={startInvoiceWizard}>Open invoice wizard</button>
       {/if}
-    </div>
-  {/if}
+    {/if}
+    {#if canManageJobs}
+      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
+    {/if}
+    {#if job.template?.name}
+      <span class="meta">Template: {job.template.name}</span>
+    {/if}
+  </div>
 
   <TaskTree
     tasks={enrichedTasks}
@@ -425,13 +419,16 @@
 
 <style>
   .error { color: #a8071a; }
-  .back-overview { padding: 8px 24px; margin: 0; }
-  .meta { color: #888; font-size: 13px; }
-  .action-bar { display: flex; gap: 8px; margin-bottom: 16px; }
-  .action-bar button {
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 24px;
+  }
+  .back-link { font-size: 13px; }
+  .meta { color: #888; font-size: 13px; margin-left: auto; }
+  .toolbar button {
     padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;
     background: #fff; cursor: pointer; font-size: 13px;
   }
-  .action-bar button:hover { background: #f3f4f6; }
-  .action-bar button:disabled { opacity: 0.5; cursor: default; }
+  .toolbar button:hover { background: #f3f4f6; }
+  .toolbar button:disabled { opacity: 0.5; cursor: default; }
 </style>
