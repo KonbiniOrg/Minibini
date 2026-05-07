@@ -156,7 +156,6 @@
         {/if}
         <td>
           <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
-          {#if task.description}<br><span class="dim">{task.description}</span>{/if}
         </td>
         {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task)}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
@@ -227,7 +226,6 @@
           {/if}
           <td class="indent">
             <button type="button" class="link-btn" onclick={() => onTaskClick(sub)}>{sub.name}</button>
-            {#if sub.description}<br><span class="dim indent">{sub.description}</span>{/if}
           </td>
           {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub)}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
           <td class="text-right">{fmtWorkerTime(sub.est_worker_time)}</td>
