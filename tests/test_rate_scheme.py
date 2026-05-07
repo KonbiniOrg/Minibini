@@ -276,8 +276,9 @@ class RateSchemeIsReferencedTest(BaseTestCase):
         )
         self.assertTrue(s.is_referenced())
 
-    def test_scheme_with_taskCharge_is_referenced(self):
-        from apps.jobs.models import RateScheme, Task, TaskCharge, Job
+    def test_scheme_with_task_is_referenced(self):
+        """Phase B: is_referenced checks Task.rate_scheme, not TaskCharge."""
+        from apps.jobs.models import RateScheme, Task, Job
         from apps.contacts.models import Contact, Business
         contact = Contact.objects.create(first_name='F', last_name='L', email='f2@l.test')
         biz = Business.objects.create(business_name='B', default_contact=contact)
@@ -288,8 +289,7 @@ class RateSchemeIsReferencedTest(BaseTestCase):
             name='refTC', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
-        t = Task.objects.create(job=job, name='t')
-        TaskCharge.objects.create(task=t, rate_scheme=s)
+        Task.objects.create(job=job, name='t', rate_scheme=s)
         self.assertTrue(s.is_referenced())
 
     def test_scheme_with_taskTemplate_is_referenced(self):
@@ -540,3 +540,39 @@ class RateSchemeRequiresACTest(BaseTestCase):
         with self.assertRaises(ValidationError) as cm:
             s.full_clean()
         self.assertIn('accounting_category', cm.exception.message_dict)
+
+
+class RateSchemeIsReferencedTaskTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AccountingCategory
+        self.ac = AccountingCategory.objects.create(code='BIRT', name='BIRT')
+
+    def test_is_referenced_counts_task_not_taskcharge(self):
+        """After Phase B, RateScheme.is_referenced checks Task instead of TaskCharge."""
+        from apps.jobs.models import Task, RateScheme, Job
+        from apps.contacts.models import Contact, Business
+
+        scheme = RateScheme.objects.create(
+            name='Test B2', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('10.00'), unit_label='job',
+            accounting_category=self.ac,
+        )
+        self.assertFalse(scheme.is_referenced())
+
+        # Create job + contact (mind the Business/Contact circular FK)
+        contact = Contact.objects.create(first_name='A', last_name='B')
+        biz = Business.objects.create(business_name='X-B2', default_contact=contact)
+        contact.business = biz
+        contact.save()
+        job = Job.objects.create(
+            job_number='JOB-T1-B2', contact=contact, status=Job.STATUS_DRAFT,
+        )
+        Task.objects.create(job=job, name='Direct', rate_scheme=scheme)
+
+        self.assertTrue(scheme.is_referenced())
+        counts = scheme.reference_counts()
+        self.assertEqual(counts['task_count'], 1)
+        self.assertNotIn('task_charge_count', counts)

@@ -448,11 +448,11 @@ class RateScheme(models.Model):
         return list(self.modifiers)
 
     def is_referenced(self):
-        """True if any PlanTask, TaskCharge, or TaskTemplate points at this scheme."""
+        """True if any PlanTask, Task, or TaskTemplate points at this scheme."""
         from apps.estimates.models import TaskTemplate
         if PlanTask.objects.filter(rate_scheme=self).exists():
             return True
-        if TaskCharge.objects.filter(rate_scheme=self).exists():
+        if Task.objects.filter(rate_scheme=self).exists():
             return True
         if TaskTemplate.objects.filter(rate_scheme=self).exists():
             return True
@@ -463,7 +463,7 @@ class RateScheme(models.Model):
         from apps.estimates.models import TaskTemplate
         return {
             'plan_task_count': PlanTask.objects.filter(rate_scheme=self).count(),
-            'task_charge_count': TaskCharge.objects.filter(rate_scheme=self).count(),
+            'task_count': Task.objects.filter(rate_scheme=self).count(),
             'task_template_count': TaskTemplate.objects.filter(rate_scheme=self).count(),
         }
 

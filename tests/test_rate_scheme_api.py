@@ -305,7 +305,7 @@ class RateSchemeSerializerExtraFieldsTest(BaseTestCase):
         self.assertFalse(body['superseded'])
         self.assertIn('reference_counts', body)
         self.assertEqual(body['reference_counts']['plan_task_count'], 0)
-        self.assertEqual(body['reference_counts']['task_charge_count'], 0)
+        self.assertEqual(body['reference_counts']['task_count'], 0)
         self.assertEqual(body['reference_counts']['task_template_count'], 0)
 
     def test_unit_label_must_be_in_configured_units(self):
