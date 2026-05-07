@@ -71,7 +71,35 @@
     return n ? `$${Number(n).toFixed(2)}` : '-';
   }
 
-  const colCount = $derived(6 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1));
+  function fmtWorkerTime(value) {
+    // Server returns DurationField as either "HH:MM:SS" / "DD HH:MM:SS"
+    // or ISO 8601 ("PT1H30M"). Render as "Hh Mm" or "Mm" for compactness.
+    if (!value) return '-';
+    const str = String(value);
+    const iso = str.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+    if (iso) {
+      const days = parseInt(iso[1] || '0', 10);
+      const h = parseInt(iso[2] || '0', 10) + days * 24;
+      const m = parseInt(iso[3] || '0', 10);
+      if (h && m) return `${h}h ${m}m`;
+      if (h) return `${h}h`;
+      if (m) return `${m}m`;
+      return '-';
+    }
+    const hms = str.match(/^(?:(\d+) )?(\d+):(\d+):(\d+)/);
+    if (hms) {
+      const days = parseInt(hms[1] || '0', 10);
+      const h = parseInt(hms[2], 10) + days * 24;
+      const m = parseInt(hms[3], 10);
+      if (h && m) return `${h}h ${m}m`;
+      if (h) return `${h}h`;
+      if (m) return `${m}m`;
+      return '-';
+    }
+    return str;
+  }
+
+  const colCount = $derived(7 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1));
 
   function isMaterialPending(mat) {
     return mat.consumption_state === 'pending';
@@ -90,6 +118,7 @@
       {#if !readonly && !jobLocked}<th>Move Material</th>{/if}
       <th>Name</th>
       {#if showAssignee}<th>Assignee</th>{/if}
+      <th class="text-right">Est Worker</th>
       {#if showStatus}<th>Status</th>{/if}
       <th class="text-right">Units</th>
       <th class="text-right">Est Qty</th>
@@ -111,6 +140,7 @@
           {#if task.description}<br><span class="dim">{task.description}</span>{/if}
         </td>
         {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task)}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
+        <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
         {#if showStatus}<td><span class="status-pill status-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason">{task.blocked_reason}</span>{/if}</td>{/if}
         <td class="text-right">{task.scheme_unit_label || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
@@ -146,6 +176,7 @@
             {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
           </td>
           {#if showAssignee}<td></td>{/if}
+          <td></td>
           {#if showStatus}<td></td>{/if}
           <td class="text-right">-</td>
           <td class="text-right">{mat.quantity ?? '-'}</td>
@@ -178,6 +209,7 @@
             {#if sub.description}<br><span class="dim indent">{sub.description}</span>{/if}
           </td>
           {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub)}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
+          <td class="text-right">{fmtWorkerTime(sub.est_worker_time)}</td>
           {#if showStatus}<td><span class="status-pill status-{sub.status}">{sub.status}</span>{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason">{sub.blocked_reason}</span>{/if}</td>{/if}
           <td class="text-right">{sub.scheme_unit_label || '-'}</td>
           <td class="text-right">{sub.est_qty ?? '-'}</td>
@@ -210,6 +242,7 @@
               {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
             </td>
             {#if showAssignee}<td></td>{/if}
+            <td></td>
             {#if showStatus}<td></td>{/if}
             <td class="text-right">-</td>
             <td class="text-right">{mat.quantity ?? '-'}</td>
@@ -245,6 +278,7 @@
             {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
           </td>
           {#if showAssignee}<td></td>{/if}
+          <td></td>
           {#if showStatus}<td></td>{/if}
           <td class="text-right">-</td>
           <td class="text-right">{mat.quantity ?? '-'}</td>
