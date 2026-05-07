@@ -38,6 +38,19 @@
     return taskTotalInfo(task).value;
   }
 
+  function taskActual(task) {
+    // ELAPSED_TIME → hours from bleps. ENTERED_QTY → worker-entered qty.
+    // FLAT_FEE and unset → no actual to display.
+    if (task.scheme_algorithm === 'elapsed_time') {
+      const h = Number(task.actual_hours) || 0;
+      return h > 0 ? h : null;
+    }
+    if (task.scheme_algorithm === 'entered_qty') {
+      return task.actual_qty != null && task.actual_qty !== '' ? task.actual_qty : null;
+    }
+    return null;
+  }
+
   function materialTotal(mat) {
     const qty = Number(mat.quantity) || 0;
     const price = Number(mat.sell_price) || 0;
@@ -104,7 +117,7 @@
     return str;
   }
 
-  const colCount = $derived(7 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1));
+  const colCount = $derived(8 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1));
 
   function isMaterialPending(mat) {
     return mat.consumption_state === 'pending';
@@ -127,6 +140,7 @@
       {#if showStatus}<th>Status</th>{/if}
       <th class="text-right">Units</th>
       <th class="text-right">Est Qty</th>
+      <th class="text-right">Actual</th>
       <th class="text-right">Unit Cost</th>
       <th class="text-right">Sell Price</th>
       <th class="text-right"><span class="est-label">(Est)</span><br>Total</th>
@@ -149,6 +163,7 @@
         {#if showStatus}<td><span class="status-pill status-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason">{task.blocked_reason}</span>{/if}</td>{/if}
         <td class="text-right">{task.scheme_unit_label || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
+        <td class="text-right">{taskActual(task) ?? '-'}</td>
         <td class="text-right">-</td>
         <td class="text-right">{fmt(task.effective_rate)}</td>
         <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmt(taskTotal(task))}</td>
@@ -185,6 +200,7 @@
           {#if showStatus}<td></td>{/if}
           <td class="text-right">-</td>
           <td class="text-right">{mat.quantity ?? '-'}</td>
+          <td class="text-right">-</td>
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
@@ -218,6 +234,7 @@
           {#if showStatus}<td><span class="status-pill status-{sub.status}">{sub.status}</span>{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason">{sub.blocked_reason}</span>{/if}</td>{/if}
           <td class="text-right">{sub.scheme_unit_label || '-'}</td>
           <td class="text-right">{sub.est_qty ?? '-'}</td>
+          <td class="text-right">{taskActual(sub) ?? '-'}</td>
           <td class="text-right">-</td>
           <td class="text-right">{fmt(sub.effective_rate)}</td>
           <td class="text-right" class:est-total={taskTotalInfo(sub).isEstimate}>{fmt(taskTotal(sub))}</td>
@@ -251,6 +268,7 @@
             {#if showStatus}<td></td>{/if}
             <td class="text-right">-</td>
             <td class="text-right">{mat.quantity ?? '-'}</td>
+            <td class="text-right">-</td>
             <td class="text-right">{fmt(mat.unit_cost)}</td>
             <td class="text-right">{fmt(mat.sell_price)}</td>
             <td class="text-right">{fmt(materialTotal(mat))}</td>
@@ -287,6 +305,7 @@
           {#if showStatus}<td></td>{/if}
           <td class="text-right">-</td>
           <td class="text-right">{mat.quantity ?? '-'}</td>
+          <td class="text-right">-</td>
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
@@ -347,9 +366,12 @@
   .status-cancelled { background: #f3f4f6; color: #9ca3af; }
   .blocked-reason { font-size: 11px; color: #991b1b; }
 
-  .actions-cell { white-space: nowrap; }
+  .actions-cell {
+    display: flex; flex-wrap: wrap; gap: 2px;
+    max-width: 12em;
+  }
   .actions-cell button {
-    font-size: 11px; padding: 2px 6px; margin-right: 2px;
+    font-size: 11px; padding: 2px 6px;
     cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
   }
   .actions-cell button:hover { background: #f0f0f0; }
