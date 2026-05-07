@@ -132,6 +132,14 @@ class TaskBase(models.Model):
         null=True, blank=True,
         help_text="Estimated worker time for scheduling"
     )
+    est_qty = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        null=True, blank=True,
+        help_text=(
+            "Estimated billable quantity in the rate scheme's units. "
+            "Required at the application layer on PlanTask; optional on Task."
+        ),
+    )
 
     class Meta:
         abstract = True
@@ -150,7 +158,8 @@ class PlanTask(TaskBase):
         'jobs.RateScheme', on_delete=models.PROTECT,
     )
     active_modifiers = models.JSONField(default=list, blank=True)
-    est_qty = models.DecimalField(max_digits=10, decimal_places=2)
+    # est_qty is now inherited from TaskBase (nullable at DB level; PlanTask.clean()
+    # enforces non-null in Phase B).
 
     class Meta:
         db_table = 'plan_tasks'
@@ -240,6 +249,23 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text="Position in assignee's work queue on the board"
     )
+    # Billing fields (Phase A: nullable; Phase B: rate_scheme tightens to NOT NULL).
+    rate_scheme = models.ForeignKey(
+        'jobs.RateScheme',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='+',
+    )
+    active_modifiers = models.JSONField(default=list, blank=True)
+    actual_qty = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        null=True, blank=True,
+        help_text=(
+            "Worker-entered actual quantity for ENTERED_QTY schemes. "
+            "Null for ELAPSED_TIME (qty derived from bleps) and FLAT_FEE."
+        ),
+    )
+    # est_qty inherited from TaskBase (nullable on Task).
 
     class Meta:
         db_table = 'tasks'
