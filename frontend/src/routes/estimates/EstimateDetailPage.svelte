@@ -3,11 +3,13 @@
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import EstimateLineItemModal from '../../components/EstimateLineItemModal.svelte';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   let { params = {} } = $props();
 
   let estimate = $state(null);
   let job = $state(null);
+  let contact = $state(null);
   let categories = $state([]);
   let loading = $state(true);
   let error = $state('');
@@ -92,8 +94,16 @@
       if (estimate?.job) {
         try {
           job = await api.get(`/api/jobs/${estimate.job}/`);
+          if (job?.contact) {
+            try {
+              contact = await api.get(`/api/contacts/${job.contact}/`);
+            } catch (_) {
+              contact = null;
+            }
+          }
         } catch (_) {
           job = null;
+          contact = null;
         }
       }
     } catch (e) {
@@ -208,9 +218,13 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if estimate}
-  <h2 class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</h2>
+  {#if job}
+    <JobHeader {job} {contact} onStatusChange={loadEstimate} />
+  {/if}
 
-  <div class="status-line">
+  <div class="toolbar">
+    <a href={`/jobs/${estimate.job}`} use:link class="back-link">&laquo; back to overview</a>
+    <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</span>
     {#if canManageJobs && validNextStatuses.length > 0}
       <span class="status-select-wrapper">
         <select class="status-select status-{estimate.status}" onchange={handleStatusChange}>
@@ -363,6 +377,12 @@
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
 
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 24px;
+  }
+  .back-link { font-size: 13px; }
+  .page-title { font-size: 18px; font-weight: 600; }
   .status-line { margin: 8px 0 16px; display: flex; align-items: center; gap: 12px; }
   .status-badge {
     padding: 4px 12px; border-radius: 12px; font-size: 13px;
