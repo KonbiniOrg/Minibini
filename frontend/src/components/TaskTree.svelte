@@ -22,15 +22,20 @@
     selectedTaskId = $bindable(null),
   } = $props();
 
+  function taskTotalInfo(task) {
+    // Prefer the live computed_charge (driven by actuals: bleps for elapsed_time,
+    // actual_qty for entered_qty, fixed for flat_fee). When actuals are absent
+    // the computed charge is 0 — fall back to est_qty * effective_rate as the
+    // estimated total, marked so the UI can render it in grey.
+    const actual = Number(task.computed_charge) || 0;
+    if (actual > 0) return { value: actual, isEstimate: false };
+    const est = (Number(task.est_qty) || 0) * (Number(task.effective_rate) || 0);
+    if (est > 0) return { value: est, isEstimate: true };
+    return { value: 0, isEstimate: false };
+  }
+
   function taskTotal(task) {
-    // computed_charge is a pre-calculated string from the API; fall back to
-    // est_qty * effective_rate if it is absent (e.g. during optimistic renders).
-    if (task.computed_charge != null) {
-      return Number(task.computed_charge) || 0;
-    }
-    const qty = Number(task.est_qty) || 0;
-    const rate = Number(task.effective_rate) || 0;
-    return qty * rate;
+    return taskTotalInfo(task).value;
   }
 
   function materialTotal(mat) {
@@ -124,7 +129,7 @@
       <th class="text-right">Est Qty</th>
       <th class="text-right">Unit Cost</th>
       <th class="text-right">Sell Price</th>
-      <th class="text-right">Total</th>
+      <th class="text-right"><span class="est-label">(Est)</span><br>Total</th>
       {#if !readonly}<th>Actions</th>{/if}
     </tr>
   </thead>
@@ -146,7 +151,7 @@
         <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">-</td>
         <td class="text-right">{fmt(task.effective_rate)}</td>
-        <td class="text-right">{fmt(taskTotal(task))}</td>
+        <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmt(taskTotal(task))}</td>
         {#if !readonly && !jobLocked}
           <td class="actions-cell">
             {#if !isTerminal(task)}
@@ -215,7 +220,7 @@
           <td class="text-right">{sub.est_qty ?? '-'}</td>
           <td class="text-right">-</td>
           <td class="text-right">{fmt(sub.effective_rate)}</td>
-          <td class="text-right">{fmt(taskTotal(sub))}</td>
+          <td class="text-right" class:est-total={taskTotalInfo(sub).isEstimate}>{fmt(taskTotal(sub))}</td>
           {#if !readonly && !jobLocked}
             <td class="actions-cell">
               {#if !isTerminal(sub)}
@@ -314,6 +319,8 @@
   .task-tree-table th { padding: 8px 10px; text-align: left; background: #f0fdfa; color: #115e59; }
   .task-tree-table td { padding: 6px 10px; vertical-align: top; }
   .text-right { text-align: right; }
+  .est-label { color: #888; font-size: 11px; font-weight: normal; }
+  .est-total { color: #888; }
   .dim { color: #888; font-size: 13px; }
   .indent { padding-left: 28px; }
   .indent-2 { padding-left: 48px; }
