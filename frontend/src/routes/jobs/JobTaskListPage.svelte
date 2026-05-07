@@ -3,7 +3,7 @@
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import TaskTree from '../../components/TaskTree.svelte';
-  import TaskModal from '../../components/TaskModal.svelte';
+  import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
   import SubtaskModal from '../../components/SubtaskModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
@@ -20,7 +20,7 @@
 
   // Modal state
   let taskModalOpen = $state(false);
-  let taskModalMode = $state('create-freeform');
+  let taskModalMode = $state('manual');
   let taskModalTask = $state(null);
 
   let materialModalOpen = $state(false);
@@ -139,15 +139,21 @@
   });
 
   // Task modal handlers
-  function openAddTask() {
+  function openAddManualTask() {
     taskModalTask = null;
-    taskModalMode = 'create-freeform';
+    taskModalMode = 'manual';
+    taskModalOpen = true;
+  }
+
+  function openAddTemplateTask() {
+    taskModalTask = null;
+    taskModalMode = 'template';
     taskModalOpen = true;
   }
 
   function openEditTask(task) {
     taskModalTask = task;
-    taskModalMode = 'edit';
+    taskModalMode = 'manual';
     taskModalOpen = true;
   }
 
@@ -341,7 +347,8 @@
 
   {#if !jobLocked}
     <div class="action-bar">
-      <button type="button" onclick={openAddTask}>Add Task</button>
+      <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
+      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
       <button type="button" onclick={openAddJobMaterial}>Add Material</button>
       {#if canBuildInvoice}
         <button type="button" onclick={startInvoiceWizard}>Open invoice wizard</button>
@@ -371,13 +378,14 @@
   />
 
   <!-- Modals -->
-  <TaskModal
+  <WorkItemForm
     open={taskModalOpen}
     mode={taskModalMode}
-    task={taskModalTask}
-    jobId={job.job_id}
+    context="job"
+    contextId={job.job_id}
+    item={taskModalTask}
+    isEdit={!!taskModalTask}
     {templates}
-    {categories}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
   />
