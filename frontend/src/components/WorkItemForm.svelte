@@ -117,7 +117,7 @@
       const m = parseInt(colonMatch[2], 10);
       return `PT${h}H${m}M`;
     }
-    const decimalMatch = trimmed.match(/^(\d+(?:\.\d+)?)$/);
+    const decimalMatch = trimmed.match(/^(\d+\.?\d*|\.\d+)$/);
     if (decimalMatch) {
       const total = parseFloat(decimalMatch[1]);
       const totalMinutes = Math.round(total * 60);
