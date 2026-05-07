@@ -224,6 +224,10 @@
     }
   }
 
+  function handleTaskClick(task) {
+    push(`/worksheets/${worksheet.est_worksheet_id}/plan-tasks/${task.plan_task_id}`);
+  }
+
   async function openWizard() {
     try {
       const result = await api.post(
@@ -264,6 +268,7 @@
   <WorksheetTaskTable
     {worksheet}
     readonly={!canEdit}
+    onTaskClick={handleTaskClick}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onReorder={handleReorder}

@@ -24,6 +24,7 @@
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
+  import PlanTaskDetailPage from './routes/worksheets/PlanTaskDetailPage.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateWizardPage from './routes/estimates/EstimateWizardPage.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
@@ -59,6 +60,7 @@
     '/jobs/:id/tasklist': JobTaskListPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
     '/worksheets/:id': WorksheetDetailPage,
+    '/worksheets/:wsId/plan-tasks/:planTaskId': PlanTaskDetailPage,
     '/estimates/:id/wizard': EstimateWizardPage,
     '/estimates/:id': EstimateDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
