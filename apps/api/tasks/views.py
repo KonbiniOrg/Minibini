@@ -206,5 +206,21 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'ok'})
 
+    @action(detail=True, methods=['patch'], url_path='actual-qty',
+            permission_classes=[IsAuthenticated])
+    def actual_qty(self, request, pk=None):
+        """Allow any authenticated worker to record their actual qty on a task."""
+        task = self.get_object()
+        qty = request.data.get('actual_qty')
+        if qty is None:
+            return Response({'actual_qty': ['Required.']}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            from decimal import Decimal
+            task.actual_qty = Decimal(str(qty))
+        except Exception:
+            return Response({'actual_qty': ['Invalid decimal.']}, status=status.HTTP_400_BAD_REQUEST)
+        task.save(update_fields=['actual_qty'])
+        return Response({'actual_qty': str(task.actual_qty)})
+
 
 

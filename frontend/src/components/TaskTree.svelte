@@ -23,8 +23,13 @@
   } = $props();
 
   function taskTotal(task) {
+    // computed_charge is a pre-calculated string from the API; fall back to
+    // est_qty * effective_rate if it is absent (e.g. during optimistic renders).
+    if (task.computed_charge != null) {
+      return Number(task.computed_charge) || 0;
+    }
     const qty = Number(task.est_qty) || 0;
-    const rate = Number(task.rate) || 0;
+    const rate = Number(task.effective_rate) || 0;
     return qty * rate;
   }
 
@@ -107,10 +112,10 @@
         </td>
         {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task)}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         {#if showStatus}<td><span class="status-pill status-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason">{task.blocked_reason}</span>{/if}</td>{/if}
-        <td class="text-right">{task.units || '-'}</td>
+        <td class="text-right">{task.scheme_unit_label || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">-</td>
-        <td class="text-right">{fmt(task.rate)}</td>
+        <td class="text-right">{fmt(task.effective_rate)}</td>
         <td class="text-right">{fmt(taskTotal(task))}</td>
         {#if !readonly && !jobLocked}
           <td class="actions-cell">
@@ -174,10 +179,10 @@
           </td>
           {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub)}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
           {#if showStatus}<td><span class="status-pill status-{sub.status}">{sub.status}</span>{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason">{sub.blocked_reason}</span>{/if}</td>{/if}
-          <td class="text-right">{sub.units || '-'}</td>
+          <td class="text-right">{sub.scheme_unit_label || '-'}</td>
           <td class="text-right">{sub.est_qty ?? '-'}</td>
           <td class="text-right">-</td>
-          <td class="text-right">{fmt(sub.rate)}</td>
+          <td class="text-right">{fmt(sub.effective_rate)}</td>
           <td class="text-right">{fmt(taskTotal(sub))}</td>
           {#if !readonly && !jobLocked}
             <td class="actions-cell">

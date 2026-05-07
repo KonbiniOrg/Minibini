@@ -580,30 +580,48 @@
                   <td class="assigned">{task.assignee_name || '—'}</td>
                   <td class="text-center"><span class="pill pill-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><small>{task.blocked_reason}</small>{/if}</td>
                   <td class="time-cell">
-                    {#if task.estimated_hours !== null && task.estimated_hours !== undefined}
+                    {#if task.scheme_algorithm === 'elapsed_time'}
                       {@const actual = Number(task.actual_hours) || 0}
-                      {@const est = Number(task.estimated_hours)}
+                      {@const est = Number(task.est_qty) || 0}
                       {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
-                      {@const over = actual > est}
+                      {@const over = est > 0 && actual > est}
                       <div class="time-track">
                         <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
                       </div>
                       <div class="time-text {over ? 'over' : ''}">
-                        {actual.toFixed(1)}h / {est.toFixed(1)}h
+                        {actual.toFixed(1)} / {est > 0 ? est.toFixed(1) : '?'} {task.scheme_unit_label || 'h'}
                         {#if est > 0}
                           {#if over}
-                            <span class="time-delta">(over by {(actual - est).toFixed(1)}h)</span>
+                            <span class="time-delta">(over by {(actual - est).toFixed(1)})</span>
                           {:else if actual === 0}
                             <span class="time-dim">(not started)</span>
                           {:else}
-                            <span class="time-dim">({(est - actual).toFixed(1)}h left)</span>
+                            <span class="time-dim">({(est - actual).toFixed(1)} left)</span>
                           {/if}
                         {/if}
                       </div>
-                    {:else if task.charge?.scheme_algorithm === 'flat_fee'}
+                    {:else if task.scheme_algorithm === 'entered_qty'}
+                      {@const actual = Number(task.actual_qty) || 0}
+                      {@const est = Number(task.est_qty) || 0}
+                      {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
+                      {@const over = est > 0 && actual > est}
+                      <div class="time-track">
+                        <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
+                      </div>
+                      <div class="time-text {over ? 'over' : ''}">
+                        {actual} / {est > 0 ? est : '?'} {task.scheme_unit_label || 'units'}
+                        {#if est > 0}
+                          {#if over}
+                            <span class="time-delta">(over by {actual - est})</span>
+                          {:else if actual === 0}
+                            <span class="time-dim">(not started)</span>
+                          {:else}
+                            <span class="time-dim">({est - actual} left)</span>
+                          {/if}
+                        {/if}
+                      </div>
+                    {:else if task.scheme_algorithm === 'flat_fee'}
                       <div class="time-text time-dim">flat fee · {Number(task.actual_hours || 0).toFixed(1)}h logged</div>
-                    {:else if task.charge?.scheme_algorithm === 'entered_qty'}
-                      <div class="time-text time-dim">qty-based · {Number(task.actual_hours || 0).toFixed(1)}h logged</div>
                     {:else}
                       <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(1)}h logged</div>
                     {/if}

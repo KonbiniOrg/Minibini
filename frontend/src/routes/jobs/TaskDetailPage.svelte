@@ -34,6 +34,7 @@
   let subtasks = $state([]);
   let subtaskModalOpen = $state(false);
   let assignModalOpen = $state(false);
+  let actualQtyError = $state('');
 
   function openEdit(blep) { editingBlep = blep; modalMode = 'edit'; }
   function openCreate() { editingBlep = null; modalMode = 'create-open'; }
@@ -70,13 +71,12 @@
 
   async function saveActualQty(value) {
     if (!task) return;
+    actualQtyError = '';
     try {
-      await api.patch(`/api/jobs/${task.job.id}/tasks/${task.task_id}/`, {
-        actual_qty: Number(value),
-      });
+      await api.patch(`/api/tasks/${task.task_id}/actual-qty/`, { actual_qty: value });
       await loadTask();
     } catch (e) {
-      // silently fail for now
+      actualQtyError = e.message || 'Could not save actual qty';
     }
   }
 
@@ -269,8 +269,8 @@
       <tr><td>Status</td><td>{task.status}{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
       <tr><td>Description</td><td>{task.description || '-'}</td></tr>
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
-      <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.units || ''}</td></tr>
-      <tr><td>Rate</td><td>{task.rate ? `$${task.rate}` : '-'}</td></tr>
+      <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
+      <tr><td>Rate</td><td>{task.effective_rate ? `$${task.effective_rate}` : '-'}</td></tr>
     </tbody>
   </table>
 
@@ -290,6 +290,7 @@
             <input type="number" step="0.01"
               value={task.actual_qty || ''}
               onchange={(e) => saveActualQty(e.target.value)}>
+            {#if actualQtyError}<span class="field-error">{actualQtyError}</span>{/if}
           </td></tr>
       {/if}
       {#if task.computed_charge}
@@ -413,6 +414,7 @@
 
 <style>
   .error { color: #a8071a; }
+  .field-error { color: #a8071a; font-size: 13px; margin-left: 6px; }
   .materials-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
   .materials-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
   .materials-table td { padding: 6px 10px; }
