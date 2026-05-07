@@ -320,3 +320,44 @@ class TerminalTaskGuardTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 201)
+
+
+class TaskSerializerFlattenTest(TestCase):
+    """Phase B6: TaskSerializer exposes billing fields as top-level, no 'charge' key."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='flatuser', password='testpass')
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='Flat', last_name='Test')
+        self.job = Job.objects.create(
+            job_number='FLAT-001', name='Flat Serializer Job', contact=self.contact,
+        )
+
+    def test_task_serializer_flattens_billing_fields(self):
+        """Phase B: rate_scheme, active_modifiers, est_qty, est_worker_time,
+        actual_qty are top-level fields. 'charge' is no longer in the payload."""
+        from decimal import Decimal
+        from apps.jobs.models import RateScheme
+
+        ac = AccountingCategory.objects.create(name='Labor')
+        scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hour',
+            accounting_category=ac,
+        )
+        Task.objects.create(
+            job=self.job, name='Test',
+            rate_scheme=scheme, active_modifiers=['rush'],
+            est_qty=Decimal('5'),
+        )
+        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        payload = body['results'] if isinstance(body, dict) and 'results' in body else body
+        row = next(t for t in payload if t['name'] == 'Test')
+        self.assertEqual(row['rate_scheme'], scheme.pk)
+        self.assertEqual(row['active_modifiers'], ['rush'])
+        self.assertEqual(row['est_qty'], '5.00')
+        self.assertIsNone(row['actual_qty'])
+        self.assertNotIn('charge', row)

@@ -104,9 +104,12 @@ def _estimated_hours(task):
 class TaskSerializer(serializers.ModelSerializer):
     """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
     assignee_name = serializers.SerializerMethodField()
-    charge = serializers.SerializerMethodField()
     actual_hours = serializers.SerializerMethodField()
-    estimated_hours = serializers.SerializerMethodField()
+    scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
+    scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True, default=None)
+    scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True, default=None)
+    effective_rate = serializers.SerializerMethodField()
+    computed_charge = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -114,7 +117,11 @@ class TaskSerializer(serializers.ModelSerializer):
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
             'parent_task', 'assignee', 'assignee_name', 'worker_queue',
-            'charge', 'actual_hours', 'estimated_hours',
+            'rate_scheme', 'active_modifiers',
+            'est_qty', 'est_worker_time', 'actual_qty',
+            'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
+            'effective_rate', 'computed_charge',
+            'actual_hours',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
@@ -124,35 +131,29 @@ class TaskSerializer(serializers.ModelSerializer):
             return name if name else obj.assignee.username
         return None
 
-    def get_charge(self, obj):
-        return _serialize_charge(obj)
-
     def get_actual_hours(self, obj):
-        return _actual_hours(obj)
+        total_seconds = sum(
+            b.elapsed.total_seconds()
+            for b in obj.blep_set.all() if b.elapsed is not None
+        )
+        return round(total_seconds / 3600.0, 2)
 
-    def get_estimated_hours(self, obj):
-        return _estimated_hours(obj)
+    def get_effective_rate(self, obj):
+        rate = obj.effective_rate()
+        return str(rate) if rate is not None else None
+
+    def get_computed_charge(self, obj):
+        try:
+            return str(obj.compute_amount())
+        except Exception:
+            return None
 
 
-class TaskDetailSerializer(serializers.ModelSerializer):
-    assignee_name = serializers.SerializerMethodField()
+class TaskDetailSerializer(TaskSerializer):
     job = serializers.SerializerMethodField()
-    charge = serializers.SerializerMethodField()
 
-    class Meta:
-        model = Task
-        fields = [
-            'task_id', 'name', 'description', 'status',
-            'blocked_reason',
-            'parent_task', 'assignee', 'assignee_name',
-            'worker_queue', 'job', 'charge',
-        ]
-        read_only_fields = fields
-
-    def get_assignee_name(self, obj):
-        if obj.assignee:
-            return obj.assignee.get_full_name() or obj.assignee.username
-        return None
+    class Meta(TaskSerializer.Meta):
+        fields = TaskSerializer.Meta.fields + ['job']
 
     def get_job(self, obj):
         job = obj.job
@@ -162,6 +163,3 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'name': job.name,
             'status': job.status,
         }
-
-    def get_charge(self, obj):
-        return _serialize_charge(obj)

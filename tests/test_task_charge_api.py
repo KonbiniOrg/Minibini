@@ -40,24 +40,27 @@ class TaskChargeAPITest(TestCase):
         # Log in as manager by default
         self.client.login(username='manager', password='testpass')
 
-    def test_task_serializer_includes_charge_null(self):
-        """GET /api/tasks/{id}/ shows charge: null when no charge exists."""
+    def test_task_serializer_has_no_charge_key(self):
+        """GET /api/tasks/{id}/ Phase B: 'charge' is no longer nested; billing fields are top-level."""
         resp = self.client.get(f'/api/tasks/{self.task.pk}/')
         self.assertEqual(resp.status_code, 200)
-        self.assertIsNone(resp.json()['charge'])
+        body = resp.json()
+        self.assertNotIn('charge', body)
+        # rate_scheme and active_modifiers are now top-level
+        self.assertIn('rate_scheme', body)
+        self.assertIn('active_modifiers', body)
 
-    def test_task_serializer_includes_charge(self):
-        """GET /api/tasks/{id}/ shows nested charge data."""
-        TaskCharge.objects.create(
-            task=self.task, rate_scheme=self.scheme,
-            active_modifiers=['messy'], actuals={'qty': 30},
-        )
+    def test_task_serializer_includes_billing_top_level(self):
+        """GET /api/tasks/{id}/ Phase B: billing fields from Task are exposed top-level."""
+        self.task.rate_scheme = self.scheme
+        self.task.active_modifiers = ['messy']
+        self.task.save()
         resp = self.client.get(f'/api/tasks/{self.task.pk}/')
         self.assertEqual(resp.status_code, 200)
-        charge = resp.json()['charge']
-        self.assertIsNotNone(charge)
-        self.assertEqual(charge['rate_scheme'], self.scheme.pk)
-        self.assertEqual(charge['active_modifiers'], ['messy'])
+        body = resp.json()
+        self.assertNotIn('charge', body)
+        self.assertEqual(body['rate_scheme'], self.scheme.pk)
+        self.assertEqual(body['active_modifiers'], ['messy'])
 
     def test_create_charge_on_task(self):
         resp = self.client.post(
@@ -187,16 +190,24 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         # The list endpoint may be paginated or unpaginated; handle both.
         items = body.get('results', body) if isinstance(body, dict) else body
         first = items[0]
-        for legacy in ('units', 'rate', 'est_qty', 'accounting_category'):
+        # Phase A legacy fields (removed in the flatten refactor)
+        for legacy in ('units', 'rate', 'accounting_category'):
             self.assertNotIn(legacy, first)
-        self.assertIn('charge', first)
+        # Phase B: charge nest is gone; billing fields are now top-level
+        self.assertNotIn('charge', first)
+        self.assertIn('rate_scheme', first)
+        self.assertIn('est_qty', first)
 
     def test_task_detail_omits_legacy_fields(self):
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/')
         body = resp.json()
-        for legacy in ('units', 'rate', 'est_qty', 'accounting_category'):
+        # Phase A legacy fields (removed in the flatten refactor)
+        for legacy in ('units', 'rate', 'accounting_category'):
             self.assertNotIn(legacy, body)
-        self.assertIn('charge', body)
+        # Phase B: charge nest is gone; billing fields are now top-level
+        self.assertNotIn('charge', body)
+        self.assertIn('rate_scheme', body)
+        self.assertIn('est_qty', body)
 
 
 class TaskTimeFieldsTest(BaseTestCase):
@@ -231,13 +242,15 @@ class TaskTimeFieldsTest(BaseTestCase):
         self.job = Job.objects.create(job_number='J-time', contact=contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
 
-        # Time-based task carried over from a plan task with est_qty=4 hours
+        # Time-based task carried over from a plan task with est_qty=4 hours.
+        # Phase B: est_qty is set directly on the Task (not read via source_plan_task).
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut',
             rate_scheme=self.elapsed_scheme, est_qty=Decimal('4.0'),
         )
         self.elapsed_task = Task.objects.create(
             job=self.job, name='Cut', source_plan_task=self.plan_task,
+            est_qty=Decimal('4.0'),
         )
         TaskCharge.objects.create(task=self.elapsed_task, rate_scheme=self.elapsed_scheme)
 
@@ -259,15 +272,15 @@ class TaskTimeFieldsTest(BaseTestCase):
         )
 
     def test_actual_hours_sums_bleps(self):
-        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/{self.elapsed_task.pk}/')
-        # detail endpoint serializes via TaskDetailSerializer (no actual_hours);
-        # use the list endpoint instead which uses TaskSerializer.
+        # Phase B: both list and detail endpoints include actual_hours.
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
         items = resp.json()
         items = items.get('results', items) if isinstance(items, dict) else items
         elapsed = next(t for t in items if t['task_id'] == self.elapsed_task.pk)
         self.assertAlmostEqual(elapsed['actual_hours'], 1.5, places=1)
-        self.assertAlmostEqual(elapsed['estimated_hours'], 4.0, places=1)
+        # Phase B: estimated_hours removed; est_qty is now the top-level field.
+        self.assertNotIn('estimated_hours', elapsed)
+        self.assertEqual(float(elapsed['est_qty']), 4.0)
 
     def test_flat_fee_task_has_no_estimated_hours(self):
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -275,7 +288,9 @@ class TaskTimeFieldsTest(BaseTestCase):
         items = items.get('results', items) if isinstance(items, dict) else items
         flat = next(t for t in items if t['task_id'] == self.flat_task.pk)
         self.assertAlmostEqual(flat['actual_hours'], 0.5, places=1)
-        self.assertIsNone(flat['estimated_hours'])
+        # Phase B: estimated_hours is removed; flat tasks have no est_qty by default.
+        self.assertNotIn('estimated_hours', flat)
+        self.assertIsNone(flat['est_qty'])
 
 
 class TaskTemplateSerializerNoACTest(BaseTestCase):
