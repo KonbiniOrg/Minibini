@@ -164,6 +164,13 @@ class PlanTask(TaskBase):
     class Meta:
         db_table = 'plan_tasks'
 
+    def clean(self):
+        super().clean()
+        if self.est_qty is None:
+            raise ValidationError({
+                'est_qty': 'Required: every PlanTask must have an estimated quantity.',
+            })
+
     def save(self, *args, **kwargs):
         """Auto-assign sort_order at the worksheet level."""
         from django.db import transaction
