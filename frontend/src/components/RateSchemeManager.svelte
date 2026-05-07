@@ -51,7 +51,7 @@
 
   function isReferenced(s) {
     const c = s.reference_counts || {};
-    return ((c.plan_task_count || 0) + (c.task_charge_count || 0) + (c.task_template_count || 0)) > 0;
+    return ((c.plan_task_count || 0) + (c.task_count || 0) + (c.task_template_count || 0)) > 0;
   }
 
   function startCreate() {
@@ -205,7 +205,7 @@
                 Replaced by: scheme {s.replaced_by}
                 {#if s.replaced_at}| Replaced at: {new Date(s.replaced_at).toLocaleString()}{/if}
                 | References: {s.reference_counts?.plan_task_count || 0} plan tasks,
-                {s.reference_counts?.task_charge_count || 0} task charges,
+                {s.reference_counts?.task_count || 0} tasks,
                 {s.reference_counts?.task_template_count || 0} templates
               </small>
             {:else if isReferenced(s)}
