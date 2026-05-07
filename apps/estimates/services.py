@@ -384,8 +384,15 @@ class WorksheetService:
         active_modifiers=None,
         est_qty=None,
         est_worker_time=None,
+        name=None,
+        description=None,
     ):
-        """Add a PlanTask to a draft worksheet from a TaskTemplate."""
+        """Add a PlanTask to a draft worksheet from a TaskTemplate.
+
+        Optional overrides:
+          name        – if truthy, replaces template_name; empty string falls back to template default.
+          description – if not None, replaces template description (empty string is kept as-is).
+        """
         from apps.jobs.models import PlanTask
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
@@ -411,8 +418,8 @@ class WorksheetService:
             )
 
         task = PlanTask.objects.create(
-            name=tt.template_name,
-            description=tt.description,
+            name=name if name else tt.template_name,
+            description=description if description is not None else tt.description,
             est_worksheet=ws,
             rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
             active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),

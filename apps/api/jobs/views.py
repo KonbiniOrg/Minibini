@@ -289,6 +289,10 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
         job = self.get_object()
         task_template_id = request.data.get('task_template_id')
         est_qty_raw = request.data.get('est_qty')
+        name = request.data.get('name') or None
+        description = request.data.get('description')  # None means "not provided"
+        active_modifiers = request.data.get('active_modifiers')  # None means use template default
+        est_worker_time = request.data.get('est_worker_time') or None
 
         if not task_template_id:
             return Response(
@@ -310,7 +314,13 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            task = template.generate_task(job, est_qty)
+            task = template.generate_task(
+                job, est_qty,
+                name=name,
+                description=description,
+                active_modifiers=active_modifiers,
+                est_worker_time=est_worker_time,
+            )
         except SchemeSupersededError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except ServiceError as e:

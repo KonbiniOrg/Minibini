@@ -68,3 +68,58 @@ class TaskEstQtyCarryOverTest(TestCase):
         task = template.generate_task(self.job, est_qty=Decimal('3'))
         self.assertEqual(task.est_qty, Decimal('3'))
         self.assertEqual(task.rate_scheme_id, scheme.pk)
+
+    def test_template_generate_task_honors_name_and_description_overrides(self):
+        """User-entered name and description must survive the template-add path."""
+        scheme = RateScheme.objects.create(
+            name='Hourly-O', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('75'), unit_label='hour',
+            accounting_category=self.ac,
+        )
+        template = TaskTemplate.objects.create(
+            template_name='Default Template Name',
+            rate_scheme=scheme,
+            default_billable_qty=Decimal('1'),
+        )
+        template.description = 'Default template description'
+        template.save()
+
+        # Override both name and description
+        task = template.generate_task(
+            self.job,
+            est_qty=Decimal('1'),
+            name='Custom Name',
+            description='Custom Desc',
+        )
+        self.assertEqual(task.name, 'Custom Name')
+        self.assertEqual(task.description, 'Custom Desc')
+
+        # Empty name falls back to template default
+        task2 = template.generate_task(
+            self.job,
+            est_qty=Decimal('1'),
+            name='',
+            description='Another desc',
+        )
+        self.assertEqual(task2.name, 'Default Template Name')
+        self.assertEqual(task2.description, 'Another desc')
+
+        # description=None falls back to template default
+        task3 = template.generate_task(
+            self.job,
+            est_qty=Decimal('1'),
+            name='Override Name',
+            description=None,
+        )
+        self.assertEqual(task3.name, 'Override Name')
+        self.assertEqual(task3.description, 'Default template description')
+
+        # Empty description is preserved (deliberate blank override)
+        task4 = template.generate_task(
+            self.job,
+            est_qty=Decimal('1'),
+            name='Name4',
+            description='',
+        )
+        self.assertEqual(task4.name, 'Name4')
+        self.assertEqual(task4.description, '')

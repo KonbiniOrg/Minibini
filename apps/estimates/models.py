@@ -427,10 +427,18 @@ class TaskTemplate(models.Model):
         return self.rate_scheme.accounting_category
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
-                       assignee=None, sort_order=None):
+                       assignee=None, sort_order=None,
+                       name=None, description=None,
+                       active_modifiers=None, est_worker_time=None):
         """Generate a PlanTask or Task from this template with specified quantity.
 
         The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
+
+        Optional overrides:
+          name            – if truthy, replaces template_name; empty string falls back to template default.
+          description     – if not None, replaces template description (empty string is kept as-is).
+          active_modifiers – list of modifier keys; falls back to template defaults when None.
+          est_worker_time – ISO 8601 duration string or None.
         """
         from apps.jobs.models import Job, Task, PlanTask
         from apps.core.services import SchemeSupersededError
@@ -442,27 +450,33 @@ class TaskTemplate(models.Model):
                 f'RateScheme. Update the template before adding tasks from it.'
             )
 
+        resolved_name = name if name else self.template_name
+        resolved_description = description if description is not None else self.description
+        resolved_modifiers = list(active_modifiers if active_modifiers is not None else (self.default_active_modifiers or []))
+
         if isinstance(container, Job):
             with transaction.atomic():
                 task = Task.objects.create(
                     job=container,
-                    name=self.template_name,
-                    description=self.description,
+                    name=resolved_name,
+                    description=resolved_description,
                     assignee=assignee,
                     sort_order=sort_order,
                     rate_scheme=self.rate_scheme,
-                    active_modifiers=list(self.default_active_modifiers or []),
+                    active_modifiers=resolved_modifiers,
                     est_qty=est_qty,
+                    est_worker_time=est_worker_time,
                 )
             return task
         else:  # EstWorksheet
             return PlanTask.objects.create(
                 est_worksheet=container,
-                name=self.template_name,
-                description=self.description,
+                name=resolved_name,
+                description=resolved_description,
                 rate_scheme=self.rate_scheme,
-                active_modifiers=list(self.default_active_modifiers or []),
+                active_modifiers=resolved_modifiers,
                 est_qty=est_qty,
+                est_worker_time=est_worker_time,
                 sort_order=sort_order,
             )
 

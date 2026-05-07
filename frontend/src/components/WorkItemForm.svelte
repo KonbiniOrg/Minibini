@@ -97,13 +97,29 @@
   }
 
   function durationToISO(input) {
-    // "HH:MM" → "PT{H}H{M}M"; "" → null
-    if (!input) return null;
-    const m = input.match(/^(\d+):(\d+)$/);
-    if (!m) return null;
-    const hours = parseInt(m[1], 10);
-    const mins = parseInt(m[2], 10);
-    return `PT${hours}H${mins}M`;
+    // Accepts:
+    //   ""        → null
+    //   "HH:MM"   → "PT{H}H{M}M"
+    //   decimal   → interpret as hours, e.g. "1.5" → PT1H30M
+    // Returns null for empty input, false for unparseable input.
+    if (input === '' || input === null || input === undefined) return null;
+    const trimmed = String(input).trim();
+    if (trimmed === '') return null;
+    const colonMatch = trimmed.match(/^(\d+):(\d+)$/);
+    if (colonMatch) {
+      const h = parseInt(colonMatch[1], 10);
+      const m = parseInt(colonMatch[2], 10);
+      return `PT${h}H${m}M`;
+    }
+    const decimalMatch = trimmed.match(/^(\d+(?:\.\d+)?)$/);
+    if (decimalMatch) {
+      const total = parseFloat(decimalMatch[1]);
+      const totalMinutes = Math.round(total * 60);
+      const h = Math.floor(totalMinutes / 60);
+      const m = totalMinutes % 60;
+      return `PT${h}H${m}M`;
+    }
+    return false; // unparseable
   }
 
   function toggleModifier(key, checked) {
@@ -130,6 +146,12 @@
       return;
     }
 
+    const estWorkerTimeISO = durationToISO(estWorkerTime);
+    if (estWorkerTimeISO === false) {
+      error = `Could not parse "${estWorkerTime}" as a duration. Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).`;
+      return;
+    }
+
     busy = true;
     error = '';
     try {
@@ -139,7 +161,7 @@
         rate_scheme: rateSchemeId,
         active_modifiers: activeModifiers,
         est_qty: estQty || null,
-        est_worker_time: durationToISO(estWorkerTime),
+        est_worker_time: estWorkerTimeISO,
       };
 
       if (isEdit && item) {
@@ -153,9 +175,11 @@
           : `/api/jobs/${contextId}/add-from-template/`;
         await api.post(url, {
           task_template_id: Number(templateId),
+          name,
+          description,
           est_qty: estQty || null,
           active_modifiers: activeModifiers,
-          est_worker_time: durationToISO(estWorkerTime),
+          est_worker_time: estWorkerTimeISO,
         });
       } else {
         let url;
@@ -264,8 +288,8 @@
 
         <p>
           <label><strong>Estimated worker time</strong><br>
-            <input type="text" placeholder="HH:MM" bind:value={estWorkerTime}>
-            <small>e.g. 1:30 = 1 hour 30 min</small>
+            <input type="text" placeholder="e.g. 1:30 or 1.5" bind:value={estWorkerTime}>
+            <small>HH:MM or decimal hours (1.5 = 1h30m)</small>
           </label>
         </p>
 
