@@ -1,11 +1,13 @@
 <script>
-  import { push } from 'svelte-spa-router';
+  import { push, link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   const { params = {} } = $props();
 
   let job = $state(null);
+  let contact = $state(null);
   let workTemplates = $state([]);
   let loading = $state(true);
   let error = $state('');
@@ -26,6 +28,13 @@
       ]);
       job = jobResp;
       workTemplates = tmplResp.results || tmplResp;
+      if (job.contact) {
+        try {
+          contact = await api.get(`/api/contacts/${job.contact}/`);
+        } catch (e) {
+          contact = null;
+        }
+      }
     } catch (e) {
       error = e.message || 'Could not load.';
     } finally {
@@ -71,9 +80,14 @@
 {:else if !canManageJobs}
   <p>You do not have permission to create worksheets.</p>
 {:else if job}
-  <h2>New Worksheet for Job {job.job_number}</h2>
+  <JobHeader {job} {contact} onStatusChange={load} />
 
-  <form onsubmit={handleSubmit}>
+  <div class="toolbar">
+    <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
+    <h2 class="page-title">New Worksheet</h2>
+  </div>
+
+  <form onsubmit={handleSubmit} class="form-body">
     <p>
       <label for="template"><strong>Work Template (optional)</strong></label><br>
       <select id="template" bind:value={templateId}>
@@ -98,4 +112,11 @@
 <style>
   .error { color: #a8071a; }
   small { color: #666; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
+    padding: 8px 24px;
+  }
+  .back-link { font-size: 13px; }
+  .page-title { font-size: 18px; margin: 0; margin-left: auto; }
+  .form-body { padding: 0 24px; }
 </style>
