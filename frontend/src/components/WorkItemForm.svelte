@@ -1,0 +1,290 @@
+<script>
+  import { onMount } from 'svelte';
+  import { api } from '../lib/api.js';
+
+  let {
+    open = false,
+    mode = 'manual', // 'manual' | 'template'
+    context = 'job', // 'job' | 'worksheet' | 'subtask'
+    contextId = null, // job pk, worksheet pk, or parent task pk
+    item = null,     // for edit mode; null for create
+    isEdit = false,
+    templates = [],
+    onSaved = () => {},
+    onClose = () => {},
+  } = $props();
+
+  let templateId = $state('');
+  let rateSchemeId = $state('');
+  let name = $state('');
+  let description = $state('');
+  let activeModifiers = $state([]);
+  let estQty = $state('');
+  let estWorkerTime = $state(''); // accepts "HH:MM" or "" for null
+  let busy = $state(false);
+  let error = $state('');
+
+  let schemes = $state([]);
+  let loading = $state(true);
+
+  onMount(async () => {
+    try {
+      const resp = await api.get('/api/rate-schemes/');
+      schemes = resp.results || resp;
+    } catch (e) {
+      error = e.message || 'Could not load rate schemes.';
+    } finally {
+      loading = false;
+    }
+  });
+
+  // Populate when opening or when prefill changes
+  $effect(() => {
+    if (!open) return;
+    if (isEdit && item) {
+      name = item.name || '';
+      description = item.description || '';
+      rateSchemeId = item.rate_scheme ?? '';
+      activeModifiers = [...(item.active_modifiers || [])];
+      estQty = item.est_qty ?? '';
+      estWorkerTime = formatDuration(item.est_worker_time);
+      templateId = '';
+    } else {
+      name = ''; description = '';
+      rateSchemeId = ''; activeModifiers = [];
+      estQty = ''; estWorkerTime = '';
+      templateId = '';
+    }
+    error = '';
+  });
+
+  // In template mode, when the user picks a template, defaults flow downward.
+  const selectedTemplate = $derived(
+    templates.find(t => String(t.template_id) === String(templateId)) || null
+  );
+  $effect(() => {
+    if (mode !== 'template') return;
+    if (!selectedTemplate) return;
+    if (!name) name = selectedTemplate.template_name || '';
+    if (!description) description = selectedTemplate.description || '';
+    activeModifiers = [...(selectedTemplate.default_active_modifiers || [])];
+    if (!estQty && selectedTemplate.default_billable_qty) {
+      estQty = selectedTemplate.default_billable_qty;
+    }
+    rateSchemeId = selectedTemplate.rate_scheme ?? '';
+  });
+
+  const selectedScheme = $derived(
+    schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null
+  );
+
+  const estQtyRequired = $derived(context === 'worksheet');
+
+  function formatDuration(value) {
+    // Server returns ISO 8601 like "PT1H30M" or HH:MM:SS — accept either, render HH:MM
+    if (!value) return '';
+    if (typeof value === 'string') {
+      const isoMatch = value.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+      if (isoMatch) {
+        const h = parseInt(isoMatch[1] || '0', 10);
+        const m = parseInt(isoMatch[2] || '0', 10);
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      }
+      const hmsMatch = value.match(/(\d+):(\d+)/);
+      if (hmsMatch) return `${hmsMatch[1].padStart(2, '0')}:${hmsMatch[2]}`;
+    }
+    return '';
+  }
+
+  function durationToISO(input) {
+    // "HH:MM" → "PT{H}H{M}M"; "" → null
+    if (!input) return null;
+    const m = input.match(/^(\d+):(\d+)$/);
+    if (!m) return null;
+    const hours = parseInt(m[1], 10);
+    const mins = parseInt(m[2], 10);
+    return `PT${hours}H${mins}M`;
+  }
+
+  function toggleModifier(key, checked) {
+    if (checked) {
+      if (!activeModifiers.includes(key)) {
+        activeModifiers = [...activeModifiers, key];
+      }
+    } else {
+      activeModifiers = activeModifiers.filter(k => k !== key);
+    }
+  }
+
+  async function save() {
+    if (estQtyRequired && !estQty) {
+      error = 'Estimated qty is required on the worksheet.';
+      return;
+    }
+    if (!isEdit && mode === 'template' && !templateId) {
+      error = 'Please pick a template.';
+      return;
+    }
+    if (mode === 'manual' && !rateSchemeId) {
+      error = 'Please pick a rate scheme.';
+      return;
+    }
+
+    busy = true;
+    error = '';
+    try {
+      const payload = {
+        name,
+        description,
+        rate_scheme: rateSchemeId,
+        active_modifiers: activeModifiers,
+        est_qty: estQty || null,
+        est_worker_time: durationToISO(estWorkerTime),
+      };
+
+      if (isEdit && item) {
+        const url = context === 'worksheet'
+          ? `/api/est-worksheets/${contextId}/tasks/${item.plan_task_id || item.task_id}/`
+          : `/api/jobs/${contextId}/tasks/${item.task_id}/`;
+        await api.patch(url, payload);
+      } else if (mode === 'template') {
+        const url = context === 'worksheet'
+          ? `/api/est-worksheets/${contextId}/add-from-template/`
+          : `/api/jobs/${contextId}/add-from-template/`;
+        await api.post(url, {
+          task_template_id: Number(templateId),
+          est_qty: estQty || null,
+          active_modifiers: activeModifiers,
+          est_worker_time: durationToISO(estWorkerTime),
+        });
+      } else {
+        let url;
+        if (context === 'worksheet') {
+          url = `/api/est-worksheets/${contextId}/tasks/`;
+        } else if (context === 'subtask') {
+          url = `/api/tasks/${contextId}/subtasks/`;
+        } else {
+          url = `/api/jobs/${contextId}/tasks/`;
+        }
+        await api.post(url, payload);
+      }
+      onSaved();
+    } catch (e) {
+      if (e.data && typeof e.data === 'object' && !e.data.detail) {
+        error = Object.entries(e.data)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+          .join('; ');
+      } else {
+        error = e.message || 'Could not save.';
+      }
+    } finally {
+      busy = false;
+    }
+  }
+</script>
+
+{#if open}
+  <div class="overlay">
+    <div class="modal">
+      <h3>{isEdit ? 'Edit Task' : (mode === 'template' ? 'Add Task From Template' : 'Add Manual Task')}</h3>
+
+      {#if loading}
+        <p>Loading rate schemes…</p>
+      {:else}
+        {#if !isEdit && mode === 'template'}
+          <p>
+            <label><strong>Template *</strong><br>
+              <select bind:value={templateId}>
+                <option value="">-- Select template --</option>
+                {#each templates as tmpl (tmpl.template_id)}
+                  <option value={tmpl.template_id}>{tmpl.template_name}</option>
+                {/each}
+              </select>
+            </label>
+          </p>
+        {/if}
+
+        {#if mode === 'manual'}
+          <p>
+            <label><strong>Rate scheme *</strong><br>
+              <select bind:value={rateSchemeId}>
+                <option value="">-- select --</option>
+                {#each schemes as s (s.rate_scheme_id)}
+                  <option value={s.rate_scheme_id}>{s.name}</option>
+                {/each}
+              </select>
+            </label>
+          </p>
+        {/if}
+
+        <p>
+          <label><strong>Name *</strong><br>
+            <input type="text" bind:value={name} style="width:100%;box-sizing:border-box;">
+          </label>
+        </p>
+        <p>
+          <label><strong>Description</strong><br>
+            <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
+          </label>
+        </p>
+
+        {#if selectedScheme}
+          {#if mode === 'template'}
+            <p>
+              <strong>Rate scheme:</strong> {selectedScheme.name} —
+              ${selectedScheme.rate}/{selectedScheme.unit_label}
+              <small>(from template)</small>
+            </p>
+          {/if}
+          {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
+            <fieldset>
+              <legend><strong>Modifiers</strong></legend>
+              {#each selectedScheme.modifiers as m (m.key)}
+                <p>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={activeModifiers.includes(m.key)}
+                      onchange={(e) => toggleModifier(m.key, e.target.checked)}
+                    />
+                    {m.label} (+{m.percent}%)
+                  </label>
+                </p>
+              {/each}
+            </fieldset>
+          {/if}
+
+          <p>
+            <label><strong>Estimated qty {estQtyRequired ? '*' : ''}</strong><br>
+              <input type="number" step="0.01" bind:value={estQty}>
+              {#if selectedScheme}<small>{selectedScheme.unit_label}</small>{/if}
+            </label>
+          </p>
+        {/if}
+
+        <p>
+          <label><strong>Estimated worker time</strong><br>
+            <input type="text" placeholder="HH:MM" bind:value={estWorkerTime}>
+            <small>e.g. 1:30 = 1 hour 30 min</small>
+          </label>
+        </p>
+
+        <div class="buttons">
+          <button type="button" onclick={save} disabled={busy}>Save</button>
+          <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
+        </div>
+        {#if error}<p class="error">{error}</p>{/if}
+      {/if}
+    </div>
+  </div>
+{/if}
+
+<style>
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center; z-index: 200;
+  }
+  .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
+  .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .error { color: #a8071a; }
+</style>
