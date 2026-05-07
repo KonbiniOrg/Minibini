@@ -11,10 +11,13 @@
   import MaterialModal from '../../components/MaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   let { params = {} } = $props();
 
   let task = $state(null);
+  let job = $state(null);
+  let contact = $state(null);
   let loading = $state(true);
   let error = $state('');
   let conflict = $state(null);
@@ -62,10 +65,29 @@
     error = '';
     try {
       task = await api.get(`/api/tasks/${params.taskId}/`);
+      if (task?.job?.id) {
+        await loadJobContext(task.job.id);
+      }
     } catch (e) {
       error = e.message || 'Could not load task.';
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadJobContext(jobId) {
+    try {
+      job = await api.get(`/api/jobs/${jobId}/`);
+      if (job.contact) {
+        try {
+          contact = await api.get(`/api/contacts/${job.contact}/`);
+        } catch (e) {
+          contact = null;
+        }
+      }
+    } catch (e) {
+      job = null;
+      contact = null;
     }
   }
 
@@ -235,17 +257,15 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if task}
-  <h2>Task: {task.name}</h2>
+  {#if job}
+    <JobHeader {job} {contact} onStatusChange={refresh} />
+  {/if}
   {#if task.job}
-    <p>
-      <a href={`/jobs/${task.job.id}`} use:link>
-        &laquo; {task.job.job_number} {task.job.name}
-      </a>
-      &nbsp;·&nbsp;
-      <a href={`/jobs/${task.job.id}/tasklist`} use:link>
-        Task list
-      </a>
-    </p>
+    <div class="toolbar">
+      <a href={`/jobs/${task.job.id}`} use:link class="back-link">&laquo; back to overview</a>
+      <a href={`/jobs/${task.job.id}/tasklist`} use:link class="back-link">task list</a>
+      <h2 class="task-title">Task: {task.name}</h2>
+    </div>
   {/if}
 
   <TaskActions
@@ -415,6 +435,12 @@
 <style>
   .error { color: #a8071a; }
   .field-error { color: #a8071a; font-size: 13px; margin-left: 6px; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
+    padding: 8px 24px;
+  }
+  .back-link { font-size: 13px; }
+  .task-title { font-size: 18px; margin: 0; margin-left: auto; }
   .materials-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
   .materials-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
   .materials-table td { padding: 6px 10px; }
