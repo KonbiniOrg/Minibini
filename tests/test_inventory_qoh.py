@@ -5,7 +5,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, PlanTask, Task
+from apps.jobs.models import Job, PlanTask, Task, RateScheme
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial, Material
 from apps.inventory.models import PriceListItem
@@ -32,15 +32,19 @@ class ConsumeMaterialTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-QOH-002', contact=self.contact, description='Test Job',
         )
-        from apps.jobs.models import Task
+
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+        self.scheme = RateScheme.objects.create(
+            name='S-qoh2', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job,
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
+            rate_scheme=self.scheme,
         )
-
-        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
@@ -152,14 +156,19 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.job = Job.objects.create(
             job_number='J-QOH-003', contact=self.contact, description='Test Job',
         )
+
+        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+        self.scheme = RateScheme.objects.create(
+            name='S-qoh3', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job,
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
+            rate_scheme=self.scheme,
         )
-
-        self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.plywood = PriceListItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',

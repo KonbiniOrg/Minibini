@@ -59,15 +59,20 @@ class TaskCreationProducesChargeTest(BaseTestCase):
 
 class TaskCleanNoLongerRequiresChargeTest(BaseTestCase):
     """B4 removed the hasattr(self, 'charge') guard from Task.clean().
-    Tasks can now exist without a TaskCharge. rate_scheme will be required
-    (NOT NULL) in B8.
+    B8 makes rate_scheme NOT NULL at the DB level — Tasks always have it.
     """
     fixtures = []
 
     def setUp(self):
         super().setUp()
-        from apps.jobs.models import Job
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import Job, RateScheme
         from apps.contacts.models import Business, Contact
+        ac = AccountingCategory.objects.create(code='B8-tcrc', name='B8-tcrc')
+        self.scheme = RateScheme.objects.create(
+            name='S-tcrc', algorithm='flat_fee', rate=1,
+            unit_label='ea', accounting_category=ac,
+        )
         contact = Contact.objects.create(
             first_name='F', last_name='L', email='f-tcrc@l.test',
         )
@@ -79,7 +84,8 @@ class TaskCleanNoLongerRequiresChargeTest(BaseTestCase):
         self.job = Job.objects.create(job_number='J-tcrc', contact=contact)
 
     def test_task_full_clean_succeeds_without_charge(self):
+        """B4 removed charge guard; B8 requires rate_scheme. Task with rate_scheme passes clean."""
         from apps.jobs.models import Task
-        t = Task.objects.create(job=self.job, name='no charge')
-        # Should not raise — charge guard removed in B4
+        t = Task.objects.create(job=self.job, name='with scheme', rate_scheme=self.scheme)
+        # Should not raise — charge guard removed in B4, rate_scheme required (B8)
         t.full_clean()

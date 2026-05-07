@@ -23,7 +23,7 @@ class TaskStatusFieldTest(BaseTestCase):
         self.job = Job.objects.first()
 
     def test_task_default_status_is_pending(self):
-        task = Task.objects.create(name='Test Task', job=self.job)
+        task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.assertEqual(task.status, Task.STATUS_PENDING)
 
     def test_task_status_choices(self):
@@ -44,7 +44,7 @@ class TaskTransitionValidationTest(BaseTestCase):
 
     def _create_task_with_status(self, status):
         from apps.jobs.models import RateScheme, TaskCharge
-        task = Task.objects.create(name='Test Task', job=self.job)
+        task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         TaskCharge.objects.create(task=task, rate_scheme=RateScheme.objects.first())
         if status != Task.STATUS_PENDING:
             Task.objects.filter(pk=task.pk).update(status=status)
@@ -126,7 +126,7 @@ class TaskTransitionValidationTest(BaseTestCase):
 
     def test_new_task_no_transition_validation(self):
         """New task (no pk) should not trigger transition validation."""
-        task = Task(name='New Task', job=self.job, status=Task.STATUS_IN_PROGRESS)
+        task = Task(name='New Task', job=self.job, status=Task.STATUS_IN_PROGRESS, rate_scheme_id=1)
         task.full_clean()
 
 
@@ -137,7 +137,7 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         from apps.jobs.models import RateScheme, TaskCharge
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Test Task', job=self.job)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         TaskCharge.objects.create(task=self.task, rate_scheme=RateScheme.objects.first())
         self.user = User.objects.get(username='admin')
 
@@ -160,7 +160,7 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
             TaskLifecycleService.start_work(self.task.pk, self.user)
 
     def test_start_work_closes_users_other_open_blep(self):
-        other_task = Task.objects.create(name='Other Task', job=self.job)
+        other_task = Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_IN_PROGRESS)
         old_blep = Blep.objects.create(
             task=other_task, user=self.user, start_time=timezone.now()
@@ -230,7 +230,7 @@ class CompleteTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Test Task', job=self.job)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
 
     def test_complete_from_in_progress(self):
@@ -282,7 +282,7 @@ class JobAutoWorkCompleteTest(BaseTestCase):
             contact=fixture_job.contact,
         )
         _approve_job(self.job)
-        self.task = Task.objects.create(name='Test Task', job=self.job)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
 
     def test_complete_last_task_on_approved_job_advances_to_work_complete(self):
@@ -291,13 +291,13 @@ class JobAutoWorkCompleteTest(BaseTestCase):
         self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
 
     def test_complete_with_others_remaining_does_not_advance(self):
-        Task.objects.create(name='Other Task', job=self.job)
+        Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         TaskLifecycleService.complete_task(self.task.pk)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
 
     def test_complete_with_cancelled_siblings_advances(self):
-        other = Task.objects.create(name='Other Task', job=self.job)
+        other = Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=other.pk).update(status=Task.STATUS_CANCELLED)
         TaskLifecycleService.complete_task(self.task.pk)
         self.job.refresh_from_db()
@@ -315,7 +315,7 @@ class JobAutoWorkCompleteTest(BaseTestCase):
             job_number='J-AUTO-DRAFT', contact=self.job.contact,
         )
         self.assertEqual(job2.status, Job.STATUS_DRAFT)
-        task = Task.objects.create(name='DraftTask', job=job2)
+        task = Task.objects.create(name='DraftTask', job=job2, rate_scheme_id=1)
         TaskLifecycleService.complete_task(task.pk)
         job2.refresh_from_db()
         self.assertEqual(job2.status, Job.STATUS_DRAFT)
@@ -330,7 +330,7 @@ class JobAutoWorkCompleteTest(BaseTestCase):
         # Create another task somehow (bypass the expectation by updating status
         # directly). Then complete it: the _check_job_work_complete guard only
         # fires when job.status == APPROVED or IN_PROGRESS, so this is a no-op.
-        other = Task.objects.create(name='Extra', job=self.job)
+        other = Task.objects.create(name='Extra', job=self.job, rate_scheme_id=1)
         with patch(
             'apps.jobs.services.JobService.update_status'
         ) as mock_update:
@@ -345,7 +345,7 @@ class BlockNoRollupRegressionTest(BaseTestCase):
         super().setUp()
         self.job = Job.objects.first()
         _approve_job(self.job)
-        self.task = Task.objects.create(name='Task', job=self.job)
+        self.task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
 
     def test_block_task_does_not_change_job_status(self):
         original = self.job.status
@@ -365,7 +365,7 @@ class BlockTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Test Task', job=self.job)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
 
     def test_block_from_pending(self):
@@ -432,7 +432,7 @@ class CancelTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Test Task', job=self.job)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
 
     def test_cancel_from_pending(self):
@@ -479,7 +479,7 @@ class StartStopWorkTest(BaseTestCase):
         from apps.jobs.models import RateScheme, TaskCharge
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Test Task', job=self.job)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         TaskCharge.objects.create(task=self.task, rate_scheme=RateScheme.objects.first())
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.task.refresh_from_db()
@@ -500,7 +500,7 @@ class StartStopWorkTest(BaseTestCase):
             TaskLifecycleService.start_work(self.task.pk, self.user)
 
     def test_start_work_closes_users_other_blep(self):
-        other_task = Task.objects.create(name='Other Task', job=self.job)
+        other_task = Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_IN_PROGRESS)
         old_blep = Blep.objects.create(
             task=other_task, user=self.user, start_time=timezone.now()

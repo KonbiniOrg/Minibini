@@ -28,6 +28,7 @@ class TaskWorkerQueueTest(FixtureTestCase):
             name='Test task',
             job=self.job,
             worker_queue=5,
+            rate_scheme_id=1,
         )
         task.save()
         task.refresh_from_db()
@@ -38,6 +39,7 @@ class TaskWorkerQueueTest(FixtureTestCase):
             name='Test task',
             job=self.job,
             worker_queue=None,
+            rate_scheme_id=1,
         )
         task.save()
         task.refresh_from_db()
@@ -91,13 +93,13 @@ class TaskReorderEndpointTest(FixtureTestCase):
             status='approved', contact=self.contact,
         )
         self.task1 = Task.objects.create(
-            name='Task 1', job=self.job, assignee=self.user, worker_queue=1,
+            name='Task 1', job=self.job, assignee=self.user, worker_queue=1, rate_scheme_id=1,
         )
         self.task2 = Task.objects.create(
-            name='Task 2', job=self.job, assignee=self.user, worker_queue=2,
+            name='Task 2', job=self.job, assignee=self.user, worker_queue=2, rate_scheme_id=1,
         )
         self.task3 = Task.objects.create(
-            name='Task 3', job=self.job, assignee=self.user, worker_queue=3,
+            name='Task 3', job=self.job, assignee=self.user, worker_queue=3, rate_scheme_id=1,
         )
 
     def test_reorder_updates_worker_queue(self):
@@ -141,7 +143,7 @@ class TaskReorderEndpointTest(FixtureTestCase):
 
     def test_assign_task_via_patch(self):
         unassigned_task = Task.objects.create(
-            name='Unassigned', job=self.job,
+            name='Unassigned', job=self.job, rate_scheme_id=1,
         )
         response = self.client.post(
             f'/api/tasks/{unassigned_task.pk}/assign/',
@@ -184,7 +186,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
             status='approved', contact=self.contact,
         )
     def test_assign_task_to_worker(self):
-        task = Task.objects.create(name='Unassigned', job=self.job)
+        task = Task.objects.create(name='Unassigned', job=self.job, rate_scheme_id=1)
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},
@@ -198,7 +200,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
     def test_unassign_task(self):
         task = Task.objects.create(
             name='Assigned', job=self.job,
-            assignee=self.user, worker_queue=1,
+            assignee=self.user, worker_queue=1, rate_scheme_id=1,
         )
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
@@ -213,7 +215,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
     def test_assign_requires_permission(self):
         viewer = User.objects.create_user(username='viewer', password='testpass')
         self.client.login(username='viewer', password='testpass')
-        task = Task.objects.create(name='Task', job=self.job)
+        task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},

@@ -7,6 +7,29 @@
         }
     },
     {
+        "model": "core.accountingcategory",
+        "pk": 801,
+        "fields": {
+            "name": "Labor",
+            "code": "LAB-JBD",
+            "taxable": false,
+            "is_active": true,
+            "qbo_expense_account_id": ""
+        }
+    },
+    {
+        "model": "jobs.ratescheme",
+        "pk": 101,
+        "fields": {
+            "name": "Std Hourly (JBD)",
+            "algorithm": "elapsed_time",
+            "rate": "85.00",
+            "unit_label": "hour",
+            "modifiers": [],
+            "accounting_category": 801
+        }
+    },
+    {
         "model": "jobs.job",
         "pk": 1,
         "fields": {
@@ -40,7 +63,11 @@
             "job": 1,
             "name": "Kitchen demolition",
             "description": "",
-            "sort_order": null
+            "sort_order": null,
+            "rate_scheme": 101,
+            "active_modifiers": [],
+            "actual_qty": null,
+            "est_qty": null
         }
     },
     {
@@ -51,7 +78,11 @@
             "job": 1,
             "name": "Electrical rough-in",
             "description": "",
-            "sort_order": null
+            "sort_order": null,
+            "rate_scheme": 101,
+            "active_modifiers": [],
+            "actual_qty": null,
+            "est_qty": null
         }
     },
     {

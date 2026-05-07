@@ -73,7 +73,7 @@ class TaskChargeComputeAmountTest(TestCase):
         )
 
     def test_task_charge_elapsed_time(self):
-        task = Task.objects.create(job=self.job, name='t')
+        task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme_time)
         TaskCharge.objects.create(task=task, rate_scheme=self.scheme_time)
         now = timezone.now()
         Blep.objects.create(task=task, start_time=now - timedelta(hours=2), end_time=now)
@@ -83,6 +83,7 @@ class TaskChargeComputeAmountTest(TestCase):
     def test_task_charge_entered_qty(self):
         task = Task.objects.create(
             job=self.job, name='t', actual_qty=Decimal('3'),
+            rate_scheme=self.scheme_qty,
         )
         TaskCharge.objects.create(
             task=task, rate_scheme=self.scheme_qty, actuals={'qty': 3},
@@ -91,7 +92,7 @@ class TaskChargeComputeAmountTest(TestCase):
         self.assertEqual(task.charge.compute_amount(), Decimal('150.00'))
 
     def test_task_charge_flat_fee(self):
-        task = Task.objects.create(job=self.job, name='t')
+        task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme_flat)
         TaskCharge.objects.create(task=task, rate_scheme=self.scheme_flat)
         self.assertEqual(task.charge.compute_amount(), Decimal('250.00'))
 

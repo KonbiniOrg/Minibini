@@ -34,7 +34,7 @@ class TaskBillingFieldsAPITest(TestCase):
         from apps.jobs.models import Job
         contact = Contact.objects.create(first_name='Test', last_name='Contact')
         self.job = Job.objects.create(name='Test Job', contact=contact, job_number='JOB-TEST-001')
-        self.task = Task.objects.create(name='Test Task', job=self.job)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme=self.scheme)
 
         self.client.login(username='manager', password='testpass')
 
@@ -88,7 +88,7 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='J-tnf', contact=contact)
-        self.task = Task.objects.create(job=self.job, name='T-tnf')
+        self.task = Task.objects.create(job=self.job, name='T-tnf', rate_scheme=self.scheme)
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
 
     def test_task_list_omits_legacy_fields(self):
@@ -157,7 +157,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         )
         self.elapsed_task = Task.objects.create(
             job=self.job, name='Cut', source_plan_task=self.plan_task,
-            est_qty=Decimal('4.0'),
+            est_qty=Decimal('4.0'), rate_scheme=self.elapsed_scheme,
         )
         TaskCharge.objects.create(task=self.elapsed_task, rate_scheme=self.elapsed_scheme)
 
@@ -170,7 +170,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         )
 
         # Flat-fee task with no plan source
-        self.flat_task = Task.objects.create(job=self.job, name='Setup')
+        self.flat_task = Task.objects.create(job=self.job, name='Setup', rate_scheme=self.flat_scheme)
         TaskCharge.objects.create(task=self.flat_task, rate_scheme=self.flat_scheme)
         Blep.objects.create(
             task=self.flat_task, user=self.user,

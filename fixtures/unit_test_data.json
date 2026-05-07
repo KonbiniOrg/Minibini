@@ -278,6 +278,82 @@
     }
   },
   {
+    "model": "core.accountingcategory",
+    "pk": 901,
+    "fields": {
+      "code": "SVC",
+      "name": "Service",
+      "taxable": false,
+      "default_description": "Professional services and labor",
+      "is_active": true,
+      "qbo_item_id": "",
+      "qbo_expense_account_id": ""
+    }
+  },
+  {
+    "model": "core.accountingcategory",
+    "pk": 902,
+    "fields": {
+      "code": "MTL",
+      "name": "Material",
+      "taxable": true,
+      "default_description": "Raw materials",
+      "is_active": true,
+      "qbo_item_id": "",
+      "qbo_expense_account_id": ""
+    }
+  },
+  {
+    "model": "jobs.ratescheme",
+    "pk": 1,
+    "fields": {
+      "name": "Std Hourly",
+      "description": "Standard hourly rate for bench work",
+      "algorithm": "elapsed_time",
+      "rate": "45.00",
+      "unit_label": "hour",
+      "modifiers": [],
+      "accounting_category": 901
+    }
+  },
+  {
+    "model": "jobs.ratescheme",
+    "pk": 2,
+    "fields": {
+      "name": "Std CNC Router",
+      "description": "Per-minute CNC charge with optional modifiers",
+      "algorithm": "entered_qty",
+      "rate": "4.00",
+      "unit_label": "minute",
+      "modifiers": [
+        {
+          "key": "messy",
+          "label": "Messy materials",
+          "percent": 10
+        },
+        {
+          "key": "doublestick",
+          "label": "Doublestick tape",
+          "percent": 5
+        }
+      ],
+      "accounting_category": 901
+    }
+  },
+  {
+    "model": "jobs.ratescheme",
+    "pk": 3,
+    "fields": {
+      "name": "Std Setup Fee",
+      "description": "Flat setup charge",
+      "algorithm": "flat_fee",
+      "rate": "50.00",
+      "unit_label": "job",
+      "modifiers": [],
+      "accounting_category": 901
+    }
+  },
+  {
     "model": "jobs.job",
     "pk": 1,
     "fields": {
@@ -311,7 +387,11 @@
       "name": "Kitchen demolition",
       "description": "",
       "sort_order": null,
-      "job": 1
+      "job": 1,
+      "rate_scheme": 1,
+      "active_modifiers": [],
+      "actual_qty": null,
+      "est_qty": null
     }
   },
   {
@@ -322,7 +402,11 @@
       "name": "Electrical rough-in",
       "description": "",
       "sort_order": null,
-      "job": 1
+      "job": 1,
+      "rate_scheme": 1,
+      "active_modifiers": [],
+      "actual_qty": null,
+      "est_qty": null
     }
   },
   {
@@ -402,32 +486,6 @@
       "business": 2,
       "contact": 3,
       "vendor_invoice_number": "ACME-INV-002"
-    }
-  },
-  {
-    "model": "core.accountingcategory",
-    "pk": 901,
-    "fields": {
-      "code": "SVC",
-      "name": "Service",
-      "taxable": false,
-      "default_description": "Professional services and labor",
-      "is_active": true,
-      "qbo_item_id": "",
-      "qbo_expense_account_id": ""
-    }
-  },
-  {
-    "model": "core.accountingcategory",
-    "pk": 902,
-    "fields": {
-      "code": "MTL",
-      "name": "Material",
-      "taxable": true,
-      "default_description": "Raw materials",
-      "is_active": true,
-      "qbo_item_id": "",
-      "qbo_expense_account_id": ""
     }
   },
   {
@@ -576,56 +634,6 @@
       "description": "Template for routine maintenance work",
       "is_active": true,
       "created_date": "2023-02-20T14:30:00Z"
-    }
-  },
-  {
-    "model": "jobs.ratescheme",
-    "pk": 1,
-    "fields": {
-      "name": "Std Hourly",
-      "description": "Standard hourly rate for bench work",
-      "algorithm": "elapsed_time",
-      "rate": "45.00",
-      "unit_label": "hour",
-      "modifiers": [],
-      "accounting_category": 901
-    }
-  },
-  {
-    "model": "jobs.ratescheme",
-    "pk": 2,
-    "fields": {
-      "name": "Std CNC Router",
-      "description": "Per-minute CNC charge with optional modifiers",
-      "algorithm": "entered_qty",
-      "rate": "4.00",
-      "unit_label": "minute",
-      "modifiers": [
-        {
-          "key": "messy",
-          "label": "Messy materials",
-          "percent": 10
-        },
-        {
-          "key": "doublestick",
-          "label": "Doublestick tape",
-          "percent": 5
-        }
-      ],
-      "accounting_category": 901
-    }
-  },
-  {
-    "model": "jobs.ratescheme",
-    "pk": 3,
-    "fields": {
-      "name": "Std Setup Fee",
-      "description": "Flat setup charge",
-      "algorithm": "flat_fee",
-      "rate": "50.00",
-      "unit_label": "job",
-      "modifiers": [],
-      "accounting_category": 901
     }
   },
   {

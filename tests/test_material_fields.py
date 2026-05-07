@@ -17,7 +17,11 @@ class MaterialFieldsTest(TestCase):
             email='test@example.com', work_number='555-0100',
         )
         self.job = Job.objects.create(job_number='JOB-TEST-1', contact=self.contact)
-        self.task = Task.objects.create(job=self.job, name='t')
+        self.scheme = RateScheme.objects.create(
+            name='S-mf', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.cat,
+        )
+        self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
 
     def test_material_has_job_consumption_state_restocked_qty(self):
         m = Material.objects.create(
@@ -99,7 +103,12 @@ class MaterialTaskSetNullTest(TestCase):
             email='nulltest@example.com',
         )
         self.job = Job.objects.create(job_number='JOB-TSN-1', contact=self.contact)
-        self.task = Task.objects.create(job=self.job, name='deletable')
+        cat = AccountingCategory.objects.create(name='tsn-cat', code='TSN1')
+        scheme = RateScheme.objects.create(
+            name='S-tsn', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=cat,
+        )
+        self.task = Task.objects.create(job=self.job, name='deletable', rate_scheme=scheme)
 
     def test_delete_task_keeps_material_with_null_task_and_original_job(self):
         m = Material.objects.create(

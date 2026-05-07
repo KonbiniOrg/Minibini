@@ -7,7 +7,7 @@ from decimal import Decimal
 from datetime import timedelta
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.core.models import User, Configuration, AccountingCategory
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import Estimate, TaskTemplate
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import PriceListItem
@@ -43,6 +43,10 @@ class ComprehensiveModelIntegrationTest(TestCase):
             business=self.business
         )
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+        self.scheme = RateScheme.objects.create(
+            name='S-cm-int', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
 
     def test_complete_job_workflow(self):
         job = Job.objects.create(
@@ -63,6 +67,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             assignee=self.user,
             job=job,
             name="Test Task",
+            rate_scheme=self.scheme,
         )
 
         blep = Blep.objects.create(
@@ -211,14 +216,15 @@ class ComprehensiveModelIntegrationTest(TestCase):
             contact=self.contact
         )
 
-        task = Task.objects.create(
-            job=job,
-            name="Planning Task",
-        )
         from apps.jobs.models import RateScheme
         scheme = RateScheme.objects.create(
             name='S-cmtw', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
+        task = Task.objects.create(
+            job=job,
+            name="Planning Task",
+            rate_scheme=scheme,
         )
         task_template = TaskTemplate.objects.create(
             template_name="Planning Task Template",
@@ -259,7 +265,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             contact=self.contact
         )
 
-        task = Task.objects.create(job=job, name="Test Task")
+        task = Task.objects.create(job=job, name="Test Task", rate_scheme=self.scheme)
 
         initial_task_count = Task.objects.count()
 
@@ -379,10 +385,6 @@ class LineItemValidationTest(TestCase):
             contact=self.contact,
             vendor_invoice_number="VIN_VALID001"
         )
-        self.task = Task.objects.create(
-            job=self.job,
-            name="Test Task",
-        )
         # EstimateLineItem.task targets PlanTask, not Task
         from apps.estimates.models import EstWorksheet
         from apps.jobs.models import PlanTask, RateScheme
@@ -392,6 +394,11 @@ class LineItemValidationTest(TestCase):
             name='S-cm', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.cm_ac,
+        )
+        self.task = Task.objects.create(
+            job=self.job,
+            name="Test Task",
+            rate_scheme=self.cm_scheme,
         )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,

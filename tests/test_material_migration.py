@@ -19,7 +19,7 @@ from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import Material, PlanMaterial, PriceListItem
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 
 
 def _backfill():
@@ -48,9 +48,13 @@ class BackfillMaterialJobTest(TestCase):
             code='MIG-N10', accounting_category=self.cat, is_inventoried=False,
         )
         self.job = Job.objects.create(job_number='JOB-MIG10-1', contact=self.contact)
-        self.task_pending = Task.objects.create(job=self.job, name='pending-t')
+        self.scheme = RateScheme.objects.create(
+            name='S-mig10', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.cat,
+        )
+        self.task_pending = Task.objects.create(job=self.job, name='pending-t', rate_scheme=self.scheme)
         self.task_done = Task.objects.create(
-            job=self.job, name='done-t', status=Task.STATUS_COMPLETE,
+            job=self.job, name='done-t', status=Task.STATUS_COMPLETE, rate_scheme=self.scheme,
         )
 
     def test_inventoried_pending_task_gets_pending_state(self):
@@ -189,11 +193,15 @@ class BackfillPlaceholderTaskCleanupTest(TestCase):
         self.contact = _make_contact()
         self.job = Job.objects.create(job_number='JOB-MIG11-1', contact=self.contact)
         self.user = User.objects.create_user('mig11_user', password='p')
+        self.scheme = RateScheme.objects.create(
+            name='S-mig11', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.cat,
+        )
 
     def test_placeholder_task_removed_materials_become_taskless(self):
         """Placeholder 'Materials' task with only expense-bound mats and no bleps is deleted."""
         from apps.expenses.models import Expense
-        placeholder = Task.objects.create(job=self.job, name='Materials')
+        placeholder = Task.objects.create(job=self.job, name='Materials', rate_scheme=self.scheme)
         m = Material.objects.create(
             job=self.job, task=placeholder,
             description='exp mat', quantity=Decimal('1'),
@@ -218,7 +226,7 @@ class BackfillPlaceholderTaskCleanupTest(TestCase):
         from django.utils import timezone
         from apps.jobs.models import Blep
         from apps.expenses.models import Expense
-        placeholder = Task.objects.create(job=self.job, name='Materials')
+        placeholder = Task.objects.create(job=self.job, name='Materials', rate_scheme=self.scheme)
         m = Material.objects.create(
             job=self.job, task=placeholder,
             description='exp mat', quantity=Decimal('1'),

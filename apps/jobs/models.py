@@ -256,12 +256,11 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text="Position in assignee's work queue on the board"
     )
-    # Billing fields (Phase A: nullable; Phase B: rate_scheme tightens to NOT NULL).
+    # Billing fields (Phase B: rate_scheme is NOT NULL at the DB level).
     rate_scheme = models.ForeignKey(
         'jobs.RateScheme',
         on_delete=models.PROTECT,
-        null=True, blank=True,
-        related_name='+',
+        related_name='task_set',
     )
     active_modifiers = models.JSONField(default=list, blank=True)
     actual_qty = models.DecimalField(
@@ -287,8 +286,7 @@ class Task(TaskBase):
                     raise ValidationError(
                         {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
                     )
-        # Note: charge guard removed in B4. rate_scheme will be required (NOT NULL)
-        # in B8 once all write paths have been migrated.
+        # charge guard removed in B4. rate_scheme is NOT NULL at DB level (B8).
 
     def save(self, *args, **kwargs):
         from django.db import transaction

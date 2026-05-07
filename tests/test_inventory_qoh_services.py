@@ -6,7 +6,7 @@ from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, InventoryAdjustment, PriceListItem, Material
 from apps.inventory.services import InventoryService, MaterialService
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import EstWorksheet, Estimate
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 
@@ -25,10 +25,13 @@ class ConsumeMaterialTest(TestCase):
             code='PLI-001', description='Steel plate',
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('0.00'), accounting_category=self.category)
-
+        self.scheme = RateScheme.objects.create(
+            name='S-qohs1', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Cut steel',
-            sort_order=1)
+            sort_order=1, rate_scheme=self.scheme)
 
     def test_decreases_qoh_and_increases_qty_sold(self):
         """Consuming material decreases QOH and increases qty_sold."""
@@ -146,7 +149,7 @@ class ConsumeMaterialTest(TestCase):
     def test_consume_via_job_task(self):
         """Consuming material on a job task reduces earmark for the task's job."""
         wo_task = Task.objects.create(
-            job=self.job, name='Assemble', sort_order=1)
+            job=self.job, name='Assemble', sort_order=1, rate_scheme=self.scheme)
 
         Earmark.objects.create(
             price_list_item=self.pli, job=self.job,
@@ -179,10 +182,13 @@ class CompleteTaskAdjustmentTest(TestCase):
             code='PLI-001', description='Steel plate',
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('5.00'), accounting_category=self.category)
-
+        self.scheme = RateScheme.objects.create(
+            name='S-qohs2', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job, name='Cut steel',
-            sort_order=1)
+            sort_order=1, rate_scheme=self.scheme)
 
         self.material = Material(
             job=self.job,

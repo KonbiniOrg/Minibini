@@ -9,9 +9,21 @@ from decimal import Decimal
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import User, AccountingCategory
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.contacts.models import Contact
 from apps.inventory.models import Material, PriceListItem
+
+
+def _make_scheme(name_suffix=''):
+    """Create a minimal flat-fee RateScheme for tests that don't care about billing."""
+    code = f'TST{name_suffix[:4]}'.upper()
+    ac, _ = AccountingCategory.objects.get_or_create(
+        code=code, defaults={'name': f'Test AC {name_suffix}'},
+    )
+    return RateScheme.objects.create(
+        name=f'S-tst-{name_suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class MaterialCRUDTest(TestCase):
@@ -28,9 +40,11 @@ class MaterialCRUDTest(TestCase):
         self.job = Job.objects.create(
             job_number='MAT-001', name='Material Job', contact=self.contact,
         )
+        self.scheme = _make_scheme('mat')
         self.task = Task.objects.create(
             job=self.job,
             name='Install countertop',
+            rate_scheme=self.scheme,
         )
         self.category = AccountingCategory.objects.create(
             name='General', code='GEN',
@@ -153,7 +167,7 @@ class MaterialCRUDTest(TestCase):
     def test_material_wrong_task(self):
         """Material on a different task should not be accessible."""
         task2 = Task.objects.create(
-            job=self.job, name='Other task',
+            job=self.job, name='Other task', rate_scheme=self.scheme,
         )
         response = self.client.patch(
             f'/api/tasks/{task2.pk}/materials/{self.material.pk}/',
@@ -177,9 +191,11 @@ class SubtaskCRUDTest(TestCase):
         self.job = Job.objects.create(
             job_number='SUB-001', name='Subtask Job', contact=self.contact,
         )
+        self.scheme = _make_scheme('sub')
         self.parent_task = Task.objects.create(
             job=self.job,
             name='Parent task',
+            rate_scheme=self.scheme,
         )
 
     def test_list_subtasks_empty(self):
@@ -192,6 +208,7 @@ class SubtaskCRUDTest(TestCase):
             job=self.job,
             parent_task=self.parent_task,
             name='Child task',
+            rate_scheme=self.scheme,
         )
         response = self.client.get(f'/api/tasks/{self.parent_task.pk}/subtasks/')
         self.assertEqual(response.status_code, 200)
@@ -201,7 +218,7 @@ class SubtaskCRUDTest(TestCase):
     def test_create_subtask(self):
         response = self.client.post(
             f'/api/tasks/{self.parent_task.pk}/subtasks/',
-            {'name': 'New subtask', 'units': 'hours', 'rate': '25.00', 'est_qty': '3.00'},
+            {'name': 'New subtask', 'est_qty': '3.00', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -216,7 +233,7 @@ class SubtaskCRUDTest(TestCase):
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/tasks/{self.parent_task.pk}/subtasks/',
-            {'name': 'Worker subtask', 'units': 'ea', 'rate': '10.00', 'est_qty': '1.00'},
+            {'name': 'Worker subtask', 'est_qty': '1.00', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -225,7 +242,7 @@ class SubtaskCRUDTest(TestCase):
         self.client.force_authenticate(user=None)
         response = self.client.post(
             f'/api/tasks/{self.parent_task.pk}/subtasks/',
-            {'name': 'Fail', 'units': 'ea', 'rate': '10.00', 'est_qty': '1.00'},
+            {'name': 'Fail', 'est_qty': '1.00', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 403)
@@ -242,10 +259,11 @@ class TerminalTaskGuardTest(TestCase):
         self.job = Job.objects.create(
             job_number='TERM-001', name='Terminal Job', contact=self.contact,
         )
+        self.scheme = _make_scheme('term')
 
     def _make_task(self, task_status):
         return Task.objects.create(
-            job=self.job, name='A task', status=task_status,
+            job=self.job, name='A task', status=task_status, rate_scheme=self.scheme,
         )
 
     def test_cannot_add_material_to_complete_task(self):
