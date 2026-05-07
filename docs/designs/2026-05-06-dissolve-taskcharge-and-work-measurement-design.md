@@ -146,7 +146,7 @@ The supersede flow, frozen-once-referenced rules, AC pass-through, scheme picker
 
 `TaskCharge.compute_amount` moves to `Task`. `PlanTask.compute_amount` already exists. Both atoms become first-class on the work-item model — symmetric with `Material` / `PlanMaterial`.
 
-The invoice wizard's per-task atom (designed in 2026-05-02 and partially shipped) becomes a Task atom rather than a TaskCharge atom. `InvoiceLineItemSource` rows that today point at `TaskCharge` PKs are migrated to point at `Task` PKs (one-to-one mapping; trivial since the relationship was OneToOne).
+The invoice wizard's per-task atom (designed in 2026-05-02 and shipped) already keys `InvoiceLineItemSource` rows on Task PKs (`SOURCE_TASK` with `source_pk = task.pk`) — confirmed in `apps/invoicing/models.py:191`. **No migration of source rows is needed.** Only the compute path changes: `task.charge.compute()` becomes `task.compute_amount()`. Same for the per-task atom assembly in `InvoiceWizardService.get_source_pool` and the `_atom_*` helpers — they switch from `task.charge.<x>` to `task.<x>` directly.
 
 The estimate wizard's per-PlanTask atom (designed in 2026-04-19) is unchanged.
 
@@ -326,7 +326,7 @@ Pre-production: correctness over preservation. The existing dev DB can be hand-f
 - Make `Task.rate_scheme` `NOT NULL`.
 - Drop `Task.clean()`'s `hasattr(self, 'charge')` requirement.
 - Drop the `TaskCharge` model and `task_charges` table.
-- Migrate `InvoiceLineItemSource` rows from pointing at TaskCharge PKs to pointing at Task PKs (1:1 mapping; the source `task_charge_id == task_id` link follows from the OneToOne).
+- (`InvoiceLineItemSource` source rows already key on Task PKs via `SOURCE_TASK` — no migration needed.)
 - Update `RateScheme.is_referenced()` and `reference_counts()` to query Task instead of TaskCharge.
 - Update `RateScheme.get_actual_qty()` to read `task.actual_qty`.
 - Move `compute_amount` from TaskCharge to Task. Update wizard atom callsites.
