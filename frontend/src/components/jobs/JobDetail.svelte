@@ -429,15 +429,31 @@
                 </tr>
               {/each}
             </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="5" class="text-right" style="font-weight:600;">Total</td>
-                <td class="text-right" style="font-weight:700;">
-                  ${displayedEstimate.line_items.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2)}
-                </td>
-              </tr>
-            </tfoot>
           </table>
+          <div class="est-footer">
+            <div class="est-meta">
+              {#if displayedEstimate.sent_date}
+                <span class="meta-bit"><span class="meta-label">Sent</span> <span class="meta-value">{fmtDate(displayedEstimate.sent_date)}</span></span>
+              {/if}
+              {#if displayedEstimate.closed_date && displayedEstimate.status === 'accepted'}
+                <span class="meta-bit"><span class="meta-label">Accepted</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'rejected'}
+                <span class="meta-bit"><span class="meta-label">Rejected</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'superseded'}
+                <span class="meta-bit"><span class="meta-label">Superseded</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'expired'}
+                <span class="meta-bit"><span class="meta-label">Expired</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+              {:else if !displayedEstimate.sent_date && displayedEstimate.created_date}
+                <span class="meta-bit"><span class="meta-label">Started</span> <span class="meta-value">{fmtDate(displayedEstimate.created_date)}</span></span>
+              {/if}
+            </div>
+            <div class="est-totals">
+              <div class="t-label">Total</div>
+              <div class="t-value grand">
+                ${displayedEstimate.line_items.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2)}
+              </div>
+            </div>
+          </div>
         {:else if displayedEstimate}
           <p class="empty-msg">Estimate has no line items.</p>
         {:else}
@@ -1238,15 +1254,21 @@
   .inv-readonly tr:nth-child(even) td { background: #dcfce7; }
   .inv-readonly .text-right { font-variant-numeric: tabular-nums; }
 
-  /* Invoice footer (meta + totals combined) */
-  .inv-footer {
+  /* Invoice / Estimate footer (meta + totals combined) */
+  .inv-footer, .est-footer {
     display: grid; grid-template-columns: 1fr auto; gap: 24px;
-    background: #ecfdf5; border-top: 2px solid #86efac;
+    border-top: 2px solid #86efac;
     padding: 12px 16px; font-size: 13px;
   }
-  .inv-meta {
+  .inv-footer { background: #ecfdf5; }
+  .est-footer { background: #eff6ff; border-top-color: #93c5fd; }
+  .inv-meta, .est-meta {
     display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
   }
+  .est-totals { display: grid; grid-template-columns: auto 110px; column-gap: 12px; row-gap: 2px; }
+  .est-totals .t-label { text-align: right; color: #1e3a8a; font-size: 12px; }
+  .est-totals .t-value { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .est-totals .t-value.grand { font-size: 15px; }
   .inv-link { font-weight: 600; color: #14532d; text-decoration: none; }
   .inv-link:hover { text-decoration: underline; }
   .meta-bit { color: #14532d; font-size: 12px; }
