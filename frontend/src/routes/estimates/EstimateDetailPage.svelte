@@ -356,10 +356,6 @@
     <p>No line items found for this estimate.</p>
   {/if}
 
-  <p>
-    <a href={`/jobs/${estimate.job}`} use:link>View Job Details</a>
-  </p>
-
   <EstimateLineItemModal
     open={modalOpen}
     mode={modalMode}
