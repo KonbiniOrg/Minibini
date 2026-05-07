@@ -325,7 +325,7 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if job}
-  <h2>Tasks for Job {job.job_number}</h2>
+  <h2>Tasks for Job {job.job_number}{#if job.name} — {job.name}{/if}</h2>
 
   <p>
     <a href={`/jobs/${job.job_id}`} use:link>&laquo; Back to Job</a>
