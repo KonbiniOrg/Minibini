@@ -9,7 +9,7 @@
   import BlepEditModal from '../../components/tasks/BlepEditModal.svelte';
   import TaskTree from '../../components/TaskTree.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
-  import SubtaskModal from '../../components/SubtaskModal.svelte';
+  import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
 
   let { params = {} } = $props();
@@ -387,9 +387,12 @@
     <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
   {/if}
 
-  <SubtaskModal
+  <WorkItemForm
     open={subtaskModalOpen}
-    parentTaskId={task?.task_id}
+    mode="manual"
+    context="subtask"
+    contextId={task?.task_id}
+    templates={[]}
     onSaved={handleSubtaskSaved}
     onClose={() => { subtaskModalOpen = false; }}
   />

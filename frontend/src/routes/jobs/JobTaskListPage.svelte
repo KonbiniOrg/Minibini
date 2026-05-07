@@ -5,7 +5,6 @@
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
-  import SubtaskModal from '../../components/SubtaskModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
 
   let { params = {} } = $props();
@@ -401,9 +400,12 @@
     onClose={() => { materialModalOpen = false; }}
   />
 
-  <SubtaskModal
+  <WorkItemForm
     open={subtaskModalOpen}
-    parentTaskId={subtaskModalParentTaskId}
+    mode="manual"
+    context="subtask"
+    contextId={subtaskModalParentTaskId}
+    templates={[]}
     onSaved={handleSubtaskSaved}
     onClose={() => { subtaskModalOpen = false; }}
   />
