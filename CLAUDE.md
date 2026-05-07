@@ -180,6 +180,12 @@ The primary UI is a Svelte 5 SPA at `frontend/`, built with Vite and using hash-
 - **Dev:** Vite on `:9000` proxies `/api/*` to Django on `:8000`
 - **Prod:** `npm run build` → `dist/` served by nginx
 
+## UI Decisions
+
+Conventions to keep the SPA's interaction vocabulary consistent. New code follows these unless there's a specific reason not to.
+
+- **Links navigate; buttons act.** Use `<a href="...">` (or `use:link`) for anything that takes the user to a different view. Use `<button>` for anything that mutates state, opens a modal, or triggers an API call without a navigation. Don't dress a `<button>` as a link to navigate, and don't wrap a `<a>` around an action handler.
+
 ## REST API (`apps/api/`)
 
 DRF-based API serving the Svelte frontend. Session-based authentication (no tokens).
