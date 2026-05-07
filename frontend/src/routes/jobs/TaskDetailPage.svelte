@@ -15,7 +15,6 @@
   let { params = {} } = $props();
 
   let task = $state(null);
-  let charge = $state(null);
   let loading = $state(true);
   let error = $state('');
   let conflict = $state(null);
@@ -66,15 +65,6 @@
       error = e.message || 'Could not load task.';
     } finally {
       loading = false;
-    }
-  }
-
-  async function loadCharge() {
-    if (!task) return;
-    try {
-      charge = await api.get(`/api/jobs/${task.job.id}/tasks/${task.task_id}/charge/`);
-    } catch (e) {
-      charge = null;
     }
   }
 
@@ -135,7 +125,6 @@
 
   async function refresh() {
     await loadTask();
-    await loadCharge();
     await loadBleps();
     await loadMaterials();
     await loadSubtasks();
@@ -143,10 +132,7 @@
 
   $effect(() => {
     if (params.taskId) {
-      (async () => {
-        await loadTask();
-        await loadCharge();
-      })();
+      loadTask();
       loadBleps();
       loadMaterials();
       loadSubtasks();
@@ -289,25 +275,25 @@
   </table>
 
   <!-- Charge section -->
-  {#if charge}
+  {#if task && task.scheme_name}
     <h3>Charge</h3>
     <table border="1"><tbody>
-      <tr><td><strong>Scheme</strong></td><td>{charge.scheme_name}</td></tr>
-      <tr><td><strong>Rate</strong></td><td>${charge.effective_rate}/{charge.scheme_unit_label}</td></tr>
-      {#if charge.active_modifiers.length > 0}
+      <tr><td><strong>Scheme</strong></td><td>{task.scheme_name}</td></tr>
+      <tr><td><strong>Rate</strong></td><td>${task.effective_rate}/{task.scheme_unit_label}</td></tr>
+      {#if task.active_modifiers && task.active_modifiers.length > 0}
         <tr><td><strong>Modifiers</strong></td>
-          <td>{charge.active_modifiers.join(', ')}</td></tr>
+          <td>{task.active_modifiers.join(', ')}</td></tr>
       {/if}
-      {#if charge.scheme_algorithm === 'entered_qty'}
-        <tr><td><strong>Actual {charge.scheme_unit_label}s</strong></td>
+      {#if task.scheme_algorithm === 'entered_qty'}
+        <tr><td><strong>Actual {task.scheme_unit_label}s</strong></td>
           <td>
             <input type="number" step="0.01"
               value={task.actual_qty || ''}
               onchange={(e) => saveActualQty(e.target.value)}>
           </td></tr>
       {/if}
-      {#if charge.computed_charge}
-        <tr><td><strong>Charge</strong></td><td>${charge.computed_charge}</td></tr>
+      {#if task.computed_charge}
+        <tr><td><strong>Charge</strong></td><td>${task.computed_charge}</td></tr>
       {/if}
     </tbody></table>
   {/if}
