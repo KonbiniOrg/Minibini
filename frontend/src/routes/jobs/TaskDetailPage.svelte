@@ -39,6 +39,19 @@
   let assignModalOpen = $state(false);
   let actualQtyError = $state('');
 
+  // Edit-task modal
+  let editTaskOpen = $state(false);
+  let templates = $state([]);
+
+  async function loadTemplates() {
+    try {
+      const resp = await api.get('/api/task-templates/?page_size=100');
+      templates = resp.results || resp;
+    } catch (e) {
+      templates = [];
+    }
+  }
+
   function openEdit(blep) { editingBlep = blep; modalMode = 'edit'; }
   function openCreate() { editingBlep = null; modalMode = 'create-open'; }
   function closeModal() { editingBlep = null; modalMode = 'edit'; }
@@ -159,6 +172,7 @@
       loadMaterials();
       loadSubtasks();
       loadCategories();
+      loadTemplates();
     }
   });
 
@@ -264,6 +278,9 @@
     <div class="toolbar">
       <a href={`/jobs/${task.job.id}`} use:link class="back-link">&laquo; back to overview</a>
       <a href={`/jobs/${task.job.id}/tasklist`} use:link class="back-link">task list</a>
+      {#if !taskIsTerminal}
+        <button type="button" onclick={() => { editTaskOpen = true; }}>edit task</button>
+      {/if}
       <h2 class="task-title">Task: {task.name}</h2>
     </div>
   {/if}
@@ -402,6 +419,18 @@
     templates={[]}
     onSaved={handleSubtaskSaved}
     onClose={() => { subtaskModalOpen = false; }}
+  />
+
+  <WorkItemForm
+    open={editTaskOpen}
+    mode="manual"
+    context="job"
+    contextId={task.job?.id}
+    item={task}
+    isEdit={true}
+    {templates}
+    onSaved={() => { editTaskOpen = false; refresh(); }}
+    onClose={() => { editTaskOpen = false; }}
   />
 
   <BlepList
