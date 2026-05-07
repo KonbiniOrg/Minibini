@@ -367,11 +367,11 @@
   .blocked-reason { font-size: 11px; color: #991b1b; }
 
   .actions-cell {
-    display: flex; flex-wrap: wrap; gap: 2px;
     max-width: 12em;
   }
   .actions-cell button {
     font-size: 11px; padding: 2px 6px;
+    margin: 0 2px 2px 0;
     cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
   }
   .actions-cell button:hover { background: #f0f0f0; }
