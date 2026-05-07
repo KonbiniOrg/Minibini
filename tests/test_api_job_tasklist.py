@@ -361,3 +361,41 @@ class TaskSerializerFlattenTest(TestCase):
         self.assertEqual(row['est_qty'], '5.00')
         self.assertIsNone(row['actual_qty'])
         self.assertNotIn('charge', row)
+
+    def test_post_task_accepts_flat_billing_fields(self):
+        """POST /api/jobs/<id>/tasks/ accepts rate_scheme, active_modifiers,
+        est_qty, est_worker_time, actual_qty as direct fields (not nested in
+        'actuals')."""
+        from decimal import Decimal
+        from django.contrib.auth.models import Permission
+        from apps.jobs.models import RateScheme
+
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.user.user_permissions.add(perm)
+        # Re-fetch user so permission cache is cleared
+        self.client.force_authenticate(user=User.objects.get(pk=self.user.pk))
+
+        ac = AccountingCategory.objects.create(name='Labor2')
+        scheme = RateScheme.objects.create(
+            name='Hourly2', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hour',
+            accounting_category=ac,
+        )
+        payload = {
+            'name': 'Bench work',
+            'description': 'Test',
+            'rate_scheme': scheme.pk,
+            'active_modifiers': [],
+            'est_qty': '5.00',
+            'est_worker_time': 'PT5H',
+        }
+        resp = self.client.post(
+            f'/api/jobs/{self.job.pk}/tasks/', payload,
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        task = Task.objects.get(pk=resp.json()['task_id'])
+        self.assertEqual(task.rate_scheme_id, scheme.pk)
+        self.assertEqual(task.est_qty, Decimal('5.00'))
+        self.assertIsNotNone(task.est_worker_time)
+        self.assertIsNone(task.actual_qty)
