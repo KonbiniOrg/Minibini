@@ -584,7 +584,9 @@
         <span class="top-bar-title">
           MATERIALS{#if jobMaterials.length} · {jobMaterials.length} item{jobMaterials.length === 1 ? '' : 's'}{:else} · None{/if}
         </span>
-        <span class="top-bar-actions"></span>
+        <span class="top-bar-actions">
+          <a href="#/jobs/{job.job_id}/tasklist">View task list →</a>
+        </span>
       </div>
       <div class="body">
         {#if jobMaterials.length > 0}
