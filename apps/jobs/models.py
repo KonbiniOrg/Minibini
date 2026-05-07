@@ -287,9 +287,8 @@ class Task(TaskBase):
                     raise ValidationError(
                         {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
                     )
-        # Phase B: every Task must have a TaskCharge.
-        if self.pk and not hasattr(self, 'charge'):
-            raise ValidationError({'charge': 'Required: every Task must have a TaskCharge.'})
+        # Note: charge guard removed in B4. rate_scheme will be required (NOT NULL)
+        # in B8 once all write paths have been migrated.
 
     def save(self, *args, **kwargs):
         from django.db import transaction

@@ -100,18 +100,18 @@ class GetSourcePoolTest(TestCase):
         )
 
         self.task_billable = Task.objects.create(
-            job=self.job, name='Site demo',
+            job=self.job, name='Site demo', rate_scheme=self.scheme,
         )
-        # Task with a TaskCharge produces a per-task atom from charge.compute()
+        # Keep TaskCharge for backward compat with _atom_units which still reads charge.
         TaskCharge.objects.create(task=self.task_billable, rate_scheme=self.scheme)
 
         self.task_empty = Task.objects.create(
-            job=self.job, name='Inspection',
+            job=self.job, name='Inspection', rate_scheme=self.scheme,
         )
         TaskCharge.objects.create(task=self.task_empty, rate_scheme=self.scheme)
 
         self.task_cancelled = Task.objects.create(
-            job=self.job, name='Cancelled work',
+            job=self.job, name='Cancelled work', rate_scheme=self.scheme,
         )
         TaskCharge.objects.create(task=self.task_cancelled, rate_scheme=self.scheme)
         self.task_cancelled.status = Task.STATUS_CANCELLED
@@ -282,7 +282,7 @@ class AddAtomsToNewLineItemTest(TestCase):
             accounting_category=self.cat_labor,
         )
         self.task = Task.objects.create(
-            job=self.job, name='Labor',
+            job=self.job, name='Labor', rate_scheme=self.scheme,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -297,7 +297,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         )
         # Second task with its own bleps — task atom rolls up to 1h * $25 = $25
         self.task2 = Task.objects.create(
-            job=self.job, name='Cleanup',
+            job=self.job, name='Cleanup', rate_scheme=self.scheme,
         )
         TaskCharge.objects.create(task=self.task2, rate_scheme=self.scheme)
         Blep.objects.create(

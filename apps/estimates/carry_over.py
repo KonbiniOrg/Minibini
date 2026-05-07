@@ -45,34 +45,23 @@ class AtomCarryOverService:
 
     @staticmethod
     def _carry_over_plan_tasks(worksheet, job):
-        from apps.jobs.models import PlanTask, RateScheme, Task, TaskCharge
+        from apps.jobs.models import PlanTask, Task
         count = 0
         for pt in PlanTask.objects.filter(
             est_worksheet=worksheet,
         ).select_related('rate_scheme'):
-            # Idempotency: skip if a Task already exists that came from this PlanTask
             if Task.objects.filter(job=job, source_plan_task=pt).exists():
                 continue
-            if not pt.rate_scheme_id:
-                # Plan task with no billing config — carry as a Task without a TaskCharge.
-                Task.objects.create(
-                    job=job, name=pt.name, description=pt.description,
-                    source_plan_task=pt,
-                )
-                count += 1
-                continue
-            task = Task.objects.create(
-                job=job, name=pt.name, description=pt.description,
+            Task.objects.create(
+                job=job,
+                name=pt.name,
+                description=pt.description,
                 source_plan_task=pt,
-            )
-            actuals = {}
-            if pt.rate_scheme.algorithm == RateScheme.ENTERED_QTY and pt.est_qty is not None:
-                actuals = {'qty': str(pt.est_qty.normalize())}
-            TaskCharge.objects.create(
-                task=task,
                 rate_scheme=pt.rate_scheme,
-                active_modifiers=pt.active_modifiers,
-                actuals=actuals,
+                active_modifiers=list(pt.active_modifiers or []),
+                est_qty=pt.est_qty,
+                est_worker_time=pt.est_worker_time,
+                actual_qty=None,
             )
             count += 1
         return count
@@ -106,26 +95,22 @@ class AtomCarryOverService:
 
     @staticmethod
     def _create_task_from_line_item(line_item, job):
-        from apps.jobs.models import RateScheme, Task, TaskCharge
+        from apps.jobs.models import Task
         template = line_item.source_template
         # Idempotency: skip if a Task on the same job already came from this template
         if Task.objects.filter(job=job, source_template=template).exists():
             return False
-        task = Task.objects.create(
+        Task.objects.create(
             job=job,
             name=template.template_name,
             description=template.description or '',
             source_template=template,
+            rate_scheme=template.rate_scheme,
+            active_modifiers=list(template.default_active_modifiers or []),
+            est_qty=line_item.qty,
+            est_worker_time=None,
+            actual_qty=None,
         )
-        if template.rate_scheme_id:
-            actuals = {}
-            if template.rate_scheme.algorithm == RateScheme.ENTERED_QTY:
-                actuals = {'qty': str(line_item.qty)}
-            TaskCharge.objects.create(
-                task=task,
-                rate_scheme=template.rate_scheme,
-                actuals=actuals,
-            )
         return True
 
     @staticmethod

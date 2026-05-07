@@ -12,7 +12,7 @@ from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, Task, Blep, RateScheme, TaskCharge
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import (
     Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
@@ -335,16 +335,11 @@ class JobService:
                 name=plan_task.name,
                 description=plan_task.description,
                 sort_order=plan_task.sort_order,
+                rate_scheme=plan_task.rate_scheme,
+                active_modifiers=list(plan_task.active_modifiers or []),
+                est_qty=plan_task.est_qty,
+                est_worker_time=plan_task.est_worker_time,
             )
-            # Copy PlanTask billing fields → TaskCharge if billing is configured
-            from apps.jobs.models import TaskCharge
-            if plan_task.rate_scheme_id:
-                TaskCharge.objects.create(
-                    task=new_task,
-                    rate_scheme=plan_task.rate_scheme,
-                    active_modifiers=list(plan_task.active_modifiers or []),
-                    actuals={},
-                )
             for pm in plan_task.plan_materials.all():
                 MaterialService.create_on_job(
                     job=job, task=new_task,
@@ -374,9 +369,9 @@ class TaskService:
     """Service class for Task creation workflows."""
 
     @staticmethod
-    def create_from_template(template, job, assignee=None):
+    def create_from_template(template, job, assignee=None, est_qty=None):
         """
-        Create Task from TaskTemplate. Creates a TaskCharge transactionally.
+        Create Task from TaskTemplate. Writes billing fields directly on Task.
         """
         from apps.core.services import SchemeSupersededError
 
@@ -395,18 +390,17 @@ class TaskService:
                 job=job,
                 name=template.template_name,
                 assignee=assignee,
-            )
-            TaskCharge.objects.create(
-                task=task,
                 rate_scheme=template.rate_scheme,
                 active_modifiers=list(template.default_active_modifiers or []),
+                est_qty=est_qty if est_qty is not None else template.default_billable_qty,
             )
         return task
 
     @staticmethod
     def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
-                      actuals=None, **task_fields):
-        """Create Task directly. Requires rate_scheme_id and creates a TaskCharge transactionally."""
+                      est_qty=None, est_worker_time=None, actual_qty=None,
+                      **task_fields):
+        """Create Task directly. Requires rate_scheme_id."""
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
         scheme = RateScheme.objects.get(pk=rate_scheme_id)
@@ -415,11 +409,14 @@ class TaskService:
                 {'rate_scheme': 'Selected RateScheme is superseded.'}
             )
         with transaction.atomic():
-            task = Task.objects.create(job=job, name=name, **task_fields)
-            TaskCharge.objects.create(
-                task=task, rate_scheme=scheme,
+            task = Task.objects.create(
+                job=job, name=name,
+                rate_scheme=scheme,
                 active_modifiers=active_modifiers or [],
-                actuals=actuals or {},
+                est_qty=est_qty,
+                est_worker_time=est_worker_time,
+                actual_qty=actual_qty,
+                **task_fields,
             )
         return task
 
@@ -979,11 +976,11 @@ class BoardService:
             task__job=job,
             start_time__isnull=False,
             end_time__isnull=False,
-        ).select_related('task__charge__rate_scheme')
+        ).select_related('task__rate_scheme')
         for blep in bleps:
             try:
-                rate = blep.task.charge.rate_scheme.rate
-            except (TaskCharge.DoesNotExist, AttributeError):
+                rate = blep.task.rate_scheme.rate
+            except AttributeError:
                 rate = None
             if rate:
                 elapsed_hours = Decimal(str(blep.elapsed.total_seconds() / 3600))

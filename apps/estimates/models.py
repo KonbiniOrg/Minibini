@@ -432,7 +432,7 @@ class TaskTemplate(models.Model):
 
         The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
         """
-        from apps.jobs.models import Job, Task, PlanTask, TaskCharge
+        from apps.jobs.models import Job, Task, PlanTask
         from apps.core.services import SchemeSupersededError
         from django.db import transaction
 
@@ -450,12 +450,10 @@ class TaskTemplate(models.Model):
                     description=self.description,
                     assignee=assignee,
                     sort_order=sort_order,
+                    rate_scheme=self.rate_scheme,
+                    active_modifiers=list(self.default_active_modifiers or []),
+                    est_qty=est_qty,
                 )
-                if self.rate_scheme_id:
-                    TaskCharge.objects.create(
-                        task=task, rate_scheme=self.rate_scheme,
-                        active_modifiers=list(self.default_active_modifiers or []),
-                    )
             return task
         else:  # EstWorksheet
             return PlanTask.objects.create(

@@ -47,16 +47,10 @@ class PlanTaskEstQtyRequiredTest(TestCase):
 
     def test_task_accepts_null_est_qty(self):
         # Task is the asymmetric side — null is fine.
-        # Note: Task.clean() currently still has the hasattr(self, 'charge')
-        # check left over from Phase A; B8 removes it. So we set rate_scheme
-        # and create a TaskCharge for now to satisfy that pre-existing check.
-        from apps.jobs.models import TaskCharge
+        # B4 removed the hasattr(self, 'charge') guard, so no TaskCharge needed.
         t = Task.objects.create(
             job=self.job, name='Looser',
             rate_scheme=self.scheme,
             est_qty=None,
         )
-        # The pre-existing Task.clean() requires charge on update; on create
-        # it's bypassed because pk is None at clean() time. So creating
-        # without a TaskCharge is fine here.
         self.assertIsNone(t.est_qty)

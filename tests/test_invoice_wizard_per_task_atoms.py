@@ -28,7 +28,7 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='J-pta', contact=contact)
-        self.task = Task.objects.create(job=self.job, name='Build-pta')
+        self.task = Task.objects.create(job=self.job, name='Build-pta', rate_scheme=self.scheme)
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         # 30 minutes of work = $30 (60/hr × 0.5)
         now = timezone.now()

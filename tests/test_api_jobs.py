@@ -173,14 +173,11 @@ class JobTaskSubResourceTest(TestCase):
         self.assertEqual(response.data['name'], 'New task')
         t = Task.objects.get(pk=response.data['task_id'])
         self.assertEqual(t.job_id, self.job.pk)
-        # TaskCharge created in same transaction
-        self.assertTrue(hasattr(t, 'charge'))
-        self.assertEqual(t.charge.rate_scheme_id, self.scheme.pk)
+        # rate_scheme set directly on Task (no TaskCharge)
+        self.assertEqual(t.rate_scheme_id, self.scheme.pk)
 
     def test_update_task_on_job(self):
-        from apps.jobs.models import TaskCharge
-        task = Task.objects.create(job=self.job, name='Original')
-        TaskCharge.objects.create(task=task, rate_scheme=self.scheme)
+        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'Renamed'},

@@ -31,23 +31,22 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         contact.save()
         self.job = Job.objects.create(job_number='J-tcr', contact=contact)
 
-    def test_create_from_template_creates_charge(self):
+    def test_create_from_template_sets_rate_scheme_on_task(self):
         from apps.jobs.services import TaskService
         task = TaskService.create_from_template(self.template, self.job)
-        self.assertTrue(hasattr(task, 'charge'))
-        self.assertEqual(task.charge.rate_scheme, self.scheme)
+        self.assertEqual(task.rate_scheme, self.scheme)
 
     def test_create_direct_without_scheme_raises(self):
         from apps.jobs.services import TaskService
         with self.assertRaises(ValidationError):
             TaskService.create_direct(self.job, name='no scheme')
 
-    def test_create_direct_with_scheme_creates_charge(self):
+    def test_create_direct_with_scheme_sets_rate_scheme_on_task(self):
         from apps.jobs.services import TaskService
         task = TaskService.create_direct(
             self.job, name='ok', rate_scheme_id=self.scheme.pk,
         )
-        self.assertTrue(hasattr(task, 'charge'))
+        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
 
     def test_template_with_superseded_scheme_raises(self):
         from apps.jobs.services import TaskService
@@ -58,7 +57,11 @@ class TaskCreationProducesChargeTest(BaseTestCase):
             TaskService.create_from_template(self.template, self.job)
 
 
-class TaskCleanRequiresChargeTest(BaseTestCase):
+class TaskCleanNoLongerRequiresChargeTest(BaseTestCase):
+    """B4 removed the hasattr(self, 'charge') guard from Task.clean().
+    Tasks can now exist without a TaskCharge. rate_scheme will be required
+    (NOT NULL) in B8.
+    """
     fixtures = []
 
     def setUp(self):
@@ -75,9 +78,8 @@ class TaskCleanRequiresChargeTest(BaseTestCase):
         contact.save()
         self.job = Job.objects.create(job_number='J-tcrc', contact=contact)
 
-    def test_task_full_clean_raises_when_no_charge(self):
-        from django.core.exceptions import ValidationError
+    def test_task_full_clean_succeeds_without_charge(self):
         from apps.jobs.models import Task
         t = Task.objects.create(job=self.job, name='no charge')
-        with self.assertRaises(ValidationError):
-            t.full_clean()
+        # Should not raise — charge guard removed in B4
+        t.full_clean()
