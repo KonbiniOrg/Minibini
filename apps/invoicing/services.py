@@ -176,14 +176,15 @@ class WizardAtomLabels:
     """Helpers for rendering human-friendly labels for wizard atoms."""
 
     @staticmethod
-    def qty_source_label(charge):
-        """Describe where the billable quantity came from for a TaskCharge."""
-        scheme = charge.rate_scheme
-        if scheme.algorithm == 'elapsed_time':
-            qty = scheme.get_actual_qty(charge.task)
+    def qty_source_label(task):
+        """Describe where the billable quantity came from for a Task atom."""
+        from apps.jobs.models import RateScheme
+        scheme = task.rate_scheme
+        if scheme.algorithm == RateScheme.ELAPSED_TIME:
+            qty = scheme.get_actual_qty(task)
             return f'{qty:.2f} {scheme.unit_label} from bleps'
-        if scheme.algorithm == 'entered_qty':
-            qty = scheme.get_actual_qty(charge.task)
+        if scheme.algorithm == RateScheme.ENTERED_QTY:
+            qty = scheme.get_actual_qty(task)
             return f'{qty} {scheme.unit_label} entered'
         return 'flat fee'
 
@@ -276,25 +277,25 @@ class InvoiceWizardService:
         tasks = (
             Task.objects.filter(job=job)
             .exclude(status=Task.STATUS_CANCELLED)
-            .select_related('charge', 'charge__rate_scheme')
+            .select_related('rate_scheme')
             .order_by('sort_order', 'pk')
         )
         task_list = []
         for task in tasks:
             atoms = []
 
-            charge = task.charge
-            amount = charge.compute().quantize(Decimal('0.01'))
-            key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
-            state_info = claims.get(key, default_state)
-            atoms.append({
-                'atom_type': 'task',
-                'atom_id': task.pk,
-                'description': f'{task.name} ({charge.rate_scheme.name})',
-                'sub_info': WizardAtomLabels.qty_source_label(charge),
-                'computed_amount': amount,
-                **state_info,
-            })
+            if task.rate_scheme_id:
+                amount = task.compute_amount().quantize(Decimal('0.01'))
+                key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
+                state_info = claims.get(key, default_state)
+                atoms.append({
+                    'atom_type': 'task',
+                    'atom_id': task.pk,
+                    'description': f'{task.name} ({task.rate_scheme.name})',
+                    'sub_info': WizardAtomLabels.qty_source_label(task),
+                    'computed_amount': amount,
+                    **state_info,
+                })
 
             # Material atoms
             materials = (
@@ -370,7 +371,7 @@ class InvoiceWizardService:
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            return atom_instance.charge.compute().quantize(Decimal('0.01'))
+            return atom_instance.compute_amount().quantize(Decimal('0.01'))
         if isinstance(atom_instance, Material):
             return (atom_instance.quantity * atom_instance.sell_price).quantize(Decimal('0.01'))
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
@@ -379,7 +380,7 @@ class InvoiceWizardService:
     def _atom_category(atom_instance):
         """Return the accounting_category of an atom.
 
-        For Tasks, walks through TaskCharge → RateScheme via
+        For Tasks, walks through Task → RateScheme via
         effective_accounting_category. For Materials, direct.
         """
         from apps.jobs.models import Task
@@ -419,9 +420,8 @@ class InvoiceWizardService:
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            charge = getattr(atom_instance, 'charge', None)
-            if charge and charge.rate_scheme_id:
-                return charge.rate_scheme.unit_label
+            if atom_instance.rate_scheme_id:
+                return atom_instance.rate_scheme.unit_label
             return 'none'
         if isinstance(atom_instance, Material):
             if atom_instance.price_list_item_id:
@@ -434,7 +434,7 @@ class InvoiceWizardService:
         """Return (qty, price) for a single-atom copy-over so qty * price = total.
 
         Materials decompose cleanly into intrinsic qty/price. Tasks roll up
-        bleps via TaskCharge — there is no single qty/price per Task that's
+        bleps via Task.rate_scheme — there is no single qty/price per Task that's
         meaningful across all rate algorithms, so default to qty=1.
         """
         from apps.inventory.models import Material

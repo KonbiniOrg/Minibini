@@ -102,7 +102,6 @@ class GetSourcePoolTest(TestCase):
         self.task_billable = Task.objects.create(
             job=self.job, name='Site demo', rate_scheme=self.scheme,
         )
-        # Keep TaskCharge for backward compat with _atom_units which still reads charge.
         TaskCharge.objects.create(task=self.task_billable, rate_scheme=self.scheme)
 
         self.task_empty = Task.objects.create(
@@ -156,10 +155,9 @@ class GetSourcePoolTest(TestCase):
         self.assertNotIn('Cancelled work', task_names)
 
     def test_empty_task_has_flag_set(self):
-        # Post-B7: every Task has a TaskCharge, so every task always has
-        # at least the per-task billable atom. The "empty task" concept
-        # no longer exists — this test now verifies the inspection task
-        # surfaces its per-task atom.
+        # Every Task has a rate_scheme, so every task always has at least the
+        # per-task billable atom. The "empty task" concept no longer exists —
+        # this test now verifies the inspection task surfaces its per-task atom.
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         inspection = next(
             t for t in pool['tasks'] if t['name'] == 'Inspection'
@@ -487,7 +485,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         )
         # task1 with a 2h blep — task atom rolls up to $50
         self.task = Task.objects.create(
-            job=self.job, name='Labor',
+            job=self.job, name='Labor', rate_scheme=self.scheme,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
@@ -496,7 +494,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         )
         # task2 with a 1h blep — task atom rolls up to $25
         self.task2 = Task.objects.create(
-            job=self.job, name='Cleanup',
+            job=self.job, name='Cleanup', rate_scheme=self.scheme,
         )
         TaskCharge.objects.create(task=self.task2, rate_scheme=self.scheme)
         Blep.objects.create(
@@ -602,19 +600,19 @@ class RemoveAtomsFromLineItemTest(TestCase):
         )
         # Three tasks, each with one blep, producing task atoms of $50/$25/$37.50
         start = timezone.now() - timezone.timedelta(hours=6)
-        self.task1 = Task.objects.create(job=self.job, name='Labor 1')
+        self.task1 = Task.objects.create(job=self.job, name='Labor 1', rate_scheme=self.scheme)
         TaskCharge.objects.create(task=self.task1, rate_scheme=self.scheme)
         Blep.objects.create(
             task=self.task1, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
-        self.task2 = Task.objects.create(job=self.job, name='Labor 2')
+        self.task2 = Task.objects.create(job=self.job, name='Labor 2', rate_scheme=self.scheme)
         TaskCharge.objects.create(task=self.task2, rate_scheme=self.scheme)
         Blep.objects.create(
             task=self.task2,
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
-        self.task3 = Task.objects.create(job=self.job, name='Labor 3')
+        self.task3 = Task.objects.create(job=self.job, name='Labor 3', rate_scheme=self.scheme)
         TaskCharge.objects.create(task=self.task3, rate_scheme=self.scheme)
         Blep.objects.create(
             task=self.task3,
@@ -748,12 +746,12 @@ class RemoveAtomsFromLineItemTest(TestCase):
         # self.line_item is line 1 (from setUp). Add two more line items, each
         # backed by a fresh task atom.
         start = timezone.now() - timezone.timedelta(hours=12)
-        task4 = Task.objects.create(job=self.job, name='Labor 4')
+        task4 = Task.objects.create(job=self.job, name='Labor 4', rate_scheme=self.scheme)
         TaskCharge.objects.create(task=task4, rate_scheme=self.scheme)
         Blep.objects.create(
             task=task4, start_time=start, end_time=start + timezone.timedelta(hours=1),
         )
-        task5 = Task.objects.create(job=self.job, name='Labor 5')
+        task5 = Task.objects.create(job=self.job, name='Labor 5', rate_scheme=self.scheme)
         TaskCharge.objects.create(task=task5, rate_scheme=self.scheme)
         Blep.objects.create(
             task=task5,
@@ -802,7 +800,7 @@ class DiscardDraftTest(TestCase):
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
-            job=self.job, name='Labor',
+            job=self.job, name='Labor', rate_scheme=self.scheme,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
@@ -967,7 +965,7 @@ class TaskAttachedPartialRestockTest(TestCase):
             rate=Decimal('25.00'), unit_label='hours',
             accounting_category=self.cat,
         )
-        task = Task.objects.create(job=job, name='work')
+        task = Task.objects.create(job=job, name='work', rate_scheme=scheme)
         TaskCharge.objects.create(task=task, rate_scheme=scheme)
         pli = PriceListItem.objects.create(
             code='I-TAPR', accounting_category=self.cat,
@@ -1018,7 +1016,7 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         self.job = Job.objects.create(job_number='J-id', contact=contact)
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         self.task = Task.objects.create(
-            job=self.job, name='Setup',
+            job=self.job, name='Setup', rate_scheme=self.scheme,
         )
         TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         now = timezone.now()

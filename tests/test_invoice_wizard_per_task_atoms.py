@@ -1,5 +1,6 @@
 from decimal import Decimal
 from datetime import timedelta
+from django.test import TestCase
 from django.utils import timezone
 from tests.base import BaseTestCase
 
@@ -75,3 +76,56 @@ class WizardTaskAtomHelpersTest(WizardPerTaskAtomsTest):
         from apps.invoicing.models import InvoiceLineItemSource
         st = InvoiceWizardService._atom_source_type(self.task)
         self.assertEqual(st, InvoiceLineItemSource.SOURCE_TASK)
+
+
+class WizardReadsTaskDirectlyTest(TestCase):
+    """Phase B: wizard atom rendering uses task.compute_amount and
+    task.rate_scheme, not task.charge.*."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory, Configuration
+        from apps.jobs.models import RateScheme, Job, Task
+        from apps.invoicing.models import Invoice
+        from apps.contacts.models import Contact, Business
+
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
+        Configuration.objects.create(key='invoice_counter', value='0')
+
+        ac = AccountingCategory.objects.create(name='Labor')
+        contact = Contact.objects.create(first_name='A', last_name='B')
+        biz = Business.objects.create(business_name='Z', default_contact=contact)
+        contact.business = biz
+        contact.save()
+        self.job = Job.objects.create(
+            job_number='JOB-WIZ', contact=contact, status=Job.STATUS_APPROVED,
+        )
+        self.scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('5.00'), unit_label='piece',
+            accounting_category=ac,
+        )
+        self.task = Task.objects.create(
+            job=self.job, name='Polish',
+            rate_scheme=self.scheme, active_modifiers=[],
+            est_qty=Decimal('12'), actual_qty=Decimal('12'),
+        )
+        self.invoice = Invoice.objects.create(
+            job=self.job, status=Invoice.STATUS_DRAFT,
+        )
+
+    def test_source_pool_reads_task_directly(self):
+        from apps.invoicing.services import InvoiceWizardService
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        # Find our task in the tree
+        task_entry = next(
+            t for t in pool['tasks']
+            if t['task_id'] == self.task.pk
+        )
+        self.assertEqual(len(task_entry['atoms']), 1)
+        atom = task_entry['atoms'][0]
+        self.assertEqual(atom['atom_type'], 'task')
+        self.assertEqual(atom['atom_id'], self.task.pk)
+        self.assertEqual(atom['computed_amount'], Decimal('60.00'))
+        self.assertIn('Polish', atom['description'])
+        self.assertIn('Hourly', atom['description'])  # scheme name in label
+        self.assertIn('12', atom['sub_info'])  # qty source label
