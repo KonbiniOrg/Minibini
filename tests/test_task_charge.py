@@ -43,6 +43,10 @@ class TaskChargeModelTest(BaseTestCase):
     def test_task_charge_compute(self):
         """entered_qty: 30 sq ft × $4.60 effective = $138"""
         from apps.jobs.models import TaskCharge
+        # actual_qty on Task is now the authoritative source for ENTERED_QTY.
+        # Use update() to bypass full_clean() which enforces the charge exists.
+        Task.objects.filter(pk=self.task.pk).update(actual_qty=Decimal('30'))
+        self.task.refresh_from_db()
         charge = TaskCharge.objects.create(
             task=self.task,
             rate_scheme=self.scheme,
@@ -118,14 +122,17 @@ class TaskChargeModelTest(BaseTestCase):
     def test_get_actual_qty_returns_decimal_when_actuals_qty_is_string(self):
         """Carry-over stores qty as str(Decimal); compute() must still work."""
         from apps.jobs.models import TaskCharge
+        # actual_qty on Task is the authoritative source; set it to the typed value.
+        # Use update() to bypass full_clean() which enforces the charge exists.
+        Task.objects.filter(pk=self.task.pk).update(actual_qty=Decimal('2.5'))
+        self.task.refresh_from_db()
         charge = TaskCharge.objects.create(
             task=self.task,
             rate_scheme=self.scheme,
             active_modifiers=[],
             actuals={'qty': '2.5'},  # string, not number — what carry-over writes
         )
-        # The bug: compute() raised TypeError before the fix because
-        # str * Decimal is invalid.
+        # compute() reads task.actual_qty (typed Decimal) so no TypeError.
         self.assertEqual(charge.compute(), Decimal('10.00'))  # 2.5 × $4.00
 
 

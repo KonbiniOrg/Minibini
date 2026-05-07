@@ -297,8 +297,28 @@ class Task(TaskBase):
 
     @property
     def effective_accounting_category(self):
-        return self.charge.rate_scheme.accounting_category
+        if not self.rate_scheme_id:
+            return None
+        return self.rate_scheme.accounting_category
 
+    def compute_amount(self, active_modifiers=None):
+        """Uniform atom interface: total billable amount for this task.
+
+        Ignores the active_modifiers argument (uses self.active_modifiers).
+        Parameter is accepted to match the BillableAtom interface shared
+        with PlanTask/Material/PlanMaterial.
+        Returns Decimal('0.00') when rate_scheme is unset.
+        """
+        from decimal import Decimal
+        if not self.rate_scheme_id:
+            return Decimal('0.00')
+        qty = self.rate_scheme.get_actual_qty(self)
+        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
+
+    def effective_rate(self):
+        if not self.rate_scheme_id:
+            return None
+        return self.rate_scheme.effective_rate(self.active_modifiers)
 
 
 class Blep(models.Model):
@@ -419,12 +439,7 @@ class RateScheme(models.Model):
             )
             return Decimal(total_seconds) / 3600
         elif self.algorithm == self.ENTERED_QTY:
-            raw = task.charge.actuals.get('qty', 0)
-            # actuals is JSON; qty may have been stored as int (UI), str (carry-over
-            # preserves Decimal precision through JSON), or Decimal-as-str by other
-            # writers. Normalize to Decimal at the read boundary so callers can do
-            # arithmetic.
-            return Decimal(str(raw))
+            return task.actual_qty or Decimal('0')
         else:  # FLAT_FEE
             return Decimal('1')
 

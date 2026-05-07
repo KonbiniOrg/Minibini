@@ -81,11 +81,13 @@ class TaskChargeComputeAmountTest(TestCase):
         self.assertEqual(task.charge.compute_amount(), Decimal('200.00'))
 
     def test_task_charge_entered_qty(self):
-        task = Task.objects.create(job=self.job, name='t')
+        task = Task.objects.create(
+            job=self.job, name='t', actual_qty=Decimal('3'),
+        )
         TaskCharge.objects.create(
             task=task, rate_scheme=self.scheme_qty, actuals={'qty': 3},
         )
-        # 3 × $50 = $150
+        # 3 × $50 = $150; get_actual_qty now reads task.actual_qty (typed Decimal)
         self.assertEqual(task.charge.compute_amount(), Decimal('150.00'))
 
     def test_task_charge_flat_fee(self):

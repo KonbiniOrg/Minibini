@@ -158,13 +158,11 @@ class RateSchemeComputeTest(BaseTestCase):
         self.assertEqual(result, Decimal('2'))
 
     def test_get_actual_qty_entered_qty(self):
-        charge = MagicMock()
-        charge.actuals = {'qty': 25}
         task = MagicMock()
-        task.charge = charge
+        task.actual_qty = Decimal('25')
 
         result = self.scheme.get_actual_qty(task)
-        self.assertEqual(result, 25)
+        self.assertEqual(result, Decimal('25'))
 
     def test_get_actual_qty_flat_fee(self):
         task = MagicMock()
