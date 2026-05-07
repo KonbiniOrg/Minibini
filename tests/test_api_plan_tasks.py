@@ -1,4 +1,6 @@
+from datetime import timedelta
 from decimal import Decimal
+from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import AccountingCategory, User
@@ -127,3 +129,97 @@ class WorksheetNestedPlanTaskTest(TestCase):
         task_data = response.data[0]
         self.assertIn('plan_materials', task_data)
         self.assertEqual(len(task_data['plan_materials']), 1)
+
+
+class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
+    """B7 compliance: worksheet task endpoints accept and persist est_worker_time."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='testuser_ewt', password='testpass',
+        )
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.user.user_permissions.add(perm)
+        self.user = User.objects.get(pk=self.user.pk)  # reload to clear perm cache
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(
+            first_name='Worker', last_name='Time',
+        )
+        self.job = Job.objects.create(
+            job_number='EWT-001', name='Worker Time Job', contact=self.contact,
+        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.cat = AccountingCategory.objects.create(code='LAB-ewt', name='Labor EWT')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly EWT', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('75.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+
+    def test_add_task_via_tasks_endpoint_with_est_worker_time(self):
+        """POST /api/est-worksheets/{id}/tasks/ accepts est_worker_time and persists it."""
+        response = self.client.post(
+            f'/api/est-worksheets/{self.worksheet.pk}/tasks/',
+            {
+                'name': 'Fit panels',
+                'rate_scheme': self.scheme.pk,
+                'est_qty': '3.00',
+                'est_worker_time': 'PT2H30M',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertIn('est_worker_time', response.data)
+        plan_task = PlanTask.objects.get(pk=response.data['plan_task_id'])
+        self.assertEqual(plan_task.est_worker_time, timedelta(hours=2, minutes=30))
+
+    def test_serializer_includes_est_worker_time_in_response(self):
+        """est_worker_time is returned in the task list response."""
+        PlanTask.objects.create(
+            est_worksheet=self.worksheet,
+            name='Polish surface',
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
+            est_worker_time=timedelta(hours=1),
+        )
+        response = self.client.get(f'/api/est-worksheets/{self.worksheet.pk}/tasks/')
+        self.assertEqual(response.status_code, 200)
+        task_data = response.data[0]
+        self.assertIn('est_worker_time', task_data)
+        # DRF serializes DurationField as a string in ISO 8601 / HH:MM:SS form
+        self.assertIsNotNone(task_data['est_worker_time'])
+
+    def test_plan_task_detail_serializer_includes_est_worker_time(self):
+        """GET /api/plan-tasks/{id}/ includes est_worker_time in the response."""
+        plan_task = PlanTask.objects.create(
+            est_worksheet=self.worksheet,
+            name='Detail task',
+            rate_scheme=self.scheme,
+            est_qty=Decimal('2'),
+            est_worker_time=timedelta(minutes=45),
+        )
+        response = self.client.get(f'/api/plan-tasks/{plan_task.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('est_worker_time', response.data)
+        self.assertIsNotNone(response.data['est_worker_time'])
+
+    def test_add_from_template_accepts_est_worker_time(self):
+        """POST /api/est-worksheets/{id}/add-from-template/ accepts est_worker_time."""
+        from apps.estimates.models import TaskTemplate
+        tt = TaskTemplate.objects.create(
+            template_name='Cut pieces',
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('4'),
+        )
+        response = self.client.post(
+            f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
+            {
+                'task_template_id': tt.pk,
+                'est_worker_time': 'PT1H',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        plan_task = PlanTask.objects.get(pk=response.data['plan_task_id'])
+        self.assertEqual(plan_task.est_worker_time, timedelta(hours=1))

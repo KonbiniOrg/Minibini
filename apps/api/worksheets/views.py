@@ -107,6 +107,7 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         est_qty = request.data.get('est_qty')
         rate_scheme = request.data.get('rate_scheme')
         active_modifiers = request.data.get('active_modifiers')
+        est_worker_time = request.data.get('est_worker_time')
         if not task_template_id:
             return Response(
                 {'task_template_id': ['This field is required.']},
@@ -124,6 +125,7 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
                     if est_qty is not None and est_qty != ''
                     else None
                 ),
+                est_worker_time=est_worker_time if est_worker_time else None,
             )
         except SchemeSupersededError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)

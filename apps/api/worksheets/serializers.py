@@ -41,7 +41,7 @@ class PlanTaskSerializer(serializers.ModelSerializer):
         model = PlanTask
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
-            'rate_scheme', 'active_modifiers', 'est_qty',
+            'rate_scheme', 'active_modifiers', 'est_qty', 'est_worker_time',
             'amount', 'units', 'plan_materials',
         ]
         read_only_fields = ['plan_task_id', 'sort_order', 'amount', 'units']
