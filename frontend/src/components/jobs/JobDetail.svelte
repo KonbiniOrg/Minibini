@@ -1,5 +1,6 @@
 <script>
   import HistoryPanel from '../HistoryPanel.svelte';
+  import JobHeader from './JobHeader.svelte';
   import { user } from '../../stores/auth.js';
   import { api } from '../../lib/api.js';
 
@@ -24,47 +25,6 @@
   let canManageFinancials = $derived(
     $user?.permissions?.includes('can_manage_financials') ?? false
   );
-
-  // Valid status transitions (mirrors Job model)
-  const VALID_TRANSITIONS = {
-    draft: ['submitted', 'rejected'],
-    submitted: ['approved', 'rejected'],
-    approved: ['cancelled'],
-    in_progress: ['work_complete', 'cancelled'],
-    work_complete: [],
-    rejected: [],
-    completed: [],
-    cancelled: [],
-  };
-
-  let validNextStatuses = $derived(VALID_TRANSITIONS[job.status] || []);
-
-  async function handleStatusChange(e) {
-    const newStatus = e.target.value;
-    if (newStatus === job.status) return;
-    try {
-      await api.patch(`/api/jobs/${job.job_id}/`, { status: newStatus });
-      if (onStatusChange) onStatusChange();
-    } catch (err) {
-      e.target.value = job.status;
-      alert(err.message || 'Status change failed');
-    }
-  }
-
-  let releasingToFloor = $state(false);
-
-  async function releaseToFloor() {
-    if (!confirm('Release this job to the floor? Workers will see it as In Progress.')) return;
-    releasingToFloor = true;
-    try {
-      await api.patch(`/api/jobs/${job.job_id}/`, { status: 'in_progress' });
-      if (onStatusChange) onStatusChange();
-    } catch (e) {
-      alert(e.message || 'Failed to release to floor.');
-    } finally {
-      releasingToFloor = false;
-    }
-  }
 
   // Estimate versions, sorted oldest first for left-to-right tabs
   let estimateList = $derived(
@@ -258,51 +218,7 @@
 
 <div class="job-detail-page">
 
-<!-- HEADER -->
-<div class="job-header">
-  <div class="titleblock">
-    <h1>
-      JOB #{job.job_number.replace(/^JOB-/, '')}: {job.name || '(untitled)'}
-      {#if canManageJobs}<a href="#/jobs/{job.job_id}/edit" class="edit-link">edit</a>{/if}
-    </h1>
-    <p class="customer-line">
-      {#if contact}
-        for <a href="#/contacts/{contact.contact_id}">{contact.name}</a>{#if contact.business}, at <a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>{/if}
-      {/if}
-    </p>
-    <div class="status-row">
-      {#if canManageJobs && validNextStatuses.length > 0}
-        <span class="status-select-wrapper">
-          <select class="status-select status-{job.status}" onchange={handleStatusChange}>
-            <option value={job.status} selected>{job.status}</option>
-            {#each validNextStatuses as nextStatus}
-              <option value={nextStatus}>{nextStatus}</option>
-            {/each}
-          </select>
-        </span>
-      {:else}
-        <span class="status-badge status-{job.status}">{job.status}</span>
-      {/if}
-      <span class="dates">
-        {#if job.start_date}Started {new Date(job.start_date).toLocaleDateString()}{/if}
-        {#if job.due_date}{job.start_date ? ' · ' : ''}Due {new Date(job.due_date).toLocaleDateString()}{/if}
-        {#if job.completed_date}{(job.start_date || job.due_date) ? ' · ' : ''}Completed {new Date(job.completed_date).toLocaleDateString()}{/if}
-        {#if job.customer_po_number}{(job.start_date || job.due_date || job.completed_date) ? ' · ' : ''}PO: {job.customer_po_number}{/if}
-      </span>
-      {#if job.status === 'approved' && canManageJobs}
-        <button class="release-btn" onclick={releaseToFloor} disabled={releasingToFloor}>
-          {releasingToFloor ? 'Releasing…' : 'Release to floor'}
-        </button>
-      {/if}
-    </div>
-  </div>
-  <div class="pl-grid">
-    <div class="pl-item"><div class="pl-label">Estimated</div><div class="pl-value">$—</div></div>
-    <div class="pl-item"><div class="pl-label">Spent</div><div class="pl-value pl-spent">$—</div></div>
-    <div class="pl-item"><div class="pl-label">Billable</div><div class="pl-value pl-billable">$—</div></div>
-    <div class="pl-item"><div class="pl-label">Invoiced</div><div class="pl-value pl-invoiced">$—</div></div>
-  </div>
-</div>
+<JobHeader {job} {contact} {onStatusChange} />
 
 <!-- DESCRIPTION + HISTORY (fixed height) -->
 <div class="midband">

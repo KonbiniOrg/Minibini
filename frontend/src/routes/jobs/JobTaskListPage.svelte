@@ -6,10 +6,12 @@
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   let { params = {} } = $props();
 
   let job = $state(null);
+  let contact = $state(null);
   let enrichedTasks = $state([]);
   let jobMaterials = $state([]);
   let templates = $state([]);
@@ -62,6 +64,13 @@
       job = await api.get(`/api/jobs/${params.id}/`);
       jobMaterials = (job.materials || []).filter(m => !m.task);
       await enrichTasks();
+      if (job.contact) {
+        try {
+          contact = await api.get(`/api/contacts/${job.contact}/`);
+        } catch (e) {
+          contact = null;
+        }
+      }
     } catch (e) {
       error = e.message || 'Could not load job.';
     } finally {
@@ -325,18 +334,14 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if job}
-  <h2>Tasks for Job {job.job_number}{#if job.name} — {job.name}{/if}</h2>
+  <JobHeader {job} {contact} onStatusChange={reload} />
 
-  <p>
-    <a href={`/jobs/${job.job_id}`} use:link>&laquo; Back to Job</a>
-  </p>
-
-  <div class="status-line">
-    <span class="status-badge status-{job.status}">{job.status}</span>
+  <p class="back-overview">
+    <a href={`/jobs/${job.job_id}`} use:link>&laquo; back to overview</a>
     {#if job.template?.name}
-      <span class="meta">Template: {job.template.name}</span>
+      <span class="meta">· Template: {job.template.name}</span>
     {/if}
-  </div>
+  </p>
 
   {#if canManageJobs}
     <div class="action-bar">
@@ -420,18 +425,7 @@
 
 <style>
   .error { color: #a8071a; }
-  .status-line { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
-  .status-badge {
-    padding: 4px 12px; border-radius: 12px; font-size: 13px;
-    font-weight: 600; text-transform: capitalize;
-  }
-  .status-draft { background: #f3f4f6; color: #374151; }
-  .status-submitted { background: #dbeafe; color: #1e40af; }
-  .status-approved { background: #dcfce7; color: #166534; }
-  .status-work_complete { background: #ccfbf1; color: #115e59; }
-  .status-completed { background: #dbeafe; color: #1e40af; }
-  .status-rejected { background: #fee2e2; color: #991b1b; }
-  .status-cancelled { background: #fef3c7; color: #92400e; }
+  .back-overview { padding: 8px 24px; margin: 0; }
   .meta { color: #888; font-size: 13px; }
   .action-bar { display: flex; gap: 8px; margin-bottom: 16px; }
   .action-bar button {
