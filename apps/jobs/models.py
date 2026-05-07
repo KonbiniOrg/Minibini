@@ -301,8 +301,6 @@ class Task(TaskBase):
 
     @property
     def effective_accounting_category(self):
-        if not self.rate_scheme_id:
-            return None
         return self.rate_scheme.accounting_category
 
     def compute_amount(self, active_modifiers=None):
@@ -311,17 +309,11 @@ class Task(TaskBase):
         Ignores the active_modifiers argument (uses self.active_modifiers).
         Parameter is accepted to match the BillableAtom interface shared
         with PlanTask/Material/PlanMaterial.
-        Returns Decimal('0.00') when rate_scheme is unset.
         """
-        from decimal import Decimal
-        if not self.rate_scheme_id:
-            return Decimal('0.00')
         qty = self.rate_scheme.get_actual_qty(self)
         return self.rate_scheme.compute_charge(qty, self.active_modifiers)
 
     def effective_rate(self):
-        if not self.rate_scheme_id:
-            return None
         return self.rate_scheme.effective_rate(self.active_modifiers)
 
 
@@ -524,41 +516,5 @@ class RateScheme(models.Model):
     def __str__(self):
         return self.name
 
-
-class TaskCharge(models.Model):
-    """The filled-in billing form for a Task. One per Task (OneToOne)."""
-    task_charge_id = models.AutoField(primary_key=True)
-    task = models.OneToOneField(Task, on_delete=models.CASCADE, related_name='charge')
-    rate_scheme = models.ForeignKey(RateScheme, on_delete=models.PROTECT)
-    active_modifiers = models.JSONField(default=list, blank=True)
-    actuals = models.JSONField(default=dict, blank=True)
-
-    class Meta:
-        db_table = 'task_charges'
-
-    def __str__(self):
-        return f"Charge for {self.task}"
-
-    def compute(self):
-        """Compute charge using scheme's algorithm and this charge's specifics."""
-        qty = self.rate_scheme.get_actual_qty(self.task)
-        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
-
-    def compute_amount(self, active_modifiers=None):
-        """Uniform atom interface: total billable amount for this charge.
-
-        Ignores the active_modifiers argument (uses self.active_modifiers).
-        Parameter is accepted to match the BillableAtom interface shared with
-        Material/PlanMaterial.
-        """
-        return self.compute()
-
-    def effective_rate(self):
-        return self.rate_scheme.effective_rate(self.active_modifiers)
-
-    def has_actuals(self):
-        if self.rate_scheme.algorithm == RateScheme.ENTERED_QTY:
-            return bool(self.actuals.get('qty'))
-        return True  # elapsed_time and flat_fee don't need manual entry
 
 

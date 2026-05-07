@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import RateScheme, PlanTask, Job, TaskCharge
+from apps.jobs.models import RateScheme, PlanTask, Job
 from apps.jobs.services import JobService
 from apps.estimates.models import EstWorksheet
 from apps.core.models import AccountingCategory

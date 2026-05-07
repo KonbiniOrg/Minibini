@@ -43,9 +43,7 @@ class TaskTransitionValidationTest(BaseTestCase):
         self.job = Job.objects.first()
 
     def _create_task_with_status(self, status):
-        from apps.jobs.models import RateScheme, TaskCharge
         task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
-        TaskCharge.objects.create(task=task, rate_scheme=RateScheme.objects.first())
         if status != Task.STATUS_PENDING:
             Task.objects.filter(pk=task.pk).update(status=status)
             task.refresh_from_db()
@@ -134,11 +132,9 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
     """start_work on a pending task promotes it and consumes materials."""
 
     def setUp(self):
-        from apps.jobs.models import RateScheme, TaskCharge
         super().setUp()
         self.job = Job.objects.first()
         self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
-        TaskCharge.objects.create(task=self.task, rate_scheme=RateScheme.objects.first())
         self.user = User.objects.get(username='admin')
 
     def test_start_work_promotes_pending_to_in_progress(self):
@@ -476,11 +472,9 @@ class CancelTaskTest(BaseTestCase):
 
 class StartStopWorkTest(BaseTestCase):
     def setUp(self):
-        from apps.jobs.models import RateScheme, TaskCharge
         super().setUp()
         self.job = Job.objects.first()
         self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
-        TaskCharge.objects.create(task=self.task, rate_scheme=RateScheme.objects.first())
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.task.refresh_from_db()
         self.user = User.objects.get(username='admin')

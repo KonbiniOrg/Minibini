@@ -47,20 +47,6 @@ class TaskComputeAmountTest(TestCase):
         )
         self.assertEqual(task.compute_amount(), Decimal('60.00'))
 
-    def test_compute_amount_returns_zero_when_rate_scheme_id_unset(self):
-        # compute_amount() has a defensive null guard for rate_scheme_id.
-        # B8 makes rate_scheme NOT NULL at the DB level, so this path is only
-        # reachable for in-memory instances that haven't been saved. Verify the
-        # guard still works without a DB save.
-        scheme = RateScheme.objects.create(
-            name='Guard', algorithm=RateScheme.FLAT_FEE,
-            rate=Decimal('100.00'), unit_label='job',
-            accounting_category=self.ac,
-        )
-        task = Task.objects.create(job=self.job, name='Orphan', rate_scheme=scheme)
-        task.rate_scheme_id = None  # simulate unset in-memory without DB save
-        self.assertEqual(task.compute_amount(), Decimal('0.00'))
-
     def test_effective_accounting_category_reads_from_scheme(self):
         scheme = RateScheme.objects.create(
             name='Setup', algorithm=RateScheme.FLAT_FEE,

@@ -68,7 +68,7 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory, User
         from django.contrib.auth.models import Permission
-        from apps.jobs.models import RateScheme, Job, Task, TaskCharge
+        from apps.jobs.models import RateScheme, Job, Task
         from apps.contacts.models import Business, Contact
         self.user = User.objects.create_user('u-tnf', 'u-tnf@x.test', 'pw')
         perm = Permission.objects.get(codename='can_manage_jobs')
@@ -89,7 +89,6 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         contact.save()
         self.job = Job.objects.create(job_number='J-tnf', contact=contact)
         self.task = Task.objects.create(job=self.job, name='T-tnf', rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
 
     def test_task_list_omits_legacy_fields(self):
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -125,7 +124,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory, User
         from django.contrib.auth.models import Permission
-        from apps.jobs.models import RateScheme, Job, Task, TaskCharge, PlanTask, Blep
+        from apps.jobs.models import RateScheme, Job, Task, PlanTask, Blep
         from apps.estimates.models import EstWorksheet
         from apps.contacts.models import Contact
         from datetime import timedelta
@@ -159,7 +158,6 @@ class TaskTimeFieldsTest(BaseTestCase):
             job=self.job, name='Cut', source_plan_task=self.plan_task,
             est_qty=Decimal('4.0'), rate_scheme=self.elapsed_scheme,
         )
-        TaskCharge.objects.create(task=self.elapsed_task, rate_scheme=self.elapsed_scheme)
 
         # 1 hour 30 minutes of work logged (1.5h)
         now = timezone.now()
@@ -171,7 +169,6 @@ class TaskTimeFieldsTest(BaseTestCase):
 
         # Flat-fee task with no plan source
         self.flat_task = Task.objects.create(job=self.job, name='Setup', rate_scheme=self.flat_scheme)
-        TaskCharge.objects.create(task=self.flat_task, rate_scheme=self.flat_scheme)
         Blep.objects.create(
             task=self.flat_task, user=self.user,
             start_time=now - timedelta(minutes=30),

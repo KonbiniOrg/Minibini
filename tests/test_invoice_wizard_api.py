@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from apps.core.models import User, Configuration, AccountingCategory
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, Blep, RateScheme, TaskCharge
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.inventory.models import Material, PriceListItem
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 
@@ -39,7 +39,6 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.task = Task.objects.create(
             job=self.job, name='Labor', rate_scheme=self.scheme,
         )
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
         Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -75,7 +74,6 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         between the arrow and the X."""
         # setUp already claims self.task; create a second task for this test.
         other_task = Task.objects.create(job=self.job, name='Cleanup', rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=other_task, rate_scheme=self.scheme)
         task_li = InvoiceLineItem.objects.create(
             invoice=self.invoice,
             description='', qty=Decimal('1'), price=Decimal('0.00'),
@@ -122,7 +120,6 @@ class SourcePoolEndpointTest(TestCase):
         self.task = Task.objects.create(
             job=self.job, name='Labor', rate_scheme=self.scheme,
         )
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -185,7 +182,6 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.task = Task.objects.create(
             job=self.job, name='Labor', rate_scheme=self.scheme,
         )
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -271,7 +267,6 @@ class AddAtomsEndpointTest(TestCase):
         self.task = Task.objects.create(
             job=self.job, name='Labor', rate_scheme=self.scheme,
         )
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
             task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
@@ -280,7 +275,6 @@ class AddAtomsEndpointTest(TestCase):
         self.task2 = Task.objects.create(
             job=self.job, name='Cleanup', rate_scheme=self.scheme,
         )
-        TaskCharge.objects.create(task=self.task2, rate_scheme=self.scheme)
         Blep.objects.create(
             task=self.task2,
             start_time=start + timezone.timedelta(hours=3),
@@ -352,14 +346,12 @@ class RemoveAtomsEndpointTest(TestCase):
         )
         # task1 with a 2h blep — task atom = $50
         self.task1 = Task.objects.create(job=self.job, name='Labor 1', rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=self.task1, rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
             task=self.task1, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         # task2 with a 1h blep — task atom = $25
         self.task2 = Task.objects.create(job=self.job, name='Labor 2', rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=self.task2, rate_scheme=self.scheme)
         Blep.objects.create(
             task=self.task2,
             start_time=start + timezone.timedelta(hours=3),

@@ -11,7 +11,7 @@ class WizardPerTaskAtomsTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import RateScheme, Job, Task, TaskCharge, Blep
+        from apps.jobs.models import RateScheme, Job, Task, Blep
         from apps.invoicing.models import Invoice
         from apps.contacts.models import Business, Contact
 
@@ -30,7 +30,6 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         contact.save()
         self.job = Job.objects.create(job_number='J-pta', contact=contact)
         self.task = Task.objects.create(job=self.job, name='Build-pta', rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
         # 30 minutes of work = $30 (60/hr × 0.5)
         now = timezone.now()
         Blep.objects.create(

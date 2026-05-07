@@ -44,13 +44,15 @@ class MaterialComputeAmountTest(TestCase):
 
 
 from apps.jobs.models import (
-    Blep, PlanTask, RateScheme, Task, TaskCharge,
+    Blep, PlanTask, RateScheme, Task,
 )
 from django.utils import timezone
 from datetime import timedelta
 
 
-class TaskChargeComputeAmountTest(TestCase):
+class TaskComputeAmountTest(TestCase):
+    """Task.compute_amount() covers all three RateScheme algorithms."""
+
     def setUp(self):
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
         Configuration.objects.create(key='job_counter', value='0')
@@ -72,29 +74,24 @@ class TaskChargeComputeAmountTest(TestCase):
             rate=Decimal('250'), unit_label='each', accounting_category=self.cat,
         )
 
-    def test_task_charge_elapsed_time(self):
+    def test_task_elapsed_time(self):
         task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme_time)
-        TaskCharge.objects.create(task=task, rate_scheme=self.scheme_time)
         now = timezone.now()
         Blep.objects.create(task=task, start_time=now - timedelta(hours=2), end_time=now)
         # 2 hours × $100 = $200
-        self.assertEqual(task.charge.compute_amount(), Decimal('200.00'))
+        self.assertEqual(task.compute_amount(), Decimal('200.00'))
 
-    def test_task_charge_entered_qty(self):
+    def test_task_entered_qty(self):
         task = Task.objects.create(
             job=self.job, name='t', actual_qty=Decimal('3'),
             rate_scheme=self.scheme_qty,
         )
-        TaskCharge.objects.create(
-            task=task, rate_scheme=self.scheme_qty, actuals={'qty': 3},
-        )
-        # 3 × $50 = $150; get_actual_qty now reads task.actual_qty (typed Decimal)
-        self.assertEqual(task.charge.compute_amount(), Decimal('150.00'))
+        # 3 × $50 = $150
+        self.assertEqual(task.compute_amount(), Decimal('150.00'))
 
-    def test_task_charge_flat_fee(self):
+    def test_task_flat_fee(self):
         task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme_flat)
-        TaskCharge.objects.create(task=task, rate_scheme=self.scheme_flat)
-        self.assertEqual(task.charge.compute_amount(), Decimal('250.00'))
+        self.assertEqual(task.compute_amount(), Decimal('250.00'))
 
 
 

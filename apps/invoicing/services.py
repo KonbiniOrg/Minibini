@@ -284,18 +284,17 @@ class InvoiceWizardService:
         for task in tasks:
             atoms = []
 
-            if task.rate_scheme_id:
-                amount = task.compute_amount().quantize(Decimal('0.01'))
-                key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
-                state_info = claims.get(key, default_state)
-                atoms.append({
-                    'atom_type': 'task',
-                    'atom_id': task.pk,
-                    'description': f'{task.name} ({task.rate_scheme.name})',
-                    'sub_info': WizardAtomLabels.qty_source_label(task),
-                    'computed_amount': amount,
-                    **state_info,
-                })
+            amount = task.compute_amount().quantize(Decimal('0.01'))
+            key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
+            state_info = claims.get(key, default_state)
+            atoms.append({
+                'atom_type': 'task',
+                'atom_id': task.pk,
+                'description': f'{task.name} ({task.rate_scheme.name})',
+                'sub_info': WizardAtomLabels.qty_source_label(task),
+                'computed_amount': amount,
+                **state_info,
+            })
 
             # Material atoms
             materials = (
@@ -420,9 +419,7 @@ class InvoiceWizardService:
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            if atom_instance.rate_scheme_id:
-                return atom_instance.rate_scheme.unit_label
-            return 'none'
+            return atom_instance.rate_scheme.unit_label
         if isinstance(atom_instance, Material):
             if atom_instance.price_list_item_id:
                 return atom_instance.price_list_item.units

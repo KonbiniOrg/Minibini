@@ -510,7 +510,6 @@ class JobReorderTasksTest(TestCase):
     """Phase C2: POST /api/jobs/{id}/reorder-tasks/."""
 
     def setUp(self):
-        from apps.jobs.models import TaskCharge
         self.client = APIClient()
         self.user = _make_admin('reord_admin')
         self.client.force_authenticate(user=self.user)
@@ -526,9 +525,6 @@ class JobReorderTasksTest(TestCase):
         self.a = Task.objects.create(job=self.job, name='A', sort_order=0, rate_scheme=self.scheme)
         self.b = Task.objects.create(job=self.job, name='B', sort_order=1, rate_scheme=self.scheme)
         self.c = Task.objects.create(job=self.job, name='C', sort_order=2, rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=self.a, rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=self.b, rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=self.c, rate_scheme=self.scheme)
 
     def test_reorder_down(self):
         response = self.client.post(
