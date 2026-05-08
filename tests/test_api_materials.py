@@ -34,16 +34,19 @@ class MaterialApiTest(APITestCase):
         self.assertEqual(resp.status_code, 201, resp.content)
         self.assertTrue(Material.objects.filter(job=self.job, task__isnull=True).exists())
 
-    def test_patch_material_description_only(self):
+    def test_patch_pli_linked_material_rejects_field_edits(self):
+        """PLI-linked Materials are immutable except for unit_cost/sell_price.
+        PATCHing description (or any non-pricing field) returns 400. Quantity
+        must be edited via /restock/ or /draw-more/."""
         from apps.inventory.services import MaterialService
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('2'), price_list_item=self.pli,
         )
         r1 = self.client.patch(f'/api/materials/{m.pk}/', {'description': 'y'}, format='json')
-        self.assertEqual(r1.status_code, 200, r1.content)
+        self.assertEqual(r1.status_code, 400, r1.content)
         r2 = self.client.patch(f'/api/materials/{m.pk}/', {'quantity': '99'}, format='json')
-        self.assertEqual(r2.status_code, 400)
+        self.assertEqual(r2.status_code, 400, r2.content)
 
     def test_consume_restock_draw_more_actions(self):
         from apps.inventory.services import MaterialService

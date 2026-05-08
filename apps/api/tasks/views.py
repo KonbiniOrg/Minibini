@@ -63,8 +63,10 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return err
         serializer = MaterialWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        create_data = {k: v for k, v in serializer.validated_data.items()
+                       if k != 'propagate_to_pli'}
         mat = MaterialService.create_on_job(
-            job=task.job, task=task, **serializer.validated_data
+            job=task.job, task=task, **create_data
         )
         return Response(
             MaterialSerializer(mat).data,
@@ -112,9 +114,7 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             )
         serializer = MaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        for field, value in serializer.validated_data.items():
-            setattr(material, field, value)
-        material.save()
+        serializer.save()
         return Response(MaterialSerializer(material).data)
 
     # --- Subtask CRUD ---

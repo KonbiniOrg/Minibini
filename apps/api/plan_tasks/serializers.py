@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
+from apps.core.units import UnitsField
 
 
 class PlanMaterialSerializer(serializers.ModelSerializer):
@@ -15,14 +16,38 @@ class PlanMaterialSerializer(serializers.ModelSerializer):
 
 
 class PlanMaterialWriteSerializer(serializers.ModelSerializer):
+    units = UnitsField(required=False)
+    propagate_to_pli = serializers.BooleanField(
+        write_only=True, required=False, default=False,
+    )
+
     class Meta:
         model = PlanMaterial
         fields = [
             'plan_material_id', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item',
-            'accounting_category',
+            'units', 'unit_cost', 'sell_price', 'price_list_item',
+            'accounting_category', 'propagate_to_pli',
         ]
         read_only_fields = ['plan_material_id']
+
+    def update(self, instance, validated_data):
+        from apps.inventory.serializer_helpers import (
+            enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED, FREEFORM_ALLOWED,
+        )
+        # plan_task is not a field here (plan_task is the parent resource);
+        # just apply the standard PLI allowlist check.
+        if instance.price_list_item_id is not None:
+            enforce_pli_linked_allowlist(
+                instance, validated_data, PLI_LINKED_PRICING_ALLOWED,
+            )
+        else:
+            disallowed = set(validated_data.keys()) - FREEFORM_ALLOWED
+            if disallowed:
+                raise serializers.ValidationError({
+                    'detail': f'Disallowed fields on freeform PlanMaterial: {sorted(disallowed)}',
+                })
+        validated_data.pop('propagate_to_pli', None)
+        return super().update(instance, validated_data)
 
 
 class PlanTaskDetailSerializer(serializers.ModelSerializer):

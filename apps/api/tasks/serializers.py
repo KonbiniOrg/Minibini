@@ -26,15 +26,35 @@ class MaterialSerializer(serializers.ModelSerializer):
 
 class MaterialWriteSerializer(serializers.ModelSerializer):
     units = UnitsField(required=False)
+    propagate_to_pli = serializers.BooleanField(
+        write_only=True, required=False, default=False,
+    )
 
     class Meta:
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
             'units', 'unit_cost', 'sell_price', 'price_list_item',
-            'accounting_category',
+            'accounting_category', 'propagate_to_pli',
         ]
         read_only_fields = ['material_id']
+
+    def update(self, instance, validated_data):
+        from apps.inventory.serializer_helpers import (
+            enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED, FREEFORM_ALLOWED,
+        )
+        if instance.price_list_item_id is not None:
+            enforce_pli_linked_allowlist(
+                instance, validated_data, PLI_LINKED_PRICING_ALLOWED,
+            )
+        else:
+            disallowed = set(validated_data.keys()) - FREEFORM_ALLOWED
+            if disallowed:
+                raise serializers.ValidationError({
+                    'detail': f'Disallowed fields on freeform Material: {sorted(disallowed)}',
+                })
+        validated_data.pop('propagate_to_pli', None)
+        return super().update(instance, validated_data)
 
 
 class TaskSerializer(serializers.ModelSerializer):

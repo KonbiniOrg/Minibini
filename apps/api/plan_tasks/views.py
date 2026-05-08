@@ -85,12 +85,5 @@ class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
 
         serializer = PlanMaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        try:
-            mat = InventoryService.update_plan_material(
-                material.pk, **serializer.validated_data
-            )
-        except NotFoundError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
-        except ServiceError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        mat = serializer.save()
         return Response(PlanMaterialSerializer(mat).data)

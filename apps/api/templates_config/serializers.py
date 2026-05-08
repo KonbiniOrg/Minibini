@@ -54,6 +54,28 @@ class TemplateMaterialSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['template_material_id', 'work_template']
 
+    def update(self, instance, validated_data):
+        from apps.inventory.serializer_helpers import (
+            TEMPLATE_PLI_LINKED_ALLOWED, TEMPLATE_FREEFORM_ALLOWED,
+        )
+        if instance.price_list_item_id is not None:
+            disallowed = set(validated_data.keys()) - TEMPLATE_PLI_LINKED_ALLOWED
+            if disallowed:
+                raise serializers.ValidationError({
+                    'detail': (
+                        'PLI-linked TemplateMaterials are immutable except for '
+                        'quantity and sort_order; '
+                        f'disallowed fields: {sorted(disallowed)}'
+                    )
+                })
+        else:
+            disallowed = set(validated_data.keys()) - TEMPLATE_FREEFORM_ALLOWED
+            if disallowed:
+                raise serializers.ValidationError({
+                    'detail': f'Disallowed fields on freeform TemplateMaterial: {sorted(disallowed)}',
+                })
+        return super().update(instance, validated_data)
+
 
 class ConfigurationSerializer(serializers.ModelSerializer):
     class Meta:
