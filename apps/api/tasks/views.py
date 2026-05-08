@@ -114,6 +114,19 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             )
         serializer = MaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        propagate = serializer.validated_data.get('propagate_to_pli', False)
+        if material.price_list_item_id is not None and (
+            'unit_cost' in serializer.validated_data
+            or 'sell_price' in serializer.validated_data
+        ):
+            MaterialService.update_pricing(
+                material,
+                unit_cost=serializer.validated_data.get('unit_cost'),
+                sell_price=serializer.validated_data.get('sell_price'),
+                propagate_to_pli=propagate,
+            )
+            material.refresh_from_db()
+            return Response(MaterialSerializer(material).data)
         serializer.save()
         return Response(MaterialSerializer(material).data)
 

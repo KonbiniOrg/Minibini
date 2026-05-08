@@ -138,6 +138,38 @@ class InventoryService:
         mat.delete()
 
     @staticmethod
+    def update_plan_material_pricing(plan_material, *, unit_cost=None, sell_price=None, propagate_to_pli=False):
+        """Same as MaterialService.update_pricing but for PlanMaterial."""
+        from django.db import transaction
+        with transaction.atomic():
+            update_fields = []
+            cost_changed = False
+            price_changed = False
+            if unit_cost is not None and unit_cost != plan_material.unit_cost:
+                plan_material.unit_cost = unit_cost
+                update_fields.append('unit_cost')
+                cost_changed = True
+            if sell_price is not None and sell_price != plan_material.sell_price:
+                plan_material.sell_price = sell_price
+                update_fields.append('sell_price')
+                price_changed = True
+            if update_fields:
+                plan_material.save(update_fields=update_fields)
+
+            if propagate_to_pli and plan_material.price_list_item_id is not None:
+                pli = plan_material.price_list_item
+                pli_fields = []
+                if cost_changed and pli.purchase_price != plan_material.unit_cost:
+                    pli.purchase_price = plan_material.unit_cost
+                    pli_fields.append('purchase_price')
+                if price_changed and pli.selling_price != plan_material.sell_price:
+                    pli.selling_price = plan_material.sell_price
+                    pli_fields.append('selling_price')
+                if pli_fields:
+                    pli.save(update_fields=pli_fields)
+        return plan_material
+
+    @staticmethod
     def create_plan_material_on_worksheet(worksheet, **kwargs):
         """Create a task-less PlanMaterial on a worksheet."""
         mat = PlanMaterial(est_worksheet=worksheet, plan_task=None, **kwargs)
@@ -288,6 +320,44 @@ class InventoryService:
 class MaterialService:
     """Sole entry point for Material row creation and lifecycle ops.
     All earmark mutations go through InventoryService._mutate_earmark."""
+
+    @staticmethod
+    def update_pricing(material, *, unit_cost=None, sell_price=None, propagate_to_pli=False):
+        """Update unit_cost and/or sell_price on a Material. If propagate_to_pli is
+        True and the Material is PLI-linked, also update the PLI's purchase_price /
+        selling_price to match — but only for fields that actually changed.
+
+        No permission check: open to any authenticated user (deliberate carve-out
+        from can_manage_financials per design).
+        """
+        from django.db import transaction
+        with transaction.atomic():
+            update_fields = []
+            cost_changed = False
+            price_changed = False
+            if unit_cost is not None and unit_cost != material.unit_cost:
+                material.unit_cost = unit_cost
+                update_fields.append('unit_cost')
+                cost_changed = True
+            if sell_price is not None and sell_price != material.sell_price:
+                material.sell_price = sell_price
+                update_fields.append('sell_price')
+                price_changed = True
+            if update_fields:
+                material.save(update_fields=update_fields)
+
+            if propagate_to_pli and material.price_list_item_id is not None:
+                pli = material.price_list_item
+                pli_fields = []
+                if cost_changed and pli.purchase_price != material.unit_cost:
+                    pli.purchase_price = material.unit_cost
+                    pli_fields.append('purchase_price')
+                if price_changed and pli.selling_price != material.sell_price:
+                    pli.selling_price = material.sell_price
+                    pli_fields.append('selling_price')
+                if pli_fields:
+                    pli.save(update_fields=pli_fields)
+        return material
 
     @staticmethod
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),

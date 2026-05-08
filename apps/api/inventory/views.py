@@ -42,6 +42,29 @@ class MaterialViewSet(viewsets.ModelViewSet):
         return Response({'error': 'Delete via Restock (manual-add) or expense rejection.'},
                         status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        propagate = serializer.validated_data.get('propagate_to_pli', False)
+        if instance.price_list_item_id is not None and (
+            'unit_cost' in serializer.validated_data
+            or 'sell_price' in serializer.validated_data
+        ):
+            # Pricing-only path on a PLI-linked instance: route through the service
+            # for the optional PLI propagation.
+            MaterialService.update_pricing(
+                instance,
+                unit_cost=serializer.validated_data.get('unit_cost'),
+                sell_price=serializer.validated_data.get('sell_price'),
+                propagate_to_pli=propagate,
+            )
+            instance.refresh_from_db()
+            return Response(MaterialSerializer(instance).data)
+        # Freeform path or non-pricing fields: fall through to default save.
+        serializer.save()
+        return Response(MaterialSerializer(instance).data)
+
     @action(detail=True, methods=['post'])
     def consume(self, request, pk=None):
         m = self.get_object()

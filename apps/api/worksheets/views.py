@@ -183,6 +183,20 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
 
         serializer = PlanMaterialWriteSerializer(mat, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        propagate = serializer.validated_data.get('propagate_to_pli', False)
+        if mat.price_list_item_id is not None and (
+            'unit_cost' in serializer.validated_data
+            or 'sell_price' in serializer.validated_data
+        ):
+            from apps.inventory.services import InventoryService
+            InventoryService.update_plan_material_pricing(
+                mat,
+                unit_cost=serializer.validated_data.get('unit_cost'),
+                sell_price=serializer.validated_data.get('sell_price'),
+                propagate_to_pli=propagate,
+            )
+            mat.refresh_from_db()
+            return Response(PlanMaterialWriteSerializer(mat).data)
         serializer.save()
         return Response(serializer.data)
 
