@@ -54,9 +54,11 @@ class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
 
         serializer = PlanMaterialWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        create_data = {k: v for k, v in serializer.validated_data.items()
+                       if k != 'propagate_to_pli'}
         try:
             mat = InventoryService.create_plan_material(
-                plan_task.pk, **serializer.validated_data
+                plan_task.pk, **create_data
             )
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)

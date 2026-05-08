@@ -18,7 +18,7 @@ class PlanMaterialSerializer(serializers.ModelSerializer):
 class PlanMaterialWriteSerializer(serializers.ModelSerializer):
     units = UnitsField(required=False)
     propagate_to_pli = serializers.BooleanField(
-        write_only=True, required=False, default=False,
+        write_only=True, required=False,
     )
 
     class Meta:

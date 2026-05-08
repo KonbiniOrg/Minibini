@@ -7,6 +7,7 @@ PLI_LINKED_PRICING_ALLOWED = {'unit_cost', 'sell_price', 'propagate_to_pli'}
 # Fields editable on freeform (no PLI) Material / PlanMaterial.
 FREEFORM_ALLOWED = {
     'description', 'units', 'unit_cost', 'sell_price', 'accounting_category',
+    'propagate_to_pli',
 }
 
 # TemplateMaterial allowlists: PLI-linked only allows quantity + sort_order

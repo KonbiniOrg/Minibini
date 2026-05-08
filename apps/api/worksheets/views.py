@@ -152,7 +152,9 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         serializer = PlanMaterialWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         plan_task = serializer.validated_data.get('plan_task')
-        kwargs = {k: v for k, v in serializer.validated_data.items() if k != 'plan_task'}
+        EXCLUDE_FROM_CREATE = {'plan_task', 'propagate_to_pli'}
+        kwargs = {k: v for k, v in serializer.validated_data.items()
+                  if k not in EXCLUDE_FROM_CREATE}
         if plan_task is not None:
             kwargs['plan_task'] = plan_task
             from apps.inventory.models import PlanMaterial

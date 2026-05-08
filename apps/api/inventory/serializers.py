@@ -34,7 +34,7 @@ class MaterialSerializer(serializers.ModelSerializer):
     qty_on_order = serializers.SerializerMethodField()
     qty_on_hand = serializers.SerializerMethodField()
     propagate_to_pli = serializers.BooleanField(
-        write_only=True, required=False, default=False,
+        write_only=True, required=False,
     )
 
     class Meta:
