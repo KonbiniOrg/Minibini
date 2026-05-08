@@ -169,7 +169,9 @@ class PlanMaterial(MaterialBase):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.description} (qty: {self.quantity})"
+        if self.units and self.units != 'none':
+            return f"{self.description} (qty: {self.quantity:.2f} {self.units})"
+        return f"{self.description} (qty: {self.quantity:.2f})"
 
 
 class TemplateMaterial(MaterialBase):
@@ -252,4 +254,6 @@ class Material(MaterialBase):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.description} (qty: {self.quantity})"
+        if self.units and self.units != 'none':
+            return f"{self.description} (qty: {self.quantity:.2f} {self.units})"
+        return f"{self.description} (qty: {self.quantity:.2f})"

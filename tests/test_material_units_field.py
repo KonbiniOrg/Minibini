@@ -121,3 +121,42 @@ class MaterialSerializerUnitsTests(APITestCase):
         )
         resp = self.client.get(f'/api/materials/{m.pk}/')
         self.assertEqual(resp.json()['units'], 'ea')
+
+
+class MaterialStrTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        Configuration.objects.create(key='units_list', value='["none","sheets","ea"]')
+        cls.cat = AccountingCategory.objects.create(code='MATSTR', name='MaterialsStr')
+        cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j2@d.com')
+        cls.job = Job.objects.create(
+            name='Js', job_number='J-STR', status=Job.STATUS_DRAFT, contact=cls.contact,
+        )
+
+    def test_material_str_includes_units_when_not_none(self):
+        m = Material.objects.create(
+            job=self.job, description='Steel', quantity=Decimal('5'), units='sheets',
+        )
+        self.assertEqual(str(m), 'Steel (qty: 5.00 sheets)')
+
+    def test_material_str_omits_units_when_none(self):
+        m = Material.objects.create(
+            job=self.job, description='Misc', quantity=Decimal('1'),
+        )
+        self.assertEqual(str(m), 'Misc (qty: 1.00)')
+
+    def test_plan_material_str_includes_units_when_not_none(self):
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        pm = PlanMaterial.objects.create(
+            est_worksheet=ws, description='Plan Steel',
+            quantity=Decimal('3'), units='ea',
+        )
+        self.assertEqual(str(pm), 'Plan Steel (qty: 3.00 ea)')
+
+    def test_plan_material_str_omits_units_when_none(self):
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        pm = PlanMaterial.objects.create(
+            est_worksheet=ws, description='Plan Misc',
+            quantity=Decimal('2'),
+        )
+        self.assertEqual(str(pm), 'Plan Misc (qty: 2.00)')
