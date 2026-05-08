@@ -1,7 +1,11 @@
 # tests/test_material_units_field.py
 from decimal import Decimal
 from django.test import TestCase
-from apps.inventory.models import Material, PlanMaterial, TemplateMaterial
+from apps.contacts.models import Contact
+from apps.core.models import AccountingCategory, Configuration
+from apps.inventory.models import Material, PlanMaterial, PriceListItem, TemplateMaterial
+from apps.estimates.models import EstWorksheet, WorkTemplate
+from apps.jobs.models import Job
 
 
 class MaterialUnitsFieldTests(TestCase):
@@ -21,3 +25,58 @@ class MaterialUnitsFieldTests(TestCase):
         f = TemplateMaterial._meta.get_field('units')
         self.assertEqual(f.max_length, 50)
         self.assertEqual(f.default, 'none')
+
+
+class PopulateFromPliCopiesUnitsTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        Configuration.objects.create(key='units_list', value='["none","ea","sheets","lbs","hours"]')
+        cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
+        cls.pli = PriceListItem.objects.create(
+            code='PLI-1', units='sheets', description='Steel Sheet',
+            purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
+            accounting_category=cls.cat,
+        )
+        cls.contact = Contact.objects.create(first_name='Test', last_name='Customer', email='test@example.com')
+        cls.job = Job.objects.create(name='J', job_number='J-1', status=Job.STATUS_DRAFT, contact=cls.contact)
+
+    def test_material_pulls_units_from_pli(self):
+        m = Material(
+            job=self.job, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        m.save()
+        self.assertEqual(m.units, 'sheets')
+
+    def test_material_keeps_explicit_units_when_set(self):
+        # Override case: caller supplies a non-default 'units'; PLI does not overwrite.
+        m = Material(
+            job=self.job, price_list_item=self.pli,
+            quantity=Decimal('1'), units='lbs',
+        )
+        m.save()
+        self.assertEqual(m.units, 'lbs')
+
+    def test_freeform_material_keeps_default_units(self):
+        m = Material(
+            job=self.job, price_list_item=None,
+            quantity=Decimal('1'),
+        )
+        m.save()
+        self.assertEqual(m.units, 'none')
+
+    def test_plan_material_pulls_units_from_pli(self):
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        pm = PlanMaterial(
+            est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
+        )
+        pm.save()
+        self.assertEqual(pm.units, 'sheets')
+
+    def test_template_material_pulls_units_from_pli(self):
+        wt = WorkTemplate.objects.create(template_name='T')
+        tm = TemplateMaterial(
+            work_template=wt, price_list_item=self.pli, quantity=Decimal('1'),
+        )
+        tm.save()
+        self.assertEqual(tm.units, 'sheets')

@@ -128,10 +128,12 @@ class MaterialBase(models.Model):
         return self.quantity * self.sell_price
 
     def _populate_from_pli(self):
-        """Copy description/unit_cost/sell_price/accounting_category from linked PriceListItem if not already set."""
+        """Copy description/units/unit_cost/sell_price/accounting_category from linked PriceListItem if not already set."""
         if self.price_list_item:
             if not self.description:
                 self.description = self.price_list_item.description[:255]
+            if self.units == 'none' or not self.units:
+                self.units = self.price_list_item.units
             if self.unit_cost == Decimal('0.00'):
                 self.unit_cost = self.price_list_item.purchase_price
             if self.sell_price == Decimal('0.00'):
