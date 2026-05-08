@@ -597,9 +597,14 @@ class EstimateWizardService:
 
     @staticmethod
     def _atom_units(atom_instance):
-        """Return the units label for an atom, sourced from related rate
-        scheme or price list item. Falls back to 'none' (the only literal
-        unit guaranteed to exist in the configured units list)."""
+        """Return the units label for an atom.
+
+        PlanTask: from rate_scheme.unit_label (or 'none' if no scheme).
+        PlanMaterial: from the atom's own units field (which is populated
+                      from the linked PLI at create time via _populate_from_pli,
+                      so PLI-linked PMs reflect the PLI's units; freeform PMs
+                      carry whatever units the user set).
+        """
         from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
         if isinstance(atom_instance, PlanTask):
@@ -607,9 +612,7 @@ class EstimateWizardService:
                 return atom_instance.rate_scheme.unit_label
             return 'none'
         if isinstance(atom_instance, PlanMaterial):
-            if atom_instance.price_list_item_id:
-                return atom_instance.price_list_item.units
-            return 'none'
+            return atom_instance.units or 'none'
         return 'none'
 
     @staticmethod
