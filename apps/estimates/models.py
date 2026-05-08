@@ -345,30 +345,49 @@ class WorkTemplate(models.Model):
         from apps.inventory.models import PlanMaterial
         for tm in self.materials.all():
             for _ in range(quantity):
-                PlanMaterial.objects.create(
-                    est_worksheet=worksheet,
-                    plan_task=None,
-                    description=tm.description,
-                    quantity=tm.quantity,
-                    unit_cost=tm.unit_cost,
-                    sell_price=tm.sell_price,
-                    price_list_item=tm.price_list_item,
-                    accounting_category=tm.accounting_category,
-                )
+                if tm.price_list_item_id:
+                    # PLI-linked: only carry quantity + PLI link.
+                    # _populate_from_pli pulls description, units, pricing, and
+                    # accounting_category from the *current* PLI on save.
+                    PlanMaterial.objects.create(
+                        est_worksheet=worksheet,
+                        plan_task=None,
+                        quantity=tm.quantity,
+                        price_list_item=tm.price_list_item,
+                    )
+                else:
+                    # Freeform: template carries the explicit values.
+                    PlanMaterial.objects.create(
+                        est_worksheet=worksheet,
+                        plan_task=None,
+                        description=tm.description,
+                        quantity=tm.quantity,
+                        units=tm.units,
+                        unit_cost=tm.unit_cost,
+                        sell_price=tm.sell_price,
+                        accounting_category=tm.accounting_category,
+                    )
 
     def generate_materials_for_job(self, job, quantity=1):
         from apps.inventory.services import MaterialService
         for tm in self.materials.all():
             for _ in range(quantity):
-                MaterialService.create_on_job(
-                    job=job, task=None,
-                    description=tm.description,
-                    quantity=tm.quantity,
-                    unit_cost=tm.unit_cost,
-                    sell_price=tm.sell_price,
-                    price_list_item=tm.price_list_item,
-                    accounting_category=tm.accounting_category,
-                )
+                if tm.price_list_item_id:
+                    MaterialService.create_on_job(
+                        job=job, task=None,
+                        quantity=tm.quantity,
+                        price_list_item=tm.price_list_item,
+                    )
+                else:
+                    MaterialService.create_on_job(
+                        job=job, task=None,
+                        description=tm.description,
+                        quantity=tm.quantity,
+                        units=tm.units,
+                        unit_cost=tm.unit_cost,
+                        sell_price=tm.sell_price,
+                        accounting_category=tm.accounting_category,
+                    )
 
 
 class TemplateTaskAssociation(models.Model):
