@@ -373,12 +373,16 @@ class WorkTemplate(models.Model):
         for tm in self.materials.all():
             for _ in range(quantity):
                 if tm.price_list_item_id:
+                    # PLI-linked: only carry quantity + PLI link.
+                    # _populate_from_pli pulls description, units, pricing, and
+                    # accounting_category from the *current* PLI on save.
                     MaterialService.create_on_job(
                         job=job, task=None,
                         quantity=tm.quantity,
                         price_list_item=tm.price_list_item,
                     )
                 else:
+                    # Freeform: template carries the explicit values.
                     MaterialService.create_on_job(
                         job=job, task=None,
                         description=tm.description,
