@@ -96,6 +96,7 @@ class MaterialBase(models.Model):
     """Abstract base for PlanMaterial (planning) and Material (actual)."""
     description = models.CharField(max_length=255, blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    units = models.CharField(max_length=50, default='none')
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     sell_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     price_list_item = models.ForeignKey(
