@@ -10,6 +10,11 @@ FREEFORM_ALLOWED = {
     'propagate_to_pli',
 }
 
+# PlanMaterial freeform allowlist — same as Material's plus 'quantity'.
+# PlanMaterial has no Restock/Draw-more state-machine ops (no inventory
+# accounting), so quantity must be PATCH-editable after create.
+PLAN_MATERIAL_FREEFORM_ALLOWED = FREEFORM_ALLOWED | {'quantity'}
+
 # TemplateMaterial allowlists: PLI-linked only allows quantity + sort_order
 # (no pricing carve-out — templates are catalog config, not cost capture).
 TEMPLATE_PLI_LINKED_ALLOWED = {'quantity', 'sort_order'}

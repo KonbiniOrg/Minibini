@@ -37,7 +37,8 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         from apps.inventory.serializer_helpers import (
-            enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED, FREEFORM_ALLOWED,
+            enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED,
+            PLAN_MATERIAL_FREEFORM_ALLOWED,
         )
         # plan_task is reassignable on both freeform and PLI-linked rows;
         # exclude it from the allowlist check.
@@ -48,7 +49,7 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
                 instance, scratch, PLI_LINKED_PRICING_ALLOWED,
             )
         else:
-            disallowed = set(scratch.keys()) - FREEFORM_ALLOWED
+            disallowed = set(scratch.keys()) - PLAN_MATERIAL_FREEFORM_ALLOWED
             if disallowed:
                 raise serializers.ValidationError({
                     'detail': f'Disallowed fields on freeform PlanMaterial: {sorted(disallowed)}',

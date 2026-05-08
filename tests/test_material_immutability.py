@@ -138,6 +138,38 @@ class PlanMaterialImmutabilityTests(_Setup):
         )
         self.assertEqual(resp.status_code, 200)
 
+    def test_patch_freeform_plan_material_quantity_allowed(self):
+        """PlanMaterial has no Restock/Draw-more state machine; quantity is
+        PATCH-editable on freeform rows. (Material's quantity goes through
+        Restock/Draw-more state-machine ops; not the case for PlanMaterial.)"""
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        pm = PlanMaterial.objects.create(
+            est_worksheet=ws, price_list_item=None,
+            description='loose', quantity=Decimal('1'),
+        )
+        resp = self.client.patch(
+            f'/api/est-worksheets/{ws.pk}/plan-materials/{pm.pk}/',
+            {'quantity': '5.00'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        pm.refresh_from_db()
+        self.assertEqual(pm.quantity, Decimal('5.00'))
+
+    def test_patch_pli_linked_plan_material_quantity_rejected(self):
+        """PLI-linked PlanMaterial still has the 'pricing-only' immutability
+        rule — quantity is not in the carve-out."""
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        pm = PlanMaterial.objects.create(
+            est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
+        )
+        resp = self.client.patch(
+            f'/api/est-worksheets/{ws.pk}/plan-materials/{pm.pk}/',
+            {'quantity': '5.00'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
 
 class TemplateMaterialImmutabilityTests(_Setup):
     def _grant_can_manage_config(self):
