@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from apps.jobs.models import Task
 from apps.inventory.models import Material
+from apps.core.units import UnitsField
 
 
 class MaterialSerializer(serializers.ModelSerializer):
@@ -12,7 +13,7 @@ class MaterialSerializer(serializers.ModelSerializer):
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item',
+            'units', 'unit_cost', 'sell_price', 'price_list_item',
             'accounting_category',
             'consumption_state', 'restocked_qty',
             'is_expense_bound', 'price_list_item_is_inventoried',
@@ -24,11 +25,13 @@ class MaterialSerializer(serializers.ModelSerializer):
 
 
 class MaterialWriteSerializer(serializers.ModelSerializer):
+    units = UnitsField(required=False)
+
     class Meta:
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item',
+            'units', 'unit_cost', 'sell_price', 'price_list_item',
             'accounting_category',
         ]
         read_only_fields = ['material_id']

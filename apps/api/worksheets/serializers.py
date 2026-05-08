@@ -3,10 +3,11 @@ from rest_framework import serializers
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
+from apps.core.units import UnitsField
 
 
 class PlanMaterialSerializer(serializers.ModelSerializer):
-    units = serializers.SerializerMethodField()
+    units = UnitsField(read_only=True)
 
     class Meta:
         model = PlanMaterial
@@ -17,17 +18,16 @@ class PlanMaterialSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_units(self, obj):
-        return obj.price_list_item.units if obj.price_list_item_id else 'none'
-
 
 class PlanMaterialWriteSerializer(serializers.ModelSerializer):
     """Writable serializer for PlanMaterial; used by worksheet plan-materials endpoint."""
+    units = UnitsField(required=False)
+
     class Meta:
         model = PlanMaterial
         fields = [
             'plan_material_id', 'plan_task', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item', 'accounting_category',
+            'units', 'unit_cost', 'sell_price', 'price_list_item', 'accounting_category',
         ]
         read_only_fields = ['plan_material_id']
 

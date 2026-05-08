@@ -292,7 +292,7 @@ class MaterialService:
     @staticmethod
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
                       unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
-                      price_list_item=None, accounting_category=None):
+                      price_list_item=None, accounting_category=None, units='none'):
         from django.db import transaction
         with transaction.atomic():
             m = Material(
@@ -301,6 +301,7 @@ class MaterialService:
                 unit_cost=unit_cost, sell_price=sell_price,
                 price_list_item=price_list_item,
                 accounting_category=accounting_category,
+                units=units,
             )
             m.save()  # full_clean() runs here; enforces task/job invariant
             InventoryService._mutate_earmark(price_list_item, job, quantity)

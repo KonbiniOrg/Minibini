@@ -30,7 +30,7 @@ class MaterialSerializer(serializers.ModelSerializer):
     po_id = serializers.SerializerMethodField()
     po_number = serializers.SerializerMethodField()
     po_status = serializers.SerializerMethodField()
-    units = serializers.SerializerMethodField()
+    units = UnitsField()
     qty_on_order = serializers.SerializerMethodField()
     qty_on_hand = serializers.SerializerMethodField()
 
@@ -50,7 +50,7 @@ class MaterialSerializer(serializers.ModelSerializer):
             'consumption_state', 'restocked_qty', 'is_expense_bound',
             'price_list_item_is_inventoried',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
-            'units', 'qty_on_order', 'qty_on_hand',
+            'qty_on_order', 'qty_on_hand',
         ]
 
     def get_price_list_item_is_inventoried(self, obj):
@@ -73,9 +73,6 @@ class MaterialSerializer(serializers.ModelSerializer):
         if obj.po_line_item_id and obj.po_line_item:
             return obj.po_line_item.purchase_order.status
         return None
-
-    def get_units(self, obj):
-        return obj.price_list_item.units if obj.price_list_item_id else 'none'
 
     def get_qty_on_order(self, obj):
         if not obj.po_line_item_id:

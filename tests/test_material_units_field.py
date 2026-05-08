@@ -1,8 +1,9 @@
 # tests/test_material_units_field.py
 from decimal import Decimal
 from django.test import TestCase
+from rest_framework.test import APITestCase
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory, Configuration
+from apps.core.models import AccountingCategory, Configuration, User
 from apps.inventory.models import Material, PlanMaterial, PriceListItem, TemplateMaterial
 from apps.estimates.models import EstWorksheet, WorkTemplate
 from apps.jobs.models import Job
@@ -80,3 +81,43 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
         )
         tm.save()
         self.assertEqual(tm.units, 'sheets')
+
+
+class MaterialSerializerUnitsTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        Configuration.objects.create(key='units_list', value='["none","ea","sheets","lbs"]')
+        cls.user = User.objects.create_user(username='u', password='p')
+        cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
+        cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
+        cls.pli = PriceListItem.objects.create(
+            code='PLI-1', units='sheets', description='Steel Sheet',
+            purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
+            accounting_category=cls.cat,
+        )
+        cls.job = Job.objects.create(
+            name='J', job_number='J-1', status=Job.STATUS_DRAFT, contact=cls.contact,
+        )
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+    def test_material_get_returns_units_from_field(self):
+        # Create a Material whose units field has been overridden to differ
+        # from its PLI's units. The GET response must reflect the field value,
+        # not the PLI's value.
+        m = Material.objects.create(
+            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+        )
+        Material.objects.filter(pk=m.pk).update(units='lbs')
+        resp = self.client.get(f'/api/materials/{m.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['units'], 'lbs')
+
+    def test_freeform_material_get_returns_units_field(self):
+        m = Material.objects.create(
+            job=self.job, price_list_item=None,
+            description='custom', quantity=Decimal('1'), units='ea',
+        )
+        resp = self.client.get(f'/api/materials/{m.pk}/')
+        self.assertEqual(resp.json()['units'], 'ea')

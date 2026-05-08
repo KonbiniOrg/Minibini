@@ -4,6 +4,7 @@ from apps.estimates.models import (
 )
 from apps.core.models import Configuration, AccountingCategory
 from apps.inventory.models import TemplateMaterial
+from apps.core.units import UnitsField
 
 
 class TaskTemplateSerializer(serializers.ModelSerializer):
@@ -42,11 +43,13 @@ class WorkTemplateSerializer(serializers.ModelSerializer):
 
 
 class TemplateMaterialSerializer(serializers.ModelSerializer):
+    units = UnitsField(required=False)
+
     class Meta:
         model = TemplateMaterial
         fields = [
             'template_material_id', 'work_template', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item', 'accounting_category',
+            'units', 'unit_cost', 'sell_price', 'price_list_item', 'accounting_category',
             'sort_order',
         ]
         read_only_fields = ['template_material_id', 'work_template']
