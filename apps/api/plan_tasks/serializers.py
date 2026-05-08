@@ -9,7 +9,7 @@ class PlanMaterialSerializer(serializers.ModelSerializer):
         model = PlanMaterial
         fields = [
             'plan_material_id', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item',
+            'units', 'unit_cost', 'sell_price', 'price_list_item',
             'accounting_category',
         ]
         read_only_fields = fields

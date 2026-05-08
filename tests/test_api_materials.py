@@ -25,6 +25,18 @@ class MaterialApiTest(APITestCase):
             qty_on_hand=Decimal('10'),
         )
 
+    def test_post_jobs_id_materials_carries_units_freeform(self):
+        """Issue 1 regression: freeform task-less Material POST must persist units."""
+        url = f'/api/jobs/{self.job.pk}/materials/'
+        resp = self.client.post(url, {
+            'description': 'custom item',
+            'quantity': '1',
+            'units': 'lbs',
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        m = Material.objects.get(job=self.job, description='custom item')
+        self.assertEqual(m.units, 'lbs')
+
     def test_post_jobs_id_materials_creates_taskless_material(self):
         url = f'/api/jobs/{self.job.pk}/materials/'
         resp = self.client.post(url, {

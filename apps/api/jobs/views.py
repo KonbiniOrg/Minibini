@@ -275,6 +275,7 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                 job=job, task=None,
                 description=data.get('description', ''),
                 quantity=_Decimal(str(data.get('quantity', 0))),
+                units=data.get('units', 'none'),
                 unit_cost=_Decimal(str(data.get('unit_cost', 0))),
                 sell_price=_Decimal(str(data.get('sell_price', 0))),
                 price_list_item=pli,

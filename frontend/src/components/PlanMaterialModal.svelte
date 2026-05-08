@@ -122,6 +122,7 @@
           : {
               description,
               units,
+              quantity: fullPayload.quantity,
               unit_cost: fullPayload.unit_cost,
               sell_price: fullPayload.sell_price,
               accounting_category: fullPayload.accounting_category,
