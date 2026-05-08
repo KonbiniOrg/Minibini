@@ -440,3 +440,25 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
         self.job.refresh_from_db()
         self.assertIsNone(self.job.template)
+
+    def test_copy_from_worksheet_carries_units(self):
+        """Units set on PlanMaterial are preserved on the resulting Material."""
+        plan_task = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='Cut', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
+        PlanMaterial.objects.create(
+            est_worksheet=self.worksheet, plan_task=plan_task,
+            description='task-attached', quantity=Decimal('5'),
+            units='lbs', unit_cost=Decimal('2.00'), sell_price=Decimal('3.00'))
+        PlanMaterial.objects.create(
+            est_worksheet=self.worksheet, plan_task=None,
+            description='task-less', quantity=Decimal('2'),
+            units='ea', unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'))
+
+        new_job = JobService.create_job(name='Copy Target', contact=self.contact)
+        JobService.copy_from_worksheet(new_job.pk, self.worksheet.pk)
+
+        task_mat = Material.objects.get(job=new_job, task__isnull=False)
+        self.assertEqual(task_mat.units, 'lbs')
+        loose_mat = Material.objects.get(job=new_job, task__isnull=True)
+        self.assertEqual(loose_mat.units, 'ea')
