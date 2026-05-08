@@ -1,4 +1,6 @@
 <script>
+  import { formatQtyUnits } from '../lib/format.js';
+
   let {
     tasks = [],
     jobMaterials = [],
@@ -198,7 +200,7 @@
           <td></td>
           {#if showStatus}<td></td>{/if}
           <td class="text-right">-</td>
-          <td class="text-right">{mat.quantity ?? '-'}</td>
+          <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
           <td class="text-right">-</td>
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
@@ -265,7 +267,7 @@
             <td></td>
             {#if showStatus}<td></td>{/if}
             <td class="text-right">-</td>
-            <td class="text-right">{mat.quantity ?? '-'}</td>
+            <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
             <td class="text-right">-</td>
             <td class="text-right">{fmt(mat.unit_cost)}</td>
             <td class="text-right">{fmt(mat.sell_price)}</td>
@@ -302,7 +304,7 @@
           <td></td>
           {#if showStatus}<td></td>{/if}
           <td class="text-right">-</td>
-          <td class="text-right">{mat.quantity ?? '-'}</td>
+          <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
           <td class="text-right">-</td>
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>

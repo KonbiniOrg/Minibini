@@ -6,6 +6,7 @@
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import { formatQtyUnits } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
@@ -302,7 +303,7 @@
                 <td class="move-cell">{#if selectedTaskId != null}<button type="button" class="small-btn" onclick={() => handleMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
               {/if}
               <td>{mat.description || '(no description)'}</td>
-              <td class="text-right">{mat.quantity ?? '-'}</td>
+              <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
               <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
               <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
               {#if canEdit}

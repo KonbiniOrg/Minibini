@@ -5,6 +5,7 @@
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import { formatQtyUnits } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
@@ -227,7 +228,7 @@
         {#each materials as mat}
           <tr>
             <td>{mat.description || '(no description)'}</td>
-            <td class="text-right">{mat.quantity ?? '-'}</td>
+            <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
             <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
             <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
             <td class="text-right">{(Number(mat.quantity) && Number(mat.sell_price)) ? `$${(Number(mat.quantity) * Number(mat.sell_price)).toFixed(2)}` : '-'}</td>

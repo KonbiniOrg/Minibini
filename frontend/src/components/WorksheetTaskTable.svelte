@@ -1,4 +1,6 @@
 <script>
+  import { formatQtyUnits } from '../lib/format.js';
+
   let {
     worksheet = null,
     readonly = false,
@@ -83,7 +85,7 @@
             <td class="move-cell">{#if selectedTaskId != null && selectedTaskId !== (task.plan_task_id ?? null)}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent"><span class="material-marker">&#9679;</span> {mat.description || '(no description)'}</td>
-          <td class="text-right">{mat.quantity ?? '-'}</td>
+          <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
           {#if !readonly}
             <td class="actions-cell">
