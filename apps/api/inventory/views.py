@@ -14,6 +14,18 @@ class PriceListItemViewSet(viewsets.ModelViewSet):
     serializer_class = PriceListItemSerializer
     lookup_field = 'pk'
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Optional filter: ?is_active=true|false (omit to include all).
+        # Pickers (Material modal, etc.) pass is_active=true so deactivated
+        # PLIs don't appear as selection options. Catalog management omits
+        # the param so admins can still see and re-activate deactivated rows.
+        is_active_param = self.request.query_params.get('is_active')
+        if is_active_param is not None:
+            value = is_active_param.lower() in ('true', '1', 'yes')
+            qs = qs.filter(is_active=value)
+        return qs
+
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
