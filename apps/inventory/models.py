@@ -174,26 +174,6 @@ class PlanMaterial(MaterialBase):
         return f"{self.description} (qty: {self.quantity:.2f})"
 
 
-class TemplateMaterial(MaterialBase):
-    """Template-level material on a WorkTemplate. Populated as task-less PlanMaterial
-    (on EstWorksheet) or task-less Material (on Job)."""
-    template_material_id = models.AutoField(primary_key=True)
-    work_template = models.ForeignKey(
-        'estimates.WorkTemplate', on_delete=models.CASCADE,
-        related_name='materials',
-    )
-    sort_order = models.IntegerField(default=0)
-
-    class Meta:
-        db_table = 'template_materials'
-        ordering = ['sort_order']
-
-    def save(self, *args, **kwargs):
-        self._populate_from_pli()
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-
 class TemplateMaterialAssociation(models.Model):
     """A reusable PriceListItem associated with a WorkTemplate.
 

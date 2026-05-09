@@ -1,13 +1,15 @@
 # tests/test_template_material_association_model.py
 from decimal import Decimal
 from django.test import TestCase
+from rest_framework.test import APITestCase
+from django.contrib.auth.models import Permission
 from apps.inventory.models import (
     PriceListItem, TemplateMaterialAssociation,
 )
 from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
-from apps.core.models import AccountingCategory
+from apps.core.models import AccountingCategory, User
 from apps.jobs.models import RateScheme
 
 
@@ -76,3 +78,84 @@ class DataMigrationFromOldTemplateMaterialTests(TestCase):
         # confirming they describe the same generation outcome.
         # The actual RunPython logic is tested via Django's migration test framework.
         pass  # Placeholder; the data migration test happens at migration runtime.
+
+
+class TemplateMaterialAssociationApiTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(username='u', password='p')
+        cls.user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_config'),
+        )
+        cls.cat = AccountingCategory.objects.create(code='TMAAPI', name='Cat')
+        cls.scheme = RateScheme.objects.create(
+            name='H', rate=Decimal('50'), unit_label='hour',
+            accounting_category=cls.cat,
+        )
+        cls.pli = PriceListItem.objects.create(
+            code='PLITMA', units='sheets', description='X',
+            purchase_price=Decimal('10'), selling_price=Decimal('20'),
+            accounting_category=cls.cat,
+        )
+        cls.wt = WorkTemplate.objects.create(template_name='WT-API')
+        cls.tt = TaskTemplate.objects.create(
+            template_name='TT-API', rate_scheme=cls.scheme,
+            default_billable_qty=Decimal('1'),
+        )
+        cls.tta = TemplateTaskAssociation.objects.create(
+            work_template=cls.wt, task_template=cls.tt,
+            est_qty=Decimal('1'),
+        )
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+    def test_post_creates_association(self):
+        resp = self.client.post(
+            f'/api/work-templates/{self.wt.pk}/materials/',
+            {'price_list_item': self.pli.pk, 'quantity': '5'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body['price_list_item'], self.pli.pk)
+        self.assertEqual(body['quantity'], '5.00')
+        self.assertIsNone(body['template_task_association'])
+
+    def test_post_with_task_association(self):
+        resp = self.client.post(
+            f'/api/work-templates/{self.wt.pk}/materials/',
+            {
+                'price_list_item': self.pli.pk,
+                'quantity': '2',
+                'template_task_association': self.tta.pk,
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()['template_task_association'], self.tta.pk)
+
+    def test_patch_quantity(self):
+        a = TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        resp = self.client.patch(
+            f'/api/work-templates/{self.wt.pk}/materials/{a.pk}/',
+            {'quantity': '5'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        a.refresh_from_db()
+        self.assertEqual(a.quantity, Decimal('5'))
+
+    def test_delete(self):
+        a = TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        resp = self.client.delete(
+            f'/api/work-templates/{self.wt.pk}/materials/{a.pk}/',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(TemplateMaterialAssociation.objects.filter(pk=a.pk).exists())

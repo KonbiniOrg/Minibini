@@ -4,8 +4,8 @@ from django.test import TestCase
 from rest_framework.test import APITestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, User
-from apps.inventory.models import Material, PlanMaterial, PriceListItem, TemplateMaterial
-from apps.estimates.models import EstWorksheet, WorkTemplate
+from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.estimates.models import EstWorksheet
 from apps.jobs.models import Job
 
 
@@ -21,12 +21,6 @@ class MaterialUnitsFieldTests(TestCase):
         f = PlanMaterial._meta.get_field('units')
         self.assertEqual(f.max_length, 50)
         self.assertEqual(f.default, 'none')
-
-    def test_template_material_has_units_field(self):
-        f = TemplateMaterial._meta.get_field('units')
-        self.assertEqual(f.max_length, 50)
-        self.assertEqual(f.default, 'none')
-
 
 class PopulateFromPliCopiesUnitsTests(TestCase):
     @classmethod
@@ -73,15 +67,6 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
         )
         pm.save()
         self.assertEqual(pm.units, 'sheets')
-
-    def test_template_material_pulls_units_from_pli(self):
-        wt = WorkTemplate.objects.create(template_name='T')
-        tm = TemplateMaterial(
-            work_template=wt, price_list_item=self.pli, quantity=Decimal('1'),
-        )
-        tm.save()
-        self.assertEqual(tm.units, 'sheets')
-
 
 class MaterialSerializerUnitsTests(APITestCase):
     @classmethod

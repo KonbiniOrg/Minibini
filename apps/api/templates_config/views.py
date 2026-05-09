@@ -9,11 +9,11 @@ from apps.estimates.services import WorkTemplateService
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
 from apps.api.permissions import CanManageConfig
-from apps.inventory.models import TemplateMaterial
+from apps.inventory.models import TemplateMaterialAssociation
 from .serializers import (
     WorkTemplateSerializer, TaskTemplateSerializer,
     ConfigurationSerializer, AccountingCategorySerializer,
-    TemplateMaterialSerializer,
+    TemplateMaterialAssociationSerializer,
 )
 
 
@@ -45,35 +45,37 @@ class WorkTemplateViewSet(viewsets.ModelViewSet):
     def materials(self, request, pk=None):
         template = self.get_object()
         if request.method == 'GET':
-            mats = TemplateMaterial.objects.filter(work_template=template)
-            serializer = TemplateMaterialSerializer(mats, many=True)
-            return Response(serializer.data)
+            assocs = TemplateMaterialAssociation.objects.filter(work_template=template)
+            return Response(TemplateMaterialAssociationSerializer(assocs, many=True).data)
 
-        serializer = TemplateMaterialSerializer(data=request.data)
+        serializer = TemplateMaterialAssociationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        mat = TemplateMaterial(work_template=template, **serializer.validated_data)
-        mat.save()
-        out = TemplateMaterialSerializer(mat)
-        return Response(out.data, status=status.HTTP_201_CREATED)
+        a = TemplateMaterialAssociation(work_template=template, **serializer.validated_data)
+        a.full_clean()
+        a.save()
+        return Response(
+            TemplateMaterialAssociationSerializer(a).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=['get', 'patch', 'delete'],
-            url_path='materials/(?P<mat_id>[0-9]+)', url_name='material-detail')
-    def material_detail(self, request, pk=None, mat_id=None):
+            url_path='materials/(?P<assoc_id>[0-9]+)', url_name='material-detail')
+    def material_detail(self, request, pk=None, assoc_id=None):
         template = self.get_object()
         try:
-            mat = TemplateMaterial.objects.get(pk=mat_id, work_template=template)
-        except TemplateMaterial.DoesNotExist:
+            a = TemplateMaterialAssociation.objects.get(pk=assoc_id, work_template=template)
+        except TemplateMaterialAssociation.DoesNotExist:
             from rest_framework.exceptions import NotFound
             raise NotFound()
 
         if request.method == 'GET':
-            return Response(TemplateMaterialSerializer(mat).data)
+            return Response(TemplateMaterialAssociationSerializer(a).data)
 
         if request.method == 'DELETE':
-            mat.delete()
-            return Response({'message': 'Template material deleted.'})
+            a.delete()
+            return Response({'message': 'Template material association deleted.'})
 
-        serializer = TemplateMaterialSerializer(mat, data=request.data, partial=True)
+        serializer = TemplateMaterialAssociationSerializer(a, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)

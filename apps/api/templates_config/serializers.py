@@ -3,8 +3,7 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.core.models import Configuration, AccountingCategory
-from apps.inventory.models import TemplateMaterial
-from apps.core.units import UnitsField
+from apps.inventory.models import TemplateMaterialAssociation
 
 
 class TaskTemplateSerializer(serializers.ModelSerializer):
@@ -42,39 +41,15 @@ class WorkTemplateSerializer(serializers.ModelSerializer):
         read_only_fields = ['template_id']
 
 
-class TemplateMaterialSerializer(serializers.ModelSerializer):
-    units = UnitsField(required=False)
-
+class TemplateMaterialAssociationSerializer(serializers.ModelSerializer):
     class Meta:
-        model = TemplateMaterial
+        model = TemplateMaterialAssociation
         fields = [
-            'template_material_id', 'work_template', 'description', 'quantity',
-            'units', 'unit_cost', 'sell_price', 'price_list_item', 'accounting_category',
-            'sort_order',
+            'template_material_association_id', 'work_template',
+            'price_list_item', 'template_task_association',
+            'quantity', 'sort_order',
         ]
-        read_only_fields = ['template_material_id', 'work_template']
-
-    def update(self, instance, validated_data):
-        from apps.inventory.serializer_helpers import (
-            TEMPLATE_PLI_LINKED_ALLOWED, TEMPLATE_FREEFORM_ALLOWED,
-        )
-        if instance.price_list_item_id is not None:
-            disallowed = set(validated_data.keys()) - TEMPLATE_PLI_LINKED_ALLOWED
-            if disallowed:
-                raise serializers.ValidationError({
-                    'detail': (
-                        'PLI-linked TemplateMaterials are immutable except for '
-                        'quantity and sort_order; '
-                        f'disallowed fields: {sorted(disallowed)}'
-                    )
-                })
-        else:
-            disallowed = set(validated_data.keys()) - TEMPLATE_FREEFORM_ALLOWED
-            if disallowed:
-                raise serializers.ValidationError({
-                    'detail': f'Disallowed fields on freeform TemplateMaterial: {sorted(disallowed)}',
-                })
-        return super().update(instance, validated_data)
+        read_only_fields = ['template_material_association_id', 'work_template']
 
 
 class ConfigurationSerializer(serializers.ModelSerializer):
