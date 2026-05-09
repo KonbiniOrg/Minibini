@@ -220,3 +220,65 @@ class TemplateMaterialAssociationApiPermissionTests(APITestCase):
         )
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(len(resp.json()), 1)
+
+
+class CrossTemplateValidationTests(APITestCase):
+    """Model-level clean() must reject template_task_association from a
+    different WorkTemplate. Test surfaces both POST and PATCH paths."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(username='u', password='p')
+        cls.user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_config'),
+        )
+        cls.cat = AccountingCategory.objects.create(code='X', name='X')
+        from apps.jobs.models import RateScheme
+        cls.scheme = RateScheme.objects.create(
+            name='H', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hour',
+            accounting_category=cls.cat,
+        )
+        cls.pli = PriceListItem.objects.create(
+            code='X-PLI', units='sheets', description='X',
+            purchase_price=Decimal('1'), selling_price=Decimal('2'),
+            accounting_category=cls.cat,
+        )
+        # Two WorkTemplates; the TTA we'll try to use lives on the OTHER one.
+        cls.wt1 = WorkTemplate.objects.create(template_name='WT1')
+        cls.wt2 = WorkTemplate.objects.create(template_name='WT2')
+        cls.tt = TaskTemplate.objects.create(
+            template_name='TT', rate_scheme=cls.scheme,
+            default_billable_qty=Decimal('1'),
+        )
+        cls.tta_on_wt2 = TemplateTaskAssociation.objects.create(
+            work_template=cls.wt2, task_template=cls.tt,
+            est_qty=Decimal('1'),
+        )
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+    def test_post_with_cross_template_tta_returns_400(self):
+        resp = self.client.post(
+            f'/api/work-templates/{self.wt1.pk}/materials/',
+            {
+                'price_list_item': self.pli.pk,
+                'quantity': '1',
+                'template_task_association': self.tta_on_wt2.pk,
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_patch_to_cross_template_tta_returns_400(self):
+        a = TemplateMaterialAssociation.objects.create(
+            work_template=self.wt1, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        resp = self.client.patch(
+            f'/api/work-templates/{self.wt1.pk}/materials/{a.pk}/',
+            {'template_task_association': self.tta_on_wt2.pk},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)

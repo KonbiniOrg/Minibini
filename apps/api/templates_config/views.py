@@ -1,5 +1,6 @@
 import json
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -51,7 +52,10 @@ class WorkTemplateViewSet(viewsets.ModelViewSet):
         serializer = TemplateMaterialAssociationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         a = TemplateMaterialAssociation(work_template=template, **serializer.validated_data)
-        a.full_clean()
+        try:
+            a.full_clean()
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
         a.save()
         return Response(
             TemplateMaterialAssociationSerializer(a).data,
@@ -77,8 +81,17 @@ class WorkTemplateViewSet(viewsets.ModelViewSet):
 
         serializer = TemplateMaterialAssociationSerializer(a, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+        # Apply changes to the instance, then full_clean() to fire model-level
+        # validation (cross-template template_task_association mismatch, etc.)
+        # before saving.
+        for field, value in serializer.validated_data.items():
+            setattr(a, field, value)
+        try:
+            a.full_clean()
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
+        a.save()
+        return Response(TemplateMaterialAssociationSerializer(a).data)
 
 
 class TaskTemplateViewSet(viewsets.ModelViewSet):
