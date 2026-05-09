@@ -159,3 +159,64 @@ class TemplateMaterialAssociationApiTests(APITestCase):
         )
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertFalse(TemplateMaterialAssociation.objects.filter(pk=a.pk).exists())
+
+
+class TemplateMaterialAssociationApiPermissionTests(APITestCase):
+    """Permission gates on /api/work-templates/{id}/materials/.
+    Reads are open to any authenticated user; writes require
+    can_manage_config."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.cat = AccountingCategory.objects.create(code='CP', name='CatP')
+        cls.pli = PriceListItem.objects.create(
+            code='PLIP', units='sheets', description='X',
+            purchase_price=Decimal('10'), selling_price=Decimal('20'),
+            accounting_category=cls.cat,
+        )
+        cls.wt = WorkTemplate.objects.create(template_name='WTP')
+
+    def setUp(self):
+        self.worker = User.objects.create_user(username='worker', password='p')
+        self.client.force_login(self.worker)
+
+    def test_worker_cannot_post(self):
+        resp = self.client.post(
+            f'/api/work-templates/{self.wt.pk}/materials/',
+            {'price_list_item': self.pli.pk, 'quantity': '1'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 403, resp.content)
+
+    def test_worker_cannot_patch(self):
+        a = TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        resp = self.client.patch(
+            f'/api/work-templates/{self.wt.pk}/materials/{a.pk}/',
+            {'quantity': '2'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 403, resp.content)
+
+    def test_worker_cannot_delete(self):
+        a = TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        resp = self.client.delete(
+            f'/api/work-templates/{self.wt.pk}/materials/{a.pk}/',
+        )
+        self.assertEqual(resp.status_code, 403, resp.content)
+
+    def test_worker_can_get_list(self):
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        resp = self.client.get(
+            f'/api/work-templates/{self.wt.pk}/materials/',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(len(resp.json()), 1)
