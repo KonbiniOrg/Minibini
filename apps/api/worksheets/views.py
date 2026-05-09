@@ -77,6 +77,7 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         ws = WorksheetService.create_worksheet(job_pk, **kwargs)
         if template:
             template.generate_tasks_for_worksheet(ws)
+            template.generate_materials_for_worksheet(ws)
         serializer.instance = ws
 
     @action(detail=True, methods=['post'], url_path='reorder')

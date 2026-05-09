@@ -378,9 +378,10 @@ def estworksheet_create_for_job(request, job_id):
                 job.pk, template=template,
             )
 
-            # If a template was selected, generate tasks from it
+            # If a template was selected, generate tasks and materials from it
             if template:
                 template.generate_tasks_for_worksheet(worksheet)
+                template.generate_materials_for_worksheet(worksheet)
                 messages.success(request, f'Worksheet created from template "{template.template_name}" for Job {job.job_number}')
             else:
                 messages.success(request, f'Worksheet created successfully for Job {job.job_number}')

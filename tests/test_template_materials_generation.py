@@ -107,3 +107,50 @@ class TemplateMaterialGenerationTests(TestCase):
         self.assertEqual(m.units, 'ea')
         self.assertEqual(m.unit_cost, Decimal('5.00'))
         self.assertEqual(m.sell_price, Decimal('8.00'))
+
+
+class WorksheetCreationTriggersTemplateMaterialsTests(TestCase):
+    """Regression: POST /api/est-worksheets/ with a template should generate
+    both tasks AND materials, not just tasks."""
+
+    @classmethod
+    def setUpTestData(cls):
+        Configuration.objects.create(key='units_list', value='["none","sheets","ea"]')
+        cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
+        cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
+        cls.pli = PriceListItem.objects.create(
+            code='PLI-1', units='sheets', description='Steel Sheet',
+            purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
+            accounting_category=cls.cat,
+        )
+        cls.job = Job.objects.create(
+            name='J', job_number='J-WCM', status=Job.STATUS_DRAFT, contact=cls.contact,
+        )
+        cls.wt = WorkTemplate.objects.create(template_name='T-WCM')
+        TemplateMaterial.objects.create(
+            work_template=cls.wt, price_list_item=cls.pli, quantity=Decimal('5'),
+        )
+
+    def test_api_create_worksheet_from_template_generates_materials(self):
+        from rest_framework.test import APIClient
+        from django.contrib.auth.models import Permission
+        from apps.core.models import User
+        user = User.objects.create_user(username='u-wcm', password='p')
+        user.user_permissions.add(Permission.objects.get(codename='can_manage_jobs'))
+        client = APIClient()
+        client.force_login(user)
+        resp = client.post(
+            '/api/est-worksheets/',
+            {'job': self.job.pk, 'template': self.wt.pk},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        ws_pk = resp.json()['est_worksheet_id']
+        ws = EstWorksheet.objects.get(pk=ws_pk)
+        # The template's PLI-linked TemplateMaterial should have generated a
+        # task-less PlanMaterial with units pulled from the PLI.
+        pms = list(PlanMaterial.objects.filter(est_worksheet=ws, plan_task__isnull=True))
+        self.assertEqual(len(pms), 1, f'Expected 1 task-less PlanMaterial, got {len(pms)}')
+        self.assertEqual(pms[0].price_list_item_id, self.pli.pk)
+        self.assertEqual(pms[0].units, 'sheets')
+        self.assertEqual(pms[0].quantity, Decimal('5'))
