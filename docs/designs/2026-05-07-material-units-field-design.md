@@ -547,6 +547,17 @@ and which order do you want?
 
 ## Follow-on items (surfaced during implementation / smoke testing)
 
+- **Simplify the edit affordances on real Materials.**
+  Surfaced during smoke testing on 2026-05-08: the row currently
+  exposes several overlapping controls — the edit modal (which on
+  PLI-linked Materials can only edit pricing), plus separate buttons
+  for Restock, Draw more, and Consume. Quantity changes have to go
+  through Restock/Draw-more (the modal had to disable quantity input
+  in edit mode to stop silently dropping the user's typed value), and
+  PLI-linked Materials have most of the modal disabled. A simpler
+  single-surface design would make the model clearer to the user.
+  Out of scope for this branch; flagged for a follow-on UX pass.
+
 - **`accounting_category` is optional on freeform Material creation.**
   Discovered during the post-implementation smoke test on 2026-05-08:
   the Add-Material form accepts a freeform Material without an
