@@ -547,6 +547,17 @@ and which order do you want?
 
 ## Follow-on items (surfaced during implementation / smoke testing)
 
+- **Legacy TaskTemplate add/edit Django forms still reference removed
+  direct fields.** `templates/jobs/add_task_template_standalone.html`
+  and `task_template_edit.html` bind to `form.units`, `form.rate`, and
+  `form.accounting_category` — fields that moved to RateScheme during
+  the rate-scheme refactor. The two display-only templates
+  (`work_template_detail.html`, `task_template_list.html`) were
+  patched in this branch to read through `task.rate_scheme.unit_label`
+  and `task.rate_scheme.rate`. The form-driven templates need a
+  bigger refactor (RateScheme picker instead of text inputs) and
+  are flagged for follow-on.
+
 - **TemplateMaterials should be attachable to TaskTemplates.**
   PlanMaterial already supports both `plan_task=None` (task-less,
   worksheet-level) and `plan_task=<PlanTask>` (task-attached). The
