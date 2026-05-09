@@ -168,7 +168,12 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
     @patch('apps.inventory.services.MaterialService.consume')
     def test_start_work_consumes_materials_on_first_start(self, mock_consume):
         from apps.inventory.models import Material
-        mat = Material.objects.create(job=self.job, task=self.task, description='Test Material')
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first()
+        mat = Material.objects.create(
+            job=self.job, task=self.task, description='Test Material',
+            accounting_category=cat,
+        )
         TaskLifecycleService.start_work(self.task.pk, self.user)
         mock_consume.assert_called_once_with(mat)
 

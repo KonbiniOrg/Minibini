@@ -140,7 +140,8 @@ class ConsumeMaterialTest(TestCase):
             job=self.job,
             task=self.task,
             description='Ad hoc material', quantity=Decimal('5.00'),
-            unit_cost=Decimal('10.00'))
+            unit_cost=Decimal('10.00'),
+            accounting_category=self.category)
         material.save()
 
         # Should not raise
@@ -252,7 +253,8 @@ class CompleteTaskAdjustmentTest(TestCase):
             job=self.job,
             task=self.task,
             description='Ad hoc', quantity=Decimal('5.00'),
-            unit_cost=Decimal('10.00'))
+            unit_cost=Decimal('10.00'),
+            accounting_category=self.category)
         material.save()
 
         # Should not raise

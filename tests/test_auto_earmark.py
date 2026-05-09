@@ -121,6 +121,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
             description='Custom brackets',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'),
             sell_price=Decimal('20.00'),
+            accounting_category=self.category,
         )
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)

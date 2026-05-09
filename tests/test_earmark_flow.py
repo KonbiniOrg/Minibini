@@ -143,6 +143,7 @@ class EarmarkPreviewTest(TestCase):
             job=self.job, task=self.task_a,
             description='Custom brackets',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
+            accounting_category=self.category,
         )
         preview = InventoryService.get_earmark_preview(self.job)
         self.assertEqual(len(preview), 0)

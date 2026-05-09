@@ -56,6 +56,7 @@ class MaterialCRUDTest(TestCase):
             quantity=2,
             unit_cost=Decimal('50.00'),
             sell_price=Decimal('100.00'),
+            accounting_category=self.category,
         )
 
     def test_list_materials(self):
@@ -78,7 +79,11 @@ class MaterialCRUDTest(TestCase):
     def test_create_material(self):
         response = self.client.post(
             f'/api/tasks/{self.task.pk}/materials/',
-            {'description': 'Epoxy glue', 'quantity': '1.00', 'unit_cost': '15.00', 'sell_price': '25.00'},
+            {
+                'description': 'Epoxy glue', 'quantity': '1.00',
+                'unit_cost': '15.00', 'sell_price': '25.00',
+                'accounting_category': self.category.pk,
+            },
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -90,7 +95,11 @@ class MaterialCRUDTest(TestCase):
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/tasks/{self.task.pk}/materials/',
-            {'description': 'Screws', 'quantity': '10.00', 'unit_cost': '0.50', 'sell_price': '1.00'},
+            {
+                'description': 'Screws', 'quantity': '10.00',
+                'unit_cost': '0.50', 'sell_price': '1.00',
+                'accounting_category': self.category.pk,
+            },
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -260,6 +269,9 @@ class TerminalTaskGuardTest(TestCase):
             job_number='TERM-001', name='Terminal Job', contact=self.contact,
         )
         self.scheme = _make_scheme('term')
+        self.category = AccountingCategory.objects.get_or_create(
+            code='TERM', defaults={'name': 'Term Cat'},
+        )[0]
 
     def _make_task(self, task_status):
         return Task.objects.create(
@@ -290,6 +302,7 @@ class TerminalTaskGuardTest(TestCase):
         mat = Material.objects.create(
             job=self.job, task=task, description='Existing', quantity=1,
             unit_cost=Decimal('5.00'), sell_price=Decimal('10.00'),
+            accounting_category=self.category,
         )
         response = self.client.patch(
             f'/api/tasks/{task.pk}/materials/{mat.pk}/',
@@ -303,6 +316,7 @@ class TerminalTaskGuardTest(TestCase):
         mat = Material.objects.create(
             job=self.job, task=task, description='Existing', quantity=1,
             unit_cost=Decimal('5.00'), sell_price=Decimal('10.00'),
+            accounting_category=self.category,
         )
         response = self.client.delete(
             f'/api/tasks/{task.pk}/materials/{mat.pk}/',
@@ -334,7 +348,7 @@ class TerminalTaskGuardTest(TestCase):
         task = self._make_task(Task.STATUS_IN_PROGRESS)
         response = self.client.post(
             f'/api/tasks/{task.pk}/materials/',
-            {'description': 'Yes', 'quantity': '1'},
+            {'description': 'Yes', 'quantity': '1', 'accounting_category': self.category.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201)

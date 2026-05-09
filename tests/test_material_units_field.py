@@ -55,7 +55,7 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
     def test_freeform_material_keeps_default_units(self):
         m = Material(
             job=self.job, price_list_item=None,
-            quantity=Decimal('1'),
+            quantity=Decimal('1'), accounting_category=self.cat,
         )
         m.save()
         self.assertEqual(m.units, 'none')
@@ -103,6 +103,7 @@ class MaterialSerializerUnitsTests(APITestCase):
         m = Material.objects.create(
             job=self.job, price_list_item=None,
             description='custom', quantity=Decimal('1'), units='ea',
+            accounting_category=self.cat,
         )
         resp = self.client.get(f'/api/materials/{m.pk}/')
         self.assertEqual(resp.json()['units'], 'ea')
@@ -121,12 +122,14 @@ class MaterialStrTests(TestCase):
     def test_material_str_includes_units_when_not_none(self):
         m = Material.objects.create(
             job=self.job, description='Steel', quantity=Decimal('5'), units='sheets',
+            accounting_category=self.cat,
         )
         self.assertEqual(str(m), 'Steel (qty: 5.00 sheets)')
 
     def test_material_str_omits_units_when_none(self):
         m = Material.objects.create(
             job=self.job, description='Misc', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
         self.assertEqual(str(m), 'Misc (qty: 1.00)')
 
@@ -135,6 +138,7 @@ class MaterialStrTests(TestCase):
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, description='Plan Steel',
             quantity=Decimal('3'), units='ea',
+            accounting_category=self.cat,
         )
         self.assertEqual(str(pm), 'Plan Steel (qty: 3.00 ea)')
 
@@ -143,5 +147,6 @@ class MaterialStrTests(TestCase):
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, description='Plan Misc',
             quantity=Decimal('2'),
+            accounting_category=self.cat,
         )
         self.assertEqual(str(pm), 'Plan Misc (qty: 2.00)')

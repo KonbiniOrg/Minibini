@@ -104,8 +104,7 @@ class MaterialBase(models.Model):
         null=True, blank=True,
     )
     accounting_category = models.ForeignKey(
-        'core.AccountingCategory', on_delete=models.SET_NULL,
-        null=True, blank=True,
+        'core.AccountingCategory', on_delete=models.PROTECT,
     )
 
     class Meta:
@@ -138,7 +137,7 @@ class MaterialBase(models.Model):
                 self.unit_cost = self.price_list_item.purchase_price
             if self.sell_price == Decimal('0.00'):
                 self.sell_price = self.price_list_item.selling_price
-            if not self.accounting_category:
+            if not self.accounting_category_id:
                 self.accounting_category = self.price_list_item.accounting_category
 
 

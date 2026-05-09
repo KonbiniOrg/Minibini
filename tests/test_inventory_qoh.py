@@ -132,6 +132,7 @@ class ConsumeMaterialTest(TestCase):
             quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'),
             sell_price=Decimal('20.00'),
+            accounting_category=self.category,
         )
         MaterialService.consume(material)
         self.plywood.refresh_from_db()
@@ -238,6 +239,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'),
             sell_price=Decimal('20.00'),
+            accounting_category=self.category,
         )
         InventoryService.complete_task_adjustment(material, actual_qty=Decimal('3.00'))
         self.plywood.refresh_from_db()

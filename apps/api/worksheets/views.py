@@ -156,14 +156,17 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         EXCLUDE_FROM_CREATE = {'plan_task', 'propagate_to_pli'}
         kwargs = {k: v for k, v in serializer.validated_data.items()
                   if k not in EXCLUDE_FROM_CREATE}
-        if plan_task is not None:
-            kwargs['plan_task'] = plan_task
-            from apps.inventory.models import PlanMaterial
-            mat = PlanMaterial(est_worksheet=worksheet, **kwargs)
-            mat.save()
-        else:
-            from apps.inventory.services import InventoryService
-            mat = InventoryService.create_plan_material_on_worksheet(worksheet, **kwargs)
+        try:
+            if plan_task is not None:
+                kwargs['plan_task'] = plan_task
+                from apps.inventory.models import PlanMaterial
+                mat = PlanMaterial(est_worksheet=worksheet, **kwargs)
+                mat.save()
+            else:
+                from apps.inventory.services import InventoryService
+                mat = InventoryService.create_plan_material_on_worksheet(worksheet, **kwargs)
+        except ValidationError as e:
+            return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
         out = PlanMaterialWriteSerializer(mat)
         return Response(out.data, status=status.HTTP_201_CREATED)
 

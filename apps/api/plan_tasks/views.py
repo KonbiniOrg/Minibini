@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status
 from rest_framework.exceptions import MethodNotAllowed, NotFound
 from rest_framework.mixins import RetrieveModelMixin, ListModelMixin, CreateModelMixin
@@ -64,6 +65,8 @@ class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         except ServiceError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             PlanMaterialSerializer(mat).data,
             status=status.HTTP_201_CREATED,

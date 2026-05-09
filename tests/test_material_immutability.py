@@ -88,6 +88,7 @@ class MaterialImmutabilityTests(_Setup):
         m = Material.objects.create(
             job=self.job, price_list_item=None,
             description='start', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -102,6 +103,7 @@ class MaterialImmutabilityTests(_Setup):
         m = Material.objects.create(
             job=self.job, price_list_item=None,
             description='x', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -146,6 +148,7 @@ class PlanMaterialImmutabilityTests(_Setup):
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, price_list_item=None,
             description='loose', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
         resp = self.client.patch(
             f'/api/est-worksheets/{ws.pk}/plan-materials/{pm.pk}/',
@@ -179,6 +182,7 @@ class PropagateFlagOnFreeformAndPostPathsTests(_Setup):
         m = Material.objects.create(
             job=self.job, price_list_item=None,
             description='start', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',

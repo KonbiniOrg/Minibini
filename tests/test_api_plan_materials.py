@@ -45,6 +45,7 @@ class PlanMaterialsApiTest(APITestCase):
             'quantity': '5',
             'unit_cost': '1.50',
             'sell_price': '2.00',
+            'accounting_category': self.cat.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
         mat = PlanMaterial.objects.get(pk=resp.data['plan_material_id'])
@@ -59,6 +60,7 @@ class PlanMaterialsApiTest(APITestCase):
             'description': 'task bolt',
             'quantity': '3',
             'plan_task': self.plan_task.pk,
+            'accounting_category': self.cat.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
         mat = PlanMaterial.objects.get(pk=resp.data['plan_material_id'])
@@ -69,9 +71,11 @@ class PlanMaterialsApiTest(APITestCase):
         """GET plan-materials returns both task-level and worksheet-level items."""
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=None, description='loose',
+            accounting_category=self.cat,
         )
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=self.plan_task, description='task-attached',
+            accounting_category=self.cat,
         )
         url = f'/api/est-worksheets/{self.worksheet.pk}/plan-materials/'
         resp = self.client.get(url)
@@ -82,6 +86,7 @@ class PlanMaterialsApiTest(APITestCase):
         """PATCH plan-materials/{id}/ updates the material."""
         mat = PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=None, description='old desc',
+            accounting_category=self.cat,
         )
         url = f'/api/est-worksheets/{self.worksheet.pk}/plan-materials/{mat.pk}/'
         resp = self.client.patch(url, {'description': 'new desc'}, format='json')
@@ -93,6 +98,7 @@ class PlanMaterialsApiTest(APITestCase):
         """DELETE plan-materials/{id}/ removes the material."""
         mat = PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=None, description='to delete',
+            accounting_category=self.cat,
         )
         url = f'/api/est-worksheets/{self.worksheet.pk}/plan-materials/{mat.pk}/'
         resp = self.client.delete(url)

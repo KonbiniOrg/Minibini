@@ -45,10 +45,12 @@ class PurchaseOrderAPITest(BaseTestCase):
         """POs can be filtered by job via line item linkage (Material.po_line_item)."""
         from decimal import Decimal
         from apps.contacts.models import Business
+        from apps.core.models import AccountingCategory
         from apps.jobs.models import Job
         from apps.purchasing.services import PurchaseOrderService
         business = Business.objects.first()
         job = Job.objects.first()
+        cat = AccountingCategory.objects.first()
 
         po = PurchaseOrder.objects.create(
             business=business,
@@ -60,6 +62,7 @@ class PurchaseOrderAPITest(BaseTestCase):
             qty=Decimal('1'),
             price=Decimal('100'),
             job=job.pk,
+            accounting_category=cat,
         )
         po2 = PurchaseOrder.objects.create(
             business=business,

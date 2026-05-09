@@ -54,6 +54,7 @@ class PlanTaskAPITest(TestCase):
             quantity=6,
             unit_cost=5,
             sell_price=10,
+            accounting_category=self.cat,
         )
         response = self.client.get(f'/api/plan-tasks/{self.plan_task.pk}/')
         self.assertEqual(response.status_code, 200)
@@ -121,6 +122,7 @@ class WorksheetNestedPlanTaskTest(TestCase):
             quantity=10,
             unit_cost=3,
             sell_price=5,
+            accounting_category=self.cat,
         )
         response = self.client.get(
             f'/api/est-worksheets/{self.worksheet.pk}/tasks/'

@@ -30,12 +30,16 @@ class ExpenseService:
                 price = new_material.get('price')
                 if price is None:
                     price = amount
+                # For PLI-linked materials, _populate_from_pli fills the category.
+                # For freeform (no PLI), inherit the expense's accounting_category.
+                mat_category = None if pli else accounting_category
                 material = MaterialService.create_on_job(
                     job=job, task=None,
                     description=new_material.get('description', description),
                     quantity=qty,
                     unit_cost=price,
                     price_list_item=pli,
+                    accounting_category=mat_category,
                 )
                 if pli and pli.is_inventoried:
                     InventoryService.receive_ad_hoc_purchase(material)

@@ -17,10 +17,10 @@ class MaterialLinkToPOLineTest(TestCase):
         self.business = Business.objects.create(business_name='B', default_contact=c)
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
-        cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
+        self.cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
         self.pli = PriceListItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
-            selling_price=Decimal('2.00'), accounting_category=cat,
+            selling_price=Decimal('2.00'), accounting_category=self.cat,
         )
         po = PurchaseOrder.objects.create(business=self.business)
         self.line = PurchaseOrderLineItem.objects.create(
@@ -28,7 +28,7 @@ class MaterialLinkToPOLineTest(TestCase):
         )
 
     def _make_material(self, **kwargs):
-        defaults = dict(job=self.job, quantity=Decimal('5.00'))
+        defaults = dict(job=self.job, quantity=Decimal('5.00'), accounting_category=self.cat)
         defaults.update(kwargs)
         return Material.objects.create(**defaults)
 

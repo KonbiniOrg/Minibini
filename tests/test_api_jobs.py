@@ -464,6 +464,7 @@ class JobCopyFromWorksheetTest(TestCase):
             plan_task=self.plan_task,
             description='Plywood sheet',
             quantity=2, unit_cost=40, sell_price=60,
+            accounting_category=ac,
         )
 
     def test_copy_from_worksheet_success(self):

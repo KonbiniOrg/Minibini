@@ -32,6 +32,7 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
             est_worksheet=ws, plan_task=None,
             description='loose', quantity=Decimal('5'), units='lbs',
             unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
+            accounting_category=self.cat,
         )
         self.assertEqual(EstimateWizardService._atom_units(pm), 'lbs')
 
@@ -54,6 +55,7 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
             est_worksheet=ws, plan_task=None,
             description='loose', quantity=Decimal('5'), units='lbs',
             unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
+            accounting_category=self.cat,
         )
         result = EstimateWizardService.send_all_atoms_to_estimate(ws)
         self.assertEqual(result['created_count'], 1)
@@ -88,6 +90,7 @@ class SendAllAtomsCarriesQtyAndPriceTests(TestCase):
             est_worksheet=ws, plan_task=None,
             description='loose', quantity=Decimal('5'), units='lbs',
             unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
+            accounting_category=self.cat,
         )
         result = EstimateWizardService.send_all_atoms_to_estimate(ws)
         li = EstimateLineItem.objects.get(estimate=result['estimate'])

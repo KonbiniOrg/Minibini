@@ -3,6 +3,7 @@ from rest_framework import serializers
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
+from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
 
 
@@ -24,6 +25,11 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
     units = UnitsField(required=False)
     propagate_to_pli = serializers.BooleanField(
         write_only=True, required=False,
+    )
+    accounting_category = serializers.PrimaryKeyRelatedField(
+        queryset=AccountingCategory.objects.all(),
+        required=False,
+        allow_null=True,
     )
 
     class Meta:

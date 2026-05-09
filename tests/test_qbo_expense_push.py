@@ -630,7 +630,7 @@ class SFMOMAIntegrationTest(TestCase):
         )
         existing_material = Material.objects.create(
             job=self.job, task=existing_task, description='Acrylic paint 1gal',
-            quantity=2,
+            quantity=2, accounting_category=self.cat,
         )
 
         # Submit an expense linked to the existing material

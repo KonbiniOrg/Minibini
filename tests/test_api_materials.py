@@ -32,6 +32,7 @@ class MaterialApiTest(APITestCase):
             'description': 'custom item',
             'quantity': '1',
             'units': 'lbs',
+            'accounting_category': self.cat.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
         m = Material.objects.get(job=self.job, description='custom item')
@@ -81,6 +82,7 @@ class MaterialApiTest(APITestCase):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='del-me',
             quantity=Decimal('1'), price_list_item=None,
+            accounting_category=self.cat,
         )
         resp = self.client.delete(f'/api/materials/{m.pk}/')
         self.assertEqual(resp.status_code, 405, resp.content)
@@ -127,6 +129,7 @@ class MaterialInventoriedFlagSerializerTest(APITestCase):
         return MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('1'), price_list_item=pli,
+            accounting_category=self.cat if pli is None else None,
         )
 
     def test_flag_true_for_inventoried_pli(self):
@@ -188,6 +191,7 @@ class MaterialAssignTaskApiTest(APITestCase):
         return MaterialService.create_on_job(
             job=self.job, task=task, description='x',
             quantity=Decimal('1'), price_list_item=None,
+            accounting_category=self.cat,
         )
 
     def test_assign_taskless_material_to_task(self):
@@ -252,6 +256,7 @@ class MaterialApiPermissionTest(APITestCase):
         url = f'/api/jobs/{self.job.pk}/materials/'
         resp = self.client.post(url, {
             'description': 'worker item', 'quantity': '1',
+            'accounting_category': self.cat.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
 

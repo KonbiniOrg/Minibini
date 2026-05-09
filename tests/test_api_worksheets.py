@@ -1,6 +1,6 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, AccountingCategory
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial
 from apps.jobs.models import Job, PlanTask, RateScheme
@@ -55,9 +55,11 @@ class WorksheetAPITest(BaseTestCase):
         """The detail serializer exposes materials with no plan_task as taskless_materials."""
         job = Job.objects.first()
         ws = EstWorksheet.objects.create(job=job)
+        cat = AccountingCategory.objects.first()
         PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=None,
             description='Shop supplies', quantity=1, unit_cost=15, sell_price=25,
+            accounting_category=cat,
         )
         rate_scheme = RateScheme.objects.first()
         plan_task = PlanTask.objects.create(
@@ -67,6 +69,7 @@ class WorksheetAPITest(BaseTestCase):
         PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=plan_task,
             description='6061 stock', quantity=6, unit_cost=8, sell_price=12,
+            accounting_category=cat,
         )
         response = self.client.get(f'/api/est-worksheets/{ws.pk}/')
         self.assertEqual(response.status_code, 200)

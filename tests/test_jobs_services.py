@@ -214,7 +214,7 @@ class MaterialServiceTest(JobsTestBase):
         mat = InventoryService.create_plan_material(
             self.plan_task.pk, description='Steel plate',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'),
-            sell_price=Decimal('15.00'),
+            sell_price=Decimal('15.00'), accounting_category=self.lit,
         )
         self.assertIsNotNone(mat.pk)
         self.assertEqual(mat.plan_task, self.plan_task)
@@ -224,6 +224,7 @@ class MaterialServiceTest(JobsTestBase):
         mat = PlanMaterial.objects.create(
             est_worksheet=self.worksheet,
             plan_task=self.plan_task, description='Old', quantity=Decimal('1.00'),
+            accounting_category=self.lit,
         )
         updated = InventoryService.update_plan_material(
             mat.pk, description='New', quantity=Decimal('3.00'),
@@ -235,6 +236,7 @@ class MaterialServiceTest(JobsTestBase):
         mat = PlanMaterial.objects.create(
             est_worksheet=self.worksheet,
             plan_task=self.plan_task, description='Delete me', quantity=Decimal('1.00'),
+            accounting_category=self.lit,
         )
         pk = mat.pk
         InventoryService.delete_plan_material(pk)
@@ -449,11 +451,13 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=plan_task,
             description='task-attached', quantity=Decimal('5'),
-            units='lbs', unit_cost=Decimal('2.00'), sell_price=Decimal('3.00'))
+            units='lbs', unit_cost=Decimal('2.00'), sell_price=Decimal('3.00'),
+            accounting_category=self.lit)
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=None,
             description='task-less', quantity=Decimal('2'),
-            units='ea', unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'))
+            units='ea', unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
+            accounting_category=self.lit)
 
         new_job = JobService.create_job(name='Copy Target', contact=self.contact)
         JobService.copy_from_worksheet(new_job.pk, self.worksheet.pk)

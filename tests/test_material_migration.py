@@ -109,6 +109,7 @@ class BackfillMaterialJobTest(TestCase):
         m = Material.objects.create(
             job=self.job, task=self.task_pending,
             description='x', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
         Material.objects.filter(pk=m.pk).update(consumption_state='na')
         _backfill()
@@ -128,6 +129,7 @@ class BackfillMaterialJobTest(TestCase):
         m = Material.objects.create(
             job=self.job, task=self.task_pending,
             description='x', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
         original_job_pk = self.job.pk
         with connection.cursor() as cur:
@@ -205,6 +207,7 @@ class BackfillPlaceholderTaskCleanupTest(TestCase):
         m = Material.objects.create(
             job=self.job, task=placeholder,
             description='exp mat', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
         Expense.objects.create(
             entered_by=self.user, amount=Decimal('5'),
@@ -230,6 +233,7 @@ class BackfillPlaceholderTaskCleanupTest(TestCase):
         m = Material.objects.create(
             job=self.job, task=placeholder,
             description='exp mat', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
         Expense.objects.create(
             entered_by=self.user, amount=Decimal('5'),
