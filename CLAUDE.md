@@ -37,7 +37,20 @@ docker compose up                       # Full stack (app, mysql, nginx)
 ./scripts/seed_data.sh                  # Seed realistic data via API (requires dev server running)
 ```
 
-**CRITICAL:** NEVER run `python manage.py migrate` - only the human user applies migrations to the development database. Creating migrations with `makemigrations` is fine; tests create their own test database automatically.
+**CRITICAL — never write to the dev database.** Only the human user is allowed to mutate the dev DB. Specifically:
+
+- Never run `python manage.py migrate`. Creating migrations with `makemigrations` is fine; tests create their own test database automatically.
+- Never run `python manage.py shell` (or `shell_plus`) and execute ORM writes — `Model.objects.create(...)`, `.save()`, `.delete()`, etc. all commit to the dev DB.
+- Never run `python -c "import django; django.setup(); ..."` followed by ORM writes for the same reason.
+- Never run `python manage.py loaddata` against the dev DB.
+- Never connect to the DB directly via `mysql` / `psql` / a Python DB driver and execute writes.
+- Never run scripts in the repo (`scripts/seed_data.sh`, anything in `apps/core/management/commands/`) that mutate the DB.
+
+If you need to verify model behavior, write a test and run `python manage.py test` (which uses a separate test DB and tears it down). If you need to see the current state of dev data, ask the user to run the query themselves and paste the result.
+
+**Read-only dev DB access via SQL is OK** for diagnostics (e.g. `mysql ... -e "SELECT ..."`) but never write SQL.
+
+Subagents inherit this rule. When dispatching a subagent, repeat the rule in the prompt if the task involves any DB-related work — subagents tend to "verify" model definitions by spinning up a shell, which writes data.
 
 ## Architecture
 
