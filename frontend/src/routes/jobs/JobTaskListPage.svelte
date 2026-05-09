@@ -208,15 +208,12 @@
     materialModalOpen = true;
   }
 
-  async function handleEditMaterialDescription(material, _task) {
-    const next = window.prompt('Edit description:', material.description || '');
-    if (next === null) return;
-    try {
-      await api.patch(`/api/materials/${material.material_id}/`, { description: next });
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not edit description.');
-    }
+  function openEditMaterial(material, task) {
+    materialModalMaterial = material;
+    materialModalTaskId = task ? task.task_id : null;
+    materialModalJobId = task ? null : job.job_id;
+    materialModalMode = 'edit';
+    materialModalOpen = true;
   }
 
   async function handleConsumeMaterial(material, _task) {
@@ -362,7 +359,7 @@
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onAddMaterial={openAddMaterial}
-    onEditMaterial={handleEditMaterialDescription}
+    onEditMaterial={openEditMaterial}
     onConsumeMaterial={handleConsumeMaterial}
     onRestockMaterial={handleRestockMaterial}
     onDrawMoreMaterial={handleDrawMoreMaterial}

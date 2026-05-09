@@ -211,7 +211,7 @@
               {#if !mat.is_expense_bound}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, task)}>draw more</button>
               {/if}
-              <button type="button" onclick={() => onEditMaterial(mat, task)}>edit desc</button>
+              <button type="button" onclick={() => onEditMaterial(mat, task)}>edit</button>
               <button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>
             </td>
           {:else if !readonly}
@@ -278,7 +278,7 @@
                 {#if !mat.is_expense_bound}
                   <button type="button" onclick={() => onDrawMoreMaterial(mat, sub)}>draw more</button>
                 {/if}
-                <button type="button" onclick={() => onEditMaterial(mat, sub)}>edit desc</button>
+                <button type="button" onclick={() => onEditMaterial(mat, sub)}>edit</button>
                 <button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>
               </td>
             {:else if !readonly}
@@ -316,7 +316,7 @@
               {#if !mat.is_expense_bound}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, null)}>draw more</button>
               {/if}
-              <button type="button" onclick={() => onEditMaterial(mat, null)}>edit desc</button>
+              <button type="button" onclick={() => onEditMaterial(mat, null)}>edit</button>
             </td>
           {:else if !readonly}
             <td class="actions-cell"></td>
