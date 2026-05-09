@@ -194,6 +194,58 @@ class TemplateMaterial(MaterialBase):
         super().save(*args, **kwargs)
 
 
+class TemplateMaterialAssociation(models.Model):
+    """A reusable PriceListItem associated with a WorkTemplate.
+
+    Replaces the old TemplateMaterial model: PLI is already the catalog of
+    reusable materials, so a TemplateMaterial-as-separate-catalog was
+    redundant. This model just pins which PLI belongs to which WorkTemplate
+    (with quantity), optionally pairing to a TemplateTaskAssociation so the
+    generated PlanMaterial/Material attaches to the corresponding generated
+    PlanTask/Task.
+
+    Generation semantics: for `quantity` instances of the parent WorkTemplate,
+    each instance gets one PlanMaterial/Material per association, attached
+    to the same-instance PlanTask/Task when `template_task_association` is set.
+    """
+    template_material_association_id = models.AutoField(primary_key=True)
+    work_template = models.ForeignKey(
+        'estimates.WorkTemplate', on_delete=models.CASCADE,
+        related_name='material_associations',
+    )
+    price_list_item = models.ForeignKey(
+        'PriceListItem', on_delete=models.PROTECT,
+    )
+    template_task_association = models.ForeignKey(
+        'estimates.TemplateTaskAssociation',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='material_associations',
+        help_text='If set, generated material attaches to the corresponding '
+                  'generated PlanTask/Task.',
+    )
+    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = 'template_material_assoc'
+        ordering = ['sort_order']
+
+    def __str__(self):
+        return f'{self.work_template.template_name} → {self.price_list_item.code} (qty {self.quantity})'
+
+    def clean(self):
+        super().clean()
+        if (
+            self.template_task_association_id is not None
+            and self.template_task_association.work_template_id != self.work_template_id
+        ):
+            from django.core.exceptions import ValidationError
+            raise ValidationError(
+                'template_task_association.work_template must match work_template'
+            )
+
+
 class Material(MaterialBase):
     """Actual material on a Job; optionally attached to a Task. Participates in earmark/QOH flows."""
     CONSUMPTION_STATE_PENDING = 'pending'
