@@ -178,8 +178,11 @@
 
       <p>
         <label><strong>Quantity</strong><br>
-          <input type="number" step="0.01" bind:value={quantity}>
+          <input type="number" step="0.01" bind:value={quantity} disabled={mode === 'edit' && pliLocked}>
         </label>
+        {#if mode === 'edit' && pliLocked}
+          <small style="color:#666;">PLI-linked — quantity can only be set at create time.</small>
+        {/if}
       </p>
 
       <p>

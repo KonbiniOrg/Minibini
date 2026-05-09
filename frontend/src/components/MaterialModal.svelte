@@ -177,8 +177,11 @@
 
       <p>
         <label><strong>Quantity</strong><br>
-          <input type="number" step="0.01" bind:value={quantity}>
+          <input type="number" step="0.01" bind:value={quantity} disabled={mode === 'edit'}>
         </label>
+        {#if mode === 'edit'}
+          <small style="color:#666;">To change quantity, use Restock or Draw more on the row.</small>
+        {/if}
       </p>
 
       <p>
