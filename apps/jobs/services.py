@@ -288,16 +288,8 @@ class JobService:
         job.template = template
         job.save(update_fields=['template'])
 
-        from apps.estimates.models import TemplateTaskAssociation
-        associations = TemplateTaskAssociation.objects.filter(
-            work_template=template,
-            task_template__is_active=True,
-        ).order_by('sort_order', 'task_template__template_name')
-
-        for association in associations:
-            association.task_template.generate_task(job, association.est_qty)
-
-        template.generate_materials_for_job(job, quantity=1)
+        task_pairing = template.generate_tasks_for_job(job)
+        template.generate_materials_for_job(job, task_pairing=task_pairing)
 
         from apps.inventory.services import InventoryService
         InventoryService.create_earmarks_for_job(job)
