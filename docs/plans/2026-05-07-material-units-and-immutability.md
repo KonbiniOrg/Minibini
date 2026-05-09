@@ -4,7 +4,9 @@
 
 **Goal:** Add a `units` field to `MaterialBase` (propagating to `Material`, `PlanMaterial`, `TemplateMaterial`); enforce that PLI-linked rows are immutable except for `unit_cost`/`sell_price`; add an optional `propagate_to_pli` flag on pricing PATCHes; and refactor `WorkTemplate.generate_materials_for_*` so PLI-linked TemplateMaterials pull pricing fresh from the current PLI instead of carrying stale snapshots.
 
-**Architecture:** Schema change is one additive migration on the three `materials*` tables. The immutability rule is enforced at the API serializer layer (no model `clean()` defence-in-depth — keep it simple). The pricing carve-out lives in a dedicated `MaterialService.update_pricing` service method that handles the `propagate_to_pli` flag in a single atomic transaction. TemplateMaterial generation branches on `tm.price_list_item_id` so PLI-linked rows let `_populate_from_pli` pull current PLI values.
+**Scope expansion (2026-05-09 during smoke testing):** Phase 9 and Phase 10 were added after the original 14-task plan, addressing two gaps surfaced during smoke testing. Phase 9 drops the redundant `TemplateMaterial` model in favour of a `TemplateMaterialAssociation` join table that links a WorkTemplate to a PriceListItem (with optional task pairing via `TemplateTaskAssociation`). Phase 10 makes `accounting_category` required on `Material` and `PlanMaterial`.
+
+**Architecture:** Schema change is one additive migration on the three `materials*` tables. The immutability rule is enforced at the API serializer layer (no model `clean()` defence-in-depth — keep it simple). The pricing carve-out lives in a dedicated `MaterialService.update_pricing` service method that handles the `propagate_to_pli` flag in a single atomic transaction. TemplateMaterial generation branches on `tm.price_list_item_id` so PLI-linked rows let `_populate_from_pli` pull current PLI values. (Phase 9 then replaces the entire TemplateMaterial path with TemplateMaterialAssociation, which only ever links to a PLI — no branch needed because freeform-at-template is no longer supported.)
 
 **Tech Stack:** Django 5.2, DRF, MySQL, Python 3.12, Svelte 5 (Vite SPA).
 
@@ -2119,10 +2121,1142 @@ If everything matched the design, no commit needed.
 
 ---
 
+## Phase 9 — TemplateMaterial → TemplateMaterialAssociation refactor
+
+**Scope expansion (added 2026-05-09 during smoke testing).** PLI is already the catalog of reusable materials; `TemplateMaterial` as a separate model is redundant. Drop `TemplateMaterial` entirely; replace with `TemplateMaterialAssociation` — a join table between `WorkTemplate` and `PriceListItem`, with an optional FK to `TemplateTaskAssociation` so generated PlanMaterial/Material rows attach to the matching generated PlanTask/Task.
+
+**The big simplification:** freeform TemplateMaterials are no longer supported. If a template is going to use a material, that material must exist in the PLI catalog. Worksheet- and Job-level freeform Materials still work as before for ad-hoc cases.
+
+**Pairing semantics** (per design doc):
+- Each `TemplateMaterialAssociation` may optionally point at a `TemplateTaskAssociation`.
+- For multi-instance generation (`quantity > 1`), each instance gets its own copy of the materials, paired one-to-one with the same instance's tasks. (Multi-instance UI is deferred per the follow-on note in the design doc; the generation API stays correct for any N.)
+
+### Task 15: New `TemplateMaterialAssociation` model + data migration
+
+**Files:**
+- Modify: `apps/inventory/models.py` — add `TemplateMaterialAssociation`. (Don't drop `TemplateMaterial` yet.)
+- Create: a new migration in `apps/inventory/migrations/` (auto-generated).
+- Create: a `RunPython` data migration that converts existing `TemplateMaterial` rows.
+- Create: `tests/test_template_material_association_model.py` for the new model.
+
+#### Step 1: Failing test — model exists with correct shape
+
+```python
+# tests/test_template_material_association_model.py
+from decimal import Decimal
+from django.test import TestCase
+from apps.inventory.models import (
+    PriceListItem, TemplateMaterialAssociation,
+)
+from apps.estimates.models import (
+    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+)
+from apps.core.models import AccountingCategory
+from apps.jobs.models import RateScheme
+
+
+class TemplateMaterialAssociationModelTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.cat = AccountingCategory.objects.create(code='C', name='Cat')
+        cls.scheme = RateScheme.objects.create(
+            name='Hourly', rate=Decimal('50'), unit_label='hour',
+            accounting_category=cls.cat,
+        )
+        cls.pli = PriceListItem.objects.create(
+            code='PLI-A', units='sheets', description='X',
+            purchase_price=Decimal('10'), selling_price=Decimal('20'),
+            accounting_category=cls.cat,
+        )
+        cls.wt = WorkTemplate.objects.create(template_name='WT')
+        cls.tt = TaskTemplate.objects.create(
+            template_name='TT', rate_scheme=cls.scheme,
+            default_billable_qty=Decimal('1'),
+        )
+        cls.tta = TemplateTaskAssociation.objects.create(
+            work_template=cls.wt, task_template=cls.tt,
+            est_qty=Decimal('1'), sort_order=0,
+        )
+
+    def test_minimal_creation_no_task_pairing(self):
+        a = TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('5'),
+        )
+        self.assertIsNone(a.template_task_association)
+        self.assertEqual(a.sort_order, 0)
+
+    def test_creation_with_task_pairing(self):
+        a = TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            template_task_association=self.tta,
+            quantity=Decimal('5'),
+        )
+        self.assertEqual(a.template_task_association_id, self.tta.pk)
+
+    def test_work_template_related_name(self):
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        self.assertEqual(self.wt.material_associations.count(), 1)
+
+    def test_template_task_association_related_name(self):
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            template_task_association=self.tta, quantity=Decimal('1'),
+        )
+        self.assertEqual(self.tta.material_associations.count(), 1)
+```
+
+- [ ] **Step 2: Run test, expect failure**
+
+```bash
+python manage.py test tests.test_template_material_association_model -v 2
+```
+
+Expected: `ImportError: cannot import name 'TemplateMaterialAssociation' from 'apps.inventory.models'`.
+
+- [ ] **Step 3: Add the model to `apps/inventory/models.py`**
+
+```python
+class TemplateMaterialAssociation(models.Model):
+    """A reusable PriceListItem associated with a WorkTemplate.
+
+    Replaces the old TemplateMaterial model: PLI is already the catalog of
+    reusable materials, so a TemplateMaterial-as-separate-catalog was
+    redundant. This model just pins which PLI belongs to which WorkTemplate
+    (with quantity), optionally pairing to a TemplateTaskAssociation so the
+    generated PlanMaterial/Material attaches to the corresponding generated
+    PlanTask/Task.
+
+    Generation semantics: for `quantity` instances of the parent WorkTemplate,
+    each instance gets one PlanMaterial/Material per association, attached
+    to the same-instance PlanTask/Task when `template_task_association` is set.
+    """
+    template_material_association_id = models.AutoField(primary_key=True)
+    work_template = models.ForeignKey(
+        'estimates.WorkTemplate', on_delete=models.CASCADE,
+        related_name='material_associations',
+    )
+    price_list_item = models.ForeignKey(
+        'PriceListItem', on_delete=models.PROTECT,
+    )
+    template_task_association = models.ForeignKey(
+        'estimates.TemplateTaskAssociation',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='material_associations',
+        help_text='If set, generated material attaches to the corresponding '
+                  'generated PlanTask/Task.',
+    )
+    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = 'template_material_assoc'
+        ordering = ['sort_order']
+
+    def __str__(self):
+        return f'{self.work_template.template_name} → {self.price_list_item.code} (qty {self.quantity})'
+
+    def clean(self):
+        super().clean()
+        if (
+            self.template_task_association_id is not None
+            and self.template_task_association.work_template_id != self.work_template_id
+        ):
+            from django.core.exceptions import ValidationError
+            raise ValidationError(
+                'template_task_association.work_template must match work_template'
+            )
+```
+
+- [ ] **Step 4: Generate the schema migration**
+
+```bash
+python manage.py makemigrations inventory
+```
+
+Expected: a new migration file with `CreateModel` for `TemplateMaterialAssociation`. Read the file to verify.
+
+- [ ] **Step 5: Run model tests, expect PASS**
+
+```bash
+python manage.py test tests.test_template_material_association_model -v 2
+```
+
+Expected: 4/4 PASS.
+
+- [ ] **Step 6: Write failing test for the data migration**
+
+Add to `tests/test_template_material_association_model.py`:
+
+```python
+class DataMigrationFromOldTemplateMaterialTests(TestCase):
+    """Verifies the RunPython data migration converts existing TemplateMaterial
+    rows to TemplateMaterialAssociation rows."""
+
+    def test_pli_linked_template_materials_converted(self):
+        # We can't run a migration mid-test, but we can verify the post-migration
+        # state by creating a TemplateMaterial and a parallel association and
+        # confirming they describe the same generation outcome.
+        # The actual RunPython logic is tested via Django's migration test framework.
+        pass  # Placeholder; the data migration test happens at migration runtime.
+```
+
+(The data migration's correctness is verified by the migration's own RunPython logic raising on freeform rows. We'll add an end-to-end test via fixtures in Step 8.)
+
+- [ ] **Step 7: Write the data migration**
+
+Create a new migration file (e.g. `apps/inventory/migrations/00XX_backfill_template_material_assoc.py`) right after the schema migration:
+
+```python
+from django.db import migrations
+
+
+def backfill(apps, schema_editor):
+    TemplateMaterial = apps.get_model('inventory', 'TemplateMaterial')
+    TemplateMaterialAssociation = apps.get_model('inventory', 'TemplateMaterialAssociation')
+
+    # Halt with a clear error if any freeform TemplateMaterials exist —
+    # the new design only supports PLI-linked materials at the template level.
+    freeforms = TemplateMaterial.objects.filter(price_list_item__isnull=True)
+    if freeforms.exists():
+        ids = list(freeforms.values_list('template_material_id', flat=True))
+        raise RuntimeError(
+            f'Cannot migrate: {len(ids)} freeform TemplateMaterial(s) found '
+            f'(IDs: {ids}). The new design requires every template-level '
+            f'material to link to a PriceListItem. Convert these to PLIs '
+            f'(or delete them) before re-running this migration.'
+        )
+
+    for tm in TemplateMaterial.objects.all():
+        TemplateMaterialAssociation.objects.create(
+            work_template_id=tm.work_template_id,
+            price_list_item_id=tm.price_list_item_id,
+            quantity=tm.quantity,
+            sort_order=tm.sort_order,
+        )
+
+
+def reverse_backfill(apps, schema_editor):
+    # Best-effort reverse: rebuild TemplateMaterials from associations.
+    # Some original fields (description, units, unit_cost, sell_price,
+    # accounting_category) get default values since they were never carried
+    # forward. This is acceptable since we only reverse pre-production data.
+    from decimal import Decimal
+    TemplateMaterial = apps.get_model('inventory', 'TemplateMaterial')
+    TemplateMaterialAssociation = apps.get_model('inventory', 'TemplateMaterialAssociation')
+
+    for a in TemplateMaterialAssociation.objects.all():
+        TemplateMaterial.objects.create(
+            work_template_id=a.work_template_id,
+            price_list_item_id=a.price_list_item_id,
+            quantity=a.quantity,
+            sort_order=a.sort_order,
+            description='',
+            units='none',
+            unit_cost=Decimal('0.00'),
+            sell_price=Decimal('0.00'),
+        )
+
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ('inventory', '00XX_create_template_material_association'),  # the schema migration from Step 4
+    ]
+    operations = [
+        migrations.RunPython(backfill, reverse_backfill),
+    ]
+```
+
+Replace the dependency name with the actual filename from Step 4.
+
+- [ ] **Step 8: Run all tests; expect PASS**
+
+```bash
+python manage.py test tests.test_template_material_association_model tests.test_template_materials_generation tests.test_material_units_field -v 2
+```
+
+Existing TemplateMaterial-using tests still work (the model still exists). Phase 9's later tasks update them to use the new model.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add apps/inventory/models.py apps/inventory/migrations/ tests/test_template_material_association_model.py
+git commit -m "$(cat <<'EOF'
+feat: add TemplateMaterialAssociation model + data migration
+
+Replaces TemplateMaterial-as-catalog with a join table between
+WorkTemplate and PriceListItem, with an optional FK to
+TemplateTaskAssociation for per-task pairing.
+
+Data migration backfills existing PLI-linked TemplateMaterials into
+TemplateMaterialAssociation rows. Freeform TemplateMaterials (no PLI
+link) are not supported by the new design; the migration halts with
+a clear error if any are found, requiring manual cleanup before
+re-running.
+
+The TemplateMaterial model itself is not yet dropped — Tasks 16 and
+17 update generation logic and the API surface, then Task 17 drops
+the old model.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+### Task 16: Refactor generation logic to use TemplateMaterialAssociation with task pairing
+
+**Files:**
+- Modify: `apps/estimates/models.py` — `generate_tasks_for_worksheet`, `generate_materials_for_worksheet`, `generate_materials_for_job` on `WorkTemplate`.
+- Modify: `apps/api/worksheets/views.py` and `apps/estimates/views.py` — capture the task pairing map from `generate_tasks_for_worksheet` and pass it to `generate_materials_for_worksheet`.
+- Modify: `apps/jobs/services.py` — same pattern for `generate_materials_for_job`.
+- Modify: `tests/test_template_materials_generation.py` — rewrite tests against the new model.
+
+#### Step 1: Failing tests for the new generation behavior
+
+Replace the contents of `tests/test_template_materials_generation.py` with tests against the new model:
+
+```python
+from decimal import Decimal
+from django.test import TestCase
+from apps.core.models import AccountingCategory, Configuration
+from apps.contacts.models import Contact
+from apps.inventory.models import (
+    Material, PlanMaterial, PriceListItem, TemplateMaterialAssociation,
+)
+from apps.estimates.models import (
+    EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+)
+from apps.jobs.models import Job, PlanTask, RateScheme, Task
+
+
+class _Setup(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        Configuration.objects.create(key='units_list', value='["none","sheets","ea"]')
+        cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
+        cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
+        cls.scheme = RateScheme.objects.create(
+            name='Hourly', rate=Decimal('100'), unit_label='hour',
+            accounting_category=cls.cat,
+        )
+        cls.pli = PriceListItem.objects.create(
+            code='PLI-1', units='sheets', description='Steel Sheet',
+            purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
+            accounting_category=cls.cat,
+        )
+        cls.job = Job.objects.create(
+            name='J', job_number='J-1', status=Job.STATUS_DRAFT, contact=cls.contact,
+        )
+        cls.wt = WorkTemplate.objects.create(template_name='T')
+        cls.tt = TaskTemplate.objects.create(
+            template_name='Cut', rate_scheme=cls.scheme,
+            default_billable_qty=Decimal('20'),
+        )
+        cls.tta = TemplateTaskAssociation.objects.create(
+            work_template=cls.wt, task_template=cls.tt,
+            est_qty=Decimal('20'), sort_order=0,
+        )
+
+
+class WorksheetGenerationTests(_Setup):
+    def test_task_less_association_generates_task_less_plan_material(self):
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('5'),
+        )
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        self.wt.generate_tasks_for_worksheet(ws)
+        self.wt.generate_materials_for_worksheet(ws)
+
+        pms = list(PlanMaterial.objects.filter(est_worksheet=ws, plan_task__isnull=True))
+        self.assertEqual(len(pms), 1)
+        self.assertEqual(pms[0].quantity, Decimal('5'))
+        self.assertEqual(pms[0].price_list_item_id, self.pli.pk)
+        self.assertEqual(pms[0].units, 'sheets')  # via _populate_from_pli
+
+    def test_task_paired_association_attaches_to_matching_plan_task(self):
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            template_task_association=self.tta,
+            quantity=Decimal('2'),
+        )
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        self.wt.generate_tasks_for_worksheet(ws)
+        self.wt.generate_materials_for_worksheet(ws)
+
+        pt = PlanTask.objects.get(est_worksheet=ws)
+        pm = PlanMaterial.objects.get(est_worksheet=ws)
+        self.assertEqual(pm.plan_task_id, pt.pk)
+        self.assertEqual(pm.quantity, Decimal('2'))
+
+    def test_pli_price_change_after_template_setup_reflected_at_generation(self):
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('5'),
+        )
+        # PLI price bumped after the template was set up
+        self.pli.purchase_price = Decimal('52.00')
+        self.pli.selling_price = Decimal('78.00')
+        self.pli.save()
+
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        self.wt.generate_tasks_for_worksheet(ws)
+        self.wt.generate_materials_for_worksheet(ws)
+
+        pm = PlanMaterial.objects.get(est_worksheet=ws)
+        self.assertEqual(pm.unit_cost, Decimal('52.00'))
+        self.assertEqual(pm.sell_price, Decimal('78.00'))
+
+    def test_multi_instance_replicates_per_instance_with_pairing(self):
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            template_task_association=self.tta,
+            quantity=Decimal('2'),
+        )
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        self.wt.generate_tasks_for_worksheet(ws, quantity=3)
+        self.wt.generate_materials_for_worksheet(ws, quantity=3)
+
+        # 3 PlanTasks, 3 PlanMaterials, each PlanMaterial paired with a unique PlanTask
+        pts = list(PlanTask.objects.filter(est_worksheet=ws).order_by('plan_task_id'))
+        pms = list(PlanMaterial.objects.filter(est_worksheet=ws).order_by('plan_material_id'))
+        self.assertEqual(len(pts), 3)
+        self.assertEqual(len(pms), 3)
+        # Each PlanMaterial's plan_task is one of the generated tasks, and they pair 1:1.
+        paired_task_ids = sorted(pm.plan_task_id for pm in pms)
+        self.assertEqual(paired_task_ids, sorted(pt.pk for pt in pts))
+
+
+class JobGenerationTests(_Setup):
+    def test_task_less_association_generates_task_less_material(self):
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('5'),
+        )
+        # Tasks first, then materials
+        self.wt.generate_tasks_for_job(self.job)  # method may not exist — see Step 3 below
+        self.wt.generate_materials_for_job(self.job)
+
+        ms = list(Material.objects.filter(job=self.job, task__isnull=True))
+        self.assertEqual(len(ms), 1)
+        self.assertEqual(ms[0].price_list_item_id, self.pli.pk)
+        self.assertEqual(ms[0].units, 'sheets')
+
+    def test_task_paired_association_attaches_to_matching_task(self):
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            template_task_association=self.tta,
+            quantity=Decimal('2'),
+        )
+        self.wt.generate_tasks_for_job(self.job)
+        self.wt.generate_materials_for_job(self.job)
+
+        t = Task.objects.get(job=self.job)
+        m = Material.objects.get(job=self.job)
+        self.assertEqual(m.task_id, t.pk)
+```
+
+- [ ] **Step 2: Run, verify failure**
+
+```bash
+python manage.py test tests.test_template_materials_generation -v 2
+```
+
+Expected: most fail. The generation methods don't yet pair to tasks via the new model.
+
+- [ ] **Step 3: Refactor `generate_tasks_for_worksheet` to return a pairing map**
+
+In `apps/estimates/models.py`, change `generate_tasks_for_worksheet` to return a list of `(TemplateTaskAssociation, instance_index, PlanTask)` tuples:
+
+```python
+def generate_tasks_for_worksheet(self, worksheet, quantity=1):
+    """Generate plan tasks for a worksheet from this template.
+
+    Returns a list of (TemplateTaskAssociation, instance_index, PlanTask) tuples
+    so callers (e.g. generate_materials_for_worksheet) can pair generated
+    materials with their matching PlanTasks.
+    """
+    generated = []
+    for instance in range(1, quantity + 1):
+        associations = TemplateTaskAssociation.objects.filter(
+            work_template=self,
+            task_template__is_active=True,
+        ).order_by('sort_order', 'task_template__template_name')
+
+        for association in associations:
+            task = association.task_template.generate_task(
+                worksheet,
+                est_qty=association.est_qty,
+                product_instance=instance if quantity > 1 else None,
+                sort_order=association.sort_order,
+            )
+            generated.append((association, instance, task))
+
+    return generated
+```
+
+- [ ] **Step 4: Add `WorkTemplate.generate_tasks_for_job` (parallel to `generate_tasks_for_worksheet`)**
+
+The Job side currently iterates associations directly inside `JobService.populate_from_template`. Lift the iteration into a `generate_tasks_for_job` method on `WorkTemplate` so the pairing map is exposed the same way. (Or: leave it where it is and have `JobService.populate_from_template` build the map and pass it to `generate_materials_for_job`. The method-on-WorkTemplate approach is more symmetric; recommended.)
+
+In `apps/estimates/models.py`:
+
+```python
+def generate_tasks_for_job(self, job, quantity=1):
+    """Generate Tasks on a Job from this template's TaskTemplates.
+
+    Returns a list of (TemplateTaskAssociation, instance_index, Task) tuples
+    so generate_materials_for_job can pair generated Materials with their
+    matching Tasks. Mirrors generate_tasks_for_worksheet.
+    """
+    generated = []
+    for instance in range(1, quantity + 1):
+        associations = TemplateTaskAssociation.objects.filter(
+            work_template=self,
+            task_template__is_active=True,
+        ).order_by('sort_order', 'task_template__template_name')
+
+        for association in associations:
+            task = association.task_template.generate_task(
+                job,
+                est_qty=association.est_qty,
+                product_instance=instance if quantity > 1 else None,
+                sort_order=association.sort_order,
+            )
+            generated.append((association, instance, task))
+
+    return generated
+```
+
+- [ ] **Step 5: Refactor `generate_materials_for_worksheet` to use associations + pairing map**
+
+```python
+def generate_materials_for_worksheet(self, worksheet, quantity=1, task_pairing=None):
+    """Generate PlanMaterials for a worksheet from this template's
+    material associations. Pairs each association's generated PlanMaterial
+    with the matching generated PlanTask via task_pairing (a list of
+    (TemplateTaskAssociation, instance_index, PlanTask) tuples returned by
+    generate_tasks_for_worksheet).
+
+    If task_pairing is None, all generated materials are task-less.
+    """
+    from apps.inventory.models import PlanMaterial
+
+    # Build (tta_pk, instance) -> PlanTask lookup if pairing was provided
+    pairing = {}
+    if task_pairing:
+        for tta, instance, pt in task_pairing:
+            pairing[(tta.pk, instance)] = pt
+
+    associations = self.material_associations.all()
+    for instance in range(1, quantity + 1):
+        for assoc in associations:
+            paired_pt = None
+            if assoc.template_task_association_id is not None:
+                paired_pt = pairing.get((assoc.template_task_association_id, instance))
+            PlanMaterial.objects.create(
+                est_worksheet=worksheet,
+                plan_task=paired_pt,
+                quantity=assoc.quantity,
+                price_list_item=assoc.price_list_item,
+            )
+```
+
+- [ ] **Step 6: Refactor `generate_materials_for_job` similarly**
+
+```python
+def generate_materials_for_job(self, job, quantity=1, task_pairing=None):
+    from apps.inventory.services import MaterialService
+
+    pairing = {}
+    if task_pairing:
+        for tta, instance, t in task_pairing:
+            pairing[(tta.pk, instance)] = t
+
+    associations = self.material_associations.all()
+    for instance in range(1, quantity + 1):
+        for assoc in associations:
+            paired_t = None
+            if assoc.template_task_association_id is not None:
+                paired_t = pairing.get((assoc.template_task_association_id, instance))
+            MaterialService.create_on_job(
+                job=job, task=paired_t,
+                quantity=assoc.quantity,
+                price_list_item=assoc.price_list_item,
+            )
+```
+
+- [ ] **Step 7: Update callers to capture the task pairing map**
+
+`apps/api/worksheets/views.py:69-80`:
+
+```python
+def perform_create(self, serializer):
+    data = serializer.validated_data
+    job = data.get('job')
+    job_pk = job.pk if hasattr(job, 'pk') else job
+    kwargs = {}
+    template = data.get('template')
+    if template:
+        kwargs['template'] = template
+    ws = WorksheetService.create_worksheet(job_pk, **kwargs)
+    if template:
+        task_pairing = template.generate_tasks_for_worksheet(ws)
+        template.generate_materials_for_worksheet(ws, task_pairing=task_pairing)
+    serializer.instance = ws
+```
+
+`apps/estimates/views.py` (the legacy HTML view at line 383): same pattern.
+
+`apps/jobs/services.py:300` `JobService.populate_from_template`: change
+
+```python
+template.generate_materials_for_job(job, quantity=1)
+```
+
+to
+
+```python
+task_pairing = template.generate_tasks_for_job(job)
+template.generate_materials_for_job(job, task_pairing=task_pairing)
+```
+
+…and wherever `populate_from_template` currently creates the tasks (likely a similar inline loop), refactor to call `template.generate_tasks_for_job(job)` and capture the return.
+
+(If `populate_from_template` already generates tasks via a different path, leave that intact and just add the call to `generate_tasks_for_job` if needed. Read the existing code carefully to avoid duplicate task generation.)
+
+- [ ] **Step 8: Run all tests; expect PASS**
+
+```bash
+python manage.py test tests.test_template_materials_generation tests.test_template_workflows tests.test_new_templating tests.test_jobs_services tests.test_estimates_services -v 2
+```
+
+If any existing test fails because it relied on the old TemplateMaterial-direct generation path, update the test to use TemplateMaterialAssociation and a PLI link.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add apps/estimates/models.py apps/api/worksheets/views.py apps/estimates/views.py apps/jobs/services.py tests/test_template_materials_generation.py
+git commit -m "$(cat <<'EOF'
+refactor: generate_materials_for_* uses TemplateMaterialAssociation + task pairing
+
+WorkTemplate.generate_tasks_for_worksheet and a new
+generate_tasks_for_job now return [(association, instance, PlanTask|Task)]
+tuples so callers can build a pairing map. The materials generators
+accept the map (optional) and attach generated PlanMaterial/Material
+to the matching task when the association points to a
+TemplateTaskAssociation.
+
+Materials are sourced from wt.material_associations.all() rather than
+wt.materials.all(); the old TemplateMaterial-to-PlanMaterial path is
+gone. The TemplateMaterial model itself remains until Task 17 drops it
+along with the API endpoints.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+### Task 17: API surface migrates to TemplateMaterialAssociation; drop old TemplateMaterial
+
+**Files:**
+- Modify: `apps/api/templates_config/serializers.py` — replace `TemplateMaterialSerializer` with `TemplateMaterialAssociationSerializer`.
+- Modify: `apps/api/templates_config/views.py` — update the WorkTemplate viewset's `materials` and `material_detail` actions to operate on associations.
+- Modify: `apps/inventory/serializer_helpers.py` — drop the TEMPLATE_* allowlists.
+- Create: schema migration to drop the `template_materials` table and `TemplateMaterial` model.
+- Modify: any remaining tests that reference TemplateMaterial.
+
+#### Step 1: Update tests for the new endpoint shape
+
+The endpoint stays at `/api/work-templates/{id}/materials/` but the payload changes from MaterialBase fields to `{price_list_item, quantity, template_task_association?, sort_order}`.
+
+Add to `tests/test_template_material_association_model.py`:
+
+```python
+from rest_framework.test import APITestCase
+from django.contrib.auth.models import Permission
+from apps.core.models import User
+
+
+class TemplateMaterialAssociationApiTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(username='u', password='p')
+        cls.user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_config'),
+        )
+        cls.cat = AccountingCategory.objects.create(code='C', name='Cat')
+        from apps.jobs.models import RateScheme
+        from apps.estimates.models import (
+            WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+        )
+        cls.scheme = RateScheme.objects.create(
+            name='H', rate=Decimal('50'), unit_label='hour',
+            accounting_category=cls.cat,
+        )
+        cls.pli = PriceListItem.objects.create(
+            code='PLI', units='sheets', description='X',
+            purchase_price=Decimal('10'), selling_price=Decimal('20'),
+            accounting_category=cls.cat,
+        )
+        cls.wt = WorkTemplate.objects.create(template_name='WT')
+        cls.tt = TaskTemplate.objects.create(
+            template_name='TT', rate_scheme=cls.scheme,
+            default_billable_qty=Decimal('1'),
+        )
+        cls.tta = TemplateTaskAssociation.objects.create(
+            work_template=cls.wt, task_template=cls.tt,
+            est_qty=Decimal('1'),
+        )
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+    def test_post_creates_association(self):
+        resp = self.client.post(
+            f'/api/work-templates/{self.wt.pk}/materials/',
+            {'price_list_item': self.pli.pk, 'quantity': '5'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body['price_list_item'], self.pli.pk)
+        self.assertEqual(body['quantity'], '5.00')
+        self.assertIsNone(body['template_task_association'])
+
+    def test_post_with_task_association(self):
+        resp = self.client.post(
+            f'/api/work-templates/{self.wt.pk}/materials/',
+            {
+                'price_list_item': self.pli.pk,
+                'quantity': '2',
+                'template_task_association': self.tta.pk,
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()['template_task_association'], self.tta.pk)
+
+    def test_patch_quantity(self):
+        a = TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        resp = self.client.patch(
+            f'/api/work-templates/{self.wt.pk}/materials/{a.pk}/',
+            {'quantity': '5'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        a.refresh_from_db()
+        self.assertEqual(a.quantity, Decimal('5'))
+
+    def test_delete(self):
+        a = TemplateMaterialAssociation.objects.create(
+            work_template=self.wt, price_list_item=self.pli,
+            quantity=Decimal('1'),
+        )
+        resp = self.client.delete(
+            f'/api/work-templates/{self.wt.pk}/materials/{a.pk}/',
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(TemplateMaterialAssociation.objects.filter(pk=a.pk).exists())
+```
+
+- [ ] **Step 2: Run; expect failure (404 / 400 because the endpoint still expects the old shape)**
+
+```bash
+python manage.py test tests.test_template_material_association_model.TemplateMaterialAssociationApiTests -v 2
+```
+
+- [ ] **Step 3: Replace `TemplateMaterialSerializer` with `TemplateMaterialAssociationSerializer`**
+
+In `apps/api/templates_config/serializers.py`:
+
+```python
+from apps.inventory.models import TemplateMaterialAssociation
+
+
+class TemplateMaterialAssociationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TemplateMaterialAssociation
+        fields = [
+            'template_material_association_id', 'work_template',
+            'price_list_item', 'template_task_association',
+            'quantity', 'sort_order',
+        ]
+        read_only_fields = ['template_material_association_id', 'work_template']
+```
+
+Remove the `TemplateMaterialSerializer` class. Remove the import of `TemplateMaterial` if it's only used by that serializer.
+
+- [ ] **Step 4: Update `apps/api/templates_config/views.py`**
+
+Replace usages of `TemplateMaterial` with `TemplateMaterialAssociation`. The `materials` action's GET returns `assoc.work_template.material_associations.all()`; POST creates a new TemplateMaterialAssociation. The `material_detail` GET/PATCH/DELETE works on the same model.
+
+```python
+from apps.inventory.models import TemplateMaterialAssociation
+from .serializers import (
+    WorkTemplateSerializer, TaskTemplateSerializer,
+    ConfigurationSerializer, AccountingCategorySerializer,
+    TemplateMaterialAssociationSerializer,
+)
+
+# In WorkTemplateViewSet:
+
+@action(detail=True, methods=['get', 'post'], url_path='materials', url_name='materials')
+def materials(self, request, pk=None):
+    template = self.get_object()
+    if request.method == 'GET':
+        assocs = TemplateMaterialAssociation.objects.filter(work_template=template)
+        return Response(TemplateMaterialAssociationSerializer(assocs, many=True).data)
+
+    serializer = TemplateMaterialAssociationSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    a = TemplateMaterialAssociation(work_template=template, **serializer.validated_data)
+    a.full_clean()
+    a.save()
+    return Response(
+        TemplateMaterialAssociationSerializer(a).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+@action(detail=True, methods=['get', 'patch', 'delete'],
+        url_path='materials/(?P<assoc_id>[0-9]+)', url_name='material-detail')
+def material_detail(self, request, pk=None, assoc_id=None):
+    template = self.get_object()
+    try:
+        a = TemplateMaterialAssociation.objects.get(pk=assoc_id, work_template=template)
+    except TemplateMaterialAssociation.DoesNotExist:
+        from rest_framework.exceptions import NotFound
+        raise NotFound()
+
+    if request.method == 'GET':
+        return Response(TemplateMaterialAssociationSerializer(a).data)
+
+    if request.method == 'DELETE':
+        a.delete()
+        return Response({'message': 'Template material association deleted.'})
+
+    serializer = TemplateMaterialAssociationSerializer(a, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(serializer.data)
+```
+
+- [ ] **Step 5: Drop the TEMPLATE_* allowlists from `apps/inventory/serializer_helpers.py`**
+
+The `TEMPLATE_PLI_LINKED_ALLOWED` and `TEMPLATE_FREEFORM_ALLOWED` constants are no longer used; remove them.
+
+- [ ] **Step 6: Drop the `TemplateMaterial` model**
+
+In `apps/inventory/models.py`, delete the `TemplateMaterial` class.
+
+```bash
+python manage.py makemigrations inventory
+```
+
+Expected: a new migration that does `migrations.DeleteModel(name='TemplateMaterial')`.
+
+- [ ] **Step 7: Update any straggling test imports**
+
+```bash
+grep -rn "TemplateMaterial\b" tests/ apps/ docs/ 2>/dev/null
+```
+
+Update or remove any remaining references. (`TemplateMaterialAssociation` matches, so use `\b` boundary.)
+
+- [ ] **Step 8: Run full regression**
+
+```bash
+python manage.py test 2>&1 | tail -10
+```
+
+Expected: 0 failures.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add apps/api/templates_config/serializers.py apps/api/templates_config/views.py apps/inventory/serializer_helpers.py apps/inventory/models.py apps/inventory/migrations/ tests/test_template_material_association_model.py
+git commit -m "$(cat <<'EOF'
+refactor: drop TemplateMaterial; API moves to TemplateMaterialAssociation
+
+The /api/work-templates/{id}/materials/ endpoint now operates on
+TemplateMaterialAssociation rows. POST/PATCH bodies shrink from the
+full MaterialBase field set to {price_list_item, quantity,
+template_task_association?, sort_order} — labelling and pricing come
+from the linked PriceListItem at generation time.
+
+Removes the TEMPLATE_PLI_LINKED_ALLOWED / TEMPLATE_FREEFORM_ALLOWED
+allowlist constants since the simpler shape doesn't need them.
+
+Drops the TemplateMaterial model and its template_materials table.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## Phase 10 — `accounting_category` required server-side
+
+**Scope expansion (added 2026-05-09 during smoke testing).** Today, `MaterialBase.accounting_category` is `null=True, blank=True`, so freeform Material creation can land without a category. We want it required everywhere — the field tracks tax/accounting categorization and shouldn't be optional.
+
+Approach: model-level NOT NULL, with a data migration that backfills NULL rows (PLI-linked: copy from PLI; freeform: halt with a clear error so the operator can decide what to do).
+
+### Task 18: Make `accounting_category` required on Material/PlanMaterial
+
+**Files:**
+- Modify: `apps/inventory/models.py` — `MaterialBase.accounting_category` loses `null=True, blank=True`.
+- Create: data migration backfilling NULLs.
+- Create: schema migration tightening to NOT NULL.
+- Modify: `apps/api/jobs/views.py` — the hand-rolled POST handler at `create_material` sends `accounting_category=None` when not provided; let it raise a clear 400 instead. (The path through serializers does this already.)
+- Modify: tests covering the new required behavior.
+
+**Note:** by the time this task runs, `TemplateMaterial` is already gone (Task 17), so we only need to handle `Material` and `PlanMaterial`.
+
+#### Step 1: Failing test for required-on-create
+
+Create `tests/test_accounting_category_required.py`:
+
+```python
+from decimal import Decimal
+from django.test import TestCase
+from django.core.exceptions import ValidationError
+from rest_framework.test import APITestCase
+from apps.core.models import AccountingCategory, Configuration, User
+from apps.contacts.models import Contact
+from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.estimates.models import EstWorksheet
+from apps.jobs.models import Job
+
+
+class _Setup(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        Configuration.objects.create(key='units_list', value='["none","ea","sheets"]')
+        cls.user = User.objects.create_user(username='u', password='p')
+        cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
+        cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
+        cls.pli = PriceListItem.objects.create(
+            code='PLI', units='sheets', description='X',
+            purchase_price=Decimal('10'), selling_price=Decimal('20'),
+            accounting_category=cls.cat,
+        )
+        cls.job = Job.objects.create(
+            name='J', job_number='J-1', status=Job.STATUS_DRAFT, contact=cls.contact,
+        )
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+
+class FreeformMaterialRequiresCategoryTests(_Setup):
+    def test_post_freeform_material_without_category_fails(self):
+        resp = self.client.post(
+            f'/api/jobs/{self.job.pk}/materials/',
+            {'description': 'x', 'quantity': '1'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_post_freeform_material_with_category_succeeds(self):
+        resp = self.client.post(
+            f'/api/jobs/{self.job.pk}/materials/',
+            {
+                'description': 'x', 'quantity': '1',
+                'accounting_category': self.cat.pk,
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_post_pli_linked_material_without_explicit_category_succeeds(self):
+        # PLI fills in the category via _populate_from_pli, so no explicit
+        # accounting_category is needed in the request.
+        resp = self.client.post(
+            f'/api/jobs/{self.job.pk}/materials/',
+            {
+                'price_list_item': self.pli.pk,
+                'quantity': '1',
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        m = Material.objects.get(job=self.job)
+        self.assertEqual(m.accounting_category_id, self.cat.pk)
+
+
+class FreeformPlanMaterialRequiresCategoryTests(_Setup):
+    def test_post_freeform_plan_material_without_category_fails(self):
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        resp = self.client.post(
+            f'/api/est-worksheets/{ws.pk}/plan-materials/',
+            {'description': 'x', 'quantity': '1'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+
+class ModelLevelNotNullTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        Configuration.objects.create(key='units_list', value='["none"]')
+        cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
+        cls.job = Job.objects.create(
+            name='J', job_number='J-1', status=Job.STATUS_DRAFT, contact=cls.contact,
+        )
+
+    def test_creating_freeform_material_without_category_raises(self):
+        m = Material(
+            job=self.job, description='x', quantity=Decimal('1'),
+        )
+        with self.assertRaises(ValidationError):
+            m.save()  # full_clean inside save raises on missing category
+```
+
+- [ ] **Step 2: Run, expect failure (NULLs accepted today)**
+
+```bash
+python manage.py test tests.test_accounting_category_required -v 2
+```
+
+Expected: most tests fail because the field is currently nullable.
+
+- [ ] **Step 3: Write the data migration to backfill NULLs**
+
+Create `apps/inventory/migrations/00XX_backfill_accounting_category.py`:
+
+```python
+from django.db import migrations
+
+
+def backfill(apps, schema_editor):
+    Material = apps.get_model('inventory', 'Material')
+    PlanMaterial = apps.get_model('inventory', 'PlanMaterial')
+
+    # PLI-linked rows: copy the PLI's category.
+    for cls in (Material, PlanMaterial):
+        rows = cls.objects.filter(
+            accounting_category__isnull=True,
+            price_list_item__isnull=False,
+        ).select_related('price_list_item')
+        for row in rows:
+            row.accounting_category_id = row.price_list_item.accounting_category_id
+            row.save(update_fields=['accounting_category'])
+
+    # Freeform rows: halt with a clear error.
+    for cls in (Material, PlanMaterial):
+        freeforms = cls.objects.filter(
+            accounting_category__isnull=True,
+            price_list_item__isnull=True,
+        )
+        if freeforms.exists():
+            ids = list(freeforms.values_list('pk', flat=True))
+            raise RuntimeError(
+                f'Cannot migrate: {len(ids)} freeform {cls.__name__}(s) without '
+                f'accounting_category found (IDs: {ids}). Assign a category '
+                f'before re-running this migration.'
+            )
+
+
+def reverse_backfill(apps, schema_editor):
+    # No-op: forward migration only fills NULLs from the PLI; reversing
+    # would mean re-NULLing those rows, which is destructive and unwanted.
+    pass
+
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ('inventory', '00XX_drop_template_material'),  # the schema migration from Task 17
+    ]
+    operations = [
+        migrations.RunPython(backfill, reverse_backfill),
+    ]
+```
+
+- [ ] **Step 4: Tighten the model field to NOT NULL**
+
+In `apps/inventory/models.py`, on `MaterialBase`:
+
+```python
+accounting_category = models.ForeignKey(
+    'core.AccountingCategory', on_delete=models.SET_NULL,
+    null=True, blank=True,
+)
+```
+
+becomes
+
+```python
+accounting_category = models.ForeignKey(
+    'core.AccountingCategory', on_delete=models.PROTECT,
+)
+```
+
+(Switch to PROTECT since we're now always carrying a value; SET_NULL no longer makes sense.)
+
+```bash
+python manage.py makemigrations inventory
+```
+
+Expected: an `AlterField` migration tightening `accounting_category` on Material and PlanMaterial.
+
+- [ ] **Step 5: Update `apps/api/jobs/views.py` `create_material`**
+
+The hand-rolled POST handler currently does:
+
+```python
+ac = None
+if data.get('accounting_category'):
+    ac = AccountingCategory.objects.get(pk=data['accounting_category'])
+```
+
+With the field now NOT NULL, calling `MaterialService.create_on_job(... accounting_category=None)` will fail at `_populate_from_pli` (only fills if PLI is linked) and then at `full_clean()` for freeform creates with no PLI.
+
+That's the desired behavior. Just verify the resulting 400 has a useful body. If needed, wrap `MaterialService.create_on_job` in a try/except that maps `ValidationError` to a 400 with the field errors. Many endpoints already do this.
+
+- [ ] **Step 6: Run all tests**
+
+```bash
+python manage.py test 2>&1 | tail -10
+```
+
+Expected: 0 failures. If anything fails, it's likely a test that creates a Material/PlanMaterial without a category — update to provide one.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add apps/inventory/models.py apps/inventory/migrations/ apps/api/jobs/views.py tests/test_accounting_category_required.py
+git commit -m "$(cat <<'EOF'
+feat: accounting_category required on Material/PlanMaterial
+
+MaterialBase.accounting_category drops null=True, blank=True. Field
+is now NOT NULL with on_delete=PROTECT. Migration backfills NULL rows
+by copying from the linked PLI; halts with a clear error on freeform
+rows that have no category set.
+
+The serializer paths already validate; the hand-rolled
+/api/jobs/{id}/materials/ POST surfaces a 400 via the model's
+full_clean() failure when freeform creates omit the field.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Done criteria
 
 - [ ] All Django tests pass
 - [ ] All Phase 5 manual browser tests pass
+- [ ] All Phase 9 / Phase 10 changes have passing unit tests
 - [ ] No new permission warnings
-- [ ] `docs/designs/2026-05-07-material-units-field-design.md` is accurate
+- [ ] `docs/designs/2026-05-07-material-units-field-design.md` is accurate (the TemplateMaterial follow-on note becomes "implemented")
 - [ ] Branch ready for review / merge to main
