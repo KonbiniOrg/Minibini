@@ -545,6 +545,17 @@ that adds `consumption_state`, `restocked_qty`, the `job` FK, the
 **Question:** what's the current state of the materials-on-jobs work,
 and which order do you want?
 
+## Follow-on items (surfaced during implementation / smoke testing)
+
+- **`accounting_category` is optional on freeform Material creation.**
+  Discovered during the post-implementation smoke test on 2026-05-08:
+  the Add-Material form accepts a freeform Material without an
+  `accounting_category` selection. Likely a pre-existing gap (the
+  field is `null=True, blank=True` on `MaterialBase`) but worth a
+  separate investigation — should freeform Materials be required to
+  carry a category for tax/accounting consistency? Out of scope for
+  this branch; tracked here for follow-on work.
+
 ## Implementation order (once questions are resolved)
 
 1. **Schema.** Add `units` to `MaterialBase`, generate the migration.
