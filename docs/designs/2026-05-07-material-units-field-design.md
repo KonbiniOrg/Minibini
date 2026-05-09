@@ -547,6 +547,19 @@ and which order do you want?
 
 ## Follow-on items (surfaced during implementation / smoke testing)
 
+- **TemplateMaterials should be attachable to TaskTemplates.**
+  PlanMaterial already supports both `plan_task=None` (task-less,
+  worksheet-level) and `plan_task=<PlanTask>` (task-attached). The
+  parallel pattern doesn't exist on the template side: TemplateMaterial
+  only links to WorkTemplate, so every PlanMaterial generated from a
+  template is task-less. This loses information — a template might
+  legitimately want to say "this material belongs to *that* task."
+  Extension: add an optional `task_template` FK to TemplateMaterial
+  (or a TemplateTaskMaterialAssociation row, paralleling
+  TemplateTaskAssociation), then update `generate_materials_for_*`
+  to attach the new PlanMaterial/Material to the matching generated
+  PlanTask/Task. Out of scope for this branch.
+
 - **Simplify the edit affordances on real Materials.**
   Surfaced during smoke testing on 2026-05-08: the row currently
   exposes several overlapping controls — the edit modal (which on
