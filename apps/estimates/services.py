@@ -906,12 +906,14 @@ class EstimateWizardService:
         ):
             if (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk) in claimed:
                 continue
+            total = pt.compute_amount().quantize(Decimal('0.01'))
+            qty, price = EstimateWizardService._atom_qty_and_price(pt, total)
             li = EstimateLineItem.objects.create(
                 estimate=estimate,
                 description=pt.name,
-                qty=Decimal('1'),
+                qty=qty,
                 units=EstimateWizardService._atom_units(pt),
-                price=pt.compute_amount().quantize(Decimal('0.01')),
+                price=price,
                 accounting_category=pt.effective_accounting_category,
             )
             EstimateLineItemSource.objects.create(
@@ -927,12 +929,14 @@ class EstimateWizardService:
         ):
             if (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk) in claimed:
                 continue
+            total = pm.compute_amount().quantize(Decimal('0.01'))
+            qty, price = EstimateWizardService._atom_qty_and_price(pm, total)
             li = EstimateLineItem.objects.create(
                 estimate=estimate,
                 description=pm.description,
-                qty=Decimal('1'),
+                qty=qty,
                 units=EstimateWizardService._atom_units(pm),
-                price=pm.compute_amount().quantize(Decimal('0.01')),
+                price=price,
                 accounting_category=pm.accounting_category,
             )
             EstimateLineItemSource.objects.create(

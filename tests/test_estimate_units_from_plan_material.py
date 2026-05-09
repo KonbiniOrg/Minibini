@@ -59,3 +59,50 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
         self.assertEqual(result['created_count'], 1)
         li = EstimateLineItem.objects.get(estimate=result['estimate'])
         self.assertEqual(li.units, 'lbs')
+
+
+class SendAllAtomsCarriesQtyAndPriceTests(TestCase):
+    """Regression: send_all_atoms_to_estimate must carry the PlanMaterial's
+    own qty and sell_price (not collapse to qty=1, price=total)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        Configuration.objects.create(key='units_list', value='["none","ea","sheets","lbs"]')
+        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
+        Configuration.objects.create(key='estimate_counter', value='0')
+        cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
+        from apps.contacts.models import Contact
+        cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j3@d.com')
+        cls.pli = PriceListItem.objects.create(
+            code='PLI-Q', units='sheets', description='Steel Sheet',
+            purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
+            accounting_category=cls.cat,
+        )
+        cls.job = Job.objects.create(
+            name='J', job_number='J-Q', status=Job.STATUS_DRAFT, contact=cls.contact,
+        )
+
+    def test_freeform_plan_material_carries_qty_and_sell_price(self):
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        PlanMaterial.objects.create(
+            est_worksheet=ws, plan_task=None,
+            description='loose', quantity=Decimal('5'), units='lbs',
+            unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
+        )
+        result = EstimateWizardService.send_all_atoms_to_estimate(ws)
+        li = EstimateLineItem.objects.get(estimate=result['estimate'])
+        self.assertEqual(li.qty, Decimal('5'))
+        self.assertEqual(li.units, 'lbs')
+        self.assertEqual(li.price, Decimal('2.00'))
+
+    def test_pli_linked_plan_material_carries_qty_and_sell_price(self):
+        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        PlanMaterial.objects.create(
+            est_worksheet=ws, plan_task=None,
+            quantity=Decimal('3'), price_list_item=self.pli,
+        )
+        result = EstimateWizardService.send_all_atoms_to_estimate(ws)
+        li = EstimateLineItem.objects.get(estimate=result['estimate'])
+        self.assertEqual(li.qty, Decimal('3'))
+        self.assertEqual(li.units, 'sheets')
+        self.assertEqual(li.price, Decimal('60.00'))
