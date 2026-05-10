@@ -383,8 +383,16 @@ class WorksheetService:
         rate_scheme_id=None,
         active_modifiers=None,
         est_qty=None,
+        est_worker_time=None,
+        name=None,
+        description=None,
     ):
-        """Add a PlanTask to a draft worksheet from a TaskTemplate."""
+        """Add a PlanTask to a draft worksheet from a TaskTemplate.
+
+        Optional overrides:
+          name        – if truthy, replaces template_name; empty string falls back to template default.
+          description – if not None, replaces template description (empty string is kept as-is).
+        """
         from apps.jobs.models import PlanTask
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
@@ -410,12 +418,13 @@ class WorksheetService:
             )
 
         task = PlanTask.objects.create(
-            name=tt.template_name,
-            description=tt.description,
+            name=name if name else tt.template_name,
+            description=description if description is not None else tt.description,
             est_worksheet=ws,
             rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
             active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
             est_qty=est_qty if est_qty is not None else tt.default_billable_qty,
+            est_worker_time=est_worker_time,
         )
         return task
 
@@ -588,9 +597,14 @@ class EstimateWizardService:
 
     @staticmethod
     def _atom_units(atom_instance):
-        """Return the units label for an atom, sourced from related rate
-        scheme or price list item. Falls back to 'none' (the only literal
-        unit guaranteed to exist in the configured units list)."""
+        """Return the units label for an atom.
+
+        PlanTask: from rate_scheme.unit_label (or 'none' if no scheme).
+        PlanMaterial: from the atom's own units field (which is populated
+                      from the linked PLI at create time via _populate_from_pli,
+                      so PLI-linked PMs reflect the PLI's units; freeform PMs
+                      carry whatever units the user set).
+        """
         from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
         if isinstance(atom_instance, PlanTask):
@@ -598,9 +612,7 @@ class EstimateWizardService:
                 return atom_instance.rate_scheme.unit_label
             return 'none'
         if isinstance(atom_instance, PlanMaterial):
-            if atom_instance.price_list_item_id:
-                return atom_instance.price_list_item.units
-            return 'none'
+            return atom_instance.units or 'none'
         return 'none'
 
     @staticmethod
@@ -894,12 +906,14 @@ class EstimateWizardService:
         ):
             if (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk) in claimed:
                 continue
+            total = pt.compute_amount().quantize(Decimal('0.01'))
+            qty, price = EstimateWizardService._atom_qty_and_price(pt, total)
             li = EstimateLineItem.objects.create(
                 estimate=estimate,
                 description=pt.name,
-                qty=Decimal('1'),
+                qty=qty,
                 units=EstimateWizardService._atom_units(pt),
-                price=pt.compute_amount().quantize(Decimal('0.01')),
+                price=price,
                 accounting_category=pt.effective_accounting_category,
             )
             EstimateLineItemSource.objects.create(
@@ -915,12 +929,14 @@ class EstimateWizardService:
         ):
             if (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk) in claimed:
                 continue
+            total = pm.compute_amount().quantize(Decimal('0.01'))
+            qty, price = EstimateWizardService._atom_qty_and_price(pm, total)
             li = EstimateLineItem.objects.create(
                 estimate=estimate,
                 description=pm.description,
-                qty=Decimal('1'),
+                qty=qty,
                 units=EstimateWizardService._atom_units(pm),
-                price=pm.compute_amount().quantize(Decimal('0.01')),
+                price=price,
                 accounting_category=pm.accounting_category,
             )
             EstimateLineItemSource.objects.create(

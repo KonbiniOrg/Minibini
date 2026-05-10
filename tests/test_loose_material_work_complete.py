@@ -11,7 +11,7 @@ from apps.core.models import AccountingCategory
 from apps.expenses.models import Expense
 from apps.inventory.models import PriceListItem, Material
 from apps.inventory.services import MaterialService
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService, TaskLifecycleService
 
 User = get_user_model()
@@ -25,6 +25,10 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             email='wcg@example.com', work_number='555-0199',
         )
         cat = AccountingCategory.objects.create(name='WCG Cat', code='WCG1')
+        self.scheme = RateScheme.objects.create(
+            name='S-wcg', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=cat,
+        )
         self.pli = PriceListItem.objects.create(
             code='I-WCG', accounting_category=cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
@@ -113,7 +117,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             job=self.job, task=None, description='blocking mat',
             quantity=Decimal('2'), price_list_item=self.pli,
         )
-        t = Task.objects.create(job=self.job, name='only task')
+        t = Task.objects.create(job=self.job, name='only task', rate_scheme=self.scheme)
         # Drive task completion the same way production does.
         TaskLifecycleService.complete_task(t.pk)
         self.job.refresh_from_db()

@@ -320,14 +320,18 @@ class WorkTemplate(models.Model):
         return self.template_name
 
     def generate_tasks_for_worksheet(self, worksheet, quantity=1):
-        """Generate all plan tasks for a worksheet from this template."""
-        generated_tasks = []
+        """Generate plan tasks for a worksheet from this template.
+
+        Returns a list of (TemplateTaskAssociation, instance_index, PlanTask) tuples
+        so callers (e.g. generate_materials_for_worksheet) can pair generated
+        materials with their matching PlanTasks.
+        """
+        generated = []
 
         for instance in range(1, quantity + 1):
-            # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
                 work_template=self,
-                task_template__is_active=True
+                task_template__is_active=True,
             ).order_by('sort_order', 'task_template__template_name')
 
             for association in associations:
@@ -337,37 +341,92 @@ class WorkTemplate(models.Model):
                     product_instance=instance if quantity > 1 else None,
                     sort_order=association.sort_order,
                 )
-                generated_tasks.append(task)
+                generated.append((association, instance, task))
 
-        return generated_tasks
+        return generated
 
-    def generate_materials_for_worksheet(self, worksheet, quantity=1):
+    def generate_tasks_for_job(self, job, quantity=1):
+        """Generate Tasks on a Job from this template's TaskTemplates.
+
+        Returns a list of (TemplateTaskAssociation, instance_index, Task) tuples
+        so generate_materials_for_job can pair generated Materials with their
+        matching Tasks. Mirrors generate_tasks_for_worksheet.
+        """
+        generated = []
+
+        for instance in range(1, quantity + 1):
+            associations = TemplateTaskAssociation.objects.filter(
+                work_template=self,
+                task_template__is_active=True,
+            ).order_by('sort_order', 'task_template__template_name')
+
+            for association in associations:
+                task = association.task_template.generate_task(
+                    job,
+                    est_qty=association.est_qty,
+                    product_instance=instance if quantity > 1 else None,
+                    sort_order=association.sort_order,
+                )
+                generated.append((association, instance, task))
+
+        return generated
+
+    def generate_materials_for_worksheet(self, worksheet, quantity=1, task_pairing=None):
+        """Generate PlanMaterials for a worksheet from this template's
+        material associations. Pairs each association's generated PlanMaterial
+        with the matching generated PlanTask via task_pairing (a list of
+        (TemplateTaskAssociation, instance_index, PlanTask) tuples returned by
+        generate_tasks_for_worksheet).
+
+        If task_pairing is None, all generated materials are task-less.
+        """
         from apps.inventory.models import PlanMaterial
-        for tm in self.materials.all():
-            for _ in range(quantity):
+
+        # Build (tta_pk, instance) -> PlanTask lookup if pairing was provided
+        pairing = {}
+        if task_pairing:
+            for tta, instance, pt in task_pairing:
+                pairing[(tta.pk, instance)] = pt
+
+        associations = self.material_associations.all()
+        for instance in range(1, quantity + 1):
+            for assoc in associations:
+                paired_pt = None
+                if assoc.template_task_association_id is not None:
+                    paired_pt = pairing.get((assoc.template_task_association_id, instance))
                 PlanMaterial.objects.create(
                     est_worksheet=worksheet,
-                    plan_task=None,
-                    description=tm.description,
-                    quantity=tm.quantity,
-                    unit_cost=tm.unit_cost,
-                    sell_price=tm.sell_price,
-                    price_list_item=tm.price_list_item,
-                    accounting_category=tm.accounting_category,
+                    plan_task=paired_pt,
+                    quantity=assoc.quantity,
+                    price_list_item=assoc.price_list_item,
                 )
 
-    def generate_materials_for_job(self, job, quantity=1):
+    def generate_materials_for_job(self, job, quantity=1, task_pairing=None):
+        """Generate Materials for a job from this template's material associations.
+
+        Pairs each association's generated Material with the matching generated
+        Task via task_pairing (a list of (TemplateTaskAssociation, instance_index,
+        Task) tuples returned by generate_tasks_for_job).
+
+        If task_pairing is None, all generated materials are task-less.
+        """
         from apps.inventory.services import MaterialService
-        for tm in self.materials.all():
-            for _ in range(quantity):
+
+        pairing = {}
+        if task_pairing:
+            for tta, instance, t in task_pairing:
+                pairing[(tta.pk, instance)] = t
+
+        associations = self.material_associations.all()
+        for instance in range(1, quantity + 1):
+            for assoc in associations:
+                paired_t = None
+                if assoc.template_task_association_id is not None:
+                    paired_t = pairing.get((assoc.template_task_association_id, instance))
                 MaterialService.create_on_job(
-                    job=job, task=None,
-                    description=tm.description,
-                    quantity=tm.quantity,
-                    unit_cost=tm.unit_cost,
-                    sell_price=tm.sell_price,
-                    price_list_item=tm.price_list_item,
-                    accounting_category=tm.accounting_category,
+                    job=job, task=paired_t,
+                    quantity=assoc.quantity,
+                    price_list_item=assoc.price_list_item,
                 )
 
 
@@ -427,12 +486,20 @@ class TaskTemplate(models.Model):
         return self.rate_scheme.accounting_category
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
-                       assignee=None, sort_order=None):
+                       assignee=None, sort_order=None,
+                       name=None, description=None,
+                       active_modifiers=None, est_worker_time=None):
         """Generate a PlanTask or Task from this template with specified quantity.
 
         The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
+
+        Optional overrides:
+          name            – if truthy, replaces template_name; empty string falls back to template default.
+          description     – if not None, replaces template description (empty string is kept as-is).
+          active_modifiers – list of modifier keys; falls back to template defaults when None.
+          est_worker_time – ISO 8601 duration string or None.
         """
-        from apps.jobs.models import Job, Task, PlanTask, TaskCharge
+        from apps.jobs.models import Job, Task, PlanTask
         from apps.core.services import SchemeSupersededError
         from django.db import transaction
 
@@ -442,29 +509,33 @@ class TaskTemplate(models.Model):
                 f'RateScheme. Update the template before adding tasks from it.'
             )
 
+        resolved_name = name if name else self.template_name
+        resolved_description = description if description is not None else self.description
+        resolved_modifiers = list(active_modifiers if active_modifiers is not None else (self.default_active_modifiers or []))
+
         if isinstance(container, Job):
             with transaction.atomic():
                 task = Task.objects.create(
                     job=container,
-                    name=self.template_name,
-                    description=self.description,
+                    name=resolved_name,
+                    description=resolved_description,
                     assignee=assignee,
                     sort_order=sort_order,
+                    rate_scheme=self.rate_scheme,
+                    active_modifiers=resolved_modifiers,
+                    est_qty=est_qty,
+                    est_worker_time=est_worker_time,
                 )
-                if self.rate_scheme_id:
-                    TaskCharge.objects.create(
-                        task=task, rate_scheme=self.rate_scheme,
-                        active_modifiers=list(self.default_active_modifiers or []),
-                    )
             return task
         else:  # EstWorksheet
             return PlanTask.objects.create(
                 est_worksheet=container,
-                name=self.template_name,
-                description=self.description,
+                name=resolved_name,
+                description=resolved_description,
                 rate_scheme=self.rate_scheme,
-                active_modifiers=list(self.default_active_modifiers or []),
+                active_modifiers=resolved_modifiers,
                 est_qty=est_qty,
+                est_worker_time=est_worker_time,
                 sort_order=sort_order,
             )
 

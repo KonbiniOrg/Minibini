@@ -3,11 +3,14 @@
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import EstimateLineItemModal from '../../components/EstimateLineItemModal.svelte';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import LineItemTable from '../../components/LineItemTable.svelte';
 
   let { params = {} } = $props();
 
   let estimate = $state(null);
   let job = $state(null);
+  let contact = $state(null);
   let categories = $state([]);
   let loading = $state(true);
   let error = $state('');
@@ -74,12 +77,6 @@
   let lineItems = $derived(
     (estimate?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
   );
-  let subtotal = $derived(
-    lineItems.reduce((s, li) => s + Number(li.qty) * Number(li.price), 0)
-  );
-  let categoryById = $derived(
-    Object.fromEntries(categories.map(c => [c.id, c]))
-  );
   let isSuperseded = $derived(estimate?.status === 'superseded');
   let isDraft = $derived(estimate?.status === 'draft');
   let canEdit = $derived(canManageJobs && isDraft);
@@ -92,8 +89,16 @@
       if (estimate?.job) {
         try {
           job = await api.get(`/api/jobs/${estimate.job}/`);
+          if (job?.contact) {
+            try {
+              contact = await api.get(`/api/contacts/${job.contact}/`);
+            } catch (_) {
+              contact = null;
+            }
+          }
         } catch (_) {
           job = null;
+          contact = null;
         }
       }
     } catch (e) {
@@ -123,30 +128,6 @@
     if (!iso) return '';
     const d = new Date(iso);
     return d.toLocaleString();
-  }
-
-  function fmtMoney(n) {
-    return `$${Number(n).toFixed(2)}`;
-  }
-
-  function lineTotal(li) {
-    return Number(li.qty) * Number(li.price);
-  }
-
-  function categoryName(id) {
-    return categoryById[id]?.name || '—';
-  }
-
-  function categoryTaxable(id) {
-    const c = categoryById[id];
-    if (!c) return '—';
-    return c.taxable ? 'Yes' : 'No';
-  }
-
-  function sourceLabel(li) {
-    if (li.sources?.length) return `${li.sources.length} atom${li.sources.length === 1 ? '' : 's'}`;
-    if (li.price_list_item) return `PLI #${li.price_list_item}`;
-    return 'No source';
   }
 
   function openAddItem() {
@@ -208,9 +189,13 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if estimate}
-  <h2 class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</h2>
+  {#if job}
+    <JobHeader {job} {contact} onStatusChange={loadEstimate} />
+  {/if}
 
-  <div class="status-line">
+  <div class="toolbar">
+    <a href={`/jobs/${estimate.job}`} use:link class="back-link">&laquo; back to overview</a>
+    <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</span>
     {#if canManageJobs && validNextStatuses.length > 0}
       <span class="status-select-wrapper">
         <select class="status-select status-{estimate.status}" onchange={handleStatusChange}>
@@ -286,65 +271,20 @@
       {/if}
     </p>
   {/if}
-  {#if lineItems.length > 0}
-    <table border="1" style="border-collapse: collapse; width: 100%; margin-top: 10px;">
-      <thead>
-        <tr>
-          <th>Line #</th>
-          <th>Type</th>
-          <th>Taxable</th>
-          <th>Description</th>
-          <th>Source</th>
-          <th>Quantity</th>
-          <th>Unit</th>
-          <th>Price</th>
-          <th>Total</th>
-          {#if canEdit}<th>Actions</th>{/if}
-        </tr>
-      </thead>
-      <tbody>
-        {#each lineItems as li, i}
-          <tr>
-            <td>{li.line_number}</td>
-            <td>{categoryName(li.accounting_category)}</td>
-            <td>{categoryTaxable(li.accounting_category)}</td>
-            <td>{li.description || 'No description'}</td>
-            <td>{sourceLabel(li)}</td>
-            <td>{li.qty}</td>
-            <td>{li.units || '—'}</td>
-            <td>{fmtMoney(li.price)}</td>
-            <td>{fmtMoney(lineTotal(li))}</td>
-            {#if canEdit}
-              <td>
-                <button type="button" onclick={() => openEditItem(li)}>Edit</button>
-                <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
-                <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
-                <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
-              </td>
-            {/if}
-          </tr>
-        {/each}
-      </tbody>
-      <tfoot>
-        <tr style="background-color: #f5f5f5;">
-          <td colspan="8" style="text-align: right;"><strong>Subtotal:</strong></td>
-          <td>{fmtMoney(subtotal)}</td>
-          {#if canEdit}<td></td>{/if}
-        </tr>
-        <tr style="background-color: #e8e8e8;">
-          <td colspan="8" style="text-align: right;"><strong>Total:</strong></td>
-          <td><strong>{fmtMoney(subtotal)}</strong></td>
-          {#if canEdit}<td></td>{/if}
-        </tr>
-      </tfoot>
-    </table>
-  {:else}
-    <p>No line items found for this estimate.</p>
-  {/if}
 
-  <p>
-    <a href={`/jobs/${estimate.job}`} use:link>View Job Details</a>
-  </p>
+  {#snippet actionsSnippet(li, i)}
+    <button type="button" onclick={() => openEditItem(li)}>Edit</button>
+    <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
+    <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
+    <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
+  {/snippet}
+
+  <LineItemTable
+    {lineItems}
+    {categories}
+    showSource={true}
+    actions={canEdit ? actionsSnippet : null}
+  />
 
   <EstimateLineItemModal
     open={modalOpen}
@@ -363,6 +303,12 @@
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
 
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 24px;
+  }
+  .back-link { font-size: 13px; }
+  .page-title { font-size: 18px; font-weight: 600; }
   .status-line { margin: 8px 0 16px; display: flex; align-items: center; gap: 12px; }
   .status-badge {
     padding: 4px 12px; border-radius: 12px; font-size: 13px;

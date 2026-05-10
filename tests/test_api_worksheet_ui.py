@@ -51,6 +51,7 @@ class PlanMaterialCRUDTest(TestCase):
             quantity=2,
             unit_cost=Decimal('50.00'),
             sell_price=Decimal('100.00'),
+            accounting_category=self.category,
         )
 
     def test_list_materials(self):
@@ -73,7 +74,11 @@ class PlanMaterialCRUDTest(TestCase):
     def test_create_material(self):
         response = self.client.post(
             f'/api/plan-tasks/{self.plan_task.pk}/materials/',
-            {'description': 'Epoxy glue', 'quantity': '1.00', 'unit_cost': '15.00', 'sell_price': '25.00'},
+            {
+                'description': 'Epoxy glue', 'quantity': '1.00',
+                'unit_cost': '15.00', 'sell_price': '25.00',
+                'accounting_category': self.category.pk,
+            },
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -440,6 +445,7 @@ class PlanMaterialAssignTaskApiTest(TestCase):
         self.material = PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=self.task_a,
             description='m', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
 
     def _url(self):

@@ -1,5 +1,6 @@
 <script>
   import HistoryPanel from '../HistoryPanel.svelte';
+  import JobHeader from './JobHeader.svelte';
   import { user } from '../../stores/auth.js';
   import { api } from '../../lib/api.js';
 
@@ -24,47 +25,6 @@
   let canManageFinancials = $derived(
     $user?.permissions?.includes('can_manage_financials') ?? false
   );
-
-  // Valid status transitions (mirrors Job model)
-  const VALID_TRANSITIONS = {
-    draft: ['submitted', 'rejected'],
-    submitted: ['approved', 'rejected'],
-    approved: ['cancelled'],
-    in_progress: ['work_complete', 'cancelled'],
-    work_complete: [],
-    rejected: [],
-    completed: [],
-    cancelled: [],
-  };
-
-  let validNextStatuses = $derived(VALID_TRANSITIONS[job.status] || []);
-
-  async function handleStatusChange(e) {
-    const newStatus = e.target.value;
-    if (newStatus === job.status) return;
-    try {
-      await api.patch(`/api/jobs/${job.job_id}/`, { status: newStatus });
-      if (onStatusChange) onStatusChange();
-    } catch (err) {
-      e.target.value = job.status;
-      alert(err.message || 'Status change failed');
-    }
-  }
-
-  let releasingToFloor = $state(false);
-
-  async function releaseToFloor() {
-    if (!confirm('Release this job to the floor? Workers will see it as In Progress.')) return;
-    releasingToFloor = true;
-    try {
-      await api.patch(`/api/jobs/${job.job_id}/`, { status: 'in_progress' });
-      if (onStatusChange) onStatusChange();
-    } catch (e) {
-      alert(e.message || 'Failed to release to floor.');
-    } finally {
-      releasingToFloor = false;
-    }
-  }
 
   // Estimate versions, sorted oldest first for left-to-right tabs
   let estimateList = $derived(
@@ -258,51 +218,7 @@
 
 <div class="job-detail-page">
 
-<!-- HEADER -->
-<div class="job-header">
-  <div class="titleblock">
-    <h1>
-      JOB #{job.job_number.replace(/^JOB-/, '')}: {job.name || '(untitled)'}
-      {#if canManageJobs}<a href="#/jobs/{job.job_id}/edit" class="edit-link">edit</a>{/if}
-    </h1>
-    <p class="customer-line">
-      {#if contact}
-        for <a href="#/contacts/{contact.contact_id}">{contact.name}</a>{#if contact.business}, at <a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>{/if}
-      {/if}
-    </p>
-    <div class="status-row">
-      {#if canManageJobs && validNextStatuses.length > 0}
-        <span class="status-select-wrapper">
-          <select class="status-select status-{job.status}" onchange={handleStatusChange}>
-            <option value={job.status} selected>{job.status}</option>
-            {#each validNextStatuses as nextStatus}
-              <option value={nextStatus}>{nextStatus}</option>
-            {/each}
-          </select>
-        </span>
-      {:else}
-        <span class="status-badge status-{job.status}">{job.status}</span>
-      {/if}
-      <span class="dates">
-        {#if job.start_date}Started {new Date(job.start_date).toLocaleDateString()}{/if}
-        {#if job.due_date}{job.start_date ? ' · ' : ''}Due {new Date(job.due_date).toLocaleDateString()}{/if}
-        {#if job.completed_date}{(job.start_date || job.due_date) ? ' · ' : ''}Completed {new Date(job.completed_date).toLocaleDateString()}{/if}
-        {#if job.customer_po_number}{(job.start_date || job.due_date || job.completed_date) ? ' · ' : ''}PO: {job.customer_po_number}{/if}
-      </span>
-      {#if job.status === 'approved' && canManageJobs}
-        <button class="release-btn" onclick={releaseToFloor} disabled={releasingToFloor}>
-          {releasingToFloor ? 'Releasing…' : 'Release to floor'}
-        </button>
-      {/if}
-    </div>
-  </div>
-  <div class="pl-grid">
-    <div class="pl-item"><div class="pl-label">Estimated</div><div class="pl-value">$—</div></div>
-    <div class="pl-item"><div class="pl-label">Spent</div><div class="pl-value pl-spent">$—</div></div>
-    <div class="pl-item"><div class="pl-label">Billable</div><div class="pl-value pl-billable">$—</div></div>
-    <div class="pl-item"><div class="pl-label">Invoiced</div><div class="pl-value pl-invoiced">$—</div></div>
-  </div>
-</div>
+<JobHeader {job} {contact} {onStatusChange} />
 
 <!-- DESCRIPTION + HISTORY (fixed height) -->
 <div class="midband">
@@ -513,15 +429,31 @@
                 </tr>
               {/each}
             </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="5" class="text-right" style="font-weight:600;">Total</td>
-                <td class="text-right" style="font-weight:700;">
-                  ${displayedEstimate.line_items.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2)}
-                </td>
-              </tr>
-            </tfoot>
           </table>
+          <div class="est-footer">
+            <div class="est-meta">
+              {#if displayedEstimate.sent_date}
+                <span class="meta-bit"><span class="meta-label">Sent</span> <span class="meta-value">{fmtDate(displayedEstimate.sent_date)}</span></span>
+              {/if}
+              {#if displayedEstimate.closed_date && displayedEstimate.status === 'accepted'}
+                <span class="meta-bit"><span class="meta-label">Accepted</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'rejected'}
+                <span class="meta-bit"><span class="meta-label">Rejected</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'superseded'}
+                <span class="meta-bit"><span class="meta-label">Superseded</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'expired'}
+                <span class="meta-bit"><span class="meta-label">Expired</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+              {:else if !displayedEstimate.sent_date && displayedEstimate.created_date}
+                <span class="meta-bit"><span class="meta-label">Started</span> <span class="meta-value">{fmtDate(displayedEstimate.created_date)}</span></span>
+              {/if}
+            </div>
+            <div class="est-totals">
+              <div class="t-label">Total</div>
+              <div class="t-value grand">
+                ${displayedEstimate.line_items.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2)}
+              </div>
+            </div>
+          </div>
         {:else if displayedEstimate}
           <p class="empty-msg">Estimate has no line items.</p>
         {:else}
@@ -580,30 +512,48 @@
                   <td class="assigned">{task.assignee_name || '—'}</td>
                   <td class="text-center"><span class="pill pill-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><small>{task.blocked_reason}</small>{/if}</td>
                   <td class="time-cell">
-                    {#if task.estimated_hours !== null && task.estimated_hours !== undefined}
+                    {#if task.scheme_algorithm === 'elapsed_time'}
                       {@const actual = Number(task.actual_hours) || 0}
-                      {@const est = Number(task.estimated_hours)}
+                      {@const est = Number(task.est_qty) || 0}
                       {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
-                      {@const over = actual > est}
+                      {@const over = est > 0 && actual > est}
                       <div class="time-track">
                         <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
                       </div>
                       <div class="time-text {over ? 'over' : ''}">
-                        {actual.toFixed(1)}h / {est.toFixed(1)}h
+                        {actual.toFixed(1)} / {est > 0 ? est.toFixed(1) : '?'} {task.scheme_unit_label || 'h'}
                         {#if est > 0}
                           {#if over}
-                            <span class="time-delta">(over by {(actual - est).toFixed(1)}h)</span>
+                            <span class="time-delta">(over by {(actual - est).toFixed(1)})</span>
                           {:else if actual === 0}
                             <span class="time-dim">(not started)</span>
                           {:else}
-                            <span class="time-dim">({(est - actual).toFixed(1)}h left)</span>
+                            <span class="time-dim">({(est - actual).toFixed(1)} left)</span>
                           {/if}
                         {/if}
                       </div>
-                    {:else if task.charge?.scheme_algorithm === 'flat_fee'}
+                    {:else if task.scheme_algorithm === 'entered_qty'}
+                      {@const actual = Number(task.actual_qty) || 0}
+                      {@const est = Number(task.est_qty) || 0}
+                      {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
+                      {@const over = est > 0 && actual > est}
+                      <div class="time-track">
+                        <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
+                      </div>
+                      <div class="time-text {over ? 'over' : ''}">
+                        {actual} / {est > 0 ? est : '?'} {task.scheme_unit_label || 'units'}
+                        {#if est > 0}
+                          {#if over}
+                            <span class="time-delta">(over by {actual - est})</span>
+                          {:else if actual === 0}
+                            <span class="time-dim">(not started)</span>
+                          {:else}
+                            <span class="time-dim">({est - actual} left)</span>
+                          {/if}
+                        {/if}
+                      </div>
+                    {:else if task.scheme_algorithm === 'flat_fee'}
                       <div class="time-text time-dim">flat fee · {Number(task.actual_hours || 0).toFixed(1)}h logged</div>
-                    {:else if task.charge?.scheme_algorithm === 'entered_qty'}
-                      <div class="time-text time-dim">qty-based · {Number(task.actual_hours || 0).toFixed(1)}h logged</div>
                     {:else}
                       <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(1)}h logged</div>
                     {/if}
@@ -634,7 +584,9 @@
         <span class="top-bar-title">
           MATERIALS{#if jobMaterials.length} · {jobMaterials.length} item{jobMaterials.length === 1 ? '' : 's'}{:else} · None{/if}
         </span>
-        <span class="top-bar-actions"></span>
+        <span class="top-bar-actions">
+          <a href="#/jobs/{job.job_id}/tasklist">View task list →</a>
+        </span>
       </div>
       <div class="body">
         {#if jobMaterials.length > 0}
@@ -1304,15 +1256,21 @@
   .inv-readonly tr:nth-child(even) td { background: #dcfce7; }
   .inv-readonly .text-right { font-variant-numeric: tabular-nums; }
 
-  /* Invoice footer (meta + totals combined) */
-  .inv-footer {
+  /* Invoice / Estimate footer (meta + totals combined) */
+  .inv-footer, .est-footer {
     display: grid; grid-template-columns: 1fr auto; gap: 24px;
-    background: #ecfdf5; border-top: 2px solid #86efac;
+    border-top: 2px solid #86efac;
     padding: 12px 16px; font-size: 13px;
   }
-  .inv-meta {
+  .inv-footer { background: #ecfdf5; }
+  .est-footer { background: #eff6ff; border-top-color: #93c5fd; }
+  .inv-meta, .est-meta {
     display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
   }
+  .est-totals { display: grid; grid-template-columns: auto 110px; column-gap: 12px; row-gap: 2px; }
+  .est-totals .t-label { text-align: right; color: #1e3a8a; font-size: 12px; }
+  .est-totals .t-value { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .est-totals .t-value.grand { font-size: 15px; }
   .inv-link { font-weight: 600; color: #14532d; text-decoration: none; }
   .inv-link:hover { text-decoration: underline; }
   .meta-bit { color: #14532d; font-size: 12px; }

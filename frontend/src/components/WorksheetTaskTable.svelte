@@ -1,7 +1,10 @@
 <script>
+  import { formatQtyUnits } from '../lib/format.js';
+
   let {
     worksheet = null,
     readonly = false,
+    onTaskClick = () => {},
     onEditTask = () => {},
     onDeleteTask = () => {},
     onReorder = () => {},
@@ -60,7 +63,10 @@
         {#if !readonly}
           <td class="move-cell"><input type="radio" name="ws-move-target" value={task.plan_task_id} bind:group={selectedTaskId}></td>
         {/if}
-        <td>{task.name}{#if task.description}<br><span class="dim">{task.description}</span>{/if}</td>
+        <td>
+          <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
+          {#if task.description}<br><span class="dim">{task.description}</span>{/if}
+        </td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">{fmt(taskTotal(task))}</td>
         {#if !readonly}
@@ -79,7 +85,7 @@
             <td class="move-cell">{#if selectedTaskId != null && selectedTaskId !== (task.plan_task_id ?? null)}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent"><span class="material-marker">&#9679;</span> {mat.description || '(no description)'}</td>
-          <td class="text-right">{mat.quantity ?? '-'}</td>
+          <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
           {#if !readonly}
             <td class="actions-cell">
@@ -126,4 +132,10 @@
     cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
   }
   .small-btn:hover { background: #f0f0f0; }
+  .link-btn {
+    background: none; border: none; padding: 0; margin: 0;
+    color: #1d4ed8; cursor: pointer; font-size: inherit;
+    text-decoration: underline; text-align: left;
+  }
+  .link-btn:hover { color: #1e40af; }
 </style>

@@ -11,8 +11,8 @@ class BlepServicePrimitivesTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Task', job=self.job)
-        self.other_task = Task.objects.create(name='Other', job=self.job)
+        self.task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
+        self.other_task = Task.objects.create(name='Other', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
         self.other_user = User.objects.create_user(username='worker2', password='x')
 
@@ -70,7 +70,7 @@ class CreateHistoricalTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_historical', password='x')
         self.manager = User.objects.create_user(username='m', password='x')
         from django.contrib.auth.models import Permission
@@ -153,7 +153,7 @@ class UpdateBlepTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_update', password='x')
         from django.contrib.auth.models import Permission
         self.manager = User.objects.create_user(username='m', password='x')
@@ -239,7 +239,7 @@ class DeleteBlepTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_delete', password='x')
         from django.contrib.auth.models import Permission
         self.manager = User.objects.create_user(username='m', password='x')

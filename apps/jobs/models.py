@@ -132,6 +132,14 @@ class TaskBase(models.Model):
         null=True, blank=True,
         help_text="Estimated worker time for scheduling"
     )
+    est_qty = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        null=True, blank=True,
+        help_text=(
+            "Estimated billable quantity in the rate scheme's units. "
+            "Required at the application layer on PlanTask; optional on Task."
+        ),
+    )
 
     class Meta:
         abstract = True
@@ -150,10 +158,18 @@ class PlanTask(TaskBase):
         'jobs.RateScheme', on_delete=models.PROTECT,
     )
     active_modifiers = models.JSONField(default=list, blank=True)
-    est_qty = models.DecimalField(max_digits=10, decimal_places=2)
+    # est_qty is now inherited from TaskBase (nullable at DB level; PlanTask.clean()
+    # enforces non-null in Phase B).
 
     class Meta:
         db_table = 'plan_tasks'
+
+    def clean(self):
+        super().clean()
+        if self.est_qty is None:
+            raise ValidationError({
+                'est_qty': 'Required: every PlanTask must have an estimated quantity.',
+            })
 
     def save(self, *args, **kwargs):
         """Auto-assign sort_order at the worksheet level."""
@@ -240,6 +256,22 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text="Position in assignee's work queue on the board"
     )
+    # Billing fields (Phase B: rate_scheme is NOT NULL at the DB level).
+    rate_scheme = models.ForeignKey(
+        'jobs.RateScheme',
+        on_delete=models.PROTECT,
+        related_name='task_set',
+    )
+    active_modifiers = models.JSONField(default=list, blank=True)
+    actual_qty = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        null=True, blank=True,
+        help_text=(
+            "Worker-entered actual quantity for ENTERED_QTY schemes. "
+            "Null for ELAPSED_TIME (qty derived from bleps) and FLAT_FEE."
+        ),
+    )
+    # est_qty inherited from TaskBase (nullable on Task).
 
     class Meta:
         db_table = 'tasks'
@@ -254,9 +286,7 @@ class Task(TaskBase):
                     raise ValidationError(
                         {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
                     )
-        # Phase B: every Task must have a TaskCharge.
-        if self.pk and not hasattr(self, 'charge'):
-            raise ValidationError({'charge': 'Required: every Task must have a TaskCharge.'})
+        # charge guard removed in B4. rate_scheme is NOT NULL at DB level (B8).
 
     def save(self, *args, **kwargs):
         from django.db import transaction
@@ -271,8 +301,20 @@ class Task(TaskBase):
 
     @property
     def effective_accounting_category(self):
-        return self.charge.rate_scheme.accounting_category
+        return self.rate_scheme.accounting_category
 
+    def compute_amount(self, active_modifiers=None):
+        """Uniform atom interface: total billable amount for this task.
+
+        Ignores the active_modifiers argument (uses self.active_modifiers).
+        Parameter is accepted to match the BillableAtom interface shared
+        with PlanTask/Material/PlanMaterial.
+        """
+        qty = self.rate_scheme.get_actual_qty(self)
+        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
+
+    def effective_rate(self):
+        return self.rate_scheme.effective_rate(self.active_modifiers)
 
 
 class Blep(models.Model):
@@ -393,12 +435,7 @@ class RateScheme(models.Model):
             )
             return Decimal(total_seconds) / 3600
         elif self.algorithm == self.ENTERED_QTY:
-            raw = task.charge.actuals.get('qty', 0)
-            # actuals is JSON; qty may have been stored as int (UI), str (carry-over
-            # preserves Decimal precision through JSON), or Decimal-as-str by other
-            # writers. Normalize to Decimal at the read boundary so callers can do
-            # arithmetic.
-            return Decimal(str(raw))
+            return task.actual_qty or Decimal('0')
         else:  # FLAT_FEE
             return Decimal('1')
 
@@ -407,11 +444,11 @@ class RateScheme(models.Model):
         return list(self.modifiers)
 
     def is_referenced(self):
-        """True if any PlanTask, TaskCharge, or TaskTemplate points at this scheme."""
+        """True if any PlanTask, Task, or TaskTemplate points at this scheme."""
         from apps.estimates.models import TaskTemplate
         if PlanTask.objects.filter(rate_scheme=self).exists():
             return True
-        if TaskCharge.objects.filter(rate_scheme=self).exists():
+        if Task.objects.filter(rate_scheme=self).exists():
             return True
         if TaskTemplate.objects.filter(rate_scheme=self).exists():
             return True
@@ -422,7 +459,7 @@ class RateScheme(models.Model):
         from apps.estimates.models import TaskTemplate
         return {
             'plan_task_count': PlanTask.objects.filter(rate_scheme=self).count(),
-            'task_charge_count': TaskCharge.objects.filter(rate_scheme=self).count(),
+            'task_count': Task.objects.filter(rate_scheme=self).count(),
             'task_template_count': TaskTemplate.objects.filter(rate_scheme=self).count(),
         }
 
@@ -479,41 +516,5 @@ class RateScheme(models.Model):
     def __str__(self):
         return self.name
 
-
-class TaskCharge(models.Model):
-    """The filled-in billing form for a Task. One per Task (OneToOne)."""
-    task_charge_id = models.AutoField(primary_key=True)
-    task = models.OneToOneField(Task, on_delete=models.CASCADE, related_name='charge')
-    rate_scheme = models.ForeignKey(RateScheme, on_delete=models.PROTECT)
-    active_modifiers = models.JSONField(default=list, blank=True)
-    actuals = models.JSONField(default=dict, blank=True)
-
-    class Meta:
-        db_table = 'task_charges'
-
-    def __str__(self):
-        return f"Charge for {self.task}"
-
-    def compute(self):
-        """Compute charge using scheme's algorithm and this charge's specifics."""
-        qty = self.rate_scheme.get_actual_qty(self.task)
-        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
-
-    def compute_amount(self, active_modifiers=None):
-        """Uniform atom interface: total billable amount for this charge.
-
-        Ignores the active_modifiers argument (uses self.active_modifiers).
-        Parameter is accepted to match the BillableAtom interface shared with
-        Material/PlanMaterial.
-        """
-        return self.compute()
-
-    def effective_rate(self):
-        return self.rate_scheme.effective_rate(self.active_modifiers)
-
-    def has_actuals(self):
-        if self.rate_scheme.algorithm == RateScheme.ENTERED_QTY:
-            return bool(self.actuals.get('qty'))
-        return True  # elapsed_time and flat_fee don't need manual entry
 
 

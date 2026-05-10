@@ -142,19 +142,15 @@ class TaskServiceUpdateTest(JobsTestBase):
 
     def setUp(self):
         super().setUp()
-        from apps.jobs.models import TaskCharge
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.task = Task.objects.create(
-            job=self.job, name='Task 1', sort_order=1,
-        )
         scheme = RateScheme.objects.create(
             name='TSU scheme', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )
-        TaskCharge.objects.create(
-            task=self.task, rate_scheme=scheme,
-            active_modifiers=[], actuals={},
+        self.task = Task.objects.create(
+            job=self.job, name='Task 1', sort_order=1,
+            rate_scheme=scheme,
         )
 
     def test_update_task(self):
@@ -171,24 +167,20 @@ class TaskServiceReorderTest(JobsTestBase):
 
     def setUp(self):
         super().setUp()
-        from apps.jobs.models import TaskCharge
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.t1 = Task.objects.create(
-            job=self.job, name='Task 1', sort_order=1,
-        )
-        self.t2 = Task.objects.create(
-            job=self.job, name='Task 2', sort_order=2,
-        )
         scheme = RateScheme.objects.create(
             name='TSR scheme', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )
-        for t in (self.t1, self.t2):
-            TaskCharge.objects.create(
-                task=t, rate_scheme=scheme,
-                active_modifiers=[], actuals={},
-            )
+        self.t1 = Task.objects.create(
+            job=self.job, name='Task 1', sort_order=1,
+            rate_scheme=scheme,
+        )
+        self.t2 = Task.objects.create(
+            job=self.job, name='Task 2', sort_order=2,
+            rate_scheme=scheme,
+        )
 
     def test_reorder_down(self):
         TaskService.reorder_tasks(self.t1.pk, 'down')
@@ -222,7 +214,7 @@ class MaterialServiceTest(JobsTestBase):
         mat = InventoryService.create_plan_material(
             self.plan_task.pk, description='Steel plate',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'),
-            sell_price=Decimal('15.00'),
+            sell_price=Decimal('15.00'), accounting_category=self.lit,
         )
         self.assertIsNotNone(mat.pk)
         self.assertEqual(mat.plan_task, self.plan_task)
@@ -232,6 +224,7 @@ class MaterialServiceTest(JobsTestBase):
         mat = PlanMaterial.objects.create(
             est_worksheet=self.worksheet,
             plan_task=self.plan_task, description='Old', quantity=Decimal('1.00'),
+            accounting_category=self.lit,
         )
         updated = InventoryService.update_plan_material(
             mat.pk, description='New', quantity=Decimal('3.00'),
@@ -243,6 +236,7 @@ class MaterialServiceTest(JobsTestBase):
         mat = PlanMaterial.objects.create(
             est_worksheet=self.worksheet,
             plan_task=self.plan_task, description='Delete me', quantity=Decimal('1.00'),
+            accounting_category=self.lit,
         )
         pk = mat.pk
         InventoryService.delete_plan_material(pk)
@@ -290,11 +284,11 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
 
         cut_task = tasks[0]
         self.assertEqual(cut_task.name, 'Cut')
-        self.assertEqual(cut_task.charge.rate_scheme, self.scheme)
+        self.assertEqual(cut_task.rate_scheme, self.scheme)
 
         weld_task = tasks[1]
         self.assertEqual(weld_task.name, 'Weld')
-        self.assertEqual(weld_task.charge.rate_scheme, self.scheme)
+        self.assertEqual(weld_task.rate_scheme, self.scheme)
 
     def test_skips_inactive_task_templates(self):
         self.task_tmpl_2.is_active = False
@@ -448,3 +442,27 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
         self.job.refresh_from_db()
         self.assertIsNone(self.job.template)
+
+    def test_copy_from_worksheet_carries_units(self):
+        """Units set on PlanMaterial are preserved on the resulting Material."""
+        plan_task = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='Cut', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
+        PlanMaterial.objects.create(
+            est_worksheet=self.worksheet, plan_task=plan_task,
+            description='task-attached', quantity=Decimal('5'),
+            units='lbs', unit_cost=Decimal('2.00'), sell_price=Decimal('3.00'),
+            accounting_category=self.lit)
+        PlanMaterial.objects.create(
+            est_worksheet=self.worksheet, plan_task=None,
+            description='task-less', quantity=Decimal('2'),
+            units='ea', unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
+            accounting_category=self.lit)
+
+        new_job = JobService.create_job(name='Copy Target', contact=self.contact)
+        JobService.copy_from_worksheet(new_job.pk, self.worksheet.pk)
+
+        task_mat = Material.objects.get(job=new_job, task__isnull=False)
+        self.assertEqual(task_mat.units, 'lbs')
+        loose_mat = Material.objects.get(job=new_job, task__isnull=True)
+        self.assertEqual(loose_mat.units, 'ea')

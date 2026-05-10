@@ -3,10 +3,12 @@ from rest_framework import serializers
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
+from apps.core.models import AccountingCategory
+from apps.core.units import UnitsField
 
 
 class PlanMaterialSerializer(serializers.ModelSerializer):
-    units = serializers.SerializerMethodField()
+    units = UnitsField(read_only=True)
 
     class Meta:
         model = PlanMaterial
@@ -17,19 +19,49 @@ class PlanMaterialSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_units(self, obj):
-        return obj.price_list_item.units if obj.price_list_item_id else 'none'
-
 
 class PlanMaterialWriteSerializer(serializers.ModelSerializer):
     """Writable serializer for PlanMaterial; used by worksheet plan-materials endpoint."""
+    units = UnitsField(required=False)
+    propagate_to_pli = serializers.BooleanField(
+        write_only=True, required=False,
+    )
+    accounting_category = serializers.PrimaryKeyRelatedField(
+        queryset=AccountingCategory.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = PlanMaterial
         fields = [
             'plan_material_id', 'plan_task', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item', 'accounting_category',
+            'units', 'unit_cost', 'sell_price', 'price_list_item',
+            'accounting_category', 'propagate_to_pli',
         ]
         read_only_fields = ['plan_material_id']
+
+    def update(self, instance, validated_data):
+        from apps.inventory.serializer_helpers import (
+            enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED,
+            PLAN_MATERIAL_FREEFORM_ALLOWED,
+        )
+        # plan_task is reassignable on both freeform and PLI-linked rows;
+        # exclude it from the allowlist check.
+        scratch = dict(validated_data)
+        scratch.pop('plan_task', None)
+        if instance.price_list_item_id is not None:
+            enforce_pli_linked_allowlist(
+                instance, scratch, PLI_LINKED_PRICING_ALLOWED,
+            )
+        else:
+            disallowed = set(scratch.keys()) - PLAN_MATERIAL_FREEFORM_ALLOWED
+            if disallowed:
+                raise serializers.ValidationError({
+                    'detail': f'Disallowed fields on freeform PlanMaterial: {sorted(disallowed)}',
+                })
+        validated_data.pop('propagate_to_pli', None)
+        return super().update(instance, validated_data)
 
 
 class PlanTaskSerializer(serializers.ModelSerializer):
@@ -41,7 +73,7 @@ class PlanTaskSerializer(serializers.ModelSerializer):
         model = PlanTask
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
-            'rate_scheme', 'active_modifiers', 'est_qty',
+            'rate_scheme', 'active_modifiers', 'est_qty', 'est_worker_time',
             'amount', 'units', 'plan_materials',
         ]
         read_only_fields = ['plan_task_id', 'sort_order', 'amount', 'units']

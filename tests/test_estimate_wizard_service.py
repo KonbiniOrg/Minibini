@@ -500,11 +500,28 @@ class SendAllAtomsTest(TestCase):
     def test_amount_matches_compute_amount(self):
         result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
         from apps.estimates.models import EstimateLineItem
-        prices = sorted(
-            EstimateLineItem.objects.filter(estimate=result['estimate']).values_list('price', flat=True)
+        # qty * price totals must equal each atom's compute_amount.
+        # PlanTask: est_qty=2, rate=$100 → qty=2, price=100, total=$200.
+        # PlanMaterial: quantity=3, sell_price=$5 → qty=3, price=5, total=$15.
+        totals = sorted(
+            li.qty * li.price
+            for li in EstimateLineItem.objects.filter(estimate=result['estimate'])
         )
-        # PlanTask: 2 × $100 = $200; PlanMaterial: 3 × $5 = $15
-        self.assertEqual(prices, [Decimal('15.00'), Decimal('200.00')])
+        self.assertEqual(totals, [Decimal('15.00'), Decimal('200.00')])
+
+    def test_qty_and_price_split_per_atom(self):
+        """Per-unit qty/price must reflect the source atom, not collapse to 1×total."""
+        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        from apps.estimates.models import EstimateLineItem
+        rows = sorted(
+            EstimateLineItem.objects.filter(estimate=result['estimate'])
+            .values_list('qty', 'price'),
+            key=lambda t: t[0],
+        )
+        self.assertEqual(rows, [
+            (Decimal('2.00'), Decimal('100.00')),  # PlanTask
+            (Decimal('3.00'), Decimal('5.00')),    # PlanMaterial
+        ])
 
     def test_returns_estimate(self):
         result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)

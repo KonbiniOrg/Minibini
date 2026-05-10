@@ -3,7 +3,7 @@ from django.test import TestCase
 from decimal import Decimal
 
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.inventory.models import Material, PriceListItem
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
@@ -32,9 +32,14 @@ class InvoiceLineItemSourceTest(TestCase):
             contact=self.contact,
             status=Job.STATUS_APPROVED,
         )
+        self.scheme = RateScheme.objects.create(
+            name='S-ilis', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job,
             name='Labor',
+            rate_scheme=self.scheme,
         )
 
         self.invoice = Invoice.objects.create(job=self.job)

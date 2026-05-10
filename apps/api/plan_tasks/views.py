@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status
 from rest_framework.exceptions import MethodNotAllowed, NotFound
 from rest_framework.mixins import RetrieveModelMixin, ListModelMixin, CreateModelMixin
@@ -54,14 +55,18 @@ class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
 
         serializer = PlanMaterialWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        create_data = {k: v for k, v in serializer.validated_data.items()
+                       if k != 'propagate_to_pli'}
         try:
             mat = InventoryService.create_plan_material(
-                plan_task.pk, **serializer.validated_data
+                plan_task.pk, **create_data
             )
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         except ServiceError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             PlanMaterialSerializer(mat).data,
             status=status.HTTP_201_CREATED,
@@ -85,12 +90,18 @@ class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
 
         serializer = PlanMaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        try:
-            mat = InventoryService.update_plan_material(
-                material.pk, **serializer.validated_data
+        propagate = serializer.validated_data.get('propagate_to_pli', False)
+        if material.price_list_item_id is not None and (
+            'unit_cost' in serializer.validated_data
+            or 'sell_price' in serializer.validated_data
+        ):
+            InventoryService.update_plan_material_pricing(
+                material,
+                unit_cost=serializer.validated_data.get('unit_cost'),
+                sell_price=serializer.validated_data.get('sell_price'),
+                propagate_to_pli=propagate,
             )
-        except NotFoundError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
-        except ServiceError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            material.refresh_from_db()
+            return Response(PlanMaterialSerializer(material).data)
+        mat = serializer.save()
         return Response(PlanMaterialSerializer(mat).data)

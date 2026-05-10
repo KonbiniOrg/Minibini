@@ -76,7 +76,8 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
             kwargs['template'] = template
         ws = WorksheetService.create_worksheet(job_pk, **kwargs)
         if template:
-            template.generate_tasks_for_worksheet(ws)
+            task_pairing = template.generate_tasks_for_worksheet(ws)
+            template.generate_materials_for_worksheet(ws, task_pairing=task_pairing)
         serializer.instance = ws
 
     @action(detail=True, methods=['post'], url_path='reorder')
@@ -107,6 +108,9 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         est_qty = request.data.get('est_qty')
         rate_scheme = request.data.get('rate_scheme')
         active_modifiers = request.data.get('active_modifiers')
+        est_worker_time = request.data.get('est_worker_time')
+        name = request.data.get('name') or None
+        description = request.data.get('description')  # None means "not provided"
         if not task_template_id:
             return Response(
                 {'task_template_id': ['This field is required.']},
@@ -124,6 +128,9 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
                     if est_qty is not None and est_qty != ''
                     else None
                 ),
+                est_worker_time=est_worker_time if est_worker_time else None,
+                name=name,
+                description=description,
             )
         except SchemeSupersededError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
@@ -146,15 +153,20 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         serializer = PlanMaterialWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         plan_task = serializer.validated_data.get('plan_task')
-        kwargs = {k: v for k, v in serializer.validated_data.items() if k != 'plan_task'}
-        if plan_task is not None:
-            kwargs['plan_task'] = plan_task
-            from apps.inventory.models import PlanMaterial
-            mat = PlanMaterial(est_worksheet=worksheet, **kwargs)
-            mat.save()
-        else:
-            from apps.inventory.services import InventoryService
-            mat = InventoryService.create_plan_material_on_worksheet(worksheet, **kwargs)
+        EXCLUDE_FROM_CREATE = {'plan_task', 'propagate_to_pli'}
+        kwargs = {k: v for k, v in serializer.validated_data.items()
+                  if k not in EXCLUDE_FROM_CREATE}
+        try:
+            if plan_task is not None:
+                kwargs['plan_task'] = plan_task
+                from apps.inventory.models import PlanMaterial
+                mat = PlanMaterial(est_worksheet=worksheet, **kwargs)
+                mat.save()
+            else:
+                from apps.inventory.services import InventoryService
+                mat = InventoryService.create_plan_material_on_worksheet(worksheet, **kwargs)
+        except ValidationError as e:
+            return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
         out = PlanMaterialWriteSerializer(mat)
         return Response(out.data, status=status.HTTP_201_CREATED)
 
@@ -175,6 +187,20 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
 
         serializer = PlanMaterialWriteSerializer(mat, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        propagate = serializer.validated_data.get('propagate_to_pli', False)
+        if mat.price_list_item_id is not None and (
+            'unit_cost' in serializer.validated_data
+            or 'sell_price' in serializer.validated_data
+        ):
+            from apps.inventory.services import InventoryService
+            InventoryService.update_plan_material_pricing(
+                mat,
+                unit_cost=serializer.validated_data.get('unit_cost'),
+                sell_price=serializer.validated_data.get('sell_price'),
+                propagate_to_pli=propagate,
+            )
+            mat.refresh_from_db()
+            return Response(PlanMaterialWriteSerializer(mat).data)
         serializer.save()
         return Response(serializer.data)
 

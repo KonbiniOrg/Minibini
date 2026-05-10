@@ -311,9 +311,11 @@ class TaskWorkContainerTest(TestCase):
 
     def test_task_with_job(self):
         """Test creating Task directly on a Job (post-WorkOrder-removal)."""
+        scheme = _make_scheme('twj')
         task = Task.objects.create(
             job=self.job,
-            name="Job Task"
+            name="Job Task",
+            rate_scheme=scheme,
         )
 
         self.assertEqual(task.job, self.job)

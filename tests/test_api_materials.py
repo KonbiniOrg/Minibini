@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase, APIClient
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job
+from apps.jobs.models import Job, RateScheme
 from apps.inventory.models import PriceListItem, Material
 from apps.contacts.models import Contact, Business
 
@@ -25,6 +25,19 @@ class MaterialApiTest(APITestCase):
             qty_on_hand=Decimal('10'),
         )
 
+    def test_post_jobs_id_materials_carries_units_freeform(self):
+        """Issue 1 regression: freeform task-less Material POST must persist units."""
+        url = f'/api/jobs/{self.job.pk}/materials/'
+        resp = self.client.post(url, {
+            'description': 'custom item',
+            'quantity': '1',
+            'units': 'lbs',
+            'accounting_category': self.cat.pk,
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        m = Material.objects.get(job=self.job, description='custom item')
+        self.assertEqual(m.units, 'lbs')
+
     def test_post_jobs_id_materials_creates_taskless_material(self):
         url = f'/api/jobs/{self.job.pk}/materials/'
         resp = self.client.post(url, {
@@ -34,16 +47,19 @@ class MaterialApiTest(APITestCase):
         self.assertEqual(resp.status_code, 201, resp.content)
         self.assertTrue(Material.objects.filter(job=self.job, task__isnull=True).exists())
 
-    def test_patch_material_description_only(self):
+    def test_patch_pli_linked_material_rejects_field_edits(self):
+        """PLI-linked Materials are immutable except for unit_cost/sell_price.
+        PATCHing description (or any non-pricing field) returns 400. Quantity
+        must be edited via /restock/ or /draw-more/."""
         from apps.inventory.services import MaterialService
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('2'), price_list_item=self.pli,
         )
         r1 = self.client.patch(f'/api/materials/{m.pk}/', {'description': 'y'}, format='json')
-        self.assertEqual(r1.status_code, 200, r1.content)
+        self.assertEqual(r1.status_code, 400, r1.content)
         r2 = self.client.patch(f'/api/materials/{m.pk}/', {'quantity': '99'}, format='json')
-        self.assertEqual(r2.status_code, 400)
+        self.assertEqual(r2.status_code, 400, r2.content)
 
     def test_consume_restock_draw_more_actions(self):
         from apps.inventory.services import MaterialService
@@ -66,6 +82,7 @@ class MaterialApiTest(APITestCase):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='del-me',
             quantity=Decimal('1'), price_list_item=None,
+            accounting_category=self.cat,
         )
         resp = self.client.delete(f'/api/materials/{m.pk}/')
         self.assertEqual(resp.status_code, 405, resp.content)
@@ -112,6 +129,7 @@ class MaterialInventoriedFlagSerializerTest(APITestCase):
         return MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('1'), price_list_item=pli,
+            accounting_category=self.cat if pli is None else None,
         )
 
     def test_flag_true_for_inventoried_pli(self):
@@ -151,6 +169,10 @@ class MaterialAssignTaskApiTest(APITestCase):
 
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='c', code='MASGN1')
+        self.scheme = RateScheme.objects.create(
+            name='S-masgn', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
+        )
         self.user = User.objects.create_user('masgn_u', password='p')
         self.client.force_login(self.user)
         contact = Contact.objects.create(first_name='C', last_name='T')
@@ -158,17 +180,18 @@ class MaterialAssignTaskApiTest(APITestCase):
         contact.business = biz; contact.save()
         self.job = Job.objects.create(job_number='JOB-ASGN-1', contact=contact)
         from apps.jobs.models import Task
-        self.task_a = Task.objects.create(name='A', job=self.job)
-        self.task_b = Task.objects.create(name='B', job=self.job)
-        self.task_done = Task.objects.create(name='Done', job=self.job, status='complete')
+        self.task_a = Task.objects.create(name='A', job=self.job, rate_scheme=self.scheme)
+        self.task_b = Task.objects.create(name='B', job=self.job, rate_scheme=self.scheme)
+        self.task_done = Task.objects.create(name='Done', job=self.job, status='complete', rate_scheme=self.scheme)
         self.other_job = Job.objects.create(job_number='JOB-ASGN-2', contact=contact)
-        self.other_task = Task.objects.create(name='Other', job=self.other_job)
+        self.other_task = Task.objects.create(name='Other', job=self.other_job, rate_scheme=self.scheme)
 
     def _make(self, task=None):
         from apps.inventory.services import MaterialService
         return MaterialService.create_on_job(
             job=self.job, task=task, description='x',
             quantity=Decimal('1'), price_list_item=None,
+            accounting_category=self.cat,
         )
 
     def test_assign_taskless_material_to_task(self):
@@ -233,6 +256,7 @@ class MaterialApiPermissionTest(APITestCase):
         url = f'/api/jobs/{self.job.pk}/materials/'
         resp = self.client.post(url, {
             'description': 'worker item', 'quantity': '1',
+            'accounting_category': self.cat.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
 

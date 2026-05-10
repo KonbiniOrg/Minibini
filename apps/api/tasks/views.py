@@ -1,12 +1,12 @@
 from django.core.exceptions import ValidationError
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.mixins import RetrieveModelMixin
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.jobs.models import Task, TaskCharge
+from apps.jobs.models import Task
 from apps.inventory.models import Material
 from apps.inventory.services import MaterialService
 from apps.core.services import NotFoundError, ServiceError
@@ -63,8 +63,10 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return err
         serializer = MaterialWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        create_data = {k: v for k, v in serializer.validated_data.items()
+                       if k != 'propagate_to_pli'}
         mat = MaterialService.create_on_job(
-            job=task.job, task=task, **serializer.validated_data
+            job=task.job, task=task, **create_data
         )
         return Response(
             MaterialSerializer(mat).data,
@@ -112,9 +114,20 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             )
         serializer = MaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        for field, value in serializer.validated_data.items():
-            setattr(material, field, value)
-        material.save()
+        propagate = serializer.validated_data.get('propagate_to_pli', False)
+        if material.price_list_item_id is not None and (
+            'unit_cost' in serializer.validated_data
+            or 'sell_price' in serializer.validated_data
+        ):
+            MaterialService.update_pricing(
+                material,
+                unit_cost=serializer.validated_data.get('unit_cost'),
+                sell_price=serializer.validated_data.get('sell_price'),
+                propagate_to_pli=propagate,
+            )
+            material.refresh_from_db()
+            return Response(MaterialSerializer(material).data)
+        serializer.save()
         return Response(MaterialSerializer(material).data)
 
     # --- Subtask CRUD ---
@@ -206,48 +219,21 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'ok'})
 
-
-@api_view(['GET', 'POST', 'PATCH'])
-@permission_classes([IsAuthenticated])
-def task_charge_view(request, job_pk, task_pk):
-    from apps.api.tasks.serializers import TaskChargeSerializer, TaskChargeReadSerializer
-    try:
-        task = Task.objects.get(pk=task_pk, job_id=job_pk)
-    except Task.DoesNotExist:
-        return Response({'detail': 'Task not found.'}, status=404)
-
-    if request.method == 'GET':
+    @action(detail=True, methods=['patch'], url_path='actual-qty',
+            permission_classes=[IsAuthenticated])
+    def actual_qty(self, request, pk=None):
+        """Allow any authenticated worker to record their actual qty on a task."""
+        task = self.get_object()
+        qty = request.data.get('actual_qty')
+        if qty is None:
+            return Response({'actual_qty': ['Required.']}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            charge = task.charge
-        except TaskCharge.DoesNotExist:
-            return Response(None)
-        return Response(TaskChargeReadSerializer(charge).data)
+            from decimal import Decimal
+            task.actual_qty = Decimal(str(qty))
+        except Exception:
+            return Response({'actual_qty': ['Invalid decimal.']}, status=status.HTTP_400_BAD_REQUEST)
+        task.save(update_fields=['actual_qty'])
+        return Response({'actual_qty': str(task.actual_qty)})
 
-    # POST/PATCH require CanManageJobs
-    if not request.user.has_perm('core.can_manage_jobs'):
-        return Response(status=403)
 
-    if request.method == 'POST':
-        try:
-            task.charge  # check if exists
-            return Response(
-                {'detail': 'Charge already exists. Use PATCH to update.'},
-                status=400,
-            )
-        except TaskCharge.DoesNotExist:
-            pass
-        serializer = TaskChargeSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(task=task)
-        return Response(TaskChargeReadSerializer(serializer.instance).data, status=201)
-
-    # PATCH
-    try:
-        charge = task.charge
-    except TaskCharge.DoesNotExist:
-        return Response({'detail': 'No charge to update.'}, status=404)
-    serializer = TaskChargeSerializer(charge, data=request.data, partial=True)
-    serializer.is_valid(raise_exception=True)
-    serializer.save()
-    return Response(TaskChargeReadSerializer(charge).data)
 

@@ -3,22 +3,22 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from tests.base import BaseTestCase
-from apps.jobs.models import RateScheme, TaskCharge, Task
+from apps.jobs.models import RateScheme, Task
 
 User = get_user_model()
 
 
-class TaskChargeAPITest(TestCase):
+class TaskBillingFieldsAPITest(TestCase):
+    """Phase B: Task billing fields are top-level on the Task serializer.
+    The /charge/ endpoint has been removed; billing is set directly on Task.
+    """
     def setUp(self):
-        # Create a user with can_manage_jobs permission
         self.manager = User.objects.create_user(username='manager', password='testpass')
         perm = Permission.objects.get(codename='can_manage_jobs')
         self.manager.user_permissions.add(perm)
 
-        # Create a read-only worker user
         self.worker = User.objects.create_user(username='worker', password='testpass')
 
-        # Create an accounting category and a rate scheme with a modifier
         from apps.core.models import AccountingCategory
         self.ac = AccountingCategory.objects.create(code='LAB', name='Labor')
         self.scheme = RateScheme.objects.create(
@@ -30,125 +30,35 @@ class TaskChargeAPITest(TestCase):
             accounting_category=self.ac,
         )
 
-        # Create a job and task
         from apps.contacts.models import Contact
         from apps.jobs.models import Job
         contact = Contact.objects.create(first_name='Test', last_name='Contact')
         self.job = Job.objects.create(name='Test Job', contact=contact, job_number='JOB-TEST-001')
-        self.task = Task.objects.create(name='Test Task', job=self.job)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme=self.scheme)
 
-        # Log in as manager by default
         self.client.login(username='manager', password='testpass')
 
-    def test_task_serializer_includes_charge_null(self):
-        """GET /api/tasks/{id}/ shows charge: null when no charge exists."""
+    def test_task_serializer_has_no_charge_key(self):
+        """GET /api/tasks/{id}/ Phase B: 'charge' is no longer nested; billing fields are top-level."""
         resp = self.client.get(f'/api/tasks/{self.task.pk}/')
         self.assertEqual(resp.status_code, 200)
-        self.assertIsNone(resp.json()['charge'])
+        body = resp.json()
+        self.assertNotIn('charge', body)
+        # rate_scheme and active_modifiers are now top-level
+        self.assertIn('rate_scheme', body)
+        self.assertIn('active_modifiers', body)
 
-    def test_task_serializer_includes_charge(self):
-        """GET /api/tasks/{id}/ shows nested charge data."""
-        TaskCharge.objects.create(
-            task=self.task, rate_scheme=self.scheme,
-            active_modifiers=['messy'], actuals={'qty': 30},
-        )
+    def test_task_serializer_includes_billing_top_level(self):
+        """GET /api/tasks/{id}/ Phase B: billing fields from Task are exposed top-level."""
+        self.task.rate_scheme = self.scheme
+        self.task.active_modifiers = ['messy']
+        self.task.save()
         resp = self.client.get(f'/api/tasks/{self.task.pk}/')
         self.assertEqual(resp.status_code, 200)
-        charge = resp.json()['charge']
-        self.assertIsNotNone(charge)
-        self.assertEqual(charge['rate_scheme'], self.scheme.pk)
-        self.assertEqual(charge['active_modifiers'], ['messy'])
-
-    def test_create_charge_on_task(self):
-        resp = self.client.post(
-            f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/charge/',
-            {'rate_scheme': self.scheme.pk, 'active_modifiers': ['messy'], 'actuals': {'qty': 30}},
-            content_type='application/json',
-        )
-        self.assertEqual(resp.status_code, 201)
-        self.assertTrue(TaskCharge.objects.filter(task=self.task).exists())
-
-    def test_update_charge_actuals(self):
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
-        resp = self.client.patch(
-            f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/charge/',
-            {'actuals': {'qty': 35}},
-            content_type='application/json',
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.task.charge.refresh_from_db()
-        self.assertEqual(self.task.charge.actuals, {'qty': 35})
-
-    def test_get_charge(self):
-        TaskCharge.objects.create(
-            task=self.task, rate_scheme=self.scheme,
-            active_modifiers=['messy'], actuals={'qty': 30},
-        )
-        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/charge/')
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()['scheme_name'], 'CNC Router')
-
-    def test_get_charge_null(self):
-        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/charge/')
-        self.assertEqual(resp.status_code, 200)
-
-    def test_duplicate_create_returns_400(self):
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
-        resp = self.client.post(
-            f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/charge/',
-            {'rate_scheme': self.scheme.pk},
-            content_type='application/json',
-        )
-        self.assertEqual(resp.status_code, 400)
-
-    def test_create_requires_manage_jobs_perm(self):
-        """Unauthenticated/unauthorized users cannot POST."""
-        self.client.logout()
-        self.client.login(username='worker', password='testpass')
-        resp = self.client.post(
-            f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/charge/',
-            {'rate_scheme': self.scheme.pk},
-            content_type='application/json',
-        )
-        self.assertEqual(resp.status_code, 403)
-
-    def test_patch_requires_manage_jobs_perm(self):
-        """Workers without can_manage_jobs cannot PATCH."""
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
-        self.client.logout()
-        self.client.login(username='worker', password='testpass')
-        resp = self.client.patch(
-            f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/charge/',
-            {'actuals': {'qty': 5}},
-            content_type='application/json',
-        )
-        self.assertEqual(resp.status_code, 403)
-
-    def test_get_charge_worker_can_read(self):
-        """Workers without can_manage_jobs can GET."""
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme, actuals={'qty': 10})
-        self.client.logout()
-        self.client.login(username='worker', password='testpass')
-        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/charge/')
-        self.assertEqual(resp.status_code, 200)
-
-    def test_charge_computed_fields(self):
-        """Response includes scheme_name, effective_rate, computed_charge."""
-        TaskCharge.objects.create(
-            task=self.task, rate_scheme=self.scheme,
-            active_modifiers=['messy'], actuals={'qty': 10},
-        )
-        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/charge/')
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data['scheme_name'], 'CNC Router')
-        self.assertEqual(data['scheme_unit_label'], 'minute')
-        self.assertIn('effective_rate', data)
-        self.assertIn('computed_charge', data)
-
-    def test_task_not_found_returns_404(self):
-        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/99999/charge/')
-        self.assertEqual(resp.status_code, 404)
+        body = resp.json()
+        self.assertNotIn('charge', body)
+        self.assertEqual(body['rate_scheme'], self.scheme.pk)
+        self.assertEqual(body['active_modifiers'], ['messy'])
 
 
 class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
@@ -158,7 +68,7 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory, User
         from django.contrib.auth.models import Permission
-        from apps.jobs.models import RateScheme, Job, Task, TaskCharge
+        from apps.jobs.models import RateScheme, Job, Task
         from apps.contacts.models import Business, Contact
         self.user = User.objects.create_user('u-tnf', 'u-tnf@x.test', 'pw')
         perm = Permission.objects.get(codename='can_manage_jobs')
@@ -178,8 +88,7 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='J-tnf', contact=contact)
-        self.task = Task.objects.create(job=self.job, name='T-tnf')
-        TaskCharge.objects.create(task=self.task, rate_scheme=self.scheme)
+        self.task = Task.objects.create(job=self.job, name='T-tnf', rate_scheme=self.scheme)
 
     def test_task_list_omits_legacy_fields(self):
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -187,16 +96,24 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         # The list endpoint may be paginated or unpaginated; handle both.
         items = body.get('results', body) if isinstance(body, dict) else body
         first = items[0]
-        for legacy in ('units', 'rate', 'est_qty', 'accounting_category'):
+        # Phase A legacy fields (removed in the flatten refactor)
+        for legacy in ('units', 'rate', 'accounting_category'):
             self.assertNotIn(legacy, first)
-        self.assertIn('charge', first)
+        # Phase B: charge nest is gone; billing fields are now top-level
+        self.assertNotIn('charge', first)
+        self.assertIn('rate_scheme', first)
+        self.assertIn('est_qty', first)
 
     def test_task_detail_omits_legacy_fields(self):
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/{self.task.pk}/')
         body = resp.json()
-        for legacy in ('units', 'rate', 'est_qty', 'accounting_category'):
+        # Phase A legacy fields (removed in the flatten refactor)
+        for legacy in ('units', 'rate', 'accounting_category'):
             self.assertNotIn(legacy, body)
-        self.assertIn('charge', body)
+        # Phase B: charge nest is gone; billing fields are now top-level
+        self.assertNotIn('charge', body)
+        self.assertIn('rate_scheme', body)
+        self.assertIn('est_qty', body)
 
 
 class TaskTimeFieldsTest(BaseTestCase):
@@ -207,7 +124,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory, User
         from django.contrib.auth.models import Permission
-        from apps.jobs.models import RateScheme, Job, Task, TaskCharge, PlanTask, Blep
+        from apps.jobs.models import RateScheme, Job, Task, PlanTask, Blep
         from apps.estimates.models import EstWorksheet
         from apps.contacts.models import Contact
         from datetime import timedelta
@@ -231,15 +148,16 @@ class TaskTimeFieldsTest(BaseTestCase):
         self.job = Job.objects.create(job_number='J-time', contact=contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
 
-        # Time-based task carried over from a plan task with est_qty=4 hours
+        # Time-based task carried over from a plan task with est_qty=4 hours.
+        # Phase B: est_qty is set directly on the Task (not read via source_plan_task).
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut',
             rate_scheme=self.elapsed_scheme, est_qty=Decimal('4.0'),
         )
         self.elapsed_task = Task.objects.create(
             job=self.job, name='Cut', source_plan_task=self.plan_task,
+            est_qty=Decimal('4.0'), rate_scheme=self.elapsed_scheme,
         )
-        TaskCharge.objects.create(task=self.elapsed_task, rate_scheme=self.elapsed_scheme)
 
         # 1 hour 30 minutes of work logged (1.5h)
         now = timezone.now()
@@ -250,8 +168,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         )
 
         # Flat-fee task with no plan source
-        self.flat_task = Task.objects.create(job=self.job, name='Setup')
-        TaskCharge.objects.create(task=self.flat_task, rate_scheme=self.flat_scheme)
+        self.flat_task = Task.objects.create(job=self.job, name='Setup', rate_scheme=self.flat_scheme)
         Blep.objects.create(
             task=self.flat_task, user=self.user,
             start_time=now - timedelta(minutes=30),
@@ -259,15 +176,15 @@ class TaskTimeFieldsTest(BaseTestCase):
         )
 
     def test_actual_hours_sums_bleps(self):
-        resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/{self.elapsed_task.pk}/')
-        # detail endpoint serializes via TaskDetailSerializer (no actual_hours);
-        # use the list endpoint instead which uses TaskSerializer.
+        # Phase B: both list and detail endpoints include actual_hours.
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
         items = resp.json()
         items = items.get('results', items) if isinstance(items, dict) else items
         elapsed = next(t for t in items if t['task_id'] == self.elapsed_task.pk)
         self.assertAlmostEqual(elapsed['actual_hours'], 1.5, places=1)
-        self.assertAlmostEqual(elapsed['estimated_hours'], 4.0, places=1)
+        # Phase B: estimated_hours removed; est_qty is now the top-level field.
+        self.assertNotIn('estimated_hours', elapsed)
+        self.assertEqual(float(elapsed['est_qty']), 4.0)
 
     def test_flat_fee_task_has_no_estimated_hours(self):
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -275,7 +192,9 @@ class TaskTimeFieldsTest(BaseTestCase):
         items = items.get('results', items) if isinstance(items, dict) else items
         flat = next(t for t in items if t['task_id'] == self.flat_task.pk)
         self.assertAlmostEqual(flat['actual_hours'], 0.5, places=1)
-        self.assertIsNone(flat['estimated_hours'])
+        # Phase B: estimated_hours is removed; flat tasks have no est_qty by default.
+        self.assertNotIn('estimated_hours', flat)
+        self.assertIsNone(flat['est_qty'])
 
 
 class TaskTemplateSerializerNoACTest(BaseTestCase):

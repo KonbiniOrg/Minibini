@@ -28,9 +28,9 @@
         <tr>
             <td><strong>{{ template.template_name }}</strong></td>
             <td>{{ template.description|truncatewords:10|default:"-" }}</td>
-            <td>{{ template.units|default:"-" }}</td>
-            <td>${{ template.rate|default:"0.00" }}</td>
-            <td>{{ template.accounting_category|default:"-" }}</td>
+            <td>{{ template.rate_scheme.unit_label|default:"-" }}</td>
+            <td>${{ template.rate_scheme.rate|default:"0.00" }}</td>
+            <td>{{ template.rate_scheme.accounting_category|default:"-" }}</td>
             <td>
                 {% if template.work_templates.all %}
                     {% for wot in template.work_templates.all %}

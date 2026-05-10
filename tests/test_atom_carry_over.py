@@ -45,15 +45,15 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
         t = tasks.first()
         self.assertEqual(t.name, 'Setup')
 
-    def test_creates_taskcharge_elapsed_time_leaves_actuals_empty(self):
+    def test_carry_over_elapsed_time_sets_fields_on_task(self):
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
         t = Task.objects.get(job=self.job)
-        self.assertTrue(hasattr(t, 'charge'))
-        self.assertEqual(t.charge.rate_scheme, self.scheme)
-        # elapsed_time scheme: actuals stay empty (bleps will populate at invoice time)
-        self.assertEqual(t.charge.actuals, {})
+        self.assertEqual(t.rate_scheme, self.scheme)
+        # elapsed_time scheme: actual_qty stays None (bleps will populate at invoice time)
+        self.assertIsNone(t.actual_qty)
+        self.assertEqual(t.est_qty, Decimal('2'))
 
-    def test_creates_taskcharge_seeds_entered_qty_from_estimate(self):
+    def test_carry_over_entered_qty_seeds_task_est_qty(self):
         # Replace scheme to entered_qty on the PlanTask
         scheme_qty = RateScheme.objects.create(
             name='PerItem', algorithm=RateScheme.ENTERED_QTY,
@@ -64,7 +64,8 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
         self.pt.save()
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
         t = Task.objects.get(job=self.job)
-        self.assertEqual(t.charge.actuals, {'qty': '2'})
+        self.assertEqual(t.est_qty, Decimal('2'))
+        self.assertIsNone(t.actual_qty)
 
     def test_creates_material_for_each_plan_material(self):
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
@@ -178,6 +179,6 @@ class CarryOverUsesPlanTaskDirectlyTest(TestCase):
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
 
         task = Task.objects.get(source_plan_task=pt)
-        self.assertEqual(task.charge.rate_scheme_id, scheme.pk)
-        self.assertEqual(task.charge.actuals.get('qty'), '2')
+        self.assertEqual(task.rate_scheme_id, scheme.pk)
+        self.assertEqual(task.est_qty, Decimal('2.0'))
 

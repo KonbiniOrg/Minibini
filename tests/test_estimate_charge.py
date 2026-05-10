@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import RateScheme, PlanTask, Job, TaskCharge
+from apps.jobs.models import RateScheme, PlanTask, Job
 from apps.jobs.services import JobService
 from apps.estimates.models import EstWorksheet
 from apps.core.models import AccountingCategory
@@ -35,7 +35,7 @@ class CopyFromWorksheetChargeTest(TestCase):
             accounting_category=self.category,
         )
 
-    def test_copy_creates_task_charge_from_plan_task_billing(self):
+    def test_copy_sets_task_billing_fields_from_plan_task(self):
         plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='CNC cut panels',
@@ -47,11 +47,9 @@ class CopyFromWorksheetChargeTest(TestCase):
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
         task = self.job.tasks.get(name='CNC cut panels')
-        self.assertTrue(hasattr(task, 'charge'))
-        charge = task.charge
-        self.assertEqual(charge.rate_scheme, self.scheme)
-        self.assertEqual(charge.active_modifiers, ['messy'])
-        self.assertEqual(charge.actuals, {})
+        self.assertEqual(task.rate_scheme, self.scheme)
+        self.assertEqual(task.active_modifiers, ['messy'])
+        self.assertEqual(task.est_qty, Decimal('30.00'))
 
 
 class GenerateTaskEstWorksheetBranchTest(BaseTestCase):
@@ -132,12 +130,10 @@ class EffectiveACPropertyTest(BaseTestCase):
         )
         self.assertEqual(pt.effective_accounting_category, self.scheme_ac)
 
-    def test_task_effective_ac_comes_from_charge_scheme(self):
-        from apps.jobs.models import Task, TaskCharge
+    def test_task_effective_ac_comes_from_rate_scheme(self):
+        from apps.jobs.models import Task
         job = self._make_job()
-        t = Task.objects.create(job=job, name='t')
-        TaskCharge.objects.create(task=t, rate_scheme=self.scheme)
-        t.refresh_from_db()
+        t = Task.objects.create(job=job, name='t', rate_scheme=self.scheme)
         self.assertEqual(t.effective_accounting_category, self.scheme_ac)
 
     def test_taskTemplate_effective_ac_comes_from_scheme(self):

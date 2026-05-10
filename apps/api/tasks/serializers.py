@@ -1,7 +1,9 @@
 from rest_framework import serializers
 
-from apps.jobs.models import Task, TaskCharge, RateScheme
+from apps.jobs.models import Task
 from apps.inventory.models import Material
+from apps.core.models import AccountingCategory
+from apps.core.units import UnitsField
 
 
 class MaterialSerializer(serializers.ModelSerializer):
@@ -12,7 +14,7 @@ class MaterialSerializer(serializers.ModelSerializer):
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item',
+            'units', 'unit_cost', 'sell_price', 'price_list_item',
             'accounting_category',
             'consumption_state', 'restocked_qty',
             'is_expense_bound', 'price_list_item_is_inventoried',
@@ -24,89 +26,52 @@ class MaterialSerializer(serializers.ModelSerializer):
 
 
 class MaterialWriteSerializer(serializers.ModelSerializer):
+    units = UnitsField(required=False)
+    propagate_to_pli = serializers.BooleanField(
+        write_only=True, required=False,
+    )
+    accounting_category = serializers.PrimaryKeyRelatedField(
+        queryset=AccountingCategory.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item',
-            'accounting_category',
+            'units', 'unit_cost', 'sell_price', 'price_list_item',
+            'accounting_category', 'propagate_to_pli',
         ]
         read_only_fields = ['material_id']
 
-
-class TaskChargeSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TaskCharge
-        fields = [
-            'task_charge_id', 'rate_scheme', 'active_modifiers', 'actuals',
-        ]
-        read_only_fields = ['task_charge_id']
-
-
-class TaskChargeReadSerializer(serializers.ModelSerializer):
-    """Nested read-only representation for task detail."""
-    scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True)
-    scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True)
-    scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True)
-    effective_rate = serializers.SerializerMethodField()
-    computed_charge = serializers.SerializerMethodField()
-
-    class Meta:
-        model = TaskCharge
-        fields = [
-            'task_charge_id', 'rate_scheme', 'active_modifiers', 'actuals',
-            'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
-            'effective_rate', 'computed_charge',
-        ]
-        read_only_fields = fields
-
-    def get_effective_rate(self, obj):
-        return str(obj.effective_rate())
-
-    def get_computed_charge(self, obj):
-        try:
-            return str(obj.compute())
-        except Exception:
-            return None
-
-
-def _serialize_charge(obj):
-    """Return nested TaskCharge data for a Task, or None if absent."""
-    try:
-        charge = obj.charge
-    except TaskCharge.DoesNotExist:
-        return None
-    return TaskChargeReadSerializer(charge).data
-
-
-def _actual_hours(task):
-    """Sum of blep durations on this task, in hours."""
-    total_seconds = sum(
-        b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
-    )
-    return round(total_seconds / 3600.0, 2)
-
-
-def _estimated_hours(task):
-    """Estimated hours for this task — only meaningful when the rate scheme is elapsed_time."""
-    if not task.source_plan_task_id:
-        return None
-    try:
-        charge = task.charge
-    except TaskCharge.DoesNotExist:
-        return None
-    if charge.rate_scheme.algorithm != RateScheme.ELAPSED_TIME:
-        return None
-    est = task.source_plan_task.est_qty
-    return float(est) if est is not None else None
+    def update(self, instance, validated_data):
+        from apps.inventory.serializer_helpers import (
+            enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED, FREEFORM_ALLOWED,
+        )
+        if instance.price_list_item_id is not None:
+            enforce_pli_linked_allowlist(
+                instance, validated_data, PLI_LINKED_PRICING_ALLOWED,
+            )
+        else:
+            disallowed = set(validated_data.keys()) - FREEFORM_ALLOWED
+            if disallowed:
+                raise serializers.ValidationError({
+                    'detail': f'Disallowed fields on freeform Material: {sorted(disallowed)}',
+                })
+        validated_data.pop('propagate_to_pli', None)
+        return super().update(instance, validated_data)
 
 
 class TaskSerializer(serializers.ModelSerializer):
     """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
     assignee_name = serializers.SerializerMethodField()
-    charge = serializers.SerializerMethodField()
     actual_hours = serializers.SerializerMethodField()
-    estimated_hours = serializers.SerializerMethodField()
+    scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
+    scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True, default=None)
+    scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True, default=None)
+    effective_rate = serializers.SerializerMethodField()
+    computed_charge = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -114,7 +79,11 @@ class TaskSerializer(serializers.ModelSerializer):
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
             'parent_task', 'assignee', 'assignee_name', 'worker_queue',
-            'charge', 'actual_hours', 'estimated_hours',
+            'rate_scheme', 'active_modifiers',
+            'est_qty', 'est_worker_time', 'actual_qty',
+            'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
+            'effective_rate', 'computed_charge',
+            'actual_hours',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
@@ -124,35 +93,29 @@ class TaskSerializer(serializers.ModelSerializer):
             return name if name else obj.assignee.username
         return None
 
-    def get_charge(self, obj):
-        return _serialize_charge(obj)
-
     def get_actual_hours(self, obj):
-        return _actual_hours(obj)
+        total_seconds = sum(
+            b.elapsed.total_seconds()
+            for b in obj.blep_set.all() if b.elapsed is not None
+        )
+        return round(total_seconds / 3600.0, 2)
 
-    def get_estimated_hours(self, obj):
-        return _estimated_hours(obj)
+    def get_effective_rate(self, obj):
+        rate = obj.effective_rate()
+        return str(rate) if rate is not None else None
+
+    def get_computed_charge(self, obj):
+        try:
+            return str(obj.compute_amount())
+        except Exception:
+            return None
 
 
-class TaskDetailSerializer(serializers.ModelSerializer):
-    assignee_name = serializers.SerializerMethodField()
+class TaskDetailSerializer(TaskSerializer):
     job = serializers.SerializerMethodField()
-    charge = serializers.SerializerMethodField()
 
-    class Meta:
-        model = Task
-        fields = [
-            'task_id', 'name', 'description', 'status',
-            'blocked_reason',
-            'parent_task', 'assignee', 'assignee_name',
-            'worker_queue', 'job', 'charge',
-        ]
-        read_only_fields = fields
-
-    def get_assignee_name(self, obj):
-        if obj.assignee:
-            return obj.assignee.get_full_name() or obj.assignee.username
-        return None
+    class Meta(TaskSerializer.Meta):
+        fields = TaskSerializer.Meta.fields + ['job']
 
     def get_job(self, obj):
         job = obj.job
@@ -162,6 +125,3 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             'name': job.name,
             'status': job.status,
         }
-
-    def get_charge(self, obj):
-        return _serialize_charge(obj)

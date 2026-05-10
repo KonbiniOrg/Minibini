@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.inventory.models import Material, PriceListItem, Earmark
 from apps.inventory.services import InventoryService
 
@@ -52,15 +52,21 @@ class EarmarkPreviewTest(TestCase):
             accounting_category=self.category,
         )
 
+        self.scheme = RateScheme.objects.create(
+            name='S-emk', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
         self.task_a = Task.objects.create(
             job=self.job,
             name='Build cabinets',
             sort_order=1,
+            rate_scheme=self.scheme,
         )
         self.task_b = Task.objects.create(
             job=self.job,
             name='Install trim',
             sort_order=2,
+            rate_scheme=self.scheme,
         )
 
     def test_preview_aggregates_by_item(self):
@@ -137,6 +143,7 @@ class EarmarkPreviewTest(TestCase):
             job=self.job, task=self.task_a,
             description='Custom brackets',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
+            accounting_category=self.category,
         )
         preview = InventoryService.get_earmark_preview(self.job)
         self.assertEqual(len(preview), 0)

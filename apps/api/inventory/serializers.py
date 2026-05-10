@@ -30,9 +30,12 @@ class MaterialSerializer(serializers.ModelSerializer):
     po_id = serializers.SerializerMethodField()
     po_number = serializers.SerializerMethodField()
     po_status = serializers.SerializerMethodField()
-    units = serializers.SerializerMethodField()
+    units = UnitsField()
     qty_on_order = serializers.SerializerMethodField()
     qty_on_hand = serializers.SerializerMethodField()
+    propagate_to_pli = serializers.BooleanField(
+        write_only=True, required=False,
+    )
 
     class Meta:
         model = Material
@@ -44,13 +47,14 @@ class MaterialSerializer(serializers.ModelSerializer):
             'is_expense_bound', 'price_list_item_is_inventoried',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'units', 'qty_on_order', 'qty_on_hand',
+            'propagate_to_pli',
         ]
         read_only_fields = [
             'material_id', 'job', 'task',
             'consumption_state', 'restocked_qty', 'is_expense_bound',
             'price_list_item_is_inventoried',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
-            'units', 'qty_on_order', 'qty_on_hand',
+            'qty_on_order', 'qty_on_hand',
         ]
 
     def get_price_list_item_is_inventoried(self, obj):
@@ -74,9 +78,6 @@ class MaterialSerializer(serializers.ModelSerializer):
             return obj.po_line_item.purchase_order.status
         return None
 
-    def get_units(self, obj):
-        return obj.price_list_item.units if obj.price_list_item_id else 'none'
-
     def get_qty_on_order(self, obj):
         if not obj.po_line_item_id:
             return '0'
@@ -94,13 +95,22 @@ class MaterialSerializer(serializers.ModelSerializer):
         return '0'
 
     def update(self, instance, validated_data):
-        allowed = {'description'}
-        disallowed = set(validated_data.keys()) - allowed
-        if disallowed:
-            raise serializers.ValidationError({
-                k: 'read-only; use Restock/Draw-more for quantity, etc.'
-                for k in disallowed
-            })
+        from apps.inventory.serializer_helpers import (
+            enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED, FREEFORM_ALLOWED,
+        )
+        if instance.price_list_item_id is not None:
+            enforce_pli_linked_allowlist(
+                instance, validated_data, PLI_LINKED_PRICING_ALLOWED,
+            )
+        else:
+            disallowed = set(validated_data.keys()) - FREEFORM_ALLOWED
+            if disallowed:
+                raise serializers.ValidationError({
+                    'detail': f'Disallowed fields on freeform Material: {sorted(disallowed)}',
+                })
+        # propagate_to_pli is handled separately by the view (Phase 4); strip it
+        # before saving.
+        validated_data.pop('propagate_to_pli', None)
         return super().update(instance, validated_data)
 
 

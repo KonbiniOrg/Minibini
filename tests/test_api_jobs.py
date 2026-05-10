@@ -157,7 +157,7 @@ class JobTaskSubResourceTest(TestCase):
         )
 
     def test_list_tasks_on_job(self):
-        Task.objects.create(job=self.job, name='First task')
+        Task.objects.create(job=self.job, name='First task', rate_scheme=self.scheme)
         response = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
@@ -173,14 +173,11 @@ class JobTaskSubResourceTest(TestCase):
         self.assertEqual(response.data['name'], 'New task')
         t = Task.objects.get(pk=response.data['task_id'])
         self.assertEqual(t.job_id, self.job.pk)
-        # TaskCharge created in same transaction
-        self.assertTrue(hasattr(t, 'charge'))
-        self.assertEqual(t.charge.rate_scheme_id, self.scheme.pk)
+        # rate_scheme set directly on Task (no TaskCharge)
+        self.assertEqual(t.rate_scheme_id, self.scheme.pk)
 
     def test_update_task_on_job(self):
-        from apps.jobs.models import TaskCharge
-        task = Task.objects.create(job=self.job, name='Original')
-        TaskCharge.objects.create(task=task, rate_scheme=self.scheme)
+        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'Renamed'},
@@ -191,7 +188,7 @@ class JobTaskSubResourceTest(TestCase):
         self.assertEqual(task.name, 'Renamed')
 
     def test_delete_task_on_job(self):
-        task = Task.objects.create(job=self.job, name='Goner')
+        task = Task.objects.create(job=self.job, name='Goner', rate_scheme=self.scheme)
         response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
         self.assertEqual(response.status_code, 200)
         self.assertIn('message', response.data)
@@ -201,7 +198,7 @@ class JobTaskSubResourceTest(TestCase):
         other_job = Job.objects.create(
             job_number='C2-T-002', name='Other', contact=self.contact,
         )
-        task = Task.objects.create(job=other_job, name='Theirs')
+        task = Task.objects.create(job=other_job, name='Theirs', rate_scheme=self.scheme)
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'nope'},
@@ -220,7 +217,7 @@ class JobTaskSubResourceTest(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_list_tasks_any_authenticated(self):
-        Task.objects.create(job=self.job, name='Read me')
+        Task.objects.create(job=self.job, name='Read me', rate_scheme=self.scheme)
         worker = User.objects.create_user(username='jt_reader', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -242,8 +239,13 @@ class JobSerializerNestingTest(TestCase):
             job_number='C2-N-001', name='Nesting Job', contact=self.contact,
             template=self.template,
         )
-        Task.objects.create(job=self.job, name='A task')
-        Task.objects.create(job=self.job, name='B task')
+        ac = AccountingCategory.objects.create(code='NEST-AC', name='Nest AC')
+        self.scheme = RateScheme.objects.create(
+            name='S-nest', algorithm='flat_fee',
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
+        Task.objects.create(job=self.job, name='A task', rate_scheme=self.scheme)
+        Task.objects.create(job=self.job, name='B task', rate_scheme=self.scheme)
 
     def test_retrieve_nests_tasks_and_template(self):
         response = self.client.get(f'/api/jobs/{self.job.pk}/')
@@ -287,6 +289,11 @@ class JobListQueryCountTest(TestCase):
         self.template = WorkTemplate.objects.create(
             template_name='QC Template', is_active=True,
         )
+        ac = AccountingCategory.objects.create(code='QC-AC', name='QC AC')
+        self.scheme = RateScheme.objects.create(
+            name='S-qc', algorithm='flat_fee',
+            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+        )
 
     def _make_jobs(self, count):
         existing = Job.objects.count()
@@ -297,8 +304,8 @@ class JobListQueryCountTest(TestCase):
                 contact=self.contact,
                 template=self.template,
             )
-            Task.objects.create(job=job, name=f'Task A {i}')
-            Task.objects.create(job=job, name=f'Task B {i}')
+            Task.objects.create(job=job, name=f'Task A {i}', rate_scheme=self.scheme)
+            Task.objects.create(job=job, name=f'Task B {i}', rate_scheme=self.scheme)
 
     def _list_query_count(self):
         from django.test.utils import CaptureQueriesContext
@@ -457,6 +464,7 @@ class JobCopyFromWorksheetTest(TestCase):
             plan_task=self.plan_task,
             description='Plywood sheet',
             quantity=2, unit_cost=40, sell_price=60,
+            accounting_category=ac,
         )
 
     def test_copy_from_worksheet_success(self):
@@ -503,7 +511,6 @@ class JobReorderTasksTest(TestCase):
     """Phase C2: POST /api/jobs/{id}/reorder-tasks/."""
 
     def setUp(self):
-        from apps.jobs.models import TaskCharge
         self.client = APIClient()
         self.user = _make_admin('reord_admin')
         self.client.force_authenticate(user=self.user)
@@ -516,12 +523,9 @@ class JobReorderTasksTest(TestCase):
             name='S-reord', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
-        self.a = Task.objects.create(job=self.job, name='A', sort_order=0)
-        self.b = Task.objects.create(job=self.job, name='B', sort_order=1)
-        self.c = Task.objects.create(job=self.job, name='C', sort_order=2)
-        TaskCharge.objects.create(task=self.a, rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=self.b, rate_scheme=self.scheme)
-        TaskCharge.objects.create(task=self.c, rate_scheme=self.scheme)
+        self.a = Task.objects.create(job=self.job, name='A', sort_order=0, rate_scheme=self.scheme)
+        self.b = Task.objects.create(job=self.job, name='B', sort_order=1, rate_scheme=self.scheme)
+        self.c = Task.objects.create(job=self.job, name='C', sort_order=2, rate_scheme=self.scheme)
 
     def test_reorder_down(self):
         response = self.client.post(

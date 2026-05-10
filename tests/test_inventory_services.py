@@ -107,6 +107,7 @@ class AssignPlanTaskServiceTest(TestCase):
         self.mat = PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=self.task_a,
             description='m', quantity=Decimal('1'),
+            accounting_category=self.cat,
         )
 
     def test_assign_plan_task_moves_fk(self):

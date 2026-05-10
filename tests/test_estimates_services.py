@@ -583,6 +583,7 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
         PlanMaterial.objects.create(
             est_worksheet=ws,
             plan_task=task, description='Steel', quantity=Decimal('5.00'),
+            accounting_category=self.lit,
         )
 
         JobService.copy_from_worksheet(self.job.pk, ws.pk)

@@ -3,19 +3,23 @@
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import WorksheetTaskTable from '../../components/WorksheetTaskTable.svelte';
-  import PlanTaskModal from '../../components/PlanTaskModal.svelte';
+  import WorkItemForm from '../../components/WorkItemForm.svelte';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import { formatQtyUnits } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
   let worksheet = $state(null);
+  let job = $state(null);
+  let contact = $state(null);
   let templates = $state([]);
   let categories = $state([]);
   let loading = $state(true);
   let error = $state('');
 
   let taskModalOpen = $state(false);
-  let taskModalMode = $state('create-freeform');
+  let taskModalMode = $state('manual');
   let taskModalTask = $state(null);
 
   let materialModalOpen = $state(false);
@@ -38,10 +42,29 @@
     try {
       worksheet = await api.get(`/api/est-worksheets/${params.id}/`);
       await loadMaterials();
+      if (worksheet.job) {
+        await loadJobContext(worksheet.job);
+      }
     } catch (e) {
       error = e.message || 'Could not load worksheet.';
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadJobContext(jobId) {
+    try {
+      job = await api.get(`/api/jobs/${jobId}/`);
+      if (job.contact) {
+        try {
+          contact = await api.get(`/api/contacts/${job.contact}/`);
+        } catch (e) {
+          contact = null;
+        }
+      }
+    } catch (e) {
+      job = null;
+      contact = null;
     }
   }
 
@@ -84,15 +107,21 @@
     }
   });
 
-  function openAddTask() {
+  function openAddManualTask() {
     taskModalTask = null;
-    taskModalMode = 'create-freeform';
+    taskModalMode = 'manual';
+    taskModalOpen = true;
+  }
+
+  function openAddTemplateTask() {
+    taskModalTask = null;
+    taskModalMode = 'template';
     taskModalOpen = true;
   }
 
   function openEditTask(task) {
     taskModalTask = task;
-    taskModalMode = 'edit';
+    taskModalMode = 'manual';
     taskModalOpen = true;
   }
 
@@ -196,6 +225,10 @@
     }
   }
 
+  function handleTaskClick(task) {
+    push(`/worksheets/${worksheet.est_worksheet_id}/plan-tasks/${task.plan_task_id}`);
+  }
+
   async function openWizard() {
     try {
       const result = await api.post(
@@ -206,6 +239,18 @@
       alert(e.message || 'Failed to open wizard');
     }
   }
+
+  const canDelete = $derived(canManageJobs && isDraft && !worksheet?.estimate);
+
+  async function handleDeleteWorksheet() {
+    if (!confirm('Delete this worksheet? Its plan tasks and materials will be removed.')) return;
+    try {
+      await api.delete(`/api/est-worksheets/${worksheet.est_worksheet_id}/`);
+      push(`/jobs/${worksheet.job}`);
+    } catch (e) {
+      alert(e.data?.detail || e.message || 'Could not delete worksheet.');
+    }
+  }
 </script>
 
 {#if loading}
@@ -213,33 +258,30 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if worksheet}
-  <h2>Worksheet v{worksheet.version}</h2>
+  {#if job}
+    <JobHeader {job} {contact} onStatusChange={reload} />
+  {/if}
 
-  <p>
-    <a href={`/jobs/${worksheet.job}`} use:link>&laquo; Back to Job {worksheet.job_number}{worksheet.job_name ? ` - ${worksheet.job_name}` : ''}</a>
-  </p>
-
-  <div class="status-line">
+  <div class="toolbar">
+    <a href={`/jobs/${worksheet.job}`} use:link class="back-link">&laquo; back to overview</a>
+    <span class="ws-title">Worksheet v{worksheet.version}</span>
     <span class="status-badge status-{worksheet.status}">{worksheet.status}</span>
-    <span class="meta">
-      Created {new Date(worksheet.created_date).toLocaleDateString()}
-    </span>
-  </div>
-
-  {#if canEdit}
-    <div class="action-bar">
-      <button type="button" onclick={openAddTask}>Add Task</button>
+    {#if canEdit}
+      <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
+      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
       <button type="button" onclick={openAddMaterial}>Add Material</button>
       <button type="button" onclick={sendAllAtoms} disabled={sendingAll}>
         {sendingAll ? 'Sending…' : 'Send all atoms to estimate'}
       </button>
       <button type="button" onclick={openWizard}>Open wizard to group atoms</button>
-    </div>
-  {/if}
+    {/if}
+    <span class="meta">Created {new Date(worksheet.created_date).toLocaleDateString()}</span>
+  </div>
 
   <WorksheetTaskTable
     {worksheet}
     readonly={!canEdit}
+    onTaskClick={handleTaskClick}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onReorder={handleReorder}
@@ -273,7 +315,7 @@
                 <td class="move-cell">{#if selectedTaskId != null}<button type="button" class="small-btn" onclick={() => handleMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
               {/if}
               <td>{mat.description || '(no description)'}</td>
-              <td class="text-right">{mat.quantity ?? '-'}</td>
+              <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
               <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
               <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
               {#if canEdit}
@@ -289,13 +331,22 @@
     {/if}
   {/if}
 
-  <PlanTaskModal
+  {#if canDelete}
+    <p class="delete-row">
+      <button type="button" class="delete-btn" onclick={handleDeleteWorksheet}>
+        Delete worksheet
+      </button>
+    </p>
+  {/if}
+
+  <WorkItemForm
     open={taskModalOpen}
     mode={taskModalMode}
-    task={taskModalTask}
-    worksheetId={worksheet.est_worksheet_id}
+    context="worksheet"
+    contextId={worksheet.est_worksheet_id}
+    item={taskModalTask}
+    isEdit={!!taskModalTask}
     {templates}
-    {categories}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
   />
@@ -314,22 +365,28 @@
 
 <style>
   .error { color: #a8071a; }
-  .status-line { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 24px;
+  }
+  .back-link { font-size: 13px; }
+  .ws-title { font-size: 18px; font-weight: 600; }
   .status-badge {
     padding: 4px 12px; border-radius: 12px; font-size: 13px;
     font-weight: 600; text-transform: capitalize;
   }
+  .delete-row { padding: 16px 24px; }
+  .delete-btn { color: #a8071a; }
   .status-draft { background: #f3f4f6; color: #374151; }
   .status-final { background: #e0e7ff; color: #4338ca; }
   .status-superseded { background: #fef3c7; color: #92400e; }
-  .meta { color: #888; font-size: 13px; }
-  .action-bar { display: flex; gap: 8px; margin-bottom: 16px; }
-  .action-bar button {
+  .meta { color: #888; font-size: 13px; margin-left: auto; }
+  .toolbar button {
     padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;
     background: #fff; cursor: pointer; font-size: 13px;
   }
-  .action-bar button:hover { background: #f3f4f6; }
-  .action-bar button:disabled { opacity: 0.5; cursor: default; }
+  .toolbar button:hover { background: #f3f4f6; }
+  .toolbar button:disabled { opacity: 0.5; cursor: default; }
 
   .mat-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
   .mat-table th { padding: 8px 10px; text-align: left; background: #fef3c7; color: #78350f; }

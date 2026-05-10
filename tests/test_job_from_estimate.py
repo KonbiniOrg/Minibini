@@ -59,6 +59,7 @@ class JobCopyFromWorksheetEndToEndTest(TestCase):
             quantity=Decimal('4'),
             unit_cost=Decimal('5'),
             sell_price=Decimal('10'),
+            accounting_category=ac,
         )
 
     def test_copy_from_worksheet_links_template(self):

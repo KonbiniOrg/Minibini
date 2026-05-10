@@ -86,7 +86,9 @@ class GenerateTaskSortOrderTest(TestCase):
         )
 
         worksheet = EstWorksheet.objects.create(job=self.job)
-        tasks = wot.generate_tasks_for_worksheet(worksheet)
+        # generate_tasks_for_worksheet returns [(association, instance, PlanTask), ...]
+        # tuples (Phase 9 / Task 16). Extract the PlanTask from each entry.
+        tasks = [t for (_, _, t) in wot.generate_tasks_for_worksheet(worksheet)]
 
         sand = next(t for t in tasks if t.name == 'Sand')
         clean = next(t for t in tasks if t.name == 'Clean')
