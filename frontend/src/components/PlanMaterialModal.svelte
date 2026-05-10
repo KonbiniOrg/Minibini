@@ -58,10 +58,13 @@
     }
   });
 
-  // Clear stale error when the user touches any form field.
+  // Clear stale error when the user touches any form field. Don't read
+  // `error` inside this effect — that would track it as a dependency and
+  // re-fire the effect (clearing the message) the instant the catch block
+  // sets it.
   $effect(() => {
     description; quantity; units; unitCost; sellPrice; pliId; accountingCategory;
-    if (error) error = '';
+    error = '';
   });
 
   function handlePliSelect(pli) {
