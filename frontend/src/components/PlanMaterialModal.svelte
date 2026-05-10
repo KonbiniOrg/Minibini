@@ -58,6 +58,12 @@
     }
   });
 
+  // Clear stale error when the user touches any form field.
+  $effect(() => {
+    description; quantity; units; unitCost; sellPrice; pliId; accountingCategory;
+    if (error) error = '';
+  });
+
   function handlePliSelect(pli) {
     if (pli) {
       pliId = pli.price_list_item_id;
