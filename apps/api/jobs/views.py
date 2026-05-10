@@ -282,7 +282,11 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                 accounting_category=ac,
             )
         except ValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            # Surface field-level errors as {field: [messages]} so the SPA
+            # can format each line; fall back to a flat detail otherwise.
+            if hasattr(e, 'message_dict'):
+                return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': '; '.join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='add-from-template')
