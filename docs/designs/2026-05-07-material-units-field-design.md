@@ -558,6 +558,15 @@ and which order do you want?
   bigger refactor (RateScheme picker instead of text inputs) and
   are flagged for follow-on.
 
+- **No UI surfaces the multi-instance template generation.**
+  `WorkTemplate.generate_tasks_for_worksheet`,
+  `generate_materials_for_worksheet`, and `generate_materials_for_job`
+  all accept a `quantity=N` arg for replicating the entire work pattern
+  N times (e.g. "make 5 desks"). Every current caller passes `1`. The
+  capability exists in the model layer but no UI exposes it. When the
+  shop wants to drive batch production from a single template, the
+  generation API is ready; only the UX needs to be built.
+
 - **TemplateMaterials should be attachable to TaskTemplates.**
   PlanMaterial already supports both `plan_task=None` (task-less,
   worksheet-level) and `plan_task=<PlanTask>` (task-attached). The
