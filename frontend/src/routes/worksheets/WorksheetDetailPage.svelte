@@ -239,6 +239,18 @@
       alert(e.message || 'Failed to open wizard');
     }
   }
+
+  const canDelete = $derived(canManageJobs && isDraft && !worksheet?.estimate);
+
+  async function handleDeleteWorksheet() {
+    if (!confirm('Delete this worksheet? Its plan tasks and materials will be removed.')) return;
+    try {
+      await api.delete(`/api/est-worksheets/${worksheet.est_worksheet_id}/`);
+      push(`/jobs/${worksheet.job}`);
+    } catch (e) {
+      alert(e.data?.detail || e.message || 'Could not delete worksheet.');
+    }
+  }
 </script>
 
 {#if loading}
@@ -319,6 +331,14 @@
     {/if}
   {/if}
 
+  {#if canDelete}
+    <p class="delete-row">
+      <button type="button" class="delete-btn" onclick={handleDeleteWorksheet}>
+        Delete worksheet
+      </button>
+    </p>
+  {/if}
+
   <WorkItemForm
     open={taskModalOpen}
     mode={taskModalMode}
@@ -355,6 +375,8 @@
     padding: 4px 12px; border-radius: 12px; font-size: 13px;
     font-weight: 600; text-transform: capitalize;
   }
+  .delete-row { padding: 16px 24px; }
+  .delete-btn { color: #a8071a; }
   .status-draft { background: #f3f4f6; color: #374151; }
   .status-final { background: #e0e7ff; color: #4338ca; }
   .status-superseded { background: #fef3c7; color: #92400e; }
