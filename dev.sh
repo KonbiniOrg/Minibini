@@ -25,12 +25,12 @@ trap cleanup INT TERM
 
 echo "=== Starting Django on :8000 ==="
 cd "$PROJECT_DIR"
-$PYTHON manage.py runserver &
+$PYTHON manage.py runserver 0.0.0.0:8000 &
 DJANGO_PID=$!
 
 echo "=== Starting Vite on :9000 ==="
 cd "$FRONTEND_DIR"
-npx vite &
+npx vite --host 0.0.0.0 &
 VITE_PID=$!
 
 echo ""
