@@ -626,6 +626,15 @@ Concrete items, smallest first:
   mistakes. Concern is shared across all four subclasses since it lives
   on `BaseLineItem`.
 
+- **`accounting_category` required on all four line-item subclasses
+  (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`,
+  `BillLineItem`).** Currently nullable (inherited from
+  `BaseLineItem`); a null AC falls back to silently tax-exempt at QBO
+  push time. Should become NOT NULL after existing rows are backfilled.
+  One project-wide migration across all four subclasses — the change
+  lives in `apps/core/models.py` (`BaseLineItem`) plus a backfill step
+  per subclass.
+
 - **Decommission deprecated HTML views opportunistically.** Full
   CRUD HTML views still live in `apps/contacts/views.py`,
   `apps/estimates/views.py`, `apps/jobs/views.py`, and

@@ -23,7 +23,7 @@ Singleton per Minibini instance. Stores OAuth tokens and connection metadata.
 | `refresh_token` | 100-day rolling lifetime |
 | `access_token_expires_at` | One hour after issue |
 | `refresh_token_expires_at` | 100 days after issue; reset on every refresh |
-| `is_active` | Only one row may be active at a time; `qbo_callback` deactivates any existing rows in the same transaction |
+| `is_active` | Only one row may be active at a time; `qbo_callback` deactivates any existing rows in the same transaction. Inactive rows are kept (not deleted) so the historical record of which `realm_id` Minibini was connected to and when remains queryable — useful for diagnosing past pushes whose `qbo_id` belongs to a now-disconnected company. The dead tokens cost nothing. |
 | `connected_at`, `last_sync_at` | Metadata |
 
 Properties:
@@ -319,7 +319,7 @@ There is no `GET /api/qbo/sync-log/` endpoint yet; `QBOSyncLog` is currently ins
 - **No scheduler for `poll_qbo_payments`.** The command runs cleanly by hand but is not yet wired into a cron / scheduler in any deployed environment. Tracked in `invoicing-and-expenses.md`.
 - **No `Job` status promotion when its invoices are fully paid.** Polling updates `Invoice.qbo_payment_status` but doesn't roll up to the job. Tracked in `invoicing-and-expenses.md`.
 - **Sync log UI.** No `/api/qbo/sync-log/` endpoint or settings panel showing recent push attempts; failures are visible only via the Django admin.
-- **Employee-as-Vendor sync for personal reimbursements.** Reimbursement Purchases currently omit `EntityRef`; we'd need a QBO Employee (or Vendor) record per `User` to attribute reimbursements properly. Also tracked in `invoicing-and-expenses.md`.
+- **Employee-as-Vendor sync for personal reimbursements** — tracked in `invoicing-and-expenses.md`.
 - **Job P&L view.** Phase 5 of the original plan — pull QBO-reported actuals back into Minibini for a per-job profit & loss view. Tracked in `invoicing-and-expenses.md`.
 - **Estimate push.** Not currently supported. Minibini-direct estimate send is also unimplemented; see `estimates-and-prices.md`.
 - **Webhooks.** Polling was chosen for simplicity. QBO does support a webhook channel for invoice payment notifications; revisit if polling latency or load becomes a problem.
@@ -332,7 +332,6 @@ There is no `GET /api/qbo/sync-log/` endpoint yet; `QBOSyncLog` is currently ins
 - **"Resend to QBO" action.** Once `qbo_id` is set, the send-to-qbo path short-circuits. If the original push partially failed, there's no UI for retrying just the failed steps.
 - **"View in QBO" deep link.** No button in the invoice detail UI to jump to the QBO invoice URL.
 - **Connection health beyond `is_refresh_token_expiring_soon`.** No proactive token refresh well before the 100-day window closes, no email alert, no dashboard pulse.
-- **Retention of inactive `QBOConnection` rows.** When a new OAuth connection is made, the previous row is flipped to `is_active=False` but kept; its tokens are expired and unusable. Open question: is the historical record (realm_id, prior connect dates) worth keeping, or should `qbo_callback` / `qbo_disconnect` delete the old row outright? If we keep it, the rationale should be documented.
 - **CDC reverse-sync for QBO-first Purchases.** Research notes preserved as an appendix in `invoicing-and-expenses.md`.
 
 ---

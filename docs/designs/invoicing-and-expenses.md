@@ -520,7 +520,7 @@ The Job P&L view consumes invoices, bills, expenses, and bleps to compute revenu
 - **Spending dashboards** — vendor totals, category totals over time.
 - **QBO → Minibini reverse sync** for Purchases entered directly in QBO. CDC-based polling is the recommended path; research in the appendix below.
 - **History coverage on `Expense`.** The `Expense` model is not decorated with `@history`. Edits do not write `HistoryEntry` rows. Reimbursement state changes also live outside the audit log.
-- **`accounting_category` required on `InvoiceLineItem`.** Currently nullable (inherited from `BaseLineItem`); a null AC falls back to silently tax-exempt at QBO push time. Should become NOT NULL after existing rows are backfilled. Part of a project-wide change across all four line-item subclasses (Estimate, Invoice, PO, Bill) — matching items live in the other docs.
+- **`accounting_category` required on `InvoiceLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.
 
 ---
 

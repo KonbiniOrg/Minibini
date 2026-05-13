@@ -158,6 +158,11 @@ deletion CASCADEs both `Material` and `Earmark` cleanly.
 `po_line_item` uses `related_name='+'` (no reverse accessor); use
 `PurchaseOrderLineItem.linked_material` (property that does
 `Material.objects.filter(po_line_item=self).first()`) instead.
+Deliberately *not* a `OneToOneField` — multiple Materials (and
+therefore multiple Jobs) may eventually share a single PO line item
+when one real-world purchase covers several jobs' needs. Uniqueness
+is not enforced at the DB level so that future model can be allowed
+without a migration.
 
 `source_plan_material` is the carry-over key used by
 `AtomCarryOverService` (see `docs/designs/estimates-and-prices.md`)
@@ -938,22 +943,14 @@ settings UI for editing the `units_list` Configuration value.
   feature.** Field exists on the model, untouched by current flows.
 - **Server-side `?search=` filtering on `PriceListItemPicker`** once the
   catalog grows.
-- **`accounting_category` required on `PurchaseOrderLineItem` and `BillLineItem`.** Currently nullable (inherited from `BaseLineItem`); a null AC falls back to silently tax-exempt at QBO push time. Should become NOT NULL after existing rows are backfilled. Part of a project-wide change across all four line-item subclasses (Estimate, Invoice, PO, Bill) — matching items live in the other docs.
-- **Maybe: convert `Material.po_line_item` to `OneToOneField`.** The
-  link is conceptually 0-or-1 (enforced today only by the
-  `linked_material` property using `.first()`); a `OneToOneField` would
-  let the DB enforce uniqueness and remove the need for the
-  `related_name='+'` + property workaround. No bug today; worth
-  considering on the next migration pass.
-- **Decide whether Bill needs an auto-generated `bill_number`.** Bills
-  currently carry both an auto-generated `bill_number` (via
+- **`accounting_category` required on `PurchaseOrderLineItem` and `BillLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.
+- **Drop the auto-generated `Bill.bill_number` field.** Bills currently
+  carry both an auto-generated `bill_number` (via
   `NumberGenerationService`) and a `vendor_invoice_number` (the
-  vendor's own number from their invoice). The auto-generated number
-  may be redundant — vendors track payment by their invoice number,
-  not ours, and internal lookup could use the vendor invoice number +
-  vendor name. Keeping the auto-generated number costs a Configuration
-  counter and a uniqueness slot; dropping it would simplify the model
-  and the bill-creation UX. Open question.
+  vendor's own number from their invoice). Vendors track payment by
+  their invoice number, not ours, and internal lookup can use vendor
+  invoice number + vendor name. Drop `bill_number` and its
+  Configuration counter; update bill-creation UX accordingly.
 - **`InventoryAdjustment` rows on ad-hoc paths.**
   `receive_ad_hoc_purchase` and `reverse_ad_hoc_purchase` (the
   expense-bound paths) currently bypass `InventoryAdjustment`; only the
