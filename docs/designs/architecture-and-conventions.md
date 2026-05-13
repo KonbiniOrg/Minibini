@@ -117,7 +117,8 @@ apps/api/
     permissions.py           # atom-permission factory + the four atom classes
     pagination.py            # StandardPagination
     mixins.py                # StatusTransitionMixin, LineItemMixin,
-                             # PlanTaskMixin, JobTaskMixin, JSONDestroyMixin
+                             # PlanTaskMixin, JobTaskMixin,
+                             # JSONDestroyMixin, ConfirmDeleteMixin
     stubs.py                 # stub_501 factory
     auth/                    # session login/logout/me, password change, refresh stub
     bleps/                   # historical time entries
@@ -192,6 +193,7 @@ All in `apps/api/mixins.py`.
 | `PlanTaskBundleMixin` | n/a | Backwards-compat alias for `PlanTaskMixin`; remove after callers update. |
 | `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. |
 | `JSONDestroyMixin` | JobViewSet, BillViewSet, PriceListItemViewSet, WorkTemplateViewSet, TaskTemplateViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
+| `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
 
 `StatusTransitionMixin.status_actions` shape:
 
@@ -287,16 +289,16 @@ DELETE /api/contacts/5/?confirm=true
   → 200 {"message": "\"Jane Doe\" has been deleted."}
 ```
 
-Implemented independently in three viewsets:
+Implemented via `ConfirmDeleteMixin` in `apps/api/mixins.py`. Three
+viewsets use it today:
 
-- `ContactViewSet.destroy` — `apps/api/contacts/views.py`
-- `BusinessViewSet.destroy` — `apps/api/contacts/views.py`
-- `ReimbursementViewSet.destroy` — `apps/api/reimbursements/views.py`
+- `ContactViewSet` — `apps/api/contacts/views.py`
+- `BusinessViewSet` — `apps/api/contacts/views.py`
+- `ReimbursementViewSet` — `apps/api/reimbursements/views.py`
 
-Each one parses `?confirm=true`, computes an impact dict on first call,
-delegates to a service on the confirmed call. Candidate for a shared
-`ConfirmDeleteMixin` with an overridable `get_deletion_impact(obj) -> dict`
-hook.
+Each one implements `get_deletion_impact(obj) -> dict` and
+`perform_confirmed_destroy(obj) -> Response`; the mixin handles the
+`?confirm=true` ceremony.
 
 The contact/business impact queries currently live inline in the
 viewset (`Job.objects.filter(contact=contact).count()` etc.) — those
@@ -592,21 +594,10 @@ and are unchanged.
 
 Concrete items, smallest first:
 
-- **`ConfirmDeleteMixin`** to consolidate the two-phase delete pattern
-  duplicated across `ContactViewSet`, `BusinessViewSet`, and
-  `ReimbursementViewSet`. Subclass overrides
-  `get_deletion_impact(obj) -> dict`.
-
-- **Move impact queries into services.** `ContactViewSet.destroy` and
-  `BusinessViewSet.destroy` currently run `Job.objects.filter(...)`
-  directly to compute the impact dict. That belongs on the service.
-
-- **`BlepViewSet.create` validation belongs in a serializer.** Hand-parses
-  `task`, `start_time`, `end_time`, `user`, validates them, parses ISO
-  datetimes, then calls `BlepService.create_historical`
-  (`apps/api/bleps/views.py`). `BlepSerializer` is set as
-  `serializer_class` but bypassed for create. Move the parsing into the
-  serializer.
+- **Move impact queries into services.** `ContactViewSet.get_deletion_impact`
+  and `BusinessViewSet.get_deletion_impact` currently run
+  `Job.objects.filter(...)` directly to compute the impact dict. That
+  belongs on the service.
 
 - **Lite-mode rollout** (deferred pending user feedback). Once the
   shape of lite mode is decided, expect: server-side persistence of

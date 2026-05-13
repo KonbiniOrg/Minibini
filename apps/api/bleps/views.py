@@ -4,7 +4,7 @@ from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.jobs.models import Blep, Task
+from apps.jobs.models import Blep
 from apps.jobs.services import BlepService, BlepPermissionError
 from apps.api.bleps.serializers import BlepSerializer
 
@@ -36,43 +36,16 @@ class BlepViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
-        data = request.data
-        task_id = data.get('task')
-        start_time = data.get('start_time')
-        end_time = data.get('end_time')
-        target_user_id = data.get('user')
-        if not (task_id and start_time and end_time):
-            return Response(
-                {'detail': 'task, start_time, and end_time are required.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if isinstance(start_time, str):
-            start_time = parse_datetime(start_time)
-        if isinstance(end_time, str):
-            end_time = parse_datetime(end_time)
-        if start_time is None or end_time is None:
-            return Response(
-                {'detail': 'start_time and end_time must be valid ISO datetimes.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            task = Task.objects.get(pk=task_id)
-        except Task.DoesNotExist:
-            return Response({'task': ['Task not found.']},
-                             status=status.HTTP_400_BAD_REQUEST)
-        target_user = None
-        if target_user_id is not None:
-            from apps.core.models import User
-            try:
-                target_user = User.objects.get(pk=target_user_id)
-            except User.DoesNotExist:
-                return Response({'user': ['User not found.']},
-                                 status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
         try:
             blep = BlepService.create_historical(
-                actor=request.user, task=task,
-                start_time=start_time, end_time=end_time,
-                target_user=target_user,
+                actor=request.user,
+                task=validated['task'],
+                start_time=validated['start_time'],
+                end_time=validated['end_time'],
+                target_user=validated.get('user'),
             )
         except BlepPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)

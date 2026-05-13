@@ -58,6 +58,18 @@ class Invoice(models.Model):
                         )
             except Invoice.DoesNotExist:
                 pass
+        # Enforce single-draft-per-job at the application layer. The
+        # equivalent partial UniqueConstraint is declared on Meta but
+        # MySQL silently drops conditional constraints (W036), so this
+        # check is the load-bearing one.
+        if self.job_id and self.status == Invoice.STATUS_DRAFT:
+            existing = Invoice.objects.filter(
+                job_id=self.job_id, status=Invoice.STATUS_DRAFT,
+            ).exclude(pk=self.pk)
+            if existing.exists():
+                raise ValidationError(
+                    'A draft invoice already exists for this job.'
+                )
 
     def save(self, *args, **kwargs):
         """Override save to auto-generate invoice_number and check job completion."""

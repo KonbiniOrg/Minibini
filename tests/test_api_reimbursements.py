@@ -179,7 +179,7 @@ class ReimbursementDeleteTwoPhaseTest(TestCase):
         self.assertEqual(r.status_code, 200)
         body = r.json()
         self.assertEqual(body.get('confirm_required'), True)
-        self.assertEqual(body.get('expense_count'), 1)
+        self.assertEqual(body.get('impact', {}).get('expense_count'), 1)
         self.assertTrue(Reimbursement.objects.filter(pk=self.batch.pk).exists())
 
     @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement')

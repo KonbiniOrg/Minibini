@@ -23,6 +23,39 @@ class JSONDestroyMixin:
         return Response({'message': self.destroy_response_message})
 
 
+class ConfirmDeleteMixin:
+    """
+    Two-phase delete confirmation. First DELETE returns 200 with
+    `{'confirm_required': True, 'impact': <dict>}`; DELETE ?confirm=true
+    actually deletes.
+
+    Subclasses implement:
+      - `get_deletion_impact(obj) -> dict` — counts/flags shown to the user.
+      - `perform_confirmed_destroy(obj) -> Response` — does the delete and
+        returns the success/failure Response.
+    """
+
+    def get_deletion_impact(self, obj):
+        raise NotImplementedError(
+            f'{type(self).__name__}.get_deletion_impact must be implemented.'
+        )
+
+    def perform_confirmed_destroy(self, obj):
+        raise NotImplementedError(
+            f'{type(self).__name__}.perform_confirmed_destroy must be implemented.'
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        confirm = request.query_params.get('confirm', '').lower() == 'true'
+        if not confirm:
+            return Response({
+                'confirm_required': True,
+                'impact': self.get_deletion_impact(obj),
+            })
+        return self.perform_confirmed_destroy(obj)
+
+
 class StatusTransitionMixin:
     """
     Mixin that auto-registers action endpoints from a status_actions dict.

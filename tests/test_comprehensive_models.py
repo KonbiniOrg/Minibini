@@ -321,16 +321,21 @@ class ComprehensiveModelIntegrationTest(TestCase):
             with transaction.atomic():
                 Job.objects.create(job_number="UNIQUE001", contact=self.contact)
 
+        # Two invoices with the same invoice_number must collide on the
+        # invoice_number unique constraint. Use status=OPEN on both so
+        # the single-draft-per-job rule doesn't fire first.
         invoice = Invoice.objects.create(
             job=job,
-            invoice_number="INV_UNIQUE001"
+            invoice_number="INV_UNIQUE001",
+            status=Invoice.STATUS_OPEN,
         )
 
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 Invoice.objects.create(
                     job=job,
-                    invoice_number="INV_UNIQUE001"
+                    invoice_number="INV_UNIQUE001",
+                    status=Invoice.STATUS_OPEN,
                 )
 
     def test_model_str_representations(self):

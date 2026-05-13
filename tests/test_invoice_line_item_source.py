@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.test import TestCase
 from decimal import Decimal
@@ -138,7 +139,7 @@ class UniqueDraftInvoicePerJobTest(TestCase):
 
     def test_second_draft_for_same_job_raises(self):
         Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
-        with self.assertRaises(IntegrityError):
+        with self.assertRaises(ValidationError):
             Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
     def test_multiple_non_draft_invoices_allowed(self):
