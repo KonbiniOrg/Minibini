@@ -281,13 +281,9 @@ class JobService:
 
     @staticmethod
     def populate_from_template(job, template):
-        """Populate a Job from a WorkTemplate's task associations."""
-        if not template.is_active:
-            raise ValidationError(f"Template {template.template_name} is not active.")
-
-        job.template = template
-        job.save(update_fields=['template'])
-
+        """Populate a Job's tasks and materials from a WorkTemplate. The
+        template itself is not stored on the Job; only its generated children
+        land here."""
         task_pairing = template.generate_tasks_for_job(job)
         template.generate_materials_for_job(job, task_pairing=task_pairing)
 
@@ -296,11 +292,8 @@ class JobService:
         return job
 
     @staticmethod
-    def copy_from_worksheet(job_pk, worksheet_pk, template=None):
-        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a job.
-
-        If `template` is provided, link it onto the job (for traceability).
-        """
+    def copy_from_worksheet(job_pk, worksheet_pk):
+        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a job."""
         from apps.estimates.models import EstWorksheet
         from apps.jobs.models import PlanTask
 
@@ -312,10 +305,6 @@ class JobService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-
-        if template is not None:
-            job.template = template
-            job.save(update_fields=['template'])
 
         from apps.inventory.services import InventoryService, MaterialService
 

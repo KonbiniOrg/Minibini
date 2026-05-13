@@ -44,7 +44,6 @@ class EstWorksheetModelTest(TestCase):
         self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
         self.assertEqual(worksheet.version, 1)
         self.assertIsNone(worksheet.estimate)
-        self.assertIsNone(worksheet.template)
         self.assertIsNone(worksheet.parent)
 
     def test_estworksheet_default_status_is_draft(self):
@@ -66,21 +65,6 @@ class EstWorksheetModelTest(TestCase):
             # Not specifying status to use default
         )
 
-        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
-        
-    def test_estworksheet_with_template(self):
-        """Test creating EstWorksheet from template."""
-        template = WorkTemplate.objects.create(
-            template_name="Test Template",
-            description="Test description"
-        )
-        
-        worksheet = EstWorksheet.objects.create(
-            job=self.job,
-            template=template
-        )
-        
-        self.assertEqual(worksheet.template, template)
         self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
         
     def test_estworksheet_str_method(self):

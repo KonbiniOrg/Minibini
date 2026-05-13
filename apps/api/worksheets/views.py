@@ -70,11 +70,8 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
         data = serializer.validated_data
         job = data.get('job')
         job_pk = job.pk if hasattr(job, 'pk') else job
-        kwargs = {}
-        template = data.get('template')
-        if template:
-            kwargs['template'] = template
-        ws = WorksheetService.create_worksheet(job_pk, **kwargs)
+        template = data.pop('template', None)
+        ws = WorksheetService.create_worksheet(job_pk)
         if template:
             task_pairing = template.generate_tasks_for_worksheet(ws)
             template.generate_materials_for_worksheet(ws, task_pairing=task_pairing)

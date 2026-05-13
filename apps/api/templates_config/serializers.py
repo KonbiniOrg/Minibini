@@ -36,7 +36,7 @@ class WorkTemplateSerializer(serializers.ModelSerializer):
         model = WorkTemplate
         fields = [
             'template_id', 'template_name', 'description',
-            'is_active', 'associations',
+            'associations',
         ]
         read_only_fields = ['template_id']
 

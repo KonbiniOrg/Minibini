@@ -250,8 +250,6 @@ Statuses: `draft`, `final`, `superseded`.
 - **job** (required FK → Job)
 - **estimate** (optional FK → Estimate, SET_NULL): if set, the worksheet was
   used to generate that estimate
-- **template** (optional FK → WorkTemplate, SET_NULL): inherited from
-  `AbstractWorkContainer`
 - **version**: integer, default 1. Must be unique per job when combined with
   parent chain.
 - **parent** (optional FK → self, SET_NULL): if set, parent must belong to the
@@ -483,11 +481,11 @@ task/material structures.
 
 - **template_name**: max 255 chars; **description**: text
 - **base_price**: optional decimal
-- **is_active**: boolean, default True. Field exists but no code path
-  currently filters by it (unlike `TaskTemplate.is_active` — see
-  below). Tracked as an open question in
-  `jobs-tasks-and-worksheets.md` §13.
 - **created_date**: auto-set
+- Hard-deleted. Nothing in the system holds a back-reference to a
+  WorkTemplate after it has populated a Job or Worksheet, so a delete
+  cascades cleanly through its TemplateTaskAssociation and
+  TemplateMaterialAssociation rows.
 
 #### TaskTemplate
 

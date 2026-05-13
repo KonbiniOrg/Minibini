@@ -149,7 +149,7 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         cat = AccountingCategory.objects.create(name='Labor')
         scheme = _make_scheme('eoct')
         self.template = WorkTemplate.objects.create(
-            template_name='Quick', is_active=True,
+            template_name='Quick',
         )
         tt = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,

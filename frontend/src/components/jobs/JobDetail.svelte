@@ -476,7 +476,7 @@
     <div class="open open-tasks">
       <div class="top-bar top-bar-tasks">
         <span class="top-bar-title">
-          TASKS{#if hasTasks} · {jobTasks.length} task{jobTasks.length === 1 ? '' : 's'}{:else} · None{/if}{#if job.template?.name} · {job.template.name}{/if}
+          TASKS{#if hasTasks} · {jobTasks.length} task{jobTasks.length === 1 ? '' : 's'}{:else} · None{/if}
         </span>
         <span class="top-bar-actions">
           {#if canManageJobs && currentWorksheet && !hasTasks}

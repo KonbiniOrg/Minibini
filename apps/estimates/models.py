@@ -251,7 +251,6 @@ class EstWorksheet(AbstractWorkContainer):
         # Create new worksheet with this one as parent
         new_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            template=self.template,
             status=EstWorksheet.STATUS_DRAFT,
             version=self.version + 1,
             parent=self,  # New worksheet points to this one as parent
@@ -301,8 +300,6 @@ class WorkTemplate(models.Model):
     # Pricing
     base_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
-    # is_active no longer used but kept in case we change our minds later and to avoid a migration
-    is_active = models.BooleanField(default=True)
     created_date = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -464,7 +461,6 @@ class TaskTemplate(models.Model):
     work_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='task_templates')
 
     created_date = models.DateTimeField(auto_now_add=True)
-    # is_active no longer used but kept in case we change our minds later and to avoid a migration
     is_active = models.BooleanField(default=True)
 
     class Meta:

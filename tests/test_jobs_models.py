@@ -76,23 +76,6 @@ class JobModelTest(TestCase):
         choice_values = [v for v, _ in Job.JOB_STATUS_CHOICES]
         self.assertIn(Job.STATUS_WORK_COMPLETE, choice_values)
 
-    def test_job_has_template_fk(self):
-        """Job extends AbstractWorkContainer, so it has a nullable template FK."""
-        template = WorkTemplate.objects.create(template_name="T1")
-        job = Job.objects.create(
-            job_number="JOB_TMPL",
-            contact=self.contact,
-            template=template,
-        )
-        self.assertEqual(job.template, template)
-
-    def test_job_template_is_nullable(self):
-        job = Job.objects.create(
-            job_number="JOB_NO_TMPL",
-            contact=self.contact,
-        )
-        self.assertIsNone(job.template)
-
     def test_job_with_completed_date(self):
         completion_time = timezone.now()
         job = Job.objects.create(
@@ -427,11 +410,9 @@ class WorkTemplateModelTest(TestCase):
         template = WorkTemplate.objects.create(
             template_name="Standard Installation",
             description="Standard installation workflow template",
-            is_active=True
         )
         self.assertEqual(template.template_name, "Standard Installation")
         self.assertEqual(template.description, "Standard installation workflow template")
-        self.assertTrue(template.is_active)
         self.assertIsNotNone(template.created_date)
 
     def test_work_template_str_method(self):
@@ -444,15 +425,7 @@ class WorkTemplateModelTest(TestCase):
         template = WorkTemplate.objects.create(
             template_name="Basic Template"
         )
-        self.assertTrue(template.is_active)
         self.assertEqual(template.description, "")
-
-    def test_work_template_inactive(self):
-        template = WorkTemplate.objects.create(
-            template_name="Inactive Template",
-            is_active=False
-        )
-        self.assertFalse(template.is_active)
 
 
 class TaskTemplateModelTest(TestCase):

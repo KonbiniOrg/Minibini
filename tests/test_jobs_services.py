@@ -268,11 +268,6 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
             work_template=self.template, task_template=self.task_tmpl_2,
             est_qty=Decimal('3.00'), sort_order=2)
 
-    def test_links_template_to_job(self):
-        JobService.populate_from_template(self.job, self.template)
-        self.job.refresh_from_db()
-        self.assertEqual(self.job.template, self.template)
-
     def test_generates_tasks_from_template(self):
         JobService.populate_from_template(self.job, self.template)
         tasks = Task.objects.filter(job=self.job).order_by('sort_order')
@@ -299,28 +294,20 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         self.assertEqual(tasks.count(), 1)
         self.assertEqual(tasks[0].name, 'Cut')
 
-    def test_rejects_inactive_template(self):
-        self.template.is_active = False
-        self.template.save()
-
-        with self.assertRaises(ValidationError):
-            JobService.populate_from_template(self.job, self.template)
-
     def test_template_with_no_associations(self):
         empty_template = WorkTemplate.objects.create(template_name='Empty Template')
         JobService.populate_from_template(self.job, empty_template)
         self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
 
     def test_populate_on_approved_job_does_not_validate_status(self):
-        """populate_from_template saves via update_fields=['template'] so
-        it does not trigger status-transition validation even on a job
-        past draft."""
+        """populate_from_template creates tasks without changing the job's
+        status, so it works even on a job past draft."""
         _walk_to(self.job, Job.STATUS_APPROVED)
         # Should not raise
         JobService.populate_from_template(self.job, self.template)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.template, self.template)
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
+        self.assertGreater(Task.objects.filter(job=self.job).count(), 0)
 
 
 class JobServiceCopyFromWorksheetTest(JobsTestBase):
@@ -428,20 +415,6 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
     def test_worksheet_not_found(self):
         with self.assertRaises(NotFoundError):
             JobService.copy_from_worksheet(self.job.pk, 99999)
-
-    def test_template_arg_sets_job_template(self):
-        """Optional template arg is linked onto the job."""
-        template = WorkTemplate.objects.create(template_name='Used')
-        JobService.copy_from_worksheet(
-            self.job.pk, self.worksheet.pk, template=template,
-        )
-        self.job.refresh_from_db()
-        self.assertEqual(self.job.template, template)
-
-    def test_no_template_arg_leaves_job_template_none(self):
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-        self.job.refresh_from_db()
-        self.assertIsNone(self.job.template)
 
     def test_copy_from_worksheet_carries_units(self):
         """Units set on PlanMaterial are preserved on the resulting Material."""

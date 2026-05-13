@@ -346,9 +346,6 @@
     {#if canManageJobs}
       <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
     {/if}
-    {#if job.template?.name}
-      <span class="meta">Template: {job.template.name}</span>
-    {/if}
   </div>
 
   <TaskTree

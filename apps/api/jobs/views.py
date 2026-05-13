@@ -20,7 +20,7 @@ from .serializers import JobSerializer
 
 
 class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
-    queryset = Job.objects.select_related('contact', 'template') \
+    queryset = Job.objects.select_related('contact') \
         .prefetch_related(
             Prefetch(
                 'tasks',
@@ -34,7 +34,6 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
                     'price_list_item', 'po_line_item__purchase_order',
                 ),
             ),
-            'template__templatetaskassociation_set__task_template',
         ) \
         .all().order_by('-created_date')
     serializer_class = JobSerializer
@@ -214,7 +213,7 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            JobService.copy_from_worksheet(job.pk, ws.pk, template=ws.template)
+            JobService.copy_from_worksheet(job.pk, ws.pk)
         except (ValidationError, NotFoundError) as e:
             return Response(
                 {'detail': e.message if hasattr(e, 'message') else str(e)},
