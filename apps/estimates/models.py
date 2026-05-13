@@ -199,14 +199,6 @@ class Estimate(models.Model):
                 estimate=self,
             )
 
-        # Signal when approved estimate is superseded
-        elif self.status == Estimate.STATUS_SUPERSEDED and old_status == Estimate.STATUS_ACCEPTED:
-            estimate_status_changed_for_job.send(
-                sender=self.__class__,
-                estimate=self,
-                new_job_status='blocked'  # NOTE: 'blocked' is not in Job's status choices
-            )
-
     def __str__(self):
         return f"Estimate {self.estimate_number}"
 

@@ -6,8 +6,9 @@
 --   mysql -u root minibini < scripts/spread_timestamps.sql
 --
 -- This script identifies jobs by their unique name, then updates timestamps
--- on the job and all related objects (worksheets, estimates, work orders,
--- tasks, bleps, invoices, history entries) to simulate realistic timing.
+-- on the job and all related objects (worksheets, estimates, tasks, bleps,
+-- invoices, history entries) to simulate realistic timing. Tasks live
+-- directly on the job (no work order layer).
 --
 -- All times use business hours (roughly 8am-5pm) on weekdays.
 -- "NOW" is treated as the current moment; everything is backdated from there.

@@ -204,9 +204,11 @@ class BaseLineItem(models.Model):
     PurchaseOrderLineItem, and BillLineItem.
     """
     line_item_id = models.AutoField(primary_key=True)
-    # NOTE: `task` FK is defined on each concrete subclass because it targets
-    # different models depending on the line item type (EstimateLineItem -> PlanTask,
-    # everything else -> Task).
+    # NOTE: `task` FK is defined only on subclasses that need it
+    # (PurchaseOrderLineItem, BillLineItem — both target jobs.Task and are
+    # reserved for a future "service PO" feature). EstimateLineItem and
+    # InvoiceLineItem do not carry a task FK; they link to their source
+    # atoms via EstimateLineItemSource / InvoiceLineItemSource respectively.
     price_list_item = models.ForeignKey('inventory.PriceListItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
     line_number = models.PositiveIntegerField(blank=True, null=True)
     qty = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))

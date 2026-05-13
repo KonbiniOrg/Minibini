@@ -40,7 +40,6 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
 
     Business rules:
     - When estimate is accepted, job becomes approved (unless already complete)
-    - When approved estimate is superseded, job becomes blocked (unless already complete)
     - Respects state transition rules: must go through intermediate states
     - Creates an action-type HistoryEntry for each status change
     """
