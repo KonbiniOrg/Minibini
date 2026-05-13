@@ -117,7 +117,7 @@ apps/api/
     permissions.py           # atom-permission factory + the four atom classes
     pagination.py            # StandardPagination
     mixins.py                # StatusTransitionMixin, LineItemMixin,
-                             # PlanTaskMixin, JobTaskMixin
+                             # PlanTaskMixin, JobTaskMixin, JSONDestroyMixin
     stubs.py                 # stub_501 factory
     auth/                    # session login/logout/me, password change, refresh stub
     bleps/                   # historical time entries
@@ -191,6 +191,7 @@ All in `apps/api/mixins.py`.
 | `PlanTaskMixin` | EstWorksheetViewSet | Adds `tasks/`, `tasks/{id}/` actions for `PlanTask` (worksheet-side). |
 | `PlanTaskBundleMixin` | n/a | Backwards-compat alias for `PlanTaskMixin`; remove after callers update. |
 | `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. |
+| `JSONDestroyMixin` | JobViewSet, BillViewSet, PriceListItemViewSet, WorkTemplateViewSet, TaskTemplateViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
 
 `StatusTransitionMixin.status_actions` shape:
 
@@ -251,7 +252,7 @@ Convention: every DELETE returns HTTP 200 with a JSON body (e.g.
 `api.js` rejects any non-JSON response, so a default DRF 204 is
 a runtime error in the SPA.
 
-**Viewsets that comply** (override `destroy()` to return JSON):
+**Viewsets that comply** (override `destroy()` to return JSON, or use `JSONDestroyMixin`):
 
 - `EstimateViewSet` — `apps/api/estimates/views.py`
 - `InvoiceViewSet` — `apps/api/invoicing/views.py`
@@ -263,22 +264,14 @@ a runtime error in the SPA.
 - `BlepViewSet` — `apps/api/bleps/views.py`
 - `RateSchemeViewSet` — `apps/api/rate_schemes/views.py`
 - `ExpenseViewSet` — `apps/api/expenses/views.py`
+- `JobViewSet` — `JSONDestroyMixin`
+- `BillViewSet` — `JSONDestroyMixin`
+- `PriceListItemViewSet` — `JSONDestroyMixin`
+- `WorkTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
+- `TaskTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
+- `AccountingCategoryViewSet` — `JSONDestroyMixin`
 - `MaterialViewSet` — returns 405 (top-level material delete is disallowed)
 - `UserViewSet` — raises `MethodNotAllowed` (use deactivate)
-
-**Viewsets that still return 204** (no `destroy()` override; DRF default):
-
-- `JobViewSet` — `apps/api/jobs/views.py`
-- `BillViewSet` — `apps/api/purchasing/views.py`
-- `PriceListItemViewSet` — `apps/api/inventory/views.py`
-- `WorkTemplateViewSet` — `apps/api/templates_config/views.py`
-  (overrides `perform_destroy` only; `destroy` still returns 204)
-- `TaskTemplateViewSet` — `apps/api/templates_config/views.py`
-  (same — `perform_destroy` only)
-- `AccountingCategoryViewSet` — `apps/api/templates_config/views.py`
-
-Fix opportunistically; ideally consolidate into a `JSONDestroyMixin`
-(see Unfinished work).
 
 ### 3.7 Two-phase delete confirmation
 
@@ -326,8 +319,7 @@ The factory is `apps/api/stubs.py:stub_501`.
 - `GET /api/time-tracking/active/` — `apps/api/urls.py`
 
 `/api/expenses/` is fully implemented (`ExpenseViewSet` in
-`apps/api/expenses/views.py`) despite CLAUDE.md still listing it as a
-stub — see Unfinished work.
+`apps/api/expenses/views.py`); it is not a stub.
 
 ---
 
@@ -599,16 +591,6 @@ and are unchanged.
 ## 9. Unfinished work
 
 Concrete items, smallest first:
-
-- **Update CLAUDE.md's stub list.** Currently lists `/api/expenses/` as
-  a stub; it's a real `ExpenseViewSet` (`apps/api/expenses/views.py`).
-  Actual stubs are listed in §3.8.
-
-- **`JSONDestroyMixin` for the six remaining 204-returning viewsets:**
-  `JobViewSet`, `BillViewSet`, `PriceListItemViewSet`,
-  `WorkTemplateViewSet`, `TaskTemplateViewSet`,
-  `AccountingCategoryViewSet`. Trivial change; eliminates a class of
-  SPA bugs caused by non-JSON responses.
 
 - **`ConfirmDeleteMixin`** to consolidate the two-phase delete pattern
   duplicated across `ContactViewSet`, `BusinessViewSet`, and

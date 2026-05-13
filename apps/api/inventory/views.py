@@ -6,13 +6,15 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from apps.inventory.models import PriceListItem, Material
 from apps.inventory.services import InventoryService, MaterialService
 from apps.api.permissions import CanManageFinancials
+from apps.api.mixins import JSONDestroyMixin
 from .serializers import PriceListItemSerializer, MaterialSerializer, MaterialOpSerializer, MaterialAssignTaskSerializer
 
 
-class PriceListItemViewSet(viewsets.ModelViewSet):
+class PriceListItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     queryset = PriceListItem.objects.all().order_by('code')
     serializer_class = PriceListItemSerializer
     lookup_field = 'pk'
+    destroy_response_message = 'Price list item deleted.'
 
     def get_queryset(self):
         qs = super().get_queryset()

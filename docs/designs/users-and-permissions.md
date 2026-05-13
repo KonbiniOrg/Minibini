@@ -440,7 +440,6 @@ The component already exists at `frontend/src/components/home/RecentLoginsList.s
 | Item | Source | Notes |
 |---|---|---|
 | Implement login tracking end-to-end | `2026-04-04-login-tracking.md`, this doc | Model, signal, home-payload extension, retention command, frontend list. `RecentLoginsList.svelte` is the placeholder. |
-| Fix `LOGIN_URL = '/admin/login/'` in `minibini/settings.py` | `2026-04-10-user-self-service-design.md` follow-up | Django-side `@login_required` failures redirect to Django admin login. Should land on the SPA login route. |
 | Deactivated-assignee visual indicator | `2026-04-10-user-admin-design.md` | Wherever a username/assignee renders (task cards, detail pages, task lists, history feed, search results) show "(deactivated)" or a greyed style when `is_active=False`. Requires an audit of all assignee-rendering components. |
 | User-to-Contact association in user admin UI | `2026-04-10-user-admin-design.md` | `User.contact` is already nullable; the admin form does not yet let the owner link or create a Contact. |
 | Admin-action history logging | `2026-04-10-user-admin-design.md` | `HistoryEntry` already supports it; create/deactivate/reset/re-permission events should be logged. |

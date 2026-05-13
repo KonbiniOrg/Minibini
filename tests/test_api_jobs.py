@@ -99,7 +99,8 @@ class JobAPITest(BaseTestCase):
         }, format='json')
         job_id = response.data['job_id']
         response = self.client.delete(f'/api/jobs/{job_id}/')
-        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('message', response.data)
 
     def test_complete_job(self):
         job = self._get_approved_job()

@@ -205,7 +205,7 @@ FIXTURE_DIRS = [
 # Session settings
 SESSION_COOKIE_AGE = 86400  # 1 day (24 * 60 * 60 seconds) instead of default 14 days
 
-LOGIN_URL = '/admin/login/'  # Interim — Django admin login form until SPA login page exists
+LOGIN_URL = '/'  # SPA root renders LoginPage when unauthenticated
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

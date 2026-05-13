@@ -713,9 +713,6 @@ covers this).
 - **Push-notification infrastructure.** The blep-takeover flow has no
   way to notify the worker whose Blep was just closed. No notification
   system exists yet anywhere in the codebase.
-- **Stale WorkOrder comment** in `apps/api/mixins.py` — the `JobTaskMixin`
-  docstring references "WorkOrder removal" by name. Cosmetic; the mixin
-  works.
 - **Multi-instance template generation needs UI.**
   `WorkTemplate.generate_tasks_for_*` and `generate_materials_for_*`
   accept `quantity=N` but every current caller passes 1.
