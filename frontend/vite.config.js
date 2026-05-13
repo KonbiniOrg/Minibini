@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [svelte()],
   server: {
     port: 9000,
+    allowedHosts: ['moose', 'moose.local'],
     proxy: {
       '/api': 'http://localhost:8000',
     },

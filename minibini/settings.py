@@ -34,12 +34,17 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     'minibini.me',
-    '45.33.56.130'
+    '45.33.56.130',
+    'moose',
+    'moose.local',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     'https://minibini.me',
     'http://localhost:9000',
+    'http://10.1.10.84:9000',
+    'http://moose:9000',
+    'http://moose.local:9000',
 ]
 
 # Application definition
