@@ -81,6 +81,11 @@ class InventoryService:
         pli.qty_on_hand = F('qty_on_hand') + material.quantity
         pli.save(update_fields=['qty_on_hand'])
         pli.refresh_from_db()
+        InventoryAdjustment.objects.create(
+            price_list_item=pli,
+            quantity_change=material.quantity,
+            reason=f'Ad-hoc receive on job {material.job.job_number}',
+        )
 
     @staticmethod
     def reverse_ad_hoc_purchase(material):
@@ -94,6 +99,11 @@ class InventoryService:
         pli.qty_on_hand = F('qty_on_hand') - total
         pli.save(update_fields=['qty_on_hand'])
         pli.refresh_from_db()
+        InventoryAdjustment.objects.create(
+            price_list_item=pli,
+            quantity_change=-total,
+            reason=f'Ad-hoc reverse on job {material.job.job_number}',
+        )
 
     # --- PlanMaterial CRUD (worksheet-side) ---
 
@@ -389,6 +399,12 @@ class MaterialService:
         with transaction.atomic():
             pli = material.price_list_item
             if pli and pli.is_inventoried and qty > Decimal('0.00'):
+                pli.refresh_from_db()
+                if pli.qty_on_hand < qty:
+                    raise ValidationError(
+                        f'Cannot consume {qty} {pli.units} of {pli.code}: '
+                        f'only {pli.qty_on_hand} on hand.'
+                    )
                 from django.db.models import F
                 pli.qty_on_hand = F('qty_on_hand') - qty
                 pli.qty_sold = F('qty_sold') + qty

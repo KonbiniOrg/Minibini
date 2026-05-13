@@ -924,10 +924,6 @@ settings UI for editing the `units_list` Configuration value.
 - **Surface pending task-less Materials on Job page before
   work_complete.** The gate works mechanically but the user has to
   remember the Materials exist. No proactive surfacing yet.
-- **QOH can go negative.** `MaterialService.consume` does
-  `pli.qty_on_hand -= quantity` without a guard, and there's no
-  `CheckConstraint`. Audit and enforcement strategy (pre-op check
-  vs DB constraint vs both) is open.
 - **Surface earmark overcommitment per PLI.** Total earmarks across all
   jobs vs QOH. Today only `get_earmark_preview(job)` exists at populate
   time; no ongoing dashboard view.
@@ -951,10 +947,6 @@ settings UI for editing the `units_list` Configuration value.
   their invoice number, not ours, and internal lookup can use vendor
   invoice number + vendor name. Drop `bill_number` and its
   Configuration counter; update bill-creation UX accordingly.
-- **`InventoryAdjustment` rows on ad-hoc paths.**
-  `receive_ad_hoc_purchase` and `reverse_ad_hoc_purchase` (the
-  expense-bound paths) currently bypass `InventoryAdjustment`; only the
-  PO-receipt and `manual_adjustment` paths write the audit row.
 - **Legacy TaskTemplate Django HTML forms** (`add_task_template_standalone.html`,
   `task_template_edit.html`) still bind to fields removed by the
   RateScheme refactor (`form.units`, `form.rate`,

@@ -326,7 +326,6 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 
 ## Development Features
 
-- **Dev autologin** *(deprecated; will be removed)* — Frontend supports `?autologin` query param to log in as dev_user via the API (requires dev_user with password `dev_password`)
 - **Seed script** — `scripts/seed_data.sh` seeds realistic data through API endpoints (requires dev server on :8000)
 - **Management commands** — `populate_data.py` (base), `populate_contact_data.py`, `populate_job_data.py`
 

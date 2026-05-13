@@ -129,6 +129,13 @@ class Invoice(models.Model):
 
     class Meta:
         db_table = 'invoices'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['job'],
+                condition=models.Q(status='draft'),
+                name='unique_draft_invoice_per_job',
+            ),
+        ]
 
     def __str__(self):
         return f"Invoice {self.invoice_number}"

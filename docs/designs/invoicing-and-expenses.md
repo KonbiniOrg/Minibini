@@ -62,17 +62,7 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 
 ### "One draft per job" — design vs. reality
 
-The 2026-04-09 design called for a partial unique constraint:
-
-```python
-models.UniqueConstraint(
-    fields=['job'],
-    condition=models.Q(status='draft'),
-    name='unique_draft_invoice_per_job',
-)
-```
-
-The current model code in `apps/invoicing/models.py` does **not** declare this constraint. The wizard service (`InvoiceWizardService.open_for_job`) enforces single-draft-per-job at the application level by returning the existing draft if one is found. Multiple drafts cannot occur via the wizard, but no DB constraint blocks direct creation. Tracked under "Unfinished work."
+Enforced by a partial unique constraint on `Invoice` (`unique_draft_invoice_per_job`, partial on `status='draft'`). `InvoiceWizardService.open_for_job` also enforces this at the application level by returning the existing draft if one is found.
 
 ### Document numbering
 
@@ -506,7 +496,6 @@ The Job P&L view consumes invoices, bills, expenses, and bleps to compute revenu
 - **Auto `draft → open` transition when an invoice is sent to the customer.** The user-facing action is "send to customer" — today that's wired through QBO (`QBOInvoiceSyncService.push_invoice`), but the action's name should reflect the customer-side intent, not the integration channel. The codebase has the `STATUS_OPEN` choice and a `sent_date` field, but nothing currently flips the status. The invoice stays `draft` even after the customer has received it. Needs design (does `cancel` on a sent invoice still hard-delete via `discard_draft`? probably not).
 - **Scheduled job for payment polling.** The `poll_qbo_payments` management command exists; no cron / scheduler currently runs it. CLAUDE.md anticipates a crontab in the docker config area; that piece has not landed.
 - **Polling-driven status promotion.** Even when polling runs, `QBOPaymentPollingService` writes `qbo_payment_status` and `qbo_amount_paid` but does not change Minibini's `status` field. A `Partial` payment should promote to `partly-paid`; a `Paid` should promote to `paid` (which would then trigger `_maybe_complete_job`). The `superseded` and `defaulted` statuses are similarly unused.
-- **`unique_draft_invoice_per_job` DB constraint.** Per the 2026-04-09 design, this should be a partial unique index. Currently only enforced at the application layer (`InvoiceWizardService.open_for_job`).
 - **One-click invoice generation.** Auto-create a draft invoice from all uninvoiced atoms when a Job hits `work_complete`, without going through the wizard. Will share the data model with the wizard. Out of scope per the 2026-04-09 design.
 - **Standalone invoice list page in the SPA.** No `#/invoices/` route today — discovery is via the job board.
 - **Direct invoice editor** (non-wizard tweaks to existing invoices). The override mechanism on bundled line items is already designed to coexist with this.
