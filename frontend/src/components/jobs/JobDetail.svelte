@@ -1,6 +1,8 @@
 <script>
   import HistoryPanel from '../HistoryPanel.svelte';
   import DeliverablesSection from './DeliverablesSection.svelte';
+  import ShipmentsPillar from './ShipmentsPillar.svelte';
+  import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
   import { user } from '../../stores/auth.js';
   import { api } from '../../lib/api.js';
@@ -178,7 +180,7 @@
   let jobMaterials = $derived(job.materials || []);
 
   // Horizontal accordion state — which section is expanded
-  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'pos'];
+  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'shipments', 'pos'];
   const storageKey = (id) => `jobDetailActiveSection_${id}`;
 
   function getDefaultSection() {
@@ -769,6 +771,28 @@
         {:else}
           <p class="empty-msg">No invoices created for this job yet.</p>
         {/if}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Shipments -->
+  {#if activeSection !== 'shipments'}
+    <div class="pillar pillar-ship"
+         role="button" tabindex="0"
+         onclick={() => openSection('shipments')}
+         onkeydown={(e) => e.key === 'Enter' && openSection('shipments')}>
+      <span class="label-v">Shipments</span>
+    </div>
+  {:else}
+    <div class="open open-ship">
+      <div class="top-bar top-bar-ship">
+        <span class="top-bar-title">SHIPMENTS</span>
+        <span class="top-bar-actions">
+          <a use:link href={`/jobs/${job.job_id}/shipments`}>Manage shipments →</a>
+        </span>
+      </div>
+      <div class="body">
+        <ShipmentsPillar jobId={job.job_id} />
       </div>
     </div>
   {/if}
