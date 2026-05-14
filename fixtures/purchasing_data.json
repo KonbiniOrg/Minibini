@@ -31,8 +31,7 @@
             "purchase_order": 1,
             "business": 2,
             "contact": 3,
-            "vendor_invoice_number": "ACME-INV-001",
-            "bill_number": "BILL-FIXTURE-001"
+            "vendor_invoice_number": "ACME-INV-001"
         }
     },
     {
@@ -42,8 +41,7 @@
             "purchase_order": 2,
             "business": 2,
             "contact": 3,
-            "vendor_invoice_number": "ACME-INV-002",
-            "bill_number": "BILL-FIXTURE-002"
+            "vendor_invoice_number": "ACME-INV-002"
         }
     },
     {

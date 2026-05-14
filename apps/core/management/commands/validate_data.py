@@ -363,23 +363,23 @@ class Command(BaseCommand):
 
         for bill in Bill.objects.select_related('business', 'contact', 'purchase_order').all():
             if bill.status not in valid_statuses:
-                self.errors.append(f'Bill {bill.bill_number}: invalid status "{bill.status}"')
+                self.errors.append(f'Bill {(bill.vendor_invoice_number or bill.pk)}: invalid status "{bill.status}"')
 
             # Contact must have a business
             if bill.contact and not bill.contact.business_id:
-                self.errors.append(f'Bill {bill.bill_number}: contact has no business')
+                self.errors.append(f'Bill {(bill.vendor_invoice_number or bill.pk)}: contact has no business')
 
             # Bill linked to draft PO
             if bill.purchase_order and bill.purchase_order.status == PurchaseOrder.STATUS_DRAFT:
                 self.errors.append(
-                    f'Bill {bill.bill_number}: linked to draft PO {bill.purchase_order.po_number}'
+                    f'Bill {(bill.vendor_invoice_number or bill.pk)}: linked to draft PO {bill.purchase_order.po_number}'
                 )
 
             # Non-draft bills need at least one line item
             if bill.status != Bill.STATUS_DRAFT:
                 if not BillLineItem.objects.filter(bill=bill).exists():
                     self.errors.append(
-                        f'Bill {bill.bill_number}: status is {bill.status} but has no line items'
+                        f'Bill {(bill.vendor_invoice_number or bill.pk)}: status is {bill.status} but has no line items'
                     )
 
     # ── Invoices ──────────────────────────────────────────────
@@ -692,7 +692,7 @@ class Command(BaseCommand):
         ):
             if bill.business_id != bill.purchase_order.business_id:
                 self.errors.append(
-                    f'Bill {bill.bill_number}: business is "{bill.business}" '
+                    f'Bill {(bill.vendor_invoice_number or bill.pk)}: business is "{bill.business}" '
                     f'but linked PO {bill.purchase_order.po_number} '
                     f'is for "{bill.purchase_order.business}"'
                 )

@@ -251,20 +251,6 @@
     },
     {
         "model": "core.configuration",
-        "pk": "bill_number_sequence",
-        "fields": {
-            "value": "BILL-{year}-{counter:04d}"
-        }
-    },
-    {
-        "model": "core.configuration",
-        "pk": "bill_counter",
-        "fields": {
-            "value": "0"
-        }
-    },
-    {
-        "model": "core.configuration",
         "pk": "board_closed_retention_days",
         "fields": {
             "value": "14"
@@ -470,7 +456,6 @@
         "model": "purchasing.bill",
         "pk": 1,
         "fields": {
-            "bill_number": "BILL-2024-0001",
             "purchase_order": 1,
             "business": 2,
             "contact": 3,
@@ -481,7 +466,6 @@
         "model": "purchasing.bill",
         "pk": 2,
         "fields": {
-            "bill_number": "BILL-2024-0002",
             "purchase_order": 2,
             "business": 2,
             "contact": 3,

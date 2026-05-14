@@ -106,7 +106,6 @@ class BillModelTest(TestCase):
         
     def test_bill_creation(self):
         bill = Bill.objects.create(
-            bill_number="BILL-001",
             purchase_order=self.purchase_order,
             business=self.business,
             contact=self.contact,
@@ -119,18 +118,16 @@ class BillModelTest(TestCase):
         
     def test_bill_str_method(self):
         bill = Bill.objects.create(
-            bill_number="BILL-002",
             purchase_order=self.purchase_order,
             business=self.business,
             contact=self.contact,
             vendor_invoice_number="VIN002"
         )
-        self.assertEqual(str(bill), f"Bill {bill.bill_number}")
+        self.assertEqual(str(bill), f"Bill {bill.vendor_invoice_number}")
         
     def test_bill_protected_from_po_delete(self):
         """Test that PurchaseOrders with Bills cannot be deleted (PROTECT)."""
         bill = Bill.objects.create(
-            bill_number="BILL-003",
             purchase_order=self.purchase_order,
             business=self.business,
             contact=self.contact,
@@ -157,7 +154,6 @@ class BillModelTest(TestCase):
             
     def test_bill_with_contact_deletion(self):
         bill = Bill.objects.create(
-            bill_number="BILL-004",
             purchase_order=self.purchase_order,
             business=self.business,
             contact=self.contact,

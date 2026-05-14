@@ -71,8 +71,7 @@ class BillModelFixtureTest(TestCase):
     def test_bill_str_method_with_fixture_data(self):
         """Test bill string representation with fixture data"""
         bill = Bill.objects.get(vendor_invoice_number="ACME-INV-001")
-        expected_str = f"Bill {bill.bill_number}"
-        self.assertEqual(str(bill), expected_str)
+        self.assertEqual(str(bill), f"Bill {bill.vendor_invoice_number}")
 
     def test_bill_purchase_order_relationships(self):
         """Test that bills are properly linked to purchase orders"""
@@ -96,7 +95,6 @@ class BillModelFixtureTest(TestCase):
             purchase_order=po,
             business=business,
             contact=vendor,
-            bill_number='BILL-TEST',
             vendor_invoice_number="ACME-INV-003"
         )
 
@@ -145,7 +143,6 @@ class BillModelFixtureTest(TestCase):
         test_bill = Bill.objects.create(
             purchase_order=po,
             contact=test_vendor,
-            bill_number='BILL-TEST',
             vendor_invoice_number="TEST-INV-001"
         )
         bill_id = test_bill.bill_id

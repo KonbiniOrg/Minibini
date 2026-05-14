@@ -189,7 +189,6 @@ class Bill(models.Model):
     ]
 
     bill_id = models.AutoField(primary_key=True)
-    bill_number = models.CharField(max_length=50, unique=True)
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, null=True, blank=True)
     # Business is required; Contact is optional but if provided, must have a Business
     business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
@@ -291,15 +290,9 @@ class Bill(models.Model):
                 pass
 
     def save(self, *args, **kwargs):
-        """Override save to validate state transitions, set dates, auto-generate bill_number, and auto-associate Business from Contact."""
-        from apps.core.services import NumberGenerationService
-
+        """Override save to validate state transitions, set dates, and auto-associate Business from Contact."""
         old_status = None
         is_new = not self.pk
-
-        # Auto-generate bill_number if not provided
-        if not self.bill_number:
-            self.bill_number = NumberGenerationService.generate_next_number('bill')
 
         # If contact is provided and has a business, auto-associate the business
         # Only do this on creation and if business is not already explicitly set
@@ -340,7 +333,7 @@ class Bill(models.Model):
         if self.status != Bill.STATUS_DRAFT:
             from django.core.exceptions import PermissionDenied
             raise PermissionDenied(
-                f'Cannot delete Bill {self.bill_number}. '
+                f'Cannot delete Bill {self.vendor_invoice_number or self.pk}. '
                 'Only Bills in Draft status can be deleted.'
             )
         return super().delete(*args, **kwargs)
@@ -349,7 +342,7 @@ class Bill(models.Model):
         db_table = 'bills'
 
     def __str__(self):
-        return f"Bill {self.bill_number}"
+        return f"Bill {self.vendor_invoice_number or self.pk}"
 
 
 class PurchaseOrderLineItem(BaseLineItem):
@@ -402,4 +395,4 @@ class BillLineItem(BaseLineItem):
         return 'bill'
 
     def __str__(self):
-        return f"Bill Line Item {self.pk} for Bill {self.bill.bill_number}"
+        return f"Bill Line Item {self.pk} for Bill {self.bill.vendor_invoice_number or self.bill.pk}"

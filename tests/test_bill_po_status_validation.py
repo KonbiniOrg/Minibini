@@ -42,7 +42,6 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
     def test_bill_creation_without_po_succeeds(self):
         """Test that a Bill can be created without a Purchase Order."""
         bill = Bill.objects.create(
-            bill_number="BILL-031",
             purchase_order=None,
             contact=self.contact,
             vendor_invoice_number='INV-001'
@@ -59,7 +58,6 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         )
 
         bill = Bill(
-            bill_number="BILL-DRAFT-TEST",
             purchase_order=po,
             contact=self.contact,
             vendor_invoice_number='INV-001'
@@ -82,7 +80,6 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po.save()
 
         bill = Bill.objects.create(
-            bill_number="BILL-032",
             purchase_order=po,
             contact=self.contact,
             vendor_invoice_number='INV-001'
@@ -105,7 +102,6 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po.save()
 
         bill = Bill.objects.create(
-            bill_number="BILL-033",
             purchase_order=po,
             contact=self.contact,
             vendor_invoice_number='INV-001'
@@ -128,7 +124,6 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po.save()
 
         bill = Bill.objects.create(
-            bill_number="BILL-034",
             purchase_order=po,
             contact=self.contact,
             vendor_invoice_number='INV-001'
@@ -151,7 +146,6 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         po.save()
 
         bill = Bill.objects.create(
-            bill_number="BILL-035",
             purchase_order=po,
             contact=self.contact,
             vendor_invoice_number='INV-001'
@@ -164,7 +158,6 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
         """Test that an existing Bill cannot be updated to reference a draft PO."""
         # Create bill without PO
         bill = Bill.objects.create(
-            bill_number="BILL-036",
             purchase_order=None,
             contact=self.contact,
             vendor_invoice_number='INV-001'
@@ -199,7 +192,6 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
 
         # Create bill with issued PO
         bill = Bill.objects.create(
-            bill_number="BILL-037",
             purchase_order=issued_po,
             contact=self.contact,
             vendor_invoice_number='INV-001'
@@ -234,7 +226,6 @@ class BillPurchaseOrderStatusValidationTest(TestCase):
 
         # Create bill with PO
         bill = Bill.objects.create(
-            bill_number="BILL-038",
             purchase_order=po,
             contact=self.contact,
             vendor_invoice_number='INV-001'

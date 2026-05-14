@@ -38,7 +38,6 @@ Required keys for document numbering (each entity type needs both):
 - `estimate_number_sequence` / `estimate_counter`
 - `invoice_number_sequence` / `invoice_counter`
 - `po_number_sequence` / `po_counter`
-- `bill_number_sequence` / `bill_counter`
 
 Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 `{day:02d}`, `{counter:04d}`. Counter values are string-encoded integers.
@@ -728,9 +727,9 @@ Valid transitions:
 - **business** (required FK → Business, PROTECT)
 - **contact** (optional FK → Contact, PROTECT): same rules as PurchaseOrder
   (must have business, must match on creation)
-- **bill_number**: unique, max 50 chars. Auto-generated via
-  NumberGenerationService if not provided.
-- **vendor_invoice_number**: required, max 50 chars
+- **vendor_invoice_number**: required, max 50 chars. The vendor's own
+  number from the invoice; serves as the primary human-facing identifier
+  for the Bill (no Minibini-side auto-generated number).
 - **purchase_order** (optional FK → PurchaseOrder, PROTECT): if set, PO must
   NOT be in `draft` status. PO's business must match bill's business.
 - If contact is provided on creation and business is not explicitly set,

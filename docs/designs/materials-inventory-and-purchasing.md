@@ -785,11 +785,10 @@ invoice, optionally linked to a `PurchaseOrder`.
 
 | Field | Type | Notes |
 |---|---|---|
-| `bill_number` | `CharField(50)` unique | Auto-generated |
 | `purchase_order` | FK PROTECT nullable | PO must be in `issued` or later (not `draft`) |
 | `business` | FK PROTECT | Required |
 | `contact` | FK PROTECT nullable | If set, must belong to `business` |
-| `vendor_invoice_number` | `CharField(50)` | Vendor's own invoice number |
+| `vendor_invoice_number` | `CharField(50)` | Vendor's own invoice number; primary human-facing identifier for the Bill (no Minibini-side auto-number) |
 | `status` | choices | See state machine |
 | `due_date`, `received_date`, `paid_date`, `cancelled_date` | datetime nullable | |
 | `qbo_id`, `qbo_payment_status` | char | QBO sync state |
@@ -817,7 +816,7 @@ physical receipt (the linked PO does).
 
 | Method | Purpose |
 |---|---|
-| `create_bill(**kwargs)` | Create with auto-numbered `bill_number` |
+| `create_bill(**kwargs)` | Create a Bill |
 | `create_bill_from_po(po_id, **kwargs)` | Create bill and copy PO line items |
 | `update_status(pk, new_status)` | Status change |
 | `delete_bill(pk)` | Draft-only delete |
@@ -940,13 +939,6 @@ settings UI for editing the `units_list` Configuration value.
 - **Server-side `?search=` filtering on `PriceListItemPicker`** once the
   catalog grows.
 - **`accounting_category` required on `PurchaseOrderLineItem` and `BillLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.
-- **Drop the auto-generated `Bill.bill_number` field.** Bills currently
-  carry both an auto-generated `bill_number` (via
-  `NumberGenerationService`) and a `vendor_invoice_number` (the
-  vendor's own number from their invoice). Vendors track payment by
-  their invoice number, not ours, and internal lookup can use vendor
-  invoice number + vendor name. Drop `bill_number` and its
-  Configuration counter; update bill-creation UX accordingly.
 - **Legacy TaskTemplate Django HTML forms** (`add_task_template_standalone.html`,
   `task_template_edit.html`) still bind to fields removed by the
   RateScheme refactor (`form.units`, `form.rate`,

@@ -114,20 +114,6 @@
     },
     {
         "model": "core.configuration",
-        "pk": "bill_number_sequence",
-        "fields": {
-            "value": "BILL-{year}-{counter:04d}"
-        }
-    },
-    {
-        "model": "core.configuration",
-        "pk": "bill_counter",
-        "fields": {
-            "value": "0"
-        }
-    },
-    {
-        "model": "core.configuration",
         "pk": "units_list",
         "fields": {
             "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"

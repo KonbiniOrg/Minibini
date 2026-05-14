@@ -263,13 +263,12 @@
           <h3>Bills</h3>
           <table border="1">
             <thead>
-              <tr><th>Bill #</th><th>Vendor Invoice #</th><th>Contact</th><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
+              <tr><th>Vendor Invoice #</th><th>Contact</th><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
             <tbody>
               {#each results.results.bills as bill}
                 <tr>
-                  <td><a href="/purchasing/bills/{bill.bill_id}/">{bill.bill_number}</a></td>
-                  <td>{bill.vendor_invoice_number || '—'}</td>
+                  <td><a href="/purchasing/bills/{bill.bill_id}/">{bill.vendor_invoice_number || `Bill ${bill.bill_id}`}</a></td>
                   <td>{bill.contact_name || '—'}</td>
                   <td>{bill.po_number || '—'}</td>
                   <td>{bill.status}</td>

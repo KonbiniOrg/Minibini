@@ -19,8 +19,6 @@ from apps.purchasing.models import PurchaseOrder, Bill
 class ComprehensiveModelIntegrationTest(TestCase):
     def setUp(self):
         # Create Configuration for number generation
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
 
         self.group, _ = Group.objects.get_or_create(name="Manager")
         self.user = User.objects.create_user(username="testuser", email="test@example.com")
@@ -146,7 +144,6 @@ class ComprehensiveModelIntegrationTest(TestCase):
         purchase_order.save()
 
         bill = Bill.objects.create(
-            bill_number="BILL-TEST-001",
             purchase_order=purchase_order,
             business=self.business,
             contact=self.contact,
@@ -384,7 +381,6 @@ class LineItemValidationTest(TestCase):
         self.purchase_order.save()
 
         self.bill = Bill.objects.create(
-            bill_number="BILL-TEST-002",
             purchase_order=self.purchase_order,
             business=self.business,
             contact=self.contact,

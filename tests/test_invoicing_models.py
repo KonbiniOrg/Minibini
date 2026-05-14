@@ -112,8 +112,6 @@ class InvoiceModelTest(TestCase):
 class InvoiceLineItemModelTest(TestCase):
     def setUp(self):
         # Create Configuration for number generation
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
