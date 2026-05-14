@@ -199,8 +199,9 @@ class PackingListPayloadTests(FixtureTestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]['deliverable_id'], self.d1.pk)
         self.assertEqual(rows[1]['deliverable_id'], self.d2.pk)
-        self.assertEqual(rows[0]['qty_this_shipment'], Decimal('10'))
-        self.assertEqual(rows[1]['qty_this_shipment'], Decimal('0'))
+        # packing_list_payload stringifies decimals (project API convention).
+        self.assertEqual(rows[0]['qty_this_shipment'], '10.00')
+        self.assertEqual(rows[1]['qty_this_shipment'], '0.00')
 
     def test_previously_picked_up_only_counts_other_picked_up_shipments(self):
         s1 = ShipmentService.create(job_id=self.job.pk)
@@ -212,9 +213,9 @@ class PackingListPayloadTests(FixtureTestCase):
 
         payload = ShipmentService.packing_list_payload(s2)
         row = next(r for r in payload['rows'] if r['deliverable_id'] == self.d1.pk)
-        self.assertEqual(row['qty_previously_picked_up'], Decimal('10'))
-        self.assertEqual(row['qty_this_shipment'], Decimal('5'))
-        self.assertEqual(row['qty_remaining_after_this_shipment'], Decimal('0'))
+        self.assertEqual(row['qty_previously_picked_up'], '10.00')
+        self.assertEqual(row['qty_this_shipment'], '5.00')
+        self.assertEqual(row['qty_remaining_after_this_shipment'], '0.00')
 
     def test_previously_does_not_include_other_prepared_shipments(self):
         s1 = ShipmentService.create(job_id=self.job.pk)
@@ -224,4 +225,4 @@ class PackingListPayloadTests(FixtureTestCase):
 
         payload = ShipmentService.packing_list_payload(s2)
         row = next(r for r in payload['rows'] if r['deliverable_id'] == self.d1.pk)
-        self.assertEqual(row['qty_previously_picked_up'], Decimal('0'))
+        self.assertEqual(row['qty_previously_picked_up'], '0.00')
