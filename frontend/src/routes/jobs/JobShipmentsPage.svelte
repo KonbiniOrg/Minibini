@@ -291,7 +291,7 @@
 
     <header class="page-header">
       <h2>Shipments</h2>
-      <p><a use:link href={`/jobs/${jobId}`}>← Back to job</a></p>
+      <p><a use:link href={`/jobs/${jobId}`}>← Back to overview</a></p>
       <div class="action-row">
         <button type="button" onclick={addShipment}>+ Add shipment</button>
         <button type="button" onclick={saveChanges} disabled={!hasChanges || saving}>
