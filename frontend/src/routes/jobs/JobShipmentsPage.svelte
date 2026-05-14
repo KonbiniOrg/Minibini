@@ -83,9 +83,18 @@
     } catch (e) { errorMsg = e.message || 'Pick-up failed.'; }
   }
 
-  async function deleteShipment(sh) {
-    if (!confirm(`Delete Shipment #${sh.sequence}?`)) return;
+  async function discardShipment(sh) {
+    if (sh.status !== 'prepared') return;
+    const itemCount = (sh.items || []).length;
+    const msg = itemCount > 0
+      ? `Discard Shipment #${sh.sequence}? This removes ${itemCount} item${itemCount === 1 ? '' : 's'} from the shipment and deletes the shipment itself. The Deliverables list is unchanged.`
+      : `Discard Shipment #${sh.sequence}?`;
+    if (!confirm(msg)) return;
     try {
+      // Backend rejects shipment delete while items exist; remove them first.
+      for (const item of (sh.items || [])) {
+        await api.delete(`/api/shipments/${sh.id}/items/${item.id}/`);
+      }
       await api.delete(`/api/shipments/${sh.id}/`);
       // Drop any pending entries that referenced this shipment.
       const next = {};
@@ -94,7 +103,7 @@
       }
       pending = next;
       await load();
-    } catch (e) { errorMsg = e.message || 'Delete failed.'; }
+    } catch (e) { errorMsg = e.message || 'Discard failed.'; }
   }
 
   async function saveChanges() {
@@ -197,8 +206,8 @@
                     <button type="button" onclick={() => pickUp(sh)}>Mark picked up</button>
                   {/if}
                   <button type="button" onclick={() => printPackingList(sh)}>Print</button>
-                  {#if sh.status === 'prepared' && (sh.items || []).length === 0}
-                    <button type="button" onclick={() => deleteShipment(sh)}>Delete</button>
+                  {#if sh.status === 'prepared'}
+                    <button type="button" class="discard" onclick={() => discardShipment(sh)}>Discard</button>
                   {/if}
                 </div>
               </th>
@@ -266,6 +275,7 @@
   .date { color: #777; font-size: 11px; }
   .actions { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
   .actions button { font-size: 11px; padding: 2px 6px; }
+  .actions button.discard { color: #b91c1c; }
   .qty-input { width: 5em; text-align: right; }
   .qty-input.pending-cell {
     background: #fef3c7;
