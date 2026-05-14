@@ -186,6 +186,7 @@ The primary UI is a Svelte 5 SPA at `frontend/`, built with Vite and using hash-
 Conventions to keep the SPA's interaction vocabulary consistent. New code follows these unless there's a specific reason not to.
 
 - **Links navigate; buttons act.** Use `<a href="...">` (or `use:link`) for anything that takes the user to a different view. Use `<button>` for anything that mutates state, opens a modal, or triggers an API call without a navigation. Don't dress a `<button>` as a link to navigate, and don't wrap a `<a>` around an action handler.
+- **Saves are explicit, never blur-only.** `onblur` (or any other implicit focus/navigation event) must never be the only trigger that commits a change to the server. Users move focus accidentally — losing or saving work as a side effect is hostile. Every mutation needs an explicit confirmation: a Save button, an Enter-on-form, an explicit modal "OK". `onblur` is fine as a secondary trigger (validating format, normalizing values into pending state) but the actual API call must wait for a deliberate action.
 
 ## REST API (`apps/api/`)
 

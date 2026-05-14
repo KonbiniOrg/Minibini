@@ -9,7 +9,11 @@
   let shipments = $state([]);
   let job = $state(null);
   let loading = $state(true);
+  let saving = $state(false);
   let errorMsg = $state('');
+
+  // Pending edits keyed by `${shipmentId}:${deliverableId}` => string qty (or '' to remove).
+  let pending = $state({});
 
   async function load() {
     loading = true;
@@ -37,6 +41,28 @@
     return (sh.items || []).find(it => it.deliverable === deliverableId);
   }
 
+  function pendingKey(shipmentId, deliverableId) {
+    return `${shipmentId}:${deliverableId}`;
+  }
+
+  function cellValue(sh, deliverableId) {
+    const key = pendingKey(sh.id, deliverableId);
+    if (key in pending) return pending[key];
+    return getItem(sh, deliverableId)?.qty ?? '';
+  }
+
+  function cellIsPending(sh, deliverableId) {
+    return pendingKey(sh.id, deliverableId) in pending;
+  }
+
+  function onCellInput(sh, deliverableId, value) {
+    if (sh.status !== 'prepared') return;
+    const key = pendingKey(sh.id, deliverableId);
+    pending = { ...pending, [key]: value };
+  }
+
+  let hasChanges = $derived(Object.keys(pending).length > 0);
+
   async function addShipment() {
     try {
       await api.post(`/api/jobs/${jobId}/shipments/`, {});
@@ -45,9 +71,14 @@
   }
 
   async function pickUp(sh) {
-    if (!confirm(`Mark Shipment #${sh.sequence} as picked up? This locks the shipment.`)) return;
+    if (hasChanges) {
+      if (!confirm('You have unsaved cell changes. Mark picked up anyway? Unsaved changes will be lost.')) return;
+    } else if (!confirm(`Mark Shipment #${sh.sequence} as picked up? This locks the shipment.`)) {
+      return;
+    }
     try {
       await api.post(`/api/shipments/${sh.id}/pick-up/`, {});
+      pending = {};
       await load();
     } catch (e) { errorMsg = e.message || 'Pick-up failed.'; }
   }
@@ -56,29 +87,51 @@
     if (!confirm(`Delete Shipment #${sh.sequence}?`)) return;
     try {
       await api.delete(`/api/shipments/${sh.id}/`);
+      // Drop any pending entries that referenced this shipment.
+      const next = {};
+      for (const [k, v] of Object.entries(pending)) {
+        if (!k.startsWith(`${sh.id}:`)) next[k] = v;
+      }
+      pending = next;
       await load();
     } catch (e) { errorMsg = e.message || 'Delete failed.'; }
   }
 
-  async function setQty(sh, deliverableId, rawValue) {
-    if (sh.status !== 'prepared') return;
-    const trimmed = String(rawValue ?? '').trim();
-    const existing = getItem(sh, deliverableId);
+  async function saveChanges() {
+    if (!hasChanges || saving) return;
+    saving = true;
+    errorMsg = '';
     try {
-      if (trimmed === '' || Number(trimmed) === 0) {
-        if (existing) {
-          await api.delete(`/api/shipments/${sh.id}/items/${existing.id}/`);
+      for (const [key, rawValue] of Object.entries(pending)) {
+        const [shipmentIdStr, deliverableIdStr] = key.split(':');
+        const shipmentId = Number(shipmentIdStr);
+        const deliverableId = Number(deliverableIdStr);
+        const sh = shipments.find(s => s.id === shipmentId);
+        if (!sh || sh.status !== 'prepared') continue;
+        const existing = getItem(sh, deliverableId);
+        const trimmed = String(rawValue ?? '').trim();
+        if (trimmed === '' || Number(trimmed) === 0) {
+          if (existing) await api.delete(`/api/shipments/${shipmentId}/items/${existing.id}/`);
+        } else if (existing) {
+          await api.patch(`/api/shipments/${shipmentId}/items/${existing.id}/`, { qty: trimmed });
+        } else {
+          await api.post(`/api/shipments/${shipmentId}/items/`, {
+            deliverable: deliverableId,
+            qty: trimmed,
+          });
         }
-      } else if (existing) {
-        await api.patch(`/api/shipments/${sh.id}/items/${existing.id}/`, { qty: trimmed });
-      } else {
-        await api.post(`/api/shipments/${sh.id}/items/`, {
-          deliverable: deliverableId,
-          qty: trimmed,
-        });
       }
+      pending = {};
       await load();
-    } catch (e) { errorMsg = e.message || 'Save failed.'; }
+    } catch (e) {
+      errorMsg = e.message || 'Save failed. Earlier rows may have been saved; later rows were not.';
+    } finally {
+      saving = false;
+    }
+  }
+
+  function discardChanges() {
+    pending = {};
   }
 
   function printPackingList(sh) {
@@ -91,8 +144,15 @@
     return new Date(iso).toLocaleDateString();
   }
 
+  // Column total reflects pending edits, not just saved state.
   function columnTotal(sh) {
-    return (sh.items || []).reduce((sum, it) => sum + Number(it.qty), 0);
+    let total = 0;
+    for (const d of deliverables) {
+      const v = cellValue(sh, d.id);
+      const n = Number(v);
+      if (!isNaN(n)) total += n;
+    }
+    return total;
   }
 </script>
 
@@ -103,7 +163,16 @@
     <header>
       <h2>Shipments for {job.job_number}: {job.name}</h2>
       <p><a use:link href={`/jobs/${jobId}`}>← Back to job</a></p>
-      <p><button type="button" onclick={addShipment}>+ Add shipment</button></p>
+      <div class="action-row">
+        <button type="button" onclick={addShipment}>+ Add shipment</button>
+        <button type="button" onclick={saveChanges} disabled={!hasChanges || saving}>
+          {saving ? 'Saving...' : 'Save changes'}
+        </button>
+        <button type="button" onclick={discardChanges} disabled={!hasChanges || saving}>Discard changes</button>
+        {#if hasChanges}
+          <span class="pending-note">{Object.keys(pending).length} unsaved {Object.keys(pending).length === 1 ? 'change' : 'changes'}</span>
+        {/if}
+      </div>
       {#if errorMsg}<p class="err">{errorMsg}</p>{/if}
     </header>
 
@@ -150,8 +219,9 @@
                   {:else}
                     <input
                       class="qty-input"
-                      value={getItem(sh, d.id)?.qty ?? ''}
-                      onblur={(e) => setQty(sh, d.id, e.target.value)}
+                      class:pending-cell={cellIsPending(sh, d.id)}
+                      value={cellValue(sh, d.id)}
+                      oninput={(e) => onCellInput(sh, d.id, e.target.value)}
                     />
                   {/if}
                 </td>
@@ -176,6 +246,17 @@
 
 <style>
   .page { padding: 20px 24px; }
+  .action-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin: 8px 0;
+  }
+  .pending-note {
+    font-style: italic;
+    color: #b45309;
+    font-size: 13px;
+  }
   .matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
   .matrix th, .matrix td { padding: 6px 10px; text-align: left; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -186,6 +267,10 @@
   .actions { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
   .actions button { font-size: 11px; padding: 2px 6px; }
   .qty-input { width: 5em; text-align: right; }
+  .qty-input.pending-cell {
+    background: #fef3c7;
+    border-color: #b45309;
+  }
   .err { color: #c00; }
   .totals td { background: #f5f5f5; }
 </style>
