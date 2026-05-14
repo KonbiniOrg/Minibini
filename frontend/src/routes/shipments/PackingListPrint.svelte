@@ -71,6 +71,17 @@
     {#if payload.shipment.notes}
       <p><strong>Notes:</strong> {payload.shipment.notes}</p>
     {/if}
+
+    <section class="signatures">
+      <div class="sig-row">
+        <span class="sig-label">Pickup by</span>
+        <span class="sig-line"></span>
+      </div>
+      <div class="sig-row">
+        <span class="sig-label">Pickup date</span>
+        <span class="sig-line"></span>
+      </div>
+    </section>
   </article>
 {/if}
 
@@ -85,6 +96,27 @@
   .packing-list table { width: 100%; border-collapse: collapse; margin-top: 16px; }
   .packing-list th, .packing-list td { padding: 6px 10px; text-align: left; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .signatures {
+    margin-top: 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .sig-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  .sig-label {
+    flex: 0 0 auto;
+    font-weight: bold;
+    white-space: nowrap;
+  }
+  .sig-line {
+    flex: 1 1 auto;
+    border-bottom: 1px solid #333;
+    height: 1.6em;
+  }
   .err { color: #c00; padding: 16px; }
   @media print {
     :global(.sidebar), :global(.current-blep-band) { display: none !important; }
