@@ -67,7 +67,26 @@
     try {
       await api.post(`/api/jobs/${jobId}/shipments/`, {});
       await load();
+      // Pre-fill the newly created shipment's cells with each deliverable's
+      // current qty_remaining. Most shipments deliver everything in one go,
+      // so the user can usually just click Save without typing anything.
+      prefillNewestShipmentWithRemaining();
     } catch (e) { errorMsg = e.message || 'Add shipment failed.'; }
+  }
+
+  function prefillNewestShipmentWithRemaining() {
+    if (!shipments.length) return;
+    const newest = shipments[shipments.length - 1];
+    if (newest.status !== 'prepared') return;
+    if ((newest.items || []).length > 0) return;
+    const next = { ...pending };
+    for (const d of deliverables) {
+      const rem = Number(d.qty_remaining);
+      if (Number.isFinite(rem) && rem > 0) {
+        next[pendingKey(newest.id, d.id)] = rem.toString();
+      }
+    }
+    pending = next;
   }
 
   async function pickUp(sh) {
