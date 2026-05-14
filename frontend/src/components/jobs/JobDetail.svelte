@@ -94,11 +94,9 @@
   let poList = $derived(purchaseOrders?.results || []);
   let draftInvoice = $derived(invList.find(inv => inv.status === 'draft') || null);
 
-  // Shipments: the D list locks (and Shipments become possible) once any
-  // estimate on the job has been accepted by the customer.
-  let hasAcceptedEstimate = $derived(estimateList.some(e => e.status === 'accepted'));
+  // Shipments are managed on the dedicated Job Shipments page. Only count
+  // is shown here for at-a-glance information on the accordion pillar.
   let shipmentCount = $state(0);
-  let shipmentsReloadKey = $state(0);
 
   async function refreshShipmentCount() {
     try {
@@ -113,16 +111,6 @@
   $effect(() => {
     if (job?.job_id) refreshShipmentCount();
   });
-
-  async function startShipment() {
-    try {
-      await api.post(`/api/jobs/${job.job_id}/shipments/`, {});
-      await refreshShipmentCount();
-      shipmentsReloadKey += 1;
-    } catch (e) {
-      alert(e?.message || 'Could not start shipment.');
-    }
-  }
 
   // Invoice helpers
   function invoiceTotal(inv) {
@@ -821,20 +809,11 @@
           SHIPMENTS{#if shipmentCount} · {shipmentCount}{:else} · None{/if}
         </span>
         <span class="top-bar-actions">
-          {#if hasAcceptedEstimate}
-            <button type="button" onclick={startShipment}>Start Shipment</button>
-          {:else}
-            <span class="ship-gate" title="Estimate must be accepted before shipments can begin.">
-              Awaiting estimate acceptance
-            </span>
-          {/if}
           <a use:link href={`/jobs/${job.job_id}/shipments`}>Manage shipments →</a>
         </span>
       </div>
       <div class="body">
-        {#key shipmentsReloadKey}
-          <ShipmentsPillar jobId={job.job_id} />
-        {/key}
+        <ShipmentsPillar jobId={job.job_id} />
       </div>
     </div>
   {/if}
@@ -1134,12 +1113,6 @@
   .top-bar-mat   { background: #ca8a04; }
   .top-bar-inv   { background: #15803d; }
   .top-bar-ship  { background: #0369a1; }
-  .ship-gate {
-    font-size: 12px;
-    font-weight: 400;
-    font-style: italic;
-    color: rgba(255,255,255,0.85);
-  }
   .top-bar-po    { background: #475569; }
   .top-bar-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .top-bar-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
