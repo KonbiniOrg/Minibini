@@ -90,10 +90,33 @@
 {/if}
 
 <style>
-  .deliverables-panel .panel-head {
+  /* These mirror the .panel / .panel-head / .panel-scroll rules in
+     JobDetail.svelte. Svelte scopes component styles, so we can't rely on the
+     parent's definitions reaching this component's DOM. */
+  .panel {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .panel-head {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #888;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    flex: 0 0 auto;
     display: flex;
     align-items: baseline;
     gap: 8px;
+  }
+  .panel-scroll {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .edit-link {
     background: none;
@@ -107,7 +130,7 @@
     letter-spacing: 0;
     margin-left: auto;
   }
-  /* Match the Description panel typography. */
+  /* Match the Description panel typography (line-height 1.6, color #333). */
   .empty {
     margin: 0;
     color: #333;
