@@ -71,8 +71,7 @@
 
     <p><strong>Job:</strong> {payload.job.job_number} — {payload.job.name}</p>
     <p><strong>Shipment #:</strong> {payload.shipment.sequence}</p>
-    <p><strong>Status:</strong> {payload.shipment.status === 'picked_up' ? 'Picked up' : 'Prepared'}</p>
-    <p><strong>Prepared:</strong> {fmtDateTime(payload.shipment.prepared_date)}</p>
+    <p><strong>Date:</strong> {fmtDateTime(payload.shipment.prepared_date)}</p>
     {#if payload.shipment.picked_up_date}
       <p><strong>Picked up:</strong> {fmtDateTime(payload.shipment.picked_up_date)}</p>
     {/if}
