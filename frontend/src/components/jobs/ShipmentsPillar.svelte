@@ -1,6 +1,5 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { link } from 'svelte-spa-router';
 
   let { jobId } = $props();
 

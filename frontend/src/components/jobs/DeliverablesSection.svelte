@@ -36,12 +36,6 @@
     if (changed) load();
   }
 
-  function reasonLabel(r) {
-    if (r === 'estimate_sent') return 'estimate sent';
-    if (r === 'estimate_accepted') return 'estimate accepted';
-    return '';
-  }
-
   // API returns DecimalFields as fixed-precision strings ("10.00"). Trim trailing
   // zeros for display so whole quantities show as "10" not "10.00", and "2.50"
   // shows as "2.5". Keeps non-numeric values as-is just in case.
