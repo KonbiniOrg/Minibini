@@ -155,13 +155,13 @@ Service flow (`apps/qbo/services.py`):
 3. **Group lines** — `InvoiceGroupingService.group_for_qbo(invoice)` collapses `InvoiceLineItem` rows into one QBO line per `(AccountingCategory, taxable)` tuple. Description: `"Job {job_number}: {category_name} (taxable|non-taxable)"`. Items with no category bucket under `"Uncategorized"`.
 4. **Build QBO Invoice** — `_build_qbo_invoice`. Each line gets `Amount`, `Description`, `SalesItemLineDetail.ItemRef` (from `AccountingCategory.qbo_item_id`), and `SalesItemLineDetail.TaxCodeRef = 'TAX'` or `'NON'` based on the group's taxability.
 5. **Save** — `qbo_invoice.save(qb=client)`. **Immediately persist `qbo_id` on the Minibini invoice** before doing anything else, so a downstream failure can't cause a duplicate push on retry.
-6. **Attach the job-statement PDF** — `_attach_pdf` writes the Minibini-generated statement PDF to a temp file and uploads it as a QBO `Attachable` linked to the invoice. Temp file is unlinked in a `finally` block.
+6. **Generate the Minibini job-statement PDF** — `generate_job_statement_pdf(invoice)` (in `apps/invoicing/pdf.py`). The PDF is attached to the customer email only; it is **not** uploaded to QBO. The bookkeeper sees the statement via Minibini, not via the QBO invoice record.
 7. **Mark as sent** — `_mark_as_sent` re-fetches the invoice, sets `EmailStatus = 'EmailSent'`, and re-saves. This prevents QBO from showing the invoice as "needs to be sent" in its own UI.
 8. **Download QBO PDF** — `_download_qbo_pdf` retrieves QBO's rendered invoice PDF (which carries the Pay Now link and tax calculations).
 9. **Send email via Minibini** — `_send_email` calls `OutboundEmailService.send_email` with both PDFs attached. Subject: `"Invoice {invoice_number} — {job_number}"`. Body is a fixed default — no template system.
 10. **Log success** to `QBOSyncLog`.
 
-On any exception, `QBOSyncLog` records `status='failed'` with the error message, and the exception re-raises. There is no compensating action — if step 6 succeeds but step 7 fails, the invoice exists in QBO with `qbo_id` set on Minibini but is in an inconsistent "PDF attached, not marked sent" state. Manual cleanup is required.
+On any exception, `QBOSyncLog` records `status='failed'` with the error message, and the exception re-raises. There is no compensating action — if step 7 succeeds but step 8 fails, the invoice exists in QBO with `qbo_id` set on Minibini but is in an inconsistent "marked sent, not emailed" state. Manual cleanup is required.
 
 ### Line grouping — `InvoiceGroupingService.group_for_qbo`
 
@@ -327,8 +327,7 @@ There is no `GET /api/qbo/sync-log/` endpoint yet; `QBOSyncLog` is currently ins
 - **Richer customer field push.** Only display name, phone, and email currently push. Billing/shipping address, payment terms, tax exemption, notes do not.
 - **Cross-source DisplayName collisions.** `QBODisplayNameService` only checks Minibini's own QBO IDs. A name collision with a customer/vendor created outside Minibini surfaces as a save failure from QBO, not a graceful suffix.
 - **Custom invoice email templates.** Subject and body for the invoice send-email step are hard-coded strings; there's no per-user or per-customer template system.
-- **Partial-failure handling.** If `_attach_pdf` succeeds but `_mark_as_sent` fails (or any other step after `qbo_id` is persisted), Minibini has a `qbo_id` but the QBO record is in an inconsistent state. There is no resume / retry tool; recovery is manual.
-- **Consider removing `_attach_pdf` (step 6 of the invoice push).** The Minibini job-statement PDF is currently uploaded to QBO as an `Attachable`, but the customer email attaches the locally-generated PDF directly — the QBO copy is never read back. Its only purpose is bookkeeper visibility inside QBO. Dropping the step would shave one QBO API call per send and shrink the partial-failure surface above.
+- **Partial-failure handling.** If any step after `qbo_id` is persisted fails, Minibini has a `qbo_id` but the QBO record may be in an inconsistent state (e.g. marked-sent but no email actually sent). There is no resume / retry tool; recovery is manual.
 - **"Resend to QBO" action.** Once `qbo_id` is set, the send-to-qbo path short-circuits. If the original push partially failed, there's no UI for retrying just the failed steps.
 - **"View in QBO" deep link.** No button in the invoice detail UI to jump to the QBO invoice URL.
 - **Connection health beyond `is_refresh_token_expiring_soon`.** No proactive token refresh well before the 100-day window closes, no email alert, no dashboard pulse.

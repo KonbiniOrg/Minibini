@@ -106,11 +106,10 @@ class QBOInvoicePushTest(TestCase):
 
         with patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice',
                    return_value=mock_qbo_invoice):
-            with patch('apps.qbo.services.QBOInvoiceSyncService._attach_pdf'):
-                with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
-                    QBOInvoiceSyncService.push_invoice(
+            with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
+                QBOInvoiceSyncService.push_invoice(
                         self.invoice,
                         send_to='john@example.com',
                     )
@@ -142,11 +141,10 @@ class QBOInvoicePushTest(TestCase):
 
         with patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice',
                    return_value=mock_qbo_invoice):
-            with patch('apps.qbo.services.QBOInvoiceSyncService._attach_pdf'):
-                with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
-                    QBOInvoiceSyncService.push_invoice(
+            with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
+                QBOInvoiceSyncService.push_invoice(
                         self.invoice, send_to='john@example.com',
                     )
 
@@ -173,11 +171,10 @@ class QBOInvoicePushTest(TestCase):
 
         with patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice',
                    return_value=mock_qbo_invoice):
-            with patch('apps.qbo.services.QBOInvoiceSyncService._attach_pdf'):
-                with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
-                    QBOInvoiceSyncService.push_invoice(
+            with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
+                QBOInvoiceSyncService.push_invoice(
                         self.invoice, send_to='john@example.com',
                     )
 
@@ -230,11 +227,10 @@ class IndividualContactInvoicePushTest(TestCase):
 
         with patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice',
                    return_value=mock_qbo_invoice):
-            with patch('apps.qbo.services.QBOInvoiceSyncService._attach_pdf'):
-                with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
-                    QBOInvoiceSyncService.push_invoice(
+            with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
+                QBOInvoiceSyncService.push_invoice(
                         self.invoice, send_to='jane@solo.com',
                     )
 
@@ -259,11 +255,10 @@ class IndividualContactInvoicePushTest(TestCase):
 
         with patch('apps.qbo.services.QBOInvoiceSyncService._build_qbo_invoice',
                    return_value=mock_qbo_invoice) as mock_build:
-            with patch('apps.qbo.services.QBOInvoiceSyncService._attach_pdf'):
-                with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
-                     patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
-                    QBOInvoiceSyncService.push_invoice(
+            with patch('apps.qbo.services.QBOInvoiceSyncService._mark_as_sent'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._download_qbo_pdf', return_value=b'%PDF-qbo'), \
+                 patch('apps.qbo.services.QBOInvoiceSyncService._send_email'):
+                QBOInvoiceSyncService.push_invoice(
                         self.invoice, send_to='jane@solo.com',
                     )
 
