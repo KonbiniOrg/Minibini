@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { link } from 'svelte-spa-router';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   let { params } = $props();
   const jobId = $derived(parseInt(params.jobId, 10));
@@ -10,6 +11,7 @@
   let draftShipments = $state([]); // local-only, not yet on the server
   let nextDraftCounter = 1;
   let job = $state(null);
+  let contact = $state(null);
   let loading = $state(true);
   let saving = $state(false);
   let errorMsg = $state('');
@@ -31,6 +33,15 @@
       deliverables = d;
       const list = s.results || s;
       shipments = list.slice().sort((a, b) => a.sequence - b.sequence);
+      // Fetch contact for the JobHeader; non-fatal if the contact lookup fails.
+      contact = null;
+      if (job.contact) {
+        try {
+          contact = await api.get(`/api/contacts/${job.contact}/`);
+        } catch {
+          contact = null;
+        }
+      }
     } catch (e) {
       errorMsg = e.message || 'Load failed.';
     } finally {
@@ -276,8 +287,10 @@
   {#if loading}
     <p>Loading...</p>
   {:else if job}
-    <header>
-      <h2>Shipments for {job.job_number}: {job.name}</h2>
+    <JobHeader {job} {contact} onStatusChange={load} />
+
+    <header class="page-header">
+      <h2>Shipments</h2>
       <p><a use:link href={`/jobs/${jobId}`}>← Back to job</a></p>
       <div class="action-row">
         <button type="button" onclick={addShipment}>+ Add shipment</button>
@@ -368,7 +381,10 @@
 </div>
 
 <style>
-  .page { padding: 20px 24px; }
+  .page { padding: 0 0 20px 0; }
+  .page-header { padding: 0 24px; }
+  .page-header h2 { margin-top: 16px; }
+  .matrix { margin: 0 24px; width: calc(100% - 48px); }
   .action-row {
     display: flex;
     gap: 8px;
@@ -380,7 +396,7 @@
     color: #b45309;
     font-size: 13px;
   }
-  .matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .matrix { border-collapse: collapse; font-size: 13px; }
   .matrix th, .matrix td { padding: 6px 10px; text-align: left; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .ship-head { text-align: center; font-weight: normal; vertical-align: top; }
