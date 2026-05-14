@@ -138,20 +138,31 @@
     line-height: 1.6;
   }
   table.simple-list {
+    width: 100%;
+    border: none;
     border-collapse: collapse;
     color: #333;
     font-size: 14px;
     line-height: 1.6;
   }
   table.simple-list td {
-    padding: 0 6px 0 0;
+    border: none;
+    padding: 6px 16px 6px 0;
     vertical-align: baseline;
+  }
+  table.simple-list td:last-child {
+    padding-right: 0;
+    width: 100%;
   }
   table.simple-list td.num {
     text-align: right;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    width: 1%;
   }
   table.simple-list td.units {
     color: #666;
+    white-space: nowrap;
+    width: 1%;
   }
 </style>
