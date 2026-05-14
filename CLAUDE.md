@@ -65,6 +65,7 @@ Minibini/
 │   ├── invoicing/  # Invoice, InvoiceLineItem
 │   ├── inventory/  # PriceListItem, Material, Earmark, InventoryAdjustment
 │   ├── purchasing/ # PurchaseOrder, Bill, line items
+│   ├── deliverables/ # Deliverable, Shipment, ShipmentItem
 │   └── search/     # Cross-entity search service
 ├── frontend/       # Svelte 5 SPA (Vite, svelte-spa-router)
 ├── templates/      # Django HTML templates (server-rendered views)
@@ -94,7 +95,7 @@ Minibini/
 | Doc | Covers |
 |---|---|
 | `architecture-and-conventions.md` | Service layer, mixin catalog, permissions plumbing, line-item pattern, view-mode, history capture, sidebar |
-| `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service |
+| `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service, Deliverables, Shipments |
 | `estimates-and-prices.md` | RateScheme + supersession, billable atoms, Estimate + wizard, atom carry-over, AC pass-through |
 | `materials-inventory-and-purchasing.md` | PriceListItem, Material, PlanMaterial, Earmarks, units, PurchaseOrder, Bill |
 | `invoicing-and-expenses.md` | Invoice + wizard, send-to-customer flow, Expense + Reimbursement |
@@ -114,6 +115,7 @@ Minibini/
 | `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem | materials-inventory-and-purchasing |
 | `apps.invoicing` | Invoice, InvoiceLineItem, InvoiceLineItemSource | invoicing-and-expenses |
 | `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |
+| `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-tasks-and-worksheets §12 |
 | `apps.qbo` | QBOConnection, QBOSyncLog | quickbooks-integration |
 
 ## Configuration Model
@@ -161,6 +163,7 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 - `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
 - `/api/price-list-items/`, `/api/materials/`, `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
 - `/api/expenses/`, `/api/reimbursements/`
+- `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
 - `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
 - `/api/emails/`, `/api/search/`, `/api/settings/`, `/api/home/`
 

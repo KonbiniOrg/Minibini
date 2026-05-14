@@ -1,10 +1,11 @@
 # Jobs, Tasks, and Worksheets
 
-Reference for the work-execution side of Minibini: how Jobs, Tasks, Bleps,
-EstWorksheets, PlanTasks, and Templates fit together. For service-layer
-mechanics, mixin catalog, permission atoms, history capture, and DELETE
-conventions, see `docs/designs/architecture-and-conventions.md`. For
-RateScheme / billing identity / estimate wizard / supersession, see
+Reference for the work-execution and fulfillment side of Minibini: how
+Jobs, Tasks, Bleps, EstWorksheets, PlanTasks, Templates, Deliverables,
+and Shipments fit together. For service-layer mechanics, mixin catalog,
+permission atoms, history capture, and DELETE conventions, see
+`docs/designs/architecture-and-conventions.md`. For RateScheme / billing
+identity / estimate wizard / supersession, see
 `docs/designs/estimates-and-prices.md`. For Material, PlanMaterial, and
 TemplateMaterialAssociation, see
 `docs/designs/materials-inventory-and-purchasing.md`.
@@ -664,7 +665,191 @@ Materials CRUD on the standalone endpoint:
 - `GET/POST /api/plan-tasks/{id}/materials/`
 - `PATCH/DELETE /api/plan-tasks/{id}/materials/{mid}/`
 
-## 12. Signals
+## 12. Deliverables and Shipments
+
+The fulfillment side of a Job. The three models live in
+`apps/deliverables/`. Change orders are designed but not yet implemented;
+see §14 for the deferred work.
+
+### 12.1 Concepts
+
+- **Deliverable**: a single item the customer is buying on a Job —
+  description, qty_ordered, units. No price. Distinct from estimate /
+  invoice line items (which include billable inputs like setup, jigs,
+  consumed materials). One Job has 0+ Deliverables. Listed on the Job
+  detail page (always visible, sub-header column) and on every customer-
+  facing packing list.
+- **Shipment**: a single fulfillment event for a Job. Holds 1+
+  `ShipmentItem` rows that each reference one Deliverable + a qty.
+  Multiple Shipments per Job support phased delivery / backorders.
+- **Packing list**: not a model — it's the printable rendering of one
+  Shipment, with each Deliverable's qty_ordered, this shipment's qty,
+  qty previously picked up in other shipments, and qty remaining after
+  this shipment.
+
+### 12.2 Editability of the Deliverables list
+
+Deliverables editability is computed from the Job's estimate state, not
+stored:
+
+| Estimate state on the Job | D-list state | UI affordance |
+|---|---|---|
+| No estimate | Editable | Edit link |
+| Latest active estimate is `draft` | Editable | Edit link |
+| Latest active estimate is `open` (sent) | Read-only | "(estimate sent)" pill |
+| Any estimate on the Job is `accepted` | Permanently read-only | "(estimate accepted)" pill |
+
+"Latest active" means: most recent estimate not in `superseded` /
+`rejected` / `expired`. There is at most one such row.
+
+Rationale: while the customer is reviewing a `sent` estimate, the
+Deliverables list they were shown must not drift from what the database
+holds; the only way to change it is to revise the estimate (a new draft
+revision unlocks the list). Once the customer has accepted, the agreed
+scope is fixed — change orders (deferred) are the only sanctioned
+modification path.
+
+### 12.3 Estimate-send guard
+
+`EstimateService.mark_open` rejects with `ValidationError` if the Job has
+zero Deliverables. The customer cannot receive an estimate that doesn't
+say what they're buying.
+
+This is the single cross-app modification this feature made; see also
+`data-constraints.md` §2.12.
+
+### 12.4 Shipment lifecycle
+
+```
+                ┌─ "+ Add shipment" (UI only)
+                ▼
+         local draft (never on server)
+                │
+                ▼  Save changes (if ≥1 qty > 0)
+        ┌────────────────┐
+        │   prepared     │  status_picked_up_date is null
+        └────────┬───────┘
+                │  mark_picked_up
+                ▼
+        ┌────────────────┐
+        │   picked_up    │  picked_up_date set; terminal
+        └────────────────┘
+```
+
+- A Shipment can only be created server-side once the Job has an accepted
+  estimate. Enforced in `ShipmentService.create`; raises before any
+  database write.
+- The SPA's Job Shipments page creates Shipments **locally first** (draft
+  column with prefilled qtys). The server-side `POST /api/jobs/{id}/shipments/`
+  fires only on Save, and only if the draft has at least one non-zero qty.
+  Drafts with no qty are silently discarded — this is how the UI keeps
+  the "every shipment has at least one line" invariant without a database
+  constraint.
+- An existing prepared Shipment whose final item count would be zero
+  after Save also gets deleted — same invariant maintained.
+- A `picked_up` Shipment is read-only: no edits, no item changes, no
+  deletion. There is no reverse transition.
+
+### 12.5 ShipmentItem invariants
+
+- `qty > 0` (validated by service; not a DB constraint).
+- For each Deliverable, the sum of qty across all ShipmentItem rows
+  pointing at it must not exceed `Deliverable.qty_ordered`. Validated in
+  `ShipmentService.add_item` and `update_item` via
+  `_validate_qty_bounds(deliverable, …)`. The bound counts items across
+  every Shipment regardless of status.
+- `unique_together = [('shipment', 'deliverable')]` — one row per
+  (Shipment, Deliverable) pair. Shipping the same Deliverable a second
+  time means creating a new Shipment.
+- `deliverable` FK is PROTECT, defense-in-depth against a future change
+  order that tries to remove a still-referenced Deliverable. The
+  Deliverable editability rule already prevents this in normal flows.
+
+### 12.6 Services
+
+`apps/deliverables/services.py`:
+
+| Class | Public methods |
+|---|---|
+| `DeliverableService` | `create`, `update`, `delete` (with sibling renumber), `reorder`, `is_editable`, `editability_reason`, `compute_fulfillment` |
+| `ShipmentService` | `create`, `update` (notes only), `delete` (only if prepared + empty), `mark_picked_up`, `add_item`, `update_item`, `remove_item`, `packing_list_payload` |
+
+All write paths run inside `transaction.atomic()`. Quantity-bound checks
+use `select_for_update()` on the parent Deliverable to keep concurrent
+edits from each passing the bound check independently.
+
+`compute_fulfillment(deliverable) -> dict` returns the running totals
+(`qty_ordered`, `qty_picked_up`, `qty_prepped`, `qty_remaining`) used by
+the API serializer.
+
+`packing_list_payload(shipment) -> dict` returns the JSON shape the
+printable view consumes — see §12.8.
+
+### 12.7 API surface
+
+| Method + path | Permission | Purpose |
+|---|---|---|
+| `GET /api/jobs/{id}/deliverables/` | `IsAuthenticated` | List |
+| `POST /api/jobs/{id}/deliverables/` | `CanManageJobs` | Create |
+| `PATCH /api/jobs/{id}/deliverables/{did}/` | `CanManageJobs` | Update |
+| `DELETE /api/jobs/{id}/deliverables/{did}/` | `CanManageJobs` | 200 + JSON |
+| `POST /api/jobs/{id}/deliverables/reorder/` | `CanManageJobs` | Bulk reorder |
+| `GET /api/jobs/{id}/deliverables/editability/` | `IsAuthenticated` | `{editable, reason}` |
+| `GET /api/shipments/?job={id}` | `IsAuthenticated` | List, filterable |
+| `POST /api/jobs/{id}/shipments/` | `IsAuthenticated` | Create |
+| `PATCH /api/shipments/{sid}/` | `IsAuthenticated` | Notes only (status uses pick-up) |
+| `DELETE /api/shipments/{sid}/` | `IsAuthenticated` | 200 + JSON. Allowed when `prepared` + no items. |
+| `POST /api/shipments/{sid}/pick-up/` | `IsAuthenticated` | `prepared → picked_up` |
+| `GET/POST /api/shipments/{sid}/items/` | `IsAuthenticated` | List / add |
+| `PATCH/DELETE /api/shipments/{sid}/items/{iid}/` | `IsAuthenticated` | Update / remove |
+| `GET /api/shipments/{sid}/packing-list/` | `IsAuthenticated` | Rendering payload |
+
+Deliverables are read-open / write-managed (consistent with planning
+artifacts). Shipments are read-write open to any authenticated user
+(consistent with `Blep` and other operational work — any employee can
+pick, pack, and mark goods picked up without elevated permissions).
+
+### 12.8 UI
+
+**Job detail page**: a third column appears in the existing Description
+| ... | History flex row. Renders as a `<DeliverablesSection>` panel
+matching the chrome of its neighbors. The list shows simple
+`qty units description` lines (no headers, no computed columns). An
+"Edit" link in the panel head opens `<DeliverablesEditModal>` when the
+list is editable.
+
+A read-only **Shipments pillar** sits between the Invoices and Purchase
+Orders pillars in the accordion. It renders the same matrix table as
+the editor page (one row per Deliverable, one column per Shipment with
+status + date in the header) and a "Manage shipments →" link to the
+editor.
+
+**Job Shipments page** at `#/jobs/:jobId/shipments`: the editable
+matrix. Adds + Discard (local for drafts, server for persisted),
+in-place cell editing with explicit Save (per the CLAUDE.md
+no-blur-only rule), per-shipment Mark picked up / Print / Discard
+actions, and a column total footer that includes pending edits.
+
+**Printable packing list** at `#/shipments/:sid/print`: From / To
+header (From is currently placeholder text pending a company-info
+Configuration source; To draws from the job's contact / business),
+shipment + job header, line item table with previous / this-shipment /
+remaining columns, a signature row (Pickup by + Pickup date). Print
+via the browser; no server-side PDF generator yet.
+
+### 12.9 Change orders (deferred)
+
+Out of scope for the current implementation. The design (see the
+session spec at `docs/plans/2026-05-14-deliverables-design.md` §11)
+describes a `ChangeOrder` model as an estimate-shaped post-acceptance
+amendment with both billing line items and a deliverables delta. Until
+that ships, a Job's accepted Deliverables list has **no escape hatch**:
+mistakes require revising the estimate before acceptance, or developer
+intervention.
+
+---
+
+## 13. Signals
 
 `apps/jobs/signals.py` is **empty (0 lines)**. All Job-side state
 changes flow through services. This is the same inconsistency the
@@ -687,7 +872,7 @@ terminal; an accepted estimate cannot be superseded
 (`Estimate.clean()` rejects it; `tests/test_estimate_job_status_sync.py`
 covers this).
 
-## 13. Unfinished work
+## 14. Unfinished work
 
 - **Auto-advance Job from `approved` → `in_progress` when a task moves
   out of `pending`.** Job → `in_progress` is normally a manual user
