@@ -139,6 +139,28 @@ class DeliverableService:
         }
 
 
+def _contact_address_lines(contact):
+    """Return the contact's address as a list of non-empty lines."""
+    lines = []
+    for f in ('addr1', 'addr2', 'addr3'):
+        v = (getattr(contact, f, '') or '').strip()
+        if v:
+            lines.append(v)
+    city_line_parts = []
+    city = (getattr(contact, 'city', '') or '').strip()
+    muni = (getattr(contact, 'municipality', '') or '').strip()
+    postal = (getattr(contact, 'postal_code', '') or '').strip()
+    if city:
+        city_line_parts.append(city)
+    if muni:
+        city_line_parts.append(muni)
+    if postal:
+        city_line_parts.append(postal)
+    if city_line_parts:
+        lines.append(', '.join(city_line_parts))
+    return lines
+
+
 class ShipmentService:
     """Business-logic facade for the Shipment + ShipmentItem models."""
 
@@ -306,6 +328,15 @@ class ShipmentService:
                 'qty_previously_picked_up': str(qty_prev.quantize(two_places)),
                 'qty_remaining_after_this_shipment': str(qty_remaining_after.quantize(two_places)),
             })
+        contact = getattr(shipment.job, 'contact', None)
+        business = getattr(contact, 'business', None) if contact else None
+        customer = {
+            'contact_name': contact.name if contact else '',
+            'business_name': business.business_name if business else '',
+            'business_address': business.business_address if business else '',
+            'contact_address_lines': _contact_address_lines(contact) if contact else [],
+        }
+
         return {
             'shipment': {
                 'id': shipment.pk,
@@ -320,5 +351,6 @@ class ShipmentService:
                 'job_number': shipment.job.job_number,
                 'name': shipment.job.name,
             },
+            'customer': customer,
             'rows': rows,
         }
