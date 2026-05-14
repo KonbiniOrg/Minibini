@@ -6,13 +6,16 @@
   const jobId = $derived(parseInt(params.jobId, 10));
 
   let deliverables = $state([]);
-  let shipments = $state([]);
+  let shipments = $state([]); // server-persisted only
+  let draftShipments = $state([]); // local-only, not yet on the server
+  let nextDraftCounter = 1;
   let job = $state(null);
   let loading = $state(true);
   let saving = $state(false);
   let errorMsg = $state('');
 
-  // Pending edits keyed by `${shipmentId}:${deliverableId}` => string qty (or '' to remove).
+  // Pending edits keyed by `${shipmentKey}:${deliverableId}`. shipmentKey is
+  // the server id for persisted shipments and the local _draftId for drafts.
   let pending = $state({});
 
   async function load() {
@@ -37,59 +40,73 @@
 
   $effect(() => { if (jobId) load(); });
 
+  function shipmentKey(sh) {
+    return sh._draftId ?? sh.id;
+  }
+
+  function isDraft(sh) {
+    return Boolean(sh._draftId);
+  }
+
   function getItem(sh, deliverableId) {
+    if (isDraft(sh)) return undefined; // drafts have no server items yet
     return (sh.items || []).find(it => it.deliverable === deliverableId);
   }
 
-  function pendingKey(shipmentId, deliverableId) {
-    return `${shipmentId}:${deliverableId}`;
+  function pendingKey(key, deliverableId) {
+    return `${key}:${deliverableId}`;
   }
 
   function cellValue(sh, deliverableId) {
-    const key = pendingKey(sh.id, deliverableId);
+    const key = pendingKey(shipmentKey(sh), deliverableId);
     if (key in pending) return pending[key];
+    if (isDraft(sh)) return '';
     return getItem(sh, deliverableId)?.qty ?? '';
   }
 
   function cellIsPending(sh, deliverableId) {
-    return pendingKey(sh.id, deliverableId) in pending;
+    return pendingKey(shipmentKey(sh), deliverableId) in pending;
   }
 
   function onCellInput(sh, deliverableId, value) {
     if (sh.status !== 'prepared') return;
-    const key = pendingKey(sh.id, deliverableId);
+    const key = pendingKey(shipmentKey(sh), deliverableId);
     pending = { ...pending, [key]: value };
   }
 
-  let hasChanges = $derived(Object.keys(pending).length > 0);
+  let hasChanges = $derived(Object.keys(pending).length > 0 || draftShipments.length > 0);
 
-  async function addShipment() {
-    try {
-      await api.post(`/api/jobs/${jobId}/shipments/`, {});
-      await load();
-      // Pre-fill the newly created shipment's cells with each deliverable's
-      // current qty_remaining. Most shipments deliver everything in one go,
-      // so the user can usually just click Save without typing anything.
-      prefillNewestShipmentWithRemaining();
-    } catch (e) { errorMsg = e.message || 'Add shipment failed.'; }
-  }
+  let displayedShipments = $derived([...shipments, ...draftShipments]);
 
-  function prefillNewestShipmentWithRemaining() {
-    if (!shipments.length) return;
-    const newest = shipments[shipments.length - 1];
-    if (newest.status !== 'prepared') return;
-    if ((newest.items || []).length > 0) return;
+  function addShipment() {
+    // Local-only draft. Not persisted until Save runs and finds at least one
+    // non-zero qty in this draft's cells.
+    const draftId = `draft-${nextDraftCounter}`;
+    nextDraftCounter += 1;
+    const newDraft = {
+      id: null,
+      _draftId: draftId,
+      sequence: null,
+      status: 'prepared',
+      prepared_date: new Date().toISOString(),
+      picked_up_date: null,
+      notes: '',
+      items: [],
+    };
+    draftShipments = [...draftShipments, newDraft];
+    // Prefill with each deliverable's current remaining qty.
     const next = { ...pending };
     for (const d of deliverables) {
       const rem = Number(d.qty_remaining);
       if (Number.isFinite(rem) && rem > 0) {
-        next[pendingKey(newest.id, d.id)] = rem.toString();
+        next[pendingKey(draftId, d.id)] = rem.toString();
       }
     }
     pending = next;
   }
 
   async function pickUp(sh) {
+    if (isDraft(sh)) return; // drafts can't be picked up
     if (hasChanges) {
       if (!confirm('You have unsaved cell changes. Mark picked up anyway? Unsaved changes will be lost.')) return;
     } else if (!confirm(`Mark Shipment #${sh.sequence} as picked up? This locks the shipment.`)) {
@@ -98,31 +115,63 @@
     try {
       await api.post(`/api/shipments/${sh.id}/pick-up/`, {});
       pending = {};
+      draftShipments = [];
       await load();
     } catch (e) { errorMsg = e.message || 'Pick-up failed.'; }
   }
 
   async function discardShipment(sh) {
     if (sh.status !== 'prepared') return;
+
+    if (isDraft(sh)) {
+      // Local-only — no server call needed.
+      draftShipments = draftShipments.filter(d => d._draftId !== sh._draftId);
+      const prefix = `${sh._draftId}:`;
+      const next = {};
+      for (const [k, v] of Object.entries(pending)) {
+        if (!k.startsWith(prefix)) next[k] = v;
+      }
+      pending = next;
+      return;
+    }
+
     const itemCount = (sh.items || []).length;
     const msg = itemCount > 0
       ? `Discard Shipment #${sh.sequence}? This removes ${itemCount} item${itemCount === 1 ? '' : 's'} from the shipment and deletes the shipment itself. The Deliverables list is unchanged.`
       : `Discard Shipment #${sh.sequence}?`;
     if (!confirm(msg)) return;
     try {
-      // Backend rejects shipment delete while items exist; remove them first.
       for (const item of (sh.items || [])) {
         await api.delete(`/api/shipments/${sh.id}/items/${item.id}/`);
       }
       await api.delete(`/api/shipments/${sh.id}/`);
-      // Drop any pending entries that referenced this shipment.
+      const prefix = `${sh.id}:`;
       const next = {};
       for (const [k, v] of Object.entries(pending)) {
-        if (!k.startsWith(`${sh.id}:`)) next[k] = v;
+        if (!k.startsWith(prefix)) next[k] = v;
       }
       pending = next;
       await load();
     } catch (e) { errorMsg = e.message || 'Discard failed.'; }
+  }
+
+  // Pending cells for a given shipment, normalized {deliverableId, qty:string}.
+  function pendingCellsFor(shipmentKeyStr) {
+    const prefix = `${shipmentKeyStr}:`;
+    const out = [];
+    for (const [k, v] of Object.entries(pending)) {
+      if (!k.startsWith(prefix)) continue;
+      const deliverableId = Number(k.slice(prefix.length));
+      out.push({ deliverableId, raw: v });
+    }
+    return out;
+  }
+
+  function hasAnyQty(cells) {
+    return cells.some(({ raw }) => {
+      const trimmed = String(raw ?? '').trim();
+      return trimmed !== '' && Number(trimmed) > 0;
+    });
   }
 
   async function saveChanges() {
@@ -130,26 +179,63 @@
     saving = true;
     errorMsg = '';
     try {
-      for (const [key, rawValue] of Object.entries(pending)) {
-        const [shipmentIdStr, deliverableIdStr] = key.split(':');
-        const shipmentId = Number(shipmentIdStr);
-        const deliverableId = Number(deliverableIdStr);
-        const sh = shipments.find(s => s.id === shipmentId);
-        if (!sh || sh.status !== 'prepared') continue;
-        const existing = getItem(sh, deliverableId);
-        const trimmed = String(rawValue ?? '').trim();
-        if (trimmed === '' || Number(trimmed) === 0) {
-          if (existing) await api.delete(`/api/shipments/${shipmentId}/items/${existing.id}/`);
-        } else if (existing) {
-          await api.patch(`/api/shipments/${shipmentId}/items/${existing.id}/`, { qty: trimmed });
-        } else {
-          await api.post(`/api/shipments/${shipmentId}/items/`, {
+      // 1. Drafts: create the shipment server-side only if it has at least
+      //    one non-zero qty. Otherwise drop the draft silently.
+      for (const draft of draftShipments) {
+        const cells = pendingCellsFor(draft._draftId);
+        if (!hasAnyQty(cells)) continue;
+        const created = await api.post(`/api/jobs/${jobId}/shipments/`, {});
+        for (const { deliverableId, raw } of cells) {
+          const trimmed = String(raw ?? '').trim();
+          if (trimmed === '' || Number(trimmed) === 0) continue;
+          await api.post(`/api/shipments/${created.id}/items/`, {
             deliverable: deliverableId,
             qty: trimmed,
           });
         }
       }
+
+      // 2. Existing prepared shipments: apply pending edits. If the final
+      //    state of items is empty, delete the shipment too — a shipment with
+      //    no lines doesn't make sense.
+      for (const sh of shipments) {
+        if (sh.status !== 'prepared') continue;
+        const cells = pendingCellsFor(String(sh.id));
+        if (cells.length === 0) continue;
+
+        for (const { deliverableId, raw } of cells) {
+          const existing = getItem(sh, deliverableId);
+          const trimmed = String(raw ?? '').trim();
+          if (trimmed === '' || Number(trimmed) === 0) {
+            if (existing) await api.delete(`/api/shipments/${sh.id}/items/${existing.id}/`);
+          } else if (existing) {
+            await api.patch(`/api/shipments/${sh.id}/items/${existing.id}/`, { qty: trimmed });
+          } else {
+            await api.post(`/api/shipments/${sh.id}/items/`, {
+              deliverable: deliverableId,
+              qty: trimmed,
+            });
+          }
+        }
+
+        // Recompute item count by walking the current item list and applying
+        // the pending edits. (We didn't refetch yet.)
+        const existingByDeliv = new Map((sh.items || []).map(it => [it.deliverable, it.qty]));
+        for (const { deliverableId, raw } of cells) {
+          const trimmed = String(raw ?? '').trim();
+          if (trimmed === '' || Number(trimmed) === 0) {
+            existingByDeliv.delete(deliverableId);
+          } else {
+            existingByDeliv.set(deliverableId, trimmed);
+          }
+        }
+        if (existingByDeliv.size === 0) {
+          await api.delete(`/api/shipments/${sh.id}/`);
+        }
+      }
+
       pending = {};
+      draftShipments = [];
       await load();
     } catch (e) {
       errorMsg = e.message || 'Save failed. Earlier rows may have been saved; later rows were not.';
@@ -159,10 +245,13 @@
   }
 
   function discardChanges() {
+    // Drops both cell edits and any local drafts.
     pending = {};
+    draftShipments = [];
   }
 
   function printPackingList(sh) {
+    if (isDraft(sh)) return;
     window.open(`#/shipments/${sh.id}/print`, '_blank');
   }
 
@@ -172,7 +261,6 @@
     return new Date(iso).toLocaleDateString();
   }
 
-  // Column total reflects pending edits, not just saved state.
   function columnTotal(sh) {
     let total = 0;
     for (const d of deliverables) {
@@ -198,7 +286,7 @@
         </button>
         <button type="button" onclick={discardChanges} disabled={!hasChanges || saving}>Discard changes</button>
         {#if hasChanges}
-          <span class="pending-note">{Object.keys(pending).length} unsaved {Object.keys(pending).length === 1 ? 'change' : 'changes'}</span>
+          <span class="pending-note">unsaved changes</span>
         {/if}
       </div>
       {#if errorMsg}<p class="err">{errorMsg}</p>{/if}
@@ -206,7 +294,7 @@
 
     {#if deliverables.length === 0}
       <p>This job has no deliverables yet.</p>
-    {:else if shipments.length === 0}
+    {:else if displayedShipments.length === 0}
       <p>No shipments yet. Click "+ Add shipment" to create one.</p>
     {:else}
       <table class="matrix" border="1">
@@ -215,16 +303,23 @@
             <th>Deliverable</th>
             <th class="num">Ordered</th>
             <th>Units</th>
-            {#each shipments as sh}
-              <th class="ship-head">
-                Shipment #{sh.sequence}<br>
-                <em class:picked={sh.status === 'picked_up'}>{sh.status === 'picked_up' ? 'picked up' : 'prepared'}</em><br>
-                <span class="date">{shipmentDate(sh)}</span>
+            {#each displayedShipments as sh (shipmentKey(sh))}
+              <th class="ship-head" class:draft={isDraft(sh)}>
+                {#if isDraft(sh)}
+                  New shipment<br>
+                  <em>unsaved</em>
+                {:else}
+                  Shipment #{sh.sequence}<br>
+                  <em class:picked={sh.status === 'picked_up'}>{sh.status === 'picked_up' ? 'picked up' : 'prepared'}</em><br>
+                  <span class="date">{shipmentDate(sh)}</span>
+                {/if}
                 <div class="actions">
-                  {#if sh.status === 'prepared'}
+                  {#if sh.status === 'prepared' && !isDraft(sh)}
                     <button type="button" onclick={() => pickUp(sh)}>Mark picked up</button>
                   {/if}
-                  <button type="button" onclick={() => printPackingList(sh)}>Print</button>
+                  {#if !isDraft(sh)}
+                    <button type="button" onclick={() => printPackingList(sh)}>Print</button>
+                  {/if}
                   {#if sh.status === 'prepared'}
                     <button type="button" class="discard" onclick={() => discardShipment(sh)}>Discard</button>
                   {/if}
@@ -240,7 +335,7 @@
               <td>{d.description}</td>
               <td class="num">{d.qty_ordered}</td>
               <td>{d.units}</td>
-              {#each shipments as sh}
+              {#each displayedShipments as sh (shipmentKey(sh))}
                 <td class="num">
                   {#if sh.status === 'picked_up'}
                     {getItem(sh, d.id)?.qty ?? ''}
@@ -259,7 +354,7 @@
           {/each}
           <tr class="totals">
             <td colspan="3"><strong>Shipment total</strong></td>
-            {#each shipments as sh}
+            {#each displayedShipments as sh (shipmentKey(sh))}
               <td class="num"><strong>{columnTotal(sh)}</strong></td>
             {/each}
             <td></td>
@@ -291,6 +386,8 @@
   .ship-head { text-align: center; font-weight: normal; vertical-align: top; }
   .ship-head em { color: #555; font-style: italic; }
   .ship-head em.picked { color: #1a7a3a; }
+  .ship-head.draft { background: #fef3c7; }
+  .ship-head.draft em { color: #92400e; font-weight: 500; }
   .date { color: #777; font-size: 11px; }
   .actions { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
   .actions button { font-size: 11px; padding: 2px 6px; }
