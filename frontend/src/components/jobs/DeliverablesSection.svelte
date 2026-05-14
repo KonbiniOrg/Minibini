@@ -41,6 +41,15 @@
     if (r === 'estimate_accepted') return 'estimate accepted';
     return '';
   }
+
+  // API returns DecimalFields as fixed-precision strings ("10.00"). Trim trailing
+  // zeros for display so whole quantities show as "10" not "10.00", and "2.50"
+  // shows as "2.5". Keeps non-numeric values as-is just in case.
+  function fmtQty(value) {
+    if (value === null || value === undefined || value === '') return '';
+    const n = Number(value);
+    return Number.isFinite(n) ? n.toString() : String(value);
+  }
 </script>
 
 <div class="panel deliverables-panel">
@@ -65,8 +74,8 @@
         <tbody>
           {#each deliverables as d}
             <tr>
-              <td class="num">{d.qty_ordered}</td>
-              <td>{d.units}</td>
+              <td class="num">{fmtQty(d.qty_ordered)}</td>
+              <td class="units">{d.units}</td>
               <td>{d.description}</td>
             </tr>
           {/each}
@@ -98,23 +107,28 @@
     letter-spacing: 0;
     margin-left: auto;
   }
+  /* Match the Description panel typography. */
   .empty {
-    color: #777;
-    font-size: 13px;
     margin: 0;
+    color: #333;
+    font-size: 14px;
+    line-height: 1.6;
   }
   table.simple-list {
     border-collapse: collapse;
+    color: #333;
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.6;
   }
   table.simple-list td {
-    padding: 1px 8px 1px 0;
+    padding: 0 6px 0 0;
     vertical-align: baseline;
   }
   table.simple-list td.num {
     text-align: right;
     font-variant-numeric: tabular-nums;
-    padding-right: 4px;
+  }
+  table.simple-list td.units {
+    color: #666;
   }
 </style>
