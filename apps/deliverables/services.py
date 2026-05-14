@@ -270,7 +270,11 @@ class ShipmentService:
 
     @staticmethod
     def packing_list_payload(shipment):
-        """Return JSON-serializable payload for the printable packing list view."""
+        """Return JSON-serializable payload for the printable packing list view.
+
+        Decimal quantities are emitted as strings with two decimal places to
+        match the project's API convention.
+        """
         deliverables = list(
             Deliverable.objects.filter(job=shipment.job).order_by('sort_order', 'pk')
         )
@@ -280,6 +284,7 @@ class ShipmentService:
             .select_related('shipment')
         )
 
+        two_places = Decimal('0.01')
         rows = []
         for d in deliverables:
             qty_this = Decimal('0')
@@ -296,10 +301,10 @@ class ShipmentService:
                 'deliverable_id': d.pk,
                 'description': d.description,
                 'units': d.units,
-                'qty_ordered': d.qty_ordered,
-                'qty_this_shipment': qty_this,
-                'qty_previously_picked_up': qty_prev,
-                'qty_remaining_after_this_shipment': qty_remaining_after,
+                'qty_ordered': str(d.qty_ordered.quantize(two_places)),
+                'qty_this_shipment': str(qty_this.quantize(two_places)),
+                'qty_previously_picked_up': str(qty_prev.quantize(two_places)),
+                'qty_remaining_after_this_shipment': str(qty_remaining_after.quantize(two_places)),
             })
         return {
             'shipment': {

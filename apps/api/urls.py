@@ -89,6 +89,7 @@ urlpatterns = [
     path('reimbursements/', include('apps.api.reimbursements.urls')),
     path('qbo/', include('apps.qbo.urls')),
     path('users/', include('apps.api.users.urls')),
+    path('', include('apps.api.deliverables.urls')),
     path('jobs/board/pipeline/', pipeline_view, name='board-pipeline'),
     path('jobs/board/approved/', approved_view, name='board-approved'),
     path('jobs/board/unpaid/', unpaid_view, name='board-unpaid'),
