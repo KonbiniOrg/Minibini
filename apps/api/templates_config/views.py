@@ -10,6 +10,7 @@ from apps.estimates.services import WorkTemplateService
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
 from apps.api.permissions import CanManageConfig
+from apps.api.mixins import JSONDestroyMixin
 from apps.inventory.models import TemplateMaterialAssociation
 from .serializers import (
     WorkTemplateSerializer, TaskTemplateSerializer,
@@ -18,10 +19,11 @@ from .serializers import (
 )
 
 
-class WorkTemplateViewSet(viewsets.ModelViewSet):
+class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     queryset = WorkTemplate.objects.all().order_by('template_name')
     serializer_class = WorkTemplateSerializer
     lookup_field = 'pk'
+    destroy_response_message = 'Work template deleted.'
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve')
@@ -94,10 +96,11 @@ class WorkTemplateViewSet(viewsets.ModelViewSet):
         return Response(TemplateMaterialAssociationSerializer(a).data)
 
 
-class TaskTemplateViewSet(viewsets.ModelViewSet):
+class TaskTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     queryset = TaskTemplate.objects.all().order_by('template_name')
     serializer_class = TaskTemplateSerializer
     lookup_field = 'pk'
+    destroy_response_message = 'Task template deleted.'
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
@@ -117,10 +120,11 @@ class TaskTemplateViewSet(viewsets.ModelViewSet):
         WorkTemplateService.delete_task_template(instance.pk)
 
 
-class AccountingCategoryViewSet(viewsets.ModelViewSet):
+class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     queryset = AccountingCategory.objects.all()
     serializer_class = AccountingCategorySerializer
     lookup_field = 'pk'
+    destroy_response_message = 'Accounting category deleted.'
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):

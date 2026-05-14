@@ -16,8 +16,6 @@ class BillQBOFieldsTest(TestCase):
     """Test QBO tracking fields on Bill model."""
 
     def setUp(self):
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Smith',
             email='jane@vendor.com', mobile_number='555-0000',
@@ -54,8 +52,6 @@ class QBOBillPushTest(TestCase):
     """Test pushing a bill to QBO."""
 
     def setUp(self):
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
 
         self.cat_materials = AccountingCategory.objects.create(
             code='MAT', name='Materials',
@@ -145,8 +141,6 @@ class BillSendToQBOEndpointTest(TestCase):
     """Test the /api/bills/{id}/send-to-qbo/ endpoint."""
 
     def setUp(self):
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
 
         self.api_client = Client()
         self.user = User.objects.create_user(username='bookkeeper', password='testpass')

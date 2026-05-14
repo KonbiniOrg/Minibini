@@ -36,11 +36,9 @@ class JobCopyFromWorksheetEndToEndTest(TestCase):
             job_number='E2E-001', name='E2E Job', contact=self.contact,
         )
         self.template = WorkTemplate.objects.create(
-            template_name='Kitchen Job Template', is_active=True,
+            template_name='Kitchen Job Template',
         )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, template=self.template,
-        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
         ac = AccountingCategory.objects.create(code='E2E-AC', name='e2e')
         self.scheme = RateScheme.objects.create(
             name='S-e2e', algorithm=RateScheme.FLAT_FEE,
@@ -62,15 +60,13 @@ class JobCopyFromWorksheetEndToEndTest(TestCase):
             accounting_category=ac,
         )
 
-    def test_copy_from_worksheet_links_template(self):
+    def test_copy_from_worksheet_copies_tasks_and_materials(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/copy-from-worksheet/',
             {'worksheet_id': self.worksheet.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 200, response.data)
-        self.job.refresh_from_db()
-        self.assertEqual(self.job.template_id, self.template.pk)
         tasks = Task.objects.filter(job=self.job)
         self.assertEqual(tasks.count(), 1)
         self.assertEqual(tasks.first().name, 'Assembly')

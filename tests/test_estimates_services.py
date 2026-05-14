@@ -372,12 +372,6 @@ class WorksheetServiceCreateTest(EstimatesTestBase):
         self.assertEqual(ws.job, self.job)
         self.assertEqual(ws.status, EstWorksheet.STATUS_DRAFT)
 
-    def test_create_worksheet_from_template(self):
-        from apps.estimates.services import WorksheetService, WorkTemplateService
-        tmpl = WorkTemplateService.create_template(template_name='Tmpl')
-        ws = WorksheetService.create_worksheet(self.job.pk, template=tmpl)
-        self.assertEqual(ws.template, tmpl)
-
     def test_create_worksheet_job_not_found(self):
         from apps.estimates.services import WorksheetService
         with self.assertRaises(NotFoundError):
@@ -591,14 +585,6 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
         self.assertEqual(job_task.materials.count(), 1)
         self.assertEqual(job_task.materials.first().description, 'Steel')
 
-    def test_copy_with_template_sets_template(self):
-        """Template arg should be linked onto the job."""
-        from apps.estimates.services import WorksheetService, WorkTemplateService
-        tmpl = WorkTemplateService.create_template(template_name='Tmpl')
-        ws = WorksheetService.create_worksheet(self.job.pk, template=tmpl)
-        JobService.copy_from_worksheet(self.job.pk, ws.pk, template=tmpl)
-        self.job.refresh_from_db()
-        self.assertEqual(self.job.template, tmpl)
 
 class EstimateServiceDiscardDraftTest(EstimatesTestBase):
     """Tests for EstimateService.discard_draft."""

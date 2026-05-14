@@ -21,7 +21,7 @@ class BillSummarySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Bill
-        fields = ['bill_id', 'bill_number', 'status', 'vendor_invoice_number', 'created_date',
+        fields = ['bill_id', 'status', 'vendor_invoice_number', 'created_date',
                   'contact_name', 'po_number']
 
 
@@ -124,8 +124,8 @@ class BillSerializer(serializers.ModelSerializer):
         model = Bill
         fields = [
             'bill_id', 'purchase_order', 'vendor_invoice_number',
-            'business', 'contact', 'bill_number', 'status',
+            'business', 'contact', 'status',
             'created_date', 'received_date', 'cancelled_date', 'line_items',
             'qbo_id', 'qbo_payment_status',
         ]
-        read_only_fields = ['bill_id', 'bill_number', 'created_date', 'qbo_id', 'qbo_payment_status']
+        read_only_fields = ['bill_id', 'created_date', 'qbo_id', 'qbo_payment_status']

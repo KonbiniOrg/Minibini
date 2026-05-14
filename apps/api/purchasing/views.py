@@ -10,7 +10,7 @@ from apps.purchasing.services import (
 )
 from apps.core.services import ServiceError, NotFoundError
 from apps.core.models import HistoryEntry
-from apps.api.mixins import StatusTransitionMixin, LineItemMixin
+from apps.api.mixins import StatusTransitionMixin, LineItemMixin, JSONDestroyMixin
 from apps.api.permissions import CanManageFinancials
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import (
@@ -364,10 +364,11 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         return Response(serializer.data)
 
 
-class BillViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
+class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
     queryset = Bill.objects.all().order_by('-created_date')
     serializer_class = BillSerializer
     lookup_field = 'pk'
+    destroy_response_message = 'Bill deleted.'
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):

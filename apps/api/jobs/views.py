@@ -12,15 +12,15 @@ from apps.jobs.services import JobService, TaskService
 from apps.core.models import HistoryEntry
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
 from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
-from apps.api.mixins import StatusTransitionMixin, JobTaskMixin
+from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin
 from apps.api.permissions import CanManageJobs
 from apps.api.history.serializers import HistoryEntrySerializer
 from apps.api.tasks.serializers import TaskSerializer
 from .serializers import JobSerializer
 
 
-class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
-    queryset = Job.objects.select_related('contact', 'template') \
+class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
+    queryset = Job.objects.select_related('contact') \
         .prefetch_related(
             Prefetch(
                 'tasks',
@@ -34,12 +34,12 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                     'price_list_item', 'po_line_item__purchase_order',
                 ),
             ),
-            'template__templatetaskassociation_set__task_template',
         ) \
         .all().order_by('-created_date')
     serializer_class = JobSerializer
     lookup_field = 'pk'
     task_serializer_class = TaskSerializer
+    destroy_response_message = 'Job deleted.'
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve', 'history', 'notes')
@@ -213,7 +213,7 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            JobService.copy_from_worksheet(job.pk, ws.pk, template=ws.template)
+            JobService.copy_from_worksheet(job.pk, ws.pk)
         except (ValidationError, NotFoundError) as e:
             return Response(
                 {'detail': e.message if hasattr(e, 'message') else str(e)},

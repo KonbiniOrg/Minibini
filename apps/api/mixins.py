@@ -5,6 +5,57 @@ from rest_framework.response import Response
 from apps.core.services import ServiceError, NotFoundError
 
 
+class JSONDestroyMixin:
+    """
+    Override DRF's default destroy() to return 200 with a JSON body instead of
+    the default 204 No Content. The SPA's `lib/api.js` wrapper assumes every
+    response has a JSON content-type; a 204 returns no body and triggers a
+    "Server error" path.
+
+    Subclasses may set `destroy_response_message` to customize the body, or
+    override destroy()/perform_destroy() entirely.
+    """
+    destroy_response_message = 'Deleted.'
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response({'message': self.destroy_response_message})
+
+
+class ConfirmDeleteMixin:
+    """
+    Two-phase delete confirmation. First DELETE returns 200 with
+    `{'confirm_required': True, 'impact': <dict>}`; DELETE ?confirm=true
+    actually deletes.
+
+    Subclasses implement:
+      - `get_deletion_impact(obj) -> dict` — counts/flags shown to the user.
+      - `perform_confirmed_destroy(obj) -> Response` — does the delete and
+        returns the success/failure Response.
+    """
+
+    def get_deletion_impact(self, obj):
+        raise NotImplementedError(
+            f'{type(self).__name__}.get_deletion_impact must be implemented.'
+        )
+
+    def perform_confirmed_destroy(self, obj):
+        raise NotImplementedError(
+            f'{type(self).__name__}.perform_confirmed_destroy must be implemented.'
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        confirm = request.query_params.get('confirm', '').lower() == 'true'
+        if not confirm:
+            return Response({
+                'confirm_required': True,
+                'impact': self.get_deletion_impact(obj),
+            })
+        return self.perform_confirmed_destroy(obj)
+
+
 class StatusTransitionMixin:
     """
     Mixin that auto-registers action endpoints from a status_actions dict.
@@ -259,10 +310,7 @@ PlanTaskBundleMixin = PlanTaskMixin
 
 class JobTaskMixin:
     """
-    Adds task CRUD actions to the Job viewset.
-
-    Works against Task (now belongs directly to Job after the 2026-04-12
-    WorkOrder removal). No bundles on the job side.
+    Adds task CRUD actions to the Job viewset. Works against Task.
 
     Subclasses declare:
         task_serializer_class = SomeTaskSerializer

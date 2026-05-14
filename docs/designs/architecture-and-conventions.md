@@ -117,7 +117,8 @@ apps/api/
     permissions.py           # atom-permission factory + the four atom classes
     pagination.py            # StandardPagination
     mixins.py                # StatusTransitionMixin, LineItemMixin,
-                             # PlanTaskMixin, JobTaskMixin
+                             # PlanTaskMixin, JobTaskMixin,
+                             # JSONDestroyMixin, ConfirmDeleteMixin
     stubs.py                 # stub_501 factory
     auth/                    # session login/logout/me, password change, refresh stub
     bleps/                   # historical time entries
@@ -191,6 +192,8 @@ All in `apps/api/mixins.py`.
 | `PlanTaskMixin` | EstWorksheetViewSet | Adds `tasks/`, `tasks/{id}/` actions for `PlanTask` (worksheet-side). |
 | `PlanTaskBundleMixin` | n/a | Backwards-compat alias for `PlanTaskMixin`; remove after callers update. |
 | `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. |
+| `JSONDestroyMixin` | JobViewSet, BillViewSet, PriceListItemViewSet, WorkTemplateViewSet, TaskTemplateViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
+| `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
 
 `StatusTransitionMixin.status_actions` shape:
 
@@ -251,7 +254,7 @@ Convention: every DELETE returns HTTP 200 with a JSON body (e.g.
 `api.js` rejects any non-JSON response, so a default DRF 204 is
 a runtime error in the SPA.
 
-**Viewsets that comply** (override `destroy()` to return JSON):
+**Viewsets that comply** (override `destroy()` to return JSON, or use `JSONDestroyMixin`):
 
 - `EstimateViewSet` — `apps/api/estimates/views.py`
 - `InvoiceViewSet` — `apps/api/invoicing/views.py`
@@ -263,22 +266,14 @@ a runtime error in the SPA.
 - `BlepViewSet` — `apps/api/bleps/views.py`
 - `RateSchemeViewSet` — `apps/api/rate_schemes/views.py`
 - `ExpenseViewSet` — `apps/api/expenses/views.py`
+- `JobViewSet` — `JSONDestroyMixin`
+- `BillViewSet` — `JSONDestroyMixin`
+- `PriceListItemViewSet` — `JSONDestroyMixin`
+- `WorkTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
+- `TaskTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
+- `AccountingCategoryViewSet` — `JSONDestroyMixin`
 - `MaterialViewSet` — returns 405 (top-level material delete is disallowed)
 - `UserViewSet` — raises `MethodNotAllowed` (use deactivate)
-
-**Viewsets that still return 204** (no `destroy()` override; DRF default):
-
-- `JobViewSet` — `apps/api/jobs/views.py`
-- `BillViewSet` — `apps/api/purchasing/views.py`
-- `PriceListItemViewSet` — `apps/api/inventory/views.py`
-- `WorkTemplateViewSet` — `apps/api/templates_config/views.py`
-  (overrides `perform_destroy` only; `destroy` still returns 204)
-- `TaskTemplateViewSet` — `apps/api/templates_config/views.py`
-  (same — `perform_destroy` only)
-- `AccountingCategoryViewSet` — `apps/api/templates_config/views.py`
-
-Fix opportunistically; ideally consolidate into a `JSONDestroyMixin`
-(see Unfinished work).
 
 ### 3.7 Two-phase delete confirmation
 
@@ -294,16 +289,16 @@ DELETE /api/contacts/5/?confirm=true
   → 200 {"message": "\"Jane Doe\" has been deleted."}
 ```
 
-Implemented independently in three viewsets:
+Implemented via `ConfirmDeleteMixin` in `apps/api/mixins.py`. Three
+viewsets use it today:
 
-- `ContactViewSet.destroy` — `apps/api/contacts/views.py`
-- `BusinessViewSet.destroy` — `apps/api/contacts/views.py`
-- `ReimbursementViewSet.destroy` — `apps/api/reimbursements/views.py`
+- `ContactViewSet` — `apps/api/contacts/views.py`
+- `BusinessViewSet` — `apps/api/contacts/views.py`
+- `ReimbursementViewSet` — `apps/api/reimbursements/views.py`
 
-Each one parses `?confirm=true`, computes an impact dict on first call,
-delegates to a service on the confirmed call. Candidate for a shared
-`ConfirmDeleteMixin` with an overridable `get_deletion_impact(obj) -> dict`
-hook.
+Each one implements `get_deletion_impact(obj) -> dict` and
+`perform_confirmed_destroy(obj) -> Response`; the mixin handles the
+`?confirm=true` ceremony.
 
 The contact/business impact queries currently live inline in the
 viewset (`Job.objects.filter(contact=contact).count()` etc.) — those
@@ -326,8 +321,7 @@ The factory is `apps/api/stubs.py:stub_501`.
 - `GET /api/time-tracking/active/` — `apps/api/urls.py`
 
 `/api/expenses/` is fully implemented (`ExpenseViewSet` in
-`apps/api/expenses/views.py`) despite CLAUDE.md still listing it as a
-stub — see Unfinished work.
+`apps/api/expenses/views.py`); it is not a stub.
 
 ---
 
@@ -600,31 +594,10 @@ and are unchanged.
 
 Concrete items, smallest first:
 
-- **Update CLAUDE.md's stub list.** Currently lists `/api/expenses/` as
-  a stub; it's a real `ExpenseViewSet` (`apps/api/expenses/views.py`).
-  Actual stubs are listed in §3.8.
-
-- **`JSONDestroyMixin` for the six remaining 204-returning viewsets:**
-  `JobViewSet`, `BillViewSet`, `PriceListItemViewSet`,
-  `WorkTemplateViewSet`, `TaskTemplateViewSet`,
-  `AccountingCategoryViewSet`. Trivial change; eliminates a class of
-  SPA bugs caused by non-JSON responses.
-
-- **`ConfirmDeleteMixin`** to consolidate the two-phase delete pattern
-  duplicated across `ContactViewSet`, `BusinessViewSet`, and
-  `ReimbursementViewSet`. Subclass overrides
-  `get_deletion_impact(obj) -> dict`.
-
-- **Move impact queries into services.** `ContactViewSet.destroy` and
-  `BusinessViewSet.destroy` currently run `Job.objects.filter(...)`
-  directly to compute the impact dict. That belongs on the service.
-
-- **`BlepViewSet.create` validation belongs in a serializer.** Hand-parses
-  `task`, `start_time`, `end_time`, `user`, validates them, parses ISO
-  datetimes, then calls `BlepService.create_historical`
-  (`apps/api/bleps/views.py`). `BlepSerializer` is set as
-  `serializer_class` but bypassed for create. Move the parsing into the
-  serializer.
+- **Move impact queries into services.** `ContactViewSet.get_deletion_impact`
+  and `BusinessViewSet.get_deletion_impact` currently run
+  `Job.objects.filter(...)` directly to compute the impact dict. That
+  belongs on the service.
 
 - **Lite-mode rollout** (deferred pending user feedback). Once the
   shape of lite mode is decided, expect: server-side persistence of
@@ -643,6 +616,15 @@ Concrete items, smallest first:
   or service-level warning (not a hard reject) would catch obvious
   mistakes. Concern is shared across all four subclasses since it lives
   on `BaseLineItem`.
+
+- **`accounting_category` required on all four line-item subclasses
+  (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`,
+  `BillLineItem`).** Currently nullable (inherited from
+  `BaseLineItem`); a null AC falls back to silently tax-exempt at QBO
+  push time. Should become NOT NULL after existing rows are backfilled.
+  One project-wide migration across all four subclasses — the change
+  lives in `apps/core/models.py` (`BaseLineItem`) plus a backfill step
+  per subclass.
 
 - **Decommission deprecated HTML views opportunistically.** Full
   CRUD HTML views still live in `apps/contacts/views.py`,

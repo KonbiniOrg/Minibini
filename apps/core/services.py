@@ -49,8 +49,6 @@ class NumberGenerationService:
     - invoice_counter: Current counter for invoices
     - po_number_sequence: Pattern for PO numbers
     - po_counter: Current counter for POs
-    - bill_number_sequence: Pattern for bill numbers
-    - bill_counter: Current counter for bills
     """
 
     # Map document types to their configuration key names
@@ -59,7 +57,6 @@ class NumberGenerationService:
         'estimate': 'estimate_number_sequence',
         'invoice': 'invoice_number_sequence',
         'po': 'po_number_sequence',
-        'bill': 'bill_number_sequence',
     }
 
     COUNTER_KEYS = {
@@ -67,7 +64,6 @@ class NumberGenerationService:
         'estimate': 'estimate_counter',
         'invoice': 'invoice_counter',
         'po': 'po_counter',
-        'bill': 'bill_counter',
     }
 
     # Per-document-type model and number-field used for collision detection.
@@ -79,7 +75,6 @@ class NumberGenerationService:
         'estimate': ('apps.estimates.models', 'Estimate', 'estimate_number'),
         'invoice': ('apps.invoicing.models', 'Invoice', 'invoice_number'),
         'po': ('apps.purchasing.models', 'PurchaseOrder', 'po_number'),
-        'bill': ('apps.purchasing.models', 'Bill', 'bill_number'),
     }
 
     MAX_COLLISION_ATTEMPTS = 1000
@@ -97,7 +92,7 @@ class NumberGenerationService:
         Generate the next sequential number for the given document type.
 
         Args:
-            document_type: One of 'job', 'estimate', 'invoice', 'po', 'bill'
+            document_type: One of 'job', 'estimate', 'invoice', 'po'
 
         Returns:
             The next formatted document number

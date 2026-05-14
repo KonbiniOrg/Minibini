@@ -160,10 +160,6 @@ All live under `/api/auth/` (`apps/api/auth/`):
 2. The form posts to `/api/auth/login/` via `frontend/src/stores/auth.js`'s `login(username, password)`. Success sets the `user` store; the SPA re-renders into the authenticated tree.
 3. `checkAuth()` on subsequent loads calls `GET /api/auth/me/` to populate the store from the existing session.
 
-### Dev autologin
-
-**Deprecated; will be removed.** `frontend/src/main.js` checks for `?autologin` in the URL on startup. When present, it POSTs to `/api/auth/login/` with `{username: 'dev_user', password: 'dev_password'}` before mounting the app. Requires the developer to have created a `dev_user` account with that password.
-
 ## User admin
 
 `apps/api/users/` — viewset, serializers, service, URL registration. Mounted at `/api/users/`. All actions require `[IsAuthenticated, CanManageConfig]`.
@@ -433,17 +429,14 @@ The component already exists at `frontend/src/components/home/RecentLoginsList.s
 
 - **Trusted proxy configuration for `X-Forwarded-For`.** The app runs behind nginx per `docker-compose`. Production should only trust `X-Forwarded-For` when the immediate upstream is a known proxy. Dev doesn't care. Could tie into a future `TRUSTED_PROXIES` setting.
 - **Logout tracking?** Not in this design. Rarely interesting to users, and `user_logged_out` doesn't fire reliably for expired sessions or closed browsers.
-- **Dev autologin noise.** The frontend `?autologin` flow creates events in dev. Acceptable — production sees normal logins only.
 
 ## Unfinished work
 
 | Item | Source | Notes |
 |---|---|---|
 | Implement login tracking end-to-end | `2026-04-04-login-tracking.md`, this doc | Model, signal, home-payload extension, retention command, frontend list. `RecentLoginsList.svelte` is the placeholder. |
-| Fix `LOGIN_URL = '/admin/login/'` in `minibini/settings.py` | `2026-04-10-user-self-service-design.md` follow-up | Django-side `@login_required` failures redirect to Django admin login. Should land on the SPA login route. |
 | Deactivated-assignee visual indicator | `2026-04-10-user-admin-design.md` | Wherever a username/assignee renders (task cards, detail pages, task lists, history feed, search results) show "(deactivated)" or a greyed style when `is_active=False`. Requires an audit of all assignee-rendering components. |
 | User-to-Contact association in user admin UI | `2026-04-10-user-admin-design.md` | `User.contact` is already nullable; the admin form does not yet let the owner link or create a Contact. |
 | Admin-action history logging | `2026-04-10-user-admin-design.md` | `HistoryEntry` already supports it; create/deactivate/reset/re-permission events should be logged. |
 | Forgot-password email flow | `2026-04-10-user-admin-design.md`, `2026-04-10-user-self-service-design.md` | Requires email-sending infra. |
 | Atom assignments for the stub endpoints | `2026-03-24-permission-atom-redesign.md` | `/api/shifts/...`, `/api/time-tracking/...`, `/api/emails/send/`, `/api/auth/refresh/` are 501 stubs. When implemented they need the right permission gating wired in. Candidates: `can_manage_time` for shifts/time-tracking, no atom for own-expense submission. |
-| Remove dev autologin (`?autologin`) | this doc | The `frontend/src/main.js` startup hook and the `dev_user` fixture entry. CLAUDE.md's "Development Features" section also mentions it. |

@@ -822,18 +822,14 @@ estimate-acceptance picture; their full behavior is in jobs-tasks.
   could pre-fill, with override. Needs a way to mark which configured
   unit means "hour".
 
-- **`@history` decorator on `Task`** — task billing changes
-  (rate-scheme reassignment, modifier toggles) don't surface in the
-  Job HistoryPanel. Tracked in jobs-tasks; relevant here because
-  billing-config changes on a Task are a normal estimating-related
-  event.
+- **`@history` decorator on `Task`** — billing-config changes on a Task
+  (rate-scheme reassignment, modifier toggles) are a normal
+  estimating-related event but don't surface in the Job HistoryPanel.
+  Tracked in `jobs-tasks-and-worksheets.md`.
 
-- **`accounting_category` required on `EstimateLineItem`.** Currently
-  nullable (inherited from `BaseLineItem`); a null AC falls back to
-  silently tax-exempt at QBO push time. Should become NOT NULL after
-  existing rows are backfilled. Part of a project-wide change across
-  all four line-item subclasses (Estimate, Invoice, PO, Bill) —
-  matching items live in the other docs.
+- **`accounting_category` required on `EstimateLineItem`** — part of the
+  project-wide line-item AC-NOT-NULL migration tracked in
+  `architecture-and-conventions.md`.
 
 - **Review `AtomCarryOverService.carry_over_for_estimate` in detail.**
   The current behaviour is documented in §9 — Phase A worksheet atom

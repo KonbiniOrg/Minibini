@@ -105,7 +105,6 @@ class BillContactBusinessTest(TestCase):
         """Bill can be created with just a Business"""
         bill = Bill.objects.create(
             business=self.business,
-            bill_number="BILL001",
             vendor_invoice_number="VIN001"
         )
         self.assertEqual(bill.business, self.business)
@@ -116,7 +115,6 @@ class BillContactBusinessTest(TestCase):
         bill = Bill.objects.create(
             business=self.business,
             contact=self.contact_with_business,
-            bill_number="BILL002",
             vendor_invoice_number="VIN002"
         )
         self.assertEqual(bill.business, self.business)
@@ -126,7 +124,6 @@ class BillContactBusinessTest(TestCase):
         """When Contact is provided without Business, Business is auto-assigned from Contact"""
         bill = Bill(
             contact=self.contact_with_business,
-            bill_number="BILL003",
             vendor_invoice_number="VIN003"
         )
         bill.save()
@@ -140,7 +137,6 @@ class BillContactBusinessTest(TestCase):
         bill = Bill(
             business=self.business2,  # Different from contact's business
             contact=self.contact_with_business,
-            bill_number="BILL003a",
             vendor_invoice_number="VIN003a"
         )
 
@@ -154,7 +150,6 @@ class BillContactBusinessTest(TestCase):
         bill = Bill(
             business=self.business,
             contact=self.contact_without_business,
-            bill_number="BILL004",
             vendor_invoice_number="VIN004"
         )
 
@@ -167,7 +162,6 @@ class BillContactBusinessTest(TestCase):
         """Bill cannot be created without a Business"""
         with self.assertRaises(Exception):
             Bill.objects.create(
-                bill_number="BILL005",
                 vendor_invoice_number="VIN005"
             )
 
@@ -177,8 +171,6 @@ class BillFromPurchaseOrderTest(TestCase):
 
     def setUp(self):
         # Create Configuration for number generation
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
 
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
         self.business = Business.objects.create(business_name="Test Vendor", default_contact=self.default_contact)
@@ -258,7 +250,6 @@ class BillFromPurchaseOrderTest(TestCase):
             purchase_order=self.po,
             business=self.po.business,
             contact=self.po.contact,
-            bill_number="BILL001",
             vendor_invoice_number="VIN001"
         )
 
@@ -276,7 +267,6 @@ class BillFromPurchaseOrderTest(TestCase):
         bill = Bill.objects.create(
             purchase_order=po_no_contact,
             business=po_no_contact.business,
-            bill_number="BILL002",
             vendor_invoice_number="VIN002"
         )
 
@@ -289,7 +279,6 @@ class BillFromPurchaseOrderTest(TestCase):
             purchase_order=self.po,
             business=self.po.business,
             contact=self.po.contact,
-            bill_number="BILL003",
             vendor_invoice_number="VIN003"
         )
 
@@ -325,7 +314,6 @@ class BillFromPurchaseOrderTest(TestCase):
             purchase_order=self.po,
             business=self.po.business,
             contact=self.po.contact,
-            bill_number="BILL004",
             vendor_invoice_number="VIN004"
         )
 

@@ -11,8 +11,6 @@ class BillPaymentPollingTest(TestCase):
     """Test QBO payment status polling for bills."""
 
     def setUp(self):
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Smith',
             email='jane@vendor.com', mobile_number='555-0000',

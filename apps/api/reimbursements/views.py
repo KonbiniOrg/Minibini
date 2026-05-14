@@ -10,13 +10,14 @@ from django.contrib.auth import get_user_model
 
 from apps.expenses.models import Expense, Reimbursement
 from apps.expenses.services import ReimbursementService
+from apps.api.mixins import ConfirmDeleteMixin
 from apps.api.permissions import CanManageFinancials
 from .serializers import ReimbursementSerializer, ReimbursementCreateSerializer
 
 User = get_user_model()
 
 
-class ReimbursementViewSet(viewsets.ModelViewSet):
+class ReimbursementViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
     queryset = Reimbursement.objects.all().select_related(
         'purchased_by', 'created_by',
     ).prefetch_related('expenses')
@@ -57,23 +58,20 @@ class ReimbursementViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    def destroy(self, request, *args, **kwargs):
-        batch = self.get_object()
-        confirm = request.query_params.get('confirm', '').lower() == 'true'
-        if not confirm:
-            return Response({
-                'confirm_required': True,
-                'expense_count': batch.expenses.count(),
-                'qbo_void_required': bool(batch.qbo_id),
-                'message': (
-                    f"This will unwind the batch: {batch.expenses.count()} "
-                    f"expenses flipped back to submitted"
-                    + (", QBO Purchase voided" if batch.qbo_id else "")
-                    + ". Confirm with ?confirm=true."
-                ),
-            }, status=status.HTTP_200_OK)
+    def get_deletion_impact(self, batch):
+        return {
+            'expense_count': batch.expenses.count(),
+            'qbo_void_required': bool(batch.qbo_id),
+            'message': (
+                f"This will unwind the batch: {batch.expenses.count()} "
+                f"expenses flipped back to submitted"
+                + (", QBO Purchase voided" if batch.qbo_id else "")
+                + ". Confirm with ?confirm=true."
+            ),
+        }
 
-        ReimbursementService.delete(batch=batch, actor=request.user)
+    def perform_confirmed_destroy(self, batch):
+        ReimbursementService.delete(batch=batch, actor=self.request.user)
         return Response(
             {'message': 'Reimbursement batch deleted.'},
             status=status.HTTP_200_OK,

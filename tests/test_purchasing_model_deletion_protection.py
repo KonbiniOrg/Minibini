@@ -165,7 +165,6 @@ class BillModelDeletionTest(TestCase):
     def test_can_delete_draft_bill_via_orm(self):
         """Test that draft Bills can be deleted via direct ORM operation."""
         bill = Bill.objects.create(
-            bill_number='BILL-DRAFT-001',
             purchase_order=self.po,
             business=self.business,
             contact=self.contact,
@@ -184,7 +183,6 @@ class BillModelDeletionTest(TestCase):
     def test_cannot_delete_received_bill_via_orm(self):
         """Test that received Bills cannot be deleted via direct ORM operation."""
         bill = Bill.objects.create(
-            bill_number='BILL-RECEIVED-001',
             purchase_order=self.po,
             business=self.business,
             contact=self.contact,
@@ -213,7 +211,6 @@ class BillModelDeletionTest(TestCase):
     def test_cannot_delete_partly_paid_bill_via_orm(self):
         """Test that partly_paid Bills cannot be deleted via direct ORM operation."""
         bill = Bill.objects.create(
-            bill_number='BILL-PARTLY-PAID-001',
             purchase_order=self.po,
             business=self.business,
             contact=self.contact,
@@ -244,7 +241,6 @@ class BillModelDeletionTest(TestCase):
     def test_cannot_delete_paid_in_full_bill_via_orm(self):
         """Test that paid_in_full Bills cannot be deleted via direct ORM operation."""
         bill = Bill.objects.create(
-            bill_number='BILL-PAID-001',
             purchase_order=self.po,
             business=self.business,
             contact=self.contact,
@@ -275,7 +271,6 @@ class BillModelDeletionTest(TestCase):
     def test_cannot_delete_cancelled_bill_via_orm(self):
         """Test that cancelled Bills cannot be deleted via direct ORM operation."""
         bill = Bill.objects.create(
-            bill_number='BILL-CANCELLED-001',
             purchase_order=self.po,
             business=self.business,
             contact=self.contact,
@@ -306,7 +301,6 @@ class BillModelDeletionTest(TestCase):
     def test_cannot_delete_refunded_bill_via_orm(self):
         """Test that refunded Bills cannot be deleted via direct ORM operation."""
         bill = Bill.objects.create(
-            bill_number='BILL-REFUNDED-001',
             purchase_order=self.po,
             business=self.business,
             contact=self.contact,

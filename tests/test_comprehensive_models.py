@@ -19,8 +19,6 @@ from apps.purchasing.models import PurchaseOrder, Bill
 class ComprehensiveModelIntegrationTest(TestCase):
     def setUp(self):
         # Create Configuration for number generation
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
 
         self.group, _ = Group.objects.get_or_create(name="Manager")
         self.user = User.objects.create_user(username="testuser", email="test@example.com")
@@ -146,7 +144,6 @@ class ComprehensiveModelIntegrationTest(TestCase):
         purchase_order.save()
 
         bill = Bill.objects.create(
-            bill_number="BILL-TEST-001",
             purchase_order=purchase_order,
             business=self.business,
             contact=self.contact,
@@ -321,16 +318,21 @@ class ComprehensiveModelIntegrationTest(TestCase):
             with transaction.atomic():
                 Job.objects.create(job_number="UNIQUE001", contact=self.contact)
 
+        # Two invoices with the same invoice_number must collide on the
+        # invoice_number unique constraint. Use status=OPEN on both so
+        # the single-draft-per-job rule doesn't fire first.
         invoice = Invoice.objects.create(
             job=job,
-            invoice_number="INV_UNIQUE001"
+            invoice_number="INV_UNIQUE001",
+            status=Invoice.STATUS_OPEN,
         )
 
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 Invoice.objects.create(
                     job=job,
-                    invoice_number="INV_UNIQUE001"
+                    invoice_number="INV_UNIQUE001",
+                    status=Invoice.STATUS_OPEN,
                 )
 
     def test_model_str_representations(self):
@@ -379,7 +381,6 @@ class LineItemValidationTest(TestCase):
         self.purchase_order.save()
 
         self.bill = Bill.objects.create(
-            bill_number="BILL-TEST-002",
             purchase_order=self.purchase_order,
             business=self.business,
             contact=self.contact,

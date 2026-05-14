@@ -48,11 +48,12 @@ Materials.
 ## 2. AbstractWorkContainer
 
 `AbstractWorkContainer` in `apps/core/models.py` is shared by `Job` and
-`EstWorksheet`. The abstract base itself owns very little:
-
-- A nullable `template` FK to `WorkTemplate` (for traceability after
-  populate-from-template).
-- A `populate_from_template(template)` stub that subclasses implement.
+`EstWorksheet`. The abstract base itself owns very little — just a
+`populate_from_template(template)` stub that subclasses implement.
+Neither subclass stores a back-reference to the `WorkTemplate` it was
+populated from; the template's job is to *materialize* its child tasks
+and materials, after which it is no longer referenced by the
+container.
 
 The two subclasses extend this with their own task and material
 relations. Tasks and materials are reverse relations from the child
@@ -139,16 +140,16 @@ A new Job has no Tasks. There are four ways to populate it:
 
 | Path | Trigger | Service | Notes |
 |---|---|---|---|
-| From WorkTemplate | `POST /api/jobs/{id}/populate-from-template` | `JobService.populate_from_template` | Generates Tasks + Materials from a `WorkTemplate`; sets `Job.template` FK; creates earmarks |
-| From a worksheet | `POST /api/jobs/{id}/copy-from-worksheet` | `JobService.copy_from_worksheet` | Copies `PlanTask` rows to `Task` rows, including their `PlanMaterial` rows; if the worksheet has a template, links it onto the Job; creates earmarks |
+| From WorkTemplate | `POST /api/jobs/{id}/populate-from-template` | `JobService.populate_from_template` | Generates Tasks + Materials from a `WorkTemplate`; creates earmarks |
+| From a worksheet | `POST /api/jobs/{id}/copy-from-worksheet` | `JobService.copy_from_worksheet` | Copies `PlanTask` rows to `Task` rows, including their `PlanMaterial` rows; creates earmarks |
 | Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `TaskTemplate.generate_task` | One task from a `TaskTemplate`; available to any authenticated user (workers can self-serve) |
 | Direct task creation | `POST /api/jobs/{id}/tasks` | `TaskService.create_direct` | One task at a time; freeform |
 
 A populate-from-estimate path is also exposed (`POST /api/jobs/{id}/populate-from-estimate`) but is currently a thin wrapper — most workflows go through copy-from-worksheet because the worksheet carries the planning data the estimate doesn't preserve.
 
-`Job.template` is set as a side effect of populate-from-template /
-copy-from-worksheet (when the worksheet has a template). It's purely for
-traceability — nothing reads it back to drive behavior.
+Neither populate path stores a back-reference to the source template on
+the Job. The template's role ends once its child Tasks and Materials
+have been materialized.
 
 ### 3.5 Document numbering
 
@@ -454,9 +455,11 @@ SET_NULL the `source_template` FK on every `Task` and
 `EstimateLineItem` that originated from it (losing the catalog
 reference), so soft-delete is the intended path.
 
-`WorkTemplate.is_active` exists on the model but is not currently
-filtered anywhere. The model comment at `apps/estimates/models.py`
-saying TaskTemplate.is_active is unused is stale.
+`WorkTemplate` has no `is_active` field. Templates are hard-deleted —
+nothing else in the system holds a back-reference to a WorkTemplate, so
+a delete cascades cleanly through its TemplateTaskAssociation /
+TemplateMaterialAssociation join rows without touching any Job,
+Worksheet, Task, or Material.
 
 ### 7.2 generate_task
 
@@ -707,24 +710,26 @@ covers this).
   (where `copy-from-worksheet` would be preferred), or when the Job
   already has tasks. Hard prerequisite gates exist; soft steering does
   not.
+- **Gate Job task population on estimate acceptance.** A Job's tasks
+  should only be populated as a side-effect of estimate acceptance
+  (preferring the worksheet's PlanTasks when one exists, falling back
+  to the estimate's line items, otherwise leaving the user to add
+  tasks by hand). Today `populate-from-template` and
+  `populate-from-estimate` can be invoked at any point in the Job
+  lifecycle, including before an estimate is accepted — which lets
+  Tasks land on a Job that has no agreed-upon scope. Add a status
+  precondition (Job must be `approved` or later, or the estimate
+  must be `accepted`) and remove the standalone populate-from-template
+  surface from the SPA's pre-acceptance flow.
 - **"Request Edit" button stub.** `RecentTimeList.svelte` shows an
   alert; there's no backend wiring or UI for the request-and-approve
   flow.
 - **Push-notification infrastructure.** The blep-takeover flow has no
   way to notify the worker whose Blep was just closed. No notification
   system exists yet anywhere in the codebase.
-- **Stale WorkOrder comment** in `apps/api/mixins.py` — the `JobTaskMixin`
-  docstring references "WorkOrder removal" by name. Cosmetic; the mixin
-  works.
 - **Multi-instance template generation needs UI.**
   `WorkTemplate.generate_tasks_for_*` and `generate_materials_for_*`
   accept `quantity=N` but every current caller passes 1.
-- **Decide on `WorkTemplate.is_active`.** Unlike `TaskTemplate.is_active`
-  (which is read in three places as the soft-delete flag), the
-  WorkTemplate equivalent is not filtered anywhere. Either wire up the
-  same soft-delete behaviour or drop the field. Also update the stale
-  "is_active no longer used" comments at `apps/estimates/models.py` —
-  the one on TaskTemplate is wrong.
 - **Default-worker rate-scheme + worker quick-add task flow.** Pending
   the broader billing-identity work tracked in
   `docs/designs/estimates-and-prices.md`.

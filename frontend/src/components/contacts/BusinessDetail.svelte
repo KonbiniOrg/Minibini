@@ -156,13 +156,12 @@
 {#if visibleBills.length > 0}
   <table border="1">
     <thead>
-      <tr><th>Bill #</th><th>Vendor Invoice</th><th>Status</th></tr>
+      <tr><th>Vendor Invoice</th><th>Status</th></tr>
     </thead>
     <tbody>
       {#each visibleBills as bill}
         <tr>
-          <td><a href="#/bills/{bill.bill_id}">{bill.bill_number}</a></td>
-          <td>{bill.vendor_invoice_number}</td>
+          <td><a href="#/bills/{bill.bill_id}">{bill.vendor_invoice_number || `Bill ${bill.bill_id}`}</a></td>
           <td>{bill.status}</td>
         </tr>
       {/each}

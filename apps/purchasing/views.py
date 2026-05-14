@@ -371,9 +371,9 @@ def bill_delete(request, bill_id):
 
     if request.method == 'POST':
         try:
-            bill_number = bill.bill_number
+            label = bill.vendor_invoice_number or bill.pk
             BillService.delete_bill(bill.pk)
-            messages.success(request, f'Bill {bill_number} deleted successfully.')
+            messages.success(request, f'Bill {label} deleted successfully.')
             return redirect('purchasing:bill_list')
         except ValidationError as e:
             messages.error(request, str(e.message))
@@ -381,7 +381,7 @@ def bill_delete(request, bill_id):
 
     # Only show confirmation page if bill is draft
     if bill.status != Bill.STATUS_DRAFT:
-        messages.error(request, f'Cannot delete Bill {bill.bill_number}. Only Draft Bills can be deleted.')
+        messages.error(request, f'Cannot delete Bill {bill.vendor_invoice_number or bill.pk}. Only Draft Bills can be deleted.')
         return redirect('purchasing:bill_detail', bill_id=bill.bill_id)
 
     return render(request, 'purchasing/bill_delete.html', {

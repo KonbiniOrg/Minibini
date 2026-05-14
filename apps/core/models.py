@@ -182,7 +182,6 @@ class AccountingCategory(models.Model):
 
 class AbstractWorkContainer(models.Model):
     """Abstract base class for work containers (Job, EstWorksheet) containing common fields."""
-    template = models.ForeignKey('estimates.WorkTemplate', on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         abstract = True
@@ -192,7 +191,8 @@ class AbstractWorkContainer(models.Model):
 
         Subclasses implement by reading the template's TemplateTaskAssociations
         and creating the appropriate task type
-        (PlanTask on EstWorksheet, Task on Job).
+        (PlanTask on EstWorksheet, Task on Job). The WorkTemplate is not
+        stored on the container — only its child tasks are materialized.
         """
         raise NotImplementedError
 

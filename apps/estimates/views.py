@@ -374,9 +374,7 @@ def estworksheet_create_for_job(request, job_id):
         form = EstWorksheetForm(request.POST, initial={'job': job})
         if form.is_valid():
             template = form.cleaned_data.get('template')
-            worksheet = WorksheetService.create_worksheet(
-                job.pk, template=template,
-            )
+            worksheet = WorksheetService.create_worksheet(job.pk)
 
             # If a template was selected, generate tasks and materials from it
             if template:

@@ -99,7 +99,8 @@ class JobAPITest(BaseTestCase):
         }, format='json')
         job_id = response.data['job_id']
         response = self.client.delete(f'/api/jobs/{job_id}/')
-        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('message', response.data)
 
     def test_complete_job(self):
         job = self._get_approved_job()
@@ -225,19 +226,15 @@ class JobTaskSubResourceTest(TestCase):
 
 
 class JobSerializerNestingTest(TestCase):
-    """Phase C2: GET /api/jobs/{id}/ nests tasks and template."""
+    """Phase C2: GET /api/jobs/{id}/ nests tasks."""
 
     def setUp(self):
         self.client = APIClient()
         self.user = _make_admin('jobnest_admin')
         self.client.force_authenticate(user=self.user)
         self.contact = Contact.objects.create(first_name='T', last_name='C')
-        self.template = WorkTemplate.objects.create(
-            template_name='Basic Template', is_active=True,
-        )
         self.job = Job.objects.create(
             job_number='C2-N-001', name='Nesting Job', contact=self.contact,
-            template=self.template,
         )
         ac = AccountingCategory.objects.create(code='NEST-AC', name='Nest AC')
         self.scheme = RateScheme.objects.create(
@@ -247,39 +244,16 @@ class JobSerializerNestingTest(TestCase):
         Task.objects.create(job=self.job, name='A task', rate_scheme=self.scheme)
         Task.objects.create(job=self.job, name='B task', rate_scheme=self.scheme)
 
-    def test_retrieve_nests_tasks_and_template(self):
+    def test_retrieve_nests_tasks(self):
         response = self.client.get(f'/api/jobs/{self.job.pk}/')
         self.assertEqual(response.status_code, 200)
         self.assertIn('tasks', response.data)
         self.assertEqual(len(response.data['tasks']), 2)
-        self.assertIn('template', response.data)
-        self.assertIsNotNone(response.data['template'])
-        self.assertEqual(response.data['template']['template_name'], 'Basic Template')
-
-    def test_retrieve_template_null_when_absent(self):
-        job = Job.objects.create(
-            job_number='C2-N-002', name='No template', contact=self.contact,
-        )
-        response = self.client.get(f'/api/jobs/{job.pk}/')
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.data['template'])
-
-    def test_update_template_via_template_id(self):
-        job = Job.objects.create(
-            job_number='C2-N-003', name='Will link', contact=self.contact,
-        )
-        response = self.client.patch(
-            f'/api/jobs/{job.pk}/',
-            {'template_id': self.template.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200, response.data)
-        job.refresh_from_db()
-        self.assertEqual(job.template_id, self.template.pk)
+        self.assertNotIn('template', response.data)
 
 
 class JobListQueryCountTest(TestCase):
-    """GET /api/jobs/ should not fire N+1 queries for tasks/template."""
+    """GET /api/jobs/ should not fire N+1 queries for tasks."""
 
     def setUp(self):
         self.client = APIClient()
@@ -287,7 +261,7 @@ class JobListQueryCountTest(TestCase):
         self.client.force_authenticate(user=self.user)
         self.contact = Contact.objects.create(first_name='Q', last_name='C')
         self.template = WorkTemplate.objects.create(
-            template_name='QC Template', is_active=True,
+            template_name='QC Template',
         )
         ac = AccountingCategory.objects.create(code='QC-AC', name='QC AC')
         self.scheme = RateScheme.objects.create(
@@ -302,7 +276,6 @@ class JobListQueryCountTest(TestCase):
                 job_number=f'QC-{i:03d}',
                 name=f'QC Job {i}',
                 contact=self.contact,
-                template=self.template,
             )
             Task.objects.create(job=job, name=f'Task A {i}', rate_scheme=self.scheme)
             Task.objects.create(job=job, name=f'Task B {i}', rate_scheme=self.scheme)
@@ -378,7 +351,7 @@ class JobPopulateFromTemplateTest(TestCase):
             job_number='C2-PT-001', name='PT Job', contact=self.contact,
         )
         self.template = WorkTemplate.objects.create(
-            template_name='Kitchen', is_active=True,
+            template_name='Kitchen',
         )
         cat = AccountingCategory.objects.create(name='Labor')
         self.scheme = RateScheme.objects.create(
@@ -403,7 +376,6 @@ class JobPopulateFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 200, response.data)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.template_id, self.template.pk)
         self.assertEqual(self.job.tasks.count(), 1)
         self.assertEqual(self.job.tasks.first().name, 'Countertop')
 
@@ -411,16 +383,6 @@ class JobPopulateFromTemplateTest(TestCase):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/populate-from-template/',
             {},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_populate_from_template_inactive(self):
-        self.template.is_active = False
-        self.template.save()
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/populate-from-template/',
-            {'template_id': self.template.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 400)

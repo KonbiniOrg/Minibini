@@ -68,6 +68,12 @@ class PriceListItem(models.Model):
 
     class Meta:
         db_table = 'price_list'
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(qty_on_hand__gte=0),
+                name='price_list_qty_on_hand_non_negative',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.code} - {self.description[:50]}"

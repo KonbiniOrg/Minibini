@@ -1,6 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
-from apps.estimates.models import EstWorksheet
+from apps.estimates.models import EstWorksheet, WorkTemplate
 from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
 from apps.core.models import AccountingCategory
@@ -96,6 +96,12 @@ class EstWorksheetSerializer(serializers.ModelSerializer):
     taskless_materials = serializers.SerializerMethodField()
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
+    # Write-only: lets the create endpoint accept a WorkTemplate id to populate
+    # tasks/materials from at create time. Not stored on the worksheet.
+    template = serializers.PrimaryKeyRelatedField(
+        queryset=WorkTemplate.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     class Meta:
         model = EstWorksheet
