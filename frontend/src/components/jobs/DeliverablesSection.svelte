@@ -46,9 +46,6 @@
 <div class="panel deliverables-panel">
   <div class="panel-head">
     Deliverables
-    {#if !editability.editable && editability.reason}
-      <span class="state">({reasonLabel(editability.reason)})</span>
-    {/if}
     {#if editability.editable}
       <button type="button" class="edit-link" onclick={openEdit}>Edit</button>
     {/if}
@@ -64,19 +61,13 @@
         {/if}
       </p>
     {:else}
-      <table border="1">
-        <thead>
-          <tr><th>#</th><th>Description</th><th>Qty</th><th>Units</th><th>Picked up</th><th>Remaining</th></tr>
-        </thead>
+      <table class="simple-list">
         <tbody>
-          {#each deliverables as d, i}
+          {#each deliverables as d}
             <tr>
-              <td>{i + 1}</td>
-              <td>{d.description}</td>
               <td class="num">{d.qty_ordered}</td>
               <td>{d.units}</td>
-              <td class="num">{d.qty_picked_up}</td>
-              <td class="num">{d.qty_remaining}</td>
+              <td>{d.description}</td>
             </tr>
           {/each}
         </tbody>
@@ -95,12 +86,6 @@
     align-items: baseline;
     gap: 8px;
   }
-  .state {
-    font-style: italic;
-    text-transform: none;
-    color: #555;
-    letter-spacing: 0;
-  }
   .edit-link {
     background: none;
     border: none;
@@ -118,17 +103,18 @@
     font-size: 13px;
     margin: 0;
   }
-  table {
-    width: 100%;
+  table.simple-list {
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: 14px;
+    line-height: 1.5;
   }
-  th, td {
-    padding: 4px 6px;
-    text-align: left;
+  table.simple-list td {
+    padding: 1px 8px 1px 0;
+    vertical-align: baseline;
   }
-  td.num {
+  table.simple-list td.num {
     text-align: right;
     font-variant-numeric: tabular-nums;
+    padding-right: 4px;
   }
 </style>
