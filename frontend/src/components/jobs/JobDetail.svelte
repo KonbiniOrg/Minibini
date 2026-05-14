@@ -1,5 +1,6 @@
 <script>
   import HistoryPanel from '../HistoryPanel.svelte';
+  import DeliverablesSection from './DeliverablesSection.svelte';
   import JobHeader from './JobHeader.svelte';
   import { user } from '../../stores/auth.js';
   import { api } from '../../lib/api.js';
@@ -220,7 +221,7 @@
 
 <JobHeader {job} {contact} {onStatusChange} />
 
-<!-- DESCRIPTION + HISTORY (fixed height) -->
+<!-- DESCRIPTION + DELIVERABLES + HISTORY (fixed height) -->
 <div class="midband">
   <div class="panel description-panel">
     <div class="panel-head">Description</div>
@@ -228,6 +229,7 @@
       <p>{job.description || 'No description.'}</p>
     </div>
   </div>
+  <DeliverablesSection jobId={job.job_id} />
   <div class="panel history-panel">
     <div class="panel-scroll history-scroll-host">
       <HistoryPanel {history} {emails} {onAddNote} />
@@ -964,7 +966,7 @@
   /* MIDBAND */
   .midband {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 1fr 320px;
     gap: 12px;
     padding: 12px 24px;
     background: #f8f9fa;
