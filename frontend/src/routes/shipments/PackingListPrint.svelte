@@ -75,11 +75,9 @@
     <section class="signatures">
       <div class="sig-row">
         <span class="sig-label">Pickup by</span>
-        <span class="sig-line"></span>
-      </div>
-      <div class="sig-row">
+        <span class="sig-line sig-line-long"></span>
         <span class="sig-label">Pickup date</span>
-        <span class="sig-line"></span>
+        <span class="sig-line sig-line-short"></span>
       </div>
     </section>
   </article>
@@ -98,9 +96,6 @@
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .signatures {
     margin-top: 48px;
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
   }
   .sig-row {
     display: flex;
@@ -113,10 +108,11 @@
     white-space: nowrap;
   }
   .sig-line {
-    flex: 1 1 auto;
     border-bottom: 1px solid #333;
     height: 1.6em;
   }
+  .sig-line-long  { flex: 2 1 0; }
+  .sig-line-short { flex: 1 1 0; }
   .err { color: #c00; padding: 16px; }
   @media print {
     :global(.sidebar), :global(.current-blep-band) { display: none !important; }
