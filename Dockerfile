@@ -12,7 +12,7 @@ RUN mkdir /app/static
 
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install gunicorn | tee pip-install.out
-RUN npm install -g vite
+RUN cd frontend && npm install
 RUN cd /app/frontend && npm run build
 
 # Run collectstatic (configure in settings)
