@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.14.5-slim-trixie
 WORKDIR /app
 
 # Install system dependencies needed for Python packages (e.g., psycopg2)
