@@ -93,6 +93,8 @@
   }
 </script>
 
+<!-- draggable card with hover preview: HTML5 DnD is mouse-only, no keyboard equivalent -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="task-card"
   class:urgent={isUrgent()}

@@ -109,13 +109,23 @@
     onClose(false);
   }
 
+  function handleKeydown(e) {
+    if (e.key === 'Escape') cancel();
+  }
+
   $effect(() => { if (jobId) load(); });
 
   let visibleRows = $derived(rows.filter(r => !r._deleted));
 </script>
 
-<div class="backdrop" onclick={cancel} role="presentation">
-  <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog">
+<svelte:window onkeydown={handleKeydown} />
+
+<div
+  class="backdrop"
+  role="presentation"
+  onclick={(e) => { if (e.target === e.currentTarget) cancel(); }}
+>
+  <div class="modal" role="dialog" tabindex="-1">
     <h3>Edit deliverables</h3>
     {#if loading}
       <p>Loading...</p>

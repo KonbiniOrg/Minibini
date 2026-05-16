@@ -66,16 +66,16 @@
     <div class="view-mode-toggle">
       {#if $viewMode === 'full'}
         <span class="active">FULL</span>
-        <a href="#" class="inactive" onclick={(e) => { e.preventDefault(); toggleViewMode(); }}>LITE</a>
+        <button class="inactive" onclick={toggleViewMode}>LITE</button>
       {:else}
-        <a href="#" class="inactive" onclick={(e) => { e.preventDefault(); toggleViewMode(); }}>FULL</a>
+        <button class="inactive" onclick={toggleViewMode}>FULL</button>
         <span class="active">LITE</span>
       {/if}
     </div>
     <div class="bottom-area">
       {#if $user}
         <a href="/profile" use:link>{$user.username}</a>
-        <a href="#" class="nav-link" onclick={(e) => { e.preventDefault(); handleLogout(); }}>Logout</a>
+        <button class="nav-link" onclick={handleLogout}>Logout</button>
       {/if}
     </div>
   </nav>
@@ -175,7 +175,7 @@
     letter-spacing: 0.5px;
   }
   .view-mode-toggle .active,
-  nav .view-mode-toggle a.inactive {
+  nav .view-mode-toggle button.inactive {
     display: inline;
     padding: 0;
     width: auto;
@@ -185,14 +185,17 @@
     line-height: 1;
     text-decoration: none;
     background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
   }
   .view-mode-toggle .active {
     color: #fff;
   }
-  nav .view-mode-toggle a.inactive {
+  nav .view-mode-toggle button.inactive {
     color: #6a9aab;
   }
-  nav .view-mode-toggle a.inactive:hover {
+  nav .view-mode-toggle button.inactive:hover {
     color: #aac7d6;
     background: none;
     box-shadow: none;

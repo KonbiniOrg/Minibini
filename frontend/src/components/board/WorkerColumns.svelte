@@ -90,6 +90,8 @@
         <span class="worker-name">{worker.user.name}</span>
         <span class="worker-task-count">{worker.tasks.length}</span>
       </div>
+      <!-- drag-and-drop drop zone: HTML5 DnD is mouse-only, no keyboard equivalent -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="worker-tasks"
         ondragover={(e) => handleColumnDragOver(e, worker.user.id)}
@@ -100,6 +102,7 @@
           {#if dragOverWorker === worker.user.id && dragOverIndex === i}
             <div class="drop-placeholder"></div>
           {/if}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="task-card-wrapper"
             class:dimmed={focusedJobIds.length > 0 && !focusedJobIds.includes(task.job_id)}
