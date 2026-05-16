@@ -296,9 +296,9 @@ class AddAtomsEndpointTest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data['sources']), 2)
-        # Single task-atom copy-over set qty=1, price=$50. Adding task2 atom
-        # keeps qty=1 and recomputes per-unit price: ($50 + $25) / 1 = $75.00.
-        self.assertEqual(data['price'], '75.00')
+        # Adding task2 makes {task, task2} a uniform same-scheme bundle, so the
+        # line item is re-summarized: qty = 3h, price = scheme rate $25.00.
+        self.assertEqual(data['price'], '25.00')
 
     def test_returns_409_on_claim_conflict(self):
         # Claim task2 on a different line item first

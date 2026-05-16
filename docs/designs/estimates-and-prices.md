@@ -469,8 +469,14 @@ release claims on the plan side.
 | N | Wizard-grouped from multiple atoms |
 
 A single-atom line item copies the atom's description, units, qty,
-and price across; multi-atom line items use blank description,
-`units = 'none'`, `qty = 1`, `price = sum(compute_amount)`.
+and price across. Multi-atom line items: when every atom is a task
+(`PlanTask` / `Task`) sharing one `RateScheme` and identical
+`active_modifiers`, the line is **summarized** — `units` from the
+scheme, `qty` = summed quantities (`est_qty` on the estimate side,
+actuals on the invoice side), `price` = the common effective rate.
+Any other multi-atom bundle (a material atom present, mixed schemes,
+or mixed modifiers) falls back to blank description, `units = 'none'`,
+`qty = 1`, `price = sum(compute_amount)`.
 
 ---
 
@@ -533,9 +539,9 @@ add-atoms / remove-atoms operations.
 |---|---|
 | `open_for_worksheet(worksheet)` | Returns the worksheet's draft Estimate, creating one if none exists. Refuses if the worksheet's estimate is non-draft (the `final` worksheet should have prevented this). |
 | `get_source_pool(worksheet)` | Walks PlanTasks and PlanMaterials on the worksheet, returns a flat pool with claim state per atom: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). |
-| `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Computes price from `sum(atom.compute_amount())`. Single-atom case copies atom's description/units/qty/price; multi-atom case uses blanks. |
-| `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), recomputes price after; otherwise preserves the override. |
-| `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Recompute-if-in-sync rule applies. Deletes the line item if no sources remain. |
+| `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). |
+| `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), it is re-derived: a uniform same-scheme task bundle is re-summarized (units/qty/price), otherwise qty is kept and the per-unit price recomputed. An overridden line item is left untouched. |
+| `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Same re-derive-if-in-sync rule as `add_atoms_to_line_item`. Deletes the line item if no sources remain. |
 | `send_all_atoms_to_estimate(worksheet)` | Bulk 1:1 conversion of every unclaimed atom on the worksheet to its own line item. Not transactionally wrapped — partial success is acceptable; caller can re-run. |
 
 Conflict handling: `add_atoms_to_*` raise `EstimateClaimConflict` when

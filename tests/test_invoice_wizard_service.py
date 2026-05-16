@@ -319,12 +319,14 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(line_item.sources.count(), 2)
         self.assertEqual(line_item.invoice, self.invoice)
 
-    def test_default_price_is_sum_of_atoms(self):
+    def test_fallback_bundle_price_is_sum_of_atoms(self):
+        # A non-uniform bundle (task + material) falls back: qty=1, price=sum.
         atoms = [
-            {'type': 'task', 'id': self.task.pk},   # 3h * $25 = $75
-            {'type': 'task', 'id': self.task2.pk},  # 1h * $25 = $25
+            {'type': 'task', 'id': self.task.pk},          # 3h * $25 = $75
+            {'type': 'material', 'id': self.material.pk},  # $25
         ]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(line_item.qty, Decimal('1'))
         self.assertEqual(line_item.price, Decimal('100.00'))
 
     def test_single_task_atom_copy_over(self):
@@ -512,15 +514,18 @@ class AddAtomsToExistingLineItemTest(TestCase):
         self.line_item.refresh_from_db()
         self.assertEqual(self.line_item.sources.count(), 2)
 
-    def test_recomputes_price_when_in_sync(self):
-        # Line item is in sync from single-atom task copy-over: qty=1, price=$50.
-        # Adding task2 atom ($25 more, total $75) keeps qty=1 and recomputes per-unit price.
+    def test_add_makes_uniform_bundle_resummarized(self):
+        # Line item starts as a single-atom task copy-over (qty=1, price=$50).
+        # Adding task2 makes {task, task2} a uniform same-scheme bundle, so the
+        # line item is re-summarized: qty = summed hours, price = scheme rate.
         InvoiceWizardService.add_atoms_to_line_item(
             self.line_item,
-            [{'type': 'task', 'id': self.task2.pk}],  # another $25
+            [{'type': 'task', 'id': self.task2.pk}],
         )
         self.line_item.refresh_from_db()
-        self.assertEqual(self.line_item.price, Decimal('75.00'))  # 75 / 1
+        self.assertEqual(self.line_item.qty, Decimal('3'))
+        self.assertEqual(self.line_item.price, Decimal('25.00'))
+        self.assertEqual(self.line_item.units, 'hours')
 
     def test_preserves_price_when_overridden(self):
         # Override the price
@@ -544,20 +549,20 @@ class AddAtomsToExistingLineItemTest(TestCase):
                 [{'type': 'task', 'id': self.task2.pk}],
             )
 
-    def test_recomputes_per_unit_price_when_in_sync_with_qty_gt_1(self):
-        # Set qty=2, price=$25 — in sync because qty*price ($50) == sum ($50)
+    def test_add_to_in_sync_uniform_bundle_resummarizes_over_manual_qty(self):
+        # A manually-set qty on an in-sync line item is replaced by the
+        # re-summarization when the result is a uniform same-scheme bundle.
         self.line_item.qty = Decimal('2')
         self.line_item.price = Decimal('25.00')
         self.line_item.save()
 
         InvoiceWizardService.add_atoms_to_line_item(
             self.line_item,
-            [{'type': 'task', 'id': self.task2.pk}],  # adds $25 → new sum $75
+            [{'type': 'task', 'id': self.task2.pk}],
         )
         self.line_item.refresh_from_db()
-        # qty stays 2, price = 75/2 = 37.50
-        self.assertEqual(self.line_item.qty, Decimal('2'))
-        self.assertEqual(self.line_item.price, Decimal('37.50'))
+        self.assertEqual(self.line_item.qty, Decimal('3'))
+        self.assertEqual(self.line_item.price, Decimal('25.00'))
 
     def test_preserves_price_when_overridden_with_qty_gt_1(self):
         # Set qty=2, price=$40 — overridden (qty*price=$80, sum=$50)
@@ -635,15 +640,18 @@ class RemoveAtomsFromLineItemTest(TestCase):
         self.assertFalse(result['line_item_deleted'])
 
     def test_recomputes_price_when_in_sync(self):
-        # price $112.50, in sync with 3 sources
+        # 3-task uniform bundle, created summarized (qty=4.5h, price=$25).
+        # Removing task1 (2h) leaves a uniform {task2, task3} bundle that is
+        # re-summarized: qty = 1h + 1.5h = 2.5, price = scheme rate.
         source_ids = list(
             self.line_item.sources
-            .filter(source_pk=self.task1.pk)  # remove the $50 atom
+            .filter(source_pk=self.task1.pk)  # remove the 2h atom
             .values_list('source_id', flat=True)
         )
         InvoiceWizardService.remove_atoms_from_line_item(self.line_item, source_ids)
         self.line_item.refresh_from_db()
-        self.assertEqual(self.line_item.price, Decimal('62.50'))  # $25 + $37.50
+        self.assertEqual(self.line_item.qty, Decimal('2.5'))
+        self.assertEqual(self.line_item.price, Decimal('25.00'))
 
     def test_preserves_price_when_overridden(self):
         # Override the price
@@ -698,22 +706,22 @@ class RemoveAtomsFromLineItemTest(TestCase):
                 self.line_item, source_ids,
             )
 
-    def test_recomputes_per_unit_price_when_in_sync_with_qty_gt_1(self):
-        # qty=3, sum=$112.50 → in-sync per-unit price = $37.50
+    def test_remove_from_in_sync_uniform_bundle_resummarizes(self):
+        # Manual qty/price on an in-sync line item is replaced by
+        # re-summarization when removal leaves a uniform same-scheme bundle.
         self.line_item.qty = Decimal('3')
         self.line_item.price = Decimal('37.50')
         self.line_item.save()
 
         source_ids = list(
             self.line_item.sources
-            .filter(source_pk=self.task1.pk)  # remove the $50 atom
+            .filter(source_pk=self.task1.pk)  # remove the 2h atom
             .values_list('source_id', flat=True)
         )
         InvoiceWizardService.remove_atoms_from_line_item(self.line_item, source_ids)
         self.line_item.refresh_from_db()
-        # New sum = $62.50, qty = 3 → 62.50/3 = 20.8333... → quantize to $20.83
-        self.assertEqual(self.line_item.qty, Decimal('3'))
-        self.assertEqual(self.line_item.price, Decimal('20.83'))
+        self.assertEqual(self.line_item.qty, Decimal('2.5'))
+        self.assertEqual(self.line_item.price, Decimal('25.00'))
 
     def test_preserves_price_when_overridden_with_qty_gt_1(self):
         # qty=2, price=$100 (overridden — qty*price=$200, sum=$112.50)

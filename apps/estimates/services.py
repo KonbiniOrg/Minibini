@@ -751,9 +751,13 @@ class EstimateWizardService:
             )
         else:
             description = ''
-            units = 'none'
-            qty = Decimal('1')
-            price = total_price
+            summary = EstimateWizardService._uniform_scheme_bundle(instances)
+            if summary is not None:
+                units, qty, price = summary
+            else:
+                units = 'none'
+                qty = Decimal('1')
+                price = total_price
 
         try:
             with transaction.atomic():
@@ -806,6 +810,47 @@ class EstimateWizardService:
         return line_item.price == EstimateWizardService._expected_per_unit(sum_value, line_item.qty)
 
     @staticmethod
+    def _uniform_scheme_bundle(instances):
+        """If every atom is a PlanTask sharing one RateScheme and identical
+        `active_modifiers`, return `(units, qty, price)` summarizing the
+        bundle — units from the scheme, qty = summed est_qty, price = the
+        common effective rate. Otherwise None, and the caller falls back to
+        qty=1 / units='none'."""
+        from apps.jobs.models import PlanTask
+        if not instances or not all(isinstance(i, PlanTask) for i in instances):
+            return None
+        if any(i.rate_scheme_id is None or i.est_qty is None for i in instances):
+            return None
+        if len({i.rate_scheme_id for i in instances}) != 1:
+            return None
+        modifier_sets = {
+            tuple(sorted(i.active_modifiers or [])) for i in instances
+        }
+        if len(modifier_sets) != 1:
+            return None
+        scheme = instances[0].rate_scheme
+        qty = sum((i.est_qty for i in instances), Decimal('0'))
+        price = instances[0].effective_rate().quantize(Decimal('0.01'))
+        return scheme.unit_label, qty, price
+
+    @staticmethod
+    def _resync_in_sync_line_item(line_item):
+        """After a source-set change on an in-sync line item, re-derive its
+        units/qty/price. If the sources form a uniform same-scheme task
+        bundle, summarize; otherwise keep qty and recompute the per-unit
+        price. Saves the line item."""
+        instances = [src.resolve() for src in line_item.sources.all()]
+        summary = EstimateWizardService._uniform_scheme_bundle(instances)
+        if summary is not None:
+            line_item.units, line_item.qty, line_item.price = summary
+        else:
+            new_sum = EstimateWizardService._sum_sources(line_item)
+            line_item.price = EstimateWizardService._expected_per_unit(
+                new_sum, line_item.qty,
+            )
+        line_item.save()
+
+    @staticmethod
     def add_atoms_to_line_item(line_item, atoms):
         """Append N atoms as sources to an existing line item.
 
@@ -831,9 +876,7 @@ class EstimateWizardService:
                         source_pk=instance.pk,
                     )
                 if was_in_sync:
-                    new_sum = EstimateWizardService._sum_sources(line_item)
-                    line_item.price = EstimateWizardService._expected_per_unit(new_sum, line_item.qty)
-                    line_item.save()
+                    EstimateWizardService._resync_in_sync_line_item(line_item)
         except IntegrityError:
             existing = set(
                 EstimateLineItemSource.objects
@@ -871,9 +914,7 @@ class EstimateWizardService:
                 return {'line_item_deleted': True}
 
             if was_in_sync:
-                new_sum = EstimateWizardService._sum_sources(line_item)
-                line_item.price = EstimateWizardService._expected_per_unit(new_sum, line_item.qty)
-                line_item.save()
+                EstimateWizardService._resync_in_sync_line_item(line_item)
 
         return {'line_item_deleted': False}
 

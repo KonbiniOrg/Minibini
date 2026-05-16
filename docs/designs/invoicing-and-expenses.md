@@ -150,7 +150,14 @@ For the shared concepts — source pool, claim semantics, in-sync vs. override r
 | Case | Description | Units | Qty | Price | Accounting category |
 |---|---|---|---|---|---|
 | Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity` or `1` for tasks) | Atom-derived (`Material.sell_price` or `task.compute_amount()`) | Atom's effective category |
-| Multi-atom | `''` (UI prompts user to name) | `'none'` | `1` | Sum of atom amounts | Uniform-or-null (set if all atoms share one category) |
+| Multi-atom — uniform task bundle | `''` (UI prompts user to name) | Rate scheme `unit_label` | Summed actual quantities | Common effective rate | Uniform-or-null |
+| Multi-atom — anything else | `''` (UI prompts user to name) | `'none'` | `1` | Sum of atom amounts | Uniform-or-null (set if all atoms share one category) |
+
+A multi-atom bundle is a "uniform task bundle" when every atom is a Task
+sharing one `RateScheme` and identical `active_modifiers`. `add_atoms_to_line_item`
+/ `remove_atoms_from_line_item` re-derive the same way on an in-sync line
+item (re-summarize a uniform bundle, else keep qty and recompute the
+per-unit price).
 
 `taxable_override` is left null on creation (uses the category default).
 

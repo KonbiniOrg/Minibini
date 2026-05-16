@@ -440,6 +440,48 @@ class InvoiceWizardService:
         return Decimal('1'), total_price  # Task or unknown
 
     @staticmethod
+    def _uniform_scheme_bundle(instances):
+        """If every atom is a Task sharing one RateScheme and identical
+        `active_modifiers`, return `(units, qty, price)` summarizing the
+        bundle — units from the scheme, qty = summed actual quantities,
+        price = the common effective rate. Otherwise None, and the caller
+        falls back to qty=1 / units='none'."""
+        from apps.jobs.models import Task
+        if not instances or not all(isinstance(i, Task) for i in instances):
+            return None
+        if len({i.rate_scheme_id for i in instances}) != 1:
+            return None
+        modifier_sets = {
+            tuple(sorted(i.active_modifiers or [])) for i in instances
+        }
+        if len(modifier_sets) != 1:
+            return None
+        scheme = instances[0].rate_scheme
+        modifiers = instances[0].active_modifiers or []
+        qty = sum(
+            (scheme.get_actual_qty(t) for t in instances), Decimal('0'),
+        )
+        price = scheme.effective_rate(modifiers).quantize(Decimal('0.01'))
+        return scheme.unit_label, qty, price
+
+    @staticmethod
+    def _resync_in_sync_line_item(line_item):
+        """After a source-set change on an in-sync line item, re-derive its
+        units/qty/price. If the sources form a uniform same-scheme task
+        bundle, summarize; otherwise keep qty and recompute the per-unit
+        price. Saves the line item."""
+        instances = [src.resolve() for src in line_item.sources.all()]
+        summary = InvoiceWizardService._uniform_scheme_bundle(instances)
+        if summary is not None:
+            line_item.units, line_item.qty, line_item.price = summary
+        else:
+            new_sum = InvoiceWizardService._sum_sources(line_item)
+            line_item.price = InvoiceWizardService._expected_per_unit(
+                new_sum, line_item.qty,
+            )
+        line_item.save()
+
+    @staticmethod
     def _sum_sources(line_item):
         """Sum the computed amounts of all source atoms on a line item."""
         total = Decimal('0.00')
@@ -488,9 +530,7 @@ class InvoiceWizardService:
                         source_pk=instance.pk,
                     )
                 if was_in_sync:
-                    new_sum = InvoiceWizardService._sum_sources(line_item)
-                    line_item.price = InvoiceWizardService._expected_per_unit(new_sum, line_item.qty)
-                    line_item.save()
+                    InvoiceWizardService._resync_in_sync_line_item(line_item)
         except IntegrityError:
             existing = set(
                 InvoiceLineItemSource.objects
@@ -532,9 +572,7 @@ class InvoiceWizardService:
                 return {'line_item_deleted': True}
 
             if was_in_sync:
-                new_sum = InvoiceWizardService._sum_sources(line_item)
-                line_item.price = InvoiceWizardService._expected_per_unit(new_sum, line_item.qty)
-                line_item.save()
+                InvoiceWizardService._resync_in_sync_line_item(line_item)
 
         return {'line_item_deleted': False}
 
@@ -562,7 +600,9 @@ class InvoiceWizardService:
         category = categories.pop() if len(categories) == 1 else None
 
         # Single atom: copy over description, units, qty, price from the atom.
-        # Multi-atom: blank description, units='none', qty=1, price=total.
+        # Multi-atom: if it's a uniform same-scheme task bundle, summarize it
+        # (units/qty/price from the scheme); otherwise blank description,
+        # units='none', qty=1, price=total.
         if len(instances) == 1:
             description = InvoiceWizardService._atom_description(instances[0])
             units = InvoiceWizardService._atom_units(instances[0])
@@ -571,9 +611,13 @@ class InvoiceWizardService:
             )
         else:
             description = ''
-            units = 'none'
-            qty = Decimal('1')
-            price = total_price
+            summary = InvoiceWizardService._uniform_scheme_bundle(instances)
+            if summary is not None:
+                units, qty, price = summary
+            else:
+                units = 'none'
+                qty = Decimal('1')
+                price = total_price
 
         try:
             with transaction.atomic():
