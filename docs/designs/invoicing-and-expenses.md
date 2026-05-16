@@ -53,7 +53,7 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 | `cancelled` | Terminal. Frees its claimed atoms (the wizard treats cancelled-invoice claims as available). |
 | `superseded` | Defined in choices, no current transition. |
 | `partly-paid` | Defined in choices, no current transition. The polling service writes `qbo_payment_status='Partial'` but does not flip Minibini's `status`. |
-| `paid` | When written, `Invoice.save()` calls `_maybe_complete_job()` which walks the job through `approved → in_progress → work_complete → completed` if all of the job's invoices are now resolved (paid or cancelled). |
+| `paid` | When written, `Invoice.save()` calls `_maybe_complete_job()` which walks the job through `approved → in_progress → work_complete → completed` (each step via `JobService.update_job`) if all of the job's invoices are now resolved (paid or cancelled). Before the walk it releases any loose pending Materials on the job — `JobService.release_loose_materials` restocks them and a `HistoryEntry` logs it — so the `work_complete` materials gate cannot strand the job on this unattended path. |
 | `defaulted` | Defined in choices, no current transition. |
 
 `InvoiceViewSet.status_actions` registers only `cancel` (writes `STATUS_CANCELLED` directly via a queryset update). Everything else is set by direct `save()` or by code that has not yet been written.

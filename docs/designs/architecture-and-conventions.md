@@ -89,6 +89,16 @@ def perform_create(self, serializer):
     serializer.instance = job
 ```
 
+**Job status changes — one chokepoint.** `JobService.update_job(pk, **kwargs)`
+is the base update method: it applies the field changes *and* dispatches
+status-transition side effects (the `work_complete` loose-materials gate,
+earmark release on entry to `work_complete`/`cancelled`/`rejected`).
+`JobService.update_status(pk, new_status)` is a thin wrapper over it. Every
+Job status change is expected to flow through `update_job` — the status
+pill's PATCH, the status-action endpoints, and the estimate- and
+invoice-driven handlers all route through it, so side effects fire
+regardless of caller.
+
 ### 2.3 Signals vs services
 
 The codebase has not committed to a single pattern for cross-model side
@@ -96,10 +106,11 @@ effects. Two different conventions coexist:
 
 - `apps/jobs/signals.py` — **0 lines**. Job status side effects are
   handled inside `apps/jobs/services.py`.
-- `apps/estimates/signals.py` — **123 lines** with three receivers
+- `apps/estimates/signals.py` — three receivers
   (`estimate_status_changed_for_worksheet`, `estimate_status_changed_for_job`,
   `estimate_accepted`) that mutate worksheets and jobs when an estimate
-  status changes.
+  status changes. The job-status receiver routes its changes through
+  `JobService.update_job` rather than mutating the Job directly.
 
 This is undecided convention, not deliberate design. Either approach
 works in isolation; mixing them makes it hard to reason about what

@@ -70,6 +70,9 @@ class CreateHistoricalTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
         self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_historical', password='x')
         self.manager = User.objects.create_user(username='m', password='x')

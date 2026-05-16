@@ -97,8 +97,9 @@ draft         → submitted, rejected
 submitted     → approved, rejected
 approved      → in_progress, cancelled
 in_progress   → work_complete, cancelled
-work_complete → completed, cancelled
-rejected, completed, cancelled → (terminal)
+work_complete → completed, cancelled, in_progress
+cancelled     → in_progress
+rejected, completed → (terminal)
 ```
 
 `STATUS_IN_PROGRESS` was added with the billing-atoms work; it sits
@@ -106,20 +107,36 @@ between `approved` (estimate accepted, awaiting prep) and `work_complete`
 (all work done). Use the model constants (`Job.STATUS_IN_PROGRESS` etc.),
 not string literals, per `CLAUDE.md`.
 
+`work_complete → in_progress` and `cancelled → in_progress` are
+*reactivation* transitions — for moving a Job back into work after it was
+marked complete prematurely or cancelled by accident. They are exposed on
+the job-view status pill and gated by `can_manage_jobs` (the pill PATCHes
+`/api/jobs/{id}/`, which already requires that atom).
+
 ### 3.2 Auto-set dates
 
 `Job.save()` at `apps/jobs/models.py`:
 
 - On entry to `approved`: sets `start_date = now()` if unset.
-- On entry to a terminal: sets `completed_date = now()` if unset.
+- On entry to `completed`, `cancelled`, or `rejected`: sets
+  `completed_date = now()` if unset.
 - `created_date`, `start_date`, `completed_date` are immutable once set
-  (clean() restores the old value if changed).
+  (clean() restores the old value if changed) — *except* `completed_date`
+  is cleared back to `None` when a Job is reactivated to `in_progress`
+  from `work_complete`/`cancelled` (an active Job carries no completion
+  date).
 
-### 3.3 Auto-advance to work_complete
+### 3.3 Auto-advance on work activity
 
-When a Task transitions to `complete` or `cancelled`,
-`TaskLifecycleService._check_job_work_complete` (`apps/jobs/services.py`)
-fires. If every Task on the Job is terminal:
+**To `in_progress`:** when work starts on an `approved` Job — a Blep is
+opened (`start_work` or `create_historical`) or a Task is completed —
+`JobService.mark_work_started(job)` advances it `approved → in_progress`.
+It is a no-op for any other status (pre-`approved` jobs are left alone;
+the state machine forbids a direct DRAFT/SUBMITTED jump).
+
+**To `work_complete`:** when a Task transitions to `complete` or
+`cancelled`, `TaskLifecycleService._check_job_work_complete`
+(`apps/jobs/services.py`) fires. If every Task on the Job is terminal:
 
 - If the Job is `approved`, it walks through `in_progress` first to
   respect the state machine.
@@ -128,12 +145,13 @@ fires. If every Task on the Job is terminal:
 If `JobService._loose_pending_materials(job)` finds task-less materials
 in pending consumption state, the auto-advance silently fails (the task
 status update itself succeeds; the Job stays one rung lower). The same
-guard is applied when `JobService.update_status` is called explicitly to
-move a Job to `work_complete` — it raises `ValidationError`.
+guard runs inside `JobService.update_job` whenever a Job is moved to
+`work_complete` — it raises `ValidationError`.
 
-Entry to `work_complete` triggers
-`InventoryService.release_earmarks_for_job(job)`. There is no other
-side-effect on this transition.
+Entry to `work_complete`, `cancelled`, or `rejected` triggers
+`InventoryService.release_earmarks_for_job(job)` (see
+`materials-inventory-and-purchasing.md`). There is no other side-effect on
+those transitions.
 
 ### 3.4 Job creation paths
 
@@ -346,6 +364,13 @@ Validation rules enforced inside `BlepService`:
    `[start, now)` for the comparison; two different users may overlap
    on the same task)
 3. 24h rolling window for non-managers (create / update / delete)
+4. **Job-status guard:** a Blep may only be created on a Task whose Job
+   is in a status where work belongs. Live `start_work` allows `approved`
+   and `in_progress` only; backfilled `create_historical` also allows
+   `work_complete` (you may log time after work was marked done). Any
+   other status — `draft`, `submitted`, `rejected`, `completed`,
+   `cancelled` — is rejected with `ValidationError`. The UI is expected
+   to prevent this; the guard is defensive.
 
 ### 5.4 API
 

@@ -50,10 +50,10 @@ class Job(AbstractWorkContainer):
             Job.STATUS_SUBMITTED: [Job.STATUS_APPROVED, Job.STATUS_REJECTED],
             Job.STATUS_APPROVED: [Job.STATUS_IN_PROGRESS, Job.STATUS_CANCELLED],
             Job.STATUS_IN_PROGRESS: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],  # NEW
-            Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED],
+            Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_IN_PROGRESS],
             Job.STATUS_REJECTED: [],  # Terminal state
             Job.STATUS_COMPLETED: [],  # Terminal state
-            Job.STATUS_CANCELLED: [],  # Terminal state
+            Job.STATUS_CANCELLED: [Job.STATUS_IN_PROGRESS],  # reactivatable (undo accidental cancel)
         }
 
         # Check if this is an update
@@ -69,7 +69,15 @@ class Job(AbstractWorkContainer):
                 if old_job.start_date and self.start_date != old_job.start_date:
                     self.start_date = old_job.start_date
 
-                if old_job.completed_date and self.completed_date != old_job.completed_date:
+                reactivating = (
+                    old_status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED)
+                    and self.status == Job.STATUS_IN_PROGRESS
+                )
+                if reactivating:
+                    # Reactivating a closed job — it is active again, so it
+                    # must not carry a completed_date.
+                    self.completed_date = None
+                elif old_job.completed_date and self.completed_date != old_job.completed_date:
                     self.completed_date = old_job.completed_date
 
                 # If status hasn't changed, no validation needed
@@ -104,7 +112,8 @@ class Job(AbstractWorkContainer):
                         self.start_date = timezone.now()
 
                     # Transitioning to terminal states - set completed_date
-                    if self.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED] and not self.completed_date:
+                    if self.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
+                                       Job.STATUS_REJECTED] and not self.completed_date:
                         self.completed_date = timezone.now()
 
             except Job.DoesNotExist:

@@ -210,6 +210,127 @@ class JobStatusTransitionTest(TestCase):
         self.assertEqual(job.status, Job.STATUS_WORK_COMPLETE)
 
 
+class RejectedJobCompletedDateTest(TestCase):
+    """Bug 3: a Job transitioning to REJECTED should get completed_date set,
+    so it shows in the board's Closed section (which filters on
+    completed_date >= cutoff)."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='R', last_name='J', email='r@j.com',
+        )
+
+    def _draft_job(self):
+        return Job.objects.create(
+            job_number=f'J-REJ-{timezone.now().timestamp()}',
+            contact=self.contact,
+            status=Job.STATUS_DRAFT,
+        )
+
+    def test_rejected_transition_sets_completed_date(self):
+        job = self._draft_job()
+        self.assertIsNone(job.completed_date)
+        job.status = Job.STATUS_REJECTED
+        job.save()
+        job.refresh_from_db()
+        self.assertIsNotNone(job.completed_date)
+
+    def test_completed_transition_still_sets_completed_date(self):
+        job = self._draft_job()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                  Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
+                  Job.STATUS_COMPLETED):
+            job.status = s
+            job.save()
+        job.refresh_from_db()
+        self.assertIsNotNone(job.completed_date)
+
+    def test_cancelled_transition_still_sets_completed_date(self):
+        job = self._draft_job()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                  Job.STATUS_CANCELLED):
+            job.status = s
+            job.save()
+        job.refresh_from_db()
+        self.assertIsNotNone(job.completed_date)
+
+
+class JobReactivationTest(TestCase):
+    """Bug 4: a Job can be moved back to IN_PROGRESS from WORK_COMPLETE or
+    CANCELLED. completed_date is cleared on the CANCELLED reactivation."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Re', last_name='Act', email='re@act.com',
+        )
+
+    def _job_at(self, *statuses):
+        job = Job.objects.create(
+            job_number=f'J-RA-{timezone.now().timestamp()}',
+            contact=self.contact, status=Job.STATUS_DRAFT,
+        )
+        for s in statuses:
+            job.status = s
+            job.save()
+        return job
+
+    def test_work_complete_can_return_to_in_progress(self):
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+            Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
+        )
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_cancelled_can_return_to_in_progress(self):
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_CANCELLED,
+        )
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_cancelled_to_in_progress_clears_completed_date(self):
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_CANCELLED,
+        )
+        job.refresh_from_db()
+        self.assertIsNotNone(job.completed_date)
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        job.refresh_from_db()
+        self.assertIsNone(job.completed_date)
+
+    def test_work_complete_to_in_progress_completed_date_stays_none(self):
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+            Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
+        )
+        self.assertIsNone(job.completed_date)
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        job.refresh_from_db()
+        self.assertIsNone(job.completed_date)
+
+    def test_completed_date_immutable_on_non_reactivation(self):
+        """Regression: completed_date stays protected for ordinary saves."""
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+            Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
+            Job.STATUS_COMPLETED,
+        )
+        job.refresh_from_db()
+        original = job.completed_date
+        self.assertIsNotNone(original)
+        job.completed_date = original - timedelta(days=5)
+        job.save()
+        job.refresh_from_db()
+        self.assertEqual(job.completed_date, original)
+
+
 class EstimateModelTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')

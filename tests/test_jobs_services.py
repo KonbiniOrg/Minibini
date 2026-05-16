@@ -110,21 +110,19 @@ class JobServiceUpdateStatusTest(JobsTestBase):
         with self.assertRaises(NotFoundError):
             JobService.update_status(99999, Job.STATUS_SUBMITTED)
 
-    def test_update_status_noop_short_circuits(self):
-        """Setting a job to its current status returns unchanged without
-        saving or firing side-effects."""
+    def test_update_status_noop_fires_no_side_effects(self):
+        """Setting a job to its current status returns it unchanged and fires
+        no status-transition side effects (the consolidated update_job no
+        longer short-circuits the save, but that save is a harmless no-op)."""
         _walk_to(self.job, Job.STATUS_WORK_COMPLETE)
 
         with patch(
             'apps.inventory.services.InventoryService.release_earmarks_for_job'
-        ) as mock_release, patch.object(
-            Job, 'save', autospec=True,
-        ) as mock_save:
+        ) as mock_release:
             result = JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
 
         self.assertEqual(result.status, Job.STATUS_WORK_COMPLETE)
         mock_release.assert_not_called()
-        mock_save.assert_not_called()
 
     def test_update_status_fires_release_on_transition_into_work_complete(self):
         _walk_to(self.job, Job.STATUS_IN_PROGRESS)

@@ -107,6 +107,9 @@ class BlepCreateAPITest(BaseTestCase):
         self.other = User.objects.create_user(username='worker2', password='x')
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
         self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
 
     def _payload(self, hours_ago=2, duration_hours=1, user=None, task=None):

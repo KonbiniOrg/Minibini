@@ -130,3 +130,70 @@ class EarmarkReleaseTransitionTest(TestCase):
         ) as mock_release:
             JobService.update_status(self.job.pk, Job.STATUS_COMPLETED)
         mock_release.assert_not_called()
+
+
+class EarmarkReleaseOnTerminalStatusesTest(TestCase):
+    """Bug 5: earmarks release on entry to CANCELLED and REJECTED too, and the
+    release fires through the consolidated update_job regardless of path."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='T', last_name='C', email='t5@c.com',
+        )
+        self.category = AccountingCategory.objects.get_or_create(
+            code='SVC', defaults={'name': 'Service', 'taxable': False},
+        )[0]
+        self.pli = PriceListItem.objects.create(
+            code='PLY.T5', description='Plywood', units='sheets',
+            qty_on_hand=Decimal('20.00'),
+            purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
+            is_inventoried=True, accounting_category=self.category,
+        )
+
+    def _job(self, *statuses):
+        job = Job.objects.create(
+            job_number=f'J-T5-{Job.objects.count()}', contact=self.contact,
+            status=Job.STATUS_DRAFT,
+        )
+        for s in statuses:
+            job.status = s
+            job.save()
+        return job
+
+    def _earmark(self, job, qty='3.00'):
+        return Earmark.objects.create(
+            price_list_item=self.pli, job=job, quantity=Decimal(qty),
+        )
+
+    def test_cancel_releases_earmarks(self):
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
+        self._earmark(job)
+        JobService.update_job(job.pk, status=Job.STATUS_CANCELLED)
+        self.assertEqual(Earmark.objects.filter(job=job).count(), 0)
+
+    def test_reject_releases_earmarks(self):
+        job = self._job()  # draft
+        self._earmark(job)
+        JobService.update_job(job.pk, status=Job.STATUS_REJECTED)
+        self.assertEqual(Earmark.objects.filter(job=job).count(), 0)
+
+    def test_work_complete_via_update_job_releases_earmarks(self):
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        self._earmark(job)
+        JobService.update_job(job.pk, status=Job.STATUS_WORK_COMPLETE)
+        self.assertEqual(Earmark.objects.filter(job=job).count(), 0)
+
+    def test_non_status_update_does_not_release(self):
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
+        self._earmark(job)
+        JobService.update_job(job.pk, name='Renamed')
+        self.assertEqual(Earmark.objects.filter(job=job).count(), 1)
+
+    def test_reactivation_does_not_recreate_earmarks(self):
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
+        self._earmark(job)
+        JobService.update_job(job.pk, status=Job.STATUS_CANCELLED)
+        self.assertEqual(Earmark.objects.filter(job=job).count(), 0)
+        JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
+        self.assertEqual(Earmark.objects.filter(job=job).count(), 0)

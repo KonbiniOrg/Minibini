@@ -13,6 +13,9 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.user = User.objects.first()
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
         self.task = Task.objects.create(
             job=self.job, name="Test task", rate_scheme_id=1,
         )
@@ -149,6 +152,9 @@ class TaskSerializerStatusTest(BaseTestCase):
         self.user = User.objects.first()
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
         self.task = Task.objects.create(
             job=self.job, name="Test task", rate_scheme_id=1,
         )

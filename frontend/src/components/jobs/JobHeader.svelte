@@ -12,16 +12,18 @@
     $user?.permissions?.includes('can_manage_jobs') ?? false
   );
 
-  // Mirrors Job model
+  // The transitions the status pill offers — a subset of the Job model's
+  // VALID_TRANSITIONS (the pill deliberately omits some, e.g. work_complete's
+  // →completed/→cancelled).
   const VALID_TRANSITIONS = {
     draft: ['submitted', 'rejected'],
     submitted: ['approved', 'rejected'],
     approved: ['cancelled'],
     in_progress: ['work_complete', 'cancelled'],
-    work_complete: [],
+    work_complete: ['in_progress'],
     rejected: [],
     completed: [],
-    cancelled: [],
+    cancelled: ['in_progress'],
   };
 
   let validNextStatuses = $derived(VALID_TRANSITIONS[job.status] || []);

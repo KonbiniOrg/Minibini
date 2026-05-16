@@ -134,6 +134,7 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
+        _approve_job(self.job)
         self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
 
@@ -291,11 +292,13 @@ class JobAutoWorkCompleteTest(BaseTestCase):
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
 
-    def test_complete_with_others_remaining_does_not_advance(self):
+    def test_complete_with_others_remaining_advances_to_in_progress(self):
+        """Completing one task of several advances APPROVED→IN_PROGRESS
+        (Bug 1: work has started) but not all the way to WORK_COMPLETE."""
         Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         TaskLifecycleService.complete_task(self.task.pk)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_APPROVED)
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
 
     def test_complete_with_cancelled_siblings_advances(self):
         other = Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
@@ -479,6 +482,7 @@ class StartStopWorkTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
+        _approve_job(self.job)
         self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.task.refresh_from_db()

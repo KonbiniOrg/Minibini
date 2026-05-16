@@ -60,6 +60,17 @@ def _existing_overlaps(user, start_time, end_time, exclude_blep_id=None):
     return qs.exists()
 
 
+def _assert_job_allows_blep(job, allowed_statuses, action):
+    """Reject Blep creation when the Task's Job is in a status where work
+    should not be recorded against it."""
+    if job.status not in allowed_statuses:
+        labels = ', '.join(f"'{s}'" for s in allowed_statuses)
+        raise ValidationError(
+            f"Cannot {action}: job status is '{job.status}', "
+            f"must be one of {labels}."
+        )
+
+
 class BlepService:
     """All Blep (time entry) writes flow through this service.
 
@@ -128,6 +139,12 @@ class BlepService:
                 "Creating a time entry for another user requires can_manage_time."
             )
         # Post-split: task is always a Task (work-order side); no container check needed.
+        _assert_job_allows_blep(
+            task.job,
+            (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+             Job.STATUS_WORK_COMPLETE),
+            'log time',
+        )
         if end_time < start_time:
             raise ValidationError("end_time must be >= start_time.")
         if not _within_edit_window(start_time) and not _has_manage_time(actor):
@@ -138,9 +155,11 @@ class BlepService:
             raise ValidationError(
                 "This time entry overlaps an existing entry for the user."
             )
-        return BlepService._create(
+        blep = BlepService._create(
             task, target_user, start_time=start_time, end_time=end_time,
         )
+        JobService.mark_work_started(task.job)
+        return blep
 
     @staticmethod
     def update(blep, actor, **fields):
@@ -224,17 +243,42 @@ class JobService:
         job.save()
         return job
 
+    # Job statuses whose entry releases the job's earmarks (work is done or
+    # the job is dead — any reservation against inventory is freed).
+    _EARMARK_RELEASING_STATUSES = (
+        Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED, Job.STATUS_REJECTED,
+    )
+
     @staticmethod
     def update_job(pk, **kwargs):
-        """Update an existing Job by PK."""
+        """Base Job update. Applies field changes and dispatches
+        status-transition side effects (loose-materials gate, earmark
+        release). update_status() is a thin wrapper over this — every Job
+        status change should flow through here."""
         try:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        old_status = job.status
         for field, value in kwargs.items():
             setattr(job, field, value)
+        status_changed = job.status != old_status
+
+        if status_changed and job.status == Job.STATUS_WORK_COMPLETE:
+            offenders = JobService._loose_pending_materials(job)
+            if offenders.exists():
+                names = ', '.join(m.description or str(m.pk) for m in offenders)
+                raise ValidationError(
+                    f'Cannot advance to work_complete: unresolved task-less materials: {names}'
+                )
+
         job.full_clean()
         job.save()
+
+        if status_changed and job.status in JobService._EARMARK_RELEASING_STATUSES:
+            from apps.inventory.services import InventoryService
+            InventoryService.release_earmarks_for_job(job)
+
         return job
 
     @staticmethod
@@ -251,33 +295,33 @@ class JobService:
         )
 
     @staticmethod
+    def release_loose_materials(job):
+        """Restock (release) any task-less PENDING materials still committed
+        to the job. Returns a list of {'description', 'quantity'} captured
+        before restock removes the rows — used for an audit record."""
+        from apps.inventory.services import MaterialService
+        released = []
+        for material in list(JobService._loose_pending_materials(job)):
+            released.append({
+                'description': material.description or f'Material {material.pk}',
+                'quantity': str(material.quantity),
+            })
+            MaterialService.restock(material, material.quantity)
+        return released
+
+    @staticmethod
     def update_status(pk, new_status):
-        """Update job status; triggers earmark release on entry to work_complete."""
-        try:
-            job = Job.objects.get(pk=pk)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {pk} not found')
-        if job.status == new_status:
-            return job
+        """Thin wrapper over update_job for a status-only change."""
+        return JobService.update_job(pk, status=new_status)
 
-        if new_status == Job.STATUS_WORK_COMPLETE:
-            offenders = JobService._loose_pending_materials(job)
-            if offenders.exists():
-                names = ', '.join(m.description or str(m.pk) for m in offenders)
-                raise ValidationError(
-                    f'Cannot advance to work_complete: unresolved task-less materials: {names}'
-                )
-
-        old_status = job.status
-        job.status = new_status
-        job.full_clean()
-        job.save()
-
-        if new_status == Job.STATUS_WORK_COMPLETE and old_status != Job.STATUS_WORK_COMPLETE:
-            from apps.inventory.services import InventoryService
-            InventoryService.release_earmarks_for_job(job)
-
-        return job
+    @staticmethod
+    def mark_work_started(job):
+        """Advance an APPROVED Job to IN_PROGRESS when work begins on it
+        (a Blep is created, or a Task is completed). No-op for any other
+        status — pre-APPROVED jobs are left alone, and the state machine
+        forbids a direct jump from DRAFT/SUBMITTED to IN_PROGRESS."""
+        if job.status == Job.STATUS_APPROVED:
+            JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
 
     @staticmethod
     def populate_from_template(job, template):
@@ -479,6 +523,7 @@ class TaskLifecycleService:
             )
             task.status = Task.STATUS_COMPLETE
             task.blocked_reason = ''
+            JobService.mark_work_started(task.job)
             TaskLifecycleService._check_job_work_complete(task)
             return task
 
@@ -583,6 +628,11 @@ class TaskLifecycleService:
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             # Post-split: task is always a Task (work-order side); no container check needed.
+            _assert_job_allows_blep(
+                task.job,
+                (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS),
+                'start work',
+            )
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
                 raise ValidationError(
                     f"Cannot start work: task status is '{task.status}', "
@@ -605,6 +655,7 @@ class TaskLifecycleService:
                 for material in task.materials.all():
                     MaterialService.consume(material)
                 blep = BlepService._create(task, user, start_time=now)
+                JobService.mark_work_started(task.job)
                 return {'task': task, 'blep': blep}
 
             # Task is in_progress: check for other active workers.
@@ -628,6 +679,7 @@ class TaskLifecycleService:
             if action == 'takeover':
                 other_bleps.update(end_time=now)
             blep = BlepService._create(task, user, start_time=now)
+            JobService.mark_work_started(task.job)
             return {'task': task, 'blep': blep}
 
     @staticmethod

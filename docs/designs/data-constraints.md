@@ -189,8 +189,13 @@ Valid transitions:
 - `submitted` → `approved`, `rejected`
 - `approved` → `in_progress`, `cancelled`
 - `in_progress` → `work_complete`, `cancelled`
-- `work_complete` → `completed`, `cancelled`
-- `rejected`, `completed`, `cancelled` → (terminal)
+- `work_complete` → `completed`, `cancelled`, `in_progress`
+- `cancelled` → `in_progress`
+- `rejected`, `completed` → (terminal)
+
+`work_complete → in_progress` and `cancelled → in_progress` are
+*reactivation* transitions (undo a premature completion / accidental
+cancel), gated by `can_manage_jobs` at the API layer.
 
 `STATUS_IN_PROGRESS` sits between `approved` and `work_complete` (added when
 WorkOrder was removed). `work_complete` = all tasks terminal and earmarks
@@ -210,8 +215,10 @@ released. `completed` = fully closed (typically: all invoices paid).
 - **start_date**: auto-set to `now()` on transition to `approved`. Immutable
   once set. Should be null for `draft`/`submitted`/`rejected`.
 - **due_date**: optional, user-set
-- **completed_date**: auto-set to `now()` on transition to `completed` or
-  `cancelled`. Immutable once set. Must be null for
+- **completed_date**: auto-set to `now()` on transition to `completed`,
+  `cancelled`, or `rejected`. Immutable once set — *except* it is cleared
+  back to null when a Job is reactivated to `in_progress` from
+  `work_complete`/`cancelled`. Must be null for
   `draft`/`submitted`/`approved`/`in_progress`/`work_complete`.
 
 #### Implied state from other models
@@ -365,6 +372,11 @@ Depends on: Task, User.
     precondition. Supports backdating bleps onto tasks that have
     since transitioned to `blocked`, `complete`, or `cancelled` (e.g.
     a worker forgot to clock in for work they did earlier today).
+  - **Job-status precondition (both paths)**: the task's Job must be in
+    a status where work belongs. `start_work` requires `approved` or
+    `in_progress`; `create_historical` also permits `work_complete`.
+    Any other Job status (`draft`, `submitted`, `rejected`, `completed`,
+    `cancelled`) is rejected with `ValidationError`.
 - Steady-state invariant: a Blep's task is in `in_progress`, `blocked`,
   `complete`, or `cancelled` — never `pending`, because `start_work`
   promotes before creating and `create_historical` is only sensibly
@@ -1101,7 +1113,11 @@ Implemented by the `estimate_status_changed_for_worksheet` signal in
 - If ALL Invoices for the Job are now `paid` (or `cancelled`), the Job
   transitions to `completed`. The handler walks the state machine through
   `in_progress` → `work_complete` → `completed` if the Job is still
-  `approved` at the moment of payment.
+  `approved` at the moment of payment (each step via `JobService.update_job`).
+- Before the walk, any loose pending Materials on the Job are released
+  (restocked) so the `work_complete` materials gate cannot strand the Job —
+  this is an unattended path with no user to resolve them. A `HistoryEntry`
+  records the release if anything was released.
 - Job's `completed_date` is set to `now()` (or should match the last
   Invoice's `closed_date` in a backdated translation).
 - A `HistoryEntry` of `entry_type='action'` is created on the Job, attributed
@@ -1131,25 +1147,31 @@ creation, expense submission).
 a Job, the Earmark for `(pli, job)` reflects the sum of outstanding
 quantities. Earmarks are released by `MaterialService.consume`
 (decrements by Material.quantity, flips state to `consumed`),
-`MaterialService.restock` (decrements by restocked qty), and
-`JobService.update_status(..., work_complete)` →
-`InventoryService.release_earmarks_for_job(job)` (deletes all remaining
-earmarks for the Job).
+`MaterialService.restock` (decrements by restocked qty), and by
+`JobService.update_job` on entry to `work_complete`, `cancelled`, or
+`rejected` → `InventoryService.release_earmarks_for_job(job)` (deletes all
+remaining earmarks for the Job).
 
 See `docs/designs/materials-inventory-and-purchasing.md`.
 
 ---
 
-### 2.7 All Tasks terminal → Job auto-advance to work_complete
+### 2.7 Work starts → Job auto-advance to in_progress / work_complete
 
-**Trigger:** A Task on a Job transitions to `complete` or `cancelled`.
+**Trigger:** A Task on a Job transitions to `complete` or `cancelled`; or
+work starts (a Blep is opened via `start_work` / `create_historical`).
 
-**Effects:** `TaskLifecycleService._check_job_work_complete` checks whether
-ALL Tasks on the Job are terminal (`complete` or `cancelled`). If yes and
-the Job is `approved` or `in_progress`, walk it through
-`approved → in_progress → work_complete` (skipping `approved → in_progress`
-if already past). Entering `work_complete` releases all remaining earmarks
-(via §2.6).
+**Effects:**
+- `JobService.mark_work_started(job)` advances an `approved` Job to
+  `in_progress` whenever work starts on it (a Blep is created, or a Task is
+  completed). No-op for any other status. So completing one Task of several
+  moves an `approved` Job to `in_progress`.
+- `TaskLifecycleService._check_job_work_complete` then checks whether ALL
+  Tasks on the Job are terminal (`complete` or `cancelled`). If yes and the
+  Job is `approved` or `in_progress`, it walks through
+  `approved → in_progress → work_complete` (skipping `approved → in_progress`
+  if already past). Entering `work_complete` releases all remaining earmarks
+  (via §2.6).
 
 **Silent-fail guard:** if `JobService._loose_pending_materials(job)` finds
 task-less, `pending`, positive-quantity Materials on the Job, the
@@ -1174,6 +1196,7 @@ Implemented in `apps/jobs/services.py`.
 - A Blep is created on the Task with `start_time` set to `now()`.
 - Any other open Blep the user has (on any task) is closed.
 - Pending Materials on the Task may be auto-consumed (see jobs-tasks doc).
+- If the Job is `approved`, it advances to `in_progress` (see §2.7).
 
 **Data constraint:** A Task's first Blep `start_time` should coincide with or
 follow the Task's transition out of `pending`. If a Task is `in_progress`,
