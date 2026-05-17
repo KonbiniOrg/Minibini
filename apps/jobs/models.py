@@ -442,7 +442,10 @@ class RateScheme(models.Model):
             total_seconds = sum(
                 b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
             )
-            return Decimal(total_seconds) / 3600
+            # Quantize to 2 places: a raw seconds/3600 division is
+            # non-terminating (~28 digits) and overflows the line item qty
+            # field (max_digits=10) when carried into the invoice wizard.
+            return (Decimal(str(total_seconds)) / 3600).quantize(Decimal('0.01'))
         elif self.algorithm == self.ENTERED_QTY:
             return task.actual_qty or Decimal('0')
         else:  # FLAT_FEE
