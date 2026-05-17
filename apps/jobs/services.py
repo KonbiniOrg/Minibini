@@ -173,11 +173,12 @@ class BlepService:
             raise ValidationError(
                 "This time entry overlaps an existing entry for the user."
             )
-        blep = BlepService._create(
-            task, target_user, start_time=start_time, end_time=end_time,
-        )
-        TaskLifecycleService._promote_pending_task(task)
-        JobService.mark_work_started(task.job)
+        with transaction.atomic():
+            blep = BlepService._create(
+                task, target_user, start_time=start_time, end_time=end_time,
+            )
+            TaskLifecycleService._promote_pending_task(task)
+            JobService.mark_work_started(task.job)
         return blep
 
     @staticmethod
@@ -529,16 +530,23 @@ class TaskLifecycleService:
     @staticmethod
     def _promote_pending_task(task):
         """A Blep means work has begun on the task: promote a `pending` task
-        to `in_progress`. No-op for any other status (an `in_progress` task
-        is already there; a backdated Blep must not reopen a terminal or
-        blocked task). The promotion is a conditional UPDATE on the DB row,
-        so a stale in-memory `task` cannot cause a wrong promotion. Mutates
-        `task` in place when it promotes."""
+        to `in_progress` and consume its materials. No-op for any other
+        status (an `in_progress` task is already there; a backdated Blep
+        must not reopen a terminal or blocked task). The promotion is a
+        conditional UPDATE on the DB row, so a stale in-memory `task` cannot
+        cause a wrong promotion. Mutates `task` in place when it promotes.
+
+        Material consumption is a side effect of the pending -> in_progress
+        promotion, not of every clock-in — so it fires here, for both the
+        live (start_work) and historical (create_historical) paths."""
         promoted = Task.objects.filter(
             pk=task.pk, status=Task.STATUS_PENDING,
         ).update(status=Task.STATUS_IN_PROGRESS)
         if promoted:
             task.status = Task.STATUS_IN_PROGRESS
+            from apps.inventory.services import MaterialService
+            for material in task.materials.all():
+                MaterialService.consume(material)
 
     @staticmethod
     def complete_task(task_pk, actual_qty=None):
@@ -691,16 +699,14 @@ class TaskLifecycleService:
             now = timezone.now()
 
             if task.status == Task.STATUS_PENDING:
-                # First worker on a pending task: promote and consume materials.
-                # No conflict possible — nobody has touched it yet.
+                # First worker on a pending task: promote (which consumes the
+                # task's materials) and assign. No conflict possible — nobody
+                # has touched it yet.
                 BlepService._close_open(user=user, now=now)
                 TaskLifecycleService._promote_pending_task(task)
                 if not task.assignee_id:
                     Task.objects.filter(pk=task.pk).update(assignee=user)
                     task.assignee = user
-                from apps.inventory.services import MaterialService
-                for material in task.materials.all():
-                    MaterialService.consume(material)
                 blep = BlepService._create(task, user, start_time=now)
                 JobService.mark_work_started(task.job)
                 return {'task': task, 'blep': blep}
