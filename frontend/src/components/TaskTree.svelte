@@ -42,13 +42,16 @@
 
   function taskActual(task) {
     // ELAPSED_TIME → hours from bleps. ENTERED_QTY → worker-entered qty.
-    // FLAT_FEE and unset → no actual to display.
+    // FLAT_FEE → always 1 (a one-off). Unset/other → no actual to display.
     if (task.scheme_algorithm === 'elapsed_time') {
       const h = Number(task.actual_hours) || 0;
       return h > 0 ? h : null;
     }
     if (task.scheme_algorithm === 'entered_qty') {
       return task.actual_qty != null && task.actual_qty !== '' ? task.actual_qty : null;
+    }
+    if (task.scheme_algorithm === 'flat_fee') {
+      return 1;
     }
     return null;
   }
