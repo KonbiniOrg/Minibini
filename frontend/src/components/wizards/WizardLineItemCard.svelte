@@ -147,7 +147,6 @@
   }
 
   async function deleteLineItem() {
-    if (!confirm('Delete this line item?')) return;
     await api.delete(`${apiBase}/line-items/${lineItem.line_item_id}/`);
     onchange?.();
   }
