@@ -290,15 +290,18 @@ class InvoiceWizardService(BaseWizardService):
         for task in tasks:
             atoms = []
 
-            amount = task.compute_amount().quantize(Decimal('0.01'))
+            detail = InvoiceWizardService._atom_detail(task)
             key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
             state_info = claims.get(key, default_state)
             atoms.append({
-                'atom_type': 'task',
-                'atom_id': task.pk,
+                'type': 'task',
+                'id': task.pk,
                 'description': f'{task.name} ({task.rate_scheme.name})',
                 'sub_info': WizardAtomLabels.qty_source_label(task),
-                'computed_amount': amount,
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'units': detail['units'],
+                'amount': detail['amount'],
                 **state_info,
             })
 
@@ -308,15 +311,18 @@ class InvoiceWizardService(BaseWizardService):
                 .order_by('pk')
             )
             for mat in materials:
-                amount = (mat.quantity * mat.sell_price).quantize(Decimal('0.01'))
+                detail = InvoiceWizardService._atom_detail(mat)
                 key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
                 state_info = claims.get(key, default_state)
                 atoms.append({
-                    'atom_type': 'material',
-                    'atom_id': mat.pk,
+                    'type': 'material',
+                    'id': mat.pk,
                     'description': mat.description,
                     'sub_info': '',
-                    'computed_amount': amount,
+                    'qty': detail['qty'],
+                    'rate': detail['rate'],
+                    'units': detail['units'],
+                    'amount': detail['amount'],
                     **state_info,
                 })
 
@@ -334,15 +340,18 @@ class InvoiceWizardService(BaseWizardService):
         )
         loose_atoms = []
         for mat in loose:
-            amount = (mat.quantity * mat.sell_price).quantize(Decimal('0.01'))
+            detail = InvoiceWizardService._atom_detail(mat)
             key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
             state_info = claims.get(key, default_state)
             loose_atoms.append({
-                'atom_type': 'material',
-                'atom_id': mat.pk,
+                'type': 'material',
+                'id': mat.pk,
                 'description': mat.description,
                 'sub_info': '',
-                'computed_amount': amount,
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'units': detail['units'],
+                'amount': detail['amount'],
                 **state_info,
             })
         task_list.append({

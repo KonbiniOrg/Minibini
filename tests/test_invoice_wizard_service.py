@@ -161,7 +161,7 @@ class GetSourcePoolTest(TestCase):
         )
         self.assertTrue(inspection['has_billable_atoms'])
         self.assertEqual(len(inspection['atoms']), 1)
-        self.assertEqual(inspection['atoms'][0]['atom_type'], 'task')
+        self.assertEqual(inspection['atoms'][0]['type'], 'task')
 
     def test_atom_state_available(self):
         pool = InvoiceWizardService.get_source_pool(self.invoice)
@@ -191,7 +191,7 @@ class GetSourcePoolTest(TestCase):
         )
         claimed = next(
             a for a in site_demo['atoms']
-            if a['atom_type'] == 'task' and a['atom_id'] == self.task_billable.pk
+            if a['type'] == 'task' and a['id'] == self.task_billable.pk
         )
         self.assertEqual(claimed['state'], 'claimed_by_current')
         self.assertEqual(claimed['claiming_line_item_id'], line_item.pk)
@@ -216,7 +216,7 @@ class GetSourcePoolTest(TestCase):
         )
         claimed = next(
             a for a in site_demo['atoms']
-            if a['atom_type'] == 'task' and a['atom_id'] == self.task_billable.pk
+            if a['type'] == 'task' and a['id'] == self.task_billable.pk
         )
         self.assertEqual(claimed['state'], 'claimed_by_other')
         self.assertEqual(claimed['claiming_invoice_id'], other_invoice.pk)
@@ -242,7 +242,7 @@ class GetSourcePoolTest(TestCase):
         )
         claimed_atom = next(
             a for a in site_demo['atoms']
-            if a['atom_type'] == 'task' and a['atom_id'] == self.task_billable.pk
+            if a['type'] == 'task' and a['id'] == self.task_billable.pk
         )
         self.assertEqual(claimed_atom['state'], 'available')
 
@@ -251,10 +251,10 @@ class GetSourcePoolTest(TestCase):
         site_demo = next(
             t for t in pool['tasks'] if t['name'] == 'Site demo'
         )
-        materials = [a for a in site_demo['atoms'] if a['atom_type'] == 'material']
+        materials = [a for a in site_demo['atoms'] if a['type'] == 'material']
         self.assertEqual(len(materials), 1)
-        self.assertEqual(materials[0]['atom_id'], self.material.pk)
-        self.assertEqual(materials[0]['computed_amount'], Decimal('25.00'))
+        self.assertEqual(materials[0]['id'], self.material.pk)
+        self.assertEqual(materials[0]['amount'], Decimal('25.00'))
 
 
 class AddAtomsToNewLineItemTest(TestCase):
@@ -834,7 +834,7 @@ class DiscardDraftTest(TestCase):
         labor_before = next(t for t in pool_before['tasks'] if t['name'] == 'Labor')
         atom_before = next(
             a for a in labor_before['atoms']
-            if a['atom_type'] == 'task' and a['atom_id'] == self.task.pk
+            if a['type'] == 'task' and a['id'] == self.task.pk
         )
         self.assertEqual(atom_before['state'], 'claimed_by_current')
 
@@ -845,7 +845,7 @@ class DiscardDraftTest(TestCase):
         labor_task = next(t for t in pool['tasks'] if t['name'] == 'Labor')
         task_atom = next(
             a for a in labor_task['atoms']
-            if a['atom_type'] == 'task' and a['atom_id'] == self.task.pk
+            if a['type'] == 'task' and a['id'] == self.task.pk
         )
         self.assertEqual(task_atom['state'], 'available')
 
@@ -907,8 +907,8 @@ class SourcePoolLooseMaterialsTest(TestCase):
         loose = [g for g in pool['tasks'] if g['task_id'] is None]
         self.assertEqual(len(loose), 1)
         atoms = loose[0]['atoms']
-        self.assertEqual([a['atom_id'] for a in atoms], [m1.pk])
-        self.assertEqual(atoms[0]['computed_amount'], Decimal('6.00'))
+        self.assertEqual([a['id'] for a in atoms], [m1.pk])
+        self.assertEqual(atoms[0]['amount'], Decimal('6.00'))
 
     def test_partial_restock_bills_reduced_quantity(self):
         from decimal import Decimal
@@ -978,10 +978,10 @@ class TaskAttachedPartialRestockTest(TestCase):
         # Find the task group
         task_group = next((g for g in pool['tasks'] if g['task_id'] == task.pk), None)
         self.assertIsNotNone(task_group, 'Task should appear in source pool')
-        mat_atoms = [a for a in task_group['atoms'] if a['atom_type'] == 'material']
+        mat_atoms = [a for a in task_group['atoms'] if a['type'] == 'material']
         self.assertEqual(len(mat_atoms), 1)
         self.assertEqual(
-            mat_atoms[0]['computed_amount'], Decimal('6.00'),
+            mat_atoms[0]['amount'], Decimal('6.00'),
             'computed_amount should be quantity(3) * sell_price(2) = 6.00',
         )
 

@@ -102,6 +102,22 @@ class BaseWizardService:
             return atom_instance.quantity, atom_instance.sell_price
         return cls._task_qty_and_price(atom_instance, total_price)
 
+    @classmethod
+    def _atom_detail(cls, atom_instance):
+        """The qty / rate / units / amount breakdown for an atom — the
+        `qty units × rate = amount` line shown in the source pool. For a
+        task, qty * rate == amount exactly (compute_amount is qty *
+        effective_rate)."""
+        amount = cls._atom_computed_amount(atom_instance)
+        units = cls._atom_units(atom_instance)
+        if isinstance(atom_instance, cls._task_model()):
+            qty = cls._task_actual_qty(atom_instance)
+            rate = atom_instance.effective_rate().quantize(Decimal('0.01'))
+        else:
+            qty = atom_instance.quantity
+            rate = atom_instance.sell_price.quantize(Decimal('0.01'))
+        return {'qty': qty, 'rate': rate, 'units': units, 'amount': amount}
+
     # ── line-item sync helpers ─────────────────────────────────────────
     @classmethod
     def _sum_sources(cls, line_item):

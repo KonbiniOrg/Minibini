@@ -113,7 +113,7 @@
     for (const task of sourcePool.tasks) {
       for (const atom of task.atoms) {
         if (atom.state === 'claimed_by_other') continue;
-        const key = `${atom.atom_type}:${atom.atom_id}`;
+        const key = `${atom.type}:${atom.id}`;
         if (claimMap.has(key)) {
           const claim = claimMap.get(key);
           atom.state = 'claimed_by_current';

@@ -605,7 +605,8 @@ class EstimateWizardService(BaseWizardService):
 
         Returns: {'atoms': [
             {'type': 'plan_task'|'plan_material', 'id': N, 'description': str,
-             'amount': Decimal, 'state': 'available'|'claimed_by_current'|'claimed_by_other',
+             'qty': Decimal, 'rate': Decimal, 'amount': Decimal,
+             'state': 'available'|'claimed_by_current'|'claimed_by_other',
              'category_id': N or None, 'units': str}
         ]}
         """
@@ -659,12 +660,15 @@ class EstimateWizardService(BaseWizardService):
             key = (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk)
             state_info = claims.get(key, default_state)
             eff_cat = pt.effective_accounting_category
+            detail = EstimateWizardService._atom_detail(pt)
             atoms.append({
                 'type': 'plan_task',
                 'id': pt.pk,
                 'description': pt.name,
-                'amount': pt.compute_amount().quantize(Decimal('0.01')),
-                'units': EstimateWizardService._atom_units(pt),
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'amount': detail['amount'],
+                'units': detail['units'],
                 'category_id': eff_cat.pk if eff_cat else None,
                 **state_info,
             })
@@ -674,12 +678,15 @@ class EstimateWizardService(BaseWizardService):
         ):
             key = (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk)
             state_info = claims.get(key, default_state)
+            detail = EstimateWizardService._atom_detail(pm)
             atoms.append({
                 'type': 'plan_material',
                 'id': pm.pk,
                 'description': pm.description,
-                'amount': pm.compute_amount().quantize(Decimal('0.01')),
-                'units': EstimateWizardService._atom_units(pm),
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'amount': detail['amount'],
+                'units': detail['units'],
                 'category_id': pm.accounting_category_id,
                 **state_info,
             })

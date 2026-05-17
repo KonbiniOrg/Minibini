@@ -107,6 +107,16 @@ class GetSourcePoolTest(TestCase):
         self.assertEqual(amounts[('plan_task', self.pt.pk)], Decimal('200.00'))
         self.assertEqual(amounts[('plan_material', self.pm.pk)], Decimal('15.00'))
 
+    def test_atoms_include_qty_and_rate(self):
+        pool = EstimateWizardService.get_source_pool(self.ws)
+        by_id = {(a['type'], a['id']): a for a in pool['atoms']}
+        pt_atom = by_id[('plan_task', self.pt.pk)]
+        self.assertEqual(pt_atom['qty'], Decimal('2'))
+        self.assertEqual(pt_atom['rate'], Decimal('100.00'))
+        pm_atom = by_id[('plan_material', self.pm.pk)]
+        self.assertEqual(pm_atom['qty'], Decimal('3'))
+        self.assertEqual(pm_atom['rate'], Decimal('5.00'))
+
     def test_unclaimed_atom_state(self):
         pool = EstimateWizardService.get_source_pool(self.ws)
         for a in pool['atoms']:

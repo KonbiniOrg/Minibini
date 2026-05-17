@@ -137,8 +137,8 @@ class SourcePoolEndpointTest(TestCase):
         self.assertEqual(len(task['atoms']), 1)
         atom = task['atoms'][0]
         # Per-task atom computed via task.compute_amount() (post-B5)
-        self.assertEqual(atom['atom_type'], 'task')
-        self.assertEqual(atom['atom_id'], self.task.pk)
+        self.assertEqual(atom['type'], 'task')
+        self.assertEqual(atom['id'], self.task.pk)
         self.assertEqual(atom['state'], 'available')
 
     def test_requires_authentication(self):
