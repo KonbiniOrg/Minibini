@@ -86,10 +86,15 @@ taxability / QBO income mapping), and its own version lineage. Every
 algorithm:
 
 ```python
-ELAPSED_TIME → Decimal(sum(blep.elapsed.total_seconds()) / 3600)
+ELAPSED_TIME → (Decimal(sum(blep.elapsed.total_seconds())) / 3600).quantize(0.01)
 ENTERED_QTY  → task.actual_qty or Decimal('0')
 FLAT_FEE     → Decimal('1')
 ```
+
+The `ELAPSED_TIME` result is quantized to 2 decimal places: a raw
+seconds/3600 division is non-terminating (~28 digits) and would overflow
+the line item `qty` field (`max_digits=10`) when carried into the invoice
+wizard.
 
 ### 2.3 Modifiers
 
@@ -292,14 +297,21 @@ Both models implement the uniform atom interface
 class Task:
     def compute_amount(self, active_modifiers=None):
         qty = self.rate_scheme.get_actual_qty(self)  # algorithm-aware
-        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        return charge.quantize(Decimal('0.01'))
 
 class PlanTask:
     def compute_amount(self, active_modifiers=None):
         if not self.rate_scheme_id or self.est_qty is None:
             return Decimal('0.00')
-        return self.rate_scheme.compute_charge(self.est_qty, self.active_modifiers)
+        charge = self.rate_scheme.compute_charge(self.est_qty, self.active_modifiers)
+        return charge.quantize(Decimal('0.01'))
 ```
+
+Both `compute_amount` results are quantized to 2 decimal places (cents):
+`compute_charge` is `qty * effective_rate`, and a modifier-adjusted rate
+can carry more than 2 decimals, so the unrounded product would surface
+extra digits on the task detail page and in worksheet totals.
 
 The `active_modifiers` parameter is accepted to match the atom
 interface but is ignored — both use `self.active_modifiers`. PlanTask

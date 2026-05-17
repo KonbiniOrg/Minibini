@@ -335,13 +335,15 @@ Valid transitions:
 - **rate_scheme** (required FK → RateScheme, PROTECT): NOT NULL at DB level
 - **active_modifiers**: JSON list (default `[]`)
 - **est_qty** (inherited from `TaskBase`): optional
-- **est_worker_time**: optional Duration
+- **est_worker_time**: optional Duration — but **required (and must be > 0)
+  once `assignee` is set**; assigned work has to be schedulable
 - **actual_qty**: optional decimal — worker-entered qty for `entered_qty`
   schemes. Null for `elapsed_time` (derived from Bleps) and `flat_fee`.
 - **status**: default `pending`
 - **blocked_reason**: text, default '' — set by `block_task(reason=...)`, cleared by `unblock_task`/`complete_task`/`cancel_task`. The previous reason is overwritten and not preserved anywhere; once `@history` is added to Task (see `jobs-tasks-and-worksheets.md` §13), each block/unblock will surface in the HistoryPanel
 - **worker_queue**: optional integer — position in assignee's queue
-- **assignee** (optional FK → User, SET_NULL)
+- **assignee** (optional FK → User, SET_NULL): setting it requires a
+  non-zero `est_worker_time` (see that field)
 - **parent_task** (optional FK → self, CASCADE)
 - **source_template** (optional FK → TaskTemplate, SET_NULL)
 - **source_plan_task** (optional OneToOne → PlanTask, SET_NULL): set by
@@ -351,6 +353,11 @@ Valid transitions:
 
 #### Implied state from other models
 
+- An assigned Task (`assignee` set) must carry a non-zero `est_worker_time`
+  — assigned work has to be schedulable. Enforced by `Task.clean()`;
+  `TaskService.assign` (the board/modal `update()` path, which bypasses
+  `clean()`) re-checks the rule and returns `{needs_worker_time: true}` so
+  the UI can prompt for an estimate. Unassigning has no such requirement.
 - A Task with any Bleps must not be in `pending`. Validator-enforced.
 - Task → terminal auto-closes any open Bleps (end_time := now).
 - All Tasks on a Job terminal → `TaskLifecycleService._check_job_work_complete`

@@ -241,7 +241,7 @@ on `PlanTask` via the `TaskBase` abstract):
 | `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. |
 | `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`) |
 | `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task; required on PlanTask. |
-| `est_worker_time` | DurationField — estimated worker time for scheduling |
+| `est_worker_time` | DurationField — estimated worker time for scheduling. Required (and non-zero) once the Task has an `assignee`: assigned work must be schedulable. Enforced by `Task.clean()` and re-checked by `TaskService.assign`. |
 | `actual_qty` | Worker-entered quantity for `ENTERED_QTY` schemes; null for `ELAPSED_TIME` (derived from bleps) and `FLAT_FEE` |
 
 `Task.compute_amount()` resolves the actual quantity per scheme
@@ -569,7 +569,12 @@ each user who has at least one active task, plus any user manually
 added via the "+" button. Tasks within a column are sorted by
 `worker_queue`. Drag-and-drop assigns / reorders / unassigns:
 
-- `PATCH /api/tasks/{id}/assign/` — set assignee + worker_queue
+- `POST /api/tasks/{id}/assign/` — set assignee + worker_queue, optionally
+  `est_worker_time`. Assigning a Task that has no estimate (and none
+  supplied) returns `{needs_worker_time: true}` instead of assigning, so
+  the UI can prompt: the board drag-and-drop pops an interrupting duration
+  modal (`WorkerTimePromptModal`), and the Assign modal shows a required
+  duration field. Unassigning never requires a duration.
 - `POST /api/tasks/reorder/` — bulk update worker_queue from a list
 
 ### 8.5 Card composition
