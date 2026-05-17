@@ -12,7 +12,7 @@
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
-  import { formatQtyUnits } from '../../lib/format.js';
+  import { formatQtyUnits, formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
@@ -325,6 +325,7 @@
       <tr><td>Description</td><td>{task.description || '-'}</td></tr>
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
+      <tr><td>Est. worker time</td><td>{formatDuration(task.est_worker_time)}</td></tr>
       <tr><td>Rate</td><td>{task.effective_rate ? `$${task.effective_rate}` : '-'}</td></tr>
     </tbody>
   </table>
