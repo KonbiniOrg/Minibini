@@ -535,18 +535,21 @@ class TaskService:
         """Assign (or unassign) a task to a worker.
 
         Assigned work has to be schedulable, so a task being given an
-        assignee must carry an estimated worker time. If it has none and the
-        caller did not supply one, raise `TaskWorkerTimeRequired` so the UI
-        can prompt for it. Unassigning (`assignee_id` falsy) has no such
-        requirement.
+        assignee must carry an estimated worker time. When it has none and
+        the caller did not supply one, raise `TaskWorkerTimeRequired` up
+        front so the endpoint can answer with a prompt signal rather than a
+        generic validation error. The save still runs `Task.clean()`, which
+        is the actual enforcer of the invariant. Unassigning (`assignee_id`
+        falsy) has no such requirement.
         """
-        fields = {'assignee_id': assignee_id or None, 'worker_queue': worker_queue}
-        if assignee_id:
-            if est_worker_time is not None:
-                fields['est_worker_time'] = est_worker_time
-            elif not task.est_worker_time:
-                raise TaskWorkerTimeRequired()
-        Task.objects.filter(pk=task.pk).update(**fields)
+        if assignee_id and est_worker_time is None and not task.est_worker_time:
+            raise TaskWorkerTimeRequired()
+        task.assignee_id = assignee_id or None
+        task.worker_queue = worker_queue
+        if est_worker_time is not None:
+            task.est_worker_time = est_worker_time
+        task.save()
+        return task
 
 
 class TaskLifecycleService:

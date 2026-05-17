@@ -354,10 +354,12 @@ Valid transitions:
 #### Implied state from other models
 
 - An assigned Task (`assignee` set) must carry a non-zero `est_worker_time`
-  — assigned work has to be schedulable. Enforced by `Task.clean()`;
-  `TaskService.assign` (the board/modal `update()` path, which bypasses
-  `clean()`) re-checks the rule and returns `{needs_worker_time: true}` so
-  the UI can prompt for an estimate. Unassigning has no such requirement.
+  — assigned work has to be schedulable. Enforced by `Task.clean()` on
+  every save. `TaskService.assign` additionally pre-checks before saving
+  and raises `TaskWorkerTimeRequired`, so the assign endpoint can answer
+  `{needs_worker_time: true}` and have the UI prompt for an estimate
+  instead of surfacing a generic validation error. Unassigning has no
+  such requirement.
 - A Task with any Bleps must not be in `pending`. Validator-enforced.
 - Task → terminal auto-closes any open Bleps (end_time := now).
 - All Tasks on a Job terminal → `TaskLifecycleService._check_job_work_complete`

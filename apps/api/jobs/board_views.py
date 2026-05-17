@@ -77,6 +77,7 @@ def task_assign_view(request, task_pk):
     can prompt. Pass assignee: null to unassign.
     """
     from datetime import timedelta
+    from django.core.exceptions import ValidationError
     from django.utils.dateparse import parse_duration
     from apps.jobs.services import TaskService, TaskWorkerTimeRequired
 
@@ -105,5 +106,8 @@ def task_assign_view(request, task_pk):
         )
     except TaskWorkerTimeRequired:
         return Response({'needs_worker_time': True})
+    except ValidationError as e:
+        detail = e.message_dict if hasattr(e, 'message_dict') else str(e)
+        return Response({'detail': detail}, status=400)
 
     return Response({'status': 'ok'})
