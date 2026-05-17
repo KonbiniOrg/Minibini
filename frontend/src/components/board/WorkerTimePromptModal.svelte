@@ -39,11 +39,6 @@
 {#if open}
   <div class="overlay">
     <div class="modal">
-      <h3>Estimated worker time</h3>
-      <p>
-        "{taskName}" has no time estimate. Assigned work has to be scheduled,
-        so enter how long you expect it to take.
-      </p>
       <p>
         <label><strong>Estimated worker time *</strong><br>
           <input

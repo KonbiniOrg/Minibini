@@ -338,6 +338,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         Task.objects.create(
             name='Assigned task', job=job,
             assignee=self.worker, worker_queue=1, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
         )
         Task.objects.create(name='Unassigned task', job=job, rate_scheme_id=1)
         data = BoardService.get_board_data()
@@ -359,6 +360,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         Task.objects.create(
             name='Assigned task', job=job,
             assignee=self.worker, worker_queue=1, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
         )
         data = BoardService.get_board_data()
         available_ids = [w['id'] for w in data['approved']['available_workers']]

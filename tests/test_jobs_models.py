@@ -437,6 +437,7 @@ class TaskModelTest(TestCase):
         task = Task.objects.create(
             parent_task=parent_task,
             assignee=self.user,
+            est_worker_time=timedelta(hours=1),
             job=self.job,
             name="Installation Task",
             rate_scheme=self.scheme,
@@ -445,6 +446,30 @@ class TaskModelTest(TestCase):
         self.assertEqual(task.assignee, self.user)
         self.assertEqual(task.job, self.job)
         self.assertEqual(task.name, "Installation Task")
+
+    def test_assigned_task_requires_est_worker_time(self):
+        """An assigned task must carry an estimated worker time — assigned
+        work has to be schedulable."""
+        with self.assertRaises(ValidationError) as ctx:
+            Task.objects.create(
+                job=self.job, name="Assigned, no estimate",
+                rate_scheme=self.scheme, assignee=self.user,
+            )
+        self.assertIn('est_worker_time', ctx.exception.message_dict)
+
+    def test_assigned_task_with_est_worker_time_allowed(self):
+        task = Task.objects.create(
+            job=self.job, name="Assigned, estimated",
+            rate_scheme=self.scheme, assignee=self.user,
+            est_worker_time=timedelta(hours=2),
+        )
+        self.assertEqual(task.assignee, self.user)
+
+    def test_unassigned_task_needs_no_est_worker_time(self):
+        task = Task.objects.create(
+            job=self.job, name="Unassigned", rate_scheme=self.scheme,
+        )
+        self.assertIsNone(task.est_worker_time)
 
     def test_task_str_method(self):
         task = Task.objects.create(

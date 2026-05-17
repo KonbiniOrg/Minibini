@@ -231,6 +231,7 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
     def test_start_work_preserves_existing_assignee(self):
         other_user = User.objects.create_user(username='other', password='test')
         self.task.assignee = other_user
+        self.task.est_worker_time = timedelta(hours=1)
         self.task.save()
         TaskLifecycleService.start_work(self.task.pk, self.user)
         self.task.refresh_from_db()
@@ -624,6 +625,7 @@ class StartStopWorkTest(BaseTestCase):
 
     def test_start_work_join_does_not_change_assignee(self):
         self.task.assignee = self.worker2
+        self.task.est_worker_time = timedelta(hours=1)
         self.task.save()
         Blep.objects.create(
             task=self.task, user=self.worker2, start_time=timezone.now()

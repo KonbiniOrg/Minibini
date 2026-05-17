@@ -296,6 +296,15 @@ class Task(TaskBase):
                     raise ValidationError(
                         {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
                     )
+        # An assigned task must carry an estimated worker time: assigned work
+        # has to be schedulable, and it can't be scheduled without a duration.
+        # TaskService.assign enforces the same rule on the board's update()
+        # path, which bypasses full_clean().
+        if self.assignee_id and not self.est_worker_time:
+            raise ValidationError({
+                'est_worker_time':
+                    'An assigned task must have an estimated worker time.',
+            })
         # charge guard removed in B4. rate_scheme is NOT NULL at DB level (B8).
 
     def save(self, *args, **kwargs):

@@ -102,7 +102,7 @@
           <label><strong>Estimated worker time *</strong><br>
             <input type="text" bind:value={estWorkerTime} placeholder="e.g. 1:30 or 1.5">
           </label><br>
-          <small>HH:MM or decimal hours. Required — assigned work has to be scheduled.</small>
+          <small>HH:MM or decimal hours.</small>
         </p>
       {/if}
 

@@ -95,13 +95,16 @@ class TaskReorderEndpointTest(FixtureTestCase):
             status='approved', contact=self.contact,
         )
         self.task1 = Task.objects.create(
-            name='Task 1', job=self.job, assignee=self.user, worker_queue=1, rate_scheme_id=1,
+            name='Task 1', job=self.job, assignee=self.user, worker_queue=1,
+            rate_scheme_id=1, est_worker_time=timedelta(hours=1),
         )
         self.task2 = Task.objects.create(
-            name='Task 2', job=self.job, assignee=self.user, worker_queue=2, rate_scheme_id=1,
+            name='Task 2', job=self.job, assignee=self.user, worker_queue=2,
+            rate_scheme_id=1, est_worker_time=timedelta(hours=1),
         )
         self.task3 = Task.objects.create(
-            name='Task 3', job=self.job, assignee=self.user, worker_queue=3, rate_scheme_id=1,
+            name='Task 3', job=self.job, assignee=self.user, worker_queue=3,
+            rate_scheme_id=1, est_worker_time=timedelta(hours=1),
         )
 
     def test_reorder_updates_worker_queue(self):
@@ -284,10 +287,14 @@ class TaskAssignEndpointTest(FixtureTestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_unassign_without_worker_time_allowed(self):
-        """Unassigning carries no duration requirement."""
+        """Unassigning carries no duration requirement, even for a task that
+        somehow holds an assignee without an estimate. The model invariant
+        blocks creating one, so force the legacy state via .update()."""
         task = Task.objects.create(
-            name='Assigned, no estimate', job=self.job,
-            assignee=self.user, worker_queue=1, rate_scheme_id=1,
+            name='Assigned, no estimate', job=self.job, rate_scheme_id=1,
+        )
+        Task.objects.filter(pk=task.pk).update(
+            assignee=self.user, worker_queue=1,
         )
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
@@ -302,6 +309,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
         task = Task.objects.create(
             name='Assigned', job=self.job,
             assignee=self.user, worker_queue=1, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
         )
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
