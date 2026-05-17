@@ -543,14 +543,14 @@
                         <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
                       </div>
                       <div class="time-text {over ? 'over' : ''}">
-                        {actual.toFixed(1)} / {est > 0 ? est.toFixed(1) : '?'} {task.scheme_unit_label || 'h'}
+                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'h'}
                         {#if est > 0}
                           {#if over}
-                            <span class="time-delta">(over by {(actual - est).toFixed(1)})</span>
+                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
                           {:else if actual === 0}
                             <span class="time-dim">(not started)</span>
                           {:else}
-                            <span class="time-dim">({(est - actual).toFixed(1)} left)</span>
+                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
                           {/if}
                         {/if}
                       </div>
@@ -563,21 +563,21 @@
                         <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
                       </div>
                       <div class="time-text {over ? 'over' : ''}">
-                        {actual} / {est > 0 ? est : '?'} {task.scheme_unit_label || 'units'}
+                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'units'}
                         {#if est > 0}
                           {#if over}
-                            <span class="time-delta">(over by {actual - est})</span>
+                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
                           {:else if actual === 0}
                             <span class="time-dim">(not started)</span>
                           {:else}
-                            <span class="time-dim">({est - actual} left)</span>
+                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
                           {/if}
                         {/if}
                       </div>
                     {:else if task.scheme_algorithm === 'flat_fee'}
-                      <div class="time-text time-dim">flat fee · {Number(task.actual_hours || 0).toFixed(1)}h logged</div>
+                      <div class="time-text time-dim">flat fee · {Number(task.actual_hours || 0).toFixed(2)}h logged</div>
                     {:else}
-                      <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(1)}h logged</div>
+                      <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(2)}h logged</div>
                     {/if}
                   </td>
                 </tr>

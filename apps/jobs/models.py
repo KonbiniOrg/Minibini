@@ -320,7 +320,8 @@ class Task(TaskBase):
         with PlanTask/Material/PlanMaterial.
         """
         qty = self.rate_scheme.get_actual_qty(self)
-        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        return charge.quantize(Decimal('0.01'))
 
     def effective_rate(self):
         return self.rate_scheme.effective_rate(self.active_modifiers)

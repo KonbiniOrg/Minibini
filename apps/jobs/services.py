@@ -1075,7 +1075,14 @@ class BoardService:
                 labor_cost += elapsed_hours * (rate / 2)
 
         spent = material_cost + labor_cost
-        return {'billed': billed, 'spent': spent, 'profit': billed - spent}
+        # qty x price aggregates and the labor loop all yield >2dp values;
+        # quantize to cents so the board profit display stays clean.
+        cents = Decimal('0.01')
+        return {
+            'billed': billed.quantize(cents),
+            'spent': spent.quantize(cents),
+            'profit': (billed - spent).quantize(cents),
+        }
 
     @staticmethod
     def _serialize_unpaid_job(job):
