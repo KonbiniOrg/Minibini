@@ -117,6 +117,26 @@ class PlanTaskComputeAmountTests(FixtureTestCase):
         )
         self.assertEqual(pt.compute_amount(), Decimal('150.00'))
 
+    def test_compute_amount_quantized_to_two_places(self):
+        """compute_amount rounds to cents. est_qty (2dp) x rate (2dp) yields
+        a 4dp product that would otherwise surface raw in worksheet totals."""
+        from apps.core.models import AccountingCategory
+        ac = AccountingCategory.objects.first()
+        scheme = RateScheme.objects.create(
+            name='Odd Plan Rate', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.07'), unit_label='piece',
+            accounting_category=ac,
+        )
+        pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='Odd',
+            rate_scheme=scheme, active_modifiers=[],
+            est_qty=Decimal('1.03'),
+        )
+        # 1.03 * 10.07 = 10.3721 -> 10.37
+        result = pt.compute_amount()
+        self.assertEqual(result, Decimal('10.37'))
+        self.assertEqual(result.as_tuple().exponent, -2)
+
     def test_compute_amount_without_scheme_returns_zero(self):
         # Build an unsaved instance — DB+full_clean now forbid persisting
         # a PlanTask without rate_scheme/est_qty, but the helper still has

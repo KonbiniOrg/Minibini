@@ -202,9 +202,10 @@ class PlanTask(TaskBase):
         """
         if not self.rate_scheme_id or self.est_qty is None:
             return Decimal('0.00')
-        return self.rate_scheme.compute_charge(
+        charge = self.rate_scheme.compute_charge(
             self.est_qty, self.active_modifiers,
         )
+        return charge.quantize(Decimal('0.01'))
 
     def effective_rate(self):
         if not self.rate_scheme_id:
