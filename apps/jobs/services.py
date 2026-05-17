@@ -158,6 +158,7 @@ class BlepService:
         blep = BlepService._create(
             task, target_user, start_time=start_time, end_time=end_time,
         )
+        TaskLifecycleService._promote_pending_task(task)
         JobService.mark_work_started(task.job)
         return blep
 
@@ -508,6 +509,20 @@ class TaskLifecycleService:
     """Service for managing Task status transitions and Blep (time tracking) lifecycle."""
 
     @staticmethod
+    def _promote_pending_task(task):
+        """A Blep means work has begun on the task: promote a `pending` task
+        to `in_progress`. No-op for any other status (an `in_progress` task
+        is already there; a backdated Blep must not reopen a terminal or
+        blocked task). The promotion is a conditional UPDATE on the DB row,
+        so a stale in-memory `task` cannot cause a wrong promotion. Mutates
+        `task` in place when it promotes."""
+        promoted = Task.objects.filter(
+            pk=task.pk, status=Task.STATUS_PENDING,
+        ).update(status=Task.STATUS_IN_PROGRESS)
+        if promoted:
+            task.status = Task.STATUS_IN_PROGRESS
+
+    @staticmethod
     def complete_task(task_pk):
         """Transition task from pending/in_progress/blocked -> complete."""
         with transaction.atomic():
@@ -644,12 +659,9 @@ class TaskLifecycleService:
                 # First worker on a pending task: promote and consume materials.
                 # No conflict possible — nobody has touched it yet.
                 BlepService._close_open(user=user, now=now)
-                updates = {'status': Task.STATUS_IN_PROGRESS}
+                TaskLifecycleService._promote_pending_task(task)
                 if not task.assignee_id:
-                    updates['assignee'] = user
-                Task.objects.filter(pk=task.pk).update(**updates)
-                task.status = Task.STATUS_IN_PROGRESS
-                if 'assignee' in updates:
+                    Task.objects.filter(pk=task.pk).update(assignee=user)
                     task.assignee = user
                 from apps.inventory.services import MaterialService
                 for material in task.materials.all():

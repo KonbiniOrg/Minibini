@@ -151,6 +151,27 @@ class CreateHistoricalTest(BaseTestCase):
         blep = BlepService.create_historical(self.user, self.task, start, end)
         self.assertIsNotNone(blep)
 
+    def test_create_historical_promotes_pending_task(self):
+        self.assertEqual(self.task.status, Task.STATUS_PENDING)
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+
+    def test_create_historical_leaves_in_progress_task_unchanged(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+
+    def test_create_historical_does_not_reopen_complete_task(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
+
 
 class UpdateBlepTest(BaseTestCase):
     def setUp(self):
