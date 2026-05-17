@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 
 from tests.base import FixtureTestCase
@@ -144,6 +146,7 @@ class TaskReorderEndpointTest(FixtureTestCase):
     def test_assign_task_via_patch(self):
         unassigned_task = Task.objects.create(
             name='Unassigned', job=self.job, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
         )
         response = self.client.post(
             f'/api/tasks/{unassigned_task.pk}/assign/',
@@ -186,7 +189,10 @@ class TaskAssignEndpointTest(FixtureTestCase):
             status='approved', contact=self.contact,
         )
     def test_assign_task_to_worker(self):
-        task = Task.objects.create(name='Unassigned', job=self.job, rate_scheme_id=1)
+        task = Task.objects.create(
+            name='Unassigned', job=self.job, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
+        )
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},
@@ -196,6 +202,101 @@ class TaskAssignEndpointTest(FixtureTestCase):
         task.refresh_from_db()
         self.assertEqual(task.assignee_id, self.user.pk)
         self.assertEqual(task.worker_queue, 1)
+
+    def test_assign_without_worker_time_prompts(self):
+        """A task with no estimated worker time cannot be scheduled, so the
+        assign endpoint signals the UI to prompt instead of assigning."""
+        task = Task.objects.create(
+            name='No estimate', job=self.job, rate_scheme_id=1,
+        )
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/assign/',
+            data={'assignee': self.user.pk, 'worker_queue': 1},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'needs_worker_time': True})
+        task.refresh_from_db()
+        self.assertIsNone(task.assignee_id)
+
+    def test_assign_with_worker_time_provided(self):
+        """Supplying est_worker_time alongside the assignee both schedules
+        the duration and completes the assignment."""
+        task = Task.objects.create(
+            name='No estimate', job=self.job, rate_scheme_id=1,
+        )
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/assign/',
+            data={
+                'assignee': self.user.pk, 'worker_queue': 1,
+                'est_worker_time': 'PT1H30M',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.assignee_id, self.user.pk)
+        self.assertEqual(task.est_worker_time, timedelta(hours=1, minutes=30))
+
+    def test_assign_task_that_already_has_worker_time(self):
+        """No prompt when the task already carries an estimate."""
+        task = Task.objects.create(
+            name='Has estimate', job=self.job, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=2),
+        )
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/assign/',
+            data={'assignee': self.user.pk, 'worker_queue': 1},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.assignee_id, self.user.pk)
+
+    def test_assign_with_zero_duration_rejected(self):
+        task = Task.objects.create(
+            name='No estimate', job=self.job, rate_scheme_id=1,
+        )
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/assign/',
+            data={
+                'assignee': self.user.pk, 'worker_queue': 1,
+                'est_worker_time': 'PT0H0M',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+        task.refresh_from_db()
+        self.assertIsNone(task.assignee_id)
+
+    def test_assign_with_unparseable_duration_rejected(self):
+        task = Task.objects.create(
+            name='No estimate', job=self.job, rate_scheme_id=1,
+        )
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/assign/',
+            data={
+                'assignee': self.user.pk, 'worker_queue': 1,
+                'est_worker_time': 'whenever',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_unassign_without_worker_time_allowed(self):
+        """Unassigning carries no duration requirement."""
+        task = Task.objects.create(
+            name='Assigned, no estimate', job=self.job,
+            assignee=self.user, worker_queue=1, rate_scheme_id=1,
+        )
+        response = self.client.post(
+            f'/api/tasks/{task.pk}/assign/',
+            data={'assignee': None, 'worker_queue': None},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        task.refresh_from_db()
+        self.assertIsNone(task.assignee_id)
 
     def test_unassign_task(self):
         task = Task.objects.create(

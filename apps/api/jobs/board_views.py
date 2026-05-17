@@ -71,8 +71,15 @@ def task_assign_view(request, task_pk):
     """Assign a task to a worker and set queue position.
 
     Expects: {"assignee": user_id, "worker_queue": position}
-    Pass assignee: null to unassign.
+    Optionally: {"est_worker_time": "PT1H30M"} — an estimated worker time to
+    set alongside the assignment. Assigning a task with no estimate (and no
+    est_worker_time supplied) returns {"needs_worker_time": true} so the UI
+    can prompt. Pass assignee: null to unassign.
     """
+    from datetime import timedelta
+    from django.utils.dateparse import parse_duration
+    from apps.jobs.services import TaskService, TaskWorkerTimeRequired
+
     task = Task.objects.filter(pk=task_pk).first()
     if not task:
         return Response({'error': 'Task not found'}, status=404)
@@ -80,9 +87,23 @@ def task_assign_view(request, task_pk):
     assignee_id = request.data.get('assignee')
     worker_queue = request.data.get('worker_queue')
 
-    Task.objects.filter(pk=task_pk).update(
-        assignee_id=assignee_id,
-        worker_queue=worker_queue,
-    )
+    raw_ewt = request.data.get('est_worker_time')
+    est_worker_time = None
+    if raw_ewt not in (None, ''):
+        est_worker_time = parse_duration(str(raw_ewt))
+        if est_worker_time is None or est_worker_time <= timedelta(0):
+            return Response(
+                {'est_worker_time': ['Enter a duration greater than zero.']},
+                status=400,
+            )
+
+    try:
+        TaskService.assign(
+            task, assignee_id,
+            worker_queue=worker_queue,
+            est_worker_time=est_worker_time,
+        )
+    except TaskWorkerTimeRequired:
+        return Response({'needs_worker_time': True})
 
     return Response({'status': 'ok'})

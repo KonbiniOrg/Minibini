@@ -49,6 +49,13 @@ class TaskTimeRequired(Exception):
     pass
 
 
+class TaskWorkerTimeRequired(Exception):
+    """Raised when assigning a task to a worker while it has no estimated
+    worker time. Assigned work has to be schedulable, and it can't be
+    scheduled without a duration — the caller should prompt for an estimate."""
+    pass
+
+
 _EDIT_WINDOW = timedelta(hours=24)
 
 
@@ -522,6 +529,24 @@ class TaskService:
         )
         task.refresh_from_db()
         return task
+
+    @staticmethod
+    def assign(task, assignee_id, worker_queue=None, est_worker_time=None):
+        """Assign (or unassign) a task to a worker.
+
+        Assigned work has to be schedulable, so a task being given an
+        assignee must carry an estimated worker time. If it has none and the
+        caller did not supply one, raise `TaskWorkerTimeRequired` so the UI
+        can prompt for it. Unassigning (`assignee_id` falsy) has no such
+        requirement.
+        """
+        fields = {'assignee_id': assignee_id or None, 'worker_queue': worker_queue}
+        if assignee_id:
+            if est_worker_time is not None:
+                fields['est_worker_time'] = est_worker_time
+            elif not task.est_worker_time:
+                raise TaskWorkerTimeRequired()
+        Task.objects.filter(pk=task.pk).update(**fields)
 
 
 class TaskLifecycleService:
@@ -1122,6 +1147,9 @@ class BoardService:
             'blocked_reason': task.blocked_reason,
             'assignee_id': task.assignee_id,
             'worker_queue': task.worker_queue,
+            'est_worker_time': (
+                str(task.est_worker_time) if task.est_worker_time else None
+            ),
         }
 
     @staticmethod
