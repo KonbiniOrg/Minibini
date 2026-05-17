@@ -31,6 +31,24 @@ class BlepPermissionError(Exception):
     pass
 
 
+class TaskActualQtyRequired(Exception):
+    """Raised when completing an ENTERED_QTY task that has no worker-entered
+    quantity. Carries the rate scheme's unit label so the caller can prompt
+    for the value."""
+    def __init__(self, unit_label=''):
+        self.unit_label = unit_label
+        super().__init__(
+            'A quantity must be entered before this task can be completed.'
+        )
+
+
+class TaskTimeRequired(Exception):
+    """Raised when completing an ELAPSED_TIME task that has no recorded time
+    (no bleps, or zero total). The caller should prompt for a historical
+    time entry."""
+    pass
+
+
 _EDIT_WINDOW = timedelta(hours=24)
 
 
@@ -523,8 +541,14 @@ class TaskLifecycleService:
             task.status = Task.STATUS_IN_PROGRESS
 
     @staticmethod
-    def complete_task(task_pk):
-        """Transition task from pending/in_progress/blocked -> complete."""
+    def complete_task(task_pk, actual_qty=None):
+        """Transition task from pending/in_progress/blocked -> complete.
+
+        `actual_qty` (optional Decimal): the worker-entered quantity. An
+        ENTERED_QTY task cannot be completed without a positive quantity —
+        either passed here or already on the task. If it's missing, raises
+        `TaskActualQtyRequired` so the caller can prompt for it.
+        """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED):
@@ -532,10 +556,21 @@ class TaskLifecycleService:
                     f"Cannot complete task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
+            if actual_qty is not None:
+                if actual_qty <= 0:
+                    raise ValidationError('Quantity must be greater than 0.')
+                task.actual_qty = actual_qty
+            if (task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and (task.actual_qty is None or task.actual_qty <= 0)):
+                raise TaskActualQtyRequired(task.rate_scheme.unit_label)
+            if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
+                    and task.rate_scheme.get_actual_qty(task) <= 0):
+                raise TaskTimeRequired()
+            update_fields = {'status': Task.STATUS_COMPLETE, 'blocked_reason': ''}
+            if actual_qty is not None:
+                update_fields['actual_qty'] = actual_qty
             BlepService._close_open(task=task)
-            Task.objects.filter(pk=task.pk).update(
-                status=Task.STATUS_COMPLETE, blocked_reason='',
-            )
+            Task.objects.filter(pk=task.pk).update(**update_fields)
             task.status = Task.STATUS_COMPLETE
             task.blocked_reason = ''
             JobService.mark_work_started(task.job)
