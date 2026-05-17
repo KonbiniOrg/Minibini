@@ -12,6 +12,7 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.core.services import NumberGenerationService, NotFoundError
+from apps.core.wizard import BaseWizardService
 from apps.inventory.models import PriceListItem
 
 
@@ -496,12 +497,17 @@ class EstimateClaimConflict(Exception):
         super().__init__(f'Atoms already claimed: {atom_ids}')
 
 
-class EstimateWizardService:
+class EstimateWizardService(BaseWizardService):
     """Orchestration layer for the estimate wizard.
 
-    Mirrors InvoiceWizardService shape. Composes on top of EstimateService rather
-    than replacing it; manual line-item CRUD continues to use EstimateService.
+    Composes on top of EstimateService rather than replacing it; manual
+    line-item CRUD continues to use EstimateService. Shared
+    line-items-from-atoms logic lives in BaseWizardService.
     """
+
+    container_attr = 'estimate'
+    source_fk = 'estimate_line_item'
+    claim_conflict_exc = EstimateClaimConflict
 
     @staticmethod
     def _validate_draft_worksheet(worksheet):
@@ -510,14 +516,6 @@ class EstimateWizardService:
             raise ValidationError(
                 f'Cannot run wizard on worksheet in status "{worksheet.status}". '
                 f'Worksheet must be in draft.'
-            )
-
-    @staticmethod
-    def _validate_draft_estimate(estimate):
-        from apps.estimates.models import Estimate
-        if estimate.status != Estimate.STATUS_DRAFT:
-            raise ValidationError(
-                f'Cannot modify line items on estimate in status "{estimate.status}".'
             )
 
     @staticmethod
@@ -582,26 +580,6 @@ class EstimateWizardService:
         raise ValueError(f'Unknown atom instance type: {type(atom_instance)}')
 
     @staticmethod
-    def _atom_category(atom_instance):
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
-        if isinstance(atom_instance, PlanTask):
-            return atom_instance.effective_accounting_category
-        if isinstance(atom_instance, PlanMaterial):
-            return atom_instance.accounting_category
-        return None
-
-    @staticmethod
-    def _atom_description(atom_instance):
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
-        if isinstance(atom_instance, PlanTask):
-            return atom_instance.name
-        if isinstance(atom_instance, PlanMaterial):
-            return atom_instance.description
-        return ''
-
-    @staticmethod
     def _atom_units(atom_instance):
         """Return the units label for an atom.
 
@@ -620,19 +598,6 @@ class EstimateWizardService:
         if isinstance(atom_instance, PlanMaterial):
             return atom_instance.units or 'none'
         return 'none'
-
-    @staticmethod
-    def _atom_qty_and_price(atom_instance, total_price):
-        """Return (qty, price) for a single-atom copy-over so qty * price = total."""
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
-        if isinstance(atom_instance, PlanMaterial):
-            return atom_instance.quantity, atom_instance.sell_price
-        if isinstance(atom_instance, PlanTask):
-            if atom_instance.rate_scheme_id and atom_instance.est_qty is not None:
-                return atom_instance.est_qty, atom_instance.effective_rate()
-            return Decimal('1'), total_price
-        return Decimal('1'), total_price
 
     @staticmethod
     def get_source_pool(worksheet):
@@ -722,203 +687,6 @@ class EstimateWizardService:
         return {'atoms': atoms}
 
     @staticmethod
-    def add_atoms_to_new_line_item(estimate, atoms):
-        """Create a new EstimateLineItem on `estimate` with the given atoms as sources.
-
-        atoms: list of {'type': 'plan_task'|'plan_material', 'id': N} dicts.
-        """
-        from django.db import IntegrityError
-        from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
-
-        EstimateWizardService._validate_draft_estimate(estimate)
-
-        instances = [EstimateWizardService._resolve_atom(a) for a in atoms]
-
-        total_price = sum(
-            (i.compute_amount() for i in instances),
-            Decimal('0.00'),
-        ).quantize(Decimal('0.01'))
-        categories = {EstimateWizardService._atom_category(i) for i in instances}
-        category = categories.pop() if len(categories) == 1 else None
-
-        # Single atom: copy over description, units, qty, price from the atom.
-        # Multi-atom: blank description, units='none', qty=1, price=total.
-        if len(instances) == 1:
-            description = EstimateWizardService._atom_description(instances[0])
-            units = EstimateWizardService._atom_units(instances[0])
-            qty, price = EstimateWizardService._atom_qty_and_price(
-                instances[0], total_price,
-            )
-        else:
-            description = ''
-            summary = EstimateWizardService._uniform_scheme_bundle(instances)
-            if summary is not None:
-                units, qty, price = summary
-            else:
-                units = 'none'
-                qty = Decimal('1')
-                price = total_price
-
-        try:
-            with transaction.atomic():
-                line_item = EstimateLineItem.objects.create(
-                    estimate=estimate,
-                    description=description,
-                    qty=qty,
-                    units=units,
-                    price=price,
-                    accounting_category=category,
-                )
-                for instance in instances:
-                    EstimateLineItemSource.objects.create(
-                        estimate_line_item=line_item,
-                        source_type=EstimateWizardService._atom_source_type(instance),
-                        source_pk=instance.pk,
-                    )
-        except IntegrityError:
-            existing = set(
-                EstimateLineItemSource.objects
-                .filter(source_type__in=[a['type'] for a in atoms])
-                .values_list('source_type', 'source_pk')
-            )
-            conflicts = [a for a in atoms if (a['type'], a['id']) in existing]
-            raise EstimateClaimConflict(atom_ids=conflicts)
-
-        return line_item
-
-    @staticmethod
-    def _sum_sources(line_item):
-        """Sum the computed amounts of all source atoms on a line item."""
-        total = Decimal('0.00')
-        for src in line_item.sources.all():
-            instance = src.resolve()
-            total += instance.compute_amount()
-        return total
-
-    @staticmethod
-    def _expected_per_unit(sum_value, qty):
-        """The per-unit price the wizard would compute right now: round(sum/qty, 2)."""
-        if not qty:
-            return Decimal('0.00')
-        return (sum_value / qty).quantize(Decimal('0.01'))
-
-    @staticmethod
-    def _is_in_sync(line_item, sum_value):
-        """In sync iff price == round(sum / qty, 2)."""
-        if not line_item.qty:
-            return False
-        return line_item.price == EstimateWizardService._expected_per_unit(sum_value, line_item.qty)
-
-    @staticmethod
-    def _uniform_scheme_bundle(instances):
-        """If every atom is a PlanTask sharing one RateScheme and identical
-        `active_modifiers`, return `(units, qty, price)` summarizing the
-        bundle — units from the scheme, qty = summed est_qty, price = the
-        common effective rate. Otherwise None, and the caller falls back to
-        qty=1 / units='none'."""
-        from apps.jobs.models import PlanTask
-        if not instances or not all(isinstance(i, PlanTask) for i in instances):
-            return None
-        if any(i.rate_scheme_id is None or i.est_qty is None for i in instances):
-            return None
-        if len({i.rate_scheme_id for i in instances}) != 1:
-            return None
-        modifier_sets = {
-            tuple(sorted(i.active_modifiers or [])) for i in instances
-        }
-        if len(modifier_sets) != 1:
-            return None
-        scheme = instances[0].rate_scheme
-        qty = sum((i.est_qty for i in instances), Decimal('0'))
-        price = instances[0].effective_rate().quantize(Decimal('0.01'))
-        return scheme.unit_label, qty, price
-
-    @staticmethod
-    def _resync_in_sync_line_item(line_item):
-        """After a source-set change on an in-sync line item, re-derive its
-        units/qty/price. If the sources form a uniform same-scheme task
-        bundle, summarize; otherwise keep qty and recompute the per-unit
-        price. Saves the line item."""
-        instances = [src.resolve() for src in line_item.sources.all()]
-        summary = EstimateWizardService._uniform_scheme_bundle(instances)
-        if summary is not None:
-            line_item.units, line_item.qty, line_item.price = summary
-        else:
-            new_sum = EstimateWizardService._sum_sources(line_item)
-            line_item.price = EstimateWizardService._expected_per_unit(
-                new_sum, line_item.qty,
-            )
-        line_item.save()
-
-    @staticmethod
-    def add_atoms_to_line_item(line_item, atoms):
-        """Append N atoms as sources to an existing line item.
-
-        Recomputes the line item's price if it was in sync before the operation;
-        preserves an overridden price otherwise.
-        """
-        from django.db import IntegrityError
-        from apps.estimates.models import EstimateLineItemSource
-
-        EstimateWizardService._validate_draft_estimate(line_item.estimate)
-
-        old_sum = EstimateWizardService._sum_sources(line_item)
-        was_in_sync = EstimateWizardService._is_in_sync(line_item, old_sum)
-
-        instances = [EstimateWizardService._resolve_atom(a) for a in atoms]
-
-        try:
-            with transaction.atomic():
-                for instance in instances:
-                    EstimateLineItemSource.objects.create(
-                        estimate_line_item=line_item,
-                        source_type=EstimateWizardService._atom_source_type(instance),
-                        source_pk=instance.pk,
-                    )
-                if was_in_sync:
-                    EstimateWizardService._resync_in_sync_line_item(line_item)
-        except IntegrityError:
-            existing = set(
-                EstimateLineItemSource.objects
-                .filter(source_type__in=[a['type'] for a in atoms])
-                .values_list('source_type', 'source_pk')
-            )
-            conflicts = [a for a in atoms if (a['type'], a['id']) in existing]
-            raise EstimateClaimConflict(atom_ids=conflicts)
-
-        return line_item
-
-    @staticmethod
-    def remove_atoms_from_line_item(line_item, source_ids):
-        """Remove a subset of source rows from a line item.
-
-        - Recomputes price if the line item was in sync before.
-        - Preserves price if it was overridden.
-        - Deletes the line item if all sources are removed.
-
-        Returns: {'line_item_deleted': bool}
-        """
-        EstimateWizardService._validate_draft_estimate(line_item.estimate)
-
-        old_sum = EstimateWizardService._sum_sources(line_item)
-        was_in_sync = EstimateWizardService._is_in_sync(line_item, old_sum)
-
-        from apps.core.services import LineItemService
-
-        with transaction.atomic():
-            line_item.sources.filter(source_id__in=source_ids).delete()
-            remaining = line_item.sources.count()
-
-            if remaining == 0:
-                LineItemService.delete_line_item_with_renumber(line_item)
-                return {'line_item_deleted': True}
-
-            if was_in_sync:
-                EstimateWizardService._resync_in_sync_line_item(line_item)
-
-        return {'line_item_deleted': False}
-
-    @staticmethod
     def send_all_atoms_to_estimate(worksheet):
         """Bulk 1:1 conversion of unclaimed atoms on the worksheet to EstimateLineItems.
 
@@ -936,7 +704,7 @@ class EstimateWizardService:
         from apps.inventory.models import PlanMaterial
 
         estimate = EstimateWizardService.open_for_worksheet(worksheet)
-        EstimateWizardService._validate_draft_estimate(estimate)
+        EstimateWizardService._validate_draft(estimate)
 
         # Build set of currently-claimed (type, pk) pairs, scoped to this job's estimates
         claimed = set(
@@ -994,3 +762,42 @@ class EstimateWizardService:
             created_count += 1
 
         return {'estimate': estimate, 'created_count': created_count}
+
+    # ── BaseWizardService hooks ────────────────────────────────────────
+    @classmethod
+    def _line_item_model(cls):
+        from apps.estimates.models import EstimateLineItem
+        return EstimateLineItem
+
+    @classmethod
+    def _source_model(cls):
+        from apps.estimates.models import EstimateLineItemSource
+        return EstimateLineItemSource
+
+    @classmethod
+    def _task_model(cls):
+        from apps.jobs.models import PlanTask
+        return PlanTask
+
+    @classmethod
+    def _material_model(cls):
+        from apps.inventory.models import PlanMaterial
+        return PlanMaterial
+
+    @classmethod
+    def _validate_draft(cls, container):
+        from apps.estimates.models import Estimate
+        if container.status != Estimate.STATUS_DRAFT:
+            raise ValidationError(
+                f'Cannot modify line items on estimate in status "{container.status}".'
+            )
+
+    @classmethod
+    def _task_qty_and_price(cls, task, total_price):
+        if task.rate_scheme_id and task.est_qty is not None:
+            return task.est_qty, task.effective_rate()
+        return Decimal('1'), total_price
+
+    @classmethod
+    def _task_actual_qty(cls, task):
+        return task.est_qty

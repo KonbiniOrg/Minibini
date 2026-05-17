@@ -135,6 +135,8 @@ For the shared concepts — source pool, claim semantics, in-sync vs. override r
 
 `InvoiceWizardService` (in `apps/invoicing/services.py`). Composes on top of `InvoiceService`; manual line item CRUD continues to go through `InvoiceService` and the `LineItemMixin`.
 
+The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_line_item`, `remove_atoms_from_line_item`, and the in-sync / bundle-summary helpers) lives in `BaseWizardService` (`apps/core/wizard.py`), shared with `EstimateWizardService`. `InvoiceWizardService` subclasses it, supplies a config block plus model hooks, and keeps the invoice-specific methods (`open_for_job`, `get_source_pool`, `BILLABLE_JOB_STATUSES`).
+
 | Method | Responsibility |
 |---|---|
 | `open_for_job(job)` | Returns the job's draft `Invoice`. Creates one if none exists. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED}`. |

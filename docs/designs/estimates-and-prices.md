@@ -529,9 +529,14 @@ atoms. See §14.
 ## 8. EstimateWizardService
 
 `EstimateWizardService` (`apps/estimates/services.py`) is the
-orchestration layer for the wizard. It mirrors `InvoiceWizardService`
-(invoicing doc) — same source-pool / line-items-from-atoms /
-add-atoms / remove-atoms operations.
+orchestration layer for the wizard. The line-items-from-atoms logic
+(`add_atoms_to_new_line_item`, `add_atoms_to_line_item`,
+`remove_atoms_from_line_item`, the in-sync / bundle-summary helpers) is
+shared with `InvoiceWizardService` via `BaseWizardService`
+(`apps/core/wizard.py`); `EstimateWizardService` subclasses it, supplies
+a small config block plus model hooks, and keeps the estimate-specific
+methods (`open_for_worksheet`, `get_source_pool`,
+`send_all_atoms_to_estimate`).
 
 ### 8.1 Methods
 

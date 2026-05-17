@@ -54,6 +54,12 @@ model directly.
   `SchemeSupersededError`). Views translate those into HTTP responses
   or Django messages.
 
+The estimate and invoice wizards share their line-items-from-atoms logic
+through `BaseWizardService` (`apps/core/wizard.py`):
+`InvoiceWizardService` and `EstimateWizardService` subclass it, each
+supplying a small config block (line-item/source models, atom types)
+plus model hooks for the few genuine divergences.
+
 **Exception hierarchy** (`apps/core/services.py`):
 
 ```python
