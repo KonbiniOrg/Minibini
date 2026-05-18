@@ -1,0 +1,85 @@
+"""Pure parsing/normalisation helpers for the Neal's data converter."""
+import re
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
+
+
+def parse_decimal(value):
+    if value is None or value == '':
+        return Decimal('0')
+    if isinstance(value, (int, float, Decimal)):
+        return Decimal(str(value))
+    cleaned = re.sub(r'[^0-9.\-]', '', str(value))
+    try:
+        return Decimal(cleaned) if cleaned else Decimal('0')
+    except InvalidOperation:
+        return Decimal('0')
+
+
+def format_date(value):
+    if value is None or value == '':
+        return None
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d')
+    text = str(value).strip()
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+        except ValueError:
+            continue
+    return None
+
+
+def to_datetime(value):
+    """Parse a cell into a datetime, or None."""
+    if isinstance(value, datetime):
+        return value
+    if value in (None, ''):
+        return None
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(str(value).strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def split_name(full_name):
+    if not full_name or not str(full_name).strip():
+        return ('(unknown)', '(unknown)')
+    parts = str(full_name).strip().split()
+    if len(parts) == 1:
+        return (parts[0], '(unknown)')
+    return (parts[0], ' '.join(parts[1:]))
+
+
+def revision_parts(reference):
+    """('03024b') -> ('03024', 1). Suffix letters a/b/c... -> version index."""
+    m = re.match(r'^(\d+)([a-zA-Z]*)$', str(reference).strip())
+    if not m:
+        return (str(reference).strip(), 0)
+    digits, suffix = m.group(1), m.group(2).lower()
+    if not suffix:
+        return (digits, 0)
+    return (digits, ord(suffix[-1]) - ord('a'))
+
+
+def hours_to_duration(value):
+    """'1.5' hours -> Django DurationField string '01:30:00'. '' -> None."""
+    if value in (None, ''):
+        return None
+    try:
+        hours = float(value)
+    except (TypeError, ValueError):
+        return None
+    total = timedelta(hours=hours)
+    s = int(total.total_seconds())
+    return f'{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}'
+
+
+def parse_kanban_name(name):
+    """'Business (Contact)' -> ('Business', 'Contact'); 'Business' -> ('Business', None)."""
+    m = re.match(r'^(.*?)\s*\(([^)]+)\)\s*$', str(name).strip())
+    if m:
+        return (m.group(1).strip(), m.group(2).strip())
+    return (str(name).strip(), None)
