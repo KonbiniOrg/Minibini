@@ -19,6 +19,7 @@ _TERMINAL_JOB_STATUSES = ('completed', 'cancelled', 'rejected')
 # Job statuses for which start_date must be set.
 _STARTED_JOB_STATUSES = ('approved', 'in_progress', 'work_complete', 'completed')
 # Job statuses for which start_date must be null.
+# Note: 'cancelled' is intentionally in neither set — a cancelled job keeps whatever start_date it had.
 _NO_START_JOB_STATUSES = ('draft', 'submitted', 'rejected')
 
 # Estimate statuses for which sent_date must be set.
@@ -27,12 +28,9 @@ _SENT_ESTIMATE_STATUSES = ('open', 'accepted', 'rejected', 'expired', 'supersede
 _CLOSED_ESTIMATE_STATUSES = ('accepted', 'rejected', 'expired', 'superseded')
 
 
-def _find(c, model, pk):
-    """Return the fixture dict for ``model``+``pk``, or None if not present."""
-    for f in c.fixture_data:
-        if f['model'] == model and f['pk'] == pk:
-            return f
-    return None
+def _find(index, model, pk):
+    """Return the fixture dict for ``model``+``pk`` via pre-built index, or None."""
+    return index.get((model, pk))
 
 
 def _add_days(date_str, days):
@@ -45,16 +43,17 @@ def _add_days(date_str, days):
 
 def reconcile(c):
     """Run all reconciliation passes in order, mutating ``c.fixture_data``."""
-    _pass_estimate_version_chains(c)
-    _pass_estimate_expiry(c)
-    _pass_estimate_dates(c)
-    _pass_job_status_and_dates(c)
+    index = {(f['model'], f['pk']): f for f in c.fixture_data}
+    _pass_estimate_version_chains(c, index)
+    _pass_estimate_expiry(c, index)
+    _pass_estimate_dates(c, index)
+    _pass_job_status_and_dates(c, index)
     _pass_task_status_from_job(c)
     _pass_invoiced_work(c)
-    _pass_document_counters(c)
+    _pass_document_counters(c, index)
 
 
-def _pass_estimate_version_chains(c):
+def _pass_estimate_version_chains(c, index):
     """Pass 1: every version below the highest is superseded; link parents."""
     today_str = date.today().strftime('%Y-%m-%d')
     for versions in c.estimates.values():
@@ -66,7 +65,7 @@ def _pass_estimate_version_chains(c):
 
         prev_pk = None
         for entry in ordered:
-            fixture = _find(c, 'estimates.estimate', entry['est_pk'])
+            fixture = _find(index, 'estimates.estimate', entry['est_pk'])
             if fixture is None:
                 prev_pk = entry['est_pk']
                 continue
@@ -82,7 +81,7 @@ def _pass_estimate_version_chains(c):
             prev_pk = entry['est_pk']
 
 
-def _pass_estimate_expiry(c):
+def _pass_estimate_expiry(c, index):
     """Pass 2: expire open estimates created more than 30 days ago."""
     cutoff = date.today() - timedelta(days=_EXPIRE_DAYS)
     for base_ref, versions in c.estimates.items():
@@ -90,7 +89,7 @@ def _pass_estimate_expiry(c):
             continue
         highest_version = max(v['version'] for v in versions)
         for entry in versions:
-            fixture = _find(c, 'estimates.estimate', entry['est_pk'])
+            fixture = _find(index, 'estimates.estimate', entry['est_pk'])
             if fixture is None or fixture['fields']['status'] != 'open':
                 continue
             created = P.to_datetime(entry['created_date'])
@@ -104,16 +103,16 @@ def _pass_estimate_expiry(c):
             )
             # If this is the job's latest estimate, the job is rejected.
             if entry['version'] == highest_version and base_ref in c.job_map:
-                job_fixture = _find(c, 'jobs.job', c.job_map[base_ref])
+                job_fixture = _find(index, 'jobs.job', c.job_map[base_ref])
                 if job_fixture is not None:
                     job_fixture['fields']['status'] = 'rejected'
 
 
-def _pass_estimate_dates(c):
+def _pass_estimate_dates(c, index):
     """Pass 3: fill in sent/expiration/closed dates consistent with status."""
     for versions in c.estimates.values():
         for entry in versions:
-            fixture = _find(c, 'estimates.estimate', entry['est_pk'])
+            fixture = _find(index, 'estimates.estimate', entry['est_pk'])
             if fixture is None:
                 continue
             fields = fixture['fields']
@@ -135,11 +134,11 @@ def _pass_estimate_dates(c):
                 fields['closed_date'] = created
 
 
-def _pass_job_status_and_dates(c):
+def _pass_job_status_and_dates(c, index):
     """Pass 4: archived cards complete jobs; reconcile job start/completed dates."""
     for base_ref, job_info in c.jobs.items():
         job_pk = job_info['job_pk']
-        job_fixture = _find(c, 'jobs.job', job_pk)
+        job_fixture = _find(index, 'jobs.job', job_pk)
         if job_fixture is None:
             continue
         fields = job_fixture['fields']
@@ -230,7 +229,7 @@ def _pass_invoiced_work(c):
                 f['fields']['status'] = 'complete'
 
 
-def _pass_document_counters(c):
+def _pass_document_counters(c, index):
     """Pass 7: set document-numbering counters to emitted record counts."""
     counts = {
         'job_counter':      'jobs.job',
@@ -240,6 +239,6 @@ def _pass_document_counters(c):
     }
     for key, model in counts.items():
         n = sum(1 for f in c.fixture_data if f['model'] == model)
-        fixture = _find(c, 'core.configuration', key)
+        fixture = _find(index, 'core.configuration', key)
         if fixture is not None:
             fixture['fields']['value'] = str(n)

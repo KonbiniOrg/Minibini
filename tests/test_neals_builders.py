@@ -245,7 +245,7 @@ class ReconcileTest(unittest.TestCase):
             self.assertIn(e['fields']['status'],
                           ('draft', 'open', 'accepted', 'rejected',
                            'superseded', 'expired'))
-            if e['fields']['status'] == 'superseded':
+            if e['fields']['status'] in ('accepted', 'rejected', 'expired', 'superseded'):
                 self.assertIsNotNone(e['fields']['closed_date'])
 
     def test_job_dates_consistent_with_status(self):
@@ -254,6 +254,8 @@ class ReconcileTest(unittest.TestCase):
             st = j['fields']['status']
             if st in ('draft', 'submitted', 'rejected'):
                 self.assertIsNone(j['fields']['start_date'])
+            if st in ('approved', 'in_progress', 'work_complete', 'completed'):
+                self.assertIsNotNone(j['fields']['start_date'])
             if st in ('draft', 'submitted', 'approved', 'in_progress',
                       'work_complete'):
                 self.assertIsNone(j['fields']['completed_date'])
