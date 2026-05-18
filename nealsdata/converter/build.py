@@ -579,3 +579,186 @@ def build_estimates(c):
                 })
 
         c.estimates[base] = base_estimates
+
+
+def derive_atoms(c):
+    """Derive RateScheme, Task, Material, and Deliverable fixtures from estimates.
+
+    For each job in c.job_map:
+    - Picks the latest estimate version (highest `version` number).
+    - Emits a RateScheme (deduped converter-wide) for each task-classified line.
+    - Emits a Task for each task-classified line.
+    - Emits a Material for each material-classified line (AFTER tasks, so
+      c.cut_task[base_ref] is already populated).
+    - Emits one Deliverable per material-classified line, or a synthetic
+      'Fake Deliverable' when there are no material lines.
+    - Applies CSV worker-time estimates from the Kanban card to specific tasks.
+
+    Mutates c.fixture_data, c.rate_scheme_map, c.cut_task, c.time_match_misses.
+    """
+    # Track names already used for RateSchemes to enforce uniqueness.
+    _rs_names_used = set(
+        f['fields']['name']
+        for f in c.fixture_data
+        if f['model'] == 'jobs.ratescheme'
+    )
+
+    def _rs_name(base_name):
+        """Return a unique RateScheme name, appending ' (N)' on collision."""
+        if base_name not in _rs_names_used:
+            _rs_names_used.add(base_name)
+            return base_name
+        n = 2
+        while True:
+            candidate = f'{base_name} ({n})'
+            if candidate not in _rs_names_used:
+                _rs_names_used.add(candidate)
+                return candidate
+            n += 1
+
+    def _get_or_create_rate_scheme(algorithm, rate, unit_label, ac):
+        """Return pk of a matching RateScheme, creating one if not seen before."""
+        key = (algorithm, f'{rate:.2f}', unit_label, ac)
+        if key in c.rate_scheme_map:
+            return c.rate_scheme_map[key]
+        base_name = f'{algorithm} ${rate:.2f}/{unit_label}'
+        name = _rs_name(base_name)
+        rs_pk = c.next_pk('jobs.ratescheme')
+        c.add_fixture('jobs.ratescheme', rs_pk, {
+            'name':                name,
+            'description':         '',
+            'algorithm':           algorithm,
+            'rate':                f'{rate:.2f}',
+            'unit_label':          unit_label,
+            'modifiers':           [],
+            'accounting_category': ac,
+            'replaced_by':         None,
+            'replaced_at':         None,
+        })
+        c.rate_scheme_map[key] = rs_pk
+        return rs_pk
+
+    for base_ref, job_info in c.jobs.items():
+        job_pk = job_info['job_pk']
+        card = job_info['card']
+
+        # --- Amendment A: use only the latest estimate version ---------------
+        est_list = c.estimates.get(base_ref, [])
+        if not est_list:
+            continue
+        latest = max(est_list, key=lambda e: e['version'])
+        est_pk = latest['est_pk']
+        lines = c.line_items.get(est_pk, [])
+
+        task_lines = [li for li in lines if li['classification'] == 'task']
+        material_lines = [li for li in lines if li['classification'] == 'material']
+
+        # --- 1 + 2. Emit RateSchemes and Tasks --------------------------------
+        sort_order = 0
+        for li in task_lines:
+            algorithm = P.infer_algorithm(li['item_type'], li['units'])
+            rate = li['price']
+            unit_label = li['units'] or 'hours'
+            rs_pk = _get_or_create_rate_scheme(algorithm, rate, unit_label, c.ac_svc_pk)
+
+            sort_order += 1
+            name = (li['description'] or 'Task')[:255] or 'Task'
+            task_pk = c.next_pk('jobs.task')
+
+            c.add_fixture('jobs.task', task_pk, {
+                'job':              job_pk,
+                'rate_scheme':      rs_pk,
+                'name':             name,
+                'description':      li['description'],
+                'est_qty':          f"{li['qty']:.2f}",
+                'est_worker_time':  None,
+                'actual_qty':       None,
+                'active_modifiers': [],
+                'status':           'pending',
+                'blocked_reason':   '',
+                'worker_queue':     None,
+                'assignee':         None,
+                'parent_task':      None,
+                'source_template':  None,
+                'source_plan_task': None,
+                'sort_order':       sort_order,
+            })
+
+            # Track first task whose name contains 'cut' (case-insensitive)
+            if base_ref not in c.cut_task and 'cut' in name.lower():
+                c.cut_task[base_ref] = task_pk
+
+        # --- 3. Emit Materials (after tasks so cut_task is set) ---------------
+        for li in material_lines:
+            mat_pk = c.next_pk('inventory.material')
+            c.add_fixture('inventory.material', mat_pk, {
+                'job':                 job_pk,
+                'task':                c.cut_task.get(base_ref),
+                'description':         li['description'],
+                'quantity':            f"{li['qty']:.2f}",
+                'units':               li['units'] or 'none',
+                'unit_cost':           '0.00',
+                'sell_price':          f"{li['price']:.2f}",
+                'accounting_category': c.ac_mat_pk,
+                'price_list_item':     None,
+                'consumption_state':   'pending',
+                'restocked_qty':       '0.00',
+                'po_line_item':        None,
+                'source_plan_material': None,
+            })
+
+        # --- 4. CSV worker-time assignments ------------------------------------
+        # Helper: find a task fixture for this job matching a name predicate.
+        def _find_task_fixture(job_pk_inner, predicate):
+            for f in c.fixture_data:
+                if f['model'] == 'jobs.task' and f['fields']['job'] == job_pk_inner:
+                    if predicate(f['fields']['name']):
+                        return f
+            return None
+
+        def _set_worker_time(fixture, raw_val):
+            duration = P.hours_to_duration(raw_val)
+            if duration is not None:
+                fixture['fields']['est_worker_time'] = duration
+
+        raw_cut = card.get('est *cut* time')
+        if raw_cut not in (None, ''):
+            cut_fixture = _find_task_fixture(job_pk, lambda n: 'cut' in n.lower())
+            if cut_fixture is not None:
+                _set_worker_time(cut_fixture, raw_cut)
+            else:
+                c.time_match_misses += 1
+
+        raw_ass = card.get('est ASS time')
+        if raw_ass not in (None, ''):
+            ass_fixture = _find_task_fixture(
+                job_pk,
+                lambda n: 'assemb' in n.lower() or 'ass' in n.lower(),
+            )
+            if ass_fixture is not None:
+                _set_worker_time(ass_fixture, raw_ass)
+            else:
+                c.time_match_misses += 1
+
+        # --- 5. Deliverables (Amendment B) ------------------------------------
+        if material_lines:
+            d_sort = 0
+            for li in material_lines:
+                d_sort += 10
+                d_pk = c.next_pk('deliverables.deliverable')
+                c.add_fixture('deliverables.deliverable', d_pk, {
+                    'job':        job_pk,
+                    'description': li['description'],
+                    'qty_ordered': f"{li['qty']:.2f}",
+                    'units':       li['units'] or 'each',
+                    'sort_order':  d_sort,
+                })
+        else:
+            d_pk = c.next_pk('deliverables.deliverable')
+            c.add_fixture('deliverables.deliverable', d_pk, {
+                'job':        job_pk,
+                'description': 'Fake Deliverable',
+                'qty_ordered': '1.00',
+                'units':       'each',
+                'sort_order':  10,
+            })

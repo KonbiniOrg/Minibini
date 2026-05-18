@@ -152,3 +152,38 @@ class EstimateBuilderTest(unittest.TestCase):
             self.assertFalse(
                 any(li['classification'] == 'skip' for li in li_list),
                 'Comment/skip lines must not be stashed in c.line_items')
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class AtomDerivationTest(unittest.TestCase):
+    def setUp(self):
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=15)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+        build.build_contacts_and_businesses(self.c)
+        build.build_jobs(self.c)
+        build.build_estimates(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_derives_ratescheme_task_material_deliverable(self):
+        build.derive_atoms(self.c)
+        self.assertGreater(len(self._models('jobs.ratescheme')), 0)
+        self.assertGreater(len(self._models('jobs.task')), 0)
+        rs_pks = {f['pk'] for f in self._models('jobs.ratescheme')}
+        for t in self._models('jobs.task'):
+            self.assertIn(t['fields']['rate_scheme'], rs_pks)
+        job_pks = {f['pk'] for f in self._models('jobs.job')}
+        deliv_jobs = {d['fields']['job'] for d in self._models('deliverables.deliverable')}
+        self.assertEqual(job_pks, deliv_jobs)
+
+    def test_materials_link_to_cut_task_when_present(self):
+        build.derive_atoms(self.c)
+        tasks = self._models('jobs.task')
+        cut_task_pks = {t['pk'] for t in tasks if 'cut' in t['fields']['name'].lower()}
+        for m in self._models('inventory.material'):
+            if m['fields']['task'] is not None:
+                self.assertIn(m['fields']['task'], cut_task_pks)
