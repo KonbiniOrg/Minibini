@@ -3,6 +3,8 @@
 Each builder function takes a NealsDataConverter instance as its first
 argument and appends fixture records to c.fixture_data via c.add_fixture().
 """
+import json
+
 from nealsdata.converter import parsing as P
 
 
@@ -70,7 +72,7 @@ def build_configuration(c):
         ('po_counter',               '0'),
         ('est_expire_days',          '30'),
         ('email_retention_days',     '30'),
-        ('units_list',               'hours,each,sheet'),
+        ('units_list',               json.dumps(['none', 'hours', 'days', 'each', 'ea', 'min', 'sheets', 'sq ft', 'ft', 'yd', 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'])),
     ]
     for key, value in entries:
         c.add_fixture('core.configuration', key, {'value': value})
@@ -132,13 +134,13 @@ def build_price_list_items(c):
 
         description = str(row.get('Description') or '').strip()
         price_raw = row.get('Price') or row.get('Sales Price') or 0
-        selling_price = str(P.parse_decimal(price_raw))
+        selling_price = f'{P.parse_decimal(price_raw):.2f}'
 
         pk = c.next_pk('inventory.pricelistitem')
         c.add_fixture('inventory.pricelistitem', pk, {
             'code': code,
             'description': description,
-            'units': 'each',
+            'units': 'none',
             'selling_price': selling_price,
             'purchase_price': '0.00',
             'qty_on_hand': '0.00',

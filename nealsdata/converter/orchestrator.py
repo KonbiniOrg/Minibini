@@ -18,6 +18,10 @@ class NealsDataConverter:
         self.fixture_data = []
         self._pk_counters = defaultdict(int)
         self.csv_cards = []
+        self.default_user_pk = None
+        self.ac_svc_pk = None
+        self.ac_mat_pk = None
+        self.pli_map = {}
 
     # --- fixture plumbing -------------------------------------------------
     def next_pk(self, model):

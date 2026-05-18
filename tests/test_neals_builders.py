@@ -1,6 +1,7 @@
 # tests/test_neals_builders.py
 import os
 import unittest
+from nealsdata.converter import build
 from nealsdata.converter.orchestrator import NealsDataConverter
 
 XLSX = 'nealsdata/datasets/company-export-220382-2026-05-18-02-19.xlsx'
@@ -21,9 +22,6 @@ class SpineTest(unittest.TestCase):
             self.assertIn('card', entry)
             self.assertIn('estimate_rows', entry)
             self.assertTrue(entry['estimate_rows'])
-
-
-from nealsdata.converter import build
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
