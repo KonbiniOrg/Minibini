@@ -230,6 +230,11 @@ def build_contacts_and_businesses(c):
         if not work_number and not mobile_number:
             work_number = '000-000-0000'
 
+        # Clamp phone numbers to the model field length (max_length=20).
+        # FreeAgent exports sometimes carry extension text / multiple numbers.
+        work_number = work_number[:20]
+        mobile_number = mobile_number[:20]
+
         # Emit Contact fixture
         c.add_fixture('contacts.contact', contact_pk, {
             'first_name': first_name,
@@ -695,7 +700,7 @@ def derive_atoms(c):
             c.add_fixture('inventory.material', mat_pk, {
                 'job':                 job_pk,
                 'task':                c.cut_task.get(base_ref),
-                'description':         li['description'] or '',
+                'description':         (li['description'] or '')[:255],
                 'quantity':            f"{li['qty']:.2f}",
                 'units':               li['units'] or 'none',
                 'unit_cost':           '0.00',
@@ -742,6 +747,21 @@ def derive_atoms(c):
                 c.time_match_misses += 1
 
         # --- 5. Deliverables (Amendment B) ------------------------------------
+        # Deliverable.created_at/updated_at are auto_now_add/auto_now fields,
+        # which loaddata does NOT auto-populate — the fixture must supply a
+        # value or MySQL rejects the NULL. Derive a timestamp from the job's
+        # created_date (a date); append midnight to make it a datetime.
+        job_fixture = next(
+            (f for f in c.fixture_data
+             if f['model'] == 'jobs.job' and f['pk'] == job_pk),
+            None,
+        )
+        job_created = (
+            job_fixture['fields']['created_date'] if job_fixture
+            else f'{_FALLBACK_YEAR}-01-01'
+        )
+        deliv_ts = f'{job_created}T00:00:00'
+
         if material_lines:
             d_sort = 0
             for li in material_lines:
@@ -753,6 +773,8 @@ def derive_atoms(c):
                     'qty_ordered': f"{li['qty']:.2f}",
                     'units':       li['units'] or 'each',
                     'sort_order':  d_sort,
+                    'created_at':  deliv_ts,
+                    'updated_at':  deliv_ts,
                 })
         else:
             d_pk = c.next_pk('deliverables.deliverable')
@@ -762,6 +784,8 @@ def derive_atoms(c):
                 'qty_ordered': '1.00',
                 'units':       'each',
                 'sort_order':  10,
+                'created_at':  deliv_ts,
+                'updated_at':  deliv_ts,
             })
 
 
