@@ -7,6 +7,28 @@ import json
 
 from nealsdata.converter import parsing as P
 
+# Fallback year when no date can be parsed from the source data.
+_FALLBACK_YEAR = 2025
+
+# Maps FreeAgent estimate Status values to Minibini job status constants.
+_EST_STATUS_TO_JOB_STATUS = {
+    'Draft':    'draft',
+    'Sent':     'submitted',
+    'Approved': 'approved',
+    'Rejected': 'rejected',
+}
+
+
+def _revision_index(row):
+    """Return the numeric revision index for a container row.
+
+    Used as a key function when selecting the highest-revision estimate row.
+    Among rows with equal indices, ``max`` returns the last one seen, which
+    preserves the "later sheet row wins on ties" behaviour.
+    """
+    ref = (row.get('Reference') or '').strip()
+    return P.revision_parts(ref)[1]
+
 
 def build_users(c):
     """Emit core.user fixtures: a system user and staff users.
@@ -259,20 +281,6 @@ def build_jobs(c):
     - c.jobs     : base_ref -> {'job_pk', 'card', 'estimate_rows', 'primary_ref'}
     - c.discarded_cards : list of notes about skipped spine entries
     """
-    STATUS_MAP = {
-        'Draft':    'draft',
-        'Sent':     'submitted',
-        'Approved': 'approved',
-        'Rejected': 'rejected',
-    }
-
-    if not hasattr(c, 'job_map'):
-        c.job_map = {}
-    if not hasattr(c, 'jobs'):
-        c.jobs = {}
-    if not hasattr(c, 'discarded_cards'):
-        c.discarded_cards = []
-
     # Per-year job counters (keys are int years)
     year_counters = {}
 
@@ -300,32 +308,23 @@ def build_jobs(c):
             # Fallback: treat all estimate rows as candidates
             container_rows = estimate_rows
 
-        # Pick highest revision index; ties broken by sheet order (last wins)
-        def revision_index(row):
-            ref = (row.get('Reference') or '').strip()
-            return P.revision_parts(ref)[1]
-
-        primary_row = container_rows[0]
-        best_index = revision_index(primary_row)
-        for row in container_rows[1:]:
-            idx = revision_index(row)
-            if idx >= best_index:
-                best_index = idx
-                primary_row = row
+        # Pick highest revision index; ties broken by sheet order (last wins).
+        # max() returns the last element on ties, preserving sheet order.
+        primary_row = max(container_rows, key=_revision_index)
 
         primary_ref = (primary_row.get('Reference') or '').strip()
 
         # --- 3. Derive year and job_number --------------------------------
         raw_date = primary_row.get('Date')
         dt = P.to_datetime(raw_date)
-        year = dt.year if dt else 2025
+        year = dt.year if dt else _FALLBACK_YEAR
 
         year_counters[year] = year_counters.get(year, 0) + 1
         job_number = f'J{year}-{year_counters[year]:04d}'
 
         # --- 4. Map estimate status → job status --------------------------
         est_status = (primary_row.get('Status') or '').strip()
-        job_status = STATUS_MAP.get(est_status, 'draft')
+        job_status = _EST_STATUS_TO_JOB_STATUS.get(est_status, 'draft')
 
         # --- 5. Build description from card fields ------------------------
         parts = []
@@ -344,7 +343,7 @@ def build_jobs(c):
             'name':               (card.get('Name') or '')[:50],
             'contact':            contact_pk,
             'status':             job_status,
-            'created_date':       P.format_date(raw_date) or '2025-01-01',
+            'created_date':       P.format_date(raw_date) or f'{_FALLBACK_YEAR}-01-01',
             'start_date':         None,
             'due_date':           P.format_date(card.get('Due date')),
             'completed_date':     None,

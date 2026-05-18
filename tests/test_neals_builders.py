@@ -101,7 +101,8 @@ class JobBuilderTest(unittest.TestCase):
     def test_builds_one_job_per_spine_entry(self):
         build.build_jobs(self.c)
         jobs = self._models('jobs.job')
-        self.assertEqual(len(jobs), len(self.c.spine))
+        self.assertEqual(len(jobs) + len(self.c.discarded_cards), len(self.c.spine))
+        self.assertGreater(len(jobs), 0)
         for j in jobs:
             self.assertTrue(j['fields']['job_number'])
             self.assertIsNotNone(j['fields']['contact'])

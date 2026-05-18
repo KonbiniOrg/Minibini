@@ -22,6 +22,10 @@ class NealsDataConverter:
         self.ac_svc_pk = None
         self.ac_mat_pk = None
         self.pli_map = {}
+        self.org_map = {}
+        self.job_map = {}
+        self.jobs = {}
+        self.discarded_cards = []
 
     # --- fixture plumbing -------------------------------------------------
     def next_pk(self, model):
