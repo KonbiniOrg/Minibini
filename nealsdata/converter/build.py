@@ -584,7 +584,7 @@ def build_estimates(c):
 def derive_atoms(c):
     """Derive RateScheme, Task, Material, and Deliverable fixtures from estimates.
 
-    For each job in c.job_map:
+    For each job in c.jobs:
     - Picks the latest estimate version (highest `version` number).
     - Emits a RateScheme (deduped converter-wide) for each task-classified line.
     - Emits a Task for each task-classified line.
@@ -669,7 +669,7 @@ def derive_atoms(c):
                 'job':              job_pk,
                 'rate_scheme':      rs_pk,
                 'name':             name,
-                'description':      li['description'],
+                'description':      li['description'] or '',
                 'est_qty':          f"{li['qty']:.2f}",
                 'est_worker_time':  None,
                 'actual_qty':       None,
@@ -694,7 +694,7 @@ def derive_atoms(c):
             c.add_fixture('inventory.material', mat_pk, {
                 'job':                 job_pk,
                 'task':                c.cut_task.get(base_ref),
-                'description':         li['description'],
+                'description':         li['description'] or '',
                 'quantity':            f"{li['qty']:.2f}",
                 'units':               li['units'] or 'none',
                 'unit_cost':           '0.00',
@@ -733,7 +733,7 @@ def derive_atoms(c):
         if raw_ass not in (None, ''):
             ass_fixture = _find_task_fixture(
                 job_pk,
-                lambda n: 'assemb' in n.lower() or 'ass' in n.lower(),
+                lambda n: 'assemb' in n.lower(),
             )
             if ass_fixture is not None:
                 _set_worker_time(ass_fixture, raw_ass)
@@ -748,7 +748,7 @@ def derive_atoms(c):
                 d_pk = c.next_pk('deliverables.deliverable')
                 c.add_fixture('deliverables.deliverable', d_pk, {
                     'job':        job_pk,
-                    'description': li['description'],
+                    'description': li['description'] or '',
                     'qty_ordered': f"{li['qty']:.2f}",
                     'units':       li['units'] or 'each',
                     'sort_order':  d_sort,
