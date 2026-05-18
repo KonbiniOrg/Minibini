@@ -187,8 +187,17 @@ class RateSchemeComputeTest(BaseTestCase):
         result = self.scheme.get_actual_qty(task)
         self.assertEqual(result, Decimal('25'))
 
-    def test_get_actual_qty_flat_fee(self):
+    def test_get_actual_qty_flat_fee_uses_est_qty(self):
+        # flat_fee now bills a fixed unit price x estimated quantity.
         task = MagicMock()
+        task.est_qty = Decimal('12')
+        result = self.flat_scheme.get_actual_qty(task)
+        self.assertEqual(result, Decimal('12'))
+
+    def test_get_actual_qty_flat_fee_falls_back_to_one(self):
+        # A genuine one-off fee carries no quantity; fall back to 1.
+        task = MagicMock()
+        task.est_qty = None
         result = self.flat_scheme.get_actual_qty(task)
         self.assertEqual(result, Decimal('1'))
 

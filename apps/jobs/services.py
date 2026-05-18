@@ -12,7 +12,7 @@ from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, Task, Blep, RateScheme
+from apps.jobs.models import Job, Task, Blep, RateScheme, copy_active_modifiers
 from apps.estimates.models import (
     Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
@@ -388,7 +388,7 @@ class JobService:
                 description=plan_task.description,
                 sort_order=plan_task.sort_order,
                 rate_scheme=plan_task.rate_scheme,
-                active_modifiers=list(plan_task.active_modifiers or []),
+                active_modifiers=copy_active_modifiers(plan_task.active_modifiers),
                 est_qty=plan_task.est_qty,
                 est_worker_time=plan_task.est_worker_time,
             )
@@ -445,7 +445,7 @@ class TaskService:
                 name=template.template_name,
                 assignee=assignee,
                 rate_scheme=template.rate_scheme,
-                active_modifiers=list(template.default_active_modifiers or []),
+                active_modifiers=copy_active_modifiers(template.default_active_modifiers),
                 est_qty=est_qty if est_qty is not None else template.default_billable_qty,
             )
         return task
@@ -466,7 +466,7 @@ class TaskService:
             task = Task.objects.create(
                 job=job, name=name,
                 rate_scheme=scheme,
-                active_modifiers=active_modifiers or [],
+                active_modifiers=copy_active_modifiers(active_modifiers),
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
                 actual_qty=actual_qty,

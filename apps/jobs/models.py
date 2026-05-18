@@ -6,6 +6,18 @@ from apps.core.models import AbstractWorkContainer
 from apps.core.history import history
 
 
+def copy_active_modifiers(value):
+    """Return a copy of an atom's active_modifiers JSON, preserving its shape.
+
+    flat_fee atoms store a dict ({'flat_fee_price': str}); other algorithms
+    store a list of modifier keys. A bare list(value) would silently reduce a
+    dict to a list of its keys, dropping the price.
+    """
+    if isinstance(value, dict):
+        return dict(value)
+    return list(value or [])
+
+
 @history(exclude=['job_id'])
 class Job(AbstractWorkContainer):
     STATUS_DRAFT = 'draft'
@@ -436,8 +448,30 @@ class RateScheme(models.Model):
             self.full_clean()
         super().save(*args, **kwargs)
 
+    @staticmethod
+    def _flat_fee_price(active_modifiers):
+        """Pull the flat-fee unit price out of an atom's active_modifiers JSON.
+
+        flat_fee atoms store the price as {'flat_fee_price': <str>}; every
+        other algorithm stores a list of modifier keys. Returns a Decimal, or
+        None when no price is present (caller falls back to the scheme rate).
+        """
+        if isinstance(active_modifiers, dict):
+            raw = active_modifiers.get('flat_fee_price')
+            if raw is not None and raw != '':
+                return Decimal(str(raw))
+        return None
+
     def effective_rate(self, active_modifiers=None):
-        """Compute rate with additive modifier surcharges."""
+        """Compute the per-unit rate.
+
+        For flat_fee the per-unit price rides on the atom (active_modifiers);
+        self.rate is only a fallback. For time/qty schemes, apply additive
+        modifier surcharges.
+        """
+        if self.algorithm == self.FLAT_FEE:
+            price = self._flat_fee_price(active_modifiers)
+            return price if price is not None else self.rate
         modifier_percent = sum(
             m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
         )
@@ -460,7 +494,10 @@ class RateScheme(models.Model):
         elif self.algorithm == self.ENTERED_QTY:
             return task.actual_qty or Decimal('0')
         else:  # FLAT_FEE
-            return Decimal('1')
+            # flat_fee bills a fixed unit price x estimated quantity. est_qty
+            # comes from the worksheet, carried to the Task and editable there;
+            # fall back to 1 for a genuine one-off fee with no quantity.
+            return task.est_qty if task.est_qty is not None else Decimal('1')
 
     def get_modifier_inputs(self):
         """Return modifiers list for UI rendering."""

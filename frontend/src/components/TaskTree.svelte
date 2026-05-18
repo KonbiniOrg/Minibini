@@ -26,7 +26,7 @@
 
   function taskTotalInfo(task) {
     // Prefer the live computed_charge (driven by actuals: bleps for elapsed_time,
-    // actual_qty for entered_qty, fixed for flat_fee). When actuals are absent
+    // actual_qty for entered_qty, est_qty x price for flat_fee). When actuals are absent
     // the computed charge is 0 — fall back to est_qty * effective_rate as the
     // estimated total, marked so the UI can render it in grey.
     const actual = Number(task.computed_charge) || 0;
@@ -42,7 +42,8 @@
 
   function taskActual(task) {
     // ELAPSED_TIME → hours from bleps. ENTERED_QTY → worker-entered qty.
-    // FLAT_FEE → always 1 (a one-off). Unset/other → no actual to display.
+    // FLAT_FEE → estimated quantity (flat fee bills price x est_qty).
+    // Unset/other → no actual to display.
     if (task.scheme_algorithm === 'elapsed_time') {
       const h = Number(task.actual_hours) || 0;
       return h > 0 ? h : null;
@@ -51,7 +52,7 @@
       return task.actual_qty != null && task.actual_qty !== '' ? task.actual_qty : null;
     }
     if (task.scheme_algorithm === 'flat_fee') {
-      return 1;
+      return task.est_qty != null && task.est_qty !== '' ? task.est_qty : 1;
     }
     return null;
   }
