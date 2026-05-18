@@ -1,5 +1,6 @@
-"""Excel data loader for the FreeAgent export."""
+"""Data loaders for the Neal's CNC converter."""
 
+import csv
 from typing import Dict, List
 
 try:
@@ -62,3 +63,18 @@ class ExcelDataLoader:
             data.append(row_dict)
 
         return data
+
+
+class KanbanCsvLoader:
+    """Loads the tab-delimited Kanban board export into a list of dicts."""
+
+    def __init__(self, csv_path):
+        self.csv_path = csv_path
+
+    def load(self):
+        with open(self.csv_path, newline='', encoding='utf-8-sig') as f:
+            first = f.readline()
+            if not first.lower().startswith('sep='):
+                f.seek(0)  # no sep= directive; rewind
+            reader = csv.DictReader(f, delimiter='\t')
+            return [dict(row) for row in reader]
