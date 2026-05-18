@@ -72,6 +72,19 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(
             P.classify_line_item('-no unit-', 'CNC cutting of wall parts'), 'task')
 
+    def test_description_starting_with_cut_is_always_task(self):
+        # 'Cut ...' is a labour operation, never a material — even when the
+        # description contains material keywords or the Item Type says Products.
+        self.assertEqual(
+            P.classify_line_item('-no unit-', 'Cut acrylic racks'), 'task')
+        self.assertEqual(
+            P.classify_line_item('Products', 'Cut plywood panels'), 'task')
+        self.assertEqual(
+            P.classify_line_item('-no unit-', 'cut 6 sheets'), 'task')
+        # but a 'Cut' Comment is still skipped, and a 'Cut' discount stays a line
+        self.assertEqual(P.classify_line_item('Comment', 'Cut note'), 'skip')
+        self.assertEqual(P.classify_line_item('Discount', 'Cut rate'), 'lineitem')
+
     def test_algorithm_inference(self):
         self.assertEqual(P.infer_algorithm('Hours', 'hours'), 'elapsed_time')
         self.assertEqual(P.infer_algorithm('Days', 'days'), 'elapsed_time')

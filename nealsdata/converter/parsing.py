@@ -115,12 +115,16 @@ def classify_line_item(item_type, description):
     it = (item_type or '').strip().lower()
     if it == 'comment':
         return 'skip'
+    if it in ('discount', 'credit'):
+        return 'lineitem'
+    # A line item describing a cut operation is always labour, never a
+    # material — even if its Item Type or keywords would say otherwise.
+    if (description or '').strip().lower().startswith('cut'):
+        return 'task'
     if it in ('hours', 'days', 'services'):
         return 'task'
     if it in ('products', 'expenses'):
         return 'material'
-    if it in ('discount', 'credit'):
-        return 'lineitem'
     # '-no unit-' and anything unrecognised: keyword heuristic
     desc = (description or '').lower()
     if any(kw in desc for kw in MATERIAL_KEYWORDS):
