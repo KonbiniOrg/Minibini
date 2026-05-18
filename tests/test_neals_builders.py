@@ -56,3 +56,30 @@ class BaseBuildersTest(unittest.TestCase):
         build.build_accounting_categories(self.c)
         build.build_price_list_items(self.c)
         self.assertGreater(len(self._models('inventory.pricelistitem')), 100)
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class ContactBuildersTest(unittest.TestCase):
+    def setUp(self):
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=10)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_builds_referenced_contacts_and_businesses(self):
+        build.build_contacts_and_businesses(self.c)
+        contacts = self._models('contacts.contact')
+        businesses = self._models('contacts.business')
+        self.assertGreater(len(contacts), 0)
+        contact_pks = {f['pk'] for f in contacts}
+        for b in businesses:
+            self.assertIn(b['fields']['default_contact'], contact_pks)
+        for ct in contacts:
+            self.assertTrue(ct['fields']['email'])
+            self.assertTrue(ct['fields']['work_number'] or
+                            ct['fields']['mobile_number'] or
+                            ct['fields']['home_number'])

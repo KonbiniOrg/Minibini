@@ -108,6 +108,142 @@ def build_accounting_categories(c):
     c.ac_mat_pk = mat_pk
 
 
+def build_contacts_and_businesses(c):
+    """Emit contacts.contact and contacts.business fixtures for orgs referenced
+    by the spine's estimate rows and bills.
+
+    Only builds one Contact + one Business per referenced org (non-interactive;
+    name mismatches between sources are ignored — the Contacts-sheet record is
+    used as-is).
+
+    Sets c.org_map (org_name -> {'business': pk, 'contact': pk}) for use by
+    downstream builders.
+    """
+    # --- 1. Collect referenced org names -----------------------------------
+    # Index Projects sheet by base_ref of the project Name
+    projects_by_base = {}
+    for row in c.loader.sheets_data.get('Projects', []):
+        name = (row.get('Name') or '').strip()
+        if name:
+            base = P.base_reference(name)
+            projects_by_base[base] = row
+
+    # Index Bills sheet by base_ref of the bill's Project column
+    bill_orgs_by_base = {}
+    for row in c.loader.sheets_data.get('Bills', []):
+        proj = (row.get('Project') or '').strip()
+        org = (row.get('Contact Organisation') or '').strip()
+        if proj and org:
+            base = P.base_reference(proj)
+            bill_orgs_by_base.setdefault(base, set()).add(org)
+
+    # Gather referenced org names for each spine entry.
+    # Priority: Projects sheet -> Bills -> card name parsed with parse_kanban_name
+    referenced_orgs = set()
+    for entry in c.spine:
+        base = entry['base_ref']
+
+        # From Projects sheet
+        proj_row = projects_by_base.get(base)
+        if proj_row:
+            org = (proj_row.get('Client Organisation') or '').strip()
+            if org:
+                referenced_orgs.add(org)
+                continue  # found it
+
+        # From Bills sheet
+        bill_org_set = bill_orgs_by_base.get(base, set())
+        if bill_org_set:
+            referenced_orgs.update(bill_org_set)
+            continue
+
+        # Fall back to card name
+        card_name = entry['card'].get('Name', '')
+        biz, _person = P.parse_kanban_name(card_name)
+        if biz:
+            referenced_orgs.add(biz)
+
+    # --- 2. Index Contacts sheet by Organisation ---------------------------
+    contacts_by_org = {}
+    for row in c.loader.sheets_data.get('Contacts', []):
+        org = (row.get('Organisation') or '').strip()
+        if org and org not in contacts_by_org:
+            contacts_by_org[org] = row
+
+    # --- 3. Emit one Contact + one Business per referenced org -------------
+    c.org_map = {}
+
+    for org in sorted(referenced_orgs):  # deterministic order
+        contact_row = contacts_by_org.get(org)
+
+        # Determine Contact field values
+        if contact_row:
+            first_name = str(contact_row.get('First Name') or '').strip()
+            last_name = str(contact_row.get('Last Name') or '').strip()
+            email = str(contact_row.get('Email') or '').strip()
+            work_number = str(contact_row.get('Phone Number') or '').strip()
+            mobile_number = str(contact_row.get('Mobile Phone Number') or '').strip()
+        else:
+            # Synthesize from org name
+            first_name, last_name = P.split_name(org)
+            email = ''
+            work_number = ''
+            mobile_number = ''
+
+        # Enforce non-empty first_name / last_name
+        if not first_name:
+            first_name = '(unknown)'
+        if not last_name:
+            last_name = '(unknown)'
+
+        # Allocate PKs
+        contact_pk = c.next_pk('contacts.contact')
+        business_pk = c.next_pk('contacts.business')
+
+        # Apply fallbacks for email and phone
+        if not email:
+            email = f'noreply+{contact_pk}@example.com'
+        if not work_number and not mobile_number:
+            work_number = '000-000-0000'
+
+        # Emit Contact fixture
+        c.add_fixture('contacts.contact', contact_pk, {
+            'first_name': first_name,
+            'middle_initial': '',
+            'last_name': last_name,
+            'email': email,
+            'addr1': '',
+            'addr2': '',
+            'addr3': '',
+            'city': '',
+            'municipality': '',
+            'postal_code': '',
+            'country_code': '',
+            'mobile_number': mobile_number,
+            'work_number': work_number,
+            'home_number': '',
+            'business': business_pk,
+            'qbo_customer_id': None,
+        })
+
+        # Emit Business fixture
+        c.add_fixture('contacts.business', business_pk, {
+            'business_name': org,
+            'our_reference_code': f'BUS-{business_pk:04d}',
+            'default_contact': contact_pk,
+            'business_address': '',
+            'business_phone': '',
+            'tax_exemption_number': '',
+            'website': '',
+            'terms': None,
+            'tax_multiplier': None,
+            'qbo_customer_id': None,
+            'qbo_vendor_id': None,
+        })
+
+        c.org_map[org] = {'business': business_pk, 'contact': contact_pk}
+
+
 def build_price_list_items(c):
     """Emit inventory.pricelistitem fixtures from the 'Price List Items' sheet.
 
