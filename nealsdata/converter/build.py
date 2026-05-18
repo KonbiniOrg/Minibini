@@ -793,6 +793,7 @@ def derive_atoms(c):
                 'created_at':  deliv_ts,
                 'updated_at':  deliv_ts,
             })
+            c.fake_deliverable_count += 1
 
 
 # Maps FreeAgent Invoice Status values to Minibini invoice status constants.
@@ -932,7 +933,7 @@ def build_invoices(c):
                 'price_list_item':     None,
                 'line_number':         line_number,
                 'qty':                 f'{qty:.2f}',
-                'units':               'none',
+                'units':               'none',  # intentional: FreeAgent invoice line items carry no unit signal
                 'description':         description,
                 'price':               f'{price:.2f}',
                 'accounting_category': None,

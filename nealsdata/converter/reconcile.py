@@ -231,7 +231,18 @@ def _pass_invoiced_work(c):
         est_totals[est_pk] = est_totals.get(est_pk, P.parse_decimal('0')) \
             + qty * price
 
+    # Pre-build job status lookup so we can guard on it below.
+    job_status_by_pk = {
+        f['pk']: f['fields']['status']
+        for f in c.fixture_data if f['model'] == 'jobs.job'
+    }
+
     for base_ref, job_info in c.jobs.items():
+        job_pk = job_info['job_pk']
+        # Skip terminal-negative jobs: marking their tasks complete would be
+        # inconsistent with a rejected or cancelled job status.
+        if job_status_by_pk.get(job_pk) in ('rejected', 'cancelled'):
+            continue
         inv_total = c.invoice_totals.get(base_ref)
         if inv_total is None or inv_total <= 0:
             continue
@@ -245,7 +256,6 @@ def _pass_invoiced_work(c):
         if abs(est_total - inv_total) > (max(est_total, inv_total) / 10):
             continue
         # Within 10%: every task on this job is complete.
-        job_pk = job_info['job_pk']
         for f in c.fixture_data:
             if f['model'] == 'jobs.task' and f['fields']['job'] == job_pk:
                 f['fields']['status'] = 'complete'

@@ -1,3 +1,9 @@
+> **DEPRECATED (2026-05-17).** This is the original brief and no longer
+> describes the converter. The current design and implementation plan are:
+> `docs/plans/2026-05-17-neals-converter-schema-update-design.md` and
+> `docs/plans/2026-05-17-neals-converter-implementation-plan.md`.
+> Kept for historical context only.
+
 Create test data in json format from real Neal's CNC customer data by processing the downloaded spreadsheet that FreeAgent spits out.  Only consider the pages Contacts, Projects, Invoices, Estimates, Bills, Tasks, Timeslips, and Price List Items; disregard all the rest.  We will map spreadsheet data to Minibini objects like this:
     Contacts -> Contact + Business
     Projects -> Job + WorkOrder

@@ -32,6 +32,7 @@ class NealsDataConverter:
         self.cut_task = {}          # base_ref -> task_pk (first task whose name has 'cut')
         self.time_match_misses = 0  # count of CSV worker-time values with no matching task
         self.invoice_totals = {}    # base_ref -> Decimal total of qty*price across job's invoice lines
+        self.fake_deliverable_count = 0  # jobs that got a synthetic 'Fake Deliverable'
 
     # --- fixture plumbing -------------------------------------------------
     def next_pk(self, model):
@@ -95,6 +96,8 @@ class NealsDataConverter:
 
     def _print_summary(self):
         from collections import Counter
+        c = self
         counts = Counter(row['model'] for row in self.fixture_data)
         for model, n in sorted(counts.items()):
             print(f'  {n:6} {model}')
+        print(f'  {c.fake_deliverable_count} jobs got a synthetic \'Fake Deliverable\' (review these)')
