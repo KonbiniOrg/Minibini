@@ -771,6 +771,7 @@ _INV_STATUS_MAP = {
     'Draft':      'draft',
     'Cancelled':  'cancelled',
     'Open':       'open',
+    'Paid':       'paid',
 }
 
 
@@ -886,7 +887,7 @@ def build_invoices(c):
 
         for li_row in lis:
             item_type = (li_row.get('Item Type') or '').strip()
-            description = str(li_row.get('Description') or '')
+            description = str(li_row.get('Description') or '').strip()
             classification = P.classify_line_item(item_type, description)
             if classification == 'skip':
                 continue

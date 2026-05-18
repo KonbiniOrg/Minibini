@@ -1,6 +1,7 @@
 # tests/test_neals_builders.py
 import os
 import unittest
+from decimal import Decimal
 from nealsdata.converter import build
 from nealsdata.converter.orchestrator import NealsDataConverter
 
@@ -215,3 +216,6 @@ class InvoiceBuilderTest(unittest.TestCase):
                 li['fields']['line_number'])
         for nums in by_inv.values():
             self.assertEqual(sorted(nums), list(range(1, len(nums) + 1)))
+        if self._models('invoicing.invoicelineitem'):
+            self.assertTrue(self.c.invoice_totals)
+            self.assertTrue(all(isinstance(v, Decimal) for v in self.c.invoice_totals.values()))
