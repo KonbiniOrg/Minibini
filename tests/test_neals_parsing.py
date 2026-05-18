@@ -16,6 +16,17 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(P.format_date('2026-02-03 04:56'), '2026-02-03')
         self.assertIsNone(P.format_date(None))
 
+    def test_format_datetime(self):
+        self.assertEqual(
+            P.format_datetime(datetime(2026, 2, 3, 4, 56)),
+            '2026-02-03T00:00:00+00:00',
+        )
+        self.assertEqual(
+            P.format_datetime('2026-02-03 04:56'),
+            '2026-02-03T00:00:00+00:00',
+        )
+        self.assertIsNone(P.format_datetime(None))
+
     def test_split_name(self):
         self.assertEqual(P.split_name('Jo Roe'), ('Jo', 'Roe'))
         self.assertEqual(P.split_name(''), ('(unknown)', '(unknown)'))

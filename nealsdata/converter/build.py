@@ -350,9 +350,9 @@ def build_jobs(c):
             'name':               (card.get('Name') or '')[:50],
             'contact':            contact_pk,
             'status':             job_status,
-            'created_date':       P.format_date(raw_date) or f'{_FALLBACK_YEAR}-01-01',
+            'created_date':       P.format_datetime(raw_date) or f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00',
             'start_date':         None,
-            'due_date':           P.format_date(card.get('Due date')),
+            'due_date':           P.format_datetime(card.get('Due date')),
             'completed_date':     None,
             'customer_po_number': '',
             'description':        description,
@@ -508,7 +508,11 @@ def build_estimates(c):
             raw_date = container.get('Date')
             est_status_raw = (container.get('Status') or '').strip()
             est_status = _EST_STATUS_MAP.get(est_status_raw, 'draft')
-            created_date = P.format_date(raw_date) or f'{_FALLBACK_YEAR}-01-01'
+            # created_date_bare: bare 'YYYY-MM-DD' used internally by reconcile
+            # for date arithmetic (_add_days, P.to_datetime).
+            created_date_bare = P.format_date(raw_date) or f'{_FALLBACK_YEAR}-01-01'
+            # created_date_tz: tz-aware value for the DateTimeField fixture.
+            created_date_tz = f'{created_date_bare}T00:00:00+00:00'
 
             est_pk = c.next_pk('estimates.estimate')
             c.add_fixture('estimates.estimate', est_pk, {
@@ -517,7 +521,7 @@ def build_estimates(c):
                 'version':         version,
                 'parent':          None,
                 'status':          est_status,
-                'created_date':    created_date,
+                'created_date':    created_date_tz,
                 'sent_date':       None,
                 'expiration_date': None,
                 'closed_date':     None,
@@ -526,7 +530,7 @@ def build_estimates(c):
             base_estimates.append({
                 'est_pk':       est_pk,
                 'status':       est_status,
-                'created_date': created_date,
+                'created_date': created_date_bare,   # bare date; used by reconcile
                 'version':      version,
                 'base_ref':     base,
             })
@@ -756,11 +760,13 @@ def derive_atoms(c):
              if f['model'] == 'jobs.job' and f['pk'] == job_pk),
             None,
         )
-        job_created = (
+        # job_fixture['fields']['created_date'] is already a tz-aware string
+        # ('YYYY-MM-DDT00:00:00+00:00'). Use it directly; fall back to the
+        # fallback tz-aware sentinel when no fixture exists.
+        deliv_ts = (
             job_fixture['fields']['created_date'] if job_fixture
-            else f'{_FALLBACK_YEAR}-01-01'
+            else f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00'
         )
-        deliv_ts = f'{job_created}T00:00:00'
 
         if material_lines:
             d_sort = 0
@@ -889,8 +895,8 @@ def build_invoices(c):
         status = _map_invoice_status(fa_status, paid_date)
 
         raw_date = container.get('Date')
-        created_date = P.format_date(raw_date) or f'{_FALLBACK_YEAR}-01-01'
-        closed_date = P.format_date(paid_date) if status == 'paid' else None
+        created_date = P.format_datetime(raw_date) or f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00'
+        closed_date = P.format_datetime(paid_date) if status == 'paid' else None
 
         inv_pk = c.next_pk('invoicing.invoice')
         c.add_fixture('invoicing.invoice', inv_pk, {

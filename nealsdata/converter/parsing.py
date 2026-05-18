@@ -30,6 +30,13 @@ def format_date(value):
     return None
 
 
+def format_datetime(value):
+    """Like format_date, but returns a timezone-aware (UTC midnight) string
+    suitable for a Django DateTimeField under USE_TZ=True. None -> None."""
+    d = format_date(value)
+    return f'{d}T00:00:00+00:00' if d else None
+
+
 def to_datetime(value):
     """Parse a cell into a datetime, or None."""
     if isinstance(value, datetime):

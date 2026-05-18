@@ -41,6 +41,19 @@ def _add_days(date_str, days):
     return (dt + timedelta(days=days)).strftime('%Y-%m-%d')
 
 
+def _as_dt_field(date_str):
+    """Convert a bare 'YYYY-MM-DD' string to a tz-aware DateTimeField value.
+
+    Returns None if date_str is None or empty. Passes through values that
+    already contain a 'T' (i.e. already tz-aware ISO strings).
+    """
+    if not date_str:
+        return None
+    if 'T' in date_str:
+        return date_str  # already tz-aware
+    return f'{date_str}T00:00:00+00:00'
+
+
 def reconcile(c):
     """Run all reconciliation passes in order, mutating ``c.fixture_data``."""
     index = {(f['model'], f['pk']): f for f in c.fixture_data}
@@ -77,7 +90,7 @@ def _pass_estimate_version_chains(c, index):
                 fixture['fields']['status'] = 'superseded'
                 entry['status'] = 'superseded'
                 closed = entry['created_date'] or highest_created
-                fixture['fields']['closed_date'] = closed
+                fixture['fields']['closed_date'] = _as_dt_field(closed)
             prev_pk = entry['est_pk']
 
 
@@ -97,7 +110,7 @@ def _pass_estimate_expiry(c, index):
                 continue
             fixture['fields']['status'] = 'expired'
             entry['status'] = 'expired'
-            fixture['fields']['closed_date'] = (
+            fixture['fields']['closed_date'] = _as_dt_field(
                 _add_days(entry['created_date'], _EXPIRE_DAYS)
                 or entry['created_date']
             )
@@ -117,7 +130,10 @@ def _pass_estimate_dates(c, index):
                 continue
             fields = fixture['fields']
             status = fields['status']
-            created = fields['created_date'] or entry['created_date']
+            # Use the bare date string for arithmetic; fields['created_date'] is
+            # tz-aware so extract the date part if needed.
+            raw_created = fields['created_date'] or entry['created_date']
+            created_bare = entry['created_date'] or raw_created[:10]
 
             if status == 'draft':
                 # Draft estimates keep all lifecycle dates null.
@@ -125,13 +141,15 @@ def _pass_estimate_dates(c, index):
 
             # sent_date: set for open-or-later.
             if status in _SENT_ESTIMATE_STATUSES and not fields.get('sent_date'):
-                fields['sent_date'] = created
+                fields['sent_date'] = _as_dt_field(created_bare)
             # expiration_date: set for open-or-later.
             if not fields.get('expiration_date'):
-                fields['expiration_date'] = _add_days(created, _EXPIRE_DAYS)
+                fields['expiration_date'] = _as_dt_field(
+                    _add_days(created_bare, _EXPIRE_DAYS)
+                )
             # closed_date: set for terminal statuses.
             if status in _CLOSED_ESTIMATE_STATUSES and not fields.get('closed_date'):
-                fields['closed_date'] = created
+                fields['closed_date'] = _as_dt_field(created_bare)
 
 
 def _pass_job_status_and_dates(c, index):
@@ -154,12 +172,14 @@ def _pass_job_status_and_dates(c, index):
         # start_date: required for approved-or-later.
         if status in _STARTED_JOB_STATUSES and not fields.get('start_date'):
             est_list = c.estimates.get(base_ref) or []
+            # c.estimates entries store bare 'YYYY-MM-DD' created_date values.
             created_dates = [
                 e['created_date'] for e in est_list if e.get('created_date')
             ]
             if created_dates:
-                fields['start_date'] = min(created_dates)
+                fields['start_date'] = _as_dt_field(min(created_dates))
             else:
+                # fields['created_date'] is already tz-aware.
                 fields['start_date'] = fields.get('created_date')
 
         # start_date must be null for draft/submitted/rejected.
@@ -169,7 +189,9 @@ def _pass_job_status_and_dates(c, index):
         # completed_date: required for terminal statuses, null otherwise.
         if status in _TERMINAL_JOB_STATUSES:
             archived_date = P.format_date(archived_at) if archived_at else None
-            fields['completed_date'] = archived_date or fields.get('created_date')
+            fields['completed_date'] = _as_dt_field(
+                archived_date or fields.get('created_date', '')[:10]
+            )
         else:
             fields['completed_date'] = None
 
