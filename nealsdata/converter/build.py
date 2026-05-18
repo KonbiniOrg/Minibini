@@ -497,6 +497,7 @@ def build_estimates(c):
 
         base_estimates = []   # accumulate for c.estimates[base]
 
+        # Version by chronological order (not suffix index) so versions advance with time.
         for version, (idx, container, lis) in enumerate(entries, start=1):
             raw_date = container.get('Date')
             est_status_raw = (container.get('Status') or '').strip()
@@ -521,6 +522,7 @@ def build_estimates(c):
                 'status':       est_status,
                 'created_date': created_date,
                 'version':      version,
+                'base_ref':     base,
             })
 
             # --------------------------------------------------------------
@@ -557,7 +559,7 @@ def build_estimates(c):
                     'source_template':   None,
                     'price_list_item':   None,
                     'line_number':       line_number,
-                    'qty':               str(qty),
+                    'qty':               f'{qty:.2f}',
                     'units':             units,
                     'description':       description,
                     'price':             f'{price:.2f}',

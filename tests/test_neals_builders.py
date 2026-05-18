@@ -148,3 +148,7 @@ class EstimateBuilderTest(unittest.TestCase):
             self.assertIn(e['fields']['job'], job_pks)
         # estimates were built for at least one job
         self.assertGreater(len(self._models('estimates.estimate')), 0)
+        for li_list in self.c.line_items.values():
+            self.assertFalse(
+                any(li['classification'] == 'skip' for li in li_list),
+                'Comment/skip lines must not be stashed in c.line_items')
