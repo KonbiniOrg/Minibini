@@ -4,6 +4,7 @@ Each builder function takes a NealsDataConverter instance as its first
 argument and appends fixture records to c.fixture_data via c.add_fixture().
 """
 import json
+from datetime import datetime
 
 from nealsdata.converter import parsing as P
 
@@ -404,3 +405,175 @@ def build_price_list_items(c):
             'accounting_category': c.ac_mat_pk,
         })
         c.pli_map[code] = pk
+
+
+# Maps FreeAgent estimate Status values to Minibini estimate status constants.
+_EST_STATUS_MAP = {
+    'Draft':    'draft',
+    'Sent':     'open',
+    'Approved': 'accepted',
+    'Rejected': 'rejected',
+}
+
+# Sentinel: datetime that sorts after all real dates (for unparseable dates).
+_DATE_SORT_MAX = datetime.max
+
+
+def build_estimates(c):
+    """Emit estimates.estimate and estimates.estimatelineitem fixtures.
+
+    Scans the full Estimates sheet to recover the container + line-item
+    structure (container rows have a non-empty Reference; line-item rows
+    immediately follow their container and have an empty Reference).
+
+    Only emits estimates whose base_reference is present in c.job_map.
+
+    For Task 10: populates
+        c.line_items  — {est_pk: [{'classification', 'item_type', 'qty',
+                                    'units', 'description', 'price',
+                                    'line_item_pk'}, ...]}
+        c.estimates   — {base_ref: [{'est_pk', 'status', 'created_date',
+                                     'version'}, ...]}
+    """
+    # ------------------------------------------------------------------
+    # 1. Walk the Estimates sheet: collect (container_row, [li_rows]) pairs
+    # ------------------------------------------------------------------
+    all_pairs = []          # list of (container_row_dict, [li_row_dict, ...])
+    current_container = None
+    current_lis = []
+
+    for row in c.loader.sheets_data.get('Estimates', []):
+        ref = (row.get('Reference') or '').strip()
+
+        if ref:
+            # Skip repeated-header rows
+            if ref == 'Reference':
+                continue
+            # Save the previous container (if any) before starting a new one
+            if current_container is not None:
+                all_pairs.append((current_container, current_lis))
+            current_container = row
+            current_lis = []
+        else:
+            # Line-item row — belongs to the current container
+            if current_container is None:
+                # No container seen yet; skip orphaned rows
+                continue
+            item_type = (row.get('Item Type') or '').strip()
+            # Skip repeated column-header rows inside line items
+            if item_type == 'Item Type':
+                continue
+            current_lis.append(row)
+
+    # Flush the last container
+    if current_container is not None:
+        all_pairs.append((current_container, current_lis))
+
+    # ------------------------------------------------------------------
+    # 2. Group pairs by base_reference; keep only those in c.job_map
+    # ------------------------------------------------------------------
+    groups = {}   # base_ref -> [(sheet_index, container_row, li_rows), ...]
+    for idx, (container, lis) in enumerate(all_pairs):
+        ref = (container.get('Reference') or '').strip()
+        base = P.base_reference(ref)
+        if base not in c.job_map:
+            continue
+        groups.setdefault(base, []).append((idx, container, lis))
+
+    # ------------------------------------------------------------------
+    # 3. For each group: sort by Date then sheet order; assign version 1..N
+    # ------------------------------------------------------------------
+    for base, entries in groups.items():
+        job_pk = c.job_map[base]
+
+        # Sort: primary key = parsed date (unparseable → datetime.max),
+        #       secondary = original sheet index (preserves order on ties).
+        def _sort_key(entry):
+            idx, container, _lis = entry
+            dt = P.to_datetime(container.get('Date'))
+            return (dt if dt is not None else _DATE_SORT_MAX, idx)
+
+        entries.sort(key=_sort_key)
+
+        base_estimates = []   # accumulate for c.estimates[base]
+
+        for version, (idx, container, lis) in enumerate(entries, start=1):
+            raw_date = container.get('Date')
+            est_status_raw = (container.get('Status') or '').strip()
+            est_status = _EST_STATUS_MAP.get(est_status_raw, 'draft')
+            created_date = P.format_date(raw_date) or f'{_FALLBACK_YEAR}-01-01'
+
+            est_pk = c.next_pk('estimates.estimate')
+            c.add_fixture('estimates.estimate', est_pk, {
+                'job':             job_pk,
+                'estimate_number': base,
+                'version':         version,
+                'parent':          None,
+                'status':          est_status,
+                'created_date':    created_date,
+                'sent_date':       None,
+                'expiration_date': None,
+                'closed_date':     None,
+            })
+
+            base_estimates.append({
+                'est_pk':       est_pk,
+                'status':       est_status,
+                'created_date': created_date,
+                'version':      version,
+            })
+
+            # --------------------------------------------------------------
+            # 4. Emit line items; stash classification info for Task 10
+            # --------------------------------------------------------------
+            c.line_items[est_pk] = []
+            line_number = 0
+
+            for li_row in lis:
+                item_type = (li_row.get('Item Type') or '').strip()
+                description = (li_row.get('Description') or '').strip()
+                classification = P.classify_line_item(item_type, description)
+
+                if classification == 'skip':
+                    # Comment rows: do not emit a line item, do not stash
+                    continue
+
+                line_number += 1
+                qty = P.parse_decimal(li_row.get('Quantity'))
+                price = P.parse_decimal(li_row.get('Price'))
+
+                # Determine units value
+                it_lower = item_type.lower()
+                if it_lower == 'hours':
+                    units = 'hours'
+                elif it_lower == 'days':
+                    units = 'days'
+                else:
+                    units = 'none'
+
+                li_pk = c.next_pk('estimates.estimatelineitem')
+                c.add_fixture('estimates.estimatelineitem', li_pk, {
+                    'estimate':          est_pk,
+                    'source_template':   None,
+                    'price_list_item':   None,
+                    'line_number':       line_number,
+                    'qty':               str(qty),
+                    'units':             units,
+                    'description':       description,
+                    'price':             f'{price:.2f}',
+                    'accounting_category': None,
+                    'taxable_override':  None,
+                    'tax_rate_override': None,
+                })
+
+                c.line_items[est_pk].append({
+                    'classification': classification,
+                    'item_type':      item_type,
+                    'qty':            qty,
+                    'units':          units,
+                    'description':    description,
+                    'price':          price,
+                    'line_item_pk':   li_pk,
+                })
+
+        c.estimates[base] = base_estimates

@@ -26,6 +26,8 @@ class NealsDataConverter:
         self.job_map = {}
         self.jobs = {}
         self.discarded_cards = []
+        self.line_items = {}
+        self.estimates = {}
 
     # --- fixture plumbing -------------------------------------------------
     def next_pk(self, model):

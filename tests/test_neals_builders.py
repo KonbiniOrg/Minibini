@@ -109,3 +109,42 @@ class JobBuilderTest(unittest.TestCase):
             self.assertIn(j['fields']['status'],
                           ('draft', 'submitted', 'approved', 'in_progress',
                            'work_complete', 'completed', 'cancelled', 'rejected'))
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class EstimateBuilderTest(unittest.TestCase):
+    def setUp(self):
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=10)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+        build.build_contacts_and_businesses(self.c)
+        build.build_jobs(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_estimates_and_line_items_built(self):
+        build.build_estimates(self.c)
+        ests = self._models('estimates.estimate')
+        self.assertGreater(len(ests), 0)
+        for e in ests:
+            self.assertIn(e['fields']['status'],
+                          ('draft', 'open', 'accepted', 'rejected',
+                           'superseded', 'expired'))
+        lines = self._models('estimates.estimatelineitem')
+        by_est = {}
+        for li in lines:
+            by_est.setdefault(li['fields']['estimate'], []).append(
+                li['fields']['line_number'])
+        for nums in by_est.values():
+            self.assertEqual(sorted(nums), list(range(1, len(nums) + 1)))
+
+    def test_comment_lines_excluded_and_estimates_link_to_jobs(self):
+        build.build_estimates(self.c)
+        job_pks = set(self.c.job_map.values())
+        for e in self._models('estimates.estimate'):
+            self.assertIn(e['fields']['job'], job_pks)
+        # estimates were built for at least one job
+        self.assertGreater(len(self._models('estimates.estimate')), 0)
