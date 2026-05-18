@@ -244,6 +244,124 @@ def build_contacts_and_businesses(c):
         c.org_map[org] = {'business': business_pk, 'contact': contact_pk}
 
 
+def build_jobs(c):
+    """Emit jobs.job fixtures — one per spine entry.
+
+    Sources:
+    - Client org: parsed from card['Name'] via parse_kanban_name, resolved
+      through c.org_map (built by build_contacts_and_businesses).
+    - Primary estimate: highest-revision container row from estimate_rows.
+    - Status: mapped from FreeAgent estimate Status field.
+    - Job number: J{year}-{counter:04d}, counter resets per year.
+
+    Sets:
+    - c.job_map  : base_ref -> job_pk
+    - c.jobs     : base_ref -> {'job_pk', 'card', 'estimate_rows', 'primary_ref'}
+    - c.discarded_cards : list of notes about skipped spine entries
+    """
+    STATUS_MAP = {
+        'Draft':    'draft',
+        'Sent':     'submitted',
+        'Approved': 'approved',
+        'Rejected': 'rejected',
+    }
+
+    if not hasattr(c, 'job_map'):
+        c.job_map = {}
+    if not hasattr(c, 'jobs'):
+        c.jobs = {}
+    if not hasattr(c, 'discarded_cards'):
+        c.discarded_cards = []
+
+    # Per-year job counters (keys are int years)
+    year_counters = {}
+
+    for entry in c.spine:
+        card = entry['card']
+        base_ref = entry['base_ref']
+        estimate_rows = entry['estimate_rows']
+
+        # --- 1. Resolve contact from card name ----------------------------
+        org, _person = P.parse_kanban_name(card.get('Name', ''))
+        if not org or org not in c.org_map:
+            c.discarded_cards.append(
+                f'{base_ref}: org "{org}" not in org_map — skipped'
+            )
+            continue
+        contact_pk = c.org_map[org]['contact']
+
+        # --- 2. Select the primary estimate container row -----------------
+        # Container rows have a non-empty Reference value.
+        container_rows = [
+            r for r in estimate_rows
+            if (r.get('Reference') or '').strip()
+        ]
+        if not container_rows:
+            # Fallback: treat all estimate rows as candidates
+            container_rows = estimate_rows
+
+        # Pick highest revision index; ties broken by sheet order (last wins)
+        def revision_index(row):
+            ref = (row.get('Reference') or '').strip()
+            return P.revision_parts(ref)[1]
+
+        primary_row = container_rows[0]
+        best_index = revision_index(primary_row)
+        for row in container_rows[1:]:
+            idx = revision_index(row)
+            if idx >= best_index:
+                best_index = idx
+                primary_row = row
+
+        primary_ref = (primary_row.get('Reference') or '').strip()
+
+        # --- 3. Derive year and job_number --------------------------------
+        raw_date = primary_row.get('Date')
+        dt = P.to_datetime(raw_date)
+        year = dt.year if dt else 2025
+
+        year_counters[year] = year_counters.get(year, 0) + 1
+        job_number = f'J{year}-{year_counters[year]:04d}'
+
+        # --- 4. Map estimate status → job status --------------------------
+        est_status = (primary_row.get('Status') or '').strip()
+        job_status = STATUS_MAP.get(est_status, 'draft')
+
+        # --- 5. Build description from card fields ------------------------
+        parts = []
+        desc = (card.get('Description') or '').strip()
+        notes = (card.get('Notes') or '').strip()
+        if desc:
+            parts.append(desc)
+        if notes:
+            parts.append(notes)
+        description = '\n'.join(parts)
+
+        # --- 6. Emit fixture ----------------------------------------------
+        job_pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', job_pk, {
+            'job_number':         job_number,
+            'name':               (card.get('Name') or '')[:50],
+            'contact':            contact_pk,
+            'status':             job_status,
+            'created_date':       P.format_date(raw_date) or '2025-01-01',
+            'start_date':         None,
+            'due_date':           P.format_date(card.get('Due date')),
+            'completed_date':     None,
+            'customer_po_number': '',
+            'description':        description,
+        })
+
+        # --- 7. Record maps -----------------------------------------------
+        c.job_map[base_ref] = job_pk
+        c.jobs[base_ref] = {
+            'job_pk':        job_pk,
+            'card':          card,
+            'estimate_rows': estimate_rows,
+            'primary_ref':   primary_ref,
+        }
+
+
 def build_price_list_items(c):
     """Emit inventory.pricelistitem fixtures from the 'Price List Items' sheet.
 

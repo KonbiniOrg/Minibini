@@ -83,3 +83,28 @@ class ContactBuildersTest(unittest.TestCase):
             self.assertTrue(ct['fields']['work_number'] or
                             ct['fields']['mobile_number'] or
                             ct['fields']['home_number'])
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class JobBuilderTest(unittest.TestCase):
+    def setUp(self):
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=10)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+        build.build_contacts_and_businesses(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_builds_one_job_per_spine_entry(self):
+        build.build_jobs(self.c)
+        jobs = self._models('jobs.job')
+        self.assertEqual(len(jobs), len(self.c.spine))
+        for j in jobs:
+            self.assertTrue(j['fields']['job_number'])
+            self.assertIsNotNone(j['fields']['contact'])
+            self.assertIn(j['fields']['status'],
+                          ('draft', 'submitted', 'approved', 'in_progress',
+                           'work_complete', 'completed', 'cancelled', 'rejected'))
