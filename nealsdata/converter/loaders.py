@@ -1,13 +1,11 @@
 """Excel data loader for the FreeAgent export."""
 
-import sys
 from typing import Dict, List
 
 try:
     import openpyxl
 except ImportError:
-    print("Error: openpyxl is required. Install with: pip install openpyxl")
-    sys.exit(1)
+    raise ImportError("openpyxl is required. Install with: pip install openpyxl")
 
 
 class ExcelDataLoader:
