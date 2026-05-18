@@ -26,6 +26,12 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(P.revision_parts('03024b'), ('03024', 1))
         self.assertEqual(P.revision_parts('03024c'), ('03024', 2))
 
+    def test_base_reference(self):
+        self.assertEqual(P.base_reference('07754'), '07754')
+        self.assertEqual(P.base_reference('03024b'), '03024')
+        self.assertEqual(P.base_reference('03077-SOLID'), '03077')
+        self.assertEqual(P.base_reference('03108-rev2'), '03108')
+
     def test_hours_to_duration(self):
         self.assertEqual(P.hours_to_duration('4'), '04:00:00')
         self.assertEqual(P.hours_to_duration('1.5'), '01:30:00')

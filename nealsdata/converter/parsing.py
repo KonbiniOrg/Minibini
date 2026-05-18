@@ -64,6 +64,16 @@ def revision_parts(reference):
     return (digits, ord(suffix[-1]) - ord('a'))
 
 
+def base_reference(reference):
+    """Leading run of digits of a document reference, used as the join key
+    between Kanban External IDs and FreeAgent Estimate References.
+    '03077-SOLID' -> '03077', '03024b' -> '03024', '07754' -> '07754'.
+    Falls back to the stripped string when there are no leading digits."""
+    text = str(reference).strip()
+    m = re.match(r'(\d+)', text)
+    return m.group(1) if m else text
+
+
 def hours_to_duration(value):
     """'1.5' hours -> Django DurationField string '01:30:00'. '' -> None."""
     if value in (None, ''):
