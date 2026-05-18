@@ -1,12 +1,40 @@
 """Data loaders for the Neal's CNC converter."""
 
 import csv
+from pathlib import Path
 from typing import Dict, List
 
 try:
     import openpyxl
 except ImportError:
     raise ImportError("openpyxl is required. Install with: pip install openpyxl")
+
+
+def _single_dataset_file(matches, label, datasets_dir):
+    """Return the sole file in `matches`, or raise ValueError if 0 or >1."""
+    if not matches:
+        raise ValueError(f'No {label} file found in {datasets_dir}')
+    if len(matches) > 1:
+        names = ', '.join(sorted(m.name for m in matches))
+        raise ValueError(
+            f'Expected exactly one {label} file in {datasets_dir}, '
+            f'found {len(matches)}: {names}'
+        )
+    return matches[0]
+
+
+def discover_datasets(datasets_dir):
+    """Locate the single Excel file and single CSV file in `datasets_dir`.
+
+    Returns (excel_path, csv_path) as strings. Raises ValueError with a
+    clear message if either is missing or ambiguous (more than one).
+    """
+    datasets_dir = Path(datasets_dir)
+    excels = sorted(datasets_dir.glob('*.xlsx')) + sorted(datasets_dir.glob('*.xls'))
+    csvs = sorted(datasets_dir.glob('*.csv'))
+    excel = _single_dataset_file(excels, 'Excel (.xlsx/.xls)', datasets_dir)
+    csv_file = _single_dataset_file(csvs, 'CSV (.csv)', datasets_dir)
+    return str(excel), str(csv_file)
 
 
 class ExcelDataLoader:

@@ -1,7 +1,10 @@
 import os
+import shutil
 import tempfile
 import unittest
-from nealsdata.converter.loaders import ExcelDataLoader, KanbanCsvLoader
+from nealsdata.converter.loaders import (
+    ExcelDataLoader, KanbanCsvLoader, discover_datasets,
+)
 
 XLSX = 'nealsdata/datasets/company-export-220382-2026-05-18-02-19.xlsx'
 
@@ -45,3 +48,47 @@ class KanbanCsvLoaderTest(unittest.TestCase):
         cards = KanbanCsvLoader('nealsdata/datasets/neals kanban.csv').load()
         self.assertGreater(len(cards), 2000)
         self.assertTrue(any(c['External ID'] for c in cards))
+
+
+class DiscoverDatasetsTest(unittest.TestCase):
+    def _tmpdir(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        return d
+
+    @staticmethod
+    def _touch(directory, name):
+        open(os.path.join(directory, name), 'w').close()
+
+    def test_finds_single_excel_and_csv(self):
+        d = self._tmpdir()
+        self._touch(d, 'company-export.xlsx')
+        self._touch(d, 'neals kanban.csv')
+        self._touch(d, 'converted.json')  # ignored — not .xlsx/.csv
+        excel, csv_path = discover_datasets(d)
+        self.assertTrue(excel.endswith('company-export.xlsx'))
+        self.assertTrue(csv_path.endswith('neals kanban.csv'))
+
+    def test_errors_on_multiple_excel(self):
+        d = self._tmpdir()
+        self._touch(d, 'a.xlsx')
+        self._touch(d, 'b.xlsx')
+        self._touch(d, 'k.csv')
+        with self.assertRaises(ValueError) as ctx:
+            discover_datasets(d)
+        self.assertIn('Excel', str(ctx.exception))
+
+    def test_errors_on_multiple_csv(self):
+        d = self._tmpdir()
+        self._touch(d, 'a.xlsx')
+        self._touch(d, 'one.csv')
+        self._touch(d, 'two.csv')
+        with self.assertRaises(ValueError) as ctx:
+            discover_datasets(d)
+        self.assertIn('CSV', str(ctx.exception))
+
+    def test_errors_on_missing_excel(self):
+        d = self._tmpdir()
+        self._touch(d, 'k.csv')
+        with self.assertRaises(ValueError):
+            discover_datasets(d)
