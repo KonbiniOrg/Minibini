@@ -83,3 +83,40 @@ def parse_kanban_name(name):
     if m:
         return (m.group(1).strip(), m.group(2).strip())
     return (str(name).strip(), None)
+
+
+MATERIAL_KEYWORDS = (
+    'plywood', 'acrylic', 'mdf', 'sheet', 'hardwood', 'melamine', 'sintra',
+    'aluminum', 'aluminium', 'board feet', 'lumber', 'plastic', 'steel',
+    'wood', 'foam', 'gator', 'laminate', 'trupan', 'chipboard', 'baltic birch',
+)
+COUNT_UNITS = ('each', 'ea', 'pcs', 'pieces', 'unit', 'units')
+
+
+def classify_line_item(item_type, description):
+    """Return one of: 'skip', 'task', 'material', 'lineitem'."""
+    it = (item_type or '').strip().lower()
+    if it == 'comment':
+        return 'skip'
+    if it in ('hours', 'days', 'services'):
+        return 'task'
+    if it in ('products', 'expenses'):
+        return 'material'
+    if it in ('discount', 'credit'):
+        return 'lineitem'
+    # '-no unit-' and anything unrecognised: keyword heuristic
+    desc = (description or '').lower()
+    if any(kw in desc for kw in MATERIAL_KEYWORDS):
+        return 'material'
+    return 'task'
+
+
+def infer_algorithm(item_type, units):
+    """RateScheme.algorithm for a Task-classified line item."""
+    it = (item_type or '').strip().lower()
+    u = (units or '').strip().lower()
+    if it in ('hours', 'days') or u in ('hour', 'hours', 'day', 'days'):
+        return 'elapsed_time'
+    if u in COUNT_UNITS:
+        return 'entered_qty'
+    return 'flat_fee'

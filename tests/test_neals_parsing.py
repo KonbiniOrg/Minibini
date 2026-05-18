@@ -34,3 +34,30 @@ class ParsingTest(unittest.TestCase):
     def test_parse_kanban_name(self):
         self.assertEqual(P.parse_kanban_name('Acme (Jo Roe)'), ('Acme', 'Jo Roe'))
         self.assertEqual(P.parse_kanban_name('Acme'), ('Acme', None))
+
+
+class ClassifyTest(unittest.TestCase):
+    def test_comment_is_skipped(self):
+        self.assertEqual(P.classify_line_item('Comment', 'anything'), 'skip')
+
+    def test_item_type_drives_classification(self):
+        self.assertEqual(P.classify_line_item('Hours', 'cut parts'), 'task')
+        self.assertEqual(P.classify_line_item('Days', 'design'), 'task')
+        self.assertEqual(P.classify_line_item('Services', 'consult'), 'task')
+        self.assertEqual(P.classify_line_item('Products', 'plywood'), 'material')
+        self.assertEqual(P.classify_line_item('Expenses', 'shipping'), 'material')
+        self.assertEqual(P.classify_line_item('Discount', 'x'), 'lineitem')
+        self.assertEqual(P.classify_line_item('Credit', 'x'), 'lineitem')
+
+    def test_no_unit_uses_keyword_heuristic(self):
+        self.assertEqual(
+            P.classify_line_item('-no unit-', '3 sheets of 3/4" plywood'), 'material')
+        self.assertEqual(
+            P.classify_line_item('-no unit-', 'CNC cutting of wall parts'), 'task')
+
+    def test_algorithm_inference(self):
+        self.assertEqual(P.infer_algorithm('Hours', 'hours'), 'elapsed_time')
+        self.assertEqual(P.infer_algorithm('Days', 'days'), 'elapsed_time')
+        self.assertEqual(P.infer_algorithm('Services', ''), 'flat_fee')
+        self.assertEqual(P.infer_algorithm('-no unit-', 'each'), 'entered_qty')
+        self.assertEqual(P.infer_algorithm('-no unit-', ''), 'flat_fee')
