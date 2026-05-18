@@ -1,5 +1,7 @@
 # tests/test_neals_builders.py
+import json
 import os
+import tempfile
 import unittest
 from decimal import Decimal
 from nealsdata.converter import build
@@ -268,3 +270,23 @@ class ReconcileTest(unittest.TestCase):
         for t in self._models('jobs.task'):
             if jobs.get(t['fields']['job']) == 'completed':
                 self.assertEqual(t['fields']['status'], 'complete')
+
+
+class ConvertEndToEndTest(unittest.TestCase):
+    @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                         'datasets not present')
+    def test_convert_writes_a_fixture_file(self):
+        fd, path = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        self.addCleanup(os.unlink, path)
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=10)
+        c.convert()
+        with open(path) as f:
+            data = json.load(f)
+        self.assertIsInstance(data, list)
+        self.assertGreater(len(data), 0)
+        models = {row['model'] for row in data}
+        self.assertIn('jobs.job', models)
+        self.assertIn('estimates.estimate', models)
+        self.assertNotIn('jobs.workorder', models)
+        self.assertNotIn('jobs.blep', models)

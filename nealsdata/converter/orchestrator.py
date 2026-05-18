@@ -71,4 +71,30 @@ class NealsDataConverter:
         return spine
 
     def convert(self):
-        raise NotImplementedError('phases wired in Task 14')
+        from nealsdata.converter import build, reconcile
+        self.loader.load()
+        self.csv_cards = self.csv_loader.load()
+        self.spine = self.select_spine()
+        build.build_users(self)
+        build.build_configuration(self)
+        build.build_accounting_categories(self)
+        build.build_price_list_items(self)
+        build.build_contacts_and_businesses(self)
+        build.build_jobs(self)
+        build.build_estimates(self)
+        build.derive_atoms(self)
+        build.build_invoices(self)
+        reconcile.reconcile(self)
+        self._write_json()
+        if self.verbose:
+            self._print_summary()
+
+    def _write_json(self):
+        with open(self.output_path, 'w') as f:
+            json.dump(self.fixture_data, f, indent=2, default=str)
+
+    def _print_summary(self):
+        from collections import Counter
+        counts = Counter(row['model'] for row in self.fixture_data)
+        for model, n in sorted(counts.items()):
+            print(f'  {n:6} {model}')
