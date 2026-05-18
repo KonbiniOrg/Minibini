@@ -418,7 +418,6 @@
     padding: 8px 24px;
   }
   .back-link { font-size: 13px; }
-  .meta { color: #888; font-size: 13px; margin-left: auto; }
   .toolbar button {
     padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;
     background: #fff; cursor: pointer; font-size: 13px;

@@ -15,7 +15,7 @@
     return {
       template_name: '', description: '', rate_scheme: '',
       default_active_modifiers: [], default_billable_qty: '',
-      is_active: true,
+      flat_fee_price: '', is_active: true,
     };
   }
 
@@ -42,6 +42,10 @@
     schemes.find(s => s.rate_scheme_id === Number(form.rate_scheme)) || null
   );
 
+  const isFlatFee = $derived(
+    !!selectedScheme && selectedScheme.algorithm === 'flat_fee'
+  );
+
   function schemeFor(id) {
     return allSchemes.find(s => s.rate_scheme_id === id);
   }
@@ -58,12 +62,17 @@
   }
 
   function startEdit(tmpl) {
+    // flat-fee templates store {flat_fee_price: str} in default_active_modifiers;
+    // every other algorithm stores a list of modifier keys.
+    const dm = tmpl.default_active_modifiers;
+    const isPriced = dm && !Array.isArray(dm);
     form = {
       template_name: tmpl.template_name,
       description: tmpl.description || '',
       rate_scheme: tmpl.rate_scheme || '',
-      default_active_modifiers: [...(tmpl.default_active_modifiers || [])],
+      default_active_modifiers: isPriced ? [] : [...(dm || [])],
       default_billable_qty: tmpl.default_billable_qty || '',
+      flat_fee_price: isPriced ? fmtPrice(dm.flat_fee_price) : '',
       is_active: tmpl.is_active,
     };
     editingId = tmpl.template_id;
@@ -71,6 +80,13 @@
   }
 
   function cancelEdit() { editingId = null; saveError = ''; }
+
+  // Render a price as dollars-and-cents (2 dp); leaves blank/unparseable as-is.
+  function fmtPrice(v) {
+    if (v === '' || v == null) return '';
+    const n = Number(v);
+    return Number.isNaN(n) ? String(v) : n.toFixed(2);
+  }
 
   function toggleModifier(key) {
     if (form.default_active_modifiers.includes(key)) {
@@ -88,7 +104,9 @@
         template_name: form.template_name,
         description: form.description,
         rate_scheme: form.rate_scheme || null,
-        default_active_modifiers: form.default_active_modifiers,
+        default_active_modifiers: isFlatFee
+          ? { flat_fee_price: form.flat_fee_price }
+          : form.default_active_modifiers,
         default_billable_qty: form.default_billable_qty || null,
         is_active: form.is_active,
       };
@@ -177,7 +195,12 @@
       </select>
     </label></p>
 
-    {#if selectedScheme && selectedScheme.modifiers.length > 0}
+    {#if isFlatFee}
+      <p><label><strong>Flat fee unit price *</strong><br>
+        <input type="number" step="0.01" min="0" bind:value={form.flat_fee_price}
+          onblur={() => form.flat_fee_price = fmtPrice(form.flat_fee_price)}>
+      </label></p>
+    {:else if selectedScheme && selectedScheme.modifiers.length > 0}
       <fieldset>
         <legend><strong>Default Modifiers</strong></legend>
         {#each selectedScheme.modifiers as mod}
@@ -192,7 +215,7 @@
     {/if}
 
     {#if selectedScheme}
-      <p><label><strong>Default estimated qty ({selectedScheme.unit_label}s)</strong><br>
+      <p><label><strong>Default estimated qty{isFlatFee ? '' : ` (${selectedScheme.unit_label}s)`}</strong><br>
         <input type="number" step="0.01" bind:value={form.default_billable_qty}>
       </label></p>
     {/if}

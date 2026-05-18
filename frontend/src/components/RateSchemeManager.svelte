@@ -160,6 +160,10 @@
     }
   }
 
+  // flat_fee schemes carry no modifier catalog: the per-item price rides on
+  // the TaskTemplate/Task, and rate is only a fallback default.
+  const isFlatFee = $derived(form.algorithm === 'flat_fee');
+
   const previewTotal = $derived.by(() => {
     if (!form.rate) return null;
     const rate = Number(form.rate);
@@ -247,9 +251,13 @@
         <option value="flat_fee">Fixed charge</option>
       </select>
     </label></p>
-    <p><label><strong>Rate *</strong><br>
+    <p><label><strong>{isFlatFee ? 'Fallback price *' : 'Rate *'}</strong><br>
       <input type="number" step="0.01" bind:value={form.rate}>
     </label>
+    {#if isFlatFee}
+      <small>Flat-fee items set their own price on each Task Template; this
+        value is only used when a task carries no price.</small>
+    {/if}
     <label><strong>Unit label *</strong><br>
       <select bind:value={form.unit_label} required>
         <option value="">-- select --</option>
@@ -267,19 +275,21 @@
       </select>
     </label></p>
 
-    <fieldset>
-      <legend><strong>Modifiers</strong></legend>
-      {#each form.modifiers as mod, i}
-        <p>
-          <input type="text" bind:value={mod.label} placeholder="Label">
-          <input type="number" step="0.1" bind:value={mod.percent} placeholder="%" style="width:60px;">%
-          <button type="button" onclick={() => removeModifier(i)}>Remove</button>
-        </p>
-      {/each}
-      <p><button type="button" onclick={addModifier}>Add modifier</button></p>
-    </fieldset>
+    {#if !isFlatFee}
+      <fieldset>
+        <legend><strong>Modifiers</strong></legend>
+        {#each form.modifiers as mod, i}
+          <p>
+            <input type="text" bind:value={mod.label} placeholder="Label">
+            <input type="number" step="0.1" bind:value={mod.percent} placeholder="%" style="width:60px;">%
+            <button type="button" onclick={() => removeModifier(i)}>Remove</button>
+          </p>
+        {/each}
+        <p><button type="button" onclick={addModifier}>Add modifier</button></p>
+      </fieldset>
+    {/if}
 
-    {#if previewTotal}
+    {#if previewTotal && !isFlatFee}
       <p><strong>Preview:</strong>
         {previewTotal.qty} {form.unit_label}s @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
       </p>

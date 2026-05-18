@@ -86,10 +86,15 @@ taxability / QBO income mapping), and its own version lineage. Every
 algorithm:
 
 ```python
-ELAPSED_TIME → Decimal(sum(blep.elapsed.total_seconds()) / 3600)
+ELAPSED_TIME → (Decimal(sum(blep.elapsed.total_seconds())) / 3600).quantize(0.01)
 ENTERED_QTY  → task.actual_qty or Decimal('0')
 FLAT_FEE     → Decimal('1')
 ```
+
+The `ELAPSED_TIME` result is quantized to 2 decimal places: a raw
+seconds/3600 division is non-terminating (~28 digits) and would overflow
+the line item `qty` field (`max_digits=10`) when carried into the invoice
+wizard.
 
 ### 2.3 Modifiers
 
@@ -292,14 +297,21 @@ Both models implement the uniform atom interface
 class Task:
     def compute_amount(self, active_modifiers=None):
         qty = self.rate_scheme.get_actual_qty(self)  # algorithm-aware
-        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        return charge.quantize(Decimal('0.01'))
 
 class PlanTask:
     def compute_amount(self, active_modifiers=None):
         if not self.rate_scheme_id or self.est_qty is None:
             return Decimal('0.00')
-        return self.rate_scheme.compute_charge(self.est_qty, self.active_modifiers)
+        charge = self.rate_scheme.compute_charge(self.est_qty, self.active_modifiers)
+        return charge.quantize(Decimal('0.01'))
 ```
+
+Both `compute_amount` results are quantized to 2 decimal places (cents):
+`compute_charge` is `qty * effective_rate`, and a modifier-adjusted rate
+can carry more than 2 decimals, so the unrounded product would surface
+extra digits on the task detail page and in worksheet totals.
 
 The `active_modifiers` parameter is accepted to match the atom
 interface but is ignored — both use `self.active_modifiers`. PlanTask
@@ -469,8 +481,14 @@ release claims on the plan side.
 | N | Wizard-grouped from multiple atoms |
 
 A single-atom line item copies the atom's description, units, qty,
-and price across; multi-atom line items use blank description,
-`units = 'none'`, `qty = 1`, `price = sum(compute_amount)`.
+and price across. Multi-atom line items: when every atom is a task
+(`PlanTask` / `Task`) sharing one `RateScheme` and identical
+`active_modifiers`, the line is **summarized** — `units` from the
+scheme, `qty` = summed quantities (`est_qty` on the estimate side,
+actuals on the invoice side), `price` = the common effective rate.
+Any other multi-atom bundle (a material atom present, mixed schemes,
+or mixed modifiers) falls back to blank description, `units = 'none'`,
+`qty = 1`, `price = sum(compute_amount)`.
 
 ---
 
@@ -523,19 +541,24 @@ atoms. See §14.
 ## 8. EstimateWizardService
 
 `EstimateWizardService` (`apps/estimates/services.py`) is the
-orchestration layer for the wizard. It mirrors `InvoiceWizardService`
-(invoicing doc) — same source-pool / line-items-from-atoms /
-add-atoms / remove-atoms operations.
+orchestration layer for the wizard. The line-items-from-atoms logic
+(`add_atoms_to_new_line_item`, `add_atoms_to_line_item`,
+`remove_atoms_from_line_item`, the in-sync / bundle-summary helpers) is
+shared with `InvoiceWizardService` via `BaseWizardService`
+(`apps/core/wizard.py`); `EstimateWizardService` subclasses it, supplies
+a small config block plus model hooks, and keeps the estimate-specific
+methods (`open_for_worksheet`, `get_source_pool`,
+`send_all_atoms_to_estimate`).
 
 ### 8.1 Methods
 
 | Method | Purpose |
 |---|---|
 | `open_for_worksheet(worksheet)` | Returns the worksheet's draft Estimate, creating one if none exists. Refuses if the worksheet's estimate is non-draft (the `final` worksheet should have prevented this). |
-| `get_source_pool(worksheet)` | Walks PlanTasks and PlanMaterials on the worksheet, returns a flat pool with claim state per atom: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). |
-| `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Computes price from `sum(atom.compute_amount())`. Single-atom case copies atom's description/units/qty/price; multi-atom case uses blanks. |
-| `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), recomputes price after; otherwise preserves the override. |
-| `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Recompute-if-in-sync rule applies. Deletes the line item if no sources remain. |
+| `get_source_pool(worksheet)` | Walks PlanTasks and PlanMaterials on the worksheet, returns a flat pool of atoms. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), and claim state: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). |
+| `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). |
+| `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), it is re-derived: a uniform same-scheme task bundle is re-summarized (units/qty/price), otherwise qty is kept and the per-unit price recomputed. An overridden line item is left untouched. |
+| `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Same re-derive-if-in-sync rule as `add_atoms_to_line_item`. Deletes the line item if no sources remain. |
 | `send_all_atoms_to_estimate(worksheet)` | Bulk 1:1 conversion of every unclaimed atom on the worksheet to its own line item. Not transactionally wrapped — partial success is acceptable; caller can re-run. |
 
 Conflict handling: `add_atoms_to_*` raise `EstimateClaimConflict` when
@@ -579,7 +602,8 @@ Permissions: read is `IsAuthenticated`; write actions require
 | Component | Path | Role |
 |---|---|---|
 | `EstimateWizardPage.svelte` | `frontend/src/routes/estimates/` | Page shell. Two-column layout (source pool left, line items right). Loads estimate + line-items + source-pool on mount; `reloadAfterAction` refreshes line items and reconciles atom states locally |
-| `WizardSourcePool.svelte` | `frontend/src/components/estimates/` | Renders the flat atom list with checkboxes; binds `selectedAtoms` to the page |
+| `WizardSourcePool.svelte` | `frontend/src/components/estimates/` | Renders the flat atom list; binds `selectedAtoms` to the page. Each atom is a `WizardAtomRow`. The invoice wizard has its own task-grouped `WizardSourcePool.svelte` that reuses the same row. |
+| `WizardAtomRow.svelte` | `frontend/src/components/wizards/` | One source-pool atom row, shared by both wizards: checkbox + `description — qty units × $rate = $total` + claim state |
 | `WizardLineItemCard.svelte` | `frontend/src/components/wizards/` | One line-item card with its source rows; surfaces "Add Here" and per-source remove |
 | `WizardActions.svelte` | `frontend/src/components/wizards/` | Bottom action bar (Discard draft, Return to estimate detail) |
 | `CatalogPicker.svelte` | `frontend/src/components/` | Unified search over `TaskTemplate` + `PriceListItem` + Manual; shared by worksheet/job atom-add and direct-estimate line-item add |

@@ -84,23 +84,25 @@
       </div>
     {:else}
       <table class="line-table">
-        {#each job.invoices || [] as inv}
-          {@const pill = invoiceStatusPill(inv)}
-          <tr>
-            <td class="col-num">{inv.invoice_number}</td>
-            <td class="col-status"><span class="pill {pill.cls}">{pill.label}</span></td>
-            <td class="col-date">{inv.sent_date ? `Sent ${formatDate(inv.sent_date)}` : ''}</td>
-            <td class="col-amt {amountClass(inv)}">{formatAmount(inv.total)}</td>
-          </tr>
-          {#each paymentRows(inv) as pmt}
-            <tr class="payment-row">
-              <td class="col-num"></td>
-              <td class="col-status"><span class="pill payment">Payment</span></td>
-              <td class="col-date">Paid {formatDate(pmt.date)}</td>
-              <td class="col-amt amt-payment">-{formatAmount(pmt.amount)}</td>
+        <tbody>
+          {#each job.invoices || [] as inv}
+            {@const pill = invoiceStatusPill(inv)}
+            <tr>
+              <td class="col-num">{inv.invoice_number}</td>
+              <td class="col-status"><span class="pill {pill.cls}">{pill.label}</span></td>
+              <td class="col-date">{inv.sent_date ? `Sent ${formatDate(inv.sent_date)}` : ''}</td>
+              <td class="col-amt {amountClass(inv)}">{formatAmount(inv.total)}</td>
             </tr>
+            {#each paymentRows(inv) as pmt}
+              <tr class="payment-row">
+                <td class="col-num"></td>
+                <td class="col-status"><span class="pill payment">Payment</span></td>
+                <td class="col-date">Paid {formatDate(pmt.date)}</td>
+                <td class="col-amt amt-payment">-{formatAmount(pmt.amount)}</td>
+              </tr>
+            {/each}
           {/each}
-        {/each}
+        </tbody>
       </table>
       <div class="card-foot">
         <span>{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}{paymentCount > 0 ? ` · ${paymentCount} payment${paymentCount !== 1 ? 's' : ''}` : ''}</span>

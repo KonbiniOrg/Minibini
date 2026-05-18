@@ -266,8 +266,21 @@ Materials with `quantity > 0`. Any match blocks the
 across inventoried and non-inventoried PLIs — task-less Materials
 always represent an unresolved Consume-or-Restock decision.
 
-`InventoryService.release_earmarks_for_job(job)` runs on successful
-transition and sweeps any remaining `Earmark` rows for the job.
+The one exception is the **invoice-paid auto-completion path**
+(`Invoice._maybe_complete_job`): it is unattended, so instead of being
+blocked it calls `JobService.release_loose_materials(job)` first, which
+restocks (releases) any loose pending Materials and records a
+`HistoryEntry`. By the time the Job reaches `work_complete` there are no
+loose materials, so the gate passes.
+
+### Earmark release on terminal transitions
+
+`InventoryService.release_earmarks_for_job(job)` deletes any remaining
+`Earmark` rows for the job. It runs from `JobService.update_job` on entry
+to `work_complete`, `cancelled`, or `rejected` — a dead or finished Job
+holds no inventory reservation. Because every Job status change routes
+through `update_job`, the release fires regardless of caller (the status
+pill, the status-action endpoints, the estimate/invoice handlers).
 
 ---
 

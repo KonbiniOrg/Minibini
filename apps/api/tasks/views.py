@@ -151,10 +151,27 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
-        from apps.jobs.services import TaskLifecycleService
+        from decimal import Decimal, InvalidOperation
+        from apps.jobs.services import (
+            TaskLifecycleService, TaskActualQtyRequired, TaskTimeRequired,
+        )
         task = self._get_task_or_404(pk)
+        raw_qty = request.data.get('actual_qty') if request.data else None
+        actual_qty = None
+        if raw_qty is not None and raw_qty != '':
+            try:
+                actual_qty = Decimal(str(raw_qty))
+            except (InvalidOperation, ValueError):
+                return Response(
+                    {'detail': 'Invalid quantity.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         try:
-            TaskLifecycleService.complete_task(task.pk)
+            TaskLifecycleService.complete_task(task.pk, actual_qty=actual_qty)
+        except TaskActualQtyRequired as e:
+            return Response({'needs_actual_qty': True, 'unit_label': e.unit_label})
+        except TaskTimeRequired:
+            return Response({'needs_time_logged': True})
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': Task.STATUS_COMPLETE})

@@ -12,7 +12,7 @@ from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, Task, Blep, RateScheme
+from apps.jobs.models import Job, Task, Blep, RateScheme, copy_active_modifiers
 from apps.estimates.models import (
     Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
@@ -28,6 +28,31 @@ from apps.core.services import NumberGenerationService, NotFoundError
 
 class BlepPermissionError(Exception):
     """Raised when a caller is not permitted to perform a blep operation."""
+    pass
+
+
+class TaskActualQtyRequired(Exception):
+    """Raised when completing an ENTERED_QTY task that has no worker-entered
+    quantity. Carries the rate scheme's unit label so the caller can prompt
+    for the value."""
+    def __init__(self, unit_label=''):
+        self.unit_label = unit_label
+        super().__init__(
+            'A quantity must be entered before this task can be completed.'
+        )
+
+
+class TaskTimeRequired(Exception):
+    """Raised when completing an ELAPSED_TIME task that has no recorded time
+    (no bleps, or zero total). The caller should prompt for a historical
+    time entry."""
+    pass
+
+
+class TaskWorkerTimeRequired(Exception):
+    """Raised when assigning a task to a worker while it has no estimated
+    worker time. Assigned work has to be schedulable, and it can't be
+    scheduled without a duration — the caller should prompt for an estimate."""
     pass
 
 
@@ -58,6 +83,17 @@ def _existing_overlaps(user, start_time, end_time, exclude_blep_id=None):
     if exclude_blep_id is not None:
         qs = qs.exclude(blep_id=exclude_blep_id)
     return qs.exists()
+
+
+def _assert_job_allows_blep(job, allowed_statuses, action):
+    """Reject Blep creation when the Task's Job is in a status where work
+    should not be recorded against it."""
+    if job.status not in allowed_statuses:
+        labels = ', '.join(f"'{s}'" for s in allowed_statuses)
+        raise ValidationError(
+            f"Cannot {action}: job status is '{job.status}', "
+            f"must be one of {labels}."
+        )
 
 
 class BlepService:
@@ -128,6 +164,12 @@ class BlepService:
                 "Creating a time entry for another user requires can_manage_time."
             )
         # Post-split: task is always a Task (work-order side); no container check needed.
+        _assert_job_allows_blep(
+            task.job,
+            (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+             Job.STATUS_WORK_COMPLETE),
+            'log time',
+        )
         if end_time < start_time:
             raise ValidationError("end_time must be >= start_time.")
         if not _within_edit_window(start_time) and not _has_manage_time(actor):
@@ -138,9 +180,13 @@ class BlepService:
             raise ValidationError(
                 "This time entry overlaps an existing entry for the user."
             )
-        return BlepService._create(
-            task, target_user, start_time=start_time, end_time=end_time,
-        )
+        with transaction.atomic():
+            blep = BlepService._create(
+                task, target_user, start_time=start_time, end_time=end_time,
+            )
+            TaskLifecycleService._promote_pending_task(task)
+            JobService.mark_work_started(task.job)
+        return blep
 
     @staticmethod
     def update(blep, actor, **fields):
@@ -224,17 +270,42 @@ class JobService:
         job.save()
         return job
 
+    # Job statuses whose entry releases the job's earmarks (work is done or
+    # the job is dead — any reservation against inventory is freed).
+    _EARMARK_RELEASING_STATUSES = (
+        Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED, Job.STATUS_REJECTED,
+    )
+
     @staticmethod
     def update_job(pk, **kwargs):
-        """Update an existing Job by PK."""
+        """Base Job update. Applies field changes and dispatches
+        status-transition side effects (loose-materials gate, earmark
+        release). update_status() is a thin wrapper over this — every Job
+        status change should flow through here."""
         try:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        old_status = job.status
         for field, value in kwargs.items():
             setattr(job, field, value)
+        status_changed = job.status != old_status
+
+        if status_changed and job.status == Job.STATUS_WORK_COMPLETE:
+            offenders = JobService._loose_pending_materials(job)
+            if offenders.exists():
+                names = ', '.join(m.description or str(m.pk) for m in offenders)
+                raise ValidationError(
+                    f'Cannot advance to work_complete: unresolved task-less materials: {names}'
+                )
+
         job.full_clean()
         job.save()
+
+        if status_changed and job.status in JobService._EARMARK_RELEASING_STATUSES:
+            from apps.inventory.services import InventoryService
+            InventoryService.release_earmarks_for_job(job)
+
         return job
 
     @staticmethod
@@ -251,33 +322,33 @@ class JobService:
         )
 
     @staticmethod
+    def release_loose_materials(job):
+        """Restock (release) any task-less PENDING materials still committed
+        to the job. Returns a list of {'description', 'quantity'} captured
+        before restock removes the rows — used for an audit record."""
+        from apps.inventory.services import MaterialService
+        released = []
+        for material in list(JobService._loose_pending_materials(job)):
+            released.append({
+                'description': material.description or f'Material {material.pk}',
+                'quantity': str(material.quantity),
+            })
+            MaterialService.restock(material, material.quantity)
+        return released
+
+    @staticmethod
     def update_status(pk, new_status):
-        """Update job status; triggers earmark release on entry to work_complete."""
-        try:
-            job = Job.objects.get(pk=pk)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {pk} not found')
-        if job.status == new_status:
-            return job
+        """Thin wrapper over update_job for a status-only change."""
+        return JobService.update_job(pk, status=new_status)
 
-        if new_status == Job.STATUS_WORK_COMPLETE:
-            offenders = JobService._loose_pending_materials(job)
-            if offenders.exists():
-                names = ', '.join(m.description or str(m.pk) for m in offenders)
-                raise ValidationError(
-                    f'Cannot advance to work_complete: unresolved task-less materials: {names}'
-                )
-
-        old_status = job.status
-        job.status = new_status
-        job.full_clean()
-        job.save()
-
-        if new_status == Job.STATUS_WORK_COMPLETE and old_status != Job.STATUS_WORK_COMPLETE:
-            from apps.inventory.services import InventoryService
-            InventoryService.release_earmarks_for_job(job)
-
-        return job
+    @staticmethod
+    def mark_work_started(job):
+        """Advance an APPROVED Job to IN_PROGRESS when work begins on it
+        (a Blep is created, or a Task is completed). No-op for any other
+        status — pre-APPROVED jobs are left alone, and the state machine
+        forbids a direct jump from DRAFT/SUBMITTED to IN_PROGRESS."""
+        if job.status == Job.STATUS_APPROVED:
+            JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
 
     @staticmethod
     def populate_from_template(job, template):
@@ -317,7 +388,7 @@ class JobService:
                 description=plan_task.description,
                 sort_order=plan_task.sort_order,
                 rate_scheme=plan_task.rate_scheme,
-                active_modifiers=list(plan_task.active_modifiers or []),
+                active_modifiers=copy_active_modifiers(plan_task.active_modifiers),
                 est_qty=plan_task.est_qty,
                 est_worker_time=plan_task.est_worker_time,
             )
@@ -374,7 +445,7 @@ class TaskService:
                 name=template.template_name,
                 assignee=assignee,
                 rate_scheme=template.rate_scheme,
-                active_modifiers=list(template.default_active_modifiers or []),
+                active_modifiers=copy_active_modifiers(template.default_active_modifiers),
                 est_qty=est_qty if est_qty is not None else template.default_billable_qty,
             )
         return task
@@ -395,7 +466,7 @@ class TaskService:
             task = Task.objects.create(
                 job=job, name=name,
                 rate_scheme=scheme,
-                active_modifiers=active_modifiers or [],
+                active_modifiers=copy_active_modifiers(active_modifiers),
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
                 actual_qty=actual_qty,
@@ -459,13 +530,61 @@ class TaskService:
         task.refresh_from_db()
         return task
 
+    @staticmethod
+    def assign(task, assignee_id, worker_queue=None, est_worker_time=None):
+        """Assign (or unassign) a task to a worker.
+
+        Assigned work has to be schedulable, so a task being given an
+        assignee must carry an estimated worker time. When it has none and
+        the caller did not supply one, raise `TaskWorkerTimeRequired` up
+        front so the endpoint can answer with a prompt signal rather than a
+        generic validation error. The save still runs `Task.clean()`, which
+        is the actual enforcer of the invariant. Unassigning (`assignee_id`
+        falsy) has no such requirement.
+        """
+        if assignee_id and est_worker_time is None and not task.est_worker_time:
+            raise TaskWorkerTimeRequired()
+        task.assignee_id = assignee_id or None
+        task.worker_queue = worker_queue
+        if est_worker_time is not None:
+            task.est_worker_time = est_worker_time
+        task.save()
+        return task
+
 
 class TaskLifecycleService:
     """Service for managing Task status transitions and Blep (time tracking) lifecycle."""
 
     @staticmethod
-    def complete_task(task_pk):
-        """Transition task from pending/in_progress/blocked -> complete."""
+    def _promote_pending_task(task):
+        """A Blep means work has begun on the task: promote a `pending` task
+        to `in_progress` and consume its materials. No-op for any other
+        status (an `in_progress` task is already there; a backdated Blep
+        must not reopen a terminal or blocked task). The promotion is a
+        conditional UPDATE on the DB row, so a stale in-memory `task` cannot
+        cause a wrong promotion. Mutates `task` in place when it promotes.
+
+        Material consumption is a side effect of the pending -> in_progress
+        promotion, not of every clock-in — so it fires here, for both the
+        live (start_work) and historical (create_historical) paths."""
+        promoted = Task.objects.filter(
+            pk=task.pk, status=Task.STATUS_PENDING,
+        ).update(status=Task.STATUS_IN_PROGRESS)
+        if promoted:
+            task.status = Task.STATUS_IN_PROGRESS
+            from apps.inventory.services import MaterialService
+            for material in task.materials.all():
+                MaterialService.consume(material)
+
+    @staticmethod
+    def complete_task(task_pk, actual_qty=None):
+        """Transition task from pending/in_progress/blocked -> complete.
+
+        `actual_qty` (optional Decimal): the worker-entered quantity. An
+        ENTERED_QTY task cannot be completed without a positive quantity —
+        either passed here or already on the task. If it's missing, raises
+        `TaskActualQtyRequired` so the caller can prompt for it.
+        """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED):
@@ -473,12 +592,24 @@ class TaskLifecycleService:
                     f"Cannot complete task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
+            if actual_qty is not None:
+                if actual_qty <= 0:
+                    raise ValidationError('Quantity must be greater than 0.')
+                task.actual_qty = actual_qty
+            if (task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and (task.actual_qty is None or task.actual_qty <= 0)):
+                raise TaskActualQtyRequired(task.rate_scheme.unit_label)
+            if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
+                    and task.rate_scheme.get_actual_qty(task) <= 0):
+                raise TaskTimeRequired()
+            update_fields = {'status': Task.STATUS_COMPLETE, 'blocked_reason': ''}
+            if actual_qty is not None:
+                update_fields['actual_qty'] = actual_qty
             BlepService._close_open(task=task)
-            Task.objects.filter(pk=task.pk).update(
-                status=Task.STATUS_COMPLETE, blocked_reason='',
-            )
+            Task.objects.filter(pk=task.pk).update(**update_fields)
             task.status = Task.STATUS_COMPLETE
             task.blocked_reason = ''
+            JobService.mark_work_started(task.job)
             TaskLifecycleService._check_job_work_complete(task)
             return task
 
@@ -583,6 +714,11 @@ class TaskLifecycleService:
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             # Post-split: task is always a Task (work-order side); no container check needed.
+            _assert_job_allows_blep(
+                task.job,
+                (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS),
+                'start work',
+            )
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
                 raise ValidationError(
                     f"Cannot start work: task status is '{task.status}', "
@@ -591,20 +727,16 @@ class TaskLifecycleService:
             now = timezone.now()
 
             if task.status == Task.STATUS_PENDING:
-                # First worker on a pending task: promote and consume materials.
-                # No conflict possible — nobody has touched it yet.
+                # First worker on a pending task: promote (which consumes the
+                # task's materials) and assign. No conflict possible — nobody
+                # has touched it yet.
                 BlepService._close_open(user=user, now=now)
-                updates = {'status': Task.STATUS_IN_PROGRESS}
+                TaskLifecycleService._promote_pending_task(task)
                 if not task.assignee_id:
-                    updates['assignee'] = user
-                Task.objects.filter(pk=task.pk).update(**updates)
-                task.status = Task.STATUS_IN_PROGRESS
-                if 'assignee' in updates:
+                    Task.objects.filter(pk=task.pk).update(assignee=user)
                     task.assignee = user
-                from apps.inventory.services import MaterialService
-                for material in task.materials.all():
-                    MaterialService.consume(material)
                 blep = BlepService._create(task, user, start_time=now)
+                JobService.mark_work_started(task.job)
                 return {'task': task, 'blep': blep}
 
             # Task is in_progress: check for other active workers.
@@ -628,6 +760,7 @@ class TaskLifecycleService:
             if action == 'takeover':
                 other_bleps.update(end_time=now)
             blep = BlepService._create(task, user, start_time=now)
+            JobService.mark_work_started(task.job)
             return {'task': task, 'blep': blep}
 
     @staticmethod
@@ -970,7 +1103,14 @@ class BoardService:
                 labor_cost += elapsed_hours * (rate / 2)
 
         spent = material_cost + labor_cost
-        return {'billed': billed, 'spent': spent, 'profit': billed - spent}
+        # qty x price aggregates and the labor loop all yield >2dp values;
+        # quantize to cents so the board profit display stays clean.
+        cents = Decimal('0.01')
+        return {
+            'billed': billed.quantize(cents),
+            'spent': spent.quantize(cents),
+            'profit': (billed - spent).quantize(cents),
+        }
 
     @staticmethod
     def _serialize_unpaid_job(job):
@@ -1010,6 +1150,9 @@ class BoardService:
             'blocked_reason': task.blocked_reason,
             'assignee_id': task.assignee_id,
             'worker_queue': task.worker_queue,
+            'est_worker_time': (
+                str(task.est_worker_time) if task.est_worker_time else None
+            ),
         }
 
     @staticmethod

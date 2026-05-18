@@ -12,7 +12,7 @@
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
-  import { formatQtyUnits } from '../../lib/format.js';
+  import { formatQtyUnits, formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
@@ -325,6 +325,7 @@
       <tr><td>Description</td><td>{task.description || '-'}</td></tr>
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
+      <tr><td>Est. worker time</td><td>{formatDuration(task.est_worker_time)}</td></tr>
       <tr><td>Rate</td><td>{task.effective_rate ? `$${task.effective_rate}` : '-'}</td></tr>
     </tbody>
   </table>
@@ -352,6 +353,11 @@
             {#if actualQtySaved}<span class="saved-flash">saved</span>{/if}
             {#if actualQtyError}<span class="field-error">{actualQtyError}</span>{/if}
           </td></tr>
+      {:else if task.scheme_algorithm === 'elapsed_time'}
+        <tr><td><strong>Actual {task.scheme_unit_label || 'hour'}s</strong></td>
+          <td>{Number(task.actual_hours) || 0}</td></tr>
+      {:else if task.scheme_algorithm === 'flat_fee'}
+        <tr><td><strong>Actual</strong></td><td>1</td></tr>
       {/if}
       {#if task.computed_charge}
         <tr><td><strong>Charge</strong></td><td>${task.computed_charge}</td></tr>

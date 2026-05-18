@@ -6,6 +6,18 @@ from apps.core.models import AbstractWorkContainer
 from apps.core.history import history
 
 
+def copy_active_modifiers(value):
+    """Return a copy of an atom's active_modifiers JSON, preserving its shape.
+
+    flat_fee atoms store a dict ({'flat_fee_price': str}); other algorithms
+    store a list of modifier keys. A bare list(value) would silently reduce a
+    dict to a list of its keys, dropping the price.
+    """
+    if isinstance(value, dict):
+        return dict(value)
+    return list(value or [])
+
+
 @history(exclude=['job_id'])
 class Job(AbstractWorkContainer):
     STATUS_DRAFT = 'draft'
@@ -50,10 +62,10 @@ class Job(AbstractWorkContainer):
             Job.STATUS_SUBMITTED: [Job.STATUS_APPROVED, Job.STATUS_REJECTED],
             Job.STATUS_APPROVED: [Job.STATUS_IN_PROGRESS, Job.STATUS_CANCELLED],
             Job.STATUS_IN_PROGRESS: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],  # NEW
-            Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED],
+            Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_IN_PROGRESS],
             Job.STATUS_REJECTED: [],  # Terminal state
             Job.STATUS_COMPLETED: [],  # Terminal state
-            Job.STATUS_CANCELLED: [],  # Terminal state
+            Job.STATUS_CANCELLED: [Job.STATUS_IN_PROGRESS],  # reactivatable (undo accidental cancel)
         }
 
         # Check if this is an update
@@ -69,7 +81,15 @@ class Job(AbstractWorkContainer):
                 if old_job.start_date and self.start_date != old_job.start_date:
                     self.start_date = old_job.start_date
 
-                if old_job.completed_date and self.completed_date != old_job.completed_date:
+                reactivating = (
+                    old_status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED)
+                    and self.status == Job.STATUS_IN_PROGRESS
+                )
+                if reactivating:
+                    # Reactivating a closed job — it is active again, so it
+                    # must not carry a completed_date.
+                    self.completed_date = None
+                elif old_job.completed_date and self.completed_date != old_job.completed_date:
                     self.completed_date = old_job.completed_date
 
                 # If status hasn't changed, no validation needed
@@ -104,7 +124,8 @@ class Job(AbstractWorkContainer):
                         self.start_date = timezone.now()
 
                     # Transitioning to terminal states - set completed_date
-                    if self.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED] and not self.completed_date:
+                    if self.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
+                                       Job.STATUS_REJECTED] and not self.completed_date:
                         self.completed_date = timezone.now()
 
             except Job.DoesNotExist:
@@ -193,9 +214,10 @@ class PlanTask(TaskBase):
         """
         if not self.rate_scheme_id or self.est_qty is None:
             return Decimal('0.00')
-        return self.rate_scheme.compute_charge(
+        charge = self.rate_scheme.compute_charge(
             self.est_qty, self.active_modifiers,
         )
+        return charge.quantize(Decimal('0.01'))
 
     def effective_rate(self):
         if not self.rate_scheme_id:
@@ -286,6 +308,15 @@ class Task(TaskBase):
                     raise ValidationError(
                         {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
                     )
+        # An assigned task must carry an estimated worker time: assigned work
+        # has to be schedulable, and it can't be scheduled without a duration.
+        # TaskService.assign enforces the same rule on the board's update()
+        # path, which bypasses full_clean().
+        if self.assignee_id and not self.est_worker_time:
+            raise ValidationError({
+                'est_worker_time':
+                    'An assigned task must have an estimated worker time.',
+            })
         # charge guard removed in B4. rate_scheme is NOT NULL at DB level (B8).
 
     def save(self, *args, **kwargs):
@@ -311,7 +342,8 @@ class Task(TaskBase):
         with PlanTask/Material/PlanMaterial.
         """
         qty = self.rate_scheme.get_actual_qty(self)
-        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        return charge.quantize(Decimal('0.01'))
 
     def effective_rate(self):
         return self.rate_scheme.effective_rate(self.active_modifiers)
@@ -416,8 +448,30 @@ class RateScheme(models.Model):
             self.full_clean()
         super().save(*args, **kwargs)
 
+    @staticmethod
+    def _flat_fee_price(active_modifiers):
+        """Pull the flat-fee unit price out of an atom's active_modifiers JSON.
+
+        flat_fee atoms store the price as {'flat_fee_price': <str>}; every
+        other algorithm stores a list of modifier keys. Returns a Decimal, or
+        None when no price is present (caller falls back to the scheme rate).
+        """
+        if isinstance(active_modifiers, dict):
+            raw = active_modifiers.get('flat_fee_price')
+            if raw is not None and raw != '':
+                return Decimal(str(raw))
+        return None
+
     def effective_rate(self, active_modifiers=None):
-        """Compute rate with additive modifier surcharges."""
+        """Compute the per-unit rate.
+
+        For flat_fee the per-unit price rides on the atom (active_modifiers);
+        self.rate is only a fallback. For time/qty schemes, apply additive
+        modifier surcharges.
+        """
+        if self.algorithm == self.FLAT_FEE:
+            price = self._flat_fee_price(active_modifiers)
+            return price if price is not None else self.rate
         modifier_percent = sum(
             m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
         )
@@ -433,11 +487,17 @@ class RateScheme(models.Model):
             total_seconds = sum(
                 b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
             )
-            return Decimal(total_seconds) / 3600
+            # Quantize to 2 places: a raw seconds/3600 division is
+            # non-terminating (~28 digits) and overflows the line item qty
+            # field (max_digits=10) when carried into the invoice wizard.
+            return (Decimal(str(total_seconds)) / 3600).quantize(Decimal('0.01'))
         elif self.algorithm == self.ENTERED_QTY:
             return task.actual_qty or Decimal('0')
         else:  # FLAT_FEE
-            return Decimal('1')
+            # flat_fee bills a fixed unit price x estimated quantity. est_qty
+            # comes from the worksheet, carried to the Task and editable there;
+            # fall back to 1 for a genuine one-off fee with no quantity.
+            return task.est_qty if task.est_qty is not None else Decimal('1')
 
     def get_modifier_inputs(self):
         """Return modifiers list for UI rendering."""

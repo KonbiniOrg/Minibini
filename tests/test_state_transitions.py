@@ -172,7 +172,8 @@ class JobStateTransitionTest(TestCase):
             job.refresh_from_db()  # Reset to completed
 
     def test_cancelled_to_any_invalid(self):
-        """Test that Cancelled is a terminal state and cannot transition."""
+        """Cancelled cannot transition anywhere except in_progress (Bug 4
+        reactivation), which is intentionally excluded from this list."""
         job = Job.objects.create(
             job_number="JOB016",
             contact=self.contact,

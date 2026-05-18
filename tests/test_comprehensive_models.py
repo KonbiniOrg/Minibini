@@ -63,6 +63,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         task = Task.objects.create(
             assignee=self.user,
+            est_worker_time=timedelta(hours=1),
             job=job,
             name="Test Task",
             rate_scheme=self.scheme,

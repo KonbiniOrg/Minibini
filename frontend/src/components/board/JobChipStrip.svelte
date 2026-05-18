@@ -82,6 +82,7 @@
       class:blocked={job.sub_status === 'blocked'}
       class:dimmed={focusedJobIds.length > 0 && !focusedJobIds.includes(job.job_id)}
       onclick={() => handleChipClick(job.job_id)}
+      onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleChipClick(job.job_id); } }}
       onmouseenter={(e) => scheduleShow(job.job_id, e.currentTarget)}
       onmouseleave={scheduleHide}
       role="button"
@@ -100,6 +101,8 @@
 </div>
 
 {#if hoveredJob}
+  <!-- hover-preview popup: mouse-only affordance, no keyboard interaction -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="chip-popup"
     style="{popupPos.anchor === 'above' ? 'bottom' : 'top'}: {popupPos.y}px; left: {popupPos.left}px;"

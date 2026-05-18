@@ -111,6 +111,7 @@ class TaskModelFixtureTest(FixtureTestCase):
 
         new_task = Task.objects.create(
             assignee=user,
+            est_worker_time=timedelta(hours=1),
             job=job,
             name="Cabinet installation",
             rate_scheme_id=1,

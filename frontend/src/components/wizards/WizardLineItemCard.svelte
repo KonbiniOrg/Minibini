@@ -147,7 +147,6 @@
   }
 
   async function deleteLineItem() {
-    if (!confirm('Delete this line item?')) return;
     await api.delete(`${apiBase}/line-items/${lineItem.line_item_id}/`);
     onchange?.();
   }
@@ -189,7 +188,7 @@
     </button>
     {#if isBundled && isOverridden}
       <span style="color: #a55;">⚠ overridden (computed ${computedSum.toFixed(2)})</span>
-      <a href="#" onclick={(e) => { e.preventDefault(); resetToComputed(); }}>reset to computed</a>
+      <button type="button" onclick={resetToComputed}>reset to computed</button>
     {:else if !isBundled}
       <span style="color: #888;"><em>(manual)</em></span>
     {/if}

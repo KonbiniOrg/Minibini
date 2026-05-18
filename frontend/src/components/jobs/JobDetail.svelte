@@ -543,14 +543,14 @@
                         <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
                       </div>
                       <div class="time-text {over ? 'over' : ''}">
-                        {actual.toFixed(1)} / {est > 0 ? est.toFixed(1) : '?'} {task.scheme_unit_label || 'h'}
+                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'h'}
                         {#if est > 0}
                           {#if over}
-                            <span class="time-delta">(over by {(actual - est).toFixed(1)})</span>
+                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
                           {:else if actual === 0}
                             <span class="time-dim">(not started)</span>
                           {:else}
-                            <span class="time-dim">({(est - actual).toFixed(1)} left)</span>
+                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
                           {/if}
                         {/if}
                       </div>
@@ -563,21 +563,21 @@
                         <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
                       </div>
                       <div class="time-text {over ? 'over' : ''}">
-                        {actual} / {est > 0 ? est : '?'} {task.scheme_unit_label || 'units'}
+                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'units'}
                         {#if est > 0}
                           {#if over}
-                            <span class="time-delta">(over by {actual - est})</span>
+                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
                           {:else if actual === 0}
                             <span class="time-dim">(not started)</span>
                           {:else}
-                            <span class="time-dim">({est - actual} left)</span>
+                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
                           {/if}
                         {/if}
                       </div>
                     {:else if task.scheme_algorithm === 'flat_fee'}
-                      <div class="time-text time-dim">flat fee · {Number(task.actual_hours || 0).toFixed(1)}h logged</div>
+                      <div class="time-text time-dim">flat fee · {Number(task.actual_hours || 0).toFixed(2)}h logged</div>
                     {:else}
-                      <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(1)}h logged</div>
+                      <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(2)}h logged</div>
                     {/if}
                   </td>
                 </tr>
@@ -956,11 +956,9 @@
     flex: 0 0 auto;
   }
   .titleblock { padding-left: 52px; min-width: 0; }
-  .titleblock h1 { font-size: 22px; font-weight: 700; margin: 0; color: #fff; }
   .edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
   .edit-link:hover { opacity: 1; text-decoration: underline; }
   .customer-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
-  .customer-line a { color: #fff; text-decoration: underline; }
   .status-row { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 12px; }
   .status-badge {
     padding: 3px 10px; border-radius: 10px; font-size: 12px;
@@ -1241,8 +1239,6 @@
   .est-table tbody tr { background: #eef2ff; }
   .est-table tbody tr:nth-child(even) { background: #e8e5ff; }
   .est-table tbody tr + tr { border-top: 1px solid #ddd6fe; }
-  .est-table tfoot { background: #e0e7ff; border-top: 2px solid #c7d2fe; }
-  .est-table tfoot td { color: #3730a3; }
   .est-table col.col-num { width: 50px; }
   .est-table col.col-qty { width: 70px; }
   .est-table col.col-units { width: 70px; }

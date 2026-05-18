@@ -53,7 +53,7 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 | `cancelled` | Terminal. Frees its claimed atoms (the wizard treats cancelled-invoice claims as available). |
 | `superseded` | Defined in choices, no current transition. |
 | `partly-paid` | Defined in choices, no current transition. The polling service writes `qbo_payment_status='Partial'` but does not flip Minibini's `status`. |
-| `paid` | When written, `Invoice.save()` calls `_maybe_complete_job()` which walks the job through `approved → in_progress → work_complete → completed` if all of the job's invoices are now resolved (paid or cancelled). |
+| `paid` | When written, `Invoice.save()` calls `_maybe_complete_job()` which walks the job through `approved → in_progress → work_complete → completed` (each step via `JobService.update_job`) if all of the job's invoices are now resolved (paid or cancelled). Before the walk it releases any loose pending Materials on the job — `JobService.release_loose_materials` restocks them and a `HistoryEntry` logs it — so the `work_complete` materials gate cannot strand the job on this unattended path. |
 | `defaulted` | Defined in choices, no current transition. |
 
 `InvoiceViewSet.status_actions` registers only `cancel` (writes `STATUS_CANCELLED` directly via a queryset update). Everything else is set by direct `save()` or by code that has not yet been written.
@@ -135,10 +135,12 @@ For the shared concepts — source pool, claim semantics, in-sync vs. override r
 
 `InvoiceWizardService` (in `apps/invoicing/services.py`). Composes on top of `InvoiceService`; manual line item CRUD continues to go through `InvoiceService` and the `LineItemMixin`.
 
+The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_line_item`, `remove_atoms_from_line_item`, and the in-sync / bundle-summary helpers) lives in `BaseWizardService` (`apps/core/wizard.py`), shared with `EstimateWizardService`. `InvoiceWizardService` subclasses it, supplies a config block plus model hooks, and keeps the invoice-specific methods (`open_for_job`, `get_source_pool`, `BILLABLE_JOB_STATUSES`).
+
 | Method | Responsibility |
 |---|---|
 | `open_for_job(job)` | Returns the job's draft `Invoice`. Creates one if none exists. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED}`. |
-| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — non-cancelled tasks for the job, plus a synthetic "Materials (no task)" group for task-less materials with `quantity > 0`. Each atom is annotated with state (`available` / `claimed_by_current` / `claimed_by_other`), computed amount, and (for claimed atoms) the claiming line item or invoice. |
+| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — non-cancelled tasks for the job, plus a synthetic "Materials (no task)" group for task-less materials with `quantity > 0`. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. Atom keys are normalized to match the estimate wizard so the frontend `WizardAtomRow` component is shared. |
 | `add_atoms_to_new_line_item(invoice, atoms)` | Creates a new `InvoiceLineItem` plus N `InvoiceLineItemSource` rows in one transaction. Defaults table below. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows. Recomputes per the in-sync rule. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Removes the matching source rows. Recomputes per the in-sync rule. Returns `{'line_item_deleted': bool}`. If the removal empties the source list, the line item is hard-deleted (via `LineItemService.delete_line_item_with_renumber`) regardless of override state. |
@@ -150,7 +152,14 @@ For the shared concepts — source pool, claim semantics, in-sync vs. override r
 | Case | Description | Units | Qty | Price | Accounting category |
 |---|---|---|---|---|---|
 | Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity` or `1` for tasks) | Atom-derived (`Material.sell_price` or `task.compute_amount()`) | Atom's effective category |
-| Multi-atom | `''` (UI prompts user to name) | `'none'` | `1` | Sum of atom amounts | Uniform-or-null (set if all atoms share one category) |
+| Multi-atom — uniform task bundle | `''` (UI prompts user to name) | Rate scheme `unit_label` | Summed actual quantities | Common effective rate | Uniform-or-null |
+| Multi-atom — anything else | `''` (UI prompts user to name) | `'none'` | `1` | Sum of atom amounts | Uniform-or-null (set if all atoms share one category) |
+
+A multi-atom bundle is a "uniform task bundle" when every atom is a Task
+sharing one `RateScheme` and identical `active_modifiers`. `add_atoms_to_line_item`
+/ `remove_atoms_from_line_item` re-derive the same way on an in-sync line
+item (re-summarize a uniform bundle, else keep qty and recompute the
+per-unit price).
 
 `taxable_override` is left null on creation (uses the category default).
 

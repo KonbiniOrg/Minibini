@@ -225,7 +225,3 @@
     </p>
   </fieldset>
 {/if}
-
-<style>
-  .error { color: #a8071a; }
-</style>

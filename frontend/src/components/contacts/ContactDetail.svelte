@@ -161,10 +161,10 @@
     <p>
       {pageRange(purchaseOrders)}
       {#if purchaseOrders.previous}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onPOPageChange(pageFromUrl(purchaseOrders.previous)); }}>Previous</a>
+        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.previous))}>Previous</button>
       {/if}
       {#if purchaseOrders.next}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onPOPageChange(pageFromUrl(purchaseOrders.next)); }}>Next</a>
+        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.next))}>Next</button>
       {/if}
     </p>
   {/if}
@@ -191,10 +191,10 @@
     <p>
       {pageRange(bills)}
       {#if bills.previous}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onBillPageChange(pageFromUrl(bills.previous)); }}>Previous</a>
+        | <button type="button" onclick={() => onBillPageChange(pageFromUrl(bills.previous))}>Previous</button>
       {/if}
       {#if bills.next}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onBillPageChange(pageFromUrl(bills.next)); }}>Next</a>
+        | <button type="button" onclick={() => onBillPageChange(pageFromUrl(bills.next))}>Next</button>
       {/if}
     </p>
   {/if}

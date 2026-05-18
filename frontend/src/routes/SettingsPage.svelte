@@ -62,11 +62,7 @@
 
   <AccountingCategories />
 
-<RateSchemeManager />
-
-<TaskTemplateManager />
-
-<h3>Payment accounts</h3>
+  <h3>Payment accounts</h3>
 <p>
   <button type="button" onclick={refreshFromQBO} disabled={loadingQBO}>
     {loadingQBO ? 'Loading...' : 'Refresh from QBO'}
@@ -106,13 +102,14 @@
 {:else if tab === 'setup'}
   <UnitsManager />
 
+  <RateSchemeManager />
+
+{:else if tab === 'catalog'}
+  <TaskTemplateManager />
+
   <h3>Work templates</h3>
   <p><em>Not yet implemented in Svelte. <a href="/estimates/templates/">Work templates (legacy)</a></em></p>
 
-  <h3>Task templates</h3>
-  <p><em>Not yet implemented in Svelte. <a href="/estimates/task-templates/">Task templates (legacy)</a></em></p>
-
-{:else if tab === 'catalog'}
   <h3>Price list items</h3>
   <p><em>Not yet implemented in Svelte. <a href="/inventory/price-list-items/">Price list items (legacy)</a></em></p>
 {/if}

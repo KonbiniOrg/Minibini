@@ -1,3 +1,4 @@
+from datetime import timedelta
 from django.utils import timezone
 from rest_framework.test import APIClient
 from apps.jobs.models import Task, Blep
@@ -13,6 +14,9 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.user = User.objects.first()
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
         self.task = Task.objects.create(
             job=self.job, name="Test task", rate_scheme_id=1,
         )
@@ -23,11 +27,50 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_complete_task(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        now = timezone.now()
+        Blep.objects.create(
+            task=self.task, start_time=now - timedelta(hours=1), end_time=now,
+        )
         url = f'/api/tasks/{self.task.pk}/complete/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
+
+    def test_complete_entered_qty_task_without_value_signals_needs_qty(self):
+        # rate_scheme 2 in the fixture is entered_qty
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        resp = self.client.post(f'/api/tasks/{eq_task.pk}/complete/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data.get('needs_actual_qty'))
+        self.assertEqual(resp.data.get('unit_label'), 'minute')
+        eq_task.refresh_from_db()
+        self.assertNotEqual(eq_task.status, Task.STATUS_COMPLETE)
+
+    def test_complete_entered_qty_task_with_value_completes(self):
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        resp = self.client.post(
+            f'/api/tasks/{eq_task.pk}/complete/',
+            {'actual_qty': '7'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get('status'), Task.STATUS_COMPLETE)
+        eq_task.refresh_from_db()
+        self.assertEqual(eq_task.status, Task.STATUS_COMPLETE)
+        from decimal import Decimal
+        self.assertEqual(eq_task.actual_qty, Decimal('7'))
+
+    def test_complete_elapsed_task_without_time_signals_needs_time(self):
+        # self.task is rate_scheme 1 (elapsed_time) with no bleps logged.
+        resp = self.client.post(f'/api/tasks/{self.task.pk}/complete/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data.get('needs_time_logged'))
+        self.task.refresh_from_db()
+        self.assertNotEqual(self.task.status, Task.STATUS_COMPLETE)
 
     def test_block_task(self):
         url = f'/api/tasks/{self.task.pk}/block/'
@@ -149,6 +192,9 @@ class TaskSerializerStatusTest(BaseTestCase):
         self.user = User.objects.first()
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
         self.task = Task.objects.create(
             job=self.job, name="Test task", rate_scheme_id=1,
         )
