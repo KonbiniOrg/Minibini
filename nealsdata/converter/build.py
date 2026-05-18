@@ -5,6 +5,7 @@ argument and appends fixture records to c.fixture_data via c.add_fixture().
 """
 import json
 from datetime import datetime
+from decimal import Decimal
 
 from nealsdata.converter import parsing as P
 
@@ -762,3 +763,152 @@ def derive_atoms(c):
                 'units':       'each',
                 'sort_order':  10,
             })
+
+
+# Maps FreeAgent Invoice Status values to Minibini invoice status constants.
+# 'Sent' with a paid date is handled specially in build_invoices (→ 'paid').
+_INV_STATUS_MAP = {
+    'Draft':      'draft',
+    'Cancelled':  'cancelled',
+    'Open':       'open',
+}
+
+
+def _map_invoice_status(fa_status, paid_date):
+    """Map a FreeAgent invoice status string to a Minibini status constant.
+
+    FreeAgent marks all sent invoices (paid or unpaid) as 'Sent'. We detect
+    paid invoices by the presence of a Paid Date value.
+    """
+    s = (fa_status or '').strip()
+    if s == 'Sent':
+        # If a paid date is present, the invoice was paid in full.
+        return 'paid' if paid_date else 'open'
+    return _INV_STATUS_MAP.get(s, 'open')
+
+
+def build_invoices(c):
+    """Emit invoicing.invoice and invoicing.invoicelineitem fixtures.
+
+    Linkage strategy (plan amendment):
+      For each spine job, collect the set of Invoice Reference values from
+      that job's Estimate container rows. An Invoice whose Reference matches
+      one of those values belongs to that job.
+
+    Invoices not referenced by any spine job's estimates are skipped.
+
+    Populates:
+        c.invoice_totals — {base_ref: Decimal sum of qty*price for that job's
+                            invoice line items}
+    """
+    # ------------------------------------------------------------------
+    # 1. Build invoice_ref -> (job_pk, base_ref) from estimate rows
+    # ------------------------------------------------------------------
+    inv_ref_to_job = {}   # str(invoice_ref) -> job_pk
+    inv_ref_to_base = {}  # str(invoice_ref) -> base_ref
+
+    for base_ref, job_info in c.jobs.items():
+        job_pk = job_info['job_pk']
+        for est_row in job_info['estimate_rows']:
+            inv_ref = (est_row.get('Invoice Reference') or '')
+            inv_ref_str = str(inv_ref).strip()
+            if inv_ref_str:
+                inv_ref_to_job[inv_ref_str] = job_pk
+                inv_ref_to_base[inv_ref_str] = base_ref
+
+    # ------------------------------------------------------------------
+    # 2. Walk Invoices sheet: collect (container_row, [li_rows]) pairs
+    # ------------------------------------------------------------------
+    all_pairs = []
+    current_container = None
+    current_lis = []
+
+    for row in c.loader.sheets_data.get('Invoices', []):
+        ref = (row.get('Reference') or '').strip()
+
+        if ref:
+            # Skip repeated-header rows
+            if ref == 'Reference':
+                continue
+            # Save the previous container before starting a new one
+            if current_container is not None:
+                all_pairs.append((current_container, current_lis))
+            current_container = row
+            current_lis = []
+        else:
+            # Line-item row
+            if current_container is None:
+                continue
+            item_type = (row.get('Item Type') or '').strip()
+            if item_type == 'Item Type':
+                continue
+            current_lis.append(row)
+
+    # Flush the last container
+    if current_container is not None:
+        all_pairs.append((current_container, current_lis))
+
+    # ------------------------------------------------------------------
+    # 3. Emit matched invoices and their line items
+    # ------------------------------------------------------------------
+    for container, lis in all_pairs:
+        ref_str = str(container.get('Reference') or '').strip()
+        if ref_str not in inv_ref_to_job:
+            continue
+
+        job_pk = inv_ref_to_job[ref_str]
+        base_ref = inv_ref_to_base[ref_str]
+
+        fa_status = (container.get('Status') or '').strip()
+        paid_date = container.get('Paid Date')
+        status = _map_invoice_status(fa_status, paid_date)
+
+        raw_date = container.get('Date')
+        created_date = P.format_date(raw_date) or f'{_FALLBACK_YEAR}-01-01'
+        closed_date = P.format_date(paid_date) if status == 'paid' else None
+
+        inv_pk = c.next_pk('invoicing.invoice')
+        c.add_fixture('invoicing.invoice', inv_pk, {
+            'job':                  job_pk,
+            'invoice_number':       ref_str,
+            'status':               status,
+            'created_date':         created_date,
+            'sent_date':            None,
+            'closed_date':          closed_date,
+            'qbo_id':               None,
+            'qbo_payment_status':   '',
+            'qbo_amount_paid':      None,
+        })
+
+        # Emit line items
+        line_number = 0
+        job_li_total = c.invoice_totals.get(base_ref, Decimal('0'))
+
+        for li_row in lis:
+            item_type = (li_row.get('Item Type') or '').strip()
+            description = str(li_row.get('Description') or '')
+            classification = P.classify_line_item(item_type, description)
+            if classification == 'skip':
+                continue
+
+            line_number += 1
+            qty = P.parse_decimal(li_row.get('Quantity'))
+            price = P.parse_decimal(li_row.get('Price'))
+
+            li_pk = c.next_pk('invoicing.invoicelineitem')
+            c.add_fixture('invoicing.invoicelineitem', li_pk, {
+                'invoice':             inv_pk,
+                'price_list_item':     None,
+                'line_number':         line_number,
+                'qty':                 f'{qty:.2f}',
+                'units':               'none',
+                'description':         description,
+                'price':               f'{price:.2f}',
+                'accounting_category': None,
+                'taxable_override':    None,
+                'tax_rate_override':   None,
+            })
+
+            job_li_total += qty * price
+
+        c.invoice_totals[base_ref] = job_li_total

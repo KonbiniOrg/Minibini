@@ -187,3 +187,31 @@ class AtomDerivationTest(unittest.TestCase):
         for m in self._models('inventory.material'):
             if m['fields']['task'] is not None:
                 self.assertIn(m['fields']['task'], cut_task_pks)
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class InvoiceBuilderTest(unittest.TestCase):
+    def setUp(self):
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=15)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+        build.build_contacts_and_businesses(self.c)
+        build.build_jobs(self.c)
+        build.build_estimates(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_invoices_attach_to_jobs_with_contiguous_line_numbers(self):
+        build.build_invoices(self.c)
+        job_pks = set(self.c.job_map.values())
+        for inv in self._models('invoicing.invoice'):
+            self.assertIn(inv['fields']['job'], job_pks)
+        by_inv = {}
+        for li in self._models('invoicing.invoicelineitem'):
+            by_inv.setdefault(li['fields']['invoice'], []).append(
+                li['fields']['line_number'])
+        for nums in by_inv.values():
+            self.assertEqual(sorted(nums), list(range(1, len(nums) + 1)))

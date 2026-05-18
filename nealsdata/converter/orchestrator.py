@@ -31,6 +31,7 @@ class NealsDataConverter:
         self.rate_scheme_map = {}   # (algorithm, rate_str, unit_label, ac) -> rs_pk
         self.cut_task = {}          # base_ref -> task_pk (first task whose name has 'cut')
         self.time_match_misses = 0  # count of CSV worker-time values with no matching task
+        self.invoice_totals = {}    # base_ref -> Decimal total of qty*price across job's invoice lines
 
     # --- fixture plumbing -------------------------------------------------
     def next_pk(self, model):
