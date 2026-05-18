@@ -409,6 +409,36 @@ inside the auth gate. Routes are page components under
 `frontend/src/routes/<domain>/<PageName>.svelte`. Reusable pieces live
 in `frontend/src/components/`.
 
+### 5.5 Style scoping gotcha (and a small footgun)
+
+Svelte scopes component `<style>` blocks per component. Class selectors
+defined in one component's `<style>` are silently invisible to the DOM
+rendered by another component, even when the class name matches.
+
+Concrete example we hit: `JobDetail.svelte` defines `.panel`,
+`.panel-head`, `.panel-scroll` for the Description / History card
+chrome. When `DeliverablesSection.svelte` was added as a sibling card,
+its outer element used `class="panel deliverables-panel"`, but the
+panel chrome did not render — the white card, border, rounded corners,
+and uppercase header treatment all came from JobDetail's scoped
+classes, which don't reach a child component's elements. Result: a
+borderless, unstyled list.
+
+Workaround in place today: copy the relevant rules into the child
+component's own `<style>` block (`DeliverablesSection.svelte` now owns
+its own `.panel` / `.panel-head` / `.panel-scroll` rules). This works
+but duplicates the styling, so the components can drift.
+
+Better long-term fix (deferred): extract shared UI chrome (panel
+shapes, common section heads, etc.) into a global stylesheet, or use
+`:global(.panel) { ... }` once in a "host" component. We have not
+audited which selectors deserve this treatment yet. When the styling
+layer is reorganized, this is the first item on the list.
+
+Rule of thumb when working on a new SPA component: if you reuse a
+class name from another component and the styling vanishes, this is
+the cause. Either copy the rule in, or promote it to global.
+
 ---
 
 ## 6. View mode (full / lite)

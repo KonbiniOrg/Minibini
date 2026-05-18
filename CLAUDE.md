@@ -65,6 +65,7 @@ Minibini/
 │   ├── invoicing/  # Invoice, InvoiceLineItem
 │   ├── inventory/  # PriceListItem, Material, Earmark, InventoryAdjustment
 │   ├── purchasing/ # PurchaseOrder, Bill, line items
+│   ├── deliverables/ # Deliverable, Shipment, ShipmentItem
 │   └── search/     # Cross-entity search service
 ├── frontend/       # Svelte 5 SPA (Vite, svelte-spa-router)
 ├── templates/      # Django HTML templates (server-rendered views)
@@ -94,7 +95,7 @@ Minibini/
 | Doc | Covers |
 |---|---|
 | `architecture-and-conventions.md` | Service layer, mixin catalog, permissions plumbing, line-item pattern, view-mode, history capture, sidebar |
-| `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service |
+| `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service, Deliverables, Shipments |
 | `estimates-and-prices.md` | RateScheme + supersession, billable atoms, Estimate + wizard, atom carry-over, AC pass-through |
 | `materials-inventory-and-purchasing.md` | PriceListItem, Material, PlanMaterial, Earmarks, units, PurchaseOrder, Bill |
 | `invoicing-and-expenses.md` | Invoice + wizard, send-to-customer flow, Expense + Reimbursement |
@@ -114,6 +115,7 @@ Minibini/
 | `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem | materials-inventory-and-purchasing |
 | `apps.invoicing` | Invoice, InvoiceLineItem, InvoiceLineItemSource | invoicing-and-expenses |
 | `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |
+| `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-tasks-and-worksheets §12 |
 | `apps.qbo` | QBOConnection, QBOSyncLog | quickbooks-integration |
 
 ## Configuration Model
@@ -161,6 +163,7 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 - `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
 - `/api/price-list-items/`, `/api/materials/`, `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
 - `/api/expenses/`, `/api/reimbursements/`
+- `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
 - `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
 - `/api/emails/`, `/api/search/`, `/api/settings/`, `/api/home/`
 
@@ -186,6 +189,7 @@ The primary UI is a Svelte 5 SPA at `frontend/`, built with Vite and using hash-
 Conventions to keep the SPA's interaction vocabulary consistent. New code follows these unless there's a specific reason not to.
 
 - **Links navigate; buttons act.** Use `<a href="...">` (or `use:link`) for anything that takes the user to a different view. Use `<button>` for anything that mutates state, opens a modal, or triggers an API call without a navigation. Don't dress a `<button>` as a link to navigate, and don't wrap a `<a>` around an action handler.
+- **Saves are explicit, never blur-only.** `onblur` (or any other implicit focus/navigation event) must never be the only trigger that commits a change to the server. Users move focus accidentally — losing or saving work as a side effect is hostile. Every mutation needs an explicit confirmation: a Save button, an Enter-on-form, an explicit modal "OK". `onblur` is fine as a secondary trigger (validating format, normalizing values into pending state) but the actual API call must wait for a deliberate action.
 
 ## REST API (`apps/api/`)
 

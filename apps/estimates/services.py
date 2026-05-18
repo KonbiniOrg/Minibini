@@ -71,6 +71,12 @@ class EstimateService:
             raise NotFoundError(f'Estimate {pk} not found')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Only draft estimates can be marked as open.')
+
+        # Guard: estimate cannot be sent without a non-empty Deliverables list.
+        from apps.deliverables.models import Deliverable
+        if not Deliverable.objects.filter(job=estimate.job).exists():
+            raise ValidationError('Cannot send estimate: job has no deliverables.')
+
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 

@@ -868,7 +868,112 @@ Personal Expenses point at a Reimbursement via `Expense.reimbursement`.
 
 ---
 
-### 1.23 QBOConnection
+### 1.23 Deliverable
+
+Depends on: Job.
+
+A finished item the customer is buying on a Job. No price; only quantity,
+units, and a free-text description. The Deliverables list is the
+customer-facing manifest distinct from billing line items.
+
+- **job** (required FK → Job, CASCADE)
+- **description** (required, text)
+- **qty_ordered** (required, decimal(10,2)): customer-agreed quantity. Only
+  changes via change order (deferred — not yet implemented).
+- **units** (required, max 50 chars): drawn from `Configuration['units_list']`
+- **sort_order** (PositiveInteger): auto-assigned to next slot on save when
+  unset (10, 20, 30, …). Renumbered to a contiguous sequence after a
+  service-driven delete.
+- **created_at** / **updated_at**: timestamps.
+- `db_table = 'deliverables'`. Default ordering: `sort_order`.
+
+**Editability** — computed from the Job's estimate state, not stored:
+
+- **Editable** when no estimate exists OR the latest non-terminal estimate is
+  in `draft` (terminal here means `superseded`, `rejected`, or `expired`).
+- **Read-only otherwise**, with the UI surfacing a reason
+  (`estimate_sent` when latest active is `open`; `estimate_accepted` when any
+  estimate on the Job is `accepted`).
+- Enforced by `DeliverableService._assert_editable(job)`; create / update /
+  delete / reorder all raise `ValidationError` outside the editable state.
+
+**Constraint**: `qty_ordered > 0` (validated by service when supplied via
+API; not a DB constraint).
+
+See `docs/designs/jobs-tasks-and-worksheets.md` for the workflow and §2.12
+below for the estimate-send guard.
+
+---
+
+### 1.24 Shipment (+ ShipmentItem)
+
+Depends on: Job (Shipment); Shipment + Deliverable (ShipmentItem).
+
+A fulfillment event for a Job. Multiple Shipments per Job support phased
+delivery / backorders. A Shipment is identified by a per-Job `sequence`
+counter (no global document number).
+
+#### Shipment
+
+- **job** (required FK → Job, CASCADE)
+- **sequence** (required PositiveInteger): per-Job counter assigned by
+  `ShipmentService.create` as `max(existing.sequence) + 1` or 1.
+- **status**: `prepared` (default) → `picked_up`. Terminal at `picked_up`;
+  no reverse transition.
+- **prepared_date** (default `now()`): set on create
+- **picked_up_date** (nullable): set by `ShipmentService.mark_picked_up`
+  when status flips
+- **notes** (blank text)
+- **created_at** / **updated_at**: timestamps.
+- `db_table = 'shipments'`. `unique_together = [('job', 'sequence')]`.
+  Default ordering: `sequence`.
+
+**Constraints:**
+
+- A Shipment can only be created when the Job has at least one estimate in
+  `accepted` status. Enforced in `ShipmentService.create`; the model has no
+  guard.
+- A Shipment in `picked_up` status is read-only: no edits, no item changes,
+  no deletion.
+- A `prepared` Shipment can only be deleted if `shipment.items` is empty.
+  The UI's "Discard shipment" flow removes items first, then deletes the
+  shipment.
+- If `status == 'picked_up'`, `picked_up_date` must be set. If
+  `status == 'prepared'`, `picked_up_date` must be null.
+
+#### ShipmentItem
+
+- **shipment** (required FK → Shipment, CASCADE)
+- **deliverable** (required FK → Deliverable, PROTECT)
+- **qty** (required, decimal(10,2)): contribution this shipment makes
+  toward the parent Deliverable.
+- `db_table = 'shipment_items'`.
+  `unique_together = [('shipment', 'deliverable')]` — one row per
+  (Shipment, Deliverable) pair.
+  Default ordering: by parent Deliverable's `sort_order`.
+
+**Constraints:**
+
+- `qty > 0` (validated by service).
+- For each Deliverable, the sum of `qty` across all `ShipmentItem` rows
+  that point at it must not exceed `Deliverable.qty_ordered`. Validated in
+  `ShipmentService.add_item` / `update_item` via
+  `_validate_qty_bounds(deliverable, …)`. The bound check counts items
+  across all Shipments regardless of shipment status — committed inventory
+  cannot exceed ordered quantity.
+- Items may not be created, updated, or deleted on a `picked_up` Shipment.
+
+**Defense-in-depth**: `Deliverable` PROTECT on `ShipmentItem.deliverable`
+makes it impossible to remove a Deliverable that any Shipment references.
+Reachable only via change orders (deferred); the Deliverable editability
+rules already prevent deletion once shipments could exist.
+
+See `docs/designs/jobs-tasks-and-worksheets.md` for the full
+fulfillment workflow.
+
+---
+
+### 1.25 QBOConnection
 
 Standalone. One active row at a time (singleton-ish — uniqueness enforced
 in the application, not the schema). See
@@ -885,7 +990,7 @@ in the application, not the schema). See
 
 ---
 
-### 1.24 QBOSyncLog
+### 1.26 QBOSyncLog
 
 Append-only audit trail of sync operations. No invariants beyond schema.
 
@@ -1122,7 +1227,41 @@ parent's.
 
 ---
 
-### 2.12 RateScheme supersession
+### 2.12 Estimate mark_open → Deliverables non-empty guard
+
+**Trigger:** `EstimateService.mark_open(estimate_pk)` is called to transition
+an Estimate from `draft` to `open`.
+
+**Effects:**
+- If the Job has zero `Deliverable` rows, `ValidationError` is raised and
+  no state changes.
+- Otherwise the transition proceeds normally (Estimate goes `open`, signal
+  walks the Job through `draft → submitted` if needed, the worksheet — if
+  draft — moves to `final`).
+
+**Data constraint:** Every `open` (or `accepted` / `superseded` / `rejected`
+that was previously `open`) Estimate must have a Job with at least one
+Deliverable. A `draft` Estimate may exist without Deliverables.
+
+---
+
+### 2.13 Shipment pick-up → picked_up_date set
+
+**Trigger:** `ShipmentService.mark_picked_up(pk)` is called on a `prepared`
+Shipment.
+
+**Effects:**
+- `Shipment.status` transitions `prepared → picked_up`.
+- `Shipment.picked_up_date` is set to `now()`.
+- The Shipment and its `ShipmentItem` rows become read-only.
+
+**Data constraint:** A Shipment in `picked_up` status must have
+`picked_up_date` set. A Shipment in `prepared` status must have
+`picked_up_date` null.
+
+---
+
+### 2.14 RateScheme supersession
 
 **Trigger:** `RateScheme.supersede(**overrides)` is called.
 

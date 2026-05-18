@@ -200,14 +200,23 @@ class EstimateServiceMarkOpenTest(EstimatesTestBase):
     """Tests for EstimateService.mark_open."""
 
     def test_mark_open(self):
+        from apps.deliverables.models import Deliverable
         est = EstimateService.create_for_job(self.job.pk)
         EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
+        # mark_open requires the job to have at least one Deliverable.
+        Deliverable.objects.create(
+            job=self.job, description='Widget', qty_ordered=Decimal('1'), units='ea',
+        )
         updated = EstimateService.mark_open(est.pk)
         self.assertEqual(updated.status, Estimate.STATUS_OPEN)
 
     def test_mark_open_updates_worksheet(self):
+        from apps.deliverables.models import Deliverable
         est = EstimateService.create_for_job(self.job.pk)
         EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
+        Deliverable.objects.create(
+            job=self.job, description='Widget', qty_ordered=Decimal('1'), units='ea',
+        )
         ws = EstWorksheet.objects.create(
             job=self.job, estimate=est, status=Job.STATUS_DRAFT,
         )

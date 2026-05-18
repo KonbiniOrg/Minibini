@@ -28,6 +28,8 @@
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateWizardPage from './routes/estimates/EstimateWizardPage.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
+  import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
+  import PackingListPrint from './routes/shipments/PackingListPrint.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
   import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
@@ -58,7 +60,9 @@
     '/jobs/:id/edit': JobEditPage,
     '/jobs/:id/create-worksheet': CreateWorksheetPage,
     '/jobs/:id/tasklist': JobTaskListPage,
+    '/jobs/:jobId/shipments': JobShipmentsPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
+    '/shipments/:sid/print': PackingListPrint,
     '/worksheets/:id': WorksheetDetailPage,
     '/worksheets/:wsId/plan-tasks/:planTaskId': PlanTaskDetailPage,
     '/estimates/:id/wizard': EstimateWizardPage,

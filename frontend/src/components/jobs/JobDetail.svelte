@@ -1,5 +1,8 @@
 <script>
   import HistoryPanel from '../HistoryPanel.svelte';
+  import DeliverablesSection from './DeliverablesSection.svelte';
+  import ShipmentsPillar from './ShipmentsPillar.svelte';
+  import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
   import { user } from '../../stores/auth.js';
   import { api } from '../../lib/api.js';
@@ -91,6 +94,24 @@
   let poList = $derived(purchaseOrders?.results || []);
   let draftInvoice = $derived(invList.find(inv => inv.status === 'draft') || null);
 
+  // Shipments are managed on the dedicated Job Shipments page. Only count
+  // is shown here for at-a-glance information on the accordion pillar.
+  let shipmentCount = $state(0);
+
+  async function refreshShipmentCount() {
+    try {
+      const r = await api.get(`/api/shipments/?job=${job.job_id}`);
+      const list = r?.results || r || [];
+      shipmentCount = list.length;
+    } catch {
+      shipmentCount = 0;
+    }
+  }
+
+  $effect(() => {
+    if (job?.job_id) refreshShipmentCount();
+  });
+
   // Invoice helpers
   function invoiceTotal(inv) {
     return (inv?.line_items || []).reduce(
@@ -177,7 +198,7 @@
   let jobMaterials = $derived(job.materials || []);
 
   // Horizontal accordion state — which section is expanded
-  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'pos'];
+  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'shipments', 'pos'];
   const storageKey = (id) => `jobDetailActiveSection_${id}`;
 
   function getDefaultSection() {
@@ -220,7 +241,7 @@
 
 <JobHeader {job} {contact} {onStatusChange} />
 
-<!-- DESCRIPTION + HISTORY (fixed height) -->
+<!-- DESCRIPTION + DELIVERABLES + HISTORY (fixed height) -->
 <div class="midband">
   <div class="panel description-panel">
     <div class="panel-head">Description</div>
@@ -228,6 +249,7 @@
       <p>{job.description || 'No description.'}</p>
     </div>
   </div>
+  <DeliverablesSection jobId={job.job_id} />
   <div class="panel history-panel">
     <div class="panel-scroll history-scroll-host">
       <HistoryPanel {history} {emails} {onAddNote} />
@@ -771,6 +793,31 @@
     </div>
   {/if}
 
+  <!-- Shipments -->
+  {#if activeSection !== 'shipments'}
+    <div class="pillar pillar-ship"
+         role="button" tabindex="0"
+         onclick={() => openSection('shipments')}
+         onkeydown={(e) => e.key === 'Enter' && openSection('shipments')}>
+      <span class="label-v">Shipments</span>
+      <span class="pillar-count">{shipmentCount}</span>
+    </div>
+  {:else}
+    <div class="open open-ship">
+      <div class="top-bar top-bar-ship">
+        <span class="top-bar-title">
+          SHIPMENTS{#if shipmentCount} · {shipmentCount}{:else} · None{/if}
+        </span>
+        <span class="top-bar-actions">
+          <a use:link href={`/jobs/${job.job_id}/shipments`}>Manage shipments →</a>
+        </span>
+      </div>
+      <div class="body">
+        <ShipmentsPillar jobId={job.job_id} />
+      </div>
+    </div>
+  {/if}
+
   <!-- Purchase Orders -->
   {#if activeSection !== 'pos'}
     <div class="pillar pillar-po"
@@ -964,7 +1011,7 @@
   /* MIDBAND */
   .midband {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 1fr 320px;
     gap: 12px;
     padding: 12px 24px;
     background: #f8f9fa;
@@ -1039,6 +1086,7 @@
   .pillar-tasks { background: #b45309; }
   .pillar-mat   { background: #ca8a04; }
   .pillar-inv   { background: #15803d; }
+  .pillar-ship  { background: #0369a1; }
   .pillar-po    { background: #475569; }
 
   .open {
@@ -1064,6 +1112,7 @@
   .top-bar-tasks { background: #b45309; }
   .top-bar-mat   { background: #ca8a04; }
   .top-bar-inv   { background: #15803d; }
+  .top-bar-ship  { background: #0369a1; }
   .top-bar-po    { background: #475569; }
   .top-bar-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .top-bar-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
