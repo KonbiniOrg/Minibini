@@ -3,6 +3,7 @@ import os
 import unittest
 from decimal import Decimal
 from nealsdata.converter import build
+from nealsdata.converter import reconcile
 from nealsdata.converter.orchestrator import NealsDataConverter
 
 XLSX = 'nealsdata/datasets/company-export-220382-2026-05-18-02-19.xlsx'
@@ -219,3 +220,49 @@ class InvoiceBuilderTest(unittest.TestCase):
         if self._models('invoicing.invoicelineitem'):
             self.assertTrue(self.c.invoice_totals)
             self.assertTrue(all(isinstance(v, Decimal) for v in self.c.invoice_totals.values()))
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class ReconcileTest(unittest.TestCase):
+    def setUp(self):
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=20)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+        build.build_contacts_and_businesses(self.c)
+        build.build_jobs(self.c)
+        build.build_estimates(self.c)
+        build.derive_atoms(self.c)
+        build.build_invoices(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_estimate_statuses_and_versioning(self):
+        reconcile.reconcile(self.c)
+        for e in self._models('estimates.estimate'):
+            self.assertIn(e['fields']['status'],
+                          ('draft', 'open', 'accepted', 'rejected',
+                           'superseded', 'expired'))
+            if e['fields']['status'] == 'superseded':
+                self.assertIsNotNone(e['fields']['closed_date'])
+
+    def test_job_dates_consistent_with_status(self):
+        reconcile.reconcile(self.c)
+        for j in self._models('jobs.job'):
+            st = j['fields']['status']
+            if st in ('draft', 'submitted', 'rejected'):
+                self.assertIsNone(j['fields']['start_date'])
+            if st in ('draft', 'submitted', 'approved', 'in_progress',
+                      'work_complete'):
+                self.assertIsNone(j['fields']['completed_date'])
+            if st in ('completed', 'cancelled', 'rejected'):
+                self.assertIsNotNone(j['fields']['completed_date'])
+
+    def test_tasks_on_completed_jobs_are_complete(self):
+        reconcile.reconcile(self.c)
+        jobs = {j['pk']: j['fields']['status'] for j in self._models('jobs.job')}
+        for t in self._models('jobs.task'):
+            if jobs.get(t['fields']['job']) == 'completed':
+                self.assertEqual(t['fields']['status'], 'complete')
