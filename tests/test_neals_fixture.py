@@ -1,5 +1,6 @@
 import os
 import unittest
+from io import StringIO
 from django.test import TestCase
 from django.core.management import call_command
 from apps.jobs.models import Job, Task
@@ -24,3 +25,13 @@ class NealsFixtureLoadTest(TestCase):
                 Deliverable.objects.filter(job=est.job).exists(),
                 f'Job {est.job_id} has a non-draft estimate but no Deliverable',
             )
+
+    def test_validate_data_runs_on_fixture(self):
+        # The validate_data command must run to completion against the
+        # generated fixture (it reports issues, it does not raise on them) —
+        # this exercises every check_* method against real converter output.
+        call_command('loaddata', FIXTURE, verbosity=0)
+        out = StringIO()
+        call_command('validate_data', stdout=out)
+        # It always prints an error summary line ('N error(s)' or 'No errors').
+        self.assertIn('error', out.getvalue().lower())
