@@ -652,6 +652,9 @@ def _build_checklist_tasks(c, base_ref, job_pk, items):
     sort_order = 0
     last_toplevel_pk = None
     for item in items:
+        # The 'Picked up/Delivered' marker drives Shipments, not Tasks.
+        if _is_pickup_marker(item['text']):
+            continue
         sort_order += 1
         name = (item['text'] or 'Task')[:255] or 'Task'
         scheme_pk = _scheme_pk(c, P.checklist_scheme_name(name))
@@ -1007,30 +1010,26 @@ def build_invoices(c):
         c.invoice_totals[base_ref] = job_li_total
 
 
-def _has_pickup_done(card):
-    """True when the card's checklist has a checked 'Picked up/Delivered' item.
+def _is_pickup_marker(text):
+    """True when a checklist line is the 'Picked up/Delivered' marker.
 
-    Matches the marker with or without a trailing recipient name; ordinary
-    'pick up ...' notes are excluded by requiring the 'picked up/delivered'
-    prefix.
+    Matches with or without a trailing recipient name; ordinary
+    'pick up ...' notes fail the 'picked up/delivered' prefix test.
     """
-    for item in P.parse_checklist(card.get('Checklist')):
-        if not item['completed']:
-            continue
-        normalized = item['text'].strip().lower().replace(' ', '')
-        if normalized.startswith('pickedup/delivered'):
-            return True
-    return False
+    return text.strip().lower().replace(' ', '').startswith('pickedup/delivered')
+
+
+def _has_pickup_done(card):
+    """True when the card's checklist has a checked 'Picked up/Delivered' item."""
+    return any(it['completed'] and _is_pickup_marker(it['text'])
+               for it in P.parse_checklist(card.get('Checklist')))
 
 
 def build_shipments(c):
     """Emit deliverables.shipment + deliverables.shipmentitem fixtures.
 
-    A Job gets one picked-up Shipment containing every Deliverable on it when
-    both hold:
-      - the Job is eligible: status 'completed' (either swimlane), or Kanban
-        Stage 'invoice' in the 'Other do' swimlane; and
-      - its Kanban checklist has a checked 'Picked up/Delivered' item.
+    Any Job whose Kanban checklist has a checked 'Picked up/Delivered' item
+    gets one picked-up Shipment containing every Deliverable on the Job.
 
     The shipment's picked-up date is taken near the end of the Job's
     lifetime (completed_date, else the latest invoice date, else the Job's
@@ -1060,13 +1059,8 @@ def build_shipments(c):
         if job_fields is None:
             continue
 
-        # Eligibility: completed (any swimlane), or invoice-stage 'Other do'.
-        stage = (card.get('Stage') or '').strip().lower()
-        eligible = (
-            job_fields['status'] == 'completed'
-            or (stage == 'invoice' and not _is_neals_swimlane(card))
-        )
-        if not eligible or not _has_pickup_done(card):
+        # Any Job with a checked 'Picked up/Delivered' item gets a Shipment.
+        if not _has_pickup_done(card):
             continue
 
         delivs = deliverables_by_job.get(job_pk, [])
