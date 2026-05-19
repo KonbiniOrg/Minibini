@@ -12,12 +12,12 @@ from nealsdata.converter import parsing as P
 # Fallback year when no date can be parsed from the source data.
 _FALLBACK_YEAR = 2025
 
-# Maps FreeAgent estimate Status values to Minibini job status constants.
-_EST_STATUS_TO_JOB_STATUS = {
-    'Draft':    'draft',
-    'Sent':     'submitted',
-    'Approved': 'approved',
-    'Rejected': 'rejected',
+# Maps Kanban 'Stage' values to Minibini job status constants.
+_STAGE_TO_JOB_STATUS = {
+    'estimate':         'submitted',
+    'in progress':      'in_progress',
+    'invoice':          'work_complete',
+    'done or rejected': 'completed',
 }
 
 
@@ -32,52 +32,38 @@ def _revision_index(row):
     return P.revision_parts(ref)[1]
 
 
-def build_users(c):
-    """Emit core.user fixtures: a system user and staff users.
+def build_seed(c):
+    """Emit core.user, core.accountingcategory and jobs.ratescheme records
+    verbatim from the nealseed fixture.
 
-    Sets c.default_user_pk to the pk of the lowest-permission staff user.
+    The records are appended to c.fixture_data exactly as they appear in
+    nealseed (user records there are written without explicit pks; Django
+    assigns them on load). Indexes the seed data for downstream builders:
+      - c.ac_by_code / c.ac_svc_pk / c.ac_mat_pk
+      - c.scheme_by_name
+    Also advances the jobs.ratescheme pk counter past the seeded schemes so
+    any derived (cloned) scheme gets a fresh pk.
     """
-    # System user — inactive, no usable password
-    system_pk = c.next_pk('core.user')
-    c.add_fixture('core.user', system_pk, {
-        'username': 'system',
-        'password': '!',
-        'first_name': '',
-        'last_name': '',
-        'email': '',
-        'is_active': False,
-        'is_staff': False,
-        'is_superuser': False,
-    })
+    from nealsdata.converter.loaders import load_seed_records
 
-    # Primary staff user (admin)
-    admin_pk = c.next_pk('core.user')
-    c.add_fixture('core.user', admin_pk, {
-        'username': 'neal',
-        'password': '!',
-        'first_name': 'Neal',
-        'last_name': '',
-        'email': '',
-        'is_active': True,
-        'is_staff': True,
-        'is_superuser': True,
-    })
+    records = load_seed_records(c.seed_path)
+    max_rs_pk = 0
+    for rec in records:
+        c.fixture_data.append(rec)   # verbatim — preserve pk-less records
+        model = rec['model']
+        fields = rec['fields']
+        if model == 'core.accountingcategory':
+            c.ac_by_code[fields['code']] = rec.get('pk')
+        elif model == 'jobs.ratescheme':
+            c.scheme_by_name[fields['name']] = rec.get('pk')
+            if isinstance(rec.get('pk'), int):
+                max_rs_pk = max(max_rs_pk, rec['pk'])
 
-    # Default (lowest-permission) staff user — used as the fallback creator
-    # for converted records that have no more specific user assignment.
-    default_pk = c.next_pk('core.user')
-    c.add_fixture('core.user', default_pk, {
-        'username': 'staff',
-        'password': '!',
-        'first_name': 'Staff',
-        'last_name': 'User',
-        'email': '',
-        'is_active': True,
-        'is_staff': False,
-        'is_superuser': False,
-    })
-
-    c.default_user_pk = default_pk
+    c.ac_svc_pk = c.ac_by_code.get('SVC')
+    c.ac_mat_pk = c.ac_by_code.get('MTL')
+    if max_rs_pk:
+        c._pk_counters['jobs.ratescheme'] = max(
+            c._pk_counters['jobs.ratescheme'], max_rs_pk)
 
 
 def build_configuration(c):
@@ -100,36 +86,6 @@ def build_configuration(c):
     ]
     for key, value in entries:
         c.add_fixture('core.configuration', key, {'value': value})
-
-
-def build_accounting_categories(c):
-    """Emit core.accountingcategory fixtures for SVC and MAT.
-
-    Sets c.ac_svc_pk and c.ac_mat_pk for use by downstream builders.
-    """
-    svc_pk = c.next_pk('core.accountingcategory')
-    c.add_fixture('core.accountingcategory', svc_pk, {
-        'code': 'SVC',
-        'name': 'Service',
-        'taxable': True,
-        'default_description': '',
-        'is_active': True,
-        'qbo_item_id': '',
-        'qbo_expense_account_id': '',
-    })
-    c.ac_svc_pk = svc_pk
-
-    mat_pk = c.next_pk('core.accountingcategory')
-    c.add_fixture('core.accountingcategory', mat_pk, {
-        'code': 'MAT',
-        'name': 'Materials',
-        'taxable': True,
-        'default_description': '',
-        'is_active': True,
-        'qbo_item_id': '',
-        'qbo_expense_account_id': '',
-    })
-    c.ac_mat_pk = mat_pk
 
 
 def build_contacts_and_businesses(c):
@@ -280,7 +236,8 @@ def build_jobs(c):
     - Client org: parsed from card['Name'] via parse_kanban_name, resolved
       through c.org_map (built by build_contacts_and_businesses).
     - Primary estimate: highest-revision container row from estimate_rows.
-    - Status: mapped from FreeAgent estimate Status field.
+    - Name: the Kanban card Description (FreeAgent has no job names).
+    - Status: mapped from the Kanban card 'Stage' column.
     - Job number: J{year}-{counter:04d}, counter resets per year.
 
     Sets:
@@ -329,25 +286,25 @@ def build_jobs(c):
         year_counters[year] = year_counters.get(year, 0) + 1
         job_number = f'J{year}-{year_counters[year]:04d}'
 
-        # --- 4. Map estimate status → job status --------------------------
-        est_status = (primary_row.get('Status') or '').strip()
-        job_status = _EST_STATUS_TO_JOB_STATUS.get(est_status, 'draft')
+        # --- 4. Map Kanban Stage → job status -----------------------------
+        stage = (card.get('Stage') or '').strip().lower()
+        job_status = _STAGE_TO_JOB_STATUS.get(stage, 'draft')
 
-        # --- 5. Build description from card fields ------------------------
-        parts = []
+        # --- 5. Build name and description from card fields ---------------
         desc = (card.get('Description') or '').strip()
         notes = (card.get('Notes') or '').strip()
-        if desc:
-            parts.append(desc)
-        if notes:
-            parts.append(notes)
+        # Job name: the card Description (the FreeAgent data has no job
+        # names); fall back to the card Name when Description is blank.
+        job_name = (desc or card.get('Name') or '')[:50]
+        # Job description duplicates the full Description plus Notes.
+        parts = [p for p in (desc, notes) if p]
         description = '\n'.join(parts)
 
         # --- 6. Emit fixture ----------------------------------------------
         job_pk = c.next_pk('jobs.job')
         c.add_fixture('jobs.job', job_pk, {
             'job_number':         job_number,
-            'name':               (card.get('Name') or '')[:50],
+            'name':               job_name,
             'contact':            contact_pk,
             'status':             job_status,
             'created_date':       P.format_datetime(raw_date) or f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00',
@@ -591,114 +548,247 @@ def build_estimates(c):
         c.estimates[base] = base_estimates
 
 
-def derive_atoms(c):
-    """Derive RateScheme, Task, Material, and Deliverable fixtures from estimates.
+# Default RateScheme for tasks with no more specific keyword match.
+_CHECKLIST_DEFAULT_SCHEME = 'Shop labor'
 
-    For each job in c.jobs:
-    - Picks the latest estimate version (highest `version` number).
-    - Emits a RateScheme (deduped converter-wide) for each task-classified line.
-    - Emits a Task for each task-classified line.
-    - Emits a Material for each material-classified line (AFTER tasks, so
-      c.cut_task[base_ref] is already populated).
-    - Emits one Deliverable per material-classified line, or a synthetic
-      'Fake Deliverable' when there are no material lines.
-    - Applies CSV worker-time estimates from the Kanban card to specific tasks.
 
-    Mutates c.fixture_data, c.rate_scheme_map, c.cut_task, c.time_match_misses.
+def _scheme_pk(c, scheme_name):
+    """Resolve a seed RateScheme name to its pk, falling back to Shop labor."""
+    return (c.scheme_by_name.get(scheme_name)
+            or c.scheme_by_name.get(_CHECKLIST_DEFAULT_SCHEME))
+
+
+def _match_or_clone_scheme(c, algorithm, rate):
+    """Return the pk of the seed RateScheme nearest in rate among those with
+    the given algorithm; clone it at the line's actual rate if none is close.
     """
-    # Track names already used for RateSchemes to enforce uniqueness.
-    _rs_names_used = set(
-        f['fields']['name']
-        for f in c.fixture_data
+    candidates = [
+        f for f in c.fixture_data
         if f['model'] == 'jobs.ratescheme'
+        and f['fields']['algorithm'] == algorithm
+    ]
+    if not candidates:
+        return _scheme_pk(c, _CHECKLIST_DEFAULT_SCHEME)
+    nearest = min(candidates,
+                  key=lambda f: abs(Decimal(f['fields']['rate']) - rate))
+    near_rate = Decimal(nearest['fields']['rate'])
+    tolerance = max(near_rate, Decimal('1')) / 10   # within ~10%
+    if abs(near_rate - rate) <= tolerance:
+        return nearest['pk']
+    # No close seed scheme — clone the nearest at the line's actual rate.
+    clone_key = ('clone', nearest['pk'], f'{rate:.2f}')
+    if clone_key in c.rate_scheme_map:
+        return c.rate_scheme_map[clone_key]
+    base = nearest['fields']
+    rs_pk = c.next_pk('jobs.ratescheme')
+    c.add_fixture('jobs.ratescheme', rs_pk, {
+        'name':                f"{base['name']} (${rate:.2f})",
+        'description':         base.get('description', ''),
+        'algorithm':           base['algorithm'],
+        'rate':                f'{rate:.2f}',
+        'unit_label':          base['unit_label'],
+        'modifiers':           base.get('modifiers', []),
+        'accounting_category': base['accounting_category'],
+        'replaced_by':         None,
+        'replaced_at':         None,
+    })
+    c.rate_scheme_map[clone_key] = rs_pk
+    return rs_pk
+
+
+def _fallback_scheme_pk(c, li):
+    """RateScheme pk for an estimate-line-item-derived task: keyword rule
+    first, then rate-matching (with clone-on-mismatch) for the default case.
+    """
+    keyword_name = P.checklist_scheme_name(li['description'])
+    if keyword_name != _CHECKLIST_DEFAULT_SCHEME:
+        return _scheme_pk(c, keyword_name)
+    algorithm = P.infer_algorithm(li['item_type'], li['units'])
+    return _match_or_clone_scheme(c, algorithm, li['price'])
+
+
+def _build_checklist_tasks(c, base_ref, job_pk, items):
+    """Emit jobs.task fixtures from parsed Kanban checklist items.
+
+    Indented checklist lines become subtasks of the most recent
+    non-indented line ([X] -> complete, [ ] -> pending).
+    """
+    sort_order = 0
+    last_toplevel_pk = None
+    for item in items:
+        sort_order += 1
+        name = (item['text'] or 'Task')[:255] or 'Task'
+        scheme_pk = _scheme_pk(c, P.checklist_scheme_name(name))
+        parent_pk = last_toplevel_pk if item['is_subtask'] else None
+        task_pk = c.next_pk('jobs.task')
+        c.add_fixture('jobs.task', task_pk, {
+            'job':              job_pk,
+            'rate_scheme':      scheme_pk,
+            'name':             name,
+            'description':      item['text'] or '',
+            'est_qty':          None,
+            'est_worker_time':  None,
+            'actual_qty':       None,
+            'active_modifiers': [],
+            'status':           'complete' if item['completed'] else 'pending',
+            'blocked_reason':   '',
+            'worker_queue':     None,
+            'assignee':         None,
+            'parent_task':      parent_pk,
+            'source_template':  None,
+            'source_plan_task': None,
+            'sort_order':       sort_order,
+        })
+        if not item['is_subtask']:
+            last_toplevel_pk = task_pk
+        if base_ref not in c.cut_task and 'cut' in name.lower():
+            c.cut_task[base_ref] = task_pk
+
+
+def _build_line_item_tasks(c, base_ref, job_pk, task_lines):
+    """Emit jobs.task fixtures from task-classified estimate line items.
+
+    Used only for jobs whose Kanban card has no checklist.
+    """
+    sort_order = 0
+    for li in task_lines:
+        sort_order += 1
+        name = (li['description'] or 'Task')[:255] or 'Task'
+        scheme_pk = _fallback_scheme_pk(c, li)
+        task_pk = c.next_pk('jobs.task')
+        c.add_fixture('jobs.task', task_pk, {
+            'job':              job_pk,
+            'rate_scheme':      scheme_pk,
+            'name':             name,
+            'description':      li['description'] or '',
+            'est_qty':          f"{li['qty']:.2f}",
+            'est_worker_time':  None,
+            'actual_qty':       None,
+            'active_modifiers': [],
+            'status':           'pending',
+            'blocked_reason':   '',
+            'worker_queue':     None,
+            'assignee':         None,
+            'parent_task':      None,
+            'source_template':  None,
+            'source_plan_task': None,
+            'sort_order':       sort_order,
+        })
+        if base_ref not in c.cut_task and 'cut' in name.lower():
+            c.cut_task[base_ref] = task_pk
+
+
+def _apply_worker_times(c, job_pk, card):
+    """Apply the Kanban card's est cut/assembly times to matching tasks."""
+    def _find_task_fixture(predicate):
+        for f in c.fixture_data:
+            if f['model'] == 'jobs.task' and f['fields']['job'] == job_pk:
+                if predicate(f['fields']['name']):
+                    return f
+        return None
+
+    def _set(fixture, raw_val):
+        duration = P.hours_to_duration(raw_val)
+        if duration is not None:
+            fixture['fields']['est_worker_time'] = duration
+
+    raw_cut = card.get('est *cut* time')
+    if raw_cut not in (None, ''):
+        f = _find_task_fixture(lambda n: 'cut' in n.lower())
+        if f is not None:
+            _set(f, raw_cut)
+        else:
+            c.time_match_misses += 1
+
+    raw_ass = card.get('est ASS time')
+    if raw_ass not in (None, ''):
+        f = _find_task_fixture(lambda n: 'assemb' in n.lower())
+        if f is not None:
+            _set(f, raw_ass)
+        else:
+            c.time_match_misses += 1
+
+
+def _build_deliverables(c, job_pk, material_lines):
+    """Emit deliverables.deliverable fixtures — one per material line, or a
+    synthetic 'Fake Deliverable' when the job has no material lines.
+    """
+    # created_at/updated_at are auto fields; loaddata won't populate them, so
+    # the fixture must supply a value. Reuse the job's tz-aware created_date.
+    job_fixture = next(
+        (f for f in c.fixture_data
+         if f['model'] == 'jobs.job' and f['pk'] == job_pk),
+        None,
+    )
+    deliv_ts = (
+        job_fixture['fields']['created_date'] if job_fixture
+        else f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00'
     )
 
-    def _rs_name(base_name):
-        """Return a unique RateScheme name, appending ' (N)' on collision."""
-        if base_name not in _rs_names_used:
-            _rs_names_used.add(base_name)
-            return base_name
-        n = 2
-        while True:
-            candidate = f'{base_name} ({n})'
-            if candidate not in _rs_names_used:
-                _rs_names_used.add(candidate)
-                return candidate
-            n += 1
-
-    def _get_or_create_rate_scheme(algorithm, rate, unit_label, ac):
-        """Return pk of a matching RateScheme, creating one if not seen before."""
-        key = (algorithm, f'{rate:.2f}', unit_label, ac)
-        if key in c.rate_scheme_map:
-            return c.rate_scheme_map[key]
-        base_name = f'{algorithm} ${rate:.2f}/{unit_label}'
-        name = _rs_name(base_name)
-        rs_pk = c.next_pk('jobs.ratescheme')
-        c.add_fixture('jobs.ratescheme', rs_pk, {
-            'name':                name,
-            'description':         '',
-            'algorithm':           algorithm,
-            'rate':                f'{rate:.2f}',
-            'unit_label':          unit_label,
-            'modifiers':           [],
-            'accounting_category': ac,
-            'replaced_by':         None,
-            'replaced_at':         None,
+    if material_lines:
+        d_sort = 0
+        for li in material_lines:
+            d_sort += 10
+            d_pk = c.next_pk('deliverables.deliverable')
+            c.add_fixture('deliverables.deliverable', d_pk, {
+                'job':         job_pk,
+                'description': (li['description'] or '')[:255],
+                'qty_ordered': f"{li['qty']:.2f}",
+                'units':       li['units'] or 'each',
+                'sort_order':  d_sort,
+                'created_at':  deliv_ts,
+                'updated_at':  deliv_ts,
+            })
+    else:
+        d_pk = c.next_pk('deliverables.deliverable')
+        c.add_fixture('deliverables.deliverable', d_pk, {
+            'job':         job_pk,
+            'description': 'Fake Deliverable',
+            'qty_ordered': '1.00',
+            'units':       'each',
+            'sort_order':  10,
+            'created_at':  deliv_ts,
+            'updated_at':  deliv_ts,
         })
-        c.rate_scheme_map[key] = rs_pk
-        return rs_pk
+        c.fake_deliverable_count += 1
 
+
+def derive_atoms(c):
+    """Derive Task, Material and Deliverable fixtures for each job.
+
+    Tasks come from the Kanban card's Checklist when it has any items
+    (each line -> a Task; indented lines -> subtasks; [X] -> complete).
+    Only when a job has no checklist do task-classified estimate line items
+    become Tasks instead. Materials and Deliverables always come from the
+    latest estimate's material-classified line items.
+
+    RateSchemes are the canonical seed schemes (build_seed); checklist tasks
+    are assigned by keyword, fallback tasks by keyword then rate-match/clone.
+
+    Mutates c.fixture_data, c.rate_scheme_map, c.cut_task, c.time_match_misses,
+    c.fake_deliverable_count.
+    """
     for base_ref, job_info in c.jobs.items():
         job_pk = job_info['job_pk']
         card = job_info['card']
 
-        # --- Amendment A: use only the latest estimate version ---------------
+        # Use only the latest estimate version for materials / fallback tasks.
         est_list = c.estimates.get(base_ref, [])
-        if not est_list:
-            continue
-        latest = max(est_list, key=lambda e: e['version'])
-        est_pk = latest['est_pk']
-        lines = c.line_items.get(est_pk, [])
-
+        latest = (max(est_list, key=lambda e: e['version'])
+                  if est_list else None)
+        lines = c.line_items.get(latest['est_pk'], []) if latest else []
         task_lines = [li for li in lines if li['classification'] == 'task']
-        material_lines = [li for li in lines if li['classification'] == 'material']
+        material_lines = [li for li in lines
+                          if li['classification'] == 'material']
 
-        # --- 1 + 2. Emit RateSchemes and Tasks --------------------------------
-        sort_order = 0
-        for li in task_lines:
-            algorithm = P.infer_algorithm(li['item_type'], li['units'])
-            rate = li['price']
-            unit_label = li['units'] or 'hours'
-            rs_pk = _get_or_create_rate_scheme(algorithm, rate, unit_label, c.ac_svc_pk)
+        # --- 1. Tasks: checklist first, estimate line items as fallback ----
+        checklist_items = P.parse_checklist(card.get('Checklist'))
+        if checklist_items:
+            _build_checklist_tasks(c, base_ref, job_pk, checklist_items)
+        else:
+            _build_line_item_tasks(c, base_ref, job_pk, task_lines)
 
-            sort_order += 1
-            name = (li['description'] or 'Task')[:255] or 'Task'
-            task_pk = c.next_pk('jobs.task')
-
-            c.add_fixture('jobs.task', task_pk, {
-                'job':              job_pk,
-                'rate_scheme':      rs_pk,
-                'name':             name,
-                'description':      li['description'] or '',
-                'est_qty':          f"{li['qty']:.2f}",
-                'est_worker_time':  None,
-                'actual_qty':       None,
-                'active_modifiers': [],
-                'status':           'pending',
-                'blocked_reason':   '',
-                'worker_queue':     None,
-                'assignee':         None,
-                'parent_task':      None,
-                'source_template':  None,
-                'source_plan_task': None,
-                'sort_order':       sort_order,
-            })
-
-            # Track first task whose name contains 'cut' (case-insensitive)
-            if base_ref not in c.cut_task and 'cut' in name.lower():
-                c.cut_task[base_ref] = task_pk
-
-        # --- 3. Emit Materials (after tasks so cut_task is set) ---------------
+        # --- 2. Materials (after tasks so cut_task is populated) -----------
         for li in material_lines:
             mat_pk = c.next_pk('inventory.material')
             c.add_fixture('inventory.material', mat_pk, {
@@ -717,83 +807,11 @@ def derive_atoms(c):
                 'source_plan_material': None,
             })
 
-        # --- 4. CSV worker-time assignments ------------------------------------
-        # Helper: find a task fixture for this job matching a name predicate.
-        def _find_task_fixture(job_pk_inner, predicate):
-            for f in c.fixture_data:
-                if f['model'] == 'jobs.task' and f['fields']['job'] == job_pk_inner:
-                    if predicate(f['fields']['name']):
-                        return f
-            return None
+        # --- 3. CSV worker-time assignments --------------------------------
+        _apply_worker_times(c, job_pk, card)
 
-        def _set_worker_time(fixture, raw_val):
-            duration = P.hours_to_duration(raw_val)
-            if duration is not None:
-                fixture['fields']['est_worker_time'] = duration
-
-        raw_cut = card.get('est *cut* time')
-        if raw_cut not in (None, ''):
-            cut_fixture = _find_task_fixture(job_pk, lambda n: 'cut' in n.lower())
-            if cut_fixture is not None:
-                _set_worker_time(cut_fixture, raw_cut)
-            else:
-                c.time_match_misses += 1
-
-        raw_ass = card.get('est ASS time')
-        if raw_ass not in (None, ''):
-            ass_fixture = _find_task_fixture(
-                job_pk,
-                lambda n: 'assemb' in n.lower(),
-            )
-            if ass_fixture is not None:
-                _set_worker_time(ass_fixture, raw_ass)
-            else:
-                c.time_match_misses += 1
-
-        # --- 5. Deliverables (Amendment B) ------------------------------------
-        # Deliverable.created_at/updated_at are auto_now_add/auto_now fields,
-        # which loaddata does NOT auto-populate — the fixture must supply a
-        # value or MySQL rejects the NULL. Derive a timestamp from the job's
-        # created_date (a date); append midnight to make it a datetime.
-        job_fixture = next(
-            (f for f in c.fixture_data
-             if f['model'] == 'jobs.job' and f['pk'] == job_pk),
-            None,
-        )
-        # job_fixture['fields']['created_date'] is already a tz-aware string
-        # ('YYYY-MM-DDT00:00:00+00:00'). Use it directly; fall back to the
-        # fallback tz-aware sentinel when no fixture exists.
-        deliv_ts = (
-            job_fixture['fields']['created_date'] if job_fixture
-            else f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00'
-        )
-
-        if material_lines:
-            d_sort = 0
-            for li in material_lines:
-                d_sort += 10
-                d_pk = c.next_pk('deliverables.deliverable')
-                c.add_fixture('deliverables.deliverable', d_pk, {
-                    'job':        job_pk,
-                    'description': li['description'] or '',
-                    'qty_ordered': f"{li['qty']:.2f}",
-                    'units':       li['units'] or 'each',
-                    'sort_order':  d_sort,
-                    'created_at':  deliv_ts,
-                    'updated_at':  deliv_ts,
-                })
-        else:
-            d_pk = c.next_pk('deliverables.deliverable')
-            c.add_fixture('deliverables.deliverable', d_pk, {
-                'job':        job_pk,
-                'description': 'Fake Deliverable',
-                'qty_ordered': '1.00',
-                'units':       'each',
-                'sort_order':  10,
-                'created_at':  deliv_ts,
-                'updated_at':  deliv_ts,
-            })
-            c.fake_deliverable_count += 1
+        # --- 4. Deliverables -----------------------------------------------
+        _build_deliverables(c, job_pk, material_lines)
 
 
 # Maps FreeAgent Invoice Status values to Minibini invoice status constants.

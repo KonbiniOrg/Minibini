@@ -38,10 +38,18 @@ class BaseBuildersTest(unittest.TestCase):
     def _models(self, model):
         return [f for f in self.c.fixture_data if f['model'] == model]
 
-    def test_build_users_includes_system_user(self):
-        build.build_users(self.c)
+    def test_build_seed_emits_users_acs_schemes(self):
+        build.build_seed(self.c)
         users = self._models('core.user')
         self.assertTrue(any(u['fields']['username'] == 'system' for u in users))
+        codes = {f['fields']['code']
+                 for f in self._models('core.accountingcategory')}
+        self.assertIn('SVC', codes)
+        self.assertIn('MTL', codes)
+        self.assertGreater(len(self._models('jobs.ratescheme')), 0)
+        # build_seed indexes the seed data for downstream builders
+        self.assertEqual(self.c.ac_by_code.get('SVC'), self.c.ac_svc_pk)
+        self.assertIn('Shop labor', self.c.scheme_by_name)
 
     def test_build_configuration_has_numbering_keys(self):
         build.build_configuration(self.c)
@@ -50,14 +58,8 @@ class BaseBuildersTest(unittest.TestCase):
                   'po_counter'):
             self.assertIn(k, keys)
 
-    def test_build_accounting_categories(self):
-        build.build_accounting_categories(self.c)
-        codes = {f['fields']['code'] for f in self._models('core.accountingcategory')}
-        self.assertIn('SVC', codes)
-        self.assertIn('MAT', codes)
-
     def test_build_price_list_items(self):
-        build.build_accounting_categories(self.c)
+        build.build_seed(self.c)
         build.build_price_list_items(self.c)
         self.assertGreater(len(self._models('inventory.pricelistitem')), 100)
 
@@ -166,6 +168,7 @@ class AtomDerivationTest(unittest.TestCase):
         self.c.loader.load()
         self.c.csv_cards = self.c.csv_loader.load()
         self.c.spine = self.c.select_spine()
+        build.build_seed(self.c)
         build.build_contacts_and_businesses(self.c)
         build.build_jobs(self.c)
         build.build_estimates(self.c)
@@ -232,6 +235,7 @@ class ReconcileTest(unittest.TestCase):
         self.c.loader.load()
         self.c.csv_cards = self.c.csv_loader.load()
         self.c.spine = self.c.select_spine()
+        build.build_seed(self.c)
         build.build_contacts_and_businesses(self.c)
         build.build_jobs(self.c)
         build.build_estimates(self.c)
@@ -264,12 +268,14 @@ class ReconcileTest(unittest.TestCase):
             if st in ('completed', 'cancelled', 'rejected'):
                 self.assertIsNotNone(j['fields']['completed_date'])
 
-    def test_tasks_on_completed_jobs_are_complete(self):
+    def test_task_statuses_are_valid_and_preserved(self):
+        # Task status comes from the checklist ([X]/[ ]); reconcile only
+        # cancels tasks on cancelled/rejected jobs and must not clobber
+        # the rest. Verify every task carries a valid status.
         reconcile.reconcile(self.c)
-        jobs = {j['pk']: j['fields']['status'] for j in self._models('jobs.job')}
+        valid = ('pending', 'in_progress', 'blocked', 'complete', 'cancelled')
         for t in self._models('jobs.task'):
-            if jobs.get(t['fields']['job']) == 'completed':
-                self.assertEqual(t['fields']['status'], 'complete')
+            self.assertIn(t['fields']['status'], valid)
 
 
 class ConvertEndToEndTest(unittest.TestCase):

@@ -91,3 +91,41 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(P.infer_algorithm('Services', ''), 'flat_fee')
         self.assertEqual(P.infer_algorithm('-no unit-', 'each'), 'entered_qty')
         self.assertEqual(P.infer_algorithm('-no unit-', ''), 'flat_fee')
+
+
+class ChecklistTest(unittest.TestCase):
+    def test_parse_checklist_basic(self):
+        cell = '[ ] do a thing;\n[X] did a thing'
+        items = P.parse_checklist(cell)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0],
+                         {'text': 'do a thing', 'completed': False,
+                          'is_subtask': False})
+        self.assertEqual(items[1],
+                         {'text': 'did a thing', 'completed': True,
+                          'is_subtask': False})
+
+    def test_parse_checklist_subtasks_and_blanks(self):
+        cell = ('[ ] parent task;\n'
+                '    [X] a finished subtask;\n'
+                '\n'
+                '[x] another top-level')
+        items = P.parse_checklist(cell)
+        self.assertEqual(len(items), 3)
+        self.assertFalse(items[0]['is_subtask'])
+        self.assertTrue(items[1]['is_subtask'])
+        self.assertTrue(items[1]['completed'])
+        self.assertFalse(items[2]['is_subtask'])
+        self.assertTrue(items[2]['completed'])
+
+    def test_parse_checklist_empty(self):
+        self.assertEqual(P.parse_checklist(''), [])
+        self.assertEqual(P.parse_checklist(None), [])
+
+    def test_checklist_scheme_name(self):
+        self.assertEqual(P.checklist_scheme_name('Cut 6 sheets'), 'CNC routing')
+        self.assertEqual(P.checklist_scheme_name('raster laser cut'), 'Laser')
+        self.assertEqual(P.checklist_scheme_name('CAD drawing'), 'CAD')
+        self.assertEqual(P.checklist_scheme_name('draw the part'), 'CAD')
+        self.assertEqual(P.checklist_scheme_name('model the bracket'), 'CAD')
+        self.assertEqual(P.checklist_scheme_name('assemble frames'), 'Shop labor')

@@ -1,8 +1,22 @@
 """Data loaders for the Neal's CNC converter."""
 
 import csv
+import json
 from pathlib import Path
 from typing import Dict, List
+
+
+def load_seed_records(seed_path, models=('core.user', 'core.accountingcategory',
+                                         'jobs.ratescheme')):
+    """Return records for `models` from a Django fixture JSON, verbatim.
+
+    Each record is returned as its original dict (pk present or absent —
+    nealseed's user records are written without explicit pks).
+    """
+    with open(seed_path, encoding='utf-8') as f:
+        data = json.load(f)
+    wanted = set(models)
+    return [rec for rec in data if rec.get('model') in wanted]
 
 try:
     import openpyxl

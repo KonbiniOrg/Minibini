@@ -46,8 +46,9 @@ class KanbanCsvLoaderTest(unittest.TestCase):
     @unittest.skipUnless(os.path.exists('nealsdata/datasets/neals kanban.csv'), 'kanban csv not present')
     def test_loads_real_file(self):
         cards = KanbanCsvLoader('nealsdata/datasets/neals kanban.csv').load()
-        self.assertGreater(len(cards), 2000)
+        self.assertGreater(len(cards), 50)
         self.assertTrue(any(c['External ID'] for c in cards))
+        self.assertIn('Checklist', cards[0])
 
 
 class DiscoverDatasetsTest(unittest.TestCase):

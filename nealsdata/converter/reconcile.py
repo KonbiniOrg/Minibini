@@ -56,13 +56,14 @@ def _as_dt_field(date_str):
 
 def reconcile(c):
     """Run all reconciliation passes in order, mutating ``c.fixture_data``."""
-    index = {(f['model'], f['pk']): f for f in c.fixture_data}
+    # Seed records (e.g. nealseed users) may be emitted without an explicit
+    # pk; key those as (model, None). Reconcile never looks them up by pk.
+    index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
     _pass_estimate_version_chains(c, index)
     _pass_estimate_expiry(c, index)
     _pass_estimate_dates(c, index)
     _pass_job_status_and_dates(c, index)
     _pass_task_status_from_job(c)
-    _pass_invoiced_work(c)
     _pass_document_counters(c, index)
 
 
@@ -95,12 +96,13 @@ def _pass_estimate_version_chains(c, index):
 
 
 def _pass_estimate_expiry(c, index):
-    """Pass 2: expire open estimates created more than 30 days ago."""
+    """Pass 2: expire open estimates created more than 30 days ago.
+
+    Job status is driven by the Kanban Stage column (set in build_jobs), so
+    an expired estimate does NOT change its job's status here.
+    """
     cutoff = date.today() - timedelta(days=_EXPIRE_DAYS)
-    for base_ref, versions in c.estimates.items():
-        if not versions:
-            continue
-        highest_version = max(v['version'] for v in versions)
+    for versions in c.estimates.values():
         for entry in versions:
             fixture = _find(index, 'estimates.estimate', entry['est_pk'])
             if fixture is None or fixture['fields']['status'] != 'open':
@@ -114,11 +116,6 @@ def _pass_estimate_expiry(c, index):
                 _add_days(entry['created_date'], _EXPIRE_DAYS)
                 or entry['created_date']
             )
-            # If this is the job's latest estimate, the job is rejected.
-            if entry['version'] == highest_version and base_ref in c.job_map:
-                job_fixture = _find(index, 'jobs.job', c.job_map[base_ref])
-                if job_fixture is not None:
-                    job_fixture['fields']['status'] = 'rejected'
 
 
 def _pass_estimate_dates(c, index):
@@ -153,7 +150,11 @@ def _pass_estimate_dates(c, index):
 
 
 def _pass_job_status_and_dates(c, index):
-    """Pass 4: archived cards complete jobs; reconcile job start/completed dates."""
+    """Pass 4: reconcile job start/completed dates with the job's status.
+
+    Job status itself is set from the Kanban Stage column in build_jobs and
+    is not changed here.
+    """
     for base_ref, job_info in c.jobs.items():
         job_pk = job_info['job_pk']
         job_fixture = _find(index, 'jobs.job', job_pk)
@@ -162,10 +163,6 @@ def _pass_job_status_and_dates(c, index):
         fields = job_fixture['fields']
         card = job_info.get('card') or {}
         archived_at = (card.get('Archived at') or '').strip()
-
-        # An archived card whose job is still 'approved' is complete.
-        if archived_at and fields['status'] == 'approved':
-            fields['status'] = 'completed'
 
         status = fields['status']
 
@@ -197,7 +194,12 @@ def _pass_job_status_and_dates(c, index):
 
 
 def _pass_task_status_from_job(c):
-    """Pass 5: derive task status from the owning job's status."""
+    """Pass 5: cancel tasks on cancelled/rejected jobs.
+
+    Task status is otherwise left as the builder set it — for checklist-
+    derived tasks that is the per-item [X]/[ ] state, which must be
+    preserved. Only a cancelled or rejected job overrides its tasks.
+    """
     job_status = {
         f['pk']: f['fields']['status']
         for f in c.fixture_data if f['model'] == 'jobs.job'
@@ -205,60 +207,8 @@ def _pass_task_status_from_job(c):
     for f in c.fixture_data:
         if f['model'] != 'jobs.task':
             continue
-        status = job_status.get(f['fields']['job'])
-        if status == 'completed':
-            f['fields']['status'] = 'complete'
-        elif status in ('cancelled', 'rejected'):
+        if job_status.get(f['fields']['job']) in ('cancelled', 'rejected'):
             f['fields']['status'] = 'cancelled'
-        else:
-            f['fields']['status'] = 'pending'
-
-
-def _pass_invoiced_work(c):
-    """Pass 6: jobs invoiced to ~their estimate total have all tasks complete.
-
-    Runs after pass 5; may upgrade pending tasks to complete.
-    """
-    # Sum qty*price of estimate line items, grouped by estimate pk.
-    est_totals = {}
-    for f in c.fixture_data:
-        if f['model'] != 'estimates.estimatelineitem':
-            continue
-        fields = f['fields']
-        qty = P.parse_decimal(fields.get('qty'))
-        price = P.parse_decimal(fields.get('price'))
-        est_pk = fields['estimate']
-        est_totals[est_pk] = est_totals.get(est_pk, P.parse_decimal('0')) \
-            + qty * price
-
-    # Pre-build job status lookup so we can guard on it below.
-    job_status_by_pk = {
-        f['pk']: f['fields']['status']
-        for f in c.fixture_data if f['model'] == 'jobs.job'
-    }
-
-    for base_ref, job_info in c.jobs.items():
-        job_pk = job_info['job_pk']
-        # Skip terminal-negative jobs: marking their tasks complete would be
-        # inconsistent with a rejected or cancelled job status.
-        if job_status_by_pk.get(job_pk) in ('rejected', 'cancelled'):
-            continue
-        inv_total = c.invoice_totals.get(base_ref)
-        if inv_total is None or inv_total <= 0:
-            continue
-        est_list = c.estimates.get(base_ref) or []
-        if not est_list:
-            continue
-        latest = max(est_list, key=lambda e: e['version'])
-        est_total = est_totals.get(latest['est_pk'])
-        if est_total is None or est_total <= 0:
-            continue
-        if abs(est_total - inv_total) > (max(est_total, inv_total) / 10):
-            continue
-        # Within 10%: every task on this job is complete.
-        for f in c.fixture_data:
-            if f['model'] == 'jobs.task' and f['fields']['job'] == job_pk:
-                f['fields']['status'] = 'complete'
 
 
 def _pass_document_counters(c, index):

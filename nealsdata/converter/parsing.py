@@ -132,6 +132,51 @@ def classify_line_item(item_type, description):
     return 'task'
 
 
+def parse_checklist(cell):
+    """Parse a Kanban 'Checklist' cell into ordered task entries.
+
+    Each non-blank line looks like '[ ] text' (unchecked) or '[X] text'
+    (checked). A line with leading whitespace is a subtask of the most
+    recent non-indented line. Lines may carry a trailing ';'.
+    Returns a list of dicts: {'text': str, 'completed': bool,
+    'is_subtask': bool}.
+    """
+    items = []
+    for raw in (cell or '').splitlines():
+        if not raw.strip():
+            continue
+        is_subtask = raw[:1] in (' ', '\t')
+        line = raw.strip().rstrip(';').strip()
+        m = re.match(r'^\[\s*([xX]?)\s*\]\s*(.*)$', line)
+        if not m:
+            continue
+        text = m.group(2).strip().rstrip(';').strip()
+        if not text:
+            continue
+        items.append({
+            'text': text,
+            'completed': bool(m.group(1)),
+            'is_subtask': is_subtask,
+        })
+    return items
+
+
+def checklist_scheme_name(task_name):
+    """RateScheme name for a task, chosen by keyword in its name.
+
+    Starts with 'cut' -> 'CNC routing'; contains 'laser' -> 'Laser';
+    contains 'draw'/'cad'/'model' -> 'CAD'; otherwise -> 'Shop labor'.
+    """
+    n = (task_name or '').strip().lower()
+    if n.startswith('cut'):
+        return 'CNC routing'
+    if 'laser' in n:
+        return 'Laser'
+    if 'draw' in n or 'cad' in n or 'model' in n:
+        return 'CAD'
+    return 'Shop labor'
+
+
 def infer_algorithm(item_type, units):
     """RateScheme.algorithm for a Task-classified line item."""
     it = (item_type or '').strip().lower()
