@@ -135,6 +135,20 @@ def _anonymize_phone(value):
     return f'{area}-555-{last4}' if area else f'555-{last4}'
 
 
+# Free-text scrubbing: email addresses, and phone numbers in the classic
+# 10-digit separated form (a deliberately conservative phone pattern to
+# avoid scrubbing part numbers / dimensions).
+_EMAIL_RE = re.compile(r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+')
+_PHONE_RE = re.compile(r'\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}')
+
+
+def _scrub_text(text):
+    """Anonymize email addresses and phone numbers found in free text."""
+    text = _EMAIL_RE.sub(lambda m: _anonymize_email(m.group(0)), text)
+    text = _PHONE_RE.sub(lambda m: _anonymize_phone(m.group(0)), text)
+    return text
+
+
 def build_contacts_and_businesses(c):
     """Emit contacts.contact and contacts.business fixtures for orgs referenced
     by the spine's estimate rows and bills.
@@ -345,8 +359,9 @@ def build_jobs(c):
             job_status = _STAGE_TO_JOB_STATUS.get(stage, 'draft')
 
         # --- 5. Build name and description from card fields ---------------
-        desc = (card.get('Description') or '').strip()
-        notes = (card.get('Notes') or '').strip()
+        # Scrub emails / phone numbers that may appear in the free text.
+        desc = _scrub_text((card.get('Description') or '').strip())
+        notes = _scrub_text((card.get('Notes') or '').strip())
         # Job name: the card Description (the FreeAgent data has no job
         # names); fall back to the card Name when Description is blank.
         job_name = (desc or card.get('Name') or '')[:50]

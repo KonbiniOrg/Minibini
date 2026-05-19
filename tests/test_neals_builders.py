@@ -364,6 +364,14 @@ class AnonymizeTest(unittest.TestCase):
         self.assertEqual(build._anonymize_phone('(650) 593-6997'), '650-555-6997')
         self.assertEqual(build._anonymize_phone(''), '555-555-5555')
 
+    def test_scrub_text(self):
+        self.assertEqual(
+            build._scrub_text('email john@neals.com or call 415-867-5309'),
+            'email john@example.com or call 415-555-5309')
+        # part-number-like sequences without the phone shape are untouched
+        self.assertEqual(build._scrub_text('cut part A-109180-00 x10'),
+                         'cut part A-109180-00 x10')
+
 
 class ConvertEndToEndTest(unittest.TestCase):
     @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
