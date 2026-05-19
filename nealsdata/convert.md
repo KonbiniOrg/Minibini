@@ -1,82 +1,348 @@
-> **DEPRECATED (2026-05-17).** This is the original brief and no longer
-> describes the converter. The current design and implementation plan are:
-> `docs/plans/2026-05-17-neals-converter-schema-update-design.md` and
-> `docs/plans/2026-05-17-neals-converter-implementation-plan.md`.
-> Kept for historical context only.
+# Neal's data converter — what it does and how to update it
 
-Create test data in json format from real Neal's CNC customer data by processing the downloaded spreadsheet that FreeAgent spits out.  Only consider the pages Contacts, Projects, Invoices, Estimates, Bills, Tasks, Timeslips, and Price List Items; disregard all the rest.  We will map spreadsheet data to Minibini objects like this:
-    Contacts -> Contact + Business
-    Projects -> Job + WorkOrder
-    Invoices -> Invoice + InvoiceLineItem
-    Estimate -> Estimate + EstimateLineItem
-    Bills    -> Bill + BillLineItem + PurchaseOrder + PurchaseOrderLineItem
-    Tasks    -> Task
-    Timeslip -> Blep
-    Price List Items -> PriceListItem
+`convert_neals_data.py` turns Neal's CNC shop data into a Django `loaddata`
+fixture (`nealsdata/datasets/converted.json`) for use as realistic dev/test
+data. This document is for the next person — possibly you, a few months out —
+who needs to update the script because something in Minibini or in Neal's
+exports changed.
 
-The spreadsheet links information together in two ways.  First, data in one page is referenced in other pages by full text of names as the spreadsheet has no GUI values.  Second, data for Estimates, Bills and Invoices combine the object data and the associated line item data into one page so those link line to next line.  Do not sort these pages or the associations are lost!
+The script is **read-only on the source data and write-only to the JSON
+fixture**: it never touches a database. It is a pure transformation.
 
-We want to delete enough old data so the size is manageable, but not break any associations.  There are 100 Projects in various states, which is plenty (and far more data without Projects).  They're all old and the task/timeslip data is minimal but we can add more of those easily enough.  So, anything old that doesn't touch a Project gets deleted.
+## 1. Inputs
 
-My suggested high-level process is, pull the whole spreadsheet into memory, generate GUID numbers and set up FK references according to how the spreadsheet pages reference each other; delete stuff that doesn't EITHER touch a Project or hit one of the exception cases or have a more recent date than 2025-10-01; add Contact objects where name inconsistencies arise as noted below.
+Two files, both placed in `nealsdata/datasets/` (the script auto-discovers
+them and errors out if there is more than one of either):
 
-In the spreadsheet, column information maps to Object fields in ways that should be fairly obvious in general
-* Contacts sheet contains both Contact and Business object data.  For each line, one Contact and 0 or 1 Businesses will be created, and the FK reference between them.  There may be a few lines that only have an Organization name and no First and Last names; in this case use the strings "(unknown)" for both names.  Some of the column headings won't apply at all and these can be discarded.
-* Projects sheet should be used to generate a WorkOrder object UNLESS the status of the project is CANCELLED.  Tasks linked to a Project should be given FK references to the associated WorkOrder.  (The incoming data does not have the concept of a WorkOrder.) Generate a fake job_number for the required Job field by using the pattern J{year}-{counter:04d} based on their created date.
-* Invoices, Estimates, Bills, all have line item object which on the spreadsheet are simply listed below.  So the first columns are data for the containing object, and the last columns are for the line items associated with that container.  You can tell when it switches over because the contents of the rows change.  So one line will have, e.g. Invoice data up to column Z (perhaps), and the next maybe 4 or 5 lines will have InvoiceLineItem data from columns AA onwards.  Many of the columns have data that doesn't fit our structure and can be ignored.  Generate required tracking numbers the same way as job_numbers.
-* Bill data will be used to create PO data as well, such that each line will generate a PO and a Bill with the FK reference between them.  All the line item data is the same. (The incoming data does not have the concept of a PurchaseOrder.)
+| File | Source | Role |
+|---|---|---|
+| `*.xlsx` | FreeAgent "Company Export" | Contacts, Projects, Invoices, Estimates, Bills, Price List Items |
+| `*.csv`  | Kanban board export (tab-delimited despite `.csv`) | The **spine** — defines which Jobs we build |
 
-In the spreadsheet, page data associate as follows.  The quoted terms refer to the spreadsheet column headers in line 1, and the letter in parentheses is the column it is in.
-* Contacts link to Projects by "Organization" (A) -> "Client Organization" (B) as well as "First Name" (B), "Last Name" (C) -> "Client Name" (C)
-* Contacts link to Bills by "Organization" (A) -> "Contact Organization" (A) as well as "First Name" (B), "Last Name" (C) -> "Contact Name" (B)
-* Projects link to Invoices by "Name" (A) -> "Projects" (C)
-* Projects link to Estimates by "Name" (A) -> "Project" (A)
-* Projects link to Bills by "Name" (A) -> "Project" (O)
-* Projects link to Tasks by "Name" (A) -> "Project" (A)
-* Projects link to Timeslips by "Name" (A) -> "Project" (G)
-* Tasks link to Timeslips by "Name" (B) -> "Task" (F)
+**FreeAgent has no column configuration**, so the Excel export shape is what
+it is. The converter consumes only these sheets and ignores the rest:
+`Contacts`, `Projects`, `Estimates`, `Invoices`, `Bills`, `Price List Items`.
+(The old `Tasks` and `Timeslips` sheets are deliberately ignored — Tasks now
+come from the Kanban Checklist column or from estimate line items.)
 
-If the name and organization in the Project or Bill spreadsheet data don't match the contact data for the Business object it references (at this point we only have 1 Contact per Business), make a new Contact object with the name, associated with the Business and invent data for them similar to the data in the first Contact's.  The new Contact then becomes the FK reference for the Project or Bill.  Disregard the contact information in Estimate and Invoice spreadsheet pages.
+### The Kanban CSV columns we consume
 
-First load the base data from fixtures/job_data/01_base.json, which contains configuration and user data and a few other starter things.  Read that into memory first so as to be able to avoid overlapping PK values.  Where Timeslips reference users, assign the existing user with the least permissions to the corresponding Blep.
+The Kanban export **is** configurable. When re-exporting from the board, make
+sure these 14 columns are included (exact header names, in any order):
 
-Statuses don't map quite right for a couple objects.  Use these mappings:
-Estimate status_map = {
-      'Draft': 'draft',
-      'Sent': 'open',
-      'Approved': 'accepted',  # ✓ FIXED
-      'Rejected': 'rejected',
-  }
-Job status_map = {
-      'Completed': 'completed',
-      'Active': 'approved',    # ✓ FIXED (maps to valid choice)
-      'Cancelled': 'cancelled', # ✓ FIXED (case corrected)
-  }
+```
+Swimlane            Stage               Name                Description
+Due date            External ID         Notes               est *cut* time
+est ASS time        est $               Created at          Archived at
+Checklist           Block reason
+```
 
-If there are multiple Estimates associated with a project, check if they are versioned (i.e. have a suffix of -v1 or V2 or similar). If so, mark the oldest as superseded and the latest leave its status as is.  Otherwise, create multiple Jobs from the Project, copying all data except the Estimate.
+Notes on individual columns:
 
-For all the line items, add line numbers starting with 1 for each main object and restarting at the next.
+- **External ID** is the FreeAgent estimate number (e.g. `E2026-0123`). It is
+  the join key against the Excel `Estimates` sheet's `Reference` column.
+  Revision suffixes (`-v2`, `V3`) are stripped to a base reference for
+  matching; the version chain is reconstructed from the Estimates sheet.
+- **Name** is `Business` or `Business (Contact)` — parsed in
+  `parse_kanban_name`. It is the join key against the FreeAgent Contacts
+  sheet's `Organization`.
+- **Description** is used as the Job's `name` (truncated to 50 chars) and,
+  with `Notes` appended, as the Job's `description`. FreeAgent has no notion
+  of a "job name".
+- **Stage** drives the Job's status (see the table below). `Swimlane`
+  refines the `Estimate` stage only: `Neal's do` → draft, anything else
+  → submitted.
+- **est *cut* time** and **est ASS time** are job-level hour estimates that
+  land on one task each (see §4). `est $` is ignored.
+- **Created at** / **Archived at** drive Job dates.
+- **Checklist** is multi-line text where each line is `[ ] some task` or
+  `[x] some completed task`. Each line becomes a `jobs.task` (with two
+  important exceptions — see §4). A leading space/tab makes a line a
+  subtask of the preceding top-level item.
+- **Block reason** is currently not consumed.
 
-Complete Job Date Rules:
-1. created_date: Created Date from spreadsheet
-2. start_date:
-  - If explicit "Starts On" exists → use it
-  - Else if status='approved' → use V1 estimate date
-  - Else if status='completed' AND no estimates → use created_date
-  - Else → None
-3. due_date: "Ends On" from spreadsheet (or None)
-4. completed_date:
-  - If status='approved' → None
-  - Else → Updated Date from spreadsheet
+### Stage → Job status
 
-Non-Database Constraints:
-- Estimates expire after 30 days.  If an Estimate's created_date is more than 30 days old, it cannot remain in 'open' status — it must be moved to 'expired'.  When an Estimate expires and it is the only (or latest) estimate on a Job, the Job should be moved to 'rejected'.  (The 30-day threshold will eventually be a Configuration option via est_expire_days, but is not enforced in app code yet.)
-- If a Job has both an Estimate and a sent Invoice (any non-draft status) whose total values are substantially similar (within 10%), all Tasks on that Job's WorkOrder should be marked complete — the work has been invoiced.  "Substantially similar" compares sum of qty*price across line items.
+| Kanban Stage | Minibini status | Note |
+|---|---|---|
+| `Estimate` + Swimlane `Neal's do` | `draft` | estimate not yet sent |
+| `Estimate` + other swimlane | `submitted` | estimate sent to customer |
+| `In Progress` | `in_progress` | |
+| `Invoice` | `work_complete` | work done, invoicing in flight |
+| `Done or Rejected` | `completed` | terminal; can be downgraded to `rejected` in reconcile (§5) |
+| anything else / blank | `draft` | safety default |
 
-TODO:
-- Check Blep data when I've written the UI to view it
-- Alter the handling of multiple Estimates per project when I've implemented Change Orders (project Round Desks for sure, likely others)
-- dates on objects other than Jobs
-- status matching - there are Jobs in completed state that have Estimates in open or rejected state, e.g. Sandisk #3 and Tree Bench - also all? of the additional Jobs from projects with multiple estimates
+If Neal renames a stage on the board, update `_STAGE_TO_JOB_STATUS` in
+`build.py`.
 
-python nealsdata/convert_neals_data.py nealsdata/company-export-whatever.xls --output fixtures/job_data/02_nealscnc_data.json
+## 2. Running it
+
+```bash
+python nealsdata/convert_neals_data.py [--limit N] [--verbose]
+```
+
+The default `--limit 100` caps how many Jobs are built from the most recent
+matched Kanban cards. The output is `nealsdata/datasets/converted.json` (the
+file is git-ignored — regenerate it whenever inputs change).
+
+Loading the result into Minibini is the user's job — the script never writes
+to a database. Tests load it into the auto-created test DB via
+`call_command('loaddata', ...)`.
+
+## 3. Pipeline at a glance
+
+`orchestrator.NealsDataConverter.convert()` runs these phases in order:
+
+1. **Load**: Excel sheets into memory; Kanban CSV into a list of dicts.
+2. **Select spine**: pair each recent Kanban card with the Estimates-sheet
+   rows whose `Reference` base matches the card's `External ID`. The
+   newest `--limit` matched cards become the Jobs we'll build.
+3. **`build_seed`**: copies users, accounting categories and rate schemes
+   verbatim from `fixtures/large_datasets/nealseed.json`, then creates one
+   extra shared "Flat Fee" RateScheme for tasks that don't fit a seeded one.
+4. **`build_configuration`**: emits the `core.configuration` entries the
+   app needs at runtime (numbering patterns + counters, `units_list`,
+   retention windows).
+5. **`build_price_list_items`**: copies the FreeAgent Price List Items
+   sheet.
+6. **`build_contacts_and_businesses`**: walks the Contacts sheet and emits
+   only the businesses/contacts actually referenced by a spine card.
+   Anonymizes emails + phones (see §6).
+7. **`build_jobs`**: one Job per spine entry, named from the card
+   Description, status from Stage + Swimlane.
+8. **`build_estimates`**: emits the Estimate + its line items for every
+   revision in the chain. Estimate line items are **kept**; downstream
+   atoms (Task, Material, Deliverable) are *copies*, not moves.
+9. **`derive_atoms`**: for each Job, builds Tasks, Materials, and
+   Deliverables from the Kanban Checklist and/or the estimate line items.
+   This is where most of the interesting logic lives — see §4.
+10. **`build_invoices`**: emits Invoices + line items via the
+    Project-name link.
+11. **`reconcile`**: cross-model fixups in a fixed order — see §5.
+12. **`build_shipments`**: runs *after* reconcile so it can see final Job
+    dates. Builds a Shipment + ShipmentItems for any card whose checklist
+    has a checked `Picked up/Delivered` line.
+
+## 4. Building Tasks, Materials, and Deliverables
+
+This is the most-rewritten part of the script and the part most likely to
+need tweaking again.
+
+### Tasks
+
+Tasks come from two sources:
+
+1. **Kanban Checklist (preferred).** Each `[ ]`/`[x]` line becomes one
+   `jobs.task`. Indented lines become subtasks. Two exceptions:
+   - `Picked up/Delivered` markers are consumed by the Shipments builder
+     instead (`_is_pickup_marker`).
+   - Board status-markers are dropped entirely (`_is_dropped_checklist_line`,
+     prefix match, case-insensitive). The current drop-list:
+     - `invoice sent`     — FreeAgent invoice data is more accurate
+     - `payment received` — same; FreeAgent has the real payment data
+     - `jan take photos`  — recurring reminder, not work
+     - `packing slip`     — not real work
+   - **`(track time)` marker overrides the drop-list.** A checklist line
+     containing `(track time)` always becomes a Task. That marker, on Neal's
+     board, explicitly flags a real time-tracked task.
+
+2. **Estimate line items (fallback).** When the card has no Checklist, the
+   estimate's labour-classified line items become Tasks. Material-keyword
+   lines that look like labour (`prepare …`, `apply …`, `glue …`,
+   `engrave …` — see `_LABOR_VERB_PREFIXES`) also become Tasks, even when a
+   Checklist is present.
+
+Every task is assigned a RateScheme:
+
+- Checklist tasks: keyword-matched (`checklist_scheme_name`):
+  - `cut`        → `CNC Routing`
+  - `laser`      → `Laser`
+  - `draw` / `cad` / `model` → `CAD`
+  - everything else → `Shop labor`
+- Line-item tasks: same keyword rule; if no keyword hits, try to match a
+  seeded scheme by `(algorithm, rate)`; failing that, fall back to the
+  shared **Flat Fee** scheme and stash the price in
+  `Task.active_modifiers = {'flat_fee_price': '…'}`.
+
+If the named scheme isn't in nealseed, the closest match is used (see
+`_match_seed_scheme`). When you add new schemes to nealseed, this will pick
+them up automatically.
+
+### Estimated worker time
+
+The Kanban card carries two job-level hour columns: `est *cut* time` and
+`est ASS time`. `_apply_worker_times` lands each on at most one task:
+
+- **cut time** → the first task on the job whose name contains `cut`.
+- **ass time** → the first task whose name contains `assemb`, `build`,
+  or `make`, *and* isn't the same task already given the cut time.
+
+The cut/ass columns are sparse in recent data, so in practice almost
+nothing matches. Every other task — and that's most of them — gets a flat
+**1-hour** default (`_DEFAULT_WORKER_TIME`). The checklist itself carries
+no per-task time data, so a real estimate is not derivable from it.
+
+### Materials
+
+`_material_line_kind` splits material-classified estimate line items three
+ways. Each line becomes exactly one fixture:
+
+| Description shape | Becomes |
+|---|---|
+| `… sheet`, `… board feet`, `BF of …`, `Materials: …`, `Estimated materials …` | `inventory.material` (raw stock) |
+| starts with one of `prepare`, `apply`, `glue`, `engrave` | `jobs.task` (labour disguised as a material line) |
+| anything else | `deliverables.deliverable` |
+
+Materials link to the job's first cut-named task via `c.cut_task` (so the
+Material's `task` FK lands on the right Task — there is always at most one
+per job).
+
+### Deliverables
+
+Every job needs at least one Deliverable. Material-classified lines that
+fell through to `deliverable` become Deliverables. A job with none gets a
+single synthetic `Fake Deliverable` (`c.fake_deliverable_count` counts
+these — the `--verbose` summary reports the number for human review).
+
+### Shipments
+
+`build_shipments` emits a Shipment + ShipmentItems for every job whose
+checklist has a checked `Picked up/Delivered` line. The shipment's date is
+the card's `Archived at` if present, otherwise the job's `completed_date`,
+otherwise the card's `Created at`. Pickup-marker lines never become Tasks.
+
+## 5. Reconciliation passes
+
+`reconcile.reconcile()` runs after all builders, in this order:
+
+1. **Estimate version chains** — for any base reference with multiple
+   versions, every version below the highest is marked `superseded` and
+   linked to the previous via `parent`. The highest keeps the builder's
+   status.
+2. **Started jobs accept their estimate** — a Job in `approved`,
+   `in_progress`, `work_complete`, or `completed` couldn't have got there
+   without an accepted estimate, so its latest estimate is forced to
+   `accepted`. (Runs before expiry so a now-accepted estimate isn't
+   re-expired.)
+3. **Expiry** — `open` estimates older than 30 days become `expired`. If
+   the expiring one is the Job's latest estimate **and** the Job is still
+   in `draft`/`submitted`, the Job is rejected.
+4. **Estimate dates** — sent/expiration/closed dates filled in to match
+   each estimate's status.
+5. **Job status & dates** — `start_date` for started jobs, `completed_date`
+   for terminal jobs (preferring `Archived at`, falling back to the
+   estimate's `closed_date`, finally the job's `created_date`).
+6. **Task status from job** — cancel tasks on cancelled/rejected jobs.
+   Otherwise the per-checklist `[X]`/`[ ]` state is preserved.
+7. **Document counters** — Configuration counters set to the number of
+   emitted Jobs/Estimates/Invoices/POs so the next number generated
+   by the running app doesn't collide.
+
+When the source data disagrees (Kanban Stage vs. Estimate Status), the
+"farther along the transition chain" wins — that's what passes 2 and 3
+together enforce.
+
+## 6. Anonymization
+
+PII in the FreeAgent data is scrubbed at build time:
+
+- **Emails**: domain replaced with `example.com`, local part kept
+  (`_anonymize_email`).
+- **Phones**: any three-digit prefix replaced with `555`, separators
+  (space, `.`, `-`, `()`) preserved (`_anonymize_phone`).
+- **Notes / Description**: regex-scrubbed for both via `_scrub_text`. The
+  Checklist column is *not* scrubbed — Neal puts shop talk there, not PII.
+
+If a new export drops PII into a column we don't currently scrub, add it
+to the scrub call site or to `_scrub_text`.
+
+## 7. Where things live
+
+```
+nealsdata/
+  convert_neals_data.py   thin CLI; argparse → orchestrator
+  convert.md              ← this document
+  datasets/               *.xlsx, *.csv, and the generated converted.json
+  converter/
+    __init__.py           empty (per CLAUDE.md)
+    loaders.py            ExcelDataLoader, KanbanCsvLoader, discover_datasets, load_seed_records
+    parsing.py            pure helpers: dates, decimals, names, references,
+                          checklist parser, classification of line items
+    build.py              all builders; the bulk of the code
+    reconcile.py          cross-model fixups (the 7 passes above)
+    orchestrator.py       NealsDataConverter — phase wiring + state container
+```
+
+The state container (`NealsDataConverter` instance, conventionally `c`)
+carries everything between phases: `c.fixture_data` (the output list),
+`c.org_map`, `c.job_map`, `c.jobs`, `c.estimates`, `c.line_items`,
+`c.cut_task`, `c.scheme_by_name`, the pk counters, and a few diagnostics
+(`c.discarded_cards`, `c.time_match_misses`, `c.fake_deliverable_count`).
+
+## 8. Common updates you'll likely need
+
+- **The Minibini schema changed.** Look at `docs/designs/data-constraints.md`
+  first to see what the model now requires. Then update the relevant
+  builder in `build.py`. The fixture-load test
+  (`tests/test_neals_fixture.py`) catches FK / field / NOT-NULL drift
+  immediately.
+- **A Kanban column was added/renamed/removed.** Update `KanbanCsvLoader`
+  isn't necessary — it uses `DictReader` and is column-name-driven — but
+  any consumer (`build_jobs`, `_apply_worker_times`, etc.) that names the
+  column directly needs the change. Update §1's column table here too.
+- **Stage names changed on the board.** `_STAGE_TO_JOB_STATUS` in
+  `build.py`. Add the new Stage → Minibini-status mapping.
+- **A new "noise" line keeps showing up on every card's checklist.**
+  Add its lowercase prefix to `_DROPPED_CHECKLIST_PREFIXES` (in `build.py`,
+  next to `_is_dropped_checklist_line`).
+- **A new rate scheme appears in production.** Add it to nealseed; the
+  matcher (`_match_seed_scheme`, plus the keyword rules in
+  `parsing.checklist_scheme_name`) will pick it up automatically. If the
+  keyword doesn't catch it, extend `checklist_scheme_name`.
+- **`validate_data` reports an issue post-load.** That command
+  (`apps/core/management/commands/validate_data.py`) is the canonical
+  reference for what counts as a legal fixture; it's what catches drift
+  the type-system can't see.
+
+## 9. Fake data, caveats
+
+The script invents data where the sources don't say:
+
+- **Worker time defaults to 1 hour** for any task not matched by the
+  card's `est *cut* time` or `est ASS time`. The checklists carry no time
+  data, so there is no better source. ("won't be accurate to real life
+  but is likely all we can really do.")
+- **Fake Deliverables** are synthesised for jobs whose estimate has no
+  line item that classifies as a deliverable. The verbose summary counts
+  these; review them periodically.
+- **Job names** come from the Kanban Description (FreeAgent has no job
+  names). They're truncated to 50 characters.
+- **Year-based job numbers** (`J{year}-{counter:04d}`) use the
+  estimate's Date for the year; missing dates fall back to
+  `_FALLBACK_YEAR = 2025` and a `0001-01-01` `created_date`. If you see
+  jobs from year 2025 stacked at the bottom that look wrong, that
+  fallback is probably firing.
+- **PII** is replaced, never preserved. The dataset is intended to look
+  realistic but contain nothing real.
+
+## 10. Tests
+
+The pipeline is covered by:
+
+- `tests/test_neals_parsing.py` — pure helpers in `parsing.py`.
+- `tests/test_neals_loaders.py` — the Excel + CSV loaders.
+- `tests/test_neals_builders.py` — every builder and the reconcile passes,
+  exercised against the real `datasets/` files (skipped if not present).
+- `tests/test_neals_fixture.py` — loads the generated `converted.json`
+  into the test database and runs `validate_data` over it. This is the
+  end-to-end safety net.
+
+Run them with:
+
+```bash
+python manage.py test tests.test_neals_parsing tests.test_neals_loaders \
+    tests.test_neals_builders tests.test_neals_fixture
+```
+
+Per `CLAUDE.md`, only one agent/process may run the Django test suite at a
+time (the MySQL test DB cannot survive parallel teardown).
