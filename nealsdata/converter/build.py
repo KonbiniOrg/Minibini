@@ -702,18 +702,45 @@ def _material_line_kind(description):
     return 'deliverable'
 
 
+# Checklist lines that are board status-markers, not real work. A line
+# starting with one of these is dropped (no Task emitted) — the underlying
+# fact is tracked more accurately elsewhere (FreeAgent invoice/payment data)
+# or is just a recurring reminder. A line carrying a '(track time)' marker is
+# never dropped: that marker explicitly flags a real, time-tracked task.
+_DROPPED_CHECKLIST_PREFIXES = (
+    'invoice sent',
+    'payment received',
+    'jan take photos',
+    'packing slip',
+)
+
+
+def _is_dropped_checklist_line(text):
+    """True when a checklist line is a board status-marker to skip."""
+    t = (text or '').strip().lower()
+    if '(track time)' in t:
+        return False
+    return t.startswith(_DROPPED_CHECKLIST_PREFIXES)
+
+
 def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     """Emit jobs.task fixtures from parsed Kanban checklist items.
 
     Indented checklist lines become subtasks of the most recent
     non-indented line ([X] -> complete, [ ] -> pending). Returns the final
     per-job sort_order so later task builders can continue the sequence.
+
+    Pickup markers (Shipments) and board status-markers
+    (_is_dropped_checklist_line) do not become Tasks.
     """
     sort_order = start_sort
     last_toplevel_pk = None
     for item in items:
         # The 'Picked up/Delivered' marker drives Shipments, not Tasks.
         if _is_pickup_marker(item['text']):
+            continue
+        # Board status-markers (Invoice Sent, Payment Received, …) are noise.
+        if _is_dropped_checklist_line(item['text']):
             continue
         sort_order += 1
         name = (item['text'] or 'Task')[:255] or 'Task'
@@ -786,16 +813,23 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
 # 1-hour estimate (see _apply_worker_times).
 _DEFAULT_WORKER_TIME = '01:00:00'
 
+# Task-name keywords matched to the Kanban card's est ASS time column.
+_ASSEMBLY_KEYWORDS = ('assemb', 'build', 'make')
+
 
 def _apply_worker_times(c, job_pk, card):
     """Apply the Kanban card's est cut/assembly times to matching tasks.
 
     The Kanban card carries two job-level time columns (est *cut* time, est
-    ASS time); these land on the cut/assembly tasks. The checklists hold no
-    per-task time data, so every other task is given a flat 1-hour estimate.
+    ASS time); each lands on at most one task — the first whose name names
+    a cut ('cut') or an assembly (_ASSEMBLY_KEYWORDS). The two never share a
+    task. The checklists hold no per-task time data, so every other task is
+    given a flat 1-hour estimate.
     """
-    def _find_task_fixture(predicate):
+    def _find_task_fixture(predicate, exclude=None):
         for f in c.fixture_data:
+            if f is exclude:
+                continue
             if f['model'] == 'jobs.task' and f['fields']['job'] == job_pk:
                 if predicate(f['fields']['name']):
                     return f
@@ -806,17 +840,21 @@ def _apply_worker_times(c, job_pk, card):
         if duration is not None:
             fixture['fields']['est_worker_time'] = duration
 
+    cut_fixture = None
     raw_cut = card.get('est *cut* time')
     if raw_cut not in (None, ''):
-        f = _find_task_fixture(lambda n: 'cut' in n.lower())
-        if f is not None:
-            _set(f, raw_cut)
+        cut_fixture = _find_task_fixture(lambda n: 'cut' in n.lower())
+        if cut_fixture is not None:
+            _set(cut_fixture, raw_cut)
         else:
             c.time_match_misses += 1
 
     raw_ass = card.get('est ASS time')
     if raw_ass not in (None, ''):
-        f = _find_task_fixture(lambda n: 'assemb' in n.lower())
+        f = _find_task_fixture(
+            lambda n: any(k in n.lower() for k in _ASSEMBLY_KEYWORDS),
+            exclude=cut_fixture,
+        )
         if f is not None:
             _set(f, raw_ass)
         else:

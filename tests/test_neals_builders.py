@@ -354,6 +354,30 @@ class ShipmentBuilderTest(unittest.TestCase):
                              ship_job[it['fields']['shipment']])
 
 
+class DroppedChecklistLineTest(unittest.TestCase):
+    def test_board_status_markers_are_dropped(self):
+        for line in ('Invoice Sent',
+                     'Invoice Sent Toni Morrison',
+                     'Payment Received',
+                     'Payment Received MLK',
+                     'Jan take photos!',
+                     'Packing Slip'):
+            self.assertTrue(build._is_dropped_checklist_line(line), line)
+
+    def test_real_work_lines_are_kept(self):
+        for line in ('code for cutting',
+                     'wait for deposit payment',
+                     'wrap w/ packing slip',
+                     'add invoice for sheet of black laminate',
+                     'assemble piece'):
+            self.assertFalse(build._is_dropped_checklist_line(line), line)
+
+    def test_track_time_marker_is_never_dropped(self):
+        # A '(track time)' marker overrides the drop-list.
+        self.assertFalse(
+            build._is_dropped_checklist_line('Invoice Sent (track time)'))
+
+
 class MaterialLineKindTest(unittest.TestCase):
     def test_raw_stock_is_material(self):
         for d in ('4\'x8\' x 3/4" sheet(s) of Baltic Birch plywood',
