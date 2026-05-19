@@ -65,6 +65,25 @@ def build_seed(c):
         c._pk_counters['jobs.ratescheme'] = max(
             c._pk_counters['jobs.ratescheme'], max_rs_pk)
 
+    # One shared flat-fee ("Fixed charge") RateScheme for converter-derived
+    # tasks that don't fit a nealseed scheme. Per the flat-fee pricing design,
+    # the per-task price rides on the task's active_modifiers as
+    # {'flat_fee_price': <str>}; this scheme's own rate is only a fallback.
+    ff_pk = c.next_pk('jobs.ratescheme')
+    c.add_fixture('jobs.ratescheme', ff_pk, {
+        'name':                'Flat Fee',
+        'description':         'Shared fixed-charge scheme; price set per task.',
+        'algorithm':           'flat_fee',
+        'rate':                '0.00',
+        'unit_label':          'ea',
+        'modifiers':           [],
+        'accounting_category': c.ac_svc_pk,
+        'replaced_by':         None,
+        'replaced_at':         None,
+    })
+    c.flat_fee_scheme_pk = ff_pk
+    c.scheme_by_name['Flat Fee'] = ff_pk
+
 
 def build_configuration(c):
     """Emit core.configuration fixtures for document numbering and app settings.
@@ -558,53 +577,45 @@ def _scheme_pk(c, scheme_name):
             or c.scheme_by_name.get(_CHECKLIST_DEFAULT_SCHEME))
 
 
-def _match_or_clone_scheme(c, algorithm, rate):
-    """Return the pk of the seed RateScheme nearest in rate among those with
-    the given algorithm; clone it at the line's actual rate if none is close.
+def _match_seed_scheme(c, algorithm, rate):
+    """Match a line's (algorithm, rate) to a seed RateScheme.
+
+    Returns (scheme_pk, active_modifiers). Time/qty lines match the nearest
+    seed scheme of that algorithm when within ~10% of its rate. Anything
+    that doesn't fit — and every flat-fee line, since the only flat-fee
+    seed scheme (Delivery1) is delivery-specific — goes to the shared
+    'Flat Fee' scheme with the price carried on the task's active_modifiers.
     """
-    candidates = [
-        f for f in c.fixture_data
-        if f['model'] == 'jobs.ratescheme'
-        and f['fields']['algorithm'] == algorithm
-    ]
-    if not candidates:
-        return _scheme_pk(c, _CHECKLIST_DEFAULT_SCHEME)
-    nearest = min(candidates,
-                  key=lambda f: abs(Decimal(f['fields']['rate']) - rate))
-    near_rate = Decimal(nearest['fields']['rate'])
-    tolerance = max(near_rate, Decimal('1')) / 10   # within ~10%
-    if abs(near_rate - rate) <= tolerance:
-        return nearest['pk']
-    # No close seed scheme — clone the nearest at the line's actual rate.
-    clone_key = ('clone', nearest['pk'], f'{rate:.2f}')
-    if clone_key in c.rate_scheme_map:
-        return c.rate_scheme_map[clone_key]
-    base = nearest['fields']
-    rs_pk = c.next_pk('jobs.ratescheme')
-    c.add_fixture('jobs.ratescheme', rs_pk, {
-        'name':                f"{base['name']} (${rate:.2f})",
-        'description':         base.get('description', ''),
-        'algorithm':           base['algorithm'],
-        'rate':                f'{rate:.2f}',
-        'unit_label':          base['unit_label'],
-        'modifiers':           base.get('modifiers', []),
-        'accounting_category': base['accounting_category'],
-        'replaced_by':         None,
-        'replaced_at':         None,
-    })
-    c.rate_scheme_map[clone_key] = rs_pk
-    return rs_pk
+    if algorithm != 'flat_fee':
+        candidates = [
+            f for f in c.fixture_data
+            if f['model'] == 'jobs.ratescheme'
+            and f['fields'].get('algorithm') == algorithm
+            and f.get('pk') != c.flat_fee_scheme_pk
+        ]
+        if candidates:
+            nearest = min(
+                candidates,
+                key=lambda f: abs(Decimal(f['fields']['rate']) - rate))
+            near_rate = Decimal(nearest['fields']['rate'])
+            tolerance = max(near_rate, Decimal('1')) / 10   # within ~10%
+            if abs(near_rate - rate) <= tolerance:
+                return nearest['pk'], []
+    # Doesn't fit a seed scheme: shared Flat Fee scheme, price per task.
+    return c.flat_fee_scheme_pk, {'flat_fee_price': f'{rate:.2f}'}
 
 
-def _fallback_scheme_pk(c, li):
-    """RateScheme pk for an estimate-line-item-derived task: keyword rule
-    first, then rate-matching (with clone-on-mismatch) for the default case.
+def _fallback_scheme(c, li):
+    """RateScheme pk + active_modifiers for an estimate-line-item-derived task.
+
+    Keyword rule first; otherwise match a seed scheme by rate, or fall back
+    to the shared Flat Fee scheme. Returns (scheme_pk, active_modifiers).
     """
     keyword_name = P.checklist_scheme_name(li['description'])
     if keyword_name != _CHECKLIST_DEFAULT_SCHEME:
-        return _scheme_pk(c, keyword_name)
+        return _scheme_pk(c, keyword_name), []
     algorithm = P.infer_algorithm(li['item_type'], li['units'])
-    return _match_or_clone_scheme(c, algorithm, li['price'])
+    return _match_seed_scheme(c, algorithm, li['price'])
 
 
 def _build_checklist_tasks(c, base_ref, job_pk, items):
@@ -654,7 +665,7 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines):
     for li in task_lines:
         sort_order += 1
         name = (li['description'] or 'Task')[:255] or 'Task'
-        scheme_pk = _fallback_scheme_pk(c, li)
+        scheme_pk, active_modifiers = _fallback_scheme(c, li)
         task_pk = c.next_pk('jobs.task')
         c.add_fixture('jobs.task', task_pk, {
             'job':              job_pk,
@@ -664,7 +675,7 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines):
             'est_qty':          f"{li['qty']:.2f}",
             'est_worker_time':  None,
             'actual_qty':       None,
-            'active_modifiers': [],
+            'active_modifiers': active_modifiers,
             'status':           'pending',
             'blocked_reason':   '',
             'worker_queue':     None,
@@ -765,7 +776,7 @@ def derive_atoms(c):
     RateSchemes are the canonical seed schemes (build_seed); checklist tasks
     are assigned by keyword, fallback tasks by keyword then rate-match/clone.
 
-    Mutates c.fixture_data, c.rate_scheme_map, c.cut_task, c.time_match_misses,
+    Mutates c.fixture_data, c.cut_task, c.time_match_misses,
     c.fake_deliverable_count.
     """
     for base_ref, job_info in c.jobs.items():

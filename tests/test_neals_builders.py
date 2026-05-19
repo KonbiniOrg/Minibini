@@ -186,6 +186,15 @@ class AtomDerivationTest(unittest.TestCase):
         job_pks = {f['pk'] for f in self._models('jobs.job')}
         deliv_jobs = {d['fields']['job'] for d in self._models('deliverables.deliverable')}
         self.assertEqual(job_pks, deliv_jobs)
+        # Tasks on the shared Flat Fee scheme carry a per-task price in
+        # active_modifiers ({'flat_fee_price': ...}); no per-rate clones exist.
+        ff_pks = {f['pk'] for f in self._models('jobs.ratescheme')
+                  if f['fields']['name'] == 'Flat Fee'}
+        for t in self._models('jobs.task'):
+            if t['fields']['rate_scheme'] in ff_pks:
+                mods = t['fields']['active_modifiers']
+                self.assertIsInstance(mods, dict)
+                self.assertIn('flat_fee_price', mods)
 
     def test_materials_link_to_cut_task_when_present(self):
         build.derive_atoms(self.c)

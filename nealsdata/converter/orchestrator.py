@@ -36,7 +36,7 @@ class NealsDataConverter:
         self.discarded_cards = []
         self.line_items = {}
         self.estimates = {}
-        self.rate_scheme_map = {}   # clone cache for derived rate schemes
+        self.flat_fee_scheme_pk = None  # shared flat-fee scheme (build_seed)
         self.cut_task = {}          # base_ref -> task_pk (first task whose name has 'cut')
         self.time_match_misses = 0  # count of CSV worker-time values with no matching task
         self.invoice_totals = {}    # base_ref -> Decimal total of qty*price across job's invoice lines
