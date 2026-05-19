@@ -4,6 +4,7 @@ Each builder function takes a NealsDataConverter instance as its first
 argument and appends fixture records to c.fixture_data via c.add_fixture().
 """
 import json
+import re
 from datetime import datetime
 from decimal import Decimal
 
@@ -116,6 +117,24 @@ def build_configuration(c):
         c.add_fixture('core.configuration', key, {'value': value})
 
 
+def _anonymize_email(value):
+    """Replace an email address's domain with example.com, keeping the
+    local part. A value with no '@' is treated as the local part."""
+    local = (value or '').split('@', 1)[0].strip()
+    return f'{local}@example.com' if local else (value or '')
+
+
+def _anonymize_phone(value):
+    """Anonymize a phone number: keep the area code and the last four
+    digits, replace the 3-digit prefix (exchange) with 555."""
+    digits = re.sub(r'\D', '', value or '')
+    if len(digits) < 4:
+        return '555-555-5555'
+    last4 = digits[-4:]
+    area = digits[:-7] if len(digits) >= 7 else ''
+    return f'{area}-555-{last4}' if area else f'555-{last4}'
+
+
 def build_contacts_and_businesses(c):
     """Emit contacts.contact and contacts.business fixtures for orgs referenced
     by the spine's estimate rows and bills.
@@ -208,14 +227,16 @@ def build_contacts_and_businesses(c):
         contact_pk = c.next_pk('contacts.contact')
         business_pk = c.next_pk('contacts.business')
 
-        # Apply fallbacks for email and phone
-        if not email:
-            email = f'noreply+{contact_pk}@example.com'
+        # Anonymize contact details: real email domains -> example.com,
+        # phone-number prefixes -> 555.
+        email = (_anonymize_email(email) if email
+                 else f'noreply+{contact_pk}@example.com')
+        work_number = _anonymize_phone(work_number) if work_number else ''
+        mobile_number = _anonymize_phone(mobile_number) if mobile_number else ''
         if not work_number and not mobile_number:
-            work_number = '000-000-0000'
+            work_number = '555-555-5555'
 
         # Clamp phone numbers to the model field length (max_length=20).
-        # FreeAgent exports sometimes carry extension text / multiple numbers.
         work_number = work_number[:20]
         mobile_number = mobile_number[:20]
 

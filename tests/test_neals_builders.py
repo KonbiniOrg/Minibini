@@ -351,6 +351,20 @@ class MaterialLineKindTest(unittest.TestCase):
             self.assertEqual(build._material_line_kind(d), 'deliverable', d)
 
 
+class AnonymizeTest(unittest.TestCase):
+    def test_email_domain_replaced(self):
+        self.assertEqual(build._anonymize_email('oomung@abinari.it'),
+                         'oomung@example.com')
+        self.assertEqual(build._anonymize_email('noreply+5@example.com'),
+                         'noreply+5@example.com')
+
+    def test_phone_prefix_replaced(self):
+        self.assertEqual(build._anonymize_phone('408-323-3393'), '408-555-3393')
+        self.assertEqual(build._anonymize_phone('805 433 4154'), '805-555-4154')
+        self.assertEqual(build._anonymize_phone('(650) 593-6997'), '650-555-6997')
+        self.assertEqual(build._anonymize_phone(''), '555-555-5555')
+
+
 class ConvertEndToEndTest(unittest.TestCase):
     @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                          'datasets not present')
