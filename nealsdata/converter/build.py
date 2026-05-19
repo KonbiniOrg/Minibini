@@ -13,12 +13,21 @@ from nealsdata.converter import parsing as P
 _FALLBACK_YEAR = 2025
 
 # Maps Kanban 'Stage' values to Minibini job status constants.
+# 'estimate' is handled separately in build_jobs (it depends on Swimlane).
 _STAGE_TO_JOB_STATUS = {
-    'estimate':         'submitted',
     'in progress':      'in_progress',
     'invoice':          'work_complete',
     'done or rejected': 'completed',
 }
+
+
+def _is_neals_swimlane(card):
+    """True when a Kanban card sits in the 'Neal's do' swimlane.
+
+    'Neal's do' means work still on Neal's side: an estimate not yet sent,
+    or an invoice not yet sent. 'Other do' means it has gone to the customer.
+    """
+    return (card.get('Swimlane') or '').strip().lower().startswith('neal')
 
 
 def _revision_index(row):
@@ -305,9 +314,14 @@ def build_jobs(c):
         year_counters[year] = year_counters.get(year, 0) + 1
         job_number = f'J{year}-{year_counters[year]:04d}'
 
-        # --- 4. Map Kanban Stage → job status -----------------------------
+        # --- 4. Map Kanban Stage (+ Swimlane) → job status ----------------
         stage = (card.get('Stage') or '').strip().lower()
-        job_status = _STAGE_TO_JOB_STATUS.get(stage, 'draft')
+        if stage == 'estimate':
+            # Estimate stage: 'Neal's do' = estimate not yet sent (job
+            # draft); 'Other do' = estimate sent to customer (job submitted).
+            job_status = 'draft' if _is_neals_swimlane(card) else 'submitted'
+        else:
+            job_status = _STAGE_TO_JOB_STATUS.get(stage, 'draft')
 
         # --- 5. Build name and description from card fields ---------------
         desc = (card.get('Description') or '').strip()
@@ -468,6 +482,13 @@ def build_estimates(c):
     for base, entries in groups.items():
         job_pk = c.job_map[base]
 
+        # Estimate-stage jobs: the Kanban swimlane drives the latest
+        # estimate's status — 'Neal's do' = draft (not sent), 'Other do' =
+        # open (sent). Older versions are superseded by reconcile as usual.
+        card = c.jobs.get(base, {}).get('card', {})
+        est_stage = (card.get('Stage') or '').strip().lower() == 'estimate'
+        swimlane_status = 'draft' if _is_neals_swimlane(card) else 'open'
+
         # Sort: primary key = parsed date (unparseable → datetime.max),
         #       secondary = original sheet index (preserves order on ties).
         def _sort_key(entry):
@@ -484,6 +505,10 @@ def build_estimates(c):
             raw_date = container.get('Date')
             est_status_raw = (container.get('Status') or '').strip()
             est_status = _EST_STATUS_MAP.get(est_status_raw, 'draft')
+            # Estimate-stage job: the latest version's status comes from the
+            # swimlane, not the FreeAgent Status column.
+            if est_stage and version == len(entries):
+                est_status = swimlane_status
             # created_date_bare: bare 'YYYY-MM-DD' used internally by reconcile
             # for date arithmetic (_add_days, P.to_datetime).
             created_date_bare = P.format_date(raw_date) or f'{_FALLBACK_YEAR}-01-01'
@@ -923,6 +948,13 @@ def build_invoices(c):
         fa_status = (container.get('Status') or '').strip()
         paid_date = container.get('Paid Date')
         status = _map_invoice_status(fa_status, paid_date)
+
+        # Invoice-stage 'Neal's do' jobs: an invoice may exist but has not
+        # been sent to the customer — force it to draft.
+        card = c.jobs.get(base_ref, {}).get('card', {})
+        if ((card.get('Stage') or '').strip().lower() == 'invoice'
+                and _is_neals_swimlane(card)):
+            status = 'draft'
 
         raw_date = container.get('Date')
         created_date = P.format_datetime(raw_date) or f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00'
