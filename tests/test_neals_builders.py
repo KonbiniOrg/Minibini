@@ -277,6 +277,23 @@ class ReconcileTest(unittest.TestCase):
             if st in ('completed', 'cancelled', 'rejected'):
                 self.assertIsNotNone(j['fields']['completed_date'])
 
+    def test_started_jobs_have_an_accepted_latest_estimate(self):
+        reconcile.reconcile(self.c)
+        jobs = {j['pk']: j['fields']['status']
+                for j in self._models('jobs.job')}
+        ests_by_job = {}
+        for e in self._models('estimates.estimate'):
+            ests_by_job.setdefault(e['fields']['job'], []).append(e['fields'])
+        for jp, status in jobs.items():
+            if status not in ('in_progress', 'work_complete', 'completed'):
+                continue
+            ests = ests_by_job.get(jp, [])
+            if not ests:
+                continue
+            latest = max(ests, key=lambda e: e['version'])
+            self.assertEqual(latest['status'], 'accepted',
+                             f'job {jp} ({status}) latest estimate not accepted')
+
     def test_task_statuses_are_valid_and_preserved(self):
         # Task status comes from the checklist ([X]/[ ]); reconcile only
         # cancels tasks on cancelled/rejected jobs and must not clobber

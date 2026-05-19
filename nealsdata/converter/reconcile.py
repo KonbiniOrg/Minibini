@@ -60,6 +60,7 @@ def reconcile(c):
     # pk; key those as (model, None). Reconcile never looks them up by pk.
     index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
     _pass_estimate_version_chains(c, index)
+    _pass_started_jobs_accept_estimate(c, index)
     _pass_estimate_expiry(c, index)
     _pass_estimate_dates(c, index)
     _pass_job_status_and_dates(c, index)
@@ -93,6 +94,31 @@ def _pass_estimate_version_chains(c, index):
                 closed = entry['created_date'] or highest_created
                 fixture['fields']['closed_date'] = _as_dt_field(closed)
             prev_pk = entry['est_pk']
+
+
+def _pass_started_jobs_accept_estimate(c, index):
+    """Pass 1.5: a job that has started work must have an accepted estimate.
+
+    The Kanban Stage (job status) and the FreeAgent estimate Status can
+    disagree; when they do, the status farther along the transition chain
+    wins. A job that is approved/in_progress/work_complete/completed could
+    not have got there without an accepted estimate, so its latest estimate
+    is forced to 'accepted'. Runs before the expiry pass so a now-accepted
+    estimate is never expired.
+    """
+    for base_ref, versions in c.estimates.items():
+        if not versions or base_ref not in c.job_map:
+            continue
+        job_fixture = _find(index, 'jobs.job', c.job_map[base_ref])
+        if (job_fixture is None
+                or job_fixture['fields']['status'] not in _STARTED_JOB_STATUSES):
+            continue
+        latest = max(versions, key=lambda v: v['version'])
+        fixture = _find(index, 'estimates.estimate', latest['est_pk'])
+        if fixture is None:
+            continue
+        fixture['fields']['status'] = 'accepted'
+        latest['status'] = 'accepted'
 
 
 def _pass_estimate_expiry(c, index):
