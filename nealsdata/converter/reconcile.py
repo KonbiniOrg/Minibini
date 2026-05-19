@@ -223,10 +223,21 @@ def _pass_job_status_and_dates(c, index):
             fields['start_date'] = None
 
         # completed_date: required for terminal statuses, null otherwise.
+        # An estimate-driven closure (rejected/expired estimate) closes the
+        # job when the estimate closed — not when the job was created.
         if status in _TERMINAL_JOB_STATUSES:
             archived_date = P.format_date(archived_at) if archived_at else None
-            fields['completed_date'] = _as_dt_field(
-                archived_date or fields.get('created_date', '')[:10]
+            est_closed = None
+            est_list = c.estimates.get(base_ref) or []
+            if est_list:
+                latest = max(est_list, key=lambda e: e['version'])
+                est_fixture = _find(index, 'estimates.estimate', latest['est_pk'])
+                if est_fixture is not None:
+                    est_closed = est_fixture['fields'].get('closed_date')
+            fields['completed_date'] = (
+                _as_dt_field(archived_date)
+                or est_closed
+                or _as_dt_field((fields.get('created_date') or '')[:10])
             )
         else:
             fields['completed_date'] = None
