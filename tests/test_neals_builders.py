@@ -196,6 +196,16 @@ class AtomDerivationTest(unittest.TestCase):
                 self.assertIsInstance(mods, dict)
                 self.assertIn('flat_fee_price', mods)
 
+    def test_every_task_has_an_est_worker_time(self):
+        # Cut/assembly tasks get the Kanban card's time columns; every other
+        # task gets the invented flat 1-hour default.
+        build.derive_atoms(self.c)
+        tasks = self._models('jobs.task')
+        self.assertGreater(len(tasks), 0)
+        for t in tasks:
+            self.assertIsNotNone(t['fields']['est_worker_time'],
+                                 f"task {t['pk']} has no est_worker_time")
+
     def test_materials_link_to_cut_task_when_present(self):
         build.derive_atoms(self.c)
         tasks = self._models('jobs.task')

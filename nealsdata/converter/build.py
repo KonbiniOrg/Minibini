@@ -781,8 +781,19 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
     return sort_order
 
 
+# Default est_worker_time for any task not matched to a Kanban time column.
+# The checklists carry no per-task time data, so this is an invented flat
+# 1-hour estimate (see _apply_worker_times).
+_DEFAULT_WORKER_TIME = '01:00:00'
+
+
 def _apply_worker_times(c, job_pk, card):
-    """Apply the Kanban card's est cut/assembly times to matching tasks."""
+    """Apply the Kanban card's est cut/assembly times to matching tasks.
+
+    The Kanban card carries two job-level time columns (est *cut* time, est
+    ASS time); these land on the cut/assembly tasks. The checklists hold no
+    per-task time data, so every other task is given a flat 1-hour estimate.
+    """
     def _find_task_fixture(predicate):
         for f in c.fixture_data:
             if f['model'] == 'jobs.task' and f['fields']['job'] == job_pk:
@@ -810,6 +821,12 @@ def _apply_worker_times(c, job_pk, card):
             _set(f, raw_ass)
         else:
             c.time_match_misses += 1
+
+    # Every task left without a card-derived time gets the default estimate.
+    for f in c.fixture_data:
+        if (f['model'] == 'jobs.task' and f['fields']['job'] == job_pk
+                and f['fields'].get('est_worker_time') is None):
+            f['fields']['est_worker_time'] = _DEFAULT_WORKER_TIME
 
 
 def _build_deliverables(c, job_pk, deliverable_lines):
