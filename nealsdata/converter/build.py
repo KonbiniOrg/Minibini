@@ -643,13 +643,37 @@ def _fallback_scheme(c, li):
     return _match_seed_scheme(c, algorithm, li['price'])
 
 
-def _build_checklist_tasks(c, base_ref, job_pk, items):
+# Leading verbs that mark a material-keyword line as labour/prep (a Task)
+# rather than raw stock or a finished deliverable.
+_LABOR_VERB_PREFIXES = ('prepare', 'apply', 'glue', 'engrave')
+
+
+def _material_line_kind(description):
+    """Classify a material-classified estimate line into one of:
+
+      'material'    — raw stock (sheets, board feet, a materials-cost line)
+      'task'        — labour/prep that merely names a material
+      'deliverable' — a finished good or named part
+
+    Each material-classified line becomes exactly one of these.
+    """
+    t = (description or '').strip().lower()
+    if ('sheet' in t or 'board feet' in t or 'bf of' in t
+            or t.startswith('materials') or t.startswith('estimated material')):
+        return 'material'
+    if t.startswith(_LABOR_VERB_PREFIXES):
+        return 'task'
+    return 'deliverable'
+
+
+def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     """Emit jobs.task fixtures from parsed Kanban checklist items.
 
     Indented checklist lines become subtasks of the most recent
-    non-indented line ([X] -> complete, [ ] -> pending).
+    non-indented line ([X] -> complete, [ ] -> pending). Returns the final
+    per-job sort_order so later task builders can continue the sequence.
     """
-    sort_order = 0
+    sort_order = start_sort
     last_toplevel_pk = None
     for item in items:
         # The 'Picked up/Delivered' marker drives Shipments, not Tasks.
@@ -682,14 +706,17 @@ def _build_checklist_tasks(c, base_ref, job_pk, items):
             last_toplevel_pk = task_pk
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
+    return sort_order
 
 
-def _build_line_item_tasks(c, base_ref, job_pk, task_lines):
-    """Emit jobs.task fixtures from task-classified estimate line items.
+def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
+    """Emit jobs.task fixtures from estimate line items.
 
-    Used only for jobs whose Kanban card has no checklist.
+    Used for the no-checklist fallback (task-classified lines) and for
+    material-keyword lines reclassified as labour. Returns the final
+    per-job sort_order.
     """
-    sort_order = 0
+    sort_order = start_sort
     for li in task_lines:
         sort_order += 1
         name = (li['description'] or 'Task')[:255] or 'Task'
@@ -715,6 +742,7 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines):
         })
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
+    return sort_order
 
 
 def _apply_worker_times(c, job_pk, card):
@@ -748,9 +776,9 @@ def _apply_worker_times(c, job_pk, card):
             c.time_match_misses += 1
 
 
-def _build_deliverables(c, job_pk, material_lines):
-    """Emit deliverables.deliverable fixtures — one per material line, or a
-    synthetic 'Fake Deliverable' when the job has no material lines.
+def _build_deliverables(c, job_pk, deliverable_lines):
+    """Emit deliverables.deliverable fixtures — one per deliverable line, or
+    a synthetic 'Fake Deliverable' when the job has no deliverable lines.
     """
     # created_at/updated_at are auto fields; loaddata won't populate them, so
     # the fixture must supply a value. Reuse the job's tz-aware created_date.
@@ -764,9 +792,9 @@ def _build_deliverables(c, job_pk, material_lines):
         else f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00'
     )
 
-    if material_lines:
+    if deliverable_lines:
         d_sort = 0
-        for li in material_lines:
+        for li in deliverable_lines:
             d_sort += 10
             d_pk = c.next_pk('deliverables.deliverable')
             c.add_fixture('deliverables.deliverable', d_pk, {
@@ -796,13 +824,13 @@ def derive_atoms(c):
     """Derive Task, Material and Deliverable fixtures for each job.
 
     Tasks come from the Kanban card's Checklist when it has any items
-    (each line -> a Task; indented lines -> subtasks; [X] -> complete).
-    Only when a job has no checklist do task-classified estimate line items
-    become Tasks instead. Materials and Deliverables always come from the
-    latest estimate's material-classified line items.
+    (each line -> a Task; indented lines -> subtasks; [X] -> complete);
+    otherwise task-classified estimate line items become Tasks.
 
-    RateSchemes are the canonical seed schemes (build_seed); checklist tasks
-    are assigned by keyword, fallback tasks by keyword then rate-match/clone.
+    Material-classified estimate line items are split (see
+    _material_line_kind): raw stock -> Material, labour/prep lines -> Task,
+    finished goods -> Deliverable. Each line becomes exactly one of those.
+    A job with no deliverable line gets a synthetic 'Fake Deliverable'.
 
     Mutates c.fixture_data, c.cut_task, c.time_match_misses,
     c.fake_deliverable_count.
@@ -817,18 +845,33 @@ def derive_atoms(c):
                   if est_list else None)
         lines = c.line_items.get(latest['est_pk'], []) if latest else []
         task_lines = [li for li in lines if li['classification'] == 'task']
-        material_lines = [li for li in lines
-                          if li['classification'] == 'material']
 
-        # --- 1. Tasks: checklist first, estimate line items as fallback ----
+        # Split material-classified lines into raw stock / labour / deliverable.
+        raw_lines, labor_lines, deliverable_lines = [], [], []
+        for li in lines:
+            if li['classification'] != 'material':
+                continue
+            kind = _material_line_kind(li['description'])
+            if kind == 'material':
+                raw_lines.append(li)
+            elif kind == 'task':
+                labor_lines.append(li)
+            else:
+                deliverable_lines.append(li)
+
+        # --- 1. Tasks: checklist (or fallback line items), plus labour lines.
         checklist_items = P.parse_checklist(card.get('Checklist'))
         if checklist_items:
-            _build_checklist_tasks(c, base_ref, job_pk, checklist_items)
+            sort_order = _build_checklist_tasks(
+                c, base_ref, job_pk, checklist_items)
         else:
-            _build_line_item_tasks(c, base_ref, job_pk, task_lines)
+            sort_order = _build_line_item_tasks(
+                c, base_ref, job_pk, task_lines)
+        # Material-keyword lines that are really labour become Tasks too.
+        _build_line_item_tasks(c, base_ref, job_pk, labor_lines, sort_order)
 
-        # --- 2. Materials (after tasks so cut_task is populated) -----------
-        for li in material_lines:
+        # --- 2. Materials: raw stock only (after tasks so cut_task is set) --
+        for li in raw_lines:
             mat_pk = c.next_pk('inventory.material')
             c.add_fixture('inventory.material', mat_pk, {
                 'job':                 job_pk,
@@ -849,8 +892,8 @@ def derive_atoms(c):
         # --- 3. CSV worker-time assignments --------------------------------
         _apply_worker_times(c, job_pk, card)
 
-        # --- 4. Deliverables -----------------------------------------------
-        _build_deliverables(c, job_pk, material_lines)
+        # --- 4. Deliverables: finished-good lines (or a Fake Deliverable) --
+        _build_deliverables(c, job_pk, deliverable_lines)
 
 
 # Maps FreeAgent Invoice Status values to Minibini invoice status constants.

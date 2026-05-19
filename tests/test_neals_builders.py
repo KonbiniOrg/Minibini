@@ -327,6 +327,30 @@ class ShipmentBuilderTest(unittest.TestCase):
                              ship_job[it['fields']['shipment']])
 
 
+class MaterialLineKindTest(unittest.TestCase):
+    def test_raw_stock_is_material(self):
+        for d in ('4\'x8\' x 3/4" sheet(s) of Baltic Birch plywood',
+                  'BF of solid maple lumber',
+                  'board feet of ash, maple, white oak',
+                  'Materials: plywood, lumber, acrylic',
+                  'Estimated materials cost for both pedestals'):
+            self.assertEqual(build._material_line_kind(d), 'material', d)
+
+    def test_labour_verbs_are_tasks(self):
+        for d in ('Apply epoxy to engraved redwood bench',
+                  'Glue up MDF to similar proportions',
+                  'Engrave decorative pattern into lead',
+                  'Prepare stock for M58 floors'):
+            self.assertEqual(build._material_line_kind(d), 'task', d)
+
+    def test_finished_goods_are_deliverables(self):
+        for d in ("Cat's Cradle sign from wood and brass",
+                  'CNC cut B_Bottom Shelf from 3/4" Walnut Plywood',
+                  'Construct Pedestal "A"',
+                  'Large acrylic/wood backdrop with crate'):
+            self.assertEqual(build._material_line_kind(d), 'deliverable', d)
+
+
 class ConvertEndToEndTest(unittest.TestCase):
     @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                          'datasets not present')
