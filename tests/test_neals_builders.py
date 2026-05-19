@@ -287,6 +287,46 @@ class ReconcileTest(unittest.TestCase):
             self.assertIn(t['fields']['status'], valid)
 
 
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class ShipmentBuilderTest(unittest.TestCase):
+    def setUp(self):
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json',
+                                    limit=100)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+        build.build_seed(self.c)
+        build.build_contacts_and_businesses(self.c)
+        build.build_jobs(self.c)
+        build.build_estimates(self.c)
+        build.derive_atoms(self.c)
+        build.build_invoices(self.c)
+        reconcile.reconcile(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_shipments_are_picked_up_with_their_jobs_deliverables(self):
+        build.build_shipments(self.c)
+        shipments = self._models('deliverables.shipment')
+        self.assertGreater(len(shipments), 0)
+        deliv_job = {d['pk']: d['fields']['job']
+                     for d in self._models('deliverables.deliverable')}
+        ship_job = {}
+        for s in shipments:
+            self.assertEqual(s['fields']['status'], 'picked_up')
+            self.assertIsNotNone(s['fields']['picked_up_date'])
+            ship_job[s['pk']] = s['fields']['job']
+        items = self._models('deliverables.shipmentitem')
+        self.assertGreater(len(items), 0)
+        for it in items:
+            self.assertIn(it['fields']['shipment'], ship_job)
+            # the item's deliverable belongs to the shipment's job
+            self.assertEqual(deliv_job[it['fields']['deliverable']],
+                             ship_job[it['fields']['shipment']])
+
+
 class ConvertEndToEndTest(unittest.TestCase):
     @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                          'datasets not present')

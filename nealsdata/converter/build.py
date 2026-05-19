@@ -1005,3 +1005,94 @@ def build_invoices(c):
             job_li_total += qty * price
 
         c.invoice_totals[base_ref] = job_li_total
+
+
+def _has_pickup_done(card):
+    """True when the card's checklist has a checked 'Picked up/Delivered' item.
+
+    Matches the marker with or without a trailing recipient name; ordinary
+    'pick up ...' notes are excluded by requiring the 'picked up/delivered'
+    prefix.
+    """
+    for item in P.parse_checklist(card.get('Checklist')):
+        if not item['completed']:
+            continue
+        normalized = item['text'].strip().lower().replace(' ', '')
+        if normalized.startswith('pickedup/delivered'):
+            return True
+    return False
+
+
+def build_shipments(c):
+    """Emit deliverables.shipment + deliverables.shipmentitem fixtures.
+
+    A Job gets one picked-up Shipment containing every Deliverable on it when
+    both hold:
+      - the Job is eligible: status 'completed' (either swimlane), or Kanban
+        Stage 'invoice' in the 'Other do' swimlane; and
+      - its Kanban checklist has a checked 'Picked up/Delivered' item.
+
+    The shipment's picked-up date is taken near the end of the Job's
+    lifetime (completed_date, else the latest invoice date, else the Job's
+    created_date). Runs AFTER reconcile so job completed_date is final.
+    """
+    job_fixtures = {f['pk']: f['fields']
+                    for f in c.fixture_data if f['model'] == 'jobs.job'}
+
+    deliverables_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] == 'deliverables.deliverable':
+            deliverables_by_job.setdefault(
+                f['fields']['job'], []).append(f)
+
+    latest_invoice_date = {}
+    for f in c.fixture_data:
+        if f['model'] == 'invoicing.invoice':
+            jp = f['fields']['job']
+            d = f['fields'].get('created_date')
+            if d and d > latest_invoice_date.get(jp, ''):
+                latest_invoice_date[jp] = d
+
+    for base_ref, job_info in c.jobs.items():
+        job_pk = job_info['job_pk']
+        card = job_info['card']
+        job_fields = job_fixtures.get(job_pk)
+        if job_fields is None:
+            continue
+
+        # Eligibility: completed (any swimlane), or invoice-stage 'Other do'.
+        stage = (card.get('Stage') or '').strip().lower()
+        eligible = (
+            job_fields['status'] == 'completed'
+            or (stage == 'invoice' and not _is_neals_swimlane(card))
+        )
+        if not eligible or not _has_pickup_done(card):
+            continue
+
+        delivs = deliverables_by_job.get(job_pk, [])
+        if not delivs:
+            continue
+
+        picked_ts = (job_fields.get('completed_date')
+                     or latest_invoice_date.get(job_pk)
+                     or job_fields.get('created_date')
+                     or f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00')
+
+        ship_pk = c.next_pk('deliverables.shipment')
+        c.add_fixture('deliverables.shipment', ship_pk, {
+            'job':            job_pk,
+            'sequence':       1,
+            'status':         'picked_up',
+            'prepared_date':  picked_ts,
+            'picked_up_date': picked_ts,
+            'notes':          '',
+            'created_at':     picked_ts,
+            'updated_at':     picked_ts,
+        })
+        for d in delivs:
+            si_pk = c.next_pk('deliverables.shipmentitem')
+            c.add_fixture('deliverables.shipmentitem', si_pk, {
+                'shipment':    ship_pk,
+                'deliverable': d['pk'],
+                'qty':         d['fields']['qty_ordered'],
+            })

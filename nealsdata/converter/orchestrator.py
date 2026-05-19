@@ -93,6 +93,7 @@ class NealsDataConverter:
         build.derive_atoms(self)
         build.build_invoices(self)
         reconcile.reconcile(self)
+        build.build_shipments(self)   # after reconcile: needs final job dates
         self._write_json()
         if self.verbose:
             self._print_summary()
