@@ -98,11 +98,16 @@ def _pass_estimate_version_chains(c, index):
 def _pass_estimate_expiry(c, index):
     """Pass 2: expire open estimates created more than 30 days ago.
 
-    Job status is driven by the Kanban Stage column (set in build_jobs), so
-    an expired estimate does NOT change its job's status here.
+    When a job's LATEST estimate expires the job is rejected — an expired
+    estimate means the job never went ahead. This only applies to
+    estimate-stage jobs (draft/submitted); a job already in progress keeps
+    its Kanban Stage status.
     """
     cutoff = date.today() - timedelta(days=_EXPIRE_DAYS)
-    for versions in c.estimates.values():
+    for base_ref, versions in c.estimates.items():
+        if not versions:
+            continue
+        highest_version = max(v['version'] for v in versions)
         for entry in versions:
             fixture = _find(index, 'estimates.estimate', entry['est_pk'])
             if fixture is None or fixture['fields']['status'] != 'open':
@@ -116,6 +121,14 @@ def _pass_estimate_expiry(c, index):
                 _add_days(entry['created_date'], _EXPIRE_DAYS)
                 or entry['created_date']
             )
+            # The job's latest estimate expiring ends the job: reject it,
+            # unless work has already started (only draft/submitted jobs).
+            if entry['version'] == highest_version and base_ref in c.job_map:
+                job_fixture = _find(index, 'jobs.job', c.job_map[base_ref])
+                if (job_fixture is not None
+                        and job_fixture['fields']['status']
+                        in ('draft', 'submitted')):
+                    job_fixture['fields']['status'] = 'rejected'
 
 
 def _pass_estimate_dates(c, index):
