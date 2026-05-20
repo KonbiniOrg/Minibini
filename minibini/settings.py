@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     'apps.invoicing',
     'apps.purchasing',
     'apps.search',
+    'apps.schedule',
     'apps.inventory',
     'apps.qbo',
     'rest_framework',
