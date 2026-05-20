@@ -4,6 +4,7 @@
   import UnitsManager from '../components/UnitsManager.svelte';
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
   import TaskTemplateManager from '../components/TaskTemplateManager.svelte';
+  import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
   let tab = $state('accounting');
@@ -55,6 +56,7 @@
   <button class:active={tab === 'accounting'} onclick={() => tab = 'accounting'}>Accounting</button>
   <button class:active={tab === 'setup'} onclick={() => tab = 'setup'}>Setup</button>
   <button class:active={tab === 'catalog'} onclick={() => tab = 'catalog'}>Catalog</button>
+  <button class:active={tab === 'schedule'} onclick={() => tab = 'schedule'}>Schedule</button>
 </nav>
 
 {#if tab === 'accounting'}
@@ -112,6 +114,9 @@
 
   <h3>Price list items</h3>
   <p><em>Not yet implemented in Svelte. <a href="/inventory/price-list-items/">Price list items (legacy)</a></em></p>
+
+{:else if tab === 'schedule'}
+  <ScheduleSettings />
 {/if}
 
 <style>

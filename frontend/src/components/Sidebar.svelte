@@ -47,6 +47,7 @@
   <nav>
     <a href="/" use:link>Home</a>
     <a href="/jobs/board" use:link>Jobs</a>
+    <a href="/schedule" use:link>Schedule</a>
     <a href="/contacts" use:link>Contacts</a>
     <a href="/email" use:link>Email</a>
     <a href="/purchase-orders" use:link>Purchasing</a>

@@ -21,6 +21,7 @@
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import InvoiceWizardPage from './routes/invoices/InvoiceWizardPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
+  import SchedulePage from './routes/schedule/SchedulePage.svelte';
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
@@ -56,6 +57,7 @@
     '/businesses/:id': BusinessDetailPage,
     '/jobs': JobListPage,
     '/jobs/board': JobBoardPage,
+    '/schedule': SchedulePage,
     '/jobs/:id': JobDetailPage,
     '/jobs/:id/edit': JobEditPage,
     '/jobs/:id/create-worksheet': CreateWorksheetPage,

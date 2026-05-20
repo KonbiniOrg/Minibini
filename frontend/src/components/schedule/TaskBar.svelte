@@ -1,0 +1,109 @@
+<script>
+  let { bar, timeToX, panelStart, panelEnd, onDragStart = null } = $props();
+
+  function darken(hex, pct = 0.3) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const f = 1 - pct;
+    return '#' + [r, g, b]
+      .map(c => Math.round(c * f).toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  let lightColor = $derived(bar.accent_color || '#888');
+  let darkColor = $derived(darken(lightColor));
+
+  let segs = $derived(bar.segments
+    .map(s => ({
+      start: new Date(s.start),
+      end: new Date(s.end),
+      est_fill_to: s.est_fill_to ? new Date(s.est_fill_to) : null,
+      actual_fill_to: s.actual_fill_to ? new Date(s.actual_fill_to) : null,
+      continues_left: s.continues_left,
+      continues_right: s.continues_right,
+    }))
+    .filter(s => s.end > panelStart && s.start < panelEnd)
+  );
+
+  function handleDragStart(e) {
+    if (!onDragStart) return;
+    e.dataTransfer.setData('text/plain', String(bar.task_id));
+    e.dataTransfer.effectAllowed = 'move';
+    onDragStart(bar.task_id);
+  }
+
+  let isDraggable = $derived(bar.kind === 'forecast' || bar.kind === 'parked');
+</script>
+
+{#each segs as seg, i (i)}
+  {@const left = timeToX(seg.start < panelStart ? panelStart : seg.start)}
+  {@const right = timeToX(seg.end > panelEnd ? panelEnd : seg.end)}
+  {@const width = Math.max(2, right - left)}
+  {@const estWidth = seg.est_fill_to ? Math.max(0, timeToX(seg.est_fill_to) - left) : 0}
+  {@const actWidth = seg.actual_fill_to ? Math.max(0, timeToX(seg.actual_fill_to) - left) : 0}
+  {@const zigClass = seg.continues_left && seg.continues_right
+                     ? 'zig-both'
+                     : seg.continues_left ? 'zig-left'
+                     : seg.continues_right ? 'zig-right' : ''}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="task-bar {zigClass} kind-{bar.kind}"
+       draggable={isDraggable}
+       ondragstart={handleDragStart}
+       data-task-id={bar.task_id}
+       style="left: {left}px; width: {width}px;"
+       title="{bar.name} · est {bar.est_minutes}m · elapsed {bar.elapsed_minutes}m">
+    {#if bar.kind === 'parked'}
+      <div class="parked-fill" style="background: {lightColor};"></div>
+    {:else}
+      {#if estWidth > 0}
+        <div class="layer-est" style="width: {estWidth}px; background: {lightColor};"></div>
+      {/if}
+      {#if actWidth > 0}
+        <div class="layer-actual" style="width: {actWidth}px; background: {darkColor};"></div>
+      {/if}
+    {/if}
+    {#if i === 0}
+      <span class="label">{bar.name}</span>
+    {/if}
+  </div>
+{/each}
+
+<style>
+  .task-bar {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  .layer-est, .layer-actual { position: absolute; left: 0; }
+  .layer-est    { top: 0;    height: 50%; }
+  .layer-actual { bottom: 0; height: 50%; }
+  .parked-fill {
+    position: absolute; inset: 0;
+    opacity: 0.5;
+    background-image: repeating-linear-gradient(45deg,
+      rgba(0,0,0,0.25), rgba(0,0,0,0.25) 3px,
+      transparent 3px, transparent 6px);
+  }
+  .label {
+    position: absolute; left: 4px; top: 2px;
+    font-size: 10px; color: #fff;
+    text-shadow: 0 0 2px rgba(0,0,0,0.5);
+    pointer-events: none; white-space: nowrap;
+  }
+  .kind-historical { opacity: 0.55; }
+
+  .zig-right { clip-path: polygon(
+    0 0, 100% 0,
+    calc(100% - 5px) 25%, 100% 50%,
+    calc(100% - 5px) 75%, 100% 100%,
+    0 100%); }
+  .zig-left  { clip-path: polygon(
+    5px 0, 100% 0, 100% 100%, 5px 100%,
+    0 75%, 5px 50%, 0 25%); }
+  .zig-both  { clip-path: polygon(
+    5px 0, 100% 0, calc(100% - 5px) 25%, 100% 50%,
+    calc(100% - 5px) 75%, 100% 100%, 5px 100%,
+    0 75%, 5px 50%, 0 25%); }
+</style>

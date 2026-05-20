@@ -141,6 +141,93 @@ class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         )
 
 
+def _validate_schedule_keys(data):
+    """Validate schedule_* keys in the incoming settings payload.
+
+    Returns an error dict (suitable for a 400 response) or None if valid.
+    Reads any keys present in `data` plus falls back to the current stored
+    values to evaluate cross-key constraints (lunch fits inside workday).
+    """
+    schedule_keys = (
+        'schedule_workday_start', 'schedule_workday_end',
+        'schedule_lunch_start', 'schedule_lunch_length_minutes',
+        'schedule_task_buffer_minutes', 'schedule_horizon_days',
+    )
+    incoming = {k: v for k, v in data.items() if k in schedule_keys}
+    if not incoming:
+        return None
+
+    # Pull current values for any keys not being set in this request.
+    current = {}
+    for key in schedule_keys:
+        if key in incoming:
+            current[key] = incoming[key]
+        else:
+            try:
+                current[key] = Configuration.objects.get(key=key).value
+            except Configuration.DoesNotExist:
+                current[key] = None
+
+    def parse_hhmm(s, label):
+        if s is None:
+            return None
+        try:
+            hh, mm = str(s).split(':')
+            hh, mm = int(hh), int(mm)
+            if not (0 <= hh <= 23 and 0 <= mm <= 59):
+                raise ValueError
+            return hh * 60 + mm
+        except (ValueError, AttributeError):
+            return {'__error__': f"{label} must be HH:MM"}
+
+    def parse_int(s, label, min_v=0):
+        if s is None:
+            return None
+        try:
+            n = int(s)
+            if n < min_v:
+                return {'__error__': f"{label} must be >= {min_v}"}
+            return n
+        except (TypeError, ValueError):
+            return {'__error__': f"{label} must be an integer"}
+
+    errors = {}
+
+    wstart = parse_hhmm(current['schedule_workday_start'], 'schedule_workday_start')
+    if isinstance(wstart, dict): errors['schedule_workday_start'] = wstart['__error__']
+    wend = parse_hhmm(current['schedule_workday_end'], 'schedule_workday_end')
+    if isinstance(wend, dict): errors['schedule_workday_end'] = wend['__error__']
+    lstart = parse_hhmm(current['schedule_lunch_start'], 'schedule_lunch_start')
+    if isinstance(lstart, dict): errors['schedule_lunch_start'] = lstart['__error__']
+    llen = parse_int(current['schedule_lunch_length_minutes'],
+                     'schedule_lunch_length_minutes', min_v=0)
+    if isinstance(llen, dict): errors['schedule_lunch_length_minutes'] = llen['__error__']
+    buf = parse_int(current['schedule_task_buffer_minutes'],
+                    'schedule_task_buffer_minutes', min_v=0)
+    if isinstance(buf, dict): errors['schedule_task_buffer_minutes'] = buf['__error__']
+    horiz = parse_int(current['schedule_horizon_days'],
+                      'schedule_horizon_days', min_v=1)
+    if isinstance(horiz, dict): errors['schedule_horizon_days'] = horiz['__error__']
+
+    if errors:
+        return errors
+
+    # Cross-key checks (only when all relevant values parse).
+    if wstart is not None and wend is not None and wstart >= wend:
+        errors['schedule_workday_end'] = 'must be after schedule_workday_start'
+    if (wstart is not None and lstart is not None and llen is not None
+            and wend is not None):
+        lend = lstart + llen
+        if lstart <= wstart:
+            errors['schedule_lunch_start'] = 'must be after schedule_workday_start'
+        if lend >= wend:
+            errors['schedule_lunch_length_minutes'] = (
+                'lunch must end before schedule_workday_end'
+            )
+
+    return errors or None
+
+
 @api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated, CanManageConfig])
 def settings_view(request):
@@ -150,6 +237,9 @@ def settings_view(request):
         return Response(data)
 
     # PATCH — update settings
+    schedule_errors = _validate_schedule_keys(request.data)
+    if schedule_errors:
+        return Response(schedule_errors, status=400)
     for key, value in request.data.items():
         Configuration.objects.update_or_create(
             key=key, defaults={'value': str(value)}

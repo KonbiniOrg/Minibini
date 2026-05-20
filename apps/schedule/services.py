@@ -143,8 +143,11 @@ class ScheduleService:
             jobs_payload.append({
                 'job_id': j.pk,
                 'job_number': getattr(j, 'job_number', '') or '',
-                'name': getattr(j, 'description', '') or '',
+                # Job has both `name` (short) and `description` (long). The
+                # board's JobCard uses `name`; reuse it here.
+                'name': getattr(j, 'name', '') or getattr(j, 'description', '') or '',
                 'accent_color': j.accent_color,
+                'contact_id': j.contact_id,
                 'contact_name': contact_name,
                 'due_date': j.due_date.isoformat() if j.due_date else None,
             })
