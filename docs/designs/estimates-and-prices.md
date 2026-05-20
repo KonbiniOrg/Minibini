@@ -64,7 +64,7 @@ taxability / QBO income mapping), and its own version lineage. Every
 | `name` | CharField(100), unique | display name; e.g. "CNC Router", "Hourly Labor" |
 | `description` | TextField, blank | longer admin explanation |
 | `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `flat_fee` |
-| `rate` | Decimal(10,2) | per-unit base price |
+| `rate` | Decimal(10,2) | per-unit base price; for `flat_fee` only a fallback — the real price rides on the atom (see §2.2) |
 | `unit_label` | CharField(50) | the customer-facing unit (e.g. `hour`, `minute`, `piece`, `job`); validated against the configured units list (`apps/core/units.py`) |
 | `modifiers` | JSONField | list of `{key, label, percent}` dicts |
 | `accounting_category` | FK → `AccountingCategory` (PROTECT) | required, NOT NULL |
@@ -80,7 +80,7 @@ taxability / QBO income mapping), and its own version lineage. Every
 |---|---|---|---|
 | `elapsed_time` | `RateScheme.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work) |
 | `entered_qty` | `RateScheme.ENTERED_QTY` | `Task.actual_qty` | machine-minutes, piece work; worker enters the count |
-| `flat_fee` | `RateScheme.FLAT_FEE` | implicit `Decimal(1)` | setup fees, delivery |
+| `flat_fee` | `RateScheme.FLAT_FEE` | the atom's `est_qty` (fallback `Decimal(1)`) | one-off setup fees; per-unit priced services (hole tapping, plywood coating) |
 
 `RateScheme.get_actual_qty(task)` resolves the right quantity per
 algorithm:
@@ -88,13 +88,24 @@ algorithm:
 ```python
 ELAPSED_TIME → (Decimal(sum(blep.elapsed.total_seconds())) / 3600).quantize(0.01)
 ENTERED_QTY  → task.actual_qty or Decimal('0')
-FLAT_FEE     → Decimal('1')
+FLAT_FEE     → task.est_qty if task.est_qty is not None else Decimal('1')
 ```
 
 The `ELAPSED_TIME` result is quantized to 2 decimal places: a raw
 seconds/3600 division is non-terminating (~28 digits) and would overflow
 the line item `qty` field (`max_digits=10`) when carried into the invoice
 wizard.
+
+**flat_fee pricing.** `flat_fee` bills a **fixed unit price × estimated
+quantity**. The unit price is *not* `RateScheme.rate` — it rides on the
+atom in `active_modifiers` as a dict `{"flat_fee_price": "<decimal-str>"}`
+(see §2.3); `RateScheme.rate` is only a fallback for atoms that carry no
+price. This lets a single shared "Flat Fee" scheme serve many
+differently-priced items (setup $100, plywood coating $30, hole tapping
+$1.00) — each item is configured as a `TaskTemplate`, not its own scheme.
+`est_qty` supplies the quantity for both `PlanTask` and `Task`: a worksheet
+estimate of 50 holes carries to the Task and stays editable there. It is
+*not* worker-entered at completion like `entered_qty`'s `actual_qty`.
 
 ### 2.3 Modifiers
 
@@ -113,15 +124,32 @@ Active modifiers stack additively: messy (+10%) + doublestick (+5%)
 = +15% on `rate`. Validation that `active_modifiers` keys are a subset
 of the scheme's modifier keys is up to the form/serializer layer.
 
+**Shape note — `active_modifiers` is algorithm-dependent.** For
+`elapsed_time` / `entered_qty` atoms, `active_modifiers` (and
+`TaskTemplate.default_active_modifiers`) is a **list** of modifier keys.
+For `flat_fee` atoms it is instead a **dict** `{"flat_fee_price": "<str>"}`
+holding the per-unit price — a flat fee takes no percentage modifiers. The
+`copy_active_modifiers()` helper (`apps/jobs/models.py`) preserves this
+shape across carry-over, worksheet revision, and template generation; a
+bare `list()` would silently reduce the price dict to a list of its keys.
+
 ### 2.4 Effective rate and compute
 
 ```python
 RateScheme.effective_rate(active_modifiers)
-    → rate * (1 + sum(m.percent for m in modifiers if m.key in active_modifiers) / 100)
+    elapsed_time / entered_qty
+        → rate * (1 + sum(m.percent for m in modifiers if m.key in active_modifiers) / 100)
+    flat_fee
+        → active_modifiers['flat_fee_price'] if present, else rate (fallback)
 
 RateScheme.compute_charge(qty, active_modifiers)
     → qty * effective_rate(active_modifiers)
 ```
+
+For `flat_fee`, the price is extracted by the static helper
+`RateScheme._flat_fee_price(active_modifiers)`, which returns the
+`flat_fee_price` value as a `Decimal`, or `None` when no price is present
+(the caller then falls back to `rate`).
 
 There is no minimum-charge floor on RateScheme — that field was
 removed.
@@ -283,7 +311,7 @@ Recap of the billing fields:
 | Field | On TaskBase / Task / PlanTask | Notes |
 |---|---|---|
 | `rate_scheme` | declared on Task and PlanTask | FK to `RateScheme` (PROTECT). NOT NULL on both. |
-| `active_modifiers` | declared on Task and PlanTask | JSON list of modifier keys |
+| `active_modifiers` | declared on Task and PlanTask | JSON: list of modifier keys for time/qty schemes, or `{"flat_fee_price": str}` for `flat_fee` (see §2.3) |
 | `est_qty` | inherited from `TaskBase` | nullable on Task; `PlanTask.clean()` rejects null |
 | `est_worker_time` | inherited from `TaskBase` | DurationField for scheduling |
 | `actual_qty` | declared on Task only | Decimal nullable; worker-entered for `entered_qty` schemes |
@@ -322,7 +350,7 @@ to resolve qty:
 |---|---|
 | `elapsed_time` | sum of Blep durations in hours |
 | `entered_qty` | `task.actual_qty or 0` |
-| `flat_fee` | `1` |
+| `flat_fee` | `task.est_qty` (fallback `1` when null) |
 
 `effective_rate()` on both returns
 `rate_scheme.effective_rate(self.active_modifiers)`.
@@ -344,7 +372,7 @@ visible for `entered_qty` schemes.
 |---|---|
 | `elapsed_time` | estimated billable hours (often equals `est_worker_time` but doesn't have to) |
 | `entered_qty` | estimated piece / minute count |
-| `flat_fee` | implicitly 1 if used; usually left null |
+| `flat_fee` | the billable quantity (e.g. number of holes); the charge is `flat_fee_price × est_qty` |
 
 `est_qty` is **never** modified by work activity. It stays as the
 estimate. `actual_qty` and Bleps capture what happened. This

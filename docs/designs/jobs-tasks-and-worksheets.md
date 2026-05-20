@@ -469,7 +469,7 @@ worksheets (creating PlanTasks) and Jobs directly (creating Tasks).
 | Model | Path | Role |
 |---|---|---|
 | `WorkTemplate` | `apps/estimates/models.py` | Worksheet- or Job-shaped template; carries optional `base_price` |
-| `TaskTemplate` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers`, `default_billable_qty` |
+| `TaskTemplate` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers`, `default_billable_qty`. For a `flat_fee` scheme, `default_active_modifiers` holds the per-item price as `{"flat_fee_price": str}` — `TaskTemplate.clean()` requires it to be positive. See `estimates-and-prices.md` §2.2. |
 | `TemplateTaskAssociation` | `apps/estimates/models.py` | M2M-with-extras between WorkTemplate and TaskTemplate; carries `est_qty` and `sort_order` |
 | `TemplateMaterialAssociation` | `apps/inventory` | Links materials to a WorkTemplate; covered in the Materials doc |
 

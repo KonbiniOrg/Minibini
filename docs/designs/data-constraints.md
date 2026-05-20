@@ -159,6 +159,11 @@ See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
   raises if missing
 - **replaced_by** (optional FK → self) / **replaced_at**: set by `supersede()`
 
+For `flat_fee` schemes, `rate` is only a fallback — the real per-unit price
+lives on each atom / `TaskTemplate` in `active_modifiers` as
+`{"flat_fee_price": str}`, and the billable quantity comes from `est_qty`.
+See `estimates-and-prices.md` §2.2.
+
 #### Frozen fields
 
 Once any PlanTask, Task, or TaskTemplate references a scheme, the fields
@@ -290,8 +295,9 @@ worksheet is a self-contained pricing artefact.
 
 - **est_worksheet** (required FK → EstWorksheet, CASCADE)
 - **rate_scheme** (required FK → RateScheme, PROTECT)
-- **active_modifiers**: JSON list of modifier keys (default `[]`); each key
-  should be present in `rate_scheme.modifiers`
+- **active_modifiers**: for `elapsed_time` / `entered_qty`, a JSON list of
+  modifier keys (default `[]`), each present in `rate_scheme.modifiers`; for
+  `flat_fee`, a dict `{"flat_fee_price": str}` holding the per-unit price
 - **est_qty** (required at the application layer — `clean()` raises if null):
   decimal in the scheme's units. DB column is nullable, but every PlanTask
   must have a value.
@@ -333,8 +339,10 @@ Valid transitions:
 
 - **job** (required FK → Job, CASCADE)
 - **rate_scheme** (required FK → RateScheme, PROTECT): NOT NULL at DB level
-- **active_modifiers**: JSON list (default `[]`)
-- **est_qty** (inherited from `TaskBase`): optional
+- **active_modifiers**: JSON — list of modifier keys, or
+  `{"flat_fee_price": str}` for `flat_fee` schemes (see RateScheme §1.7)
+- **est_qty** (inherited from `TaskBase`): optional — for `flat_fee` it is
+  the billable quantity (charge is `flat_fee_price × est_qty`)
 - **est_worker_time**: optional Duration — but **required (and must be > 0)
   once `assignee` is set**; assigned work has to be schedulable
 - **actual_qty**: optional decimal — worker-entered qty for `entered_qty`
@@ -513,7 +521,9 @@ task/material structures.
 - **rate_scheme** (required FK → RateScheme, PROTECT): default for generated
   PlanTasks / Tasks. Superseded schemes raise `SchemeSupersededError` from
   `generate_task()`.
-- **default_active_modifiers**: JSON list (default `[]`)
+- **default_active_modifiers**: JSON — list of modifier keys, or
+  `{"flat_fee_price": str}` for `flat_fee` schemes. `TaskTemplate.clean()`
+  requires a positive `flat_fee_price` when the rate scheme is `flat_fee`.
 - **default_billable_qty** (required, decimal): used as `est_qty` when
   generating
 - **work_templates**: M2M via `TemplateTaskAssociation`
