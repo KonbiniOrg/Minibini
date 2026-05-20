@@ -816,7 +816,7 @@ class BoardService:
         approved_list = []
         for i, job in enumerate(approved_jobs):
             job_data = BoardService._serialize_job(job)
-            job_data['accent_color'] = BoardService.ACCENT_COLORS[
+            job_data['accent_color'] = job.accent_color or BoardService.ACCENT_COLORS[
                 i % len(BoardService.ACCENT_COLORS)
             ]
             approved_list.append(job_data)
@@ -910,7 +910,7 @@ class BoardService:
             if sub_status in BoardService.UNPAID_SUB_STATUSES:
                 continue
             job_data = BoardService._serialize_job(job)
-            job_data['accent_color'] = BoardService.ACCENT_COLORS[
+            job_data['accent_color'] = job.accent_color or BoardService.ACCENT_COLORS[
                 i % len(BoardService.ACCENT_COLORS)
             ]
             approved_list.append(job_data)

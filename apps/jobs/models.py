@@ -6,6 +6,34 @@ from apps.core.models import AbstractWorkContainer
 from apps.core.history import history
 
 
+# Palette used to auto-assign Job.accent_color. Order matters for tie-breaking
+# (earlier entries win). Mirrors the legacy BoardService.ACCENT_COLORS list.
+JOB_ACCENT_COLOR_PALETTE = (
+    '#f97066', '#f59e0b', '#14b8a6', '#8b5cf6',
+    '#38bdf8', '#fb7185', '#84cc16', '#f97316',
+)
+
+
+def _pick_least_used_accent_color():
+    """Return the color from JOB_ACCENT_COLOR_PALETTE least represented among
+    active Jobs (submitted, approved, in_progress). Ties broken by palette
+    order (first matching color wins).
+    """
+    from django.db.models import Count
+    active_statuses = ('submitted', 'approved', 'in_progress')
+    counts = dict.fromkeys(JOB_ACCENT_COLOR_PALETTE, 0)
+    qs = Job.objects.filter(
+        status__in=active_statuses,
+        accent_color__in=JOB_ACCENT_COLOR_PALETTE,
+    ).values('accent_color').annotate(n=Count('pk'))
+    for row in qs:
+        counts[row['accent_color']] = row['n']
+    return min(
+        JOB_ACCENT_COLOR_PALETTE,
+        key=lambda c: (counts[c], JOB_ACCENT_COLOR_PALETTE.index(c)),
+    )
+
+
 def copy_active_modifiers(value):
     """Return a copy of an atom's active_modifiers JSON, preserving its shape.
 
@@ -51,6 +79,13 @@ class Job(AbstractWorkContainer):
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT)
     customer_po_number = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
+    accent_color = models.CharField(
+        max_length=7, null=True, blank=True,
+        help_text=(
+            "Auto-assigned hex color (e.g. '#dc2626') used to identify the "
+            "job in board and schedule views. Set on first save; persistent."
+        ),
+    )
 
     def clean(self):
         """Validate Job state transitions and protect immutable date fields."""
@@ -110,6 +145,9 @@ class Job(AbstractWorkContainer):
     def save(self, *args, **kwargs):
         """Override save to validate state transitions and set dates."""
         old_status = None
+
+        if self.accent_color is None:
+            self.accent_color = _pick_least_used_accent_color()
 
         # Check if this is an update (not a new object)
         if self.pk:
