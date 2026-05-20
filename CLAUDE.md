@@ -66,7 +66,8 @@ Minibini/
 │   ├── inventory/  # PriceListItem, Material, Earmark, InventoryAdjustment
 │   ├── purchasing/ # PurchaseOrder, Bill, line items
 │   ├── deliverables/ # Deliverable, Shipment, ShipmentItem
-│   └── search/     # Cross-entity search service
+│   ├── search/     # Cross-entity search service
+│   └── schedule/   # ScheduleService — per-worker time-axis layout (model-less)
 ├── frontend/       # Svelte 5 SPA (Vite, svelte-spa-router)
 ├── templates/      # Django HTML templates (server-rendered views)
 ├── fixtures/       # Test data fixtures (JSON)
@@ -117,6 +118,7 @@ Minibini/
 | `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |
 | `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-tasks-and-worksheets §12 |
 | `apps.qbo` | QBOConnection, QBOSyncLog | quickbooks-integration |
+| `apps.schedule` | _(no models)_ — `ScheduleService` produces the `/schedule` view's per-worker bars from Tasks + Bleps + `Job.accent_color` + Configuration | `docs/plans/2026-05-19-schedule-view-design.md` |
 
 ## Configuration Model
 
@@ -165,12 +167,12 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 - `/api/expenses/`, `/api/reimbursements/`
 - `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
 - `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
-- `/api/emails/`, `/api/search/`, `/api/settings/`, `/api/home/`
+- `/api/emails/`, `/api/search/`, `/api/schedule/`, `/api/settings/`, `/api/home/`
 
 Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). The SPA is the primary UI; covers home, jobs (board + detail + task list + task detail), contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. Some legacy Django HTML views still exist for opportunistic decommissioning.
+Hash-based routing (`#/path`). The SPA is the primary UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. Some legacy Django HTML views still exist for opportunistic decommissioning.
 
 ## Frontend (Svelte SPA)
 
