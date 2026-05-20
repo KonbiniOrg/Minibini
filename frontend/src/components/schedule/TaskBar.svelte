@@ -14,12 +14,16 @@
   let lightColor = $derived(bar.accent_color || '#888');
   let darkColor = $derived(darken(lightColor));
 
+  // Keep both ISO strings (for TZ-agnostic positioning via timeToX) and
+  // Date objects (for absolute-moment range filtering against panelStart/End).
   let segs = $derived(bar.segments
     .map(s => ({
+      start_iso: s.start,
+      end_iso: s.end,
+      est_iso: s.est_fill_to,
+      actual_iso: s.actual_fill_to,
       start: new Date(s.start),
       end: new Date(s.end),
-      est_fill_to: s.est_fill_to ? new Date(s.est_fill_to) : null,
-      actual_fill_to: s.actual_fill_to ? new Date(s.actual_fill_to) : null,
       continues_left: s.continues_left,
       continues_right: s.continues_right,
     }))
@@ -37,11 +41,11 @@
 </script>
 
 {#each segs as seg, i (i)}
-  {@const left = timeToX(seg.start < panelStart ? panelStart : seg.start)}
-  {@const right = timeToX(seg.end > panelEnd ? panelEnd : seg.end)}
+  {@const left = timeToX(seg.start < panelStart ? panelStart : seg.start_iso)}
+  {@const right = timeToX(seg.end > panelEnd ? panelEnd : seg.end_iso)}
   {@const width = Math.max(2, right - left)}
-  {@const estWidth = seg.est_fill_to ? Math.max(0, timeToX(seg.est_fill_to) - left) : 0}
-  {@const actWidth = seg.actual_fill_to ? Math.max(0, timeToX(seg.actual_fill_to) - left) : 0}
+  {@const estWidth = seg.est_iso ? Math.max(0, timeToX(seg.est_iso) - left) : 0}
+  {@const actWidth = seg.actual_iso ? Math.max(0, timeToX(seg.actual_iso) - left) : 0}
   {@const zigClass = seg.continues_left && seg.continues_right
                      ? 'zig-both'
                      : seg.continues_left ? 'zig-left'
