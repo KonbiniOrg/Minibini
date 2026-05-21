@@ -78,10 +78,28 @@
   function buildPanelLayout(s) {
     if (!s || !s.days || s.days.length === 0) return null;
     const chartWidth = Math.max(200, containerWidth - LANE_LABEL_WIDTH);
+
+    // Structural separation between consecutive working days:
+    //
+    //   [...workday region of day N...] [pad] [GAP] [pad] [...workday day N+1...]
+    //
+    // - PANEL_INNER_PAD is unused space inside the panel on sides facing
+    //   another working day. Gives bars visible breathing room.
+    // - OVERNIGHT_GAP_WIDTH is its own slot between consecutive working-day
+    //   panels in the chart layout. Bars cannot enter it by construction —
+    //   they are positioned only within the workday region of their panel.
+    const OVERNIGHT_GAP_WIDTH = 16;
+    const PANEL_INNER_PAD = 12;
+
     const nonworking = s.days.filter(d => !d.is_working).length;
     const working = s.days.length - nonworking;
+    let overnightCount = 0;
+    for (let i = 0; i < s.days.length - 1; i++) {
+      if (s.days[i].is_working && s.days[i + 1].is_working) overnightCount++;
+    }
     const workingPanelWidth = Math.max(80,
-      (chartWidth - nonworking * NONWORKING_WIDTH) / Math.max(working, 1));
+      (chartWidth - nonworking * NONWORKING_WIDTH - overnightCount * OVERNIGHT_GAP_WIDTH)
+      / Math.max(working, 1));
     const [wsH, wsM] = s.day_shape.workday_start.split(':').map(n => +n);
     const [weH, weM] = s.day_shape.workday_end.split(':').map(n => +n);
     const [lsH, lsM] = s.day_shape.lunch_start.split(':').map(n => +n);
@@ -93,12 +111,61 @@
     const dayMinutes = workdayEndMins - workdayStartMins;
     const serverOffset = isoOffsetMinutes(s.now);
 
+    // Build panels and the dedicated overnight-gap slots in one pass.
     const panels = [];
+    const overnightBands = [];
     let runningX = 0;
-    for (const d of s.days) {
+    for (let i = 0; i < s.days.length; i++) {
+      const d = s.days[i];
       const w = d.is_working ? workingPanelWidth : NONWORKING_WIDTH;
       panels.push({ date: d.date, is_working: d.is_working, x: runningX, width: w });
       runningX += w;
+      const next = s.days[i + 1];
+      if (next && d.is_working && next.is_working) {
+        overnightBands.push({
+          key: `${d.date}-overnight`,
+          left: runningX,
+          width: OVERNIGHT_GAP_WIDTH,
+        });
+        runningX += OVERNIGHT_GAP_WIDTH;
+      }
+    }
+
+    // Each working-day panel reserves PANEL_INNER_PAD pixels of unused space
+    // on any side that faces another working day. Bars are positioned only
+    // within this inset workday region.
+    function workdayInsets(idx) {
+      const leftPad = (idx > 0 && panels[idx - 1].is_working) ? PANEL_INNER_PAD : 0;
+      const rightPad = (idx < panels.length - 1 && panels[idx + 1].is_working) ? PANEL_INNER_PAD : 0;
+      return { leftPad, rightPad };
+    }
+
+    // Lunch gets the same treatment as overnight: its own dedicated slot
+    // inside each working-day panel, with inner padding on each side. The
+    // panel's "workday content" is the morning stretch plus the afternoon
+    // stretch, separated by the lunch slot. Bars only land in the work
+    // stretches; the lunch slot is structurally inaccessible.
+    const LUNCH_GAP_WIDTH = 16;
+    const LUNCH_INNER_PAD = 12;
+    const LUNCH_TOTAL_INSET = LUNCH_GAP_WIDTH + 2 * LUNCH_INNER_PAD;
+    const morningDuration = lunchStartMins - workdayStartMins;
+    const afternoonDuration = workdayEndMins - lunchEndMins;
+    const totalWorkDuration = morningDuration + afternoonDuration;
+
+    function panelStretches(p, idx) {
+      const { leftPad, rightPad } = workdayInsets(idx);
+      const workdayContent = p.width - leftPad - rightPad - LUNCH_TOTAL_INSET;
+      const morningWidth = workdayContent * (morningDuration / totalWorkDuration);
+      const afternoonWidth = workdayContent * (afternoonDuration / totalWorkDuration);
+      const morningLeft = p.x + leftPad;
+      const morningRight = morningLeft + morningWidth;
+      const lunchLeft = morningRight + LUNCH_INNER_PAD;
+      const lunchRight = lunchLeft + LUNCH_GAP_WIDTH;
+      const afternoonLeft = lunchRight + LUNCH_INNER_PAD;
+      const afternoonRight = afternoonLeft + afternoonWidth;
+      return { morningLeft, morningRight, morningWidth,
+               lunchLeft, lunchRight,
+               afternoonLeft, afternoonRight, afternoonWidth };
     }
 
     // Accepts an ISO string (preferred — server-timezone-aware) or a Date
@@ -113,26 +180,40 @@
       }
       const p = panels[idx];
       if (!p.is_working) return p.x + p.width / 2;
-      const minutesIntoDay = isoMinutesOfDay(iso) - workdayStartMins;
-      const fraction = Math.max(0, Math.min(1, minutesIntoDay / dayMinutes));
-      return p.x + fraction * p.width;
+      const s = panelStretches(p, idx);
+      const minutes = isoMinutesOfDay(iso);
+      if (minutes <= workdayStartMins) return s.morningLeft;
+      if (minutes <= lunchStartMins) {
+        const f = (minutes - workdayStartMins) / morningDuration;
+        return s.morningLeft + f * s.morningWidth;
+      }
+      if (minutes < lunchEndMins) {
+        // A time inside the lunch slot — shouldn't happen for bars (the
+        // server splits them around lunch) but handle defensively.
+        return (s.lunchLeft + s.lunchRight) / 2;
+      }
+      if (minutes <= workdayEndMins) {
+        const f = (minutes - lunchEndMins) / afternoonDuration;
+        return s.afternoonLeft + f * s.afternoonWidth;
+      }
+      return s.afternoonRight;
     }
 
-    // Lunch bands: one per working-day panel.
+    // Lunch bands live in their dedicated slot inside each working panel.
     const lunchBands = panels
-      .filter(p => p.is_working)
-      .map(p => {
-        const a = (lunchStartMins - workdayStartMins) / dayMinutes;
-        const b = (lunchEndMins - workdayStartMins) / dayMinutes;
+      .map((p, idx) => ({ p, idx }))
+      .filter(({ p }) => p.is_working)
+      .map(({ p, idx }) => {
+        const s = panelStretches(p, idx);
         return {
           date: p.date,
-          left: p.x + Math.max(0, a) * p.width,
-          width: Math.max(0, Math.min(1, b) - Math.max(0, a)) * p.width,
+          left: s.lunchLeft,
+          width: s.lunchRight - s.lunchLeft,
         };
       });
 
     return {
-      panels, chartWidth, timeToX, serverOffset, lunchBands,
+      panels, chartWidth, timeToX, serverOffset, lunchBands, overnightBands,
       start: new Date(s.horizon_start), end: new Date(s.horizon_end),
     };
   }
@@ -170,6 +251,10 @@
             {/each}
           </div>
           <div class="now-overlay" style="left: {LANE_LABEL_WIDTH}px; width: calc(100% - {LANE_LABEL_WIDTH}px);">
+            {#each layout?.overnightBands ?? [] as band (band.key)}
+              <div class="overnight-band"
+                   style="left: {band.left}px; width: {band.width}px;"></div>
+            {/each}
             {#each layout?.lunchBands ?? [] as band (band.date)}
               <div class="lunch-band"
                    style="left: {band.left}px; width: {band.width}px;"></div>
@@ -187,13 +272,20 @@
   .chart-area { margin-top: 8px; }
   .chart { position: relative; }
   .now-overlay { position: absolute; top: 0; bottom: 0; pointer-events: none; }
+  /* Solid color blocks for now so the slot boundaries are unambiguous.
+     Visual treatment can be revisited once we trust the structure. */
   .lunch-band {
     position: absolute;
     top: 0;
     bottom: 0;
-    background-image: repeating-linear-gradient(45deg,
-      rgba(180,180,180,0.45), rgba(180,180,180,0.45) 4px,
-      rgba(238,238,238,0.45) 4px, rgba(238,238,238,0.45) 8px);
+    background: #d0d4dc;
+    z-index: 1;
+  }
+  .overnight-band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: #4a5568;
     z-index: 1;
   }
   .empty { color: #888; padding: 12px; }

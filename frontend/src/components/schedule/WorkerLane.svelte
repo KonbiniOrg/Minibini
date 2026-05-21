@@ -70,19 +70,21 @@
 <style>
   .lane {
     display: flex; align-items: stretch;
-    border-bottom: 1px solid #eee; min-height: 36px;
+    border-bottom: 1px solid #eee; min-height: 60px;
   }
   .label {
     display: flex; align-items: center; gap: 6px;
-    padding: 4px 8px; font-size: 12px; flex-shrink: 0;
+    padding: 8px 8px; font-size: 12px; flex-shrink: 0;
+    box-sizing: border-box;
   }
   .avatar {
     width: 22px; height: 22px; border-radius: 50%;
     background: #3b82f6; color: #fff; font-size: 10px; font-weight: 700;
     display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
   }
   .name { font-weight: 600; }
   .track { position: relative; flex: 1; }
-  .primary { position: relative; height: 28px; margin-top: 4px; }
-  .parked-strip { position: relative; height: 16px; margin-top: 2px; }
+  .primary { position: relative; height: 44px; margin-top: 8px; }
+  .parked-strip { position: relative; height: 20px; margin-top: 3px; }
 </style>
