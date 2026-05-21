@@ -3,6 +3,12 @@ import { api } from '../lib/api.js';
 
 export const schedule = writable(null);
 
+// task_id currently being dragged, or null. Set by TaskBar on dragstart,
+// cleared on dragend. Read by WorkerLane so the drop-position indicator
+// can exclude the dragged task from the queue (otherwise the indicator
+// would snap to gaps adjacent to the bar's original spot).
+export const draggingTaskId = writable(null);
+
 let refreshTimer = null;
 let currentDays = null;
 

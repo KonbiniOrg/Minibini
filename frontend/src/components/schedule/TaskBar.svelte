@@ -1,4 +1,6 @@
 <script>
+  import { draggingTaskId } from '../../stores/schedule.js';
+
   let { bar, timeToX, panelStart, panelEnd, onDragStart = null } = $props();
 
   function darken(hex, pct = 0.3) {
@@ -51,7 +53,12 @@
     document.body.appendChild(ghost);
     e.dataTransfer.setDragImage(ghost, 12, 12);
     setTimeout(() => document.body.removeChild(ghost), 0);
+    draggingTaskId.set(bar.task_id);
     if (onDragStart) onDragStart(bar.task_id);
+  }
+
+  function handleDragEnd() {
+    draggingTaskId.set(null);
   }
 
   let isDraggable = $derived(bar.kind === 'forecast' || bar.kind === 'parked');
@@ -71,6 +78,7 @@
   <div class="task-bar {zigClass} kind-{bar.kind}"
        draggable={isDraggable}
        ondragstart={handleDragStart}
+       ondragend={handleDragEnd}
        data-task-id={bar.task_id}
        style="left: {left}px; width: {width}px;"
        title="{bar.name} · est {bar.est_minutes}m · elapsed {bar.elapsed_minutes}m">
