@@ -107,6 +107,13 @@ class ScheduleService:
             })
             d += timedelta(days=1)
 
+        # Half-open range covering "today" in local time. Used instead of
+        # `__date` lookups because MySQL's CONVERT_TZ() requires the timezone
+        # tables to be loaded — without them, `__date` filters return NULL
+        # and match nothing.
+        today_start_local = horizon_start  # midnight today, local
+        today_end_local = horizon_start + timedelta(days=1)
+
         # Active workers: anyone with at least one relevant task.
         relevant_statuses = [
             Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED,
@@ -119,7 +126,8 @@ class ScheduleService:
         completed_today_worker_ids = set(Task.objects.filter(
             assignee__isnull=False,
             status=Task.STATUS_COMPLETE,
-            blep__end_time__date=local_today,
+            blep__end_time__gte=today_start_local,
+            blep__end_time__lt=today_end_local,
         ).values_list('assignee_id', flat=True))
         worker_ids |= completed_today_worker_ids
 
@@ -205,12 +213,23 @@ class ScheduleService:
             Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED,
         ]
         local_today = local_now.date()
+        # Range covering "today" in local time, computed via timezone.make_aware
+        # rather than `__date` so the lookup doesn't rely on MySQL's
+        # CONVERT_TZ() (which silently returns NULL when its timezone tables
+        # aren't loaded, swallowing the completed-today filter).
+        today_start = timezone.make_aware(
+            datetime.combine(local_today, time(0, 0)),
+            local_now.tzinfo,
+        )
+        today_end = today_start + timedelta(days=1)
 
         tasks_qs = Task.objects.filter(
             assignee=worker,
         ).filter(
             Q(status__in=relevant_statuses) |
-            Q(status=Task.STATUS_COMPLETE, blep__end_time__date=local_today)
+            Q(status=Task.STATUS_COMPLETE,
+              blep__end_time__gte=today_start,
+              blep__end_time__lt=today_end)
         ).select_related('job').distinct().order_by('worker_queue', 'pk')
 
         cursor = next_workable_moment(
@@ -218,6 +237,22 @@ class ScheduleService:
             shape,
         )
         bars = []
+
+        # Cursor advancement rules differ by task kind:
+        #
+        # - Pending tasks cascade forward: cursor = forecast_end + buffer.
+        # - Completed tasks set cursor to their actual_end + buffer, which
+        #   may be EARLIER than the current cursor. This is intentional: a
+        #   task that finished early opens its successor's slot earlier
+        #   than the plan said it would, and the next pending task should
+        #   land at the actual completion (even if that's before "now").
+        # - In-progress tasks (anchored to bleps) advance the cursor
+        #   MONOTONICALLY — max(current, effective_end + buffer). They
+        #   represent work happening *now*; pending tasks already placed
+        #   ahead of them in the queue must not be pulled back on top of
+        #   them. If the active task is not first in the queue, this
+        #   prevents the visual overlap.
+        # - Blocked tasks don't move the cursor at all.
 
         for task in tasks_qs:
             bleps = list(task.blep_set.order_by('start_time'))
@@ -227,10 +262,12 @@ class ScheduleService:
                     cursor, task, shape,
                 )
             elif task.status == Task.STATUS_IN_PROGRESS and bleps:
-                active_bars, cursor = ScheduleService._emit_active(
+                active_bars, new_cursor = ScheduleService._emit_active(
                     task, bleps, local_now, cursor, shape,
                 )
                 bars.extend(active_bars)
+                if new_cursor is not None and new_cursor > cursor:
+                    cursor = new_cursor
             elif task.status == Task.STATUS_IN_PROGRESS:
                 bars.extend(ScheduleService._emit_forecast(task, cursor, shape))
                 cursor = ScheduleService._advance_cursor_after_forecast(
@@ -245,10 +282,12 @@ class ScheduleService:
                 bars.append(ScheduleService._emit_parked(task, cursor, shape))
                 # cursor unchanged — blocked tasks don't consume future time
             elif task.status == Task.STATUS_COMPLETE and bleps:
-                hist_bars, cursor = ScheduleService._emit_historical(
+                hist_bars, new_cursor = ScheduleService._emit_historical(
                     task, bleps, local_now, shape, advance_cursor_from=cursor,
                 )
                 bars.extend(hist_bars)
+                # Completed tasks may pull cursor backward intentionally.
+                cursor = new_cursor
 
         return bars
 

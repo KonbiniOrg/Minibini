@@ -31,10 +31,27 @@
   );
 
   function handleDragStart(e) {
-    if (!onDragStart) return;
     e.dataTransfer.setData('text/plain', String(bar.task_id));
     e.dataTransfer.effectAllowed = 'move';
-    onDragStart(bar.task_id);
+    // Build a small custom chip as the drag image so the ghost is always
+    // a clean rectangle. Using e.currentTarget directly let some browsers
+    // capture a wider region including neighboring bars or the lunch band.
+    const ghost = document.createElement('div');
+    ghost.textContent = bar.name;
+    ghost.style.cssText = `
+      position: absolute; top: -1000px; left: -1000px;
+      background: ${bar.accent_color || '#888'};
+      color: #fff; padding: 4px 10px;
+      font: 11px ui-monospace, Menlo, monospace;
+      border-radius: 3px; white-space: nowrap;
+      pointer-events: none; opacity: 0.92;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+      max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+    `;
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, 12, 12);
+    setTimeout(() => document.body.removeChild(ghost), 0);
+    if (onDragStart) onDragStart(bar.task_id);
   }
 
   let isDraggable = $derived(bar.kind === 'forecast' || bar.kind === 'parked');

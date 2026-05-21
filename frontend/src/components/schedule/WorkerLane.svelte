@@ -23,19 +23,38 @@
     if (!draggedId) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const moveable = worker.bars.filter(
-      b => b.kind === 'forecast' || b.kind === 'parked'
-    );
-    let insertAt = moveable.length;
-    for (let i = 0; i < moveable.length; i++) {
-      const segStart = new Date(moveable[i].segments[0]?.start);
-      const bx = timeToX(segStart);
-      if (x < bx) { insertAt = i; break; }
+
+    // Collect the worker's full queue: every distinct task_id with a bar
+    // other than historical, in current order. Historical bars represent
+    // completed-today tasks whose worker_queue no longer drives scheduling.
+    const seen = new Set();
+    const currentIds = [];
+    for (const bar of worker.bars) {
+      if (bar.kind === 'historical') continue;
+      if (seen.has(bar.task_id)) continue;
+      seen.add(bar.task_id);
+      currentIds.push(bar.task_id);
     }
-    const allIds = moveable.map(b => b.task_id);
-    const without = allIds.filter(id => id !== draggedId);
-    without.splice(insertAt, 0, draggedId);
-    reorderTasksInLane(worker.user.id, without);
+
+    // Each task's "x position" is the timeToX of its earliest visible bar.
+    function taskX(id) {
+      const xs = worker.bars
+        .filter(b => b.task_id === id)
+        .map(b => timeToX(new Date(b.segments[0]?.start)))
+        .filter(v => !Number.isNaN(v));
+      return xs.length ? Math.min(...xs) : Infinity;
+    }
+
+    // Remove dragged from its current position, then insert before the
+    // first remaining task whose x is greater than the drop x.
+    const withoutDragged = currentIds.filter(id => id !== draggedId);
+    let insertAt = withoutDragged.length;
+    for (let i = 0; i < withoutDragged.length; i++) {
+      if (taskX(withoutDragged[i]) > x) { insertAt = i; break; }
+    }
+    withoutDragged.splice(insertAt, 0, draggedId);
+
+    reorderTasksInLane(worker.user.id, withoutDragged);
   }
 </script>
 

@@ -702,6 +702,27 @@ class TaskLifecycleService:
             return task
 
     @staticmethod
+    def _promote_to_front_of_worker_queue(task):
+        """Move `task` to position 1 in its assignee's queue, shifting the
+        other open tasks down by one. Reflects reality: a task being
+        actively worked on is the next thing to think about — not some
+        later position in the queue."""
+        if task.assignee_id is None:
+            return
+        others = list(Task.objects.filter(
+            assignee_id=task.assignee_id,
+        ).exclude(
+            pk=task.pk,
+        ).exclude(
+            status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED],
+        ).order_by('worker_queue', 'pk').values_list('pk', flat=True))
+        if task.worker_queue != 1:
+            Task.objects.filter(pk=task.pk).update(worker_queue=1)
+            task.worker_queue = 1
+        for i, other_pk in enumerate(others, start=2):
+            Task.objects.filter(pk=other_pk).exclude(worker_queue=i).update(worker_queue=i)
+
+    @staticmethod
     def start_work(task_pk, user, action=None):
         """Create a Blep for `user` on the given task.
 
@@ -709,6 +730,8 @@ class TaskLifecycleService:
           materials (first worker to start the task).
         - If already in_progress, handles multi-worker conflicts via
           `action='join'` or `action='takeover'`.
+        - Promotes the task to position 1 in the assignee's worker_queue
+          so the schedule view stays consistent with reality.
         - Rejects worksheet tasks and terminal statuses.
         """
         with transaction.atomic():
@@ -737,6 +760,7 @@ class TaskLifecycleService:
                     task.assignee = user
                 blep = BlepService._create(task, user, start_time=now)
                 JobService.mark_work_started(task.job)
+                TaskLifecycleService._promote_to_front_of_worker_queue(task)
                 return {'task': task, 'blep': blep}
 
             # Task is in_progress: check for other active workers.
@@ -761,6 +785,7 @@ class TaskLifecycleService:
                 other_bleps.update(end_time=now)
             blep = BlepService._create(task, user, start_time=now)
             JobService.mark_work_started(task.job)
+            TaskLifecycleService._promote_to_front_of_worker_queue(task)
             return {'task': task, 'blep': blep}
 
     @staticmethod
