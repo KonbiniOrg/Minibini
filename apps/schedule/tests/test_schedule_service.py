@@ -243,6 +243,60 @@ class BlockedTaskTest(BaseTestCase):
         self.assertEqual(t2_start, now)
 
 
+class CompletedPlusActiveOrderingTest(BaseTestCase):
+    """When a worker has BOTH a completed task and a currently-active task,
+    the pending task that follows must not be drawn on top of the active.
+    Completed tasks are processed before active (regardless of queue order),
+    so the cursor sequence is past → present → future."""
+
+    def test_pending_after_completed_plus_active_lands_after_active(self):
+        user, completed = _seed_user_with_pending_task(
+            est_minutes=30, name='Completed', username='copa_user',
+        )
+        rs = RateScheme.objects.first()
+        # Build out the queue
+        active = Task.objects.create(
+            job=completed.job, assignee=user, rate_scheme=rs,
+            name='Active', est_worker_time=timedelta(minutes=60),
+            worker_queue=2, status=Task.STATUS_PENDING,
+        )
+        next_pending = Task.objects.create(
+            job=completed.job, assignee=user, rate_scheme=rs,
+            name='Next', est_worker_time=timedelta(minutes=60),
+            worker_queue=3, status=Task.STATUS_PENDING,
+        )
+
+        # Drive completed → done with a blep, and active → in_progress with
+        # a running blep.
+        d = date_at_weekday(2)
+        c_start = local_dt(d, 9, 0)
+        c_end = c_start + timedelta(minutes=30)
+        completed.status = Task.STATUS_IN_PROGRESS; completed.save()
+        completed.status = Task.STATUS_COMPLETE; completed.save()
+        Blep.objects.create(user=user, task=completed,
+                            start_time=c_start, end_time=c_end)
+
+        a_start = c_end + timedelta(minutes=10)  # 09:40
+        active.status = Task.STATUS_IN_PROGRESS; active.save()
+        Blep.objects.create(user=user, task=active, start_time=a_start, end_time=None)
+
+        # "now" mid-way through the active task
+        now = a_start + timedelta(minutes=20)  # 10:00, active running
+
+        data = ScheduleService.get_schedule(now=now)
+        worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        bars = {b['task_id']: b for b in worker['bars']}
+
+        active_bar = bars[active.pk]
+        next_bar = bars[next_pending.pk]
+        # Active's segment ends at active_start + est = 09:40 + 60 = 10:40.
+        # Next pending must START at or after active end + buffer = 10:50,
+        # NOT at completed's end + buffer (09:40), which would overlap.
+        active_end = datetime.fromisoformat(active_bar['segments'][-1]['end'])
+        next_start = datetime.fromisoformat(next_bar['segments'][0]['start'])
+        self.assertGreaterEqual(next_start, active_end)
+
+
 class YesterdayCompletedExcludedTest(BaseTestCase):
 
     def test_yesterday_completed_not_in_schedule(self):

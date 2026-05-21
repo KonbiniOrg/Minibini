@@ -232,6 +232,29 @@ class ScheduleService:
               blep__end_time__lt=today_end)
         ).select_related('job').distinct().order_by('worker_queue', 'pk')
 
+        # Process tasks by status group, not strictly by queue position.
+        # Completed tasks anchor in the past, in-progress tasks anchor at
+        # the blep, pending tasks cascade from the cursor. If we process in
+        # raw queue order, an active task at queue=1 (promoted on blep-start)
+        # can be followed by a completed task at queue=2 that snaps the
+        # cursor backward — and the next pending task then forecasts on top
+        # of the active. Sorting by (status_priority, queue, pk) keeps the
+        # cursor moving in time-natural order regardless of queue.
+        STATUS_PRIORITY = {
+            Task.STATUS_COMPLETE:    0,
+            Task.STATUS_IN_PROGRESS: 1,
+            Task.STATUS_PENDING:     2,
+            Task.STATUS_BLOCKED:     3,
+        }
+        tasks_qs = sorted(
+            tasks_qs,
+            key=lambda t: (
+                STATUS_PRIORITY.get(t.status, 9),
+                t.worker_queue if t.worker_queue is not None else 9999,
+                t.pk,
+            ),
+        )
+
         cursor = next_workable_moment(
             max(local_now, workday_start_on(local_today, shape)),
             shape,
