@@ -76,6 +76,7 @@
     display: flex; align-items: center; gap: 6px;
     padding: 8px 8px; font-size: 12px; flex-shrink: 0;
     box-sizing: border-box;
+    background: #f4f5f7;        /* light tint so the column boundary is visible */
   }
   .avatar {
     width: 22px; height: 22px; border-radius: 50%;

@@ -12,7 +12,7 @@
   let resizeObserver = null;
   let tickInterval = null;
 
-  const LANE_LABEL_WIDTH = 90;
+  const LANE_LABEL_WIDTH = 150;
   const NONWORKING_WIDTH = 12;
 
   onMount(() => {
@@ -272,20 +272,24 @@
   .chart-area { margin-top: 8px; }
   .chart { position: relative; }
   .now-overlay { position: absolute; top: 0; bottom: 0; pointer-events: none; }
-  /* Solid color blocks for now so the slot boundaries are unambiguous.
-     Visual treatment can be revisited once we trust the structure. */
   .lunch-band {
     position: absolute;
     top: 0;
     bottom: 0;
-    background: #d0d4dc;
+    background-image: repeating-linear-gradient(45deg,
+      rgba(180,180,180,0.45), rgba(180,180,180,0.45) 4px,
+      rgba(238,238,238,0.45) 4px, rgba(238,238,238,0.45) 8px);
     z-index: 1;
   }
+  /* Overnight: denser, darker hatching at the day boundary. Reads as a
+     bigger break than lunch even though it's only a sliver of pixels. */
   .overnight-band {
     position: absolute;
     top: 0;
     bottom: 0;
-    background: #4a5568;
+    background-image: repeating-linear-gradient(-45deg,
+      rgba(60,60,90,0.55), rgba(60,60,90,0.55) 3px,
+      rgba(150,150,180,0.55) 3px, rgba(150,150,180,0.55) 6px);
     z-index: 1;
   }
   .empty { color: #888; padding: 12px; }

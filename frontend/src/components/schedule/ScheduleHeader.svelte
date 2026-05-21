@@ -18,7 +18,8 @@
 </div>
 
 <style>
-  .header { display: flex; align-items: flex-end; padding-bottom: 4px; }
+  .header { display: flex; align-items: stretch; padding-bottom: 4px; }
+  .lane-label-spacer { background: #f4f5f7; }
   .days { display: flex; flex: 1; }
   .day {
     font-size: 12px; color: #333; padding: 4px 6px;
