@@ -240,9 +240,30 @@
       .filter(p => !p.is_working)
       .map(p => ({ date: p.date, left: p.x, width: p.width }));
 
+    // Off-hours background: the region of each working-day panel between the
+    // configured hours and the (possibly widened) display hours — i.e. the
+    // early/late margins where only in-progress work appears. Pale grey,
+    // drawn behind the bars.
+    const cfgStart = s.day_shape.config_workday_start || s.day_shape.workday_start;
+    const cfgEnd = s.day_shape.config_workday_end || s.day_shape.workday_end;
+    const offHoursBands = [];
+    for (const p of panels) {
+      if (!p.is_working) continue;
+      const dayStartX = timeToX(`${p.date}T${s.day_shape.workday_start}:00`);
+      const dayEndX = timeToX(`${p.date}T${s.day_shape.workday_end}:00`);
+      const cfgStartX = timeToX(`${p.date}T${cfgStart}:00`);
+      const cfgEndX = timeToX(`${p.date}T${cfgEnd}:00`);
+      if (cfgStartX > dayStartX + 0.5) {
+        offHoursBands.push({ key: `${p.date}-early`, left: dayStartX, width: cfgStartX - dayStartX });
+      }
+      if (dayEndX > cfgEndX + 0.5) {
+        offHoursBands.push({ key: `${p.date}-late`, left: cfgEndX, width: dayEndX - cfgEndX });
+      }
+    }
+
     return {
       panels, chartWidth, timeToX, serverOffset,
-      lunchBands, overnightBands, nonWorkingBands,
+      lunchBands, overnightBands, nonWorkingBands, offHoursBands,
       start: new Date(s.horizon_start), end: new Date(s.horizon_end),
     };
   }
@@ -291,6 +312,12 @@
         <p class="empty">No assigned work in the visible horizon.</p>
       {:else}
         <div class="chart">
+          <div class="bg-overlay" style="left: {LANE_LABEL_WIDTH}px; width: calc(100% - {LANE_LABEL_WIDTH}px);">
+            {#each layout?.offHoursBands ?? [] as band (band.key)}
+              <div class="offhours-band"
+                   style="left: {band.left}px; width: {band.width}px;"></div>
+            {/each}
+          </div>
           <div class="lanes">
             {#each $schedule.workers as worker (worker.user.id)}
               <WorkerLane {worker}
@@ -354,7 +381,14 @@
   .today-btn:hover { background: #eff6ff; }
   .chart-area { margin-top: 8px; }
   .chart { position: relative; }
-  .now-overlay { position: absolute; top: 0; bottom: 0; pointer-events: none; }
+  /* Stacking: off-hours background (0) < lanes/bars (1) < bands & now-line (2) */
+  .lanes { position: relative; z-index: 1; }
+  .now-overlay { position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 2; }
+  .bg-overlay { position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 0; }
+  .offhours-band {
+    position: absolute; top: 0; bottom: 0;
+    background: #f1f2f4;
+  }
   .lunch-band {
     position: absolute;
     top: 0;

@@ -43,6 +43,19 @@ Shipped and working:
       (Increment A). Standalone one-click-on-the-bar variant still possible if
       wanted.
 
+## Done since initial follow-ups
+
+- **Past/future scrolling** — working-day `offset`; ‹/› nav + "Today" reset;
+  now-line hides off-window.
+- **Historical est-vs-actual layering** — completed bars show the full
+  estimate (light) over actuals (dark); overrun = dark past light.
+- **Off-hours in-progress work** — the display axis widens to cover an
+  early/late worker's in-progress blep + its estimate projection, with the
+  off-hours margins shaded pale grey. Forecasts keep using configured hours
+  (two shapes: config drives the cascade, display drives the axis + active/
+  historical bars). Declined: splitting the estimate into a separate section
+  at the off-hours boundary (the "day-break" treatment) — not wanted.
+
 ## Deferred
 
 - **Hover text timing.** Browser-native `title` tooltip: first hover ~1.5s,

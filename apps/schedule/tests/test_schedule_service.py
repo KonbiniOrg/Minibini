@@ -124,6 +124,46 @@ class HorizonCountsWorkingDaysTest(BaseTestCase):
         self.assertTrue(all(day['is_working'] for day in days))
 
 
+class OffHoursInProgressTest(BaseTestCase):
+    """In-progress work outside configured hours widens the display axis
+    (day_shape), but forecasts still respect the configured workday."""
+
+    def test_early_blep_extends_workday_start_but_not_forecasts(self):
+        user, active = _seed_user_with_pending_task(
+            est_minutes=120, name='Early', username='early_user',
+        )
+        rs = RateScheme.objects.first()
+        pending = Task.objects.create(
+            job=active.job, assignee=user, rate_scheme=rs,
+            name='Later', est_worker_time=timedelta(minutes=60),
+            worker_queue=2, status=Task.STATUS_PENDING,
+        )
+        d = date_at_weekday(2)
+        # Worker started at 07:00 — before the configured 08:00 start.
+        start = local_dt(d, 7, 0)
+        active.status = Task.STATUS_IN_PROGRESS; active.save()
+        Blep.objects.create(user=user, task=active, start_time=start, end_time=None)
+        now = local_dt(d, 7, 30)  # 30 min in, still before configured start
+
+        data = ScheduleService.get_schedule(now=now)
+        # Display axis widened to 07:00.
+        self.assertEqual(data['day_shape']['workday_start'], '07:00')
+
+        worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        bars = {(b['task_id'], b['kind']): b for b in worker['bars']}
+
+        # Active bar starts at the actual 07:00 (not clamped to 08:00).
+        active_bar = bars[(active.pk, 'active')]
+        active_first = datetime.fromisoformat(active_bar['segments'][0]['start'])
+        self.assertEqual(active_first.hour, 7)
+
+        # The pending forecast still starts no earlier than the configured
+        # 08:00 — off-hours work doesn't drag scheduling into the early hours.
+        pending_bar = bars[(pending.pk, 'forecast')]
+        pending_first = datetime.fromisoformat(pending_bar['segments'][0]['start'])
+        self.assertGreaterEqual(pending_first.hour, 8)
+
+
 class HorizonOffsetTest(BaseTestCase):
     """offset scrolls the window by working days from today."""
 
