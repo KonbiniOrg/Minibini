@@ -388,20 +388,25 @@ class ScheduleService:
         # The cascade always anchors to "now" (today), independent of the
         # scroll window — pending work is planned from the present forward.
         local_today = local_now.date()
-        cursor = next_workable_moment(
+        now_floor = next_workable_moment(
             max(local_now, workday_start_on(local_today, shape)),
             shape,
         )
+        cursor = now_floor
         bars = []
 
         # Cursor advancement rules differ by task kind:
         #
         # - Pending tasks cascade forward: cursor = forecast_end + buffer.
+        #   A pending task hasn't started, so it can never forecast before
+        #   "now" — its start is floored at `now_floor`. (A completed task
+        #   that finished early can pull the cursor into the past; without
+        #   this floor the next pending task would render behind the now
+        #   line, which it can't actually start before.)
         # - Completed tasks set cursor to their actual_end + buffer, which
-        #   may be EARLIER than the current cursor. This is intentional: a
-        #   task that finished early opens its successor's slot earlier
-        #   than the plan said it would, and the next pending task should
-        #   land at the actual completion (even if that's before "now").
+        #   may be EARLIER than the current cursor. A task that finished
+        #   early frees its successor's slot sooner — but the successor, if
+        #   pending, still can't start before now (see the floor above).
         # - In-progress tasks (anchored to bleps) advance the cursor
         #   MONOTONICALLY — max(current, effective_end + buffer). They
         #   represent work happening *now*; pending tasks already placed
@@ -418,6 +423,7 @@ class ScheduleService:
             # helping out shows only their actual work, no estimate layer.
             is_assignee = task.assignee_id == worker.pk
             if task.status == Task.STATUS_PENDING:
+                cursor = max(cursor, now_floor)  # never forecast before now
                 bars.extend(ScheduleService._emit_forecast(task, cursor, shape))
                 cursor = ScheduleService._advance_cursor_after_forecast(
                     cursor, task, shape,
@@ -431,6 +437,7 @@ class ScheduleService:
                 if new_cursor is not None and new_cursor > cursor:
                     cursor = new_cursor
             elif task.status == Task.STATUS_IN_PROGRESS:
+                cursor = max(cursor, now_floor)  # never forecast before now
                 bars.extend(ScheduleService._emit_forecast(task, cursor, shape))
                 cursor = ScheduleService._advance_cursor_after_forecast(
                     cursor, task, shape,

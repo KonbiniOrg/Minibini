@@ -298,7 +298,12 @@ class OverrunCascadeTest(BaseTestCase):
 
 class CompletedEarlyTest(BaseTestCase):
 
-    def test_completed_today_emits_historical_and_pulls_next_earlier(self):
+    def test_completed_early_pulls_next_up_but_not_before_now(self):
+        # T1 estimated 2h, started 09:00, finished early at 10:00. The plan
+        # said T2 would start ~11:00; finishing early frees the slot. But by
+        # the time we render it's 10:30, and T2 (pending, not started) can't
+        # forecast before now — so it lands at 10:30, not at 10:10 (the
+        # completed end + buffer, which is in the past).
         user, task1 = _seed_user_with_pending_task(est_minutes=120, name='T1')
         rs = RateScheme.objects.first()
         task2 = Task.objects.create(
@@ -312,7 +317,7 @@ class CompletedEarlyTest(BaseTestCase):
         task1.status = Task.STATUS_IN_PROGRESS; task1.save()
         task1.status = Task.STATUS_COMPLETE; task1.save()
         Blep.objects.create(user=user, task=task1, start_time=t1_start, end_time=t1_end)
-        now = t1_end + timedelta(minutes=30)
+        now = t1_end + timedelta(minutes=30)  # 10:30
 
         data = ScheduleService.get_schedule(now=now)
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
@@ -321,8 +326,33 @@ class CompletedEarlyTest(BaseTestCase):
         t2_start = datetime.fromisoformat(
             bars_by_task[task2.pk]['segments'][0]['start']
         )
-        expected = t1_end + timedelta(minutes=10)  # buffer
-        self.assertEqual(t2_start, expected)
+        # Floored at now, not the completed end + buffer (10:10, in the past).
+        self.assertEqual(t2_start, now)
+
+    def test_early_offhours_completion_does_not_push_pending_before_now(self):
+        # The reported case: a worker did early off-hours work (07:00–07:30),
+        # completed the task, and it's now 09:00. The pending task must not
+        # render behind the now line.
+        user, task1 = _seed_user_with_pending_task(est_minutes=60, name='Early1')
+        rs = RateScheme.objects.first()
+        task2 = Task.objects.create(
+            job=task1.job, assignee=user, rate_scheme=rs,
+            name='Early2', est_worker_time=timedelta(minutes=60),
+            worker_queue=2, status=Task.STATUS_PENDING,
+        )
+        d = date_at_weekday(2)
+        t1_start = local_dt(d, 7, 0)
+        t1_end = local_dt(d, 7, 30)
+        task1.status = Task.STATUS_IN_PROGRESS; task1.save()
+        task1.status = Task.STATUS_COMPLETE; task1.save()
+        Blep.objects.create(user=user, task=task1, start_time=t1_start, end_time=t1_end)
+        now = local_dt(d, 9, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        t2 = next(b for b in worker['bars'] if b['task_id'] == task2.pk)
+        t2_start = datetime.fromisoformat(t2['segments'][0]['start'])
+        self.assertGreaterEqual(t2_start, now)
 
 
 class BlockedTaskTest(BaseTestCase):
