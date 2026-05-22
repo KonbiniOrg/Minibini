@@ -11,7 +11,7 @@ from django.utils import timezone
 from apps.core.models import Configuration
 from apps.schedule.calendar_arithmetic import (
     DayShape, add_work_time, is_working_day, next_workable_moment,
-    segments_for, work_minutes_between, workday_start_on,
+    segments_for, shift_working_days, work_minutes_between, workday_start_on,
 )
 
 
@@ -80,28 +80,34 @@ class ScheduleService:
     """Produces the per-worker schedule data for GET /api/schedule/."""
 
     @staticmethod
-    def get_schedule(now: datetime, horizon_days: Optional[int] = None) -> dict:
+    def get_schedule(now: datetime, horizon_days: Optional[int] = None,
+                     offset: int = 0) -> dict:
         from apps.jobs.models import Task, Job
 
         User = get_user_model()
         shape = load_day_shape()
         days_n = load_horizon_days(horizon_days)
 
-        # Horizon window: midnight today (local) forward until we've included
-        # `days_n` WORKING days. Non-working days (weekends now; holidays
-        # later) are still included for visual continuity — they render as
-        # thin strips — but don't count toward the horizon. A span cap keeps
-        # a large N over a long non-working stretch from running away.
+        # Horizon window: `offset` working days from today gives the window's
+        # first day; from there we walk forward including `days_n` WORKING
+        # days. Non-working days (weekends now; holidays later) are still
+        # included for visual continuity — they render as thin strips — but
+        # don't count toward the horizon. A span cap keeps a large N over a
+        # long non-working stretch from running away.
+        #   offset == 0  → window starts today (default)
+        #   offset < 0   → scroll into the past
+        #   offset > 0   → scroll into the future
         tz = timezone.get_current_timezone()
         local_now = now.astimezone(tz)
         local_today = local_now.date()
+        start_date = shift_working_days(local_today, offset)
         horizon_start = timezone.make_aware(
-            datetime.combine(local_today, time(0, 0)), tz,
+            datetime.combine(start_date, time(0, 0)), tz,
         )
 
         MAX_SPAN_DAYS = 31
         days = []
-        d = local_today
+        d = start_date
         working_seen = 0
         span = 0
         # Always advance at least one day past the last counted working day so
@@ -122,12 +128,14 @@ class ScheduleService:
             datetime.combine(d, time(0, 0)), tz,
         )
 
-        # Half-open range covering "today" in local time. Used instead of
-        # `__date` lookups because MySQL's CONVERT_TZ() requires the timezone
-        # tables to be loaded — without them, `__date` filters return NULL
-        # and match nothing.
-        today_start_local = horizon_start  # midnight today, local
-        today_end_local = horizon_start + timedelta(days=1)
+        # Completed tasks are included when their bleps fall inside the
+        # visible window [horizon_start, horizon_end). For the default (today)
+        # window this resolves to "completed today"; scrolling into the past
+        # surfaces what was completed then. Half-open ranges avoid `__date`
+        # lookups (MySQL CONVERT_TZ needs its tz tables loaded; without them
+        # `__date` returns NULL and matches nothing).
+        today_start_local = horizon_start
+        today_end_local = horizon_end
 
         # Active workers: anyone with at least one relevant task.
         relevant_statuses = [
@@ -177,7 +185,9 @@ class ScheduleService:
 
         worker_lanes = []
         for worker in workers:
-            bars = ScheduleService._build_lane(worker, local_now, shape)
+            bars = ScheduleService._build_lane(
+                worker, local_now, shape, today_start_local, today_end_local,
+            )
             worker_lanes.append({
                 'user': ScheduleService._serialize_user(worker),
                 'bars': bars,
@@ -188,6 +198,7 @@ class ScheduleService:
             'horizon_start': horizon_start.isoformat(),
             'horizon_end': horizon_end.isoformat(),
             'horizon_days': days_n,
+            'offset': offset,
             'day_shape': {
                 'workday_start': shape.workday_start.strftime('%H:%M'),
                 'workday_end': shape.workday_end.strftime('%H:%M'),
@@ -216,35 +227,27 @@ class ScheduleService:
         }
 
     @staticmethod
-    def _build_lane(worker, local_now, shape):
+    def _build_lane(worker, local_now, shape, window_start, window_end):
         """Walk the worker's queue and emit bars in order.
 
-        See docs/plans/2026-05-19-schedule-view-design.md §4 for the
-        algorithm contract.
+        `window_start` / `window_end` bound the visible horizon; completed
+        tasks are included when a blep ended inside that window. See
+        docs/plans/2026-05-19-schedule-view-design.md §4 for the algorithm
+        contract.
         """
         from apps.jobs.models import Task
 
         relevant_statuses = [
             Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED,
         ]
-        local_today = local_now.date()
-        # Range covering "today" in local time, computed via timezone.make_aware
-        # rather than `__date` so the lookup doesn't rely on MySQL's
-        # CONVERT_TZ() (which silently returns NULL when its timezone tables
-        # aren't loaded, swallowing the completed-today filter).
-        today_start = timezone.make_aware(
-            datetime.combine(local_today, time(0, 0)),
-            local_now.tzinfo,
-        )
-        today_end = today_start + timedelta(days=1)
 
         tasks_qs = Task.objects.filter(
             assignee=worker,
         ).filter(
             Q(status__in=relevant_statuses) |
             Q(status=Task.STATUS_COMPLETE,
-              blep__end_time__gte=today_start,
-              blep__end_time__lt=today_end)
+              blep__end_time__gte=window_start,
+              blep__end_time__lt=window_end)
         ).select_related('job').distinct().order_by('worker_queue', 'pk')
 
         # Process tasks by status group, not strictly by queue position.
@@ -270,6 +273,9 @@ class ScheduleService:
             ),
         )
 
+        # The cascade always anchors to "now" (today), independent of the
+        # scroll window — pending work is planned from the present forward.
+        local_today = local_now.date()
         cursor = next_workable_moment(
             max(local_now, workday_start_on(local_today, shape)),
             shape,
@@ -386,26 +392,38 @@ class ScheduleService:
 
     @staticmethod
     def _emit_historical(task, bleps, local_now, shape, advance_cursor_from=None):
-        """Emit historical bar(s) for a task with bleps. For now: one bar
-        spanning first_blep_start → last_blep_end (contiguous grouping is
-        YAGNI for v1). Returns (bars, new_cursor_if_advance_requested)."""
+        """Emit a historical bar for a task with bleps. Light layer = the
+        estimate (anchored at the first blep, always shown at full width —
+        never truncated to the actuals). Dark layer = the actual blep span.
+        Overrun shows as dark extending past light; an early finish shows
+        the full estimate light extending past the dark. Cursor advances to
+        the ACTUAL end + buffer (a task that finished early still lets the
+        next task start earlier — its estimate light may overlap that next
+        task, which renders on top).
+
+        Contiguous-blep grouping into multiple bars is still YAGNI for v1.
+        Returns (bars, new_cursor_if_advance_requested)."""
         if not bleps:
             return [], advance_cursor_from
         first = bleps[0].start_time.astimezone(local_now.tzinfo)
         last_end_dt = bleps[-1].end_time or local_now
         last = last_end_dt.astimezone(local_now.tzinfo)
-        segments = segments_for(first, last, shape)
+
+        est = task.est_worker_time or timedelta(0)
+        est_layer_end = add_work_time(first, est, shape) if est > timedelta(0) else last
+        bar_end = max(est_layer_end, last)
+        segments = segments_for(first, bar_end, shape)
+
         elapsed_minutes = 0
         for b in bleps:
             b_start = b.start_time.astimezone(local_now.tzinfo)
             b_end = (b.end_time or local_now).astimezone(local_now.tzinfo)
             elapsed_minutes += work_minutes_between(b_start, b_end, shape)
-        # For completed/historical, light and dark layers are coextensive
-        # at the actual span end.
+
         bar = ScheduleService._build_bar(
             task=task, kind='historical', segments=segments,
             elapsed_minutes=elapsed_minutes, is_running=False,
-            est_layer_end=last, actual_layer_end=last,
+            est_layer_end=est_layer_end, actual_layer_end=last,
         )
         if advance_cursor_from is None:
             return [bar], None

@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { schedule, loadSchedule, startAutoRefresh, stopAutoRefresh } from '../../stores/schedule.js';
+  import { schedule, loadSchedule, startAutoRefresh, stopAutoRefresh, scrollDays, resetToToday } from '../../stores/schedule.js';
   import ScheduleHeader from '../../components/schedule/ScheduleHeader.svelte';
   import WorkerLane from '../../components/schedule/WorkerLane.svelte';
   import NowLine from '../../components/schedule/NowLine.svelte';
@@ -254,6 +254,9 @@
     void nowTick;  // re-derive each tick
     const serverNowMs = new Date($schedule.now).getTime();
     const liveMs = Math.max(serverNowMs, Date.now());
+    const live = new Date(liveMs);
+    // Hide the now-line when "now" is outside the visible (scrolled) window.
+    if (live < layout.start || live >= layout.end) return null;
     const liveIso = isoAt(liveMs, layout.serverOffset);
     return layout.timeToX(liveIso);
   });
@@ -271,6 +274,9 @@
                   onclick={() => loadSchedule(n)}>{n}</button>
         {/each}
       </div>
+      {#if $schedule.offset}
+        <button type="button" class="today-btn" onclick={() => resetToToday()}>Today</button>
+      {/if}
     {/if}
   </div>
   {#if $schedule === null}
@@ -278,7 +284,9 @@
   {:else}
     <JobChipStrip jobs={$schedule.jobs} bind:focusedJobIds />
     <div class="chart-area">
-      <ScheduleHeader days={$schedule.days} laneLabelWidth={LANE_LABEL_WIDTH} {layout} />
+      <ScheduleHeader days={$schedule.days} laneLabelWidth={LANE_LABEL_WIDTH} {layout}
+                      onPrev={() => scrollDays(-1)}
+                      onNext={() => scrollDays(1)} />
       {#if $schedule.workers.length === 0}
         <p class="empty">No assigned work in the visible horizon.</p>
       {:else}
@@ -338,6 +346,12 @@
   .days-control button.active {
     background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600;
   }
+  .today-btn {
+    font-size: 12px; padding: 3px 10px; border: 1px solid #2563eb;
+    background: #fff; color: #2563eb; border-radius: 5px; cursor: pointer;
+    font-weight: 600;
+  }
+  .today-btn:hover { background: #eff6ff; }
   .chart-area { margin-top: 8px; }
   .chart { position: relative; }
   .now-overlay { position: absolute; top: 0; bottom: 0; pointer-events: none; }

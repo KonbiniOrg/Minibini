@@ -11,16 +11,32 @@ export const draggingTaskId = writable(null);
 
 let refreshTimer = null;
 let currentDays = null;
+let currentOffset = 0;
 
 export async function loadSchedule(days) {
   if (days !== undefined) currentDays = days;
   try {
-    const qs = currentDays != null ? `?days=${encodeURIComponent(currentDays)}` : '';
-    const data = await api.get(`/api/schedule/${qs}`);
+    const params = new URLSearchParams();
+    if (currentDays != null) params.set('days', currentDays);
+    if (currentOffset) params.set('offset', currentOffset);
+    const qs = params.toString();
+    const data = await api.get(`/api/schedule/${qs ? '?' + qs : ''}`);
     schedule.set(data);
   } catch (err) {
     console.error('Failed to load schedule', err);
   }
+}
+
+// Scroll the window by working days. `delta` shifts relative to the
+// current offset; passing 0 with absolute=true resets to today.
+export function scrollDays(delta) {
+  currentOffset += delta;
+  return loadSchedule();
+}
+
+export function resetToToday() {
+  currentOffset = 0;
+  return loadSchedule();
 }
 
 export function startAutoRefresh(intervalMs = 5 * 60 * 1000) {

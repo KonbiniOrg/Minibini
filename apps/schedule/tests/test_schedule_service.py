@@ -124,6 +124,33 @@ class HorizonCountsWorkingDaysTest(BaseTestCase):
         self.assertTrue(all(day['is_working'] for day in days))
 
 
+class HorizonOffsetTest(BaseTestCase):
+    """offset scrolls the window by working days from today."""
+
+    def test_future_offset_starts_window_ahead(self):
+        from apps.schedule.calendar_arithmetic import shift_working_days
+        d = dj_tz.localdate()
+        while d.weekday() != 0:  # Monday
+            d += timedelta(days=1)
+        now = local_dt(d, 9, 0)
+
+        data = ScheduleService.get_schedule(now=now, horizon_days=2, offset=2)
+        expected_start = shift_working_days(d, 2)  # Wed
+        self.assertEqual(data['days'][0]['date'], expected_start.isoformat())
+        self.assertEqual(data['offset'], 2)
+
+    def test_past_offset_starts_window_behind(self):
+        from apps.schedule.calendar_arithmetic import shift_working_days
+        d = dj_tz.localdate()
+        while d.weekday() != 2:  # Wednesday
+            d += timedelta(days=1)
+        now = local_dt(d, 9, 0)
+
+        data = ScheduleService.get_schedule(now=now, horizon_days=1, offset=-2)
+        expected_start = shift_working_days(d, -2)  # Monday
+        self.assertEqual(data['days'][0]['date'], expected_start.isoformat())
+
+
 class ScheduleServiceEmptyTest(BaseTestCase):
     """No assigned tasks anywhere → empty workers list."""
 
@@ -281,6 +308,45 @@ class BlockedTaskTest(BaseTestCase):
             bars_by[(task2.pk, 'forecast')]['segments'][0]['start']
         )
         self.assertEqual(t2_start, now)
+
+
+class HistoricalShowsEstimateTest(BaseTestCase):
+    """Completed (historical) bars show the full estimate as the light
+    layer and the actuals as the dark layer — never truncating the
+    estimate to the actual span."""
+
+    def _completed_task(self, est_minutes, actual_minutes, username):
+        user, task = _seed_user_with_pending_task(
+            est_minutes=est_minutes, name='C', username=username,
+        )
+        d = date_at_weekday(2)
+        start = local_dt(d, 9, 0)
+        end = start + timedelta(minutes=actual_minutes)
+        task.status = Task.STATUS_IN_PROGRESS; task.save()
+        task.status = Task.STATUS_COMPLETE; task.save()
+        Blep.objects.create(user=user, task=task, start_time=start, end_time=end)
+        now = end + timedelta(minutes=30)
+        data = ScheduleService.get_schedule(now=now)
+        worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        bar = next(b for b in worker['bars'] if b['task_id'] == task.pk)
+        return bar
+
+    def test_early_finish_shows_estimate_past_actuals(self):
+        # est 60m, took 30m → light (est) ends after dark (actual).
+        bar = self._completed_task(60, 30, 'hist_early')
+        self.assertEqual(bar['kind'], 'historical')
+        seg = bar['segments'][-1]
+        est_end = datetime.fromisoformat(seg['est_fill_to'])
+        actual_end = datetime.fromisoformat(seg['actual_fill_to'])
+        self.assertGreater(est_end, actual_end)
+
+    def test_overrun_shows_actuals_past_estimate(self):
+        # est 30m, took 60m → dark (actual) ends after light (est).
+        bar = self._completed_task(30, 60, 'hist_over')
+        seg = bar['segments'][-1]
+        est_end = datetime.fromisoformat(seg['est_fill_to'])
+        actual_end = datetime.fromisoformat(seg['actual_fill_to'])
+        self.assertGreater(actual_end, est_end)
 
 
 class CompletedPlusActiveOrderingTest(BaseTestCase):

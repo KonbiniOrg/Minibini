@@ -41,6 +41,22 @@ def is_working_day(d: date) -> bool:
     return d.weekday() < 5
 
 
+def shift_working_days(d: date, n: int) -> date:
+    """Return the date `n` working days from `d`. n > 0 moves forward, n < 0
+    moves backward, n == 0 returns `d` unchanged. Non-working days are
+    stepped over without being counted."""
+    if n == 0:
+        return d
+    step = 1 if n > 0 else -1
+    remaining = abs(n)
+    cur = d
+    while remaining > 0:
+        cur = cur + timedelta(days=step)
+        if is_working_day(cur):
+            remaining -= 1
+    return cur
+
+
 def workday_start_on(d: date, shape: DayShape) -> datetime:
     return _combine_local(d, shape.workday_start)
 
