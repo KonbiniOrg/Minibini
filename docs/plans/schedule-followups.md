@@ -26,6 +26,11 @@ Shipped and working:
       complete-with-data-entry / block / unblock / cancel), Reassign via
       `AssignModal`, "Open full task →" link, and ×/Esc/click-outside close.
       Reusable into the job board's task cards with minimal changes.
+- [ ] **Quick-card "Stop Work" acts on the viewer, not the lane worker.**
+      Known quirk (user accepts for now): opening worker B's card and clicking
+      "Stop Work" stops *your own* blep on that task, not B's — `TaskActions`
+      start/stop are self-actions. Same root cause as the on-behalf work
+      below; revisit together if it becomes annoying.
 - [ ] **Clickable bars — Increment B: on-behalf actions.** "Start for
       \<worker\>" and "Stop \<worker\>'s timer" are disabled placeholders in
       the card. Both have time-tracking side effects:

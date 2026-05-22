@@ -83,7 +83,7 @@ class ScheduleService:
     @staticmethod
     def get_schedule(now: datetime, horizon_days: Optional[int] = None,
                      offset: int = 0) -> dict:
-        from apps.jobs.models import Task, Job
+        from apps.jobs.models import Task, Job, Blep
 
         User = get_user_model()
         shape = load_day_shape()
@@ -154,6 +154,16 @@ class ScheduleService:
             blep__end_time__lt=today_end_local,
         ).values_list('assignee_id', flat=True))
         worker_ids |= completed_today_worker_ids
+        # Plus anyone with a blep open now or ending in the window, even if
+        # they aren't the task's assignee — concurrent / joined / taken-over
+        # work must surface in each contributing worker's lane.
+        blep_worker_ids = set(Blep.objects.filter(
+            user__isnull=False,
+        ).filter(
+            Q(end_time__isnull=True) |
+            Q(end_time__gte=today_start_local, end_time__lt=today_end_local)
+        ).values_list('user_id', flat=True))
+        worker_ids |= blep_worker_ids
 
         workers = User.objects.filter(pk__in=worker_ids).order_by(
             'first_name', 'last_name',
@@ -184,6 +194,14 @@ class ScheduleService:
         job_ids = set(Task.objects.filter(
             assignee_id__in=worker_ids,
             status__in=relevant_statuses + [Task.STATUS_COMPLETE],
+        ).values_list('job_id', flat=True))
+        # Include jobs of tasks worked in the window (covers tasks a worker
+        # blepped on but isn't assigned to).
+        job_ids |= set(Task.objects.filter(
+            blep__user__isnull=False,
+        ).filter(
+            Q(blep__end_time__isnull=True) |
+            Q(blep__end_time__gte=today_start_local, blep__end_time__lt=today_end_local)
         ).values_list('job_id', flat=True))
         jobs = Job.objects.filter(pk__in=job_ids).select_related('contact')
         jobs_payload = []
@@ -315,20 +333,34 @@ class ScheduleService:
         docs/plans/2026-05-19-schedule-view-design.md §4 for the algorithm
         contract.
         """
-        from apps.jobs.models import Task
+        from apps.jobs.models import Task, Blep
 
         relevant_statuses = [
             Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED,
         ]
 
-        tasks_qs = Task.objects.filter(
+        # The worker's lane covers two task sets:
+        #  - tasks ASSIGNED to them (their queue): relevant statuses, plus
+        #    completed tasks with a blep ending in the window.
+        #  - tasks they have a BLEP on (open, or ending in the window) even
+        #    if they're not the assignee — concurrent/joined/taken-over work.
+        assigned_ids = set(Task.objects.filter(
             assignee=worker,
         ).filter(
             Q(status__in=relevant_statuses) |
             Q(status=Task.STATUS_COMPLETE,
               blep__end_time__gte=window_start,
               blep__end_time__lt=window_end)
-        ).select_related('job').distinct().order_by('worker_queue', 'pk')
+        ).values_list('pk', flat=True))
+        blepped_ids = set(Blep.objects.filter(user=worker).filter(
+            Q(end_time__isnull=True) |
+            Q(end_time__gte=window_start, end_time__lt=window_end)
+        ).values_list('task_id', flat=True))
+        task_ids = assigned_ids | blepped_ids
+
+        tasks_qs = Task.objects.filter(
+            pk__in=task_ids,
+        ).select_related('job').order_by('worker_queue', 'pk')
 
         # Process tasks by status group, not strictly by queue position.
         # Completed tasks anchor in the past, in-progress tasks anchor at
@@ -379,7 +411,12 @@ class ScheduleService:
         # - Blocked tasks don't move the cursor at all.
 
         for task in tasks_qs:
-            bleps = list(task.blep_set.order_by('start_time'))
+            # Only THIS worker's bleps drive their lane's bars, so concurrent
+            # workers each show their own contribution to a shared task.
+            bleps = list(task.blep_set.filter(user=worker).order_by('start_time'))
+            # The estimate belongs to the assignee's plan — a non-assignee
+            # helping out shows only their actual work, no estimate layer.
+            is_assignee = task.assignee_id == worker.pk
             if task.status == Task.STATUS_PENDING:
                 bars.extend(ScheduleService._emit_forecast(task, cursor, shape))
                 cursor = ScheduleService._advance_cursor_after_forecast(
@@ -388,6 +425,7 @@ class ScheduleService:
             elif task.status == Task.STATUS_IN_PROGRESS and bleps:
                 active_bars, new_cursor = ScheduleService._emit_active(
                     task, bleps, local_now, cursor, display_shape, shape,
+                    show_est=is_assignee,
                 )
                 bars.extend(active_bars)
                 if new_cursor is not None and new_cursor > cursor:
@@ -401,14 +439,18 @@ class ScheduleService:
                 if bleps:
                     hist_bars, _ignored = ScheduleService._emit_historical(
                         task, bleps, local_now, display_shape, shape,
+                        show_est=is_assignee,
                     )
                     bars.extend(hist_bars)
-                bars.append(ScheduleService._emit_parked(task, cursor, shape))
+                # The parked placeholder represents a queued blocked task, so
+                # only show it in the assignee's lane (not a blepper's).
+                if task.assignee_id == worker.pk:
+                    bars.append(ScheduleService._emit_parked(task, cursor, shape))
                 # cursor unchanged — blocked tasks don't consume future time
             elif task.status == Task.STATUS_COMPLETE and bleps:
                 hist_bars, new_cursor = ScheduleService._emit_historical(
                     task, bleps, local_now, display_shape, shape,
-                    advance_cursor_from=cursor,
+                    advance_cursor_from=cursor, show_est=is_assignee,
                 )
                 bars.extend(hist_bars)
                 # Completed tasks may pull cursor backward intentionally.
@@ -439,16 +481,19 @@ class ScheduleService:
         return next_workable_moment(end + buf, shape)
 
     @staticmethod
-    def _emit_active(task, bleps, local_now, cursor, pshape, sshape):
+    def _emit_active(task, bleps, local_now, cursor, pshape, sshape,
+                     show_est=True):
         """Emit the active bar for an in-progress task with bleps.
 
         `pshape` positions the bar (the display axis — may run off-hours);
         `sshape` is the configured workday used to advance the scheduling
         cursor so following pending tasks stay within configured hours.
+        `show_est=False` (a non-assignee's lane) suppresses the estimate
+        light layer — only the worker's actual blep span is drawn.
         Returns (bars_list, new_cursor)."""
         anchor_start = bleps[0].start_time.astimezone(local_now.tzinfo)
         est = task.est_worker_time or timedelta(0)
-        est_layer_end = add_work_time(anchor_start, est, pshape)
+        est_layer_end = add_work_time(anchor_start, est, pshape) if show_est else None
 
         last_blep = bleps[-1]
         is_running = last_blep.end_time is None
@@ -463,7 +508,7 @@ class ScheduleService:
             b_end = (b.end_time or local_now).astimezone(local_now.tzinfo)
             elapsed_minutes += work_minutes_between(b_start, b_end, pshape)
 
-        effective_end = max(est_layer_end, dark_end_clock)
+        effective_end = dark_end_clock if est_layer_end is None else max(est_layer_end, dark_end_clock)
         segments = segments_for(anchor_start, effective_end, pshape)
 
         bar = ScheduleService._build_bar(
@@ -477,7 +522,7 @@ class ScheduleService:
 
     @staticmethod
     def _emit_historical(task, bleps, local_now, pshape, sshape,
-                         advance_cursor_from=None):
+                         advance_cursor_from=None, show_est=True):
         """Emit a historical bar for a task with bleps. Light layer = the
         estimate (anchored at the first blep, always shown at full width —
         never truncated to the actuals). Dark layer = the actual blep span.
@@ -499,8 +544,11 @@ class ScheduleService:
         last = last_end_dt.astimezone(local_now.tzinfo)
 
         est = task.est_worker_time or timedelta(0)
-        est_layer_end = add_work_time(first, est, pshape) if est > timedelta(0) else last
-        bar_end = max(est_layer_end, last)
+        if show_est and est > timedelta(0):
+            est_layer_end = add_work_time(first, est, pshape)
+        else:
+            est_layer_end = None
+        bar_end = last if est_layer_end is None else max(est_layer_end, last)
         segments = segments_for(first, bar_end, pshape)
 
         elapsed_minutes = 0

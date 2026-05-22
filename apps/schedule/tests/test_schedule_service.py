@@ -389,6 +389,47 @@ class HistoricalShowsEstimateTest(BaseTestCase):
         self.assertGreater(actual_end, est_end)
 
 
+class ConcurrentBlepsTest(BaseTestCase):
+    """Two workers blepping the same task each see it in their own lane,
+    anchored to their own bleps. The non-assignee shows up too."""
+
+    def test_both_workers_show_the_shared_task(self):
+        assignee, task = _seed_user_with_pending_task(
+            est_minutes=120, name='Shared', username='owner_a',
+        )
+        other = User.objects.create_user(username='joiner_b', password='x')
+        task.status = Task.STATUS_IN_PROGRESS
+        task.save()
+
+        d = date_at_weekday(2)
+        a_start = local_dt(d, 9, 0)
+        b_start = local_dt(d, 9, 10)
+        Blep.objects.create(user=assignee, task=task, start_time=a_start, end_time=None)
+        Blep.objects.create(user=other, task=task, start_time=b_start, end_time=None)
+        now = local_dt(d, 9, 30)
+
+        data = ScheduleService.get_schedule(now=now)
+        lanes = {w['user']['id']: w for w in data['workers']}
+        self.assertIn(assignee.pk, lanes)
+        self.assertIn(other.pk, lanes)
+
+        a_bar = next(b for b in lanes[assignee.pk]['bars']
+                     if b['task_id'] == task.pk and b['kind'] == 'active')
+        b_bar = next(b for b in lanes[other.pk]['bars']
+                     if b['task_id'] == task.pk and b['kind'] == 'active')
+
+        # Each lane's bar is anchored to that worker's own blep start.
+        a_first = datetime.fromisoformat(a_bar['segments'][0]['start'])
+        b_first = datetime.fromisoformat(b_bar['segments'][0]['start'])
+        self.assertEqual(a_first, a_start)
+        self.assertEqual(b_first, b_start)
+
+        # The assignee's bar carries the estimate (light layer); the
+        # non-assignee's shows only their actuals (no estimate layer).
+        self.assertTrue(any(s['est_fill_to'] for s in a_bar['segments']))
+        self.assertTrue(all(s['est_fill_to'] is None for s in b_bar['segments']))
+
+
 class CompletedPlusActiveOrderingTest(BaseTestCase):
     """When a worker has BOTH a completed task and a currently-active task,
     the pending task that follows must not be drawn on top of the active.
