@@ -84,6 +84,46 @@ class LoadHorizonDaysTest(BaseTestCase):
         self.assertEqual(load_horizon_days(99), 14)
 
 
+class HorizonCountsWorkingDaysTest(BaseTestCase):
+    """horizon_days counts WORKING days. Non-working days (weekends) are
+    included for display but don't consume the count."""
+
+    def test_friday_plus_3_working_days_spans_the_weekend(self):
+        # Find a Friday for "now".
+        from datetime import timedelta as _td
+        d = dj_tz.localdate()
+        while d.weekday() != 4:  # Friday
+            d += _td(days=1)
+        now = local_dt(d, 9, 0)
+
+        data = ScheduleService.get_schedule(now=now, horizon_days=3)
+        days = data['days']
+        working = [day for day in days if day['is_working']]
+        nonworking = [day for day in days if not day['is_working']]
+
+        # Exactly 3 working days counted.
+        self.assertEqual(len(working), 3)
+        # The intervening Saturday and Sunday appear as non-working.
+        self.assertEqual(len(nonworking), 2)
+        # First day is the Friday itself.
+        self.assertEqual(days[0]['date'], d.isoformat())
+        # Total list = Fri, Sat, Sun, Mon, Tue = 5 days.
+        self.assertEqual(len(days), 5)
+
+    def test_midweek_plus_3_has_no_weekend(self):
+        from datetime import timedelta as _td
+        d = dj_tz.localdate()
+        while d.weekday() != 0:  # Monday
+            d += _td(days=1)
+        now = local_dt(d, 9, 0)
+
+        data = ScheduleService.get_schedule(now=now, horizon_days=3)
+        days = data['days']
+        # Mon, Tue, Wed — all working, no weekend in the span.
+        self.assertEqual(len(days), 3)
+        self.assertTrue(all(day['is_working'] for day in days))
+
+
 class ScheduleServiceEmptyTest(BaseTestCase):
     """No assigned tasks anywhere → empty workers list."""
 

@@ -87,25 +87,40 @@ class ScheduleService:
         shape = load_day_shape()
         days_n = load_horizon_days(horizon_days)
 
-        # Horizon window: midnight today (local) to N days later.
+        # Horizon window: midnight today (local) forward until we've included
+        # `days_n` WORKING days. Non-working days (weekends now; holidays
+        # later) are still included for visual continuity — they render as
+        # thin strips — but don't count toward the horizon. A span cap keeps
+        # a large N over a long non-working stretch from running away.
         tz = timezone.get_current_timezone()
         local_now = now.astimezone(tz)
         local_today = local_now.date()
         horizon_start = timezone.make_aware(
             datetime.combine(local_today, time(0, 0)), tz,
         )
-        horizon_end = horizon_start + timedelta(days=days_n)
 
-        # Days list
+        MAX_SPAN_DAYS = 31
         days = []
         d = local_today
-        for _ in range(days_n):
+        working_seen = 0
+        span = 0
+        # Always advance at least one day past the last counted working day so
+        # the horizon_end bound sits cleanly after the visible range.
+        while working_seen < days_n and span < MAX_SPAN_DAYS:
+            working = is_working_day(d)
             days.append({
                 'date': d.isoformat(),
-                'is_working': is_working_day(d),
+                'is_working': working,
                 'label': d.strftime('%a · %b %d'),
             })
+            if working:
+                working_seen += 1
             d += timedelta(days=1)
+            span += 1
+        # `d` now points at the day after the last included day.
+        horizon_end = timezone.make_aware(
+            datetime.combine(d, time(0, 0)), tz,
+        )
 
         # Half-open range covering "today" in local time. Used instead of
         # `__date` lookups because MySQL's CONVERT_TZ() requires the timezone

@@ -36,7 +36,7 @@
   let tickInterval = null;
 
   const LANE_LABEL_WIDTH = 150;
-  const NONWORKING_WIDTH = 12;
+  const NONWORKING_WIDTH = 22;
 
   onMount(() => {
     loadSchedule();
@@ -235,8 +235,14 @@
         };
       });
 
+    // Non-working day columns get the same hatched treatment as overnight.
+    const nonWorkingBands = panels
+      .filter(p => !p.is_working)
+      .map(p => ({ date: p.date, left: p.x, width: p.width }));
+
     return {
-      panels, chartWidth, timeToX, serverOffset, lunchBands, overnightBands,
+      panels, chartWidth, timeToX, serverOffset,
+      lunchBands, overnightBands, nonWorkingBands,
       start: new Date(s.horizon_start), end: new Date(s.horizon_end),
     };
   }
@@ -254,7 +260,19 @@
 </script>
 
 <div class="schedule-page" bind:this={containerEl}>
-  <h2>Schedule</h2>
+  <div class="page-head">
+    <h2>Schedule</h2>
+    {#if $schedule !== null}
+      <div class="days-control" role="group" aria-label="Days to show">
+        <span class="days-label">Working days:</span>
+        {#each [1, 2, 3, 5, 10] as n}
+          <button type="button"
+                  class:active={$schedule.horizon_days === n}
+                  onclick={() => loadSchedule(n)}>{n}</button>
+        {/each}
+      </div>
+    {/if}
+  </div>
   {#if $schedule === null}
     <p>Loading schedule…</p>
   {:else}
@@ -276,6 +294,10 @@
             {/each}
           </div>
           <div class="now-overlay" style="left: {LANE_LABEL_WIDTH}px; width: calc(100% - {LANE_LABEL_WIDTH}px);">
+            {#each layout?.nonWorkingBands ?? [] as band (band.date)}
+              <div class="overnight-band"
+                   style="left: {band.left}px; width: {band.width}px;"></div>
+            {/each}
             {#each layout?.overnightBands ?? [] as band (band.key)}
               <div class="overnight-band"
                    style="left: {band.left}px; width: {band.width}px;"></div>
@@ -304,6 +326,18 @@
 
 <style>
   .schedule-page { padding: 12px; }
+  .page-head { display: flex; align-items: baseline; gap: 16px; }
+  .days-control { display: flex; align-items: center; gap: 4px; }
+  .days-label { font-size: 12px; color: #6b7280; margin-right: 2px; }
+  .days-control button {
+    font-size: 12px; min-width: 26px; padding: 3px 7px;
+    border: 1px solid #d1d5db; background: #fff; color: #374151;
+    border-radius: 5px; cursor: pointer;
+  }
+  .days-control button:hover { background: #f3f4f6; }
+  .days-control button.active {
+    background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600;
+  }
   .chart-area { margin-top: 8px; }
   .chart { position: relative; }
   .now-overlay { position: absolute; top: 0; bottom: 0; pointer-events: none; }

@@ -8,9 +8,12 @@
     {#if layout}
       {#each layout.panels as panel, i (panel.date)}
         {@const day = days[i]}
+        {@const label = panel.is_working
+          ? (day?.label || '')
+          : (day?.label || '').split('·')[0].trim()}
         <div class="day" class:nonworking={!panel.is_working}
              style="width: {panel.width}px;">
-          {day?.label || ''}
+          {label}
         </div>
       {/each}
     {/if}
@@ -27,7 +30,7 @@
     box-sizing: border-box;
   }
   .day.nonworking {
-    color: #999; padding: 4px 0; border-bottom: 1px solid #ddd;
-    font-size: 9px; overflow: hidden; text-align: center;
+    color: #333; padding: 4px 0; border-bottom: 1px solid #ccc;
+    font-size: 10px; overflow: hidden; text-align: center;
   }
 </style>
