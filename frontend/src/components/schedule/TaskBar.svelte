@@ -20,6 +20,10 @@
   let lightColor = $derived(bar.accent_color || '#888');
   let darkColor = $derived(darken(lightColor));
 
+  // No estimate layer anywhere (a non-assignee's bar) → there is no top
+  // half, so the label sits on the dark bottom-half stripe instead.
+  let hasEst = $derived(bar.segments.some(s => s.est_fill_to));
+
   // Keep both ISO strings (for TZ-agnostic positioning via timeToX) and
   // Date objects (for absolute-moment range filtering against panelStart/End).
   let segs = $derived(bar.segments
@@ -95,11 +99,14 @@
         <div class="layer-est" style="width: {estWidth}px; background: {lightColor};"></div>
       {/if}
       {#if actWidth > 0}
+        <!-- Actuals are the dark, bottom-half layer. The top (estimate) half
+             only appears for the assignee — a non-assignee's bar is just
+             this dark blep stripe, no estimate. -->
         <div class="layer-actual" style="width: {actWidth}px; background: {darkColor};"></div>
       {/if}
     {/if}
     {#if i === 0}
-      <span class="label">{bar.name}</span>
+      <span class="label" class:bottom={!hasEst && bar.kind !== 'parked'}>{bar.name}</span>
     {/if}
   </div>
 {/each}
@@ -127,6 +134,8 @@
     text-shadow: 0 0 2px rgba(0,0,0,0.5);
     pointer-events: none; white-space: nowrap;
   }
+  /* No estimate layer: label rides the dark bottom-half stripe. */
+  .label.bottom { top: auto; bottom: 2px; }
   .kind-historical { opacity: 0.55; }
   .task-bar.dimmed { opacity: 0.18; }
 
