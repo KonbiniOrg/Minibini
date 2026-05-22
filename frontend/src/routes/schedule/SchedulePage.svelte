@@ -5,10 +5,30 @@
   import WorkerLane from '../../components/schedule/WorkerLane.svelte';
   import NowLine from '../../components/schedule/NowLine.svelte';
   import JobChipStrip from '../../components/board/JobChipStrip.svelte';
+  import TaskQuickCard from '../../components/schedule/TaskQuickCard.svelte';
 
   let containerEl;
   let containerWidth = $state(1200);
   let nowTick = $state(Date.now());
+
+  // Selected task for the quick-card popout.
+  let selectedBar = $state(null);
+  let selectedAssignee = $state('');
+
+  function handleSelectTask(bar, worker) {
+    selectedBar = bar;
+    selectedAssignee = worker?.user?.name || '';
+  }
+  function closeCard() {
+    selectedBar = null;
+    selectedAssignee = '';
+  }
+  // Job lookup for the card header (job_number / name).
+  let selectedJob = $derived(
+    selectedBar && $schedule
+      ? $schedule.jobs.find(j => j.job_id === selectedBar.job_id)
+      : null
+  );
   let resizeObserver = null;
   let tickInterval = null;
 
@@ -247,7 +267,8 @@
               <WorkerLane {worker}
                           dayShape={$schedule.day_shape}
                           panelLayout={layout}
-                          laneLabelWidth={LANE_LABEL_WIDTH} />
+                          laneLabelWidth={LANE_LABEL_WIDTH}
+                          onSelectTask={handleSelectTask} />
             {/each}
           </div>
           <div class="now-overlay" style="left: {LANE_LABEL_WIDTH}px; width: calc(100% - {LANE_LABEL_WIDTH}px);">
@@ -264,6 +285,16 @@
         </div>
       {/if}
     </div>
+  {/if}
+
+  {#if selectedBar}
+    <TaskQuickCard
+      bar={selectedBar}
+      assigneeName={selectedAssignee}
+      jobNumber={selectedJob?.job_number || ''}
+      jobName={selectedJob?.name || ''}
+      onClose={closeCard}
+      onChanged={() => loadSchedule()} />
   {/if}
 </div>
 

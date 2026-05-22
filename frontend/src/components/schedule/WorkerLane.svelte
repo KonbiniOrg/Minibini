@@ -2,7 +2,7 @@
   import TaskBar from './TaskBar.svelte';
   import { reorderTasksInLane, draggingTaskId } from '../../stores/schedule.js';
 
-  let { worker, dayShape, panelLayout, laneLabelWidth = 90 } = $props();
+  let { worker, dayShape, panelLayout, laneLabelWidth = 90, onSelectTask = () => {} } = $props();
 
   let primaryBars = $derived(worker.bars.filter(b => b.kind !== 'parked'));
   let parkedBars = $derived(worker.bars.filter(b => b.kind === 'parked'));
@@ -153,7 +153,8 @@
       {#each primaryBars as bar (`${bar.task_id}-${bar.kind}-${bar.segments[0]?.start}`)}
         <TaskBar {bar} {timeToX}
                  panelStart={panelLayout?.start}
-                 panelEnd={panelLayout?.end} />
+                 panelEnd={panelLayout?.end}
+                 onSelect={(b) => onSelectTask(b, worker)} />
       {/each}
     </div>
     {#if parkedBars.length > 0}

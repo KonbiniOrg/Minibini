@@ -1,7 +1,7 @@
 <script>
   import { draggingTaskId } from '../../stores/schedule.js';
 
-  let { bar, timeToX, panelStart, panelEnd, onDragStart = null } = $props();
+  let { bar, timeToX, panelStart, panelEnd, onDragStart = null, onSelect = null } = $props();
 
   function darken(hex, pct = 0.3) {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -74,13 +74,14 @@
                      ? 'zig-both'
                      : seg.continues_left ? 'zig-left'
                      : seg.continues_right ? 'zig-right' : ''}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="task-bar {zigClass} kind-{bar.kind}"
        draggable={isDraggable}
        ondragstart={handleDragStart}
        ondragend={handleDragEnd}
+       onclick={() => onSelect && onSelect(bar)}
        data-task-id={bar.task_id}
-       style="left: {left}px; width: {width}px;"
+       style="left: {left}px; width: {width}px; cursor: pointer;"
        title="{bar.name} · est {bar.est_minutes}m · elapsed {bar.elapsed_minutes}m">
     {#if bar.kind === 'parked'}
       <div class="parked-fill" style="background: {lightColor};"></div>

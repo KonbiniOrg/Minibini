@@ -20,16 +20,28 @@ Shipped and working:
 
 ## Open UI follow-ups
 
-- [ ] **Clickable bars.** Navigate to task detail vs. side panel vs. inline
-      expand — undecided. Bars are currently drag-only (forecast/parked) or
-      static (historical/active).
+- [x] **Clickable bars (Increment A).** Clicking a bar opens `TaskQuickCard`
+      (`frontend/src/components/schedule/TaskQuickCard.svelte`): task identity,
+      status, live-blep banner, embedded `TaskActions` (start-me / stop-me /
+      complete-with-data-entry / block / unblock / cancel), Reassign via
+      `AssignModal`, "Open full task →" link, and ×/Esc/click-outside close.
+      Reusable into the job board's task cards with minimal changes.
+- [ ] **Clickable bars — Increment B: on-behalf actions.** "Start for
+      \<worker\>" and "Stop \<worker\>'s timer" are disabled placeholders in
+      the card. Both have time-tracking side effects:
+      - Start: must run the `start-work` lifecycle (promote to in_progress,
+        consume materials, mark job work-started, queue-promote) but attribute
+        the blep to the worker → extend `start-work` with an `on_behalf_of`
+        user (gated by `can_manage_time`).
+      - Stop: close the worker's open blep (PATCH via the existing
+        `can_manage_time` blep machinery), but mind any close side effects.
 - [ ] **Selecting a job card.** Clicking a job in the top JobChipStrip should
       focus/dim its tasks across lanes (cf. the board's `focusedJobIds`).
 - [ ] **More/fewer days from the page.** A horizon control on the page itself.
       The API already accepts `?days=N`; needs a UI control + store wiring.
-- [ ] **Mark done from the page.** Complete a task from the schedule (likely an
-      action on the active bar) without navigating away. Needs the status
-      transition API call + refetch.
+- [ ] **Mark done from the page.** Covered by TaskQuickCard's "Mark complete"
+      (Increment A). Standalone one-click-on-the-bar variant still possible if
+      wanted.
 
 ## Deferred
 
