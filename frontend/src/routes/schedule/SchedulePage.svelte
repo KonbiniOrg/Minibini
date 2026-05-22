@@ -11,6 +11,9 @@
   let containerWidth = $state(1200);
   let nowTick = $state(Date.now());
 
+  // Job-card focus: clicking job chips dims tasks of other jobs.
+  let focusedJobIds = $state([]);
+
   // Selected task for the quick-card popout.
   let selectedBar = $state(null);
   let selectedAssignee = $state('');
@@ -255,7 +258,7 @@
   {#if $schedule === null}
     <p>Loading schedule…</p>
   {:else}
-    <JobChipStrip jobs={$schedule.jobs} />
+    <JobChipStrip jobs={$schedule.jobs} bind:focusedJobIds />
     <div class="chart-area">
       <ScheduleHeader days={$schedule.days} laneLabelWidth={LANE_LABEL_WIDTH} {layout} />
       {#if $schedule.workers.length === 0}
@@ -268,6 +271,7 @@
                           dayShape={$schedule.day_shape}
                           panelLayout={layout}
                           laneLabelWidth={LANE_LABEL_WIDTH}
+                          {focusedJobIds}
                           onSelectTask={handleSelectTask} />
             {/each}
           </div>

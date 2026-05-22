@@ -1,7 +1,11 @@
 <script>
   import { draggingTaskId } from '../../stores/schedule.js';
 
-  let { bar, timeToX, panelStart, panelEnd, onDragStart = null, onSelect = null } = $props();
+  let { bar, timeToX, panelStart, panelEnd, onDragStart = null, onSelect = null, focusedJobIds = [] } = $props();
+
+  // When a job is focused via the chip strip, bars of other jobs dim and
+  // lose their interactivity (no click-to-open, no drag).
+  let dimmed = $derived(focusedJobIds.length > 0 && !focusedJobIds.includes(bar.job_id));
 
   function darken(hex, pct = 0.3) {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -61,7 +65,7 @@
     draggingTaskId.set(null);
   }
 
-  let isDraggable = $derived(bar.kind === 'forecast' || bar.kind === 'parked');
+  let isDraggable = $derived((bar.kind === 'forecast' || bar.kind === 'parked') && !dimmed);
 </script>
 
 {#each segs as seg, i (i)}
@@ -76,12 +80,13 @@
                      : seg.continues_right ? 'zig-right' : ''}
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="task-bar {zigClass} kind-{bar.kind}"
+       class:dimmed
        draggable={isDraggable}
        ondragstart={handleDragStart}
        ondragend={handleDragEnd}
-       onclick={() => onSelect && onSelect(bar)}
+       onclick={() => { if (!dimmed && onSelect) onSelect(bar); }}
        data-task-id={bar.task_id}
-       style="left: {left}px; width: {width}px; cursor: pointer;"
+       style="left: {left}px; width: {width}px; cursor: {dimmed ? 'default' : 'pointer'};"
        title="{bar.name} · est {bar.est_minutes}m · elapsed {bar.elapsed_minutes}m">
     {#if bar.kind === 'parked'}
       <div class="parked-fill" style="background: {lightColor};"></div>
@@ -123,6 +128,7 @@
     pointer-events: none; white-space: nowrap;
   }
   .kind-historical { opacity: 0.55; }
+  .task-bar.dimmed { opacity: 0.18; }
 
   .zig-right { clip-path: polygon(
     0 0, 100% 0,
