@@ -321,8 +321,9 @@ class InventoryService:
     def release_earmarks_for_job(job):
         """Delete all remaining earmarks for a job.
 
-        Called when a Job enters work_complete — any un-consumed earmark
-        balance is released back to general inventory availability.
+        Called when a Job enters a terminal/closed state (work_complete,
+        cancelled, or rejected) — any un-consumed earmark balance is released
+        back to general inventory availability.
         """
         Earmark.objects.filter(job=job).delete()
 

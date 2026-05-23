@@ -68,7 +68,8 @@ class StatusTransitionMixin:
 
     Each entry becomes a POST action on the viewset.
     If requires_reason is True, validates that 'reason' is in the request body.
-    The service callable receives (pk) or (pk, reason=reason).
+    The service callable receives (pk) or (pk, reason=reason). It may raise
+    NotFoundError (-> 404) or ServiceError / Django ValidationError (-> 400).
     """
     status_actions = {}
 
@@ -104,6 +105,12 @@ class StatusTransitionMixin:
                 except ServiceError as e:
                     return Response(
                         {'detail': str(e)},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                except ValidationError as e:
+                    detail = e.message_dict if hasattr(e, 'message_dict') else e.messages
+                    return Response(
+                        {'detail': detail},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 

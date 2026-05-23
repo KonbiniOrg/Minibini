@@ -239,7 +239,7 @@ on `PlanTask` via the `TaskBase` abstract):
 | Field | Description |
 |---|---|
 | `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. |
-| `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`) |
+| `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); for a `flat_fee` scheme, a `{"flat_fee_price": "<amount>"}` dict instead |
 | `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task; required on PlanTask. |
 | `est_worker_time` | DurationField — estimated worker time for scheduling. Required (and non-zero) once the Task has an `assignee`: assigned work must be schedulable. Enforced by `Task.clean()` and re-checked by `TaskService.assign`. |
 | `actual_qty` | Worker-entered quantity for `ENTERED_QTY` schemes; null for `ELAPSED_TIME` (derived from bleps) and `FLAT_FEE` |
@@ -262,8 +262,8 @@ sanctioned path to transition a Task. All methods wrap in
 | `block_task(task_pk, reason='')` | reason | pending/in_progress → blocked; rejects with `{conflict, workers}` dict if open Bleps exist (caller coordinates offline) |
 | `unblock_task(task_pk)` | — | blocked → in_progress; clears `blocked_reason` |
 | `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); fires job-completion check |
-| `start_work(task_pk, user, action=None)` | user, optional action | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. |
-| `stop_work(task_pk, user)` | user | Closes the user's open Blep on this task; raises if none |
+| `start_work(task_pk, user, action=None, on_behalf_of=None)` | user, optional action, optional on_behalf_of | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). |
+| `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). |
 
 Material consumption happens exactly once: when the first worker calls
 `start_work` on a `pending` task, `MaterialService.consume(material)`
@@ -336,6 +336,8 @@ service-driven activity:
 - Editing or deleting another user's Blep, or any Blep older than 24
   hours, requires the `can_manage_time` permission atom.
 - Reassigning a Blep to a different user also requires `can_manage_time`.
+- Starting or stopping another worker's live timer (`on_behalf_of` on
+  `start_work` / `stop_work`) also requires `can_manage_time`.
 
 These rules live in `BlepService` (`apps/jobs/services.py`), not in
 the serializer — `BlepPermissionError` translates to HTTP 403 in the
@@ -869,10 +871,9 @@ via the browser; no server-side PDF generator yet.
 
 ### 12.9 Change orders (deferred)
 
-Out of scope for the current implementation. The design (see the
-session spec at `docs/plans/2026-05-14-deliverables-design.md` §11)
-describes a `ChangeOrder` model as an estimate-shaped post-acceptance
-amendment with both billing line items and a deliverables delta. Until
+Out of scope for the current implementation. The envisioned design is a
+`ChangeOrder` model — an estimate-shaped post-acceptance amendment with
+both billing line items and a deliverables delta. Until
 that ships, a Job's accepted Deliverables list has **no escape hatch**:
 mistakes require revising the estimate before acceptance, or developer
 intervention.

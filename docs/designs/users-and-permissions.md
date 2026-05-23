@@ -54,7 +54,7 @@ The project defines four custom permission atoms on `User.Meta.permissions`:
 |---|---|
 | `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, contacts, businesses. Status transitions on each. Email-to-job actions: link, unlink, create-job-from-email. |
 | `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. |
-| `can_manage_time` | Edit or delete any user's bleps. (Editing one's own bleps is `IsAuthenticated`.) |
+| `can_manage_time` | Edit or delete any user's bleps, and start/stop another worker's live timer on-behalf. (Tracking or editing one's own time is `IsAuthenticated`.) |
 | `can_manage_config` | Settings endpoint, work and task templates, accounting categories, user admin viewset, QBO connection management. |
 
 DRF permission classes in `apps/api/permissions.py`:
@@ -94,7 +94,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/payment-terms/` | `IsAuthenticated` | (read-only) | |
 | `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` | |
 | `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` | |
-| `/api/tasks/` (job-side) | `IsAuthenticated` | `IsAuthenticated` | service enforces ownership and lifecycle rules |
+| `/api/tasks/` (job-side) | `IsAuthenticated` | `IsAuthenticated` | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
 | `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` | retrieve open to all |
 | `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 24h rolling rule + `can_manage_time` for editing others |
 | `/api/rate-schemes/` | `IsAuthenticated` | `can_manage_config` | `supersede` action also `can_manage_config` |

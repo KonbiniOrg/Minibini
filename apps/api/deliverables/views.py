@@ -1,13 +1,15 @@
 from rest_framework import status
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from rest_framework.viewsets import ModelViewSet
 from django.core.exceptions import ValidationError as DjangoValidationError
 
+from apps.api.mixins import JSONDestroyMixin, StatusTransitionMixin
 from apps.api.permissions import CanManageJobs
+from apps.core.services import NotFoundError
 from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
 from apps.deliverables.services import DeliverableService, ShipmentService
-from apps.core.services import NotFoundError
 from .serializers import (
     DeliverableSerializer, ShipmentSerializer, ShipmentItemSerializer,
 )
@@ -20,29 +22,47 @@ def _validation_error_response(exc):
     return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class JobDeliverablesView(APIView):
-    """GET + POST /api/jobs/<id>/deliverables/"""
+class DeliverableViewSet(JSONDestroyMixin, ModelViewSet):
+    """Job-nested CRUD for Deliverable; all logic lives in DeliverableService."""
+
+    serializer_class = DeliverableSerializer
+    destroy_response_message = 'Deliverable deleted.'
 
     def get_permissions(self):
-        if self.request.method == 'POST':
-            return [IsAuthenticated(), CanManageJobs()]
-        return [IsAuthenticated()]
+        if self.action in ('list', 'retrieve', 'editability'):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), CanManageJobs()]
 
-    def get(self, request, job_id):
+    def get_queryset(self):
+        return Deliverable.objects.filter(
+            job_id=self.kwargs['job_id'],
+        ).order_by('sort_order')
+
+    def get_object(self):
+        try:
+            return self.get_queryset().get(pk=self.kwargs['deliverable_id'])
+        except Deliverable.DoesNotExist:
+            raise NotFound()
+
+    def _get_job_or_404(self):
         from apps.jobs.models import Job
         try:
-            job = Job.objects.get(pk=job_id)
+            return Job.objects.get(pk=self.kwargs['job_id'])
         except Job.DoesNotExist:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        qs = Deliverable.objects.filter(job=job).order_by('sort_order')
-        serializer = DeliverableSerializer(qs, many=True)
-        return Response(serializer.data)
+            raise NotFound()
 
-    def post(self, request, job_id):
+    def list(self, request, *args, **kwargs):
+        self._get_job_or_404()
+        return Response(self.get_serializer(self.get_queryset(), many=True).data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return Response(self.get_serializer(self.get_object()).data)
+
+    def create(self, request, *args, **kwargs):
         data = request.data or {}
         try:
-            d = DeliverableService.create(
-                job_id=job_id,
+            deliverable = DeliverableService.create(
+                job_id=self.kwargs['job_id'],
                 description=data.get('description', ''),
                 qty_ordered=data.get('qty_ordered'),
                 units=data.get('units', ''),
@@ -50,61 +70,32 @@ class JobDeliverablesView(APIView):
             )
         except NotFoundError:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response(DeliverableSerializer(d).data, status=status.HTTP_201_CREATED)
+        except DjangoValidationError as exc:
+            return _validation_error_response(exc)
+        return Response(
+            self.get_serializer(deliverable).data, status=status.HTTP_201_CREATED,
+        )
 
-
-class JobDeliverableDetailView(APIView):
-    """GET / PATCH / DELETE /api/jobs/<id>/deliverables/<did>/"""
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [IsAuthenticated()]
-        return [IsAuthenticated(), CanManageJobs()]
-
-    def _get(self, job_id, deliverable_id):
+    def partial_update(self, request, *args, **kwargs):
+        deliverable = self.get_object()
         try:
-            return Deliverable.objects.get(pk=deliverable_id, job_id=job_id)
-        except Deliverable.DoesNotExist:
-            return None
+            deliverable = DeliverableService.update(
+                deliverable=deliverable, **(request.data or {}),
+            )
+        except DjangoValidationError as exc:
+            return _validation_error_response(exc)
+        return Response(self.get_serializer(deliverable).data)
 
-    def get(self, request, job_id, deliverable_id):
-        d = self._get(job_id, deliverable_id)
-        if d is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(DeliverableSerializer(d).data)
-
-    def patch(self, request, job_id, deliverable_id):
-        d = self._get(job_id, deliverable_id)
-        if d is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    def destroy(self, request, *args, **kwargs):
+        deliverable = self.get_object()
         try:
-            d = DeliverableService.update(deliverable=d, **(request.data or {}))
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response(DeliverableSerializer(d).data)
+            DeliverableService.delete(deliverable=deliverable)
+        except DjangoValidationError as exc:
+            return _validation_error_response(exc)
+        return Response({'message': self.destroy_response_message})
 
-    def delete(self, request, job_id, deliverable_id):
-        d = self._get(job_id, deliverable_id)
-        if d is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        try:
-            DeliverableService.delete(deliverable=d)
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response({'message': 'Deliverable deleted.'})
-
-
-class JobDeliverablesReorderView(APIView):
-    permission_classes = [IsAuthenticated, CanManageJobs]
-
-    def post(self, request, job_id):
-        from apps.jobs.models import Job
-        try:
-            job = Job.objects.get(pk=job_id)
-        except Job.DoesNotExist:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    def reorder(self, request, *args, **kwargs):
+        job = self._get_job_or_404()
         ordered_ids = (request.data or {}).get('ordered_ids', [])
         if not isinstance(ordered_ids, list) or not ordered_ids:
             return Response(
@@ -113,188 +104,124 @@ class JobDeliverablesReorderView(APIView):
             )
         try:
             result = DeliverableService.reorder(job=job, ordered_ids=ordered_ids)
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response(DeliverableSerializer(result, many=True).data)
+        except DjangoValidationError as exc:
+            return _validation_error_response(exc)
+        return Response(self.get_serializer(result, many=True).data)
 
-
-class JobDeliverablesEditabilityView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, job_id):
-        from apps.jobs.models import Job
-        try:
-            job = Job.objects.get(pk=job_id)
-        except Job.DoesNotExist:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    def editability(self, request, *args, **kwargs):
+        job = self._get_job_or_404()
         return Response({
             'editable': DeliverableService.is_editable(job),
             'reason': DeliverableService.editability_reason(job),
         })
 
 
-# --- Shipments ---
+class ShipmentViewSet(StatusTransitionMixin, JSONDestroyMixin, ModelViewSet):
+    """Flat CRUD for Shipment + nested items; logic lives in ShipmentService.
 
+    Pick-up is registered as a status transition via StatusTransitionMixin.
+    """
 
-class JobShipmentsCreateView(APIView):
-    """POST /api/jobs/<id>/shipments/"""
-
+    serializer_class = ShipmentSerializer
     permission_classes = [IsAuthenticated]
+    destroy_response_message = 'Shipment deleted.'
 
-    def post(self, request, job_id):
+    status_actions = {
+        'pick-up': {'service': ShipmentService.mark_picked_up},
+    }
+
+    def get_queryset(self):
+        return Shipment.objects.all().select_related('job').prefetch_related('items')
+
+    def get_object(self):
         try:
-            shipment = ShipmentService.create(job_id=job_id)
-        except NotFoundError:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response(ShipmentSerializer(shipment).data, status=status.HTTP_201_CREATED)
+            return self.get_queryset().get(pk=self.kwargs['pk'])
+        except Shipment.DoesNotExist:
+            raise NotFound()
 
-
-class ShipmentsListView(APIView):
-    """GET /api/shipments/?job=<id>"""
-
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        qs = Shipment.objects.all().select_related('job').prefetch_related('items')
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
         job_id = request.query_params.get('job')
         if job_id:
             qs = qs.filter(job_id=job_id)
-        serializer = ShipmentSerializer(qs, many=True)
-        return Response({'results': serializer.data})
+        return Response({'results': self.get_serializer(qs, many=True).data})
 
+    def retrieve(self, request, *args, **kwargs):
+        return Response(self.get_serializer(self.get_object()).data)
 
-class ShipmentDetailView(APIView):
-    """GET / PATCH / DELETE /api/shipments/<id>/"""
-
-    permission_classes = [IsAuthenticated]
-
-    def _get(self, shipment_id):
+    def create_for_job(self, request, *args, **kwargs):
         try:
-            return Shipment.objects.get(pk=shipment_id)
-        except Shipment.DoesNotExist:
-            return None
-
-    def get(self, request, shipment_id):
-        s = self._get(shipment_id)
-        if s is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(ShipmentSerializer(s).data)
-
-    def patch(self, request, shipment_id):
-        s = self._get(shipment_id)
-        if s is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        try:
-            s = ShipmentService.update(shipment=s, **(request.data or {}))
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response(ShipmentSerializer(s).data)
-
-    def delete(self, request, shipment_id):
-        s = self._get(shipment_id)
-        if s is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        try:
-            ShipmentService.delete(shipment=s)
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response({'message': 'Shipment deleted.'})
-
-
-class ShipmentPickUpView(APIView):
-    """POST /api/shipments/<id>/pick-up/"""
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, shipment_id):
-        try:
-            s = ShipmentService.mark_picked_up(shipment_id)
+            shipment = ShipmentService.create(job_id=self.kwargs['job_id'])
         except NotFoundError:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response(ShipmentSerializer(s).data)
+        except DjangoValidationError as exc:
+            return _validation_error_response(exc)
+        return Response(
+            self.get_serializer(shipment).data, status=status.HTTP_201_CREATED,
+        )
 
-
-class ShipmentItemsView(APIView):
-    """GET + POST /api/shipments/<id>/items/"""
-
-    permission_classes = [IsAuthenticated]
-
-    def _get_shipment(self, shipment_id):
+    def partial_update(self, request, *args, **kwargs):
+        shipment = self.get_object()
         try:
-            return Shipment.objects.get(pk=shipment_id)
-        except Shipment.DoesNotExist:
-            return None
+            shipment = ShipmentService.update(shipment=shipment, **(request.data or {}))
+        except DjangoValidationError as exc:
+            return _validation_error_response(exc)
+        return Response(self.get_serializer(shipment).data)
 
-    def get(self, request, shipment_id):
-        s = self._get_shipment(shipment_id)
-        if s is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        qs = s.items.all().select_related('deliverable').order_by('deliverable__sort_order')
-        return Response(ShipmentItemSerializer(qs, many=True).data)
+    def destroy(self, request, *args, **kwargs):
+        shipment = self.get_object()
+        try:
+            ShipmentService.delete(shipment=shipment)
+        except DjangoValidationError as exc:
+            return _validation_error_response(exc)
+        return Response({'message': self.destroy_response_message})
 
-    def post(self, request, shipment_id):
-        s = self._get_shipment(shipment_id)
-        if s is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    def items(self, request, *args, **kwargs):
+        shipment = self.get_object()
+        if request.method == 'GET':
+            qs = shipment.items.all().select_related('deliverable').order_by(
+                'deliverable__sort_order',
+            )
+            return Response(ShipmentItemSerializer(qs, many=True).data)
         data = request.data or {}
         try:
             item = ShipmentService.add_item(
-                shipment=s,
+                shipment=shipment,
                 deliverable_id=data.get('deliverable'),
                 qty=data.get('qty'),
             )
         except NotFoundError:
-            return Response({'detail': 'Deliverable not found.'}, status=status.HTTP_400_BAD_REQUEST)
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response(ShipmentItemSerializer(item).data, status=status.HTTP_201_CREATED)
+            return Response(
+                {'detail': 'Deliverable not found.'}, status=status.HTTP_400_BAD_REQUEST,
+            )
+        except DjangoValidationError as exc:
+            return _validation_error_response(exc)
+        return Response(
+            ShipmentItemSerializer(item).data, status=status.HTTP_201_CREATED,
+        )
 
-
-class ShipmentItemDetailView(APIView):
-    """PATCH + DELETE /api/shipments/<id>/items/<iid>/"""
-
-    permission_classes = [IsAuthenticated]
-
-    def _get(self, shipment_id, item_id):
+    def item_detail(self, request, *args, **kwargs):
+        shipment = self.get_object()
         try:
-            return ShipmentItem.objects.get(pk=item_id, shipment_id=shipment_id)
+            item = ShipmentItem.objects.get(
+                pk=self.kwargs['item_id'], shipment=shipment,
+            )
         except ShipmentItem.DoesNotExist:
-            return None
-
-    def patch(self, request, shipment_id, item_id):
-        item = self._get(shipment_id, item_id)
-        if item is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+            raise NotFound()
+        if request.method == 'DELETE':
+            try:
+                ShipmentService.remove_item(item=item)
+            except DjangoValidationError as exc:
+                return _validation_error_response(exc)
+            return Response({'message': 'Item deleted.'})
         try:
-            item = ShipmentService.update_item(item=item, qty=(request.data or {}).get('qty'))
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
+            item = ShipmentService.update_item(
+                item=item, qty=(request.data or {}).get('qty'),
+            )
+        except DjangoValidationError as exc:
+            return _validation_error_response(exc)
         return Response(ShipmentItemSerializer(item).data)
 
-    def delete(self, request, shipment_id, item_id):
-        item = self._get(shipment_id, item_id)
-        if item is None:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        try:
-            ShipmentService.remove_item(item=item)
-        except DjangoValidationError as e:
-            return _validation_error_response(e)
-        return Response({'message': 'Item deleted.'})
-
-
-class ShipmentPackingListView(APIView):
-    """GET /api/shipments/<id>/packing-list/"""
-
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, shipment_id):
-        try:
-            s = Shipment.objects.select_related('job').get(pk=shipment_id)
-        except Shipment.DoesNotExist:
-            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        payload = ShipmentService.packing_list_payload(s)
-        return Response(payload)
+    def packing_list(self, request, *args, **kwargs):
+        shipment = self.get_object()
+        return Response(ShipmentService.packing_list_payload(shipment))

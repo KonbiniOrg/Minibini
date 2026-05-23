@@ -324,8 +324,7 @@ class ScheduleService:
 
         `window_start` / `window_end` bound the visible horizon; completed
         tasks are included when a blep ended inside that window. See
-        docs/plans/2026-05-19-schedule-view-design.md §4 for the algorithm
-        contract.
+        docs/designs/schedule.md §3 for the algorithm contract.
         """
         from apps.jobs.models import Task, Blep
 

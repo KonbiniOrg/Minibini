@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import UnitsSelect from '../UnitsSelect.svelte';
 
   let { jobId, onClose } = $props();
 
@@ -143,7 +144,7 @@
               </td>
               <td><input bind:value={r.description} oninput={() => dirty = true} /></td>
               <td><input bind:value={r.qty_ordered} oninput={() => dirty = true} style="width: 5em" /></td>
-              <td><input bind:value={r.units} oninput={() => dirty = true} style="width: 5em" /></td>
+              <td><UnitsSelect bind:value={r.units} onchange={() => dirty = true} /></td>
               <td><button type="button" onclick={() => deleteRow(r)}>Delete</button></td>
             </tr>
           {/each}

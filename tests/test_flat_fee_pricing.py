@@ -3,7 +3,7 @@
 flat_fee billing now means "fixed unit price x estimated quantity". The unit
 price rides on the atom (TaskTemplate -> PlanTask -> Task) in the
 active_modifiers JSON field as {'flat_fee_price': <str>}; the RateScheme.rate
-is only a fallback. See docs/plans/2026-05-17-flat-fee-pricing-design.md.
+is only a fallback. See docs/designs/estimates-and-prices.md.
 """
 from decimal import Decimal
 from django.test import TestCase

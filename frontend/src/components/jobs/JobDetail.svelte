@@ -97,6 +97,7 @@
   // Shipments are managed on the dedicated Job Shipments page. Only count
   // is shown here for at-a-glance information on the accordion pillar.
   let shipmentCount = $state(0);
+  let hasOutstandingDeliverables = $state(false);
 
   async function refreshShipmentCount() {
     try {
@@ -108,8 +109,20 @@
     }
   }
 
+  async function refreshDeliverableFulfillment() {
+    try {
+      const items = await api.get(`/api/jobs/${job.job_id}/deliverables/`);
+      hasOutstandingDeliverables = (items || []).some(d => Number(d.qty_remaining) > 0);
+    } catch {
+      hasOutstandingDeliverables = false;
+    }
+  }
+
   $effect(() => {
-    if (job?.job_id) refreshShipmentCount();
+    if (job?.job_id) {
+      refreshShipmentCount();
+      refreshDeliverableFulfillment();
+    }
   });
 
   // Invoice helpers
@@ -205,6 +218,7 @@
     if (job.status === 'work_complete' || job.status === 'completed') {
       if (invoices?.results?.length > 0) return 'invoices';
     }
+    if (shipmentCount > 0 && hasOutstandingDeliverables) return 'shipments';
     if (jobTasks.length > 0) return 'tasks';
     if (estimates?.results?.length > 0) return 'estimates';
     if (worksheets?.results?.length > 0) return 'worksheets';
@@ -575,7 +589,7 @@
                         {/if}
                       </div>
                     {:else if task.scheme_algorithm === 'flat_fee'}
-                      <div class="time-text time-dim">flat fee · {Number(task.actual_hours || 0).toFixed(2)}h logged</div>
+                      <div class="time-text time-dim">flat fee · {Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</div>
                     {:else}
                       <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(2)}h logged</div>
                     {/if}
