@@ -57,8 +57,6 @@ class LoadDayShapeTest(BaseTestCase):
         load_horizon_days()
         self.assertEqual(shape.workday_start, time(8, 0))
         self.assertEqual(shape.workday_end, time(17, 0))
-        self.assertEqual(shape.lunch_start, time(12, 0))
-        self.assertEqual(shape.lunch_end, time(13, 0))
         self.assertEqual(shape.task_buffer_minutes, 10)
         for key in CONFIG_DEFAULTS:
             self.assertTrue(
@@ -228,12 +226,12 @@ class PendingTaskCrossingsTest(BaseTestCase):
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         return data, worker['bars']
 
-    def test_crosses_lunch(self):
+    def test_midday_span_is_one_segment(self):
+        # The workday is continuous (no lunch); a task spanning midday stays
+        # a single segment.
         _, bars = self._setup(120, weekday_target=2, hh=11, mm=0)
         segs = bars[0]['segments']
-        self.assertEqual(len(segs), 2)
-        self.assertTrue(segs[0]['continues_right'])
-        self.assertTrue(segs[1]['continues_left'])
+        self.assertEqual(len(segs), 1)
 
     def test_crosses_overnight(self):
         _, bars = self._setup(180, weekday_target=1, hh=15, mm=0)
@@ -417,6 +415,213 @@ class HistoricalShowsEstimateTest(BaseTestCase):
         est_end = datetime.fromisoformat(seg['est_fill_to'])
         actual_end = datetime.fromisoformat(seg['actual_fill_to'])
         self.assertGreater(actual_end, est_end)
+
+
+class OnBehalfApearsOnScheduleTest(BaseTestCase):
+    """A blep started on a worker's behalf must render in that worker's
+    lane, exactly as a self-started blep would."""
+
+    def _grant_manage_time(self, user):
+        from django.contrib.auth.models import Permission
+        perm = Permission.objects.get(
+            codename='can_manage_time', content_type__app_label='core',
+        )
+        user.user_permissions.add(perm)
+        return User.objects.get(pk=user.pk)
+
+    def test_on_behalf_start_shows_in_target_lane(self):
+        from unittest.mock import patch
+        from apps.jobs.services import TaskLifecycleService
+        worker, task = _seed_user_with_pending_task(
+            est_minutes=120, name='OBsched', username='ob_sched_worker',
+        )
+        # Approve the job so start_work is allowed.
+        job = task.job
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            job.status = s
+            job.save()
+        manager = self._grant_manage_time(
+            User.objects.create_user(username='ob_sched_mgr', password='x')
+        )
+
+        d = date_at_weekday(2)
+        start = local_dt(d, 9, 0)
+        with patch('django.utils.timezone.now', return_value=start):
+            TaskLifecycleService.start_work(task.pk, manager, on_behalf_of=worker)
+
+        later = local_dt(d, 9, 30)
+        data = ScheduleService.get_schedule(now=later)
+        lanes = {w['user']['id']: w for w in data['workers']}
+        self.assertIn(worker.pk, lanes, "worker should have a lane")
+        bars = [b for b in lanes[worker.pk]['bars'] if b['task_id'] == task.pk]
+        self.assertTrue(bars, "on-behalf task should appear in the worker's lane")
+
+
+class FourTaskWorkerWithActiveBlepTest(BaseTestCase):
+    """Reproduce the reported state: a worker assigned 4 tasks — 2 pending,
+    1 completed (closed blep today), 1 in-progress with an open blep started
+    ~15 min ago. All four should appear in the lane."""
+
+    def test_active_assigned_task_appears(self):
+        worker, t_active = _seed_user_with_pending_task(
+            est_minutes=120, name='Active', username='four_worker',
+        )
+        job = t_active.job
+        rs = RateScheme.objects.first()
+        t_done = Task.objects.create(
+            job=job, assignee=worker, rate_scheme=rs, name='Done',
+            est_worker_time=timedelta(minutes=60), worker_queue=2,
+            status=Task.STATUS_COMPLETE,
+        )
+        t_p1 = Task.objects.create(
+            job=job, assignee=worker, rate_scheme=rs, name='P1',
+            est_worker_time=timedelta(minutes=60), worker_queue=3,
+            status=Task.STATUS_PENDING,
+        )
+        t_p2 = Task.objects.create(
+            job=job, assignee=worker, rate_scheme=rs, name='P2',
+            est_worker_time=timedelta(minutes=60), worker_queue=4,
+            status=Task.STATUS_PENDING,
+        )
+
+        d = date_at_weekday(2)
+        # Active task: in_progress, open blep started 15 min before "now".
+        Task.objects.filter(pk=t_active.pk).update(status=Task.STATUS_IN_PROGRESS)
+        now = local_dt(d, 14, 0)
+        Blep.objects.create(
+            user=worker, task=t_active,
+            start_time=local_dt(d, 13, 45), end_time=None,
+        )
+        # Completed task: closed blep earlier today (in window).
+        Blep.objects.create(
+            user=worker, task=t_done,
+            start_time=local_dt(d, 9, 0), end_time=local_dt(d, 10, 0),
+        )
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == worker.pk)
+        present = {b['task_id'] for b in lane['bars']}
+        # Build a readable failure message listing what rendered.
+        summary = [(b['task_id'], b['kind'], len(b['segments'])) for b in lane['bars']]
+        self.assertIn(
+            t_active.pk, present,
+            f"active task missing. bars={summary}; "
+            f"active={t_active.pk} done={t_done.pk} p1={t_p1.pk} p2={t_p2.pk}",
+        )
+
+
+class PausedInProgressTaskTest(BaseTestCase):
+    """A task started then abandoned for another (in_progress, only a closed
+    blep) must not stamp a full estimate bar onto its brief past blep — that
+    overlaps the actually-active task. It forecasts the remaining estimate
+    ahead instead, leaving the active task fully visible."""
+
+    def test_paused_task_does_not_overlap_active_task(self):
+        worker, t_active = _seed_user_with_pending_task(
+            est_minutes=60, name='Active', username='paused_worker',
+        )
+        job = t_active.job
+        rs = RateScheme.objects.first()
+        t_paused = Task.objects.create(
+            job=job, assignee=worker, rate_scheme=rs, name='Paused',
+            est_worker_time=timedelta(minutes=60), worker_queue=2,
+            status=Task.STATUS_IN_PROGRESS,
+        )
+        Task.objects.filter(pk=t_active.pk).update(status=Task.STATUS_IN_PROGRESS)
+
+        d = date_at_weekday(2)
+        # Paused: a 34-second closed blep, then the worker switched to active.
+        Blep.objects.create(
+            user=worker, task=t_paused,
+            start_time=local_dt(d, 9, 0),
+            end_time=local_dt(d, 9, 0) + timedelta(seconds=34),
+        )
+        # Active: open blep started right after.
+        Blep.objects.create(
+            user=worker, task=t_active,
+            start_time=local_dt(d, 9, 0) + timedelta(seconds=34), end_time=None,
+        )
+        now = local_dt(d, 9, 30)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == worker.pk)
+
+        active_bar = next(b for b in lane['bars']
+                          if b['task_id'] == t_active.pk and b['kind'] == 'active')
+        # The paused task forecasts AHEAD (a forecast bar), not an active bar
+        # anchored to its past blep.
+        paused_forecast = next(
+            (b for b in lane['bars']
+             if b['task_id'] == t_paused.pk and b['kind'] == 'forecast'), None,
+        )
+        self.assertIsNotNone(paused_forecast, "paused task should forecast ahead")
+        self.assertFalse(
+            any(b['task_id'] == t_paused.pk and b['kind'] == 'active'
+                for b in lane['bars']),
+            "paused task should not render as an active bar",
+        )
+        # The paused forecast starts at/after the active task's end (no overlap).
+        active_end = max(datetime.fromisoformat(s['end'])
+                         for s in active_bar['segments'])
+        forecast_start = datetime.fromisoformat(paused_forecast['segments'][0]['start'])
+        self.assertGreaterEqual(forecast_start, active_end)
+
+
+class OverworkedPausedTaskTest(BaseTestCase):
+    """A worked-past-estimate task that isn't marked complete (in_progress,
+    one closed blep, no remaining) must still show its planned time as the
+    est-vs-actual historical — the overrun must not suppress it."""
+
+    def test_overworked_paused_task_shows_estimate_layer(self):
+        worker, task = _seed_user_with_pending_task(
+            est_minutes=60, name='Overrun', username='overrun_worker',
+        )
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        d = date_at_weekday(2)
+        # Worked 2x the estimate (120 min on a 60-min estimate), then stopped.
+        Blep.objects.create(
+            user=worker, task=task,
+            start_time=local_dt(d, 9, 0), end_time=local_dt(d, 11, 0),
+        )
+        now = local_dt(d, 11, 30)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == worker.pk)
+        bars = [b for b in lane['bars'] if b['task_id'] == task.pk]
+        self.assertTrue(bars, "overworked paused task should still appear")
+        hist = next(b for b in bars if b['kind'] == 'historical')
+        # The estimate (light) layer is present and ends BEFORE the actuals
+        # (dark), i.e. the overrun shows.
+        seg = hist['segments'][0]
+        self.assertIsNotNone(seg['est_fill_to'], "planned time (estimate) should show")
+        est_end = datetime.fromisoformat(seg['est_fill_to'])
+        actual_end = datetime.fromisoformat(seg['actual_fill_to'])
+        self.assertGreater(actual_end, est_end)
+
+
+class FreshNonAssigneeBlepTest(BaseTestCase):
+    """A just-started blep by a NON-assignee (no estimate layer) must still
+    render — without an estimate to extend the bar, a zero-elapsed blep
+    would otherwise collapse to no segments and be invisible."""
+
+    def test_fresh_non_assignee_blep_renders(self):
+        assignee, task = _seed_user_with_pending_task(
+            est_minutes=120, name='FNA', username='fna_assignee',
+        )
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        helper = User.objects.create_user(username='fna_helper', password='x')
+
+        d = date_at_weekday(2)
+        start = local_dt(d, 9, 0)
+        Blep.objects.create(user=helper, task=task, start_time=start, end_time=None)
+
+        # View at the same instant the blep started — zero elapsed.
+        data = ScheduleService.get_schedule(now=start)
+        lanes = {w['user']['id']: w for w in data['workers']}
+        self.assertIn(helper.pk, lanes, "helper should have a lane")
+        bars = [b for b in lanes[helper.pk]['bars'] if b['task_id'] == task.pk]
+        self.assertTrue(bars, "fresh non-assignee blep should render a bar")
+        self.assertTrue(bars[0]['segments'], "bar should have at least one segment")
 
 
 class ConcurrentBlepsTest(BaseTestCase):

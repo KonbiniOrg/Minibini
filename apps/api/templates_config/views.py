@@ -146,11 +146,10 @@ def _validate_schedule_keys(data):
 
     Returns an error dict (suitable for a 400 response) or None if valid.
     Reads any keys present in `data` plus falls back to the current stored
-    values to evaluate cross-key constraints (lunch fits inside workday).
+    values to evaluate cross-key constraints (workday end after start).
     """
     schedule_keys = (
         'schedule_workday_start', 'schedule_workday_end',
-        'schedule_lunch_start', 'schedule_lunch_length_minutes',
         'schedule_task_buffer_minutes', 'schedule_horizon_days',
     )
     incoming = {k: v for k, v in data.items() if k in schedule_keys}
@@ -197,11 +196,6 @@ def _validate_schedule_keys(data):
     if isinstance(wstart, dict): errors['schedule_workday_start'] = wstart['__error__']
     wend = parse_hhmm(current['schedule_workday_end'], 'schedule_workday_end')
     if isinstance(wend, dict): errors['schedule_workday_end'] = wend['__error__']
-    lstart = parse_hhmm(current['schedule_lunch_start'], 'schedule_lunch_start')
-    if isinstance(lstart, dict): errors['schedule_lunch_start'] = lstart['__error__']
-    llen = parse_int(current['schedule_lunch_length_minutes'],
-                     'schedule_lunch_length_minutes', min_v=0)
-    if isinstance(llen, dict): errors['schedule_lunch_length_minutes'] = llen['__error__']
     buf = parse_int(current['schedule_task_buffer_minutes'],
                     'schedule_task_buffer_minutes', min_v=0)
     if isinstance(buf, dict): errors['schedule_task_buffer_minutes'] = buf['__error__']
@@ -215,15 +209,6 @@ def _validate_schedule_keys(data):
     # Cross-key checks (only when all relevant values parse).
     if wstart is not None and wend is not None and wstart >= wend:
         errors['schedule_workday_end'] = 'must be after schedule_workday_start'
-    if (wstart is not None and lstart is not None and llen is not None
-            and wend is not None):
-        lend = lstart + llen
-        if lstart <= wstart:
-            errors['schedule_lunch_start'] = 'must be after schedule_workday_start'
-        if lend >= wend:
-            errors['schedule_lunch_length_minutes'] = (
-                'lunch must end before schedule_workday_end'
-            )
 
     return errors or None
 

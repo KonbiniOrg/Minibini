@@ -26,20 +26,14 @@ Shipped and working:
       complete-with-data-entry / block / unblock / cancel), Reassign via
       `AssignModal`, "Open full task →" link, and ×/Esc/click-outside close.
       Reusable into the job board's task cards with minimal changes.
-- [ ] **Quick-card "Stop Work" acts on the viewer, not the lane worker.**
-      Known quirk (user accepts for now): opening worker B's card and clicking
-      "Stop Work" stops *your own* blep on that task, not B's — `TaskActions`
-      start/stop are self-actions. Same root cause as the on-behalf work
-      below; revisit together if it becomes annoying.
-- [ ] **Clickable bars — Increment B: on-behalf actions.** "Start for
-      \<worker\>" and "Stop \<worker\>'s timer" are disabled placeholders in
-      the card. Both have time-tracking side effects:
-      - Start: must run the `start-work` lifecycle (promote to in_progress,
-        consume materials, mark job work-started, queue-promote) but attribute
-        the blep to the worker → extend `start-work` with an `on_behalf_of`
-        user (gated by `can_manage_time`).
-      - Stop: close the worker's open blep (PATCH via the existing
-        `can_manage_time` blep machinery), but mind any close side effects.
+- [x] **Clickable bars — Increment B: on-behalf actions (DONE).** The card's
+      "Start for \<worker\>" / "Stop \<worker\>'s timer" buttons are live for
+      managers (`can_manage_time`), targeting the lane worker. `start_work` /
+      `stop_work` gained an `on_behalf_of` arg (blep attributed to the target;
+      gated by `can_manage_time`, 403 otherwise). Conflicts during an
+      on-behalf start carry the target through `StartWorkConflictModal`. This
+      also RESOLVED the prior quirk where the card's "Stop Work" only acted on
+      the viewer — managers now have an explicit "Stop \<worker\>'s timer".
 - [ ] **Selecting a job card.** Clicking a job in the top JobChipStrip should
       focus/dim its tasks across lanes (cf. the board's `focusedJobIds`).
 - [ ] **More/fewer days from the page.** A horizon control on the page itself.
@@ -71,9 +65,13 @@ Shipped and working:
 
 - **Mid-stream estimate adjustment** — bump `est_worker_time` on an
   in-progress task without restarting time tracking.
-- **Per-worker lunch times** — lunch is currently global Configuration; make
-  it per-User. Each WorkerLane would compute its own panel stretches; the
-  structural-slot layout already supports this.
+- **Per-worker lunch times** — lunch has been REMOVED entirely from the
+  schedule (the workday is now continuous workday_start→workday_end with only
+  overnight/weekend breaks). It will return as a per-User break: each
+  WorkerLane computes its own gap(s). Reintroducing means re-adding a
+  lunch/break notion to DayShape + calendar_arithmetic (next_workable_moment,
+  add_work_time, segments_for), the ScheduleService response, the frontend
+  panel math (a per-panel split around the break), and the settings UI.
 - **Weekend / holiday config** — Saturdays/Sundays are hardcoded non-working
   in v1; replace with a configurable list + weekly pattern.
 - **User-pickable job colors** — currently auto-assigned; admin-editable only.

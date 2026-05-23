@@ -10,6 +10,7 @@
   let {
     bar,                 // schedule bar: task_id, name, status, accent_color, est_minutes, elapsed_minutes, is_running, job_id
     assigneeName = '',
+    laneWorkerId = null, // user id of the lane this card was opened from (the on-behalf target)
     jobNumber = '',
     jobName = '',
     onClose = () => {},
@@ -20,10 +21,24 @@
   let loading = $state(true);
   let error = $state('');
   let conflict = $state(null);
+  let conflictOnBehalfOf = $state(null);  // target user id when a conflict arose during an on-behalf start
   let assignModalOpen = $state(false);
+  let onBehalfBusy = $state(false);
+  let onBehalfError = $state('');
 
   const userPermissions = $derived($userStore?.permissions || []);
   const canManageJobs = $derived(userPermissions.includes('can_manage_jobs'));
+  const canManageTime = $derived(userPermissions.includes('can_manage_time'));
+
+  // On-behalf actions target the lane worker — shown only to managers, and
+  // never for the viewer's own lane (they use the self actions above).
+  const showOnBehalf = $derived(
+    canManageTime && laneWorkerId != null && laneWorkerId !== $userStore?.id
+  );
+  const canStartForWorker = $derived(
+    !bar.is_running && (bar.status === 'pending' || bar.status === 'in_progress')
+  );
+  const canStopWorker = $derived(bar.is_running);
 
   const activeBlepOnThisTask = $derived.by(() => {
     const cb = $currentBlep;
@@ -55,8 +70,46 @@
   }
 
   function handleConflict(c) { conflict = c; }
-  function handleResolved() { conflict = null; handleActionChanged(); }
-  function handleCancelConflict() { conflict = null; }
+  function handleResolved() {
+    const wasOnBehalf = conflictOnBehalfOf != null;
+    conflict = null; conflictOnBehalfOf = null;
+    handleActionChanged();
+    if (wasOnBehalf) onClose();
+  }
+  function handleCancelConflict() { conflict = null; conflictOnBehalfOf = null; }
+
+  async function startForWorker() {
+    onBehalfBusy = true; onBehalfError = '';
+    try {
+      const resp = await api.post(`/api/tasks/${bar.task_id}/start-work/`,
+        { on_behalf_of: laneWorkerId });
+      if (resp && resp.conflict) {
+        conflictOnBehalfOf = laneWorkerId;
+        conflict = resp;
+      } else {
+        onChanged();
+        onClose();
+      }
+    } catch (e) {
+      onBehalfError = e.message || 'Could not start work.';
+    } finally {
+      onBehalfBusy = false;
+    }
+  }
+
+  async function stopWorkerTimer() {
+    onBehalfBusy = true; onBehalfError = '';
+    try {
+      await api.post(`/api/tasks/${bar.task_id}/stop-work/`,
+        { on_behalf_of: laneWorkerId });
+      onChanged();
+      onClose();
+    } catch (e) {
+      onBehalfError = e.message || 'Could not stop timer.';
+    } finally {
+      onBehalfBusy = false;
+    }
+  }
 
   function onKeydown(e) {
     if (e.key === 'Escape') onClose();
@@ -126,11 +179,21 @@
           {/if}
         </div>
 
-        <div class="section-label">On behalf of {assigneeName || 'worker'} (coming soon)</div>
-        <div class="actions onbehalf">
-          <button type="button" disabled title="Follow-on work">Start for {assigneeName || 'worker'}</button>
-          <button type="button" disabled title="Follow-on work">Stop {assigneeName || 'worker'}'s timer</button>
-        </div>
+        {#if showOnBehalf && (canStartForWorker || canStopWorker)}
+          <div class="section-label">On behalf of {assigneeName || 'worker'}</div>
+          <div class="actions onbehalf">
+            {#if canStopWorker}
+              <button type="button" onclick={stopWorkerTimer} disabled={onBehalfBusy}>
+                Stop {assigneeName || 'worker'}'s timer
+              </button>
+            {:else if canStartForWorker}
+              <button type="button" onclick={startForWorker} disabled={onBehalfBusy}>
+                Start for {assigneeName || 'worker'}
+              </button>
+            {/if}
+          </div>
+          {#if onBehalfError}<p class="error">{onBehalfError}</p>{/if}
+        {/if}
       {/if}
 
       <div class="footer">
@@ -150,6 +213,7 @@
   <StartWorkConflictModal
     {conflict}
     taskId={task.task_id}
+    onBehalfOf={conflictOnBehalfOf}
     onResolved={handleResolved}
     onCancel={handleCancelConflict}
   />
@@ -197,7 +261,9 @@
   .actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .actions.secondary { margin-top: 8px; }
   .actions button { font-size: 12px; padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; color: #1f2937; cursor: pointer; }
-  .actions.onbehalf button { color: #9ca3af; cursor: not-allowed; border-style: dashed; }
+  .actions.onbehalf button { border-color: #c7cdd6; }
+  .actions.onbehalf button:hover:not(:disabled) { background: #f3f4f6; }
+  .actions.onbehalf button:disabled { color: #9ca3af; cursor: not-allowed; }
   .footer { border-top: 1px solid #eee; margin-top: 14px; padding-top: 10px; }
   .footer a { font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 600; }
   .error { color: #b91c1c; font-size: 12px; margin-top: 8px; }

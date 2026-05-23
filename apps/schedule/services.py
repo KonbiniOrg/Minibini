@@ -21,8 +21,6 @@ from apps.schedule.calendar_arithmetic import (
 CONFIG_DEFAULTS = {
     'schedule_workday_start': '08:00',
     'schedule_workday_end': '17:00',
-    'schedule_lunch_start': '12:00',
-    'schedule_lunch_length_minutes': '60',
     'schedule_task_buffer_minutes': '10',
     'schedule_horizon_days': '3',
 }
@@ -43,21 +41,15 @@ def _parse_hhmm(s: str) -> time:
 
 
 def load_day_shape() -> DayShape:
-    """Read the schedule's day shape from Configuration."""
+    """Read the schedule's day shape from Configuration. The workday is
+    continuous (no lunch break — that returns with per-worker lunch)."""
     workday_start = _parse_hhmm(_read_config('schedule_workday_start'))
     workday_end = _parse_hhmm(_read_config('schedule_workday_end'))
-    lunch_start = _parse_hhmm(_read_config('schedule_lunch_start'))
-    lunch_length = int(_read_config('schedule_lunch_length_minutes'))
     buffer_min = int(_read_config('schedule_task_buffer_minutes'))
-
-    lunch_end_minutes = lunch_start.hour * 60 + lunch_start.minute + lunch_length
-    lunch_end = time(lunch_end_minutes // 60, lunch_end_minutes % 60)
 
     return DayShape(
         workday_start=workday_start,
         workday_end=workday_end,
-        lunch_start=lunch_start,
-        lunch_end=lunch_end,
         task_buffer_minutes=buffer_min,
     )
 
@@ -247,8 +239,6 @@ class ScheduleService:
             'day_shape': {
                 'workday_start': display_shape.workday_start.strftime('%H:%M'),
                 'workday_end': display_shape.workday_end.strftime('%H:%M'),
-                'lunch_start': display_shape.lunch_start.strftime('%H:%M'),
-                'lunch_end': display_shape.lunch_end.strftime('%H:%M'),
                 'task_buffer_minutes': display_shape.task_buffer_minutes,
                 'config_workday_start': shape.workday_start.strftime('%H:%M'),
                 'config_workday_end': shape.workday_end.strftime('%H:%M'),
@@ -275,10 +265,13 @@ class ScheduleService:
 
     @staticmethod
     def _extend_shape_for_in_progress(shape, in_progress_tasks, local_now):
-        """Return `shape` widened so its workday covers any in-progress work
-        happening outside configured hours, plus that work's estimate
-        projection. Earliest start floors to the hour; latest end ceils to
-        the hour. Returns `shape` unchanged when nothing extends beyond it."""
+        """Return `shape` widened so its workday covers any work happening
+        RIGHT NOW outside configured hours (an open blep), plus that work's
+        estimate projection. Only currently-running bleps count — a closed
+        blep (even an off-hours one from earlier or another day) does not
+        widen the axis. Earliest start floors to the hour; latest end ceils
+        to the hour. Returns `shape` unchanged when nothing extends beyond
+        it."""
         def floor_hour(t):
             return time(t.hour, 0)
 
@@ -290,20 +283,17 @@ class ScheduleService:
         earliest = shape.workday_start
         latest = shape.workday_end
         for task in in_progress_tasks:
-            bleps = list(task.blep_set.order_by('start_time'))
-            if not bleps:
+            open_bleps = [b for b in task.blep_set.all() if b.end_time is None]
+            if not open_bleps:
                 continue
-            anchor = bleps[0].start_time.astimezone(local_now.tzinfo)
-            last_end = (bleps[-1].end_time or local_now).astimezone(local_now.tzinfo)
-            running_end = local_now if bleps[-1].end_time is None else last_end
+            anchor = min(b.start_time for b in open_bleps).astimezone(local_now.tzinfo)
             est = task.est_worker_time or timedelta(0)
             proj_end = anchor + est  # wall-clock approximation for the bound
 
             if anchor.time() < earliest:
                 earliest = anchor.time()
-            for cand in (last_end, running_end):
-                if cand.time() > latest:
-                    latest = cand.time()
+            if local_now.time() > latest:
+                latest = local_now.time()
             # Only let the estimate extend the day when it stays on anchor's
             # date (avoid a huge est wrapping past midnight from blowing up
             # the axis).
@@ -422,13 +412,15 @@ class ScheduleService:
             # The estimate belongs to the assignee's plan — a non-assignee
             # helping out shows only their actual work, no estimate layer.
             is_assignee = task.assignee_id == worker.pk
+            has_open_blep = any(b.end_time is None for b in bleps)
             if task.status == Task.STATUS_PENDING:
                 cursor = max(cursor, now_floor)  # never forecast before now
                 bars.extend(ScheduleService._emit_forecast(task, cursor, shape))
                 cursor = ScheduleService._advance_cursor_after_forecast(
                     cursor, task, shape,
                 )
-            elif task.status == Task.STATUS_IN_PROGRESS and bleps:
+            elif task.status == Task.STATUS_IN_PROGRESS and has_open_blep:
+                # Actively being worked — anchor to the open blep.
                 active_bars, new_cursor = ScheduleService._emit_active(
                     task, bleps, local_now, cursor, display_shape, shape,
                     show_est=is_assignee,
@@ -436,7 +428,40 @@ class ScheduleService:
                 bars.extend(active_bars)
                 if new_cursor is not None and new_cursor > cursor:
                     cursor = new_cursor
+            elif task.status == Task.STATUS_IN_PROGRESS and bleps:
+                # In progress but paused: the worker started it, then moved on
+                # (no open blep).
+                elapsed = ScheduleService._elapsed_worktime(bleps, local_now, shape)
+                est = task.est_worker_time or timedelta(0)
+                remaining = est - elapsed
+                if remaining > timedelta(0):
+                    # Under-worked: show only the actuals (no forward estimate
+                    # projection — that would overlap the active task at the
+                    # same clock position) and forecast the REMAINING estimate
+                    # in the queue ahead. The estimate lives on the forecast.
+                    hist_bars, _ignored = ScheduleService._emit_historical(
+                        task, bleps, local_now, display_shape, shape, show_est=False,
+                    )
+                    bars.extend(hist_bars)
+                    cursor = max(cursor, now_floor)
+                    bars.extend(ScheduleService._emit_forecast(
+                        task, cursor, shape, duration=remaining,
+                    ))
+                    cursor = ScheduleService._advance_cursor_after_forecast(
+                        cursor, task, shape, duration=remaining,
+                    )
+                else:
+                    # Over-worked (or exactly met): the estimate fits inside
+                    # the actual span, so the est-vs-actual historical doesn't
+                    # project beyond the work — no overlap. Show planned (light)
+                    # vs overrun (dark); nothing left to forecast.
+                    hist_bars, _ignored = ScheduleService._emit_historical(
+                        task, bleps, local_now, display_shape, shape,
+                        show_est=is_assignee,
+                    )
+                    bars.extend(hist_bars)
             elif task.status == Task.STATUS_IN_PROGRESS:
+                # In progress, no bleps from this worker → plain forecast.
                 cursor = max(cursor, now_floor)  # never forecast before now
                 bars.extend(ScheduleService._emit_forecast(task, cursor, shape))
                 cursor = ScheduleService._advance_cursor_after_forecast(
@@ -466,8 +491,20 @@ class ScheduleService:
         return bars
 
     @staticmethod
-    def _emit_forecast(task, cursor, shape):
-        est = task.est_worker_time
+    def _elapsed_worktime(bleps, local_now, shape):
+        """Total work-time the worker has logged across `bleps`."""
+        total = timedelta(0)
+        for b in bleps:
+            bs = b.start_time.astimezone(local_now.tzinfo)
+            be = (b.end_time or local_now).astimezone(local_now.tzinfo)
+            total += timedelta(minutes=work_minutes_between(bs, be, shape))
+        return total
+
+    @staticmethod
+    def _emit_forecast(task, cursor, shape, duration=None):
+        """Forecast bar from `cursor`. `duration` overrides the task's full
+        estimate (used to forecast the REMAINING time on a paused task)."""
+        est = duration if duration is not None else task.est_worker_time
         if not est or est <= timedelta(0):
             return []
         start = next_workable_moment(cursor, shape)
@@ -480,8 +517,10 @@ class ScheduleService:
         )]
 
     @staticmethod
-    def _advance_cursor_after_forecast(cursor, task, shape):
-        est = task.est_worker_time or timedelta(0)
+    def _advance_cursor_after_forecast(cursor, task, shape, duration=None):
+        est = duration if duration is not None else (task.est_worker_time or timedelta(0))
+        if est is None:
+            est = timedelta(0)
         start = next_workable_moment(cursor, shape)
         end = add_work_time(start, est, shape)
         buf = timedelta(minutes=shape.task_buffer_minutes)
@@ -515,13 +554,29 @@ class ScheduleService:
             b_end = (b.end_time or local_now).astimezone(local_now.tzinfo)
             elapsed_minutes += work_minutes_between(b_start, b_end, pshape)
 
-        effective_end = dark_end_clock if est_layer_end is None else max(est_layer_end, dark_end_clock)
+        # A running blep with no estimate layer (a non-assignee's bar) is
+        # only as wide as the elapsed actual time, so it's invisible the
+        # instant it starts (e.g. a manager just started it on someone's
+        # behalf). Floor its dark layer to a minimum visible duration; once
+        # real elapsed exceeds the floor this no-ops. The estimate-bearing
+        # (assignee) bar is already wide enough, so it's left exact.
+        MIN_RUNNING = timedelta(minutes=15)
+        dark_render_end = dark_end_clock
+        if is_running and est_layer_end is None:
+            dark_render_end = max(
+                dark_end_clock, add_work_time(anchor_start, MIN_RUNNING, pshape),
+            )
+
+        if est_layer_end is None:
+            effective_end = dark_render_end
+        else:
+            effective_end = max(est_layer_end, dark_end_clock)
         segments = segments_for(anchor_start, effective_end, pshape)
 
         bar = ScheduleService._build_bar(
             task=task, kind='active', segments=segments,
             elapsed_minutes=elapsed_minutes, is_running=is_running,
-            est_layer_end=est_layer_end, actual_layer_end=dark_end_clock,
+            est_layer_end=est_layer_end, actual_layer_end=dark_render_end,
         )
         buf = timedelta(minutes=sshape.task_buffer_minutes)
         new_cursor = next_workable_moment(effective_end + buf, sshape)

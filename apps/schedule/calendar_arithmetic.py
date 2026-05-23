@@ -15,8 +15,6 @@ from django.utils import timezone as _tz
 class DayShape:
     workday_start: time
     workday_end: time
-    lunch_start: time
-    lunch_end: time
     task_buffer_minutes: int
 
     @classmethod
@@ -24,8 +22,6 @@ class DayShape:
         return cls(
             workday_start=time(8, 0),
             workday_end=time(17, 0),
-            lunch_start=time(12, 0),
-            lunch_end=time(13, 0),
             task_buffer_minutes=10,
         )
 
@@ -65,17 +61,12 @@ def workday_end_on(d: date, shape: DayShape) -> datetime:
     return _combine_local(d, shape.workday_end)
 
 
-def lunch_window_on(d: date, shape: DayShape) -> tuple:
-    return (
-        _combine_local(d, shape.lunch_start),
-        _combine_local(d, shape.lunch_end),
-    )
-
-
 def next_workable_moment(dt: datetime, shape: DayShape) -> datetime:
     """Return the next moment at or after `dt` when work is allowed.
 
-    Skips: weekends, time before workday_start, time after workday_end, lunch.
+    Skips: weekends, time before workday_start, time after workday_end. The
+    workday is continuous (no lunch break — that returns with per-worker
+    lunch later).
     """
     while True:
         d = dt.date()
@@ -88,7 +79,6 @@ def next_workable_moment(dt: datetime, shape: DayShape) -> datetime:
 
         wd_start = workday_start_on(d, shape)
         wd_end = workday_end_on(d, shape)
-        lunch_a, lunch_b = lunch_window_on(d, shape)
 
         if dt < wd_start:
             dt = wd_start
@@ -98,9 +88,6 @@ def next_workable_moment(dt: datetime, shape: DayShape) -> datetime:
             while not is_working_day(next_d):
                 next_d += timedelta(days=1)
             dt = workday_start_on(next_d, shape)
-            continue
-        if lunch_a <= dt < lunch_b:
-            dt = lunch_b
             continue
         return dt
 
@@ -119,31 +106,24 @@ def add_work_time(
     while remaining > timedelta(0):
         d = cursor.date()
         wd_end = workday_end_on(d, shape)
-        lunch_a, lunch_b = lunch_window_on(d, shape)
 
-        # How much work time is available in this stretch (before lunch or
-        # before EOD, whichever comes first)?
-        if cursor < lunch_a:
-            stretch_end = lunch_a
-        else:
-            stretch_end = wd_end
-
-        available = stretch_end - cursor
+        # Work time available before end of day (continuous workday).
+        available = wd_end - cursor
         if remaining <= available:
             return cursor + remaining
 
         remaining -= available
-        cursor = next_workable_moment(stretch_end, shape)
+        cursor = next_workable_moment(wd_end, shape)
     return cursor
 
 
 def segments_for(
     start: datetime, end: datetime, shape: DayShape,
 ) -> list:
-    """Split [start, end] at every lunch / overnight / non-working boundary.
+    """Split [start, end] at every overnight / non-working boundary.
 
     Returns a list of (seg_start, seg_end) tuples, each within a single
-    working stretch. Returns [] if start >= end.
+    working day. Returns [] if start >= end.
     """
     if start >= end:
         return []
@@ -152,20 +132,14 @@ def segments_for(
     while cursor < end:
         d = cursor.date()
         wd_end = workday_end_on(d, shape)
-        lunch_a, lunch_b = lunch_window_on(d, shape)
 
-        if cursor < lunch_a:
-            stretch_end = lunch_a
-        else:
-            stretch_end = wd_end
-
-        seg_end = min(end, stretch_end)
+        seg_end = min(end, wd_end)
         if seg_end > cursor:
             segments.append((cursor, seg_end))
 
         if seg_end >= end:
             break
-        cursor = next_workable_moment(stretch_end, shape)
+        cursor = next_workable_moment(wd_end, shape)
     return segments
 
 

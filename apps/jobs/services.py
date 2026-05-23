@@ -723,17 +723,27 @@ class TaskLifecycleService:
             Task.objects.filter(pk=other_pk).exclude(worker_queue=i).update(worker_queue=i)
 
     @staticmethod
-    def start_work(task_pk, user, action=None):
-        """Create a Blep for `user` on the given task.
+    def start_work(task_pk, user, action=None, on_behalf_of=None):
+        """Create a Blep on the given task.
 
+        - The blep is attributed to `target` = `on_behalf_of or user`. When
+          `on_behalf_of` differs from `user`, the actor (`user`) must hold
+          can_manage_time — a manager starting a worker's timer as a
+          convenience.
         - If the task is pending, promotes it to in_progress and consumes
-          materials (first worker to start the task).
+          materials (first worker to start the task), assigning the target.
         - If already in_progress, handles multi-worker conflicts via
-          `action='join'` or `action='takeover'`.
+          `action='join'` or `action='takeover'` (evaluated against workers
+          other than the target).
         - Promotes the task to position 1 in the assignee's worker_queue
           so the schedule view stays consistent with reality.
         - Rejects worksheet tasks and terminal statuses.
         """
+        target = on_behalf_of or user
+        if target != user and not _has_manage_time(user):
+            raise BlepPermissionError(
+                "Starting work for another user requires can_manage_time."
+            )
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             # Post-split: task is always a Task (work-order side); no container check needed.
@@ -753,20 +763,20 @@ class TaskLifecycleService:
                 # First worker on a pending task: promote (which consumes the
                 # task's materials) and assign. No conflict possible — nobody
                 # has touched it yet.
-                BlepService._close_open(user=user, now=now)
+                BlepService._close_open(user=target, now=now)
                 TaskLifecycleService._promote_pending_task(task)
                 if not task.assignee_id:
-                    Task.objects.filter(pk=task.pk).update(assignee=user)
-                    task.assignee = user
-                blep = BlepService._create(task, user, start_time=now)
+                    Task.objects.filter(pk=task.pk).update(assignee=target)
+                    task.assignee = target
+                blep = BlepService._create(task, target, start_time=now)
                 JobService.mark_work_started(task.job)
                 TaskLifecycleService._promote_to_front_of_worker_queue(task)
                 return {'task': task, 'blep': blep}
 
-            # Task is in_progress: check for other active workers.
+            # Task is in_progress: check for active workers other than target.
             other_bleps = Blep.objects.filter(
                 task=task, end_time__isnull=True
-            ).exclude(user=user)
+            ).exclude(user=target)
             if other_bleps.exists() and action is None:
                 b = other_bleps.first()
                 return {
@@ -779,21 +789,31 @@ class TaskLifecycleService:
                     'started_at': b.start_time,
                     'options': ['join', 'takeover'],
                 }
-            # Close user's open Blep on ANY task
-            BlepService._close_open(user=user, now=now)
+            # Close target's open Blep on ANY task
+            BlepService._close_open(user=target, now=now)
             if action == 'takeover':
                 other_bleps.update(end_time=now)
-            blep = BlepService._create(task, user, start_time=now)
+            blep = BlepService._create(task, target, start_time=now)
             JobService.mark_work_started(task.job)
             TaskLifecycleService._promote_to_front_of_worker_queue(task)
             return {'task': task, 'blep': blep}
 
     @staticmethod
-    def stop_work(task_pk, user):
-        """Close user's open Blep on this task."""
+    def stop_work(task_pk, user, on_behalf_of=None):
+        """Close the target's open Blep on this task.
+
+        `target` = `on_behalf_of or user`. Stopping another user's timer
+        (e.g. a worker who left and forgot to clock out) requires the actor
+        (`user`) to hold can_manage_time.
+        """
+        target = on_behalf_of or user
+        if target != user and not _has_manage_time(user):
+            raise BlepPermissionError(
+                "Stopping another user's timer requires can_manage_time."
+            )
         with transaction.atomic():
             task = Task.objects.get(pk=task_pk)
-            closed = BlepService._close_open(user=user, task=task)
+            closed = BlepService._close_open(user=target, task=task)
             if not closed:
                 raise ValidationError(
                     "No open time entry found for this user on this task."

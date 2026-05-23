@@ -5,6 +5,7 @@
   let {
     conflict = null,
     taskId,
+    onBehalfOf = null,   // user id when resolving a conflict on a worker's behalf
     onResolved = () => {},
     onCancel = () => {},
   } = $props();
@@ -16,7 +17,9 @@
     busy = true;
     error = '';
     try {
-      await api.post(`/api/tasks/${taskId}/start-work/`, { action });
+      const body = { action };
+      if (onBehalfOf) body.on_behalf_of = onBehalfOf;
+      await api.post(`/api/tasks/${taskId}/start-work/`, body);
       await refreshCurrentBlep();
       onResolved();
     } catch (e) {

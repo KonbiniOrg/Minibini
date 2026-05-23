@@ -3,8 +3,6 @@
 
   let workday_start = $state('08:00');
   let workday_end = $state('17:00');
-  let lunch_start = $state('12:00');
-  let lunch_length_minutes = $state('60');
   let task_buffer_minutes = $state('10');
   let horizon_days = $state('3');
   let saveMessage = $state('');
@@ -15,8 +13,6 @@
       const data = await api.get('/api/settings/');
       workday_start = data.schedule_workday_start ?? '08:00';
       workday_end = data.schedule_workday_end ?? '17:00';
-      lunch_start = data.schedule_lunch_start ?? '12:00';
-      lunch_length_minutes = data.schedule_lunch_length_minutes ?? '60';
       task_buffer_minutes = data.schedule_task_buffer_minutes ?? '10';
       horizon_days = data.schedule_horizon_days ?? '3';
     } catch (_) {}
@@ -29,8 +25,6 @@
       await api.patch('/api/settings/', {
         schedule_workday_start: workday_start,
         schedule_workday_end: workday_end,
-        schedule_lunch_start: lunch_start,
-        schedule_lunch_length_minutes: lunch_length_minutes,
         schedule_task_buffer_minutes: task_buffer_minutes,
         schedule_horizon_days: horizon_days,
       });
@@ -48,8 +42,8 @@
 </script>
 
 <h3>Schedule</h3>
-<p>Controls the layout of the /schedule view: working hours, lunch break,
-buffer between tasks, and the default rolling-day horizon.</p>
+<p>Controls the layout of the /schedule view: working hours, buffer between
+tasks, and the default rolling-day horizon.</p>
 
 <fieldset>
   <legend><strong>Working day</strong></legend>
@@ -60,18 +54,6 @@ buffer between tasks, and the default rolling-day horizon.</p>
   <p><label><strong>Work day end</strong></label><br>
     <input type="time" bind:value={workday_end}>
     {#if errors.schedule_workday_end}<em class="err">{errors.schedule_workday_end}</em>{/if}
-  </p>
-</fieldset>
-
-<fieldset>
-  <legend><strong>Lunch</strong></legend>
-  <p><label><strong>Lunch start</strong></label><br>
-    <input type="time" bind:value={lunch_start}>
-    {#if errors.schedule_lunch_start}<em class="err">{errors.schedule_lunch_start}</em>{/if}
-  </p>
-  <p><label><strong>Lunch length (minutes)</strong></label><br>
-    <input type="number" min="0" bind:value={lunch_length_minutes}>
-    {#if errors.schedule_lunch_length_minutes}<em class="err">{errors.schedule_lunch_length_minutes}</em>{/if}
   </p>
 </fieldset>
 

@@ -45,7 +45,7 @@
     e.dataTransfer.effectAllowed = 'move';
     // Build a small custom chip as the drag image so the ghost is always
     // a clean rectangle. Using e.currentTarget directly let some browsers
-    // capture a wider region including neighboring bars or the lunch band.
+    // capture a wider region including neighboring bars or gap bands.
     const ghost = document.createElement('div');
     ghost.textContent = bar.name;
     ghost.style.cssText = `

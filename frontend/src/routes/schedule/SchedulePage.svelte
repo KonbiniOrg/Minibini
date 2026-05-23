@@ -17,14 +17,17 @@
   // Selected task for the quick-card popout.
   let selectedBar = $state(null);
   let selectedAssignee = $state('');
+  let selectedWorkerId = $state(null);
 
   function handleSelectTask(bar, worker) {
     selectedBar = bar;
     selectedAssignee = worker?.user?.name || '';
+    selectedWorkerId = worker?.user?.id ?? null;
   }
   function closeCard() {
     selectedBar = null;
     selectedAssignee = '';
+    selectedWorkerId = null;
   }
   // Job lookup for the card header (job_number / name).
   let selectedJob = $derived(
@@ -125,12 +128,8 @@
       / Math.max(working, 1));
     const [wsH, wsM] = s.day_shape.workday_start.split(':').map(n => +n);
     const [weH, weM] = s.day_shape.workday_end.split(':').map(n => +n);
-    const [lsH, lsM] = s.day_shape.lunch_start.split(':').map(n => +n);
-    const [leH, leM] = s.day_shape.lunch_end.split(':').map(n => +n);
     const workdayStartMins = wsH * 60 + wsM;
     const workdayEndMins = weH * 60 + weM;
-    const lunchStartMins = lsH * 60 + lsM;
-    const lunchEndMins = leH * 60 + leM;
     const dayMinutes = workdayEndMins - workdayStartMins;
     const serverOffset = isoOffsetMinutes(s.now);
 
@@ -163,32 +162,15 @@
       return { leftPad, rightPad };
     }
 
-    // Lunch gets the same treatment as overnight: its own dedicated slot
-    // inside each working-day panel, with inner padding on each side. The
-    // panel's "workday content" is the morning stretch plus the afternoon
-    // stretch, separated by the lunch slot. Bars only land in the work
-    // stretches; the lunch slot is structurally inaccessible.
-    const LUNCH_GAP_WIDTH = 16;
-    const LUNCH_INNER_PAD = 12;
-    const LUNCH_TOTAL_INSET = LUNCH_GAP_WIDTH + 2 * LUNCH_INNER_PAD;
-    const morningDuration = lunchStartMins - workdayStartMins;
-    const afternoonDuration = workdayEndMins - lunchEndMins;
-    const totalWorkDuration = morningDuration + afternoonDuration;
-
+    // The workday is one continuous region per panel (lunch removed —
+    // returns with per-worker lunch later). Bars land anywhere in this
+    // inset region.
     function panelStretches(p, idx) {
       const { leftPad, rightPad } = workdayInsets(idx);
-      const workdayContent = p.width - leftPad - rightPad - LUNCH_TOTAL_INSET;
-      const morningWidth = workdayContent * (morningDuration / totalWorkDuration);
-      const afternoonWidth = workdayContent * (afternoonDuration / totalWorkDuration);
-      const morningLeft = p.x + leftPad;
-      const morningRight = morningLeft + morningWidth;
-      const lunchLeft = morningRight + LUNCH_INNER_PAD;
-      const lunchRight = lunchLeft + LUNCH_GAP_WIDTH;
-      const afternoonLeft = lunchRight + LUNCH_INNER_PAD;
-      const afternoonRight = afternoonLeft + afternoonWidth;
-      return { morningLeft, morningRight, morningWidth,
-               lunchLeft, lunchRight,
-               afternoonLeft, afternoonRight, afternoonWidth };
+      const workLeft = p.x + leftPad;
+      const workWidth = p.width - leftPad - rightPad;
+      const workRight = workLeft + workWidth;
+      return { workLeft, workRight, workWidth };
     }
 
     // Accepts an ISO string (preferred — server-timezone-aware) or a Date
@@ -205,35 +187,11 @@
       if (!p.is_working) return p.x + p.width / 2;
       const s = panelStretches(p, idx);
       const minutes = isoMinutesOfDay(iso);
-      if (minutes <= workdayStartMins) return s.morningLeft;
-      if (minutes <= lunchStartMins) {
-        const f = (minutes - workdayStartMins) / morningDuration;
-        return s.morningLeft + f * s.morningWidth;
-      }
-      if (minutes < lunchEndMins) {
-        // A time inside the lunch slot — shouldn't happen for bars (the
-        // server splits them around lunch) but handle defensively.
-        return (s.lunchLeft + s.lunchRight) / 2;
-      }
-      if (minutes <= workdayEndMins) {
-        const f = (minutes - lunchEndMins) / afternoonDuration;
-        return s.afternoonLeft + f * s.afternoonWidth;
-      }
-      return s.afternoonRight;
+      if (minutes <= workdayStartMins) return s.workLeft;
+      if (minutes >= workdayEndMins) return s.workRight;
+      const f = (minutes - workdayStartMins) / dayMinutes;
+      return s.workLeft + f * s.workWidth;
     }
-
-    // Lunch bands live in their dedicated slot inside each working panel.
-    const lunchBands = panels
-      .map((p, idx) => ({ p, idx }))
-      .filter(({ p }) => p.is_working)
-      .map(({ p, idx }) => {
-        const s = panelStretches(p, idx);
-        return {
-          date: p.date,
-          left: s.lunchLeft,
-          width: s.lunchRight - s.lunchLeft,
-        };
-      });
 
     // Non-working day columns get the same hatched treatment as overnight.
     const nonWorkingBands = panels
@@ -263,7 +221,7 @@
 
     return {
       panels, chartWidth, timeToX, serverOffset,
-      lunchBands, overnightBands, nonWorkingBands, offHoursBands,
+      overnightBands, nonWorkingBands, offHoursBands,
       start: new Date(s.horizon_start), end: new Date(s.horizon_end),
     };
   }
@@ -337,10 +295,6 @@
               <div class="overnight-band"
                    style="left: {band.left}px; width: {band.width}px;"></div>
             {/each}
-            {#each layout?.lunchBands ?? [] as band (band.date)}
-              <div class="lunch-band"
-                   style="left: {band.left}px; width: {band.width}px;"></div>
-            {/each}
             <NowLine x={nowX} />
           </div>
         </div>
@@ -352,6 +306,7 @@
     <TaskQuickCard
       bar={selectedBar}
       assigneeName={selectedAssignee}
+      laneWorkerId={selectedWorkerId}
       jobNumber={selectedJob?.job_number || ''}
       jobName={selectedJob?.name || ''}
       onClose={closeCard}
@@ -389,17 +344,7 @@
     position: absolute; top: 0; bottom: 0;
     background: #f1f2f4;
   }
-  .lunch-band {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    background-image: repeating-linear-gradient(45deg,
-      rgba(180,180,180,0.45), rgba(180,180,180,0.45) 4px,
-      rgba(238,238,238,0.45) 4px, rgba(238,238,238,0.45) 8px);
-    z-index: 1;
-  }
-  /* Overnight: denser, darker hatching at the day boundary. Reads as a
-     bigger break than lunch even though it's only a sliver of pixels. */
+  /* Overnight: dense, dark hatching at the day boundary. */
   .overnight-band {
     position: absolute;
     top: 0;
