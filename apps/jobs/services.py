@@ -770,7 +770,10 @@ class TaskLifecycleService:
                     task.assignee = target
                 blep = BlepService._create(task, target, start_time=now)
                 JobService.mark_work_started(task.job)
-                TaskLifecycleService._promote_to_front_of_worker_queue(task)
+                # Promote only when the blepper IS the assignee — a
+                # non-assignee is helping and must not reorder the owner's queue.
+                if task.assignee_id == target.pk:
+                    TaskLifecycleService._promote_to_front_of_worker_queue(task)
                 return {'task': task, 'blep': blep}
 
             # Task is in_progress: check for active workers other than target.
@@ -795,7 +798,9 @@ class TaskLifecycleService:
                 other_bleps.update(end_time=now)
             blep = BlepService._create(task, target, start_time=now)
             JobService.mark_work_started(task.job)
-            TaskLifecycleService._promote_to_front_of_worker_queue(task)
+            # Promote only when the blepper IS the assignee (see above).
+            if task.assignee_id == target.pk:
+                TaskLifecycleService._promote_to_front_of_worker_queue(task)
             return {'task': task, 'blep': blep}
 
     @staticmethod

@@ -58,3 +58,26 @@ class BlepStartPromotesQueueTest(BaseTestCase):
             self.assertEqual(
                 Task.objects.get(pk=task.task_id).worker_queue, i,
             )
+
+    def test_non_assignee_blep_leaves_assignee_queue_untouched(self):
+        """A blep by someone who is NOT the assignee is 'helping' — it must
+        not renumber the assignee's queue. Only the assignee's own blep
+        promotes their queue."""
+        helper = User.objects.create_user(username='qhelper', password='x')
+        target = self.tasks[1]  # T2, worker_queue=2, assigned to self.user
+        Task.objects.filter(pk=target.task_id).update(
+            status=Task.STATUS_IN_PROGRESS,
+        )
+
+        TaskLifecycleService.start_work(target.task_id, helper)
+
+        # The assignee's queue is unchanged — no shuffle, T2 still at 2.
+        for i, task in enumerate(self.tasks, start=1):
+            self.assertEqual(
+                Task.objects.get(pk=task.task_id).worker_queue, i,
+                f'T{i} worker_queue should be unchanged by a non-assignee blep',
+            )
+        # The task stays assigned to its owner (helping, not takeover).
+        self.assertEqual(
+            Task.objects.get(pk=target.task_id).assignee_id, self.user.pk,
+        )

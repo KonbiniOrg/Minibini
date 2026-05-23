@@ -4,8 +4,9 @@
 
   let { worker, dayShape, panelLayout, laneLabelWidth = 90, focusedJobIds = [], onSelectTask = () => {} } = $props();
 
-  let primaryBars = $derived(worker.bars.filter(b => b.kind !== 'parked'));
-  let parkedBars = $derived(worker.bars.filter(b => b.kind === 'parked'));
+  // Every bar renders in the single primary band, in queue order. Blocked
+  // tasks are ordinary (styled) forecast bars now — there's no parked strip.
+  let primaryBars = $derived(worker.bars);
 
   // Drop indicator: tracks the x-coordinate of the cursor within this
   // lane's .track while a drag is in progress. Cleared when the cursor
@@ -158,15 +159,6 @@
                  onSelect={(b) => onSelectTask(b, worker)} />
       {/each}
     </div>
-    {#if parkedBars.length > 0}
-      <div class="parked-strip">
-        {#each parkedBars as bar (`${bar.task_id}-parked`)}
-          <TaskBar {bar} {timeToX}
-                   panelStart={panelLayout?.start}
-                   panelEnd={panelLayout?.end} />
-        {/each}
-      </div>
-    {/if}
     {#if indicatorX !== null}
       <div class="drop-indicator" style="left: {indicatorX - 1}px;"></div>
     {/if}
@@ -193,13 +185,12 @@
   .name { font-weight: 600; }
   .track { position: relative; flex: 1; }
   .primary { position: relative; height: 44px; margin-top: 8px; }
-  .parked-strip { position: relative; height: 20px; margin-top: 3px; }
   .drop-indicator {
     position: absolute;
     top: 4px;
     bottom: 4px;
     width: 3px;
-    background: #2563eb;
+    background: #9ca3af;
     border-radius: 2px;
     pointer-events: none;
     z-index: 3;

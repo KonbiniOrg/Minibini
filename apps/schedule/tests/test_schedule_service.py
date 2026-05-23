@@ -354,16 +354,21 @@ class CompletedEarlyTest(BaseTestCase):
 
 
 class BlockedTaskTest(BaseTestCase):
+    """A blocked task is scheduled like any other workable task: a forecast
+    bar sized by its estimate, in worker_queue order, consuming cursor time.
+    The old 'parked' strip is gone — blocked is styled distinct, not set
+    apart in the layout (mirrors the job board)."""
 
-    def test_blocked_task_emits_parked_and_does_not_consume_cursor(self):
-        user, task1 = _seed_user_with_pending_task(est_minutes=60, name='T1 blocked')
-        # pending → in_progress → blocked
-        task1.status = Task.STATUS_IN_PROGRESS; task1.save()
-        task1.status = Task.STATUS_BLOCKED; task1.save()
+    def test_blocked_no_bleps_forecasts_and_consumes_cursor(self):
+        user, blocked = _seed_user_with_pending_task(
+            est_minutes=60, name='Blocked', username='blk_user',
+        )
+        blocked.status = Task.STATUS_IN_PROGRESS; blocked.save()
+        blocked.status = Task.STATUS_BLOCKED; blocked.save()
         rs = RateScheme.objects.first()
-        task2 = Task.objects.create(
-            job=task1.job, assignee=user, rate_scheme=rs,
-            name='T2', est_worker_time=timedelta(minutes=60),
+        after = Task.objects.create(
+            job=blocked.job, assignee=user, rate_scheme=rs,
+            name='After', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
         now = local_dt(date_at_weekday(2), 9, 0)
@@ -371,11 +376,43 @@ class BlockedTaskTest(BaseTestCase):
         data = ScheduleService.get_schedule(now=now)
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         bars_by = {(b['task_id'], b['kind']): b for b in worker['bars']}
-        self.assertIn((task1.pk, 'parked'), bars_by)
-        t2_start = datetime.fromisoformat(
-            bars_by[(task2.pk, 'forecast')]['segments'][0]['start']
+        # Blocked renders as a forecast bar, never a parked marker.
+        self.assertIn((blocked.pk, 'forecast'), bars_by)
+        self.assertFalse(
+            any(k == 'parked' for (_id, k) in bars_by),
+            'no parked bars should exist anymore',
         )
-        self.assertEqual(t2_start, now)
+        # It consumes cursor time: the following pending task starts after it.
+        blocked_end = max(
+            datetime.fromisoformat(s['end'])
+            for s in bars_by[(blocked.pk, 'forecast')]['segments']
+        )
+        after_start = datetime.fromisoformat(
+            bars_by[(after.pk, 'forecast')]['segments'][0]['start']
+        )
+        self.assertGreaterEqual(after_start, blocked_end)
+
+    def test_blocked_with_prior_bleps_shows_historical_plus_remainder(self):
+        # Worked 20 of 60 min, then blocked → past actuals (historical) plus a
+        # forecast of the remaining time, exactly like a paused task.
+        user, blocked = _seed_user_with_pending_task(
+            est_minutes=60, name='BlockedWorked', username='blkw_user',
+        )
+        d = date_at_weekday(2)
+        blocked.status = Task.STATUS_IN_PROGRESS; blocked.save()
+        Blep.objects.create(
+            user=user, task=blocked,
+            start_time=local_dt(d, 9, 0), end_time=local_dt(d, 9, 20),
+        )
+        blocked.status = Task.STATUS_BLOCKED; blocked.save()
+        now = local_dt(d, 10, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        kinds = {b['kind'] for b in worker['bars'] if b['task_id'] == blocked.pk}
+        self.assertIn('historical', kinds)
+        self.assertIn('forecast', kinds)
+        self.assertNotIn('parked', kinds)
 
 
 class HistoricalShowsEstimateTest(BaseTestCase):
@@ -769,3 +806,38 @@ class YesterdayCompletedExcludedTest(BaseTestCase):
         data = ScheduleService.get_schedule(now=now)
         workers = [w for w in data['workers'] if w['user']['id'] == user.pk]
         self.assertEqual(workers, [])
+
+
+class FloatingOrderMatchesQueueTest(BaseTestCase):
+    """Floating bars (pending + in_progress-without-an-open-blep) order by
+    worker_queue alone, mirroring the job board. Status must not reorder
+    them — that was the drag-to-reorder bug."""
+
+    def test_pending_queued_first_forecasts_before_in_progress(self):
+        # Pending at worker_queue=1, in_progress (no blep) at worker_queue=2.
+        # The board would show pending first; the schedule must agree.
+        user, pending = _seed_user_with_pending_task(
+            est_minutes=60, name='PendFirst', username='order_user',
+        )  # _seed sets worker_queue=1, status pending
+        rs = RateScheme.objects.first()
+        in_prog = Task.objects.create(
+            job=pending.job, assignee=user, rate_scheme=rs,
+            name='InProgSecond', est_worker_time=timedelta(minutes=60),
+            worker_queue=2, status=Task.STATUS_IN_PROGRESS,
+        )  # in_progress but NO bleps → a floating forecast bar
+        now = local_dt(date_at_weekday(2), 9, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        bars = {b['task_id']: b for b in worker['bars']}
+        pending_start = datetime.fromisoformat(
+            bars[pending.pk]['segments'][0]['start']
+        )
+        in_prog_start = datetime.fromisoformat(
+            bars[in_prog.pk]['segments'][0]['start']
+        )
+        self.assertLess(
+            pending_start, in_prog_start,
+            'worker_queue=1 (pending) must forecast before worker_queue=2 '
+            '(in_progress); status must not override queue order',
+        )

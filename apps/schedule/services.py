@@ -355,24 +355,32 @@ class ScheduleService:
             pk__in=task_ids,
         ).select_related('job').order_by('worker_queue', 'pk')
 
-        # Process tasks by status group, not strictly by queue position.
-        # Completed tasks anchor in the past, in-progress tasks anchor at
-        # the blep, pending tasks cascade from the cursor. If we process in
-        # raw queue order, an active task at queue=1 (promoted on blep-start)
-        # can be followed by a completed task at queue=2 that snaps the
-        # cursor backward — and the next pending task then forecasts on top
-        # of the active. Sorting by (status_priority, queue, pk) keeps the
-        # cursor moving in time-natural order regardless of queue.
-        STATUS_PRIORITY = {
-            Task.STATUS_COMPLETE:    0,
-            Task.STATUS_IN_PROGRESS: 1,
-            Task.STATUS_PENDING:     2,
-            Task.STATUS_BLOCKED:     3,
-        }
+        # Order by PROCESSING PHASE, then worker_queue, then pk. The phase —
+        # not status — drives the sort so the forecast cursor still moves in
+        # time-natural order (past actuals → live session → future), while all
+        # *workable* tasks share one queue-ordered bucket. That shared bucket
+        # is what lets a pending task and an in-progress-without-an-open-blep
+        # task reorder freely by worker_queue, matching the job board.
+        # Anchored bars (completed actuals, the live session) draw at their
+        # wall-clock times regardless of queue, so processing them first is
+        # what prevents a later forecast landing on top of them — independent
+        # of queue position.
+        open_blep_task_ids = set(Blep.objects.filter(
+            user=worker, end_time__isnull=True,
+        ).values_list('task_id', flat=True))
+
+        def _phase(t):
+            if t.status == Task.STATUS_COMPLETE:
+                return 0  # anchored in the past; may pull the cursor back
+            if (t.status == Task.STATUS_IN_PROGRESS
+                    and t.pk in open_blep_task_ids):
+                return 1  # anchored to the live session
+            return 2      # floating: pending / in_progress-no-blep / blocked
+
         tasks_qs = sorted(
             tasks_qs,
             key=lambda t: (
-                STATUS_PRIORITY.get(t.status, 9),
+                _phase(t),
                 t.worker_queue if t.worker_queue is not None else 9999,
                 t.pk,
             ),
@@ -388,25 +396,24 @@ class ScheduleService:
         cursor = now_floor
         bars = []
 
-        # Cursor advancement rules differ by task kind:
+        # The cascade walks the lane in (phase, worker_queue, pk) order and
+        # threads a single `cursor` forward. Each task falls into one of three
+        # SHAPES — by how it relates to the clock, not by status:
         #
-        # - Pending tasks cascade forward: cursor = forecast_end + buffer.
-        #   A pending task hasn't started, so it can never forecast before
-        #   "now" — its start is floored at `now_floor`. (A completed task
-        #   that finished early can pull the cursor into the past; without
-        #   this floor the next pending task would render behind the now
-        #   line, which it can't actually start before.)
-        # - Completed tasks set cursor to their actual_end + buffer, which
-        #   may be EARLIER than the current cursor. A task that finished
-        #   early frees its successor's slot sooner — but the successor, if
-        #   pending, still can't start before now (see the floor above).
-        # - In-progress tasks (anchored to bleps) advance the cursor
-        #   MONOTONICALLY — max(current, effective_end + buffer). They
-        #   represent work happening *now*; pending tasks already placed
-        #   ahead of them in the queue must not be pulled back on top of
-        #   them. If the active task is not first in the queue, this
-        #   prevents the visual overlap.
-        # - Blocked tasks don't move the cursor at all.
+        # 1. Live session (an open blep): anchored to real time; advances the
+        #    cursor monotonically so later queued forecasts can't be pulled
+        #    back on top of work happening now.
+        # 2. Actuals only (completed, or any task blepped by a non-assignee):
+        #    show the logged work, never a forecast. A completed task advances
+        #    the cursor to its actual end — finishing early frees the slot and
+        #    can move the cursor BACKWARD (a following pending task is still
+        #    floored at `now`). A non-assignee's closed blep does NOT advance
+        #    the cursor (not their plan; it would also jitter with scroll).
+        # 3. Floating own work (the assignee's pending / in-progress-without-
+        #    an-open-blep / blocked): forecast from the cursor in queue order,
+        #    floored at `now`. With prior logged time (paused / worked-then-
+        #    blocked) draw the actuals and forecast only the REMAINING
+        #    estimate; otherwise forecast the full estimate.
 
         for task in tasks_qs:
             # Only THIS worker's bleps drive their lane's bars, so concurrent
@@ -416,14 +423,9 @@ class ScheduleService:
             # helping out shows only their actual work, no estimate layer.
             is_assignee = task.assignee_id == worker.pk
             has_open_blep = any(b.end_time is None for b in bleps)
-            if task.status == Task.STATUS_PENDING:
-                cursor = max(cursor, now_floor)  # never forecast before now
-                bars.extend(ScheduleService._emit_forecast(task, cursor, shape))
-                cursor = ScheduleService._advance_cursor_after_forecast(
-                    cursor, task, shape,
-                )
-            elif task.status == Task.STATUS_IN_PROGRESS and has_open_blep:
-                # Actively being worked — anchor to the open blep.
+
+            # 1. Live session — anchored to the open blep, advances monotonically.
+            if has_open_blep:
                 active_bars, new_cursor = ScheduleService._emit_active(
                     task, bleps, local_now, cursor, display_shape, shape,
                     show_est=is_assignee,
@@ -431,75 +433,56 @@ class ScheduleService:
                 bars.extend(active_bars)
                 if new_cursor is not None and new_cursor > cursor:
                     cursor = new_cursor
-            elif task.status == Task.STATUS_IN_PROGRESS and bleps and not is_assignee:
-                # A NON-assignee who merely blepped on this task (concurrent or
-                # past help) shows only their actual work. We never forecast
-                # future work for them or advance their queue — it isn't their
-                # task, and doing so would also make their lane depend on which
-                # window the closed blep falls in (scroll-dependent jitter).
-                hist_bars, _ignored = ScheduleService._emit_historical(
-                    task, bleps, local_now, display_shape, shape, show_est=False,
-                )
-                bars.extend(hist_bars)
-            elif task.status == Task.STATUS_IN_PROGRESS and bleps:
-                # The assignee paused this task: started it, then moved on (no
-                # open blep).
+                continue
+
+            # 2. Actuals only — a completed task, or a non-assignee's logged
+            #    help. Never forecast. Completed advances the cursor to its
+            #    actual end (may move backward); a non-assignee's blep doesn't.
+            if task.status == Task.STATUS_COMPLETE or not is_assignee:
+                if bleps:
+                    advance_from = (
+                        cursor if task.status == Task.STATUS_COMPLETE else None
+                    )
+                    hist_bars, new_cursor = ScheduleService._emit_historical(
+                        task, bleps, local_now, display_shape, shape,
+                        advance_cursor_from=advance_from, show_est=is_assignee,
+                    )
+                    bars.extend(hist_bars)
+                    if advance_from is not None:
+                        cursor = new_cursor  # completed may pull cursor back
+                continue
+
+            # 3. Floating own work — assignee's pending / in-progress-no-blep /
+            #    blocked. Forecast from the cursor in queue order, floored at now.
+            duration = None  # forecast the full estimate by default
+            if bleps:
                 elapsed = ScheduleService._elapsed_worktime(bleps, local_now, shape)
-                est = task.est_worker_time or timedelta(0)
-                remaining = est - elapsed
+                remaining = (task.est_worker_time or timedelta(0)) - elapsed
                 if remaining > timedelta(0):
-                    # Under-worked: show only the actuals (no forward estimate
-                    # projection — that would overlap the active task at the
-                    # same clock position) and forecast the REMAINING estimate
-                    # in the queue ahead. The estimate lives on the forecast.
-                    hist_bars, _ignored = ScheduleService._emit_historical(
+                    # Paused / worked-then-blocked: show the actuals WITHOUT the
+                    # estimate layer (it lives on the forecast, so it can't
+                    # overlap the work), then forecast the remaining estimate.
+                    hist_bars, _ = ScheduleService._emit_historical(
                         task, bleps, local_now, display_shape, shape, show_est=False,
                     )
                     bars.extend(hist_bars)
-                    cursor = max(cursor, now_floor)
-                    bars.extend(ScheduleService._emit_forecast(
-                        task, cursor, shape, duration=remaining,
-                    ))
-                    cursor = ScheduleService._advance_cursor_after_forecast(
-                        cursor, task, shape, duration=remaining,
-                    )
+                    duration = remaining
                 else:
-                    # Over-worked (or exactly met): the estimate fits inside
-                    # the actual span, so the est-vs-actual historical doesn't
-                    # project beyond the work — no overlap. Show planned (light)
-                    # vs overrun (dark); nothing left to forecast.
-                    hist_bars, _ignored = ScheduleService._emit_historical(
+                    # Over-worked: the estimate fits inside the actual span, so
+                    # the est-vs-actual historical shows the overrun; nothing
+                    # left to forecast.
+                    hist_bars, _ = ScheduleService._emit_historical(
                         task, bleps, local_now, display_shape, shape,
                         show_est=is_assignee,
                     )
                     bars.extend(hist_bars)
-            elif task.status == Task.STATUS_IN_PROGRESS:
-                # In progress, no bleps from this worker → plain forecast.
-                cursor = max(cursor, now_floor)  # never forecast before now
-                bars.extend(ScheduleService._emit_forecast(task, cursor, shape))
-                cursor = ScheduleService._advance_cursor_after_forecast(
-                    cursor, task, shape,
-                )
-            elif task.status == Task.STATUS_BLOCKED:
-                if bleps:
-                    hist_bars, _ignored = ScheduleService._emit_historical(
-                        task, bleps, local_now, display_shape, shape,
-                        show_est=is_assignee,
-                    )
-                    bars.extend(hist_bars)
-                # The parked placeholder represents a queued blocked task, so
-                # only show it in the assignee's lane (not a blepper's).
-                if task.assignee_id == worker.pk:
-                    bars.append(ScheduleService._emit_parked(task, cursor, shape))
-                # cursor unchanged — blocked tasks don't consume future time
-            elif task.status == Task.STATUS_COMPLETE and bleps:
-                hist_bars, new_cursor = ScheduleService._emit_historical(
-                    task, bleps, local_now, display_shape, shape,
-                    advance_cursor_from=cursor, show_est=is_assignee,
-                )
-                bars.extend(hist_bars)
-                # Completed tasks may pull cursor backward intentionally.
-                cursor = new_cursor
+                    continue
+
+            cursor = max(cursor, now_floor)  # never forecast before now
+            forecast_bars, cursor = ScheduleService._emit_forecast(
+                task, cursor, shape, duration=duration,
+            )
+            bars.extend(forecast_bars)
 
         return bars
 
@@ -515,29 +498,24 @@ class ScheduleService:
 
     @staticmethod
     def _emit_forecast(task, cursor, shape, duration=None):
-        """Forecast bar from `cursor`. `duration` overrides the task's full
-        estimate (used to forecast the REMAINING time on a paused task)."""
+        """Forecast bar from `cursor`, plus the advanced cursor (forecast end +
+        buffer). `duration` overrides the task's full estimate (used to forecast
+        the REMAINING time on a paused task). Returns (bars, new_cursor); with
+        no positive estimate there's no bar, but the cursor still steps past the
+        buffer (preserving prior behavior)."""
         est = duration if duration is not None else task.est_worker_time
-        if not est or est <= timedelta(0):
-            return []
         start = next_workable_moment(cursor, shape)
+        buf = timedelta(minutes=shape.task_buffer_minutes)
+        if not est or est <= timedelta(0):
+            return [], next_workable_moment(start + buf, shape)
         end = add_work_time(start, est, shape)
         segments = segments_for(start, end, shape)
-        return [ScheduleService._build_bar(
+        bar = ScheduleService._build_bar(
             task=task, kind='forecast',
             segments=segments, elapsed_minutes=0, is_running=False,
             est_layer_end=end, actual_layer_end=None,
-        )]
-
-    @staticmethod
-    def _advance_cursor_after_forecast(cursor, task, shape, duration=None):
-        est = duration if duration is not None else (task.est_worker_time or timedelta(0))
-        if est is None:
-            est = timedelta(0)
-        start = next_workable_moment(cursor, shape)
-        end = add_work_time(start, est, shape)
-        buf = timedelta(minutes=shape.task_buffer_minutes)
-        return next_workable_moment(end + buf, shape)
+        )
+        return [bar], next_workable_moment(end + buf, shape)
 
     @staticmethod
     def _emit_active(task, bleps, local_now, cursor, pshape, sshape,
@@ -644,19 +622,6 @@ class ScheduleService:
         return [bar], new_cursor
 
     @staticmethod
-    def _emit_parked(task, cursor, shape):
-        """A blocked task's placeholder. Fixed minimal width (15 min of work
-        time). Does not consume cursor time in the caller's cascade."""
-        parked_start = next_workable_moment(cursor, shape)
-        parked_end = add_work_time(parked_start, timedelta(minutes=15), shape)
-        segments = segments_for(parked_start, parked_end, shape)
-        return ScheduleService._build_bar(
-            task=task, kind='parked', segments=segments,
-            elapsed_minutes=0, is_running=False,
-            est_layer_end=parked_end, actual_layer_end=None,
-        )
-
-    @staticmethod
     def _build_bar(*, task, kind, segments, elapsed_minutes,
                    is_running, est_layer_end, actual_layer_end):
         """Assemble the bar dict from raw segments and layer endpoints."""
@@ -688,6 +653,7 @@ class ScheduleService:
             'job_id': task.job_id,
             'name': task.name,
             'status': task.status,
+            'blocked_reason': task.blocked_reason or '',
             'accent_color': task.job.accent_color,
             'est_minutes': est_minutes,
             'elapsed_minutes': elapsed_minutes,

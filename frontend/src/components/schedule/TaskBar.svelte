@@ -69,7 +69,7 @@
     draggingTaskId.set(null);
   }
 
-  let isDraggable = $derived((bar.kind === 'forecast' || bar.kind === 'parked') && !dimmed);
+  let isDraggable = $derived(bar.kind === 'forecast' && !dimmed);
 </script>
 
 {#each segs as seg, i (i)}
@@ -85,28 +85,30 @@
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="task-bar {zigClass} kind-{bar.kind}"
        class:dimmed
+       class:blocked={bar.status === 'blocked'}
        draggable={isDraggable}
        ondragstart={handleDragStart}
        ondragend={handleDragEnd}
        onclick={() => { if (!dimmed && onSelect) onSelect(bar); }}
        data-task-id={bar.task_id}
        style="left: {left}px; width: {width}px; cursor: {dimmed ? 'default' : 'pointer'};"
-       title="{bar.name} · est {bar.est_minutes}m · elapsed {bar.elapsed_minutes}m">
-    {#if bar.kind === 'parked'}
-      <div class="parked-fill" style="background: {lightColor};"></div>
-    {:else}
-      {#if estWidth > 0}
-        <div class="layer-est" style="width: {estWidth}px; background: {lightColor};"></div>
-      {/if}
-      {#if actWidth > 0}
-        <!-- Actuals are the dark, bottom-half layer. The top (estimate) half
-             only appears for the assignee — a non-assignee's bar is just
-             this dark blep stripe, no estimate. -->
-        <div class="layer-actual" style="width: {actWidth}px; background: {darkColor};"></div>
-      {/if}
+       title="{bar.name}{bar.status === 'blocked' && bar.blocked_reason ? ' · BLOCKED: ' + bar.blocked_reason : ''} · est {bar.est_minutes}m · elapsed {bar.elapsed_minutes}m">
+    {#if estWidth > 0}
+      <div class="layer-est" style="width: {estWidth}px; background: {lightColor};"></div>
+    {/if}
+    {#if actWidth > 0}
+      <!-- Actuals are the dark, bottom-half layer. The top (estimate) half
+           only appears for the assignee — a non-assignee's bar is just
+           this dark blep stripe, no estimate. -->
+      <div class="layer-actual" style="width: {actWidth}px; background: {darkColor};"></div>
+    {/if}
+    {#if bar.status === 'blocked'}
+      <!-- Blocked: a red diagonal hatch over the forecast, echoing the
+           board's red treatment. -->
+      <div class="blocked-overlay"></div>
     {/if}
     {#if i === 0}
-      <span class="label" class:bottom={!hasEst && bar.kind !== 'parked'}>{bar.name}</span>
+      <span class="label" class:bottom={!hasEst}>{bar.name}</span>
     {/if}
   </div>
 {/each}
@@ -121,13 +123,16 @@
   .layer-est, .layer-actual { position: absolute; left: 0; }
   .layer-est    { top: 0;    height: 50%; }
   .layer-actual { bottom: 0; height: 50%; }
-  .parked-fill {
+  .blocked-overlay {
     position: absolute; inset: 0;
-    opacity: 0.5;
+    pointer-events: none;
     background-image: repeating-linear-gradient(45deg,
-      rgba(0,0,0,0.25), rgba(0,0,0,0.25) 3px,
-      transparent 3px, transparent 6px);
+      rgba(239,68,68,0.5), rgba(239,68,68,0.5) 3px,
+      transparent 3px, transparent 7px);
   }
+  /* A red ring so a blocked bar reads as blocked at a glance (mirrors the
+     job board's red treatment). */
+  .task-bar.blocked { box-shadow: inset 0 0 0 2px #ef4444; }
   .label {
     position: absolute; left: 4px; top: 2px;
     font-size: 10px; color: #fff;

@@ -65,23 +65,28 @@ spans `horizon_days`. Each `days[]` entry carries `date`, `label`,
 is `pending`/`in_progress`/`blocked`, or `complete` with a blep ending today.
 Ordered by name.
 
-**Per-worker walk.** Tasks in `(worker_queue, pk)` order. A monotonic
-`cursor` advances forward only; after each advance it is normalized past
-workday-end / weekends via `next_workable_moment`. Each task emits one or
+**Per-worker walk.** Tasks are ordered by `(phase, worker_queue, pk)`, where
+`phase` groups by how a task relates to the clock — **not** by status:
+completed actuals (0) first, then the live session / open blep (1), then
+everything **floating** (2: pending / in-progress-without-an-open-blep /
+blocked). The floating bucket orders by `worker_queue` alone, so it mirrors the
+job board and a drag-reorder on either view holds on both. A `cursor` threads
+forward through the walk (normalized past workday-end / weekends via
+`next_workable_moment`); a completed task may pull it backward to its actual
+end, but a floating forecast never starts before `now`. Each task emits one or
 more **bars**:
 
 | `kind` | Source | Layers |
 |---|---|---|
 | `historical` | Past blep groups | Dark actual; light estimate coextensive for completed |
 | `active` | The current in-progress session | Light (estimate) + dark (elapsed), both anchored at the session's first blep |
-| `forecast` | Projected slot for a pending task | Light only |
-| `parked` | A blocked task | Hatched marker in a secondary lane band; does not consume cursor time |
+| `forecast` | Projected slot for a workable task — pending, in-progress-without-an-open-blep, or **blocked** | Light; a blocked bar adds a red diagonal hatch + ring (no separate strip) |
 
 A bar's `segments` split the wall-clock interval at every overnight / weekend
 boundary; each segment carries `est_fill_to` / `actual_fill_to` (where the
 light / dark layers end) and `continues_left` / `continues_right` flags that
-drive the zigzag edges. Pending bars advance the cursor by `est_worker_time +
-buffer`; an in-progress bar advances it past the later of its estimate
+drive the zigzag edges. Floating (forecast) bars advance the cursor by
+`est_worker_time + buffer`; an in-progress bar advances it past the later of its estimate
 projection and its actual end (`now` if running). Completed bars end at the
 actual end, so finishing early or running long shifts downstream tasks.
 
@@ -145,8 +150,10 @@ auto-refresh + reorder). The Board's `JobChipStrip` is reused at the top.
 - **Now line** seeds from the payload `now` and ticks client-side each minute;
   hidden when "now" is off the scrolled window. ‹/› and "Today" drive
   `offset`; a day-count control drives `?days=N`.
-- **Drag-to-reorder**: only `forecast` / `parked` bars are draggable; a 3px
-  drop indicator snaps to buffer midpoints and hides on a no-op move. No
+- **Drag-to-reorder**: `forecast` bars are draggable (this includes blocked
+  tasks, which are now forecast bars); a 3px grey drop indicator snaps to
+  buffer midpoints and hides on a no-op move. Reorder writes `worker_queue`
+  via `POST /api/tasks/reorder/`, so the order matches the job board. No
   cross-lane drag (reassignment is out of scope).
 - **Job focus**: clicking a chip in `JobChipStrip` toggles `focusedJobIds`,
   dimming non-focused jobs' bars across lanes.
