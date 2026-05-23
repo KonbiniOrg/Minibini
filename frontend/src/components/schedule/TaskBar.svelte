@@ -97,9 +97,9 @@
       <div class="layer-est" style="width: {estWidth}px; background: {lightColor};"></div>
     {/if}
     {#if actWidth > 0}
-      <!-- Actuals are the dark, bottom-half layer. The top (estimate) half
-           only appears for the assignee — a non-assignee's bar is just
-           this dark blep stripe, no estimate. -->
+      <!-- Actuals are the dark layer overlaying the bottom half of the
+           full-height estimate. The estimate only appears for the assignee —
+           a non-assignee's bar is just this dark blep stripe, no estimate. -->
       <div class="layer-actual" style="width: {actWidth}px; background: {darkColor};"></div>
     {/if}
     {#if bar.status === 'blocked'}
@@ -121,7 +121,10 @@
     overflow: hidden;
   }
   .layer-est, .layer-actual { position: absolute; left: 0; }
-  .layer-est    { top: 0;    height: 50%; }
+  /* The plan (estimate) is the full-height light bar; the blep (actual)
+     overlays its bottom half. Actual renders after est in the DOM, so it
+     paints on top. */
+  .layer-est    { top: 0;    height: 100%; }
   .layer-actual { bottom: 0; height: 50%; }
   .blocked-overlay {
     position: absolute; inset: 0;

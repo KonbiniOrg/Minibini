@@ -96,12 +96,17 @@ The work-time math lives in `calendar_arithmetic.py` as pure functions over a
 overnight/weekend), `segments_for`, `work_minutes_between`,
 `shift_working_days`.
 
-**Off-hours in-progress widening.** If a worker has an open blep running
-outside configured hours, the *display* day shape widens (start floored / end
-ceiled to the hour) to cover that work plus its estimate projection.
-Forecasts still cascade on the configured hours — config drives the cascade,
-display drives the axis. The response carries both so the frontend shades the
-off-hours margins.
+**Off-hours widening.** If any work in the visible window — running *or*
+already logged (e.g. a completed task that ran past closing) — fell outside
+configured hours, the *display* day shape widens (start floored / end ceiled
+to the hour) to cover it, plus a running blep's estimate projection. Work
+crossing midnight only extends the early edge. Without this, off-hours bar
+portions would clamp to the configured edges and vanish. Forecasts still
+cascade on the configured hours — config drives the cascade, display drives
+the axis. A completed task's estimate layer is also capped at the day edge so
+a late start can't wrap a tiny estimate tail into the next morning (a phantom
+continuation chevron). The response carries both shapes so the frontend shades
+the off-hours margins.
 
 ---
 

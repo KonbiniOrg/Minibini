@@ -841,3 +841,99 @@ class FloatingOrderMatchesQueueTest(BaseTestCase):
             'worker_queue=1 (pending) must forecast before worker_queue=2 '
             '(in_progress); status must not override queue order',
         )
+
+
+class CompletedLateWorkTest(BaseTestCase):
+    """Completed work that ran past the configured day end should be shown in
+    full (the axis widens, like running off-hours work), and a completed
+    task's estimate must never wrap past the day edge into a phantom
+    continuation."""
+
+    def test_completed_estimate_tail_does_not_create_phantom_continuation(self):
+        # Late start, all in-hours work to ~16:58. The 60-min estimate would
+        # project past 17:00, but for a COMPLETED task we don't carry the
+        # remainder — so no overnight wrap, no orphan chevron.
+        user, task = _seed_user_with_pending_task(
+            est_minutes=60, name='LateStart', username='lp_user',
+        )
+        d = date_at_weekday(2)
+        start = local_dt(d, 16, 5)
+        end = local_dt(d, 16, 58)
+        task.status = Task.STATUS_IN_PROGRESS; task.save()
+        task.status = Task.STATUS_COMPLETE; task.save()
+        Blep.objects.create(user=user, task=task, start_time=start, end_time=end)
+        now = local_dt(d, 17, 10)
+
+        data = ScheduleService.get_schedule(now=now)
+        worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        bar = next(b for b in worker['bars'] if b['task_id'] == task.pk)
+        self.assertEqual(len(bar['segments']), 1, bar['segments'])
+        self.assertFalse(bar['segments'][-1]['continues_right'])
+
+    def test_completed_late_blep_widens_axis_and_shows_full_actual(self):
+        # Worked 16:00 -> 17:10, ten minutes past the 17:00 edge. The axis
+        # widens so the full blep is visible, the actual is not clamped to
+        # 17:00, and it stays a single segment (no wrap).
+        user, task = _seed_user_with_pending_task(
+            est_minutes=60, name='RanLate', username='late_user',
+        )
+        d = date_at_weekday(2)
+        start = local_dt(d, 16, 0)
+        end = local_dt(d, 17, 10)
+        task.status = Task.STATUS_IN_PROGRESS; task.save()
+        task.status = Task.STATUS_COMPLETE; task.save()
+        Blep.objects.create(user=user, task=task, start_time=start, end_time=end)
+        now = local_dt(d, 17, 30)
+
+        data = ScheduleService.get_schedule(now=now)
+        self.assertEqual(data['day_shape']['workday_end'], '18:00')
+        worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        bar = next(b for b in worker['bars'] if b['task_id'] == task.pk)
+        self.assertEqual(len(bar['segments']), 1, bar['segments'])
+        actual_end = datetime.fromisoformat(bar['segments'][0]['actual_fill_to'])
+        self.assertEqual((actual_end.hour, actual_end.minute), (17, 10))
+
+    def test_future_window_not_widened_by_running_off_hours_blep(self):
+        # A late open blep happening NOW must not widen a window scrolled into
+        # the future — no work happens there to show, so the axis stays at the
+        # configured hours.
+        user, task = _seed_user_with_pending_task(
+            est_minutes=60, name='Evening', username='fut_user',
+        )
+        d = date_at_weekday(0)  # a Monday, so +2 working days stays in-week
+        task.status = Task.STATUS_IN_PROGRESS; task.save()
+        Blep.objects.create(
+            user=user, task=task, start_time=local_dt(d, 19, 0), end_time=None,
+        )
+        now = local_dt(d, 19, 0)
+
+        data = ScheduleService.get_schedule(now=now, offset=2)
+        # Window is two working days ahead; the running off-hours blep is today
+        # and renders nowhere in it, so the axis must not widen.
+        self.assertEqual(data['day_shape']['workday_end'], '17:00')
+
+    def test_near_midnight_blep_counts_full_elapsed_and_widens_to_end_of_day(self):
+        # The reported case: worked 22:43 -> 23:58 (75 min, same day, no
+        # midnight crossing). The axis runs to end of day to show it, and the
+        # elapsed number is the true logged duration (matching the task page),
+        # not the slice that happens to fall inside the configured hours.
+        user, task = _seed_user_with_pending_task(
+            est_minutes=60, name='Nightowl', username='night_user',
+        )
+        d = date_at_weekday(2)
+        start = local_dt(d, 22, 43)
+        end = local_dt(d, 23, 58)
+        task.status = Task.STATUS_IN_PROGRESS; task.save()
+        task.status = Task.STATUS_COMPLETE; task.save()
+        Blep.objects.create(user=user, task=task, start_time=start, end_time=end)
+        now = local_dt(d, 23, 59)
+
+        data = ScheduleService.get_schedule(now=now)
+        # Axis runs as late as the work goes (end of day; a time can't hold 24:00).
+        self.assertEqual(data['day_shape']['workday_end'], '23:59')
+        worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        bar = next(b for b in worker['bars'] if b['task_id'] == task.pk)
+        # The full 75 minutes is reported, matching Blep.elapsed / the task page.
+        self.assertEqual(bar['elapsed_minutes'], 75)
+        actual_end = datetime.fromisoformat(bar['segments'][-1]['actual_fill_to'])
+        self.assertEqual((actual_end.hour, actual_end.minute), (23, 58))

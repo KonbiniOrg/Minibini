@@ -12,7 +12,8 @@ from django.utils import timezone
 from apps.core.models import Configuration
 from apps.schedule.calendar_arithmetic import (
     DayShape, add_work_time, is_working_day, next_workable_moment,
-    segments_for, shift_working_days, work_minutes_between, workday_start_on,
+    segments_for, shift_working_days, work_minutes_between, workday_end_on,
+    workday_start_on,
 )
 
 
@@ -162,25 +163,26 @@ class ScheduleService:
         )
 
         # Display shape: the visible time axis. Equal to the configured
-        # workday, EXCEPT widened to cover any in-progress work happening
-        # outside configured hours (an early/late worker) plus that work's
-        # estimate projection. Forecasts and the cascade keep using the
-        # configured `shape` so pending work never gets scheduled off-hours;
-        # only the axis and in-progress bars use `display_shape`. Extension
-        # only applies when today is in the visible window (in-progress bars
-        # anchor to today, so a scrolled window shows none).
-        today_midnight = timezone.make_aware(
-            datetime.combine(local_today, time(0, 0)), tz,
+        # workday, EXCEPT widened to cover any work — running OR already
+        # logged — that fell outside configured hours within the visible
+        # window, so off-hours bars aren't clamped to the edges and hidden.
+        # Forecasts and the cascade keep using the configured `shape` so
+        # pending work is never scheduled off-hours; only the axis and the
+        # actual/active bars use `display_shape`.
+        # Closed bleps count when they end inside the window; an open (running)
+        # blep counts only once the window has begun — otherwise a window
+        # scrolled into the future would widen for work happening now that
+        # renders nowhere in it.
+        in_window = Q(end_time__gte=horizon_start)
+        if local_now >= horizon_start:
+            in_window |= Q(end_time__isnull=True)
+        window_bleps = list(Blep.objects.filter(
+            user_id__in=worker_ids,
+            start_time__lt=horizon_end,
+        ).filter(in_window).select_related('task'))
+        display_shape = ScheduleService._extend_shape_for_window(
+            shape, window_bleps, local_now,
         )
-        display_shape = shape
-        if horizon_start <= today_midnight < horizon_end:
-            in_progress = Task.objects.filter(
-                assignee_id__in=worker_ids,
-                status=Task.STATUS_IN_PROGRESS,
-            ).prefetch_related('blep_set')
-            display_shape = ScheduleService._extend_shape_for_in_progress(
-                shape, in_progress, local_now,
-            )
 
         # Jobs in play (for the JobChipStrip at top)
         job_ids = set(Task.objects.filter(
@@ -264,41 +266,49 @@ class ScheduleService:
         }
 
     @staticmethod
-    def _extend_shape_for_in_progress(shape, in_progress_tasks, local_now):
-        """Return `shape` widened so its workday covers any work happening
-        RIGHT NOW outside configured hours (an open blep), plus that work's
-        estimate projection. Only currently-running bleps count — a closed
-        blep (even an off-hours one from earlier or another day) does not
-        widen the axis. Earliest start floors to the hour; latest end ceils
-        to the hour. Returns `shape` unchanged when nothing extends beyond
-        it."""
+    def _extend_shape_for_window(shape, bleps, local_now):
+        """Return `shape` widened so its workday covers any work — running OR
+        already logged — that fell outside configured hours within the visible
+        window. Without this, off-hours portions of bars get clamped to the
+        configured edges and vanish. A running blep also reserves room for its
+        estimate projection. Earliest start floors to the hour; latest end
+        ceils to the hour. Work that crosses midnight only extends the early
+        edge (its far end is left alone, so one all-nighter can't blow the axis
+        open). Returns `shape` unchanged when all work fell inside configured
+        hours."""
         def floor_hour(t):
             return time(t.hour, 0)
 
         def ceil_hour(t):
             if t.minute == 0 and t.second == 0 and t.microsecond == 0:
                 return time(t.hour, 0)
-            return time(min(t.hour + 1, 23), 0)
+            if t.hour >= 23:
+                # Can't represent 24:00 in a `time`; run the axis to the last
+                # minute of the day so near-midnight work is still covered.
+                return time(23, 59)
+            return time(t.hour + 1, 0)
 
         earliest = shape.workday_start
         latest = shape.workday_end
-        for task in in_progress_tasks:
-            open_bleps = [b for b in task.blep_set.all() if b.end_time is None]
-            if not open_bleps:
-                continue
-            anchor = min(b.start_time for b in open_bleps).astimezone(local_now.tzinfo)
-            est = task.est_worker_time or timedelta(0)
-            proj_end = anchor + est  # wall-clock approximation for the bound
+        for b in bleps:
+            start = b.start_time.astimezone(local_now.tzinfo)
+            running = b.end_time is None
+            end = local_now if running else b.end_time.astimezone(local_now.tzinfo)
 
-            if anchor.time() < earliest:
-                earliest = anchor.time()
-            if local_now.time() > latest:
-                latest = local_now.time()
-            # Only let the estimate extend the day when it stays on anchor's
-            # date (avoid a huge est wrapping past midnight from blowing up
-            # the axis).
-            if proj_end.date() == anchor.date() and proj_end.time() > latest:
-                latest = proj_end.time()
+            if start.time() < earliest:
+                earliest = start.time()
+            # Only let the late edge grow from work ending on its own start
+            # date — a blep spanning midnight shouldn't drag the day open to
+            # its far end.
+            if end.date() == start.date() and end.time() > latest:
+                latest = end.time()
+            # A running blep also reserves room for its estimate projection
+            # (the active bar's light layer), same single-day guard.
+            if running:
+                est = (b.task.est_worker_time or timedelta(0)) if b.task_id else timedelta(0)
+                proj_end = start + est
+                if proj_end.date() == start.date() and proj_end.time() > latest:
+                    latest = proj_end.time()
 
         # Only round (and thus widen) when work actually fell outside the
         # configured hours. Rounding the unchanged config bounds would invent
@@ -543,7 +553,10 @@ class ScheduleService:
         for b in bleps:
             b_start = b.start_time.astimezone(local_now.tzinfo)
             b_end = (b.end_time or local_now).astimezone(local_now.tzinfo)
-            elapsed_minutes += work_minutes_between(b_start, b_end, pshape)
+            # Elapsed is the true logged duration (matches Blep.elapsed and the
+            # task page), independent of the display axis — off-hours work the
+            # axis can't fully cover still counts in full.
+            elapsed_minutes += int((b_end - b_start).total_seconds() // 60)
 
         # A running blep with no estimate layer (a non-assignee's bar) is
         # only as wide as the elapsed actual time, so it's invisible the
@@ -599,6 +612,14 @@ class ScheduleService:
         est = task.est_worker_time or timedelta(0)
         if show_est and est > timedelta(0):
             est_layer_end = add_work_time(first, est, pshape)
+            # For a COMPLETED task we don't carry leftover estimate: cap the
+            # estimate layer at the day end of the actual work so a late start
+            # can't wrap a tiny estimate tail into the next morning (which
+            # would render as a phantom continuation chevron). Incomplete work
+            # keeps the wrap — it signals estimated time still expected.
+            from apps.jobs.models import Task
+            if task.status == Task.STATUS_COMPLETE:
+                est_layer_end = min(est_layer_end, workday_end_on(last.date(), pshape))
         else:
             est_layer_end = None
         bar_end = last if est_layer_end is None else max(est_layer_end, last)
@@ -608,7 +629,10 @@ class ScheduleService:
         for b in bleps:
             b_start = b.start_time.astimezone(local_now.tzinfo)
             b_end = (b.end_time or local_now).astimezone(local_now.tzinfo)
-            elapsed_minutes += work_minutes_between(b_start, b_end, pshape)
+            # Elapsed is the true logged duration (matches Blep.elapsed and the
+            # task page), independent of the display axis — off-hours work the
+            # axis can't fully cover still counts in full.
+            elapsed_minutes += int((b_end - b_start).total_seconds() // 60)
 
         bar = ScheduleService._build_bar(
             task=task, kind='historical', segments=segments,
