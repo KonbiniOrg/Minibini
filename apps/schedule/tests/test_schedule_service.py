@@ -599,6 +599,36 @@ class OverworkedPausedTaskTest(BaseTestCase):
         self.assertGreater(actual_end, est_end)
 
 
+class NonAssigneeClosedBlepNoForecastTest(BaseTestCase):
+    """A non-assignee who blepped (closed) on a task shows only their actual
+    work — never a forecast. Forecasting their queue would (a) invent future
+    work that isn't theirs and (b) make their lane depend on which scroll
+    window the closed blep falls in."""
+
+    def test_non_assignee_closed_blep_emits_only_historical(self):
+        assignee, task = _seed_user_with_pending_task(
+            est_minutes=60, name='NotMine', username='nacb_assignee',
+        )
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        helper = User.objects.create_user(username='nacb_helper', password='x')
+
+        d = date_at_weekday(2)
+        # Helper put in a brief closed blep, then stopped (not the assignee).
+        Blep.objects.create(
+            user=helper, task=task,
+            start_time=local_dt(d, 9, 0), end_time=local_dt(d, 9, 20),
+        )
+        now = local_dt(d, 10, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        helper_lane = next(w for w in data['workers'] if w['user']['id'] == helper.pk)
+        kinds = {b['kind'] for b in helper_lane['bars'] if b['task_id'] == task.pk}
+        self.assertIn('historical', kinds)
+        self.assertNotIn('forecast', kinds,
+                         "non-assignee helped task must not forecast in their lane")
+        self.assertNotIn('active', kinds)
+
+
 class FreshNonAssigneeBlepTest(BaseTestCase):
     """A just-started blep by a NON-assignee (no estimate layer) must still
     render — without an estimate to extend the bar, a zero-elapsed blep

@@ -211,11 +211,13 @@
       const dayEndX = timeToX(`${p.date}T${s.day_shape.workday_end}:00`);
       const cfgStartX = timeToX(`${p.date}T${cfgStart}:00`);
       const cfgEndX = timeToX(`${p.date}T${cfgEnd}:00`);
+      // Extend the shading to the panel edges so it sits flush against the
+      // overnight/weekend gap rather than leaving the inner pad white.
       if (cfgStartX > dayStartX + 0.5) {
-        offHoursBands.push({ key: `${p.date}-early`, left: dayStartX, width: cfgStartX - dayStartX });
+        offHoursBands.push({ key: `${p.date}-early`, left: p.x, width: cfgStartX - p.x });
       }
       if (dayEndX > cfgEndX + 0.5) {
-        offHoursBands.push({ key: `${p.date}-late`, left: cfgEndX, width: dayEndX - cfgEndX });
+        offHoursBands.push({ key: `${p.date}-late`, left: cfgEndX, width: (p.x + p.width) - cfgEndX });
       }
     }
 

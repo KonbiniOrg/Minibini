@@ -300,8 +300,12 @@ class ScheduleService:
             if proj_end.date() == anchor.date() and proj_end.time() > latest:
                 latest = proj_end.time()
 
-        new_start = floor_hour(earliest)
-        new_end = ceil_hour(latest)
+        # Only round (and thus widen) when work actually fell outside the
+        # configured hours. Rounding the unchanged config bounds would invent
+        # a spurious off-hours margin (e.g. 08:30 floored to 08:00 with no
+        # early work), shading every day's start grey for no reason.
+        new_start = floor_hour(earliest) if earliest < shape.workday_start else shape.workday_start
+        new_end = ceil_hour(latest) if latest > shape.workday_end else shape.workday_end
         if new_start == shape.workday_start and new_end == shape.workday_end:
             return shape
         return replace(shape, workday_start=new_start, workday_end=new_end)
@@ -428,9 +432,19 @@ class ScheduleService:
                 bars.extend(active_bars)
                 if new_cursor is not None and new_cursor > cursor:
                     cursor = new_cursor
+            elif task.status == Task.STATUS_IN_PROGRESS and bleps and not is_assignee:
+                # A NON-assignee who merely blepped on this task (concurrent or
+                # past help) shows only their actual work. We never forecast
+                # future work for them or advance their queue — it isn't their
+                # task, and doing so would also make their lane depend on which
+                # window the closed blep falls in (scroll-dependent jitter).
+                hist_bars, _ignored = ScheduleService._emit_historical(
+                    task, bleps, local_now, display_shape, shape, show_est=False,
+                )
+                bars.extend(hist_bars)
             elif task.status == Task.STATUS_IN_PROGRESS and bleps:
-                # In progress but paused: the worker started it, then moved on
-                # (no open blep).
+                # The assignee paused this task: started it, then moved on (no
+                # open blep).
                 elapsed = ScheduleService._elapsed_worktime(bleps, local_now, shape)
                 est = task.est_worker_time or timedelta(0)
                 remaining = est - elapsed
