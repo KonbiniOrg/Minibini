@@ -2,6 +2,7 @@
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
+  import { blepActivityVersion } from '../../stores/blepActivity.js';
   import BlepEditModal from '../tasks/BlepEditModal.svelte';
 
   let bleps = $state([]);
@@ -59,6 +60,16 @@
   }
 
   $effect(() => { load(); });
+
+  // Refresh when any blep changes (Stop/Cancel/edit from anywhere).
+  let lastBlepVersion = $state(0);
+  $effect(() => {
+    const v = $blepActivityVersion;
+    if (v !== lastBlepVersion) {
+      lastBlepVersion = v;
+      load();
+    }
+  });
 </script>
 
 <section>

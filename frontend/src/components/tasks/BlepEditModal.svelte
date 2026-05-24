@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { notifyBlepChanged } from '../../stores/blepActivity.js';
   import { modalKeys } from '../../lib/modalKeys.js';
 
   let {
@@ -79,6 +80,7 @@
         if (canManageTime && targetUserId) payload.user = Number(targetUserId);
         await api.post('/api/bleps/', payload);
       }
+      await notifyBlepChanged();
       onSaved();
     } catch (e) {
       error = e.message || 'Could not save.';
@@ -94,6 +96,7 @@
     error = '';
     try {
       await api.delete(`/api/bleps/${blep.blep_id}/`);
+      await notifyBlepChanged();
       onSaved();
     } catch (e) {
       error = e.message || 'Could not delete.';

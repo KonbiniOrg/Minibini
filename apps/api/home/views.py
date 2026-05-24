@@ -8,11 +8,13 @@ from apps.jobs.models import Blep
 
 
 def _serialize_current_blep(blep):
+    from apps.jobs.services import blep_minimum_seconds
     task = blep.task
     job = task.job
     return {
         'id': blep.blep_id,
         'start_time': blep.start_time.isoformat() if blep.start_time else None,
+        'blep_minimum_seconds': blep_minimum_seconds(),
         'task': {
             'id': task.pk,
             'name': task.name,

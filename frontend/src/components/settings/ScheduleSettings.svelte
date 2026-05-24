@@ -5,6 +5,7 @@
   let workday_end = $state('17:00');
   let task_buffer_minutes = $state('10');
   let horizon_days = $state('3');
+  let blep_minimum_seconds = $state('60');
   let saveMessage = $state('');
   let errors = $state({});
 
@@ -15,6 +16,7 @@
       workday_end = data.schedule_workday_end ?? '17:00';
       task_buffer_minutes = data.schedule_task_buffer_minutes ?? '10';
       horizon_days = data.schedule_horizon_days ?? '3';
+      blep_minimum_seconds = data.blep_minimum_seconds ?? '60';
     } catch (_) {}
   }
 
@@ -27,6 +29,7 @@
         schedule_workday_end: workday_end,
         schedule_task_buffer_minutes: task_buffer_minutes,
         schedule_horizon_days: horizon_days,
+        blep_minimum_seconds: blep_minimum_seconds,
       });
       saveMessage = 'Schedule settings saved.';
     } catch (err) {
@@ -69,6 +72,17 @@ tasks, and the default rolling-day horizon.</p>
   </p>
 </fieldset>
 
+<fieldset>
+  <legend><strong>Time tracking</strong></legend>
+  <p><label><strong>Minimum session (seconds)</strong></label><br>
+    <input type="number" min="0" bind:value={blep_minimum_seconds}>
+    {#if errors.blep_minimum_seconds}<em class="err">{errors.blep_minimum_seconds}</em>{/if}
+  </p>
+  <p class="hint">Below this, a worker's <strong>Stop</strong> becomes <strong>Cancel</strong>:
+  a just-started session can only be discarded (the task reverts as if it never
+  started), not saved.</p>
+</fieldset>
+
 <p>
   <button type="button" onclick={save}>Save</button>
   {#if saveMessage}<em>{saveMessage}</em>{/if}
@@ -77,4 +91,5 @@ tasks, and the default rolling-day horizon.</p>
 
 <style>
   .err { color: #b91c1c; margin-left: 0.5em; }
+  .hint { font-size: 13px; color: #666; }
 </style>

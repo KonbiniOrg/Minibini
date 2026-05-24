@@ -1,11 +1,11 @@
 <script>
+  import { taskActivity } from '../../lib/taskActivity.js';
+
   let { task, draggable = false } = $props();
 
-  const STATUS_LABELS = {
-    pending: 'Pending',
-    in_progress: 'Active',
-    blocked: 'Blocked',
-  };
+  // Single vocabulary: Working (live) / Ongoing / Unstarted / Blocked (+ terminal).
+  const activity = $derived(taskActivity(task));
+  const badgeLabel = $derived(activity?.label || '');
 
   let popupVisible = $state(false);
   let popupPos = $state({ anchor: 'below', y: 0, left: 0 });
@@ -51,15 +51,11 @@
   });
 
   function dotClass() {
-    if (task.status === 'blocked') return 'dot-blocked';
-    if (task.status === 'in_progress') return 'dot-in-progress';
-    return 'dot-pending';
+    return `dot-${activity?.key || 'unstarted'}`;
   }
 
   function labelClass() {
-    if (task.status === 'blocked') return 'tsb-blocked';
-    if (task.status === 'in_progress') return 'tsb-in-progress';
-    return 'tsb-pending';
+    return `tsb-${activity?.key || 'unstarted'}`;
   }
 
   function isUrgent() {
@@ -115,8 +111,8 @@
         <div class="task-blocked-reason preserve-breaks">{task.blocked_reason}</div>
       {/if}
     </div>
-    {#if STATUS_LABELS[task.status]}
-      <span class="task-status-badge {labelClass()}">{STATUS_LABELS[task.status]}</span>
+    {#if badgeLabel}
+      <span class="task-status-badge {labelClass()}">{badgeLabel}</span>
     {/if}
   </div>
 </div>
@@ -133,8 +129,8 @@
     <div class="tp-body">
       <div class="tp-head">
         <div class="tp-name">{task.name}</div>
-        {#if STATUS_LABELS[task.status]}
-          <span class="tp-status {labelClass()}">{STATUS_LABELS[task.status]}</span>
+        {#if badgeLabel}
+          <span class="tp-status {labelClass()}">{badgeLabel}</span>
         {/if}
       </div>
       {#if task.status === 'blocked' && task.blocked_reason}
@@ -159,16 +155,27 @@
   .task-border { width: 8px; flex-shrink: 0; border-radius: 7px 0 0 7px; }
   .task-body { flex: 1; min-width: 0; padding: 7px 8px; display: flex; align-items: center; gap: 6px; }
   .task-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  .dot-pending { background: #cbd5e1; }
-  .dot-in-progress { background: #3b82f6; box-shadow: 0 0 4px rgba(59,130,246,0.27); }
+  .dot-unstarted { background: #cbd5e1; }
+  .dot-ongoing { background: #3b82f6; box-shadow: 0 0 4px rgba(59,130,246,0.27); }
   .dot-blocked { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,0.27); }
+  .dot-complete { background: #047857; }
+  .dot-cancelled { background: #cbd5e1; }
+  .dot-working { background: #16a34a; animation: card-dot-pulse 1.4s ease-out infinite; }
+  @keyframes card-dot-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(22,163,74,0.55); }
+    70%  { box-shadow: 0 0 0 5px rgba(22,163,74,0); }
+    100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+  }
   .task-info { flex: 1; min-width: 0; }
   .task-name { font-size: 11px; font-weight: 500; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .task-job-label { font-size: 9px; color: #999; }
   .task-status-badge { font-size: 8px; text-transform: uppercase; letter-spacing: 0.3px; font-weight: 700; flex-shrink: 0; }
-  .tsb-pending { color: #94a3b8; }
-  .tsb-in-progress { color: #3b82f6; }
+  .tsb-unstarted { color: #94a3b8; }
+  .tsb-ongoing { color: #3b82f6; }
   .tsb-blocked { color: #ef4444; }
+  .tsb-complete { color: #047857; }
+  .tsb-cancelled { color: #94a3b8; }
+  .tsb-working { color: #16a34a; }
 
   .task-popup {
     position: fixed;

@@ -4,6 +4,7 @@
   import { user as userStore } from '../../stores/auth.js';
   import { currentBlep } from '../../stores/currentBlep.js';
   import TaskActions from '../tasks/TaskActions.svelte';
+  import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
   import StartWorkConflictModal from '../tasks/StartWorkConflictModal.svelte';
   import AssignModal from '../AssignModal.svelte';
 
@@ -45,11 +46,6 @@
     if (!cb || !task) return null;
     return cb.task && cb.task.id === task.task_id ? cb : null;
   });
-
-  const statusLabel = $derived(({
-    pending: 'Pending', in_progress: 'In Progress', blocked: 'Blocked',
-    complete: 'Complete', cancelled: 'Cancelled',
-  })[bar.status] || bar.status);
 
   async function loadTask() {
     loading = true;
@@ -140,7 +136,7 @@
       </div>
 
       <div class="meta-row">
-        <span class="status-chip st-{bar.status}">{statusLabel}</span>
+        <TaskActivityIndicator task={{ status: bar.status, has_active_blep: bar.is_running }} />
         <span class="meta">est {bar.est_minutes}m · elapsed {bar.elapsed_minutes}m</span>
       </div>
       {#if assigneeName}

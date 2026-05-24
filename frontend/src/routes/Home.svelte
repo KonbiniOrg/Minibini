@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { blepActivityVersion } from '../stores/blepActivity.js';
   import SearchBox from '../components/home/SearchBox.svelte';
   import AssignedTaskList from '../components/home/AssignedTaskList.svelte';
   import RecentJobsList from '../components/home/RecentJobsList.svelte';
@@ -14,7 +15,7 @@
   let recentJobs = $state([]);
   let tab = $state('work');
 
-  onMount(async () => {
+  async function loadHome() {
     try {
       const data = await api.get('/api/home/');
       assignedTasks = data.assigned_tasks || [];
@@ -23,6 +24,18 @@
       error = e.message || 'Could not load home page.';
     } finally {
       loading = false;
+    }
+  }
+
+  onMount(loadHome);
+
+  // Refresh "My Tasks" activity markers when a blep changes anywhere.
+  let lastBlepVersion = $state(0);
+  $effect(() => {
+    const v = $blepActivityVersion;
+    if (v !== lastBlepVersion) {
+      lastBlepVersion = v;
+      loadHome();
     }
   });
 </script>

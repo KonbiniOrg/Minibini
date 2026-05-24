@@ -58,6 +58,24 @@ class TaskWorkerTimeRequired(Exception):
 
 _EDIT_WINDOW = timedelta(hours=24)
 
+# Below this elapsed duration, a worker's Stop becomes Cancel (delete + undo).
+# Lazy default written into Configuration on first read (mirrors the schedule keys).
+_BLEP_MINIMUM_SECONDS_DEFAULT = '60'
+
+
+def blep_minimum_seconds():
+    """The Stop→Cancel threshold (seconds). Single source of truth, also read by
+    the API to expose it to the client. Lazy default written on first read."""
+    try:
+        return int(Configuration.objects.get(key='blep_minimum_seconds').value)
+    except Configuration.DoesNotExist:
+        Configuration.objects.create(
+            key='blep_minimum_seconds', value=_BLEP_MINIMUM_SECONDS_DEFAULT,
+        )
+        return int(_BLEP_MINIMUM_SECONDS_DEFAULT)
+    except (TypeError, ValueError):
+        return int(_BLEP_MINIMUM_SECONDS_DEFAULT)
+
 
 def _has_manage_time(user):
     return user.has_perm('core.can_manage_time')
@@ -103,6 +121,9 @@ class BlepService:
     callers like TaskLifecycleService. Public methods enforce ownership,
     time windows, and overlap rules for user-initiated edits.
     """
+
+    # Tolerance for mismatched device clocks when rejecting future end times.
+    _CLOCK_SKEW_BUFFER = timedelta(seconds=30)
 
     # ─────────────────────────── primitives ───────────────────────────
 
@@ -172,6 +193,8 @@ class BlepService:
         )
         if end_time < start_time:
             raise ValidationError("end_time must be >= start_time.")
+        if end_time > timezone.now() + BlepService._CLOCK_SKEW_BUFFER:
+            raise ValidationError("End time cannot be in the future.")
         if not _within_edit_window(start_time) and not _has_manage_time(actor):
             raise BlepPermissionError(
                 "Creating a time entry older than 24 hours requires can_manage_time."
@@ -222,6 +245,8 @@ class BlepService:
         new_end = fields.get('end_time', blep.end_time)
         if new_end is not None and new_start is not None and new_end < new_start:
             raise ValidationError("end_time must be >= start_time.")
+        if new_end is not None and new_end > timezone.now() + BlepService._CLOCK_SKEW_BUFFER:
+            raise ValidationError("End time cannot be in the future.")
 
         # Use the target user for overlap check (new user if reassigning, else current)
         check_user = fields.get('user', blep.user)
@@ -824,6 +849,56 @@ class TaskLifecycleService:
                     "No open time entry found for this user on this task."
                 )
 
+    @staticmethod
+    def cancel_work(task_pk, user):
+        """Cancel the user's open blep on this task — the under-the-minimum
+        'oops, didn't mean to start that' path.
+
+        Deletes the blep. When that blep was the *first/only* activity on the
+        task (the sole reason it is in_progress), also undoes exactly what the
+        Start set in motion: reverts the task to pending and un-consumes its
+        materials. Job status and assignment are deliberately left untouched
+        (see the spec). A 'join' on an already-active task, or a task with
+        prior sessions, only loses the blep.
+
+        Only allowed while the session is under `blep_minimum_seconds`; over
+        that the caller should Stop instead (enforced defensively here).
+        """
+        with transaction.atomic():
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            blep = (
+                Blep.objects
+                .filter(task=task, user=user, end_time__isnull=True)
+                .order_by('-start_time')
+                .first()
+            )
+            if blep is None:
+                raise ValidationError(
+                    "No open time entry to cancel for this user on this task."
+                )
+            elapsed = blep.elapsed
+            if elapsed is not None and elapsed.total_seconds() >= blep_minimum_seconds():
+                raise ValidationError(
+                    "Session is too long to cancel; stop it instead."
+                )
+            # First/only activity: this is the sole blep and the task is only
+            # in_progress because of it.
+            first_activity = (
+                task.status == Task.STATUS_IN_PROGRESS
+                and Blep.objects.filter(task=task).count() == 1
+            )
+            blep.delete()
+            if first_activity:
+                reverted = Task.objects.filter(
+                    pk=task.pk, status=Task.STATUS_IN_PROGRESS,
+                ).update(status=Task.STATUS_PENDING)
+                if reverted:
+                    from apps.inventory.services import MaterialService
+                    for material in task.materials.all():
+                        if material.consumption_state == \
+                                material.CONSUMPTION_STATE_CONSUMED:
+                            MaterialService.unconsume(material)
+
 
 # ═══════════════════════════════════════════════════════════════════
 # BoardService (formerly apps.jobs.services.board_service)
@@ -882,7 +957,7 @@ class BoardService:
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         ).select_related(
             'job', 'assignee'
-        ).order_by('worker_queue', 'pk')
+        ).prefetch_related('blep_set').order_by('worker_queue', 'pk')
 
         # Group by assignee
         worker_map = {}
@@ -991,7 +1066,7 @@ class BoardService:
             status__in=[Task.STATUS_COMPLETE, Task.STATUS_CANCELLED]
         ).select_related(
             'job', 'assignee'
-        ).order_by('worker_queue', 'pk')
+        ).prefetch_related('blep_set').order_by('worker_queue', 'pk')
 
         worker_map = {}
         unassigned = []
@@ -1189,6 +1264,8 @@ class BoardService:
     @staticmethod
     def _serialize_task(task, color_map):
         job = task.job
+        bleps = list(task.blep_set.all())
+        open_user_ids = {b.user_id for b in bleps if b.end_time is None}
         return {
             'task_id': task.task_id,
             'name': task.name,
@@ -1203,6 +1280,9 @@ class BoardService:
             'est_worker_time': (
                 str(task.est_worker_time) if task.est_worker_time else None
             ),
+            'has_active_blep': bool(open_user_ids),
+            'active_worker_count': len(open_user_ids),
+            'has_bleps': bool(bleps),
         }
 
     @staticmethod
