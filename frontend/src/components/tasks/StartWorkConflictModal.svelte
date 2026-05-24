@@ -6,6 +6,7 @@
   let {
     conflict = null,
     taskId,
+    onBehalfOf = null,   // user id when resolving a conflict on a worker's behalf
     onResolved = () => {},
     onCancel = () => {},
   } = $props();
@@ -17,7 +18,9 @@
     busy = true;
     error = '';
     try {
-      await api.post(`/api/tasks/${taskId}/start-work/`, { action });
+      const body = { action };
+      if (onBehalfOf) body.on_behalf_of = onBehalfOf;
+      await api.post(`/api/tasks/${taskId}/start-work/`, body);
       await refreshCurrentBlep();
       onResolved();
     } catch (e) {
@@ -55,7 +58,7 @@
 <style>
   .overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: 200;
+    display: flex; align-items: center; justify-content: center; z-index: 1100;
   }
   .modal {
     background: white; padding: 16px; max-width: 440px;

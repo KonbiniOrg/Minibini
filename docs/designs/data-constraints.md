@@ -45,6 +45,9 @@ Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 Additional keys: `email_retention_days`, `latest_email_date`,
 `email_display_limit`, `est_expire_days`.
 
+Schedule view: `schedule_workday_start` (`08:00`), `schedule_workday_end`
+(`17:00`), `schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
+
 ---
 
 ### 1.2 User

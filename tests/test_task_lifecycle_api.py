@@ -135,6 +135,48 @@ class TaskLifecycleAPITest(BaseTestCase):
         blep = Blep.objects.get(task=self.task, user=self.user)
         self.assertIsNotNone(blep.end_time)
 
+    def test_start_work_on_behalf_attributes_blep_to_target(self):
+        # self.user (admin/superuser) bypasses atom checks → acts as manager.
+        worker = self._create_user('ob_target')
+        url = f'/api/tasks/{self.task.pk}/start-work/'
+        resp = self.client.post(url, {'on_behalf_of': worker.pk})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['status'], 'ok')
+        blep = Blep.objects.get(task=self.task, end_time__isnull=True)
+        self.assertEqual(blep.user, worker)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee, worker)
+
+    def test_start_work_on_behalf_without_manage_time_is_forbidden(self):
+        plain = self._create_user('ob_plain_api')
+        worker = self._create_user('ob_target2')
+        client = APIClient()
+        client.force_authenticate(user=plain)
+        url = f'/api/tasks/{self.task.pk}/start-work/'
+        resp = client.post(url, {'on_behalf_of': worker.pk})
+        self.assertEqual(resp.status_code, 403)
+
+    def test_stop_work_on_behalf_closes_targets_blep(self):
+        worker = self._create_user('ob_stop_target')
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(task=self.task, user=worker, start_time=timezone.now())
+        url = f'/api/tasks/{self.task.pk}/stop-work/'
+        resp = self.client.post(url, {'on_behalf_of': worker.pk})
+        self.assertEqual(resp.status_code, 200)
+        blep = Blep.objects.get(task=self.task, user=worker)
+        self.assertIsNotNone(blep.end_time)
+
+    def test_stop_work_on_behalf_without_manage_time_is_forbidden(self):
+        plain = self._create_user('ob_plain_stop')
+        worker = self._create_user('ob_stop_target2')
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(task=self.task, user=worker, start_time=timezone.now())
+        client = APIClient()
+        client.force_authenticate(user=plain)
+        url = f'/api/tasks/{self.task.pk}/stop-work/'
+        resp = client.post(url, {'on_behalf_of': worker.pk})
+        self.assertEqual(resp.status_code, 403)
+
     def test_start_work_conflict_response(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         other_user = self._create_user('otherworker')

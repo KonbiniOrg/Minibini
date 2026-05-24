@@ -337,7 +337,7 @@
     <table border="1"><tbody>
       <tr><td><strong>Scheme</strong></td><td>{task.scheme_name}</td></tr>
       <tr><td><strong>Rate</strong></td><td>${task.effective_rate}/{task.scheme_unit_label}</td></tr>
-      {#if task.active_modifiers && task.active_modifiers.length > 0}
+      {#if Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0}
         <tr><td><strong>Modifiers</strong></td>
           <td>{task.active_modifiers.join(', ')}</td></tr>
       {/if}
@@ -358,7 +358,8 @@
         <tr><td><strong>Actual {task.scheme_unit_label || 'hour'}s</strong></td>
           <td>{Number(task.actual_hours) || 0}</td></tr>
       {:else if task.scheme_algorithm === 'flat_fee'}
-        <tr><td><strong>Actual</strong></td><td>1</td></tr>
+        <tr><td><strong>Quantity</strong></td>
+          <td>{Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</td></tr>
       {/if}
       {#if task.computed_charge}
         <tr><td><strong>Charge</strong></td><td>${task.computed_charge}</td></tr>

@@ -66,13 +66,14 @@ Minibini/
 │   ├── inventory/  # PriceListItem, Material, Earmark, InventoryAdjustment
 │   ├── purchasing/ # PurchaseOrder, Bill, line items
 │   ├── deliverables/ # Deliverable, Shipment, ShipmentItem
-│   └── search/     # Cross-entity search service
+│   ├── search/     # Cross-entity search service
+│   └── schedule/   # ScheduleService — per-worker time-axis layout (model-less)
 ├── frontend/       # Svelte 5 SPA (Vite, svelte-spa-router)
 ├── templates/      # Django HTML templates (server-rendered views)
 ├── fixtures/       # Test data fixtures (JSON)
 ├── tests/          # Test suite
 ├── scripts/        # Utility scripts (seed_data.sh)
-├── docs/designs/   # Topic reference docs (eight consolidated areas — see below)
+├── docs/designs/   # Topic reference docs (nine consolidated areas — see below)
 ├── docs/plans/     # Working directory for short-lived implementation plans (currently empty)
 ├── minibini/       # Project configuration (settings, urls)
 └── manage.py
@@ -90,7 +91,7 @@ Minibini/
 
 ## Topic reference docs
 
-`docs/designs/` holds eight consolidated docs. When working in a domain, start at its doc; cross-references link out where needed.
+`docs/designs/` holds nine consolidated docs. When working in a domain, start at its doc; cross-references link out where needed.
 
 | Doc | Covers |
 |---|---|
@@ -102,6 +103,7 @@ Minibini/
 | `quickbooks-integration.md` | QBO models, OAuth, sync services, polling, developer setup appendix |
 | `users-and-permissions.md` | User model, permission atoms, auth, user admin, self-service, login tracking (designed not built) |
 | `data-constraints.md` | Cross-model invariants and field-by-field constraints (validator-consumable reference) |
+| `schedule.md` | ScheduleService, the forecast cascade, bar kinds/layering, schedule Configuration, the `/schedule` page |
 
 ## Key Models
 
@@ -117,6 +119,7 @@ Minibini/
 | `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |
 | `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-tasks-and-worksheets §12 |
 | `apps.qbo` | QBOConnection, QBOSyncLog | quickbooks-integration |
+| `apps.schedule` | _(no models)_ — `ScheduleService` produces the `/schedule` view's per-worker bars from Tasks + Bleps + `Job.accent_color` + Configuration | `docs/designs/schedule.md` |
 
 ## Configuration Model
 
@@ -165,12 +168,12 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 - `/api/expenses/`, `/api/reimbursements/`
 - `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
 - `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
-- `/api/emails/`, `/api/search/`, `/api/settings/`, `/api/home/`
+- `/api/emails/`, `/api/search/`, `/api/schedule/`, `/api/settings/`, `/api/home/`
 
 Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). The SPA is the primary UI; covers home, jobs (board + detail + task list + task detail), contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. Some legacy Django HTML views still exist for opportunistic decommissioning.
+Hash-based routing (`#/path`). The SPA is the primary UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. Some legacy Django HTML views still exist for opportunistic decommissioning.
 
 ## Frontend (Svelte SPA)
 
@@ -365,5 +368,5 @@ See `docs/designs/quickbooks-integration.md` for the full reference, including O
 - Services: `apps/*/services.py` | Settings: `minibini/settings.py`
 - API: `apps/api/*/views.py` (viewsets), `apps/api/*/serializers.py`, `apps/api/mixins.py`, `apps/api/permissions.py`
 - Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
-- Topic reference docs: `docs/designs/` (eight files; see "Topic reference docs" above)
+- Topic reference docs: `docs/designs/` (nine files; see "Topic reference docs" above)
 - Implementation plans (temporary working files): `docs/plans/` (currently empty)

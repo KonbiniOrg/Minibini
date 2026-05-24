@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     'apps.invoicing',
     'apps.purchasing',
     'apps.search',
+    'apps.schedule',
     'apps.inventory',
     'apps.qbo',
     'rest_framework',
@@ -171,7 +172,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/Los_Angeles'
+#TIME_ZONE = 'Asia/Karachi'
 
 USE_I18N = True
 

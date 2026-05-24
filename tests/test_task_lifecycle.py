@@ -238,6 +238,83 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         self.assertEqual(self.task.assignee, other_user)
 
 
+class OnBehalfStartStopTest(BaseTestCase):
+    """A manager (can_manage_time) can start/stop work on behalf of another
+    worker; the blep is attributed to that worker. Without can_manage_time,
+    acting on another user's behalf is rejected."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.jobs.services import BlepPermissionError
+        from django.contrib.auth.models import Permission
+        self.BlepPermissionError = BlepPermissionError
+        self.job = Job.objects.first()
+        _approve_job(self.job)
+        self.task = Task.objects.create(name='OB Task', job=self.job, rate_scheme_id=1)
+        self.manager = User.objects.get(username='admin')
+        perm = Permission.objects.get(
+            codename='can_manage_time', content_type__app_label='core',
+        )
+        self.manager.user_permissions.add(perm)
+        self.manager = User.objects.get(pk=self.manager.pk)  # refresh perm cache
+        self.worker = User.objects.create_user(username='ob_worker', password='x')
+        self.plain = User.objects.create_user(username='ob_plain', password='x')
+
+    def test_start_on_behalf_creates_blep_for_target_and_runs_lifecycle(self):
+        result = TaskLifecycleService.start_work(
+            self.task.pk, self.manager, on_behalf_of=self.worker,
+        )
+        blep = result['blep']
+        self.assertEqual(blep.user, self.worker)
+        self.assertIsNone(blep.end_time)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+        self.assertEqual(self.task.assignee, self.worker)
+
+    def test_start_on_behalf_requires_manage_time(self):
+        with self.assertRaises(self.BlepPermissionError):
+            TaskLifecycleService.start_work(
+                self.task.pk, self.plain, on_behalf_of=self.worker,
+            )
+
+    def test_stop_on_behalf_closes_targets_open_blep(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        blep = Blep.objects.create(
+            task=self.task, user=self.worker, start_time=timezone.now(),
+        )
+        TaskLifecycleService.stop_work(
+            self.task.pk, self.manager, on_behalf_of=self.worker,
+        )
+        blep.refresh_from_db()
+        self.assertIsNotNone(blep.end_time)
+
+    def test_stop_on_behalf_requires_manage_time(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(
+            task=self.task, user=self.worker, start_time=timezone.now(),
+        )
+        with self.assertRaises(self.BlepPermissionError):
+            TaskLifecycleService.stop_work(
+                self.task.pk, self.plain, on_behalf_of=self.worker,
+            )
+
+    def test_stop_on_behalf_leaves_actors_own_blep_alone(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        worker_blep = Blep.objects.create(
+            task=self.task, user=self.worker, start_time=timezone.now(),
+        )
+        manager_blep = Blep.objects.create(
+            task=self.task, user=self.manager, start_time=timezone.now(),
+        )
+        TaskLifecycleService.stop_work(
+            self.task.pk, self.manager, on_behalf_of=self.worker,
+        )
+        worker_blep.refresh_from_db()
+        manager_blep.refresh_from_db()
+        self.assertIsNotNone(worker_blep.end_time)
+        self.assertIsNone(manager_blep.end_time)
+
+
 class CompleteTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
