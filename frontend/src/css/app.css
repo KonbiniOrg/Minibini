@@ -38,10 +38,12 @@ dd {
  * (descriptions, notes, reasons, addresses). pre-wrap keeps newlines and
  * runs of whitespace while still wrapping long lines and auto-escaping the
  * text (no injection risk). Apply to any element that shows such a field
- * in full.
+ * in full. overflow-wrap: anywhere also breaks a long unbreakable token
+ * (e.g. a pasted URL) so it wraps instead of forcing its container wide.
  */
 .preserve-breaks {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .error-overlay,

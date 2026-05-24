@@ -1,5 +1,6 @@
 <script>
   import HistoryPanel from '../HistoryPanel.svelte';
+  import LinkifiedText from '../LinkifiedText.svelte';
   import DeliverablesSection from './DeliverablesSection.svelte';
   import ShipmentsPillar from './ShipmentsPillar.svelte';
   import { link } from 'svelte-spa-router';
@@ -246,7 +247,7 @@
   <div class="panel description-panel">
     <div class="panel-head">Description</div>
     <div class="panel-scroll">
-      <p class="preserve-breaks">{job.description || 'No description.'}</p>
+      <p class="preserve-breaks"><LinkifiedText text={job.description || 'No description.'} /></p>
     </div>
   </div>
   <DeliverablesSection jobId={job.job_id} />
@@ -746,7 +747,7 @@
                 {#each items as li}
                   <tr>
                     <td>{li.line_number}</td>
-                    <td class="preserve-breaks">{li.description}</td>
+                    <td class="preserve-breaks"><LinkifiedText text={li.description} /></td>
                     <td class="text-right">{li.qty}</td>
                     <td>{li.units || 'none'}</td>
                     <td class="text-right">{fmtMoney(li.price)}</td>
@@ -884,7 +885,7 @@
                   <tr class:other-job={li.effective_job_id && li.effective_job_id !== job.job_id}>
                     <td>{li.line_number}</td>
                     <td>
-                      <span class="preserve-breaks">{li.description}</span>
+                      <span class="preserve-breaks"><LinkifiedText text={li.description} /></span>
                       {#if li.effective_job_id && li.effective_job_id !== job.job_id}
                         <span class="other-job-label">(other job: {li.effective_job_number})</span>
                       {/if}
@@ -1018,6 +1019,10 @@
     box-sizing: border-box;
     flex: 0 0 auto;
   }
+  /* Let the 1fr columns shrink below their content's intrinsic width so a long
+     unbreakable token (e.g. a pasted URL) wraps instead of shoving the
+     Deliverables/History columns off-screen. */
+  .midband > :global(*) { min-width: 0; }
   .panel {
     background: #fff;
     border: 1px solid #e5e7eb;

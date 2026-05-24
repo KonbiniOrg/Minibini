@@ -8,6 +8,7 @@
   import BlepList from '../../components/tasks/BlepList.svelte';
   import BlepEditModal from '../../components/tasks/BlepEditModal.svelte';
   import TaskTree from '../../components/TaskTree.svelte';
+  import LinkifiedText from '../../components/LinkifiedText.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
@@ -322,7 +323,7 @@
   <table border="1">
     <tbody>
       <tr><td>Status</td><td>{task.status}{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
-      <tr><td>Description</td><td class="preserve-breaks">{task.description || '-'}</td></tr>
+      <tr><td>Description</td><td class="preserve-breaks"><LinkifiedText text={task.description || '-'} /></td></tr>
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
       <tr><td>Est. worker time</td><td>{formatDuration(task.est_worker_time)}</td></tr>

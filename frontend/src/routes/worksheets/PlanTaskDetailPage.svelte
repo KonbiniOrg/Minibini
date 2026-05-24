@@ -5,6 +5,7 @@
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import LinkifiedText from '../../components/LinkifiedText.svelte';
   import { formatQtyUnits } from '../../lib/format.js';
 
   let { params = {} } = $props();
@@ -177,7 +178,7 @@
 
   <table border="1">
     <tbody>
-      <tr><td>Description</td><td class="preserve-breaks">{task.description || '-'}</td></tr>
+      <tr><td>Description</td><td class="preserve-breaks"><LinkifiedText text={task.description || '-'} /></td></tr>
       <tr>
         <td>Est. quantity</td>
         <td>{task.est_qty ?? '-'}{#if task.scheme_unit_label} {task.scheme_unit_label}{/if}</td>

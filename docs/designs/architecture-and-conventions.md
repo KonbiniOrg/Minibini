@@ -527,6 +527,47 @@ PLI?" prompt), gate the hooks on that state: make `onSave` inert while the
 sub-step shows, and have `onCancel` dismiss the sub-step first, falling
 through to closing the whole modal only once it's gone.
 
+### 5.8 Linkifying URLs in free-text fields
+
+URLs pasted into descriptions / line items are turned into clickable links
+by `<LinkifiedText>` (`frontend/src/components/LinkifiedText.svelte`), backed
+by the pure tokenizer in `frontend/src/lib/linkify.js`. Drop it *inside* an
+existing `.preserve-breaks` wrapper so it inherits newline preservation and
+the long-token wrap (§5.6):
+
+```svelte
+<p class="preserve-breaks"><LinkifiedText text={job.description} /></p>
+```
+
+**Matching rule** (`linkify(text)` → text/url segments): a token links iff it
+starts with `http://`/`https://` **and** its host contains a dot. So
+`https://example.com/x` and `https://www.example.com` link, while
+`http://intra/wiki` and `http://localhost:8000` stay plain (no dot in host),
+as do scheme-less `example.com` and `drawing.pdf`. The required scheme keeps
+false positives near zero, so there's no TLD allowlist to maintain. Trailing
+sentence punctuation (`.,;:!?)]}'"`) is trimmed back out of the match.
+
+**Display** (`truncateUrl(url)`, the segment's `display`): scheme dropped,
+full host + up to 8 characters of the path/query, then `…` only if there's
+more — e.g. `example.com/files/r…`, `example.com/x`, `example.com`. The full
+URL stays in the anchor's `href` and `title` (hover). Links open in a new tab
+with `rel="noopener noreferrer"`.
+
+**Safety:** segments render as Svelte nodes (auto-escaped text, `<a>` for
+URLs) — never `{@html}` — so it's XSS-safe by construction, same discipline
+as §5.6.
+
+**Applied at:** Job / Task / PlanTask descriptions and billing line-item
+descriptions (`LineItemTable`, `JobDetail` invoice + PO lines,
+`PurchaseOrderDetail`). Other free-text fields (notes, addresses, material
+descriptions) get the §5.6 wrap but are not linkified.
+
+**Layout note:** a long unbreakable token (URL) in a CSS grid/flex column
+won't shrink the track unless the item has `min-width: 0`. The job-overview
+midband sets `.midband > * { min-width: 0 }` for this; pair `overflow-wrap:
+anywhere` (now part of `.preserve-breaks`) with `min-width: 0` anywhere a
+free-text field sits in a grid/flex track.
+
 ---
 
 ## 6. View mode (full / lite)
