@@ -48,6 +48,10 @@ Additional keys: `email_retention_days`, `latest_email_date`,
 Schedule view: `schedule_workday_start` (`08:00`), `schedule_workday_end`
 (`17:00`), `schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
 
+Time tracking: `blep_minimum_seconds` (`60`) — below this elapsed duration
+a worker's Stop becomes Cancel (delete + undo); see
+`jobs-tasks-and-worksheets.md` §4.5/§5.5.
+
 ---
 
 ### 1.2 User
@@ -404,7 +408,10 @@ Depends on: Task, User.
   on fixtures.
 - **user** (optional FK → User, PROTECT)
 - **start_time**: datetime, nullable
-- **end_time**: datetime, nullable. If set, must be after start_time.
+- **end_time**: datetime, nullable. If set, must be ≥ start_time and not
+  in the future — a non-null `end_time` more than 30s ahead of `now`
+  (clock-skew buffer) is rejected on create and update. Setting `end_time`
+  on an open Blep (e.g. via the edit modal) closes the session.
 - An "open" Blep has `start_time` set and `end_time` null (work in progress)
 - **No overlapping Bleps per user**: for any given User, no two Bleps (across
   all Tasks) may have overlapping time ranges. The app enforces this by

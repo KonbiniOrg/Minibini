@@ -208,6 +208,11 @@ Note `blocked → in_progress` and `blocked → complete` and
 `blocked → cancelled` — a blocked task can resume, finish, or be killed
 without round-tripping through `in_progress`.
 
+`in_progress → pending` is **not** a forward transition (and `clean()`
+rejects it). `TaskLifecycleService.cancel_work` (§4.5) performs it as a
+deliberate *undo* via a bulk `update()` that bypasses `clean()`,
+restoring an oops-started task to its pre-Start state.
+
 `Task.clean()` enforces transitions on save. `Task.save()` auto-assigns
 `sort_order` to the next available slot for the Job if unset.
 
@@ -264,6 +269,7 @@ sanctioned path to transition a Task. All methods wrap in
 | `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); fires job-completion check |
 | `start_work(task_pk, user, action=None, on_behalf_of=None)` | user, optional action, optional on_behalf_of | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). |
 | `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). |
+| `cancel_work(task_pk, user)` | user | The under-the-minimum "oops" undo. Deletes the user's open Blep on the task; if it was the first/only activity (the sole reason the task is `in_progress`), reverts the task to `pending` and un-consumes its materials (`MaterialService.unconsume`). Job status and assignee are left alone. Rejects if the session is already ≥ `blep_minimum_seconds` (stop instead) or there is no open Blep. Own-blep only — no `on_behalf_of`. |
 
 Material consumption happens exactly once: when the first worker calls
 `start_work` on a `pending` task, `MaterialService.consume(material)`
@@ -373,6 +379,10 @@ Validation rules enforced inside `BlepService`:
    other status — `draft`, `submitted`, `rejected`, `completed`,
    `cancelled` — is rejected with `ValidationError`. The UI is expected
    to prevent this; the guard is defensive.
+5. **No future `end_time`:** a non-null `end_time` more than 30s ahead of
+   `now` (`BlepService._CLOCK_SKEW_BUFFER`, tolerating mismatched device
+   clocks) is rejected on create and update. You cannot have worked ahead
+   of now.
 
 ### 5.4 API
 
@@ -380,6 +390,32 @@ Validation rules enforced inside `BlepService`:
 `?task=<id>`, `?since=<iso>` (combined with AND). Permissions:
 `IsAuthenticated` for all endpoints; the service applies the ownership
 and `can_manage_time` rules.
+
+### 5.5 Minimum session, derived activity, change notification
+
+- **Minimum session (`blep_minimum_seconds`, default 60).** While a
+  worker's own open Blep is under this elapsed duration, the UI's Stop
+  control becomes **Cancel** — `POST /api/tasks/{id}/cancel-work/` →
+  `cancel_work` (§4.5). The premise: a session that short is an "oops, I
+  didn't mean to start that," so it's discarded rather than saved. The
+  threshold rides on the `/api/bleps/current/` and task-detail payloads so
+  the client can choose the label live. Manager on-behalf stop is never a
+  cancel.
+- **Derived activity facets.** `TaskSerializer` and `BoardService` expose
+  `has_active_blep`, `active_worker_count`, and `has_bleps` (computed from
+  `blep_set`, prefetched to avoid N+1). The SPA collapses these + status
+  into one label vocabulary via `lib/taskActivity.js` — **Working** (an
+  open Blep right now) / **Ongoing** (`in_progress`, none open) /
+  **Unstarted** (`pending`) / **Blocked** — surfaced identically on the
+  board card, task detail, task tree, home, and schedule quick card.
+  `pending` vs `in_progress` stays distinct in the model (it gates
+  material consumption) but reads as plain "Unstarted" vs "Ongoing"; the
+  only real-time signal that stands out is "Working."
+- **Change notification (frontend).** Every blep mutation funnels through
+  `notifyBlepChanged()` (`stores/blepActivity.js`), which refreshes the
+  sticky `CurrentBlepBand` (so closing/cancelling a session clears it) and
+  bumps a version that blep-dependent pages subscribe to and refetch — the
+  page updates in place, no reload.
 
 ## 6. EstWorksheet
 
@@ -585,7 +621,7 @@ added via the "+" button. Tasks within a column are sorted by
 |---|---|---|
 | Job chip (Pipeline / Approved / Unpaid) | `JobCard.svelte`, `UnpaidCard.svelte` | Job number, name, customer, deadline, sub-status pill, accent stripe (8-color palette, recycled by index) |
 | Closed card | `ClosedCard.svelte` | Same plus profitability (billed / spent / profit, computed in `BoardService._compute_profitability`) |
-| Task card | `TaskCard.svelte` | Task name, status dot, assignee, blocked_reason if blocked |
+| Task card | `TaskCard.svelte` | Task name, activity label + dot (Working / Ongoing / Unstarted / Blocked — see §5.5), assignee, blocked_reason if blocked |
 
 ## 9. UI: Job Detail page
 
@@ -634,7 +670,7 @@ mount.
 
 | Component | Role |
 |---|---|
-| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions |
+| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions. While the user's own session is under `blep_minimum_seconds`, **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
 | `BlepList.svelte` | Table of bleps with edit / delete buttons gated by `isBlepEditable(blep, user, perms)` |
 | `BlepEditModal.svelte` | Create or edit a Blep — `start_time` / `end_time` always; `user` dropdown only when actor has `can_manage_time` |
 | `StartWorkConflictModal.svelte` | Shown when `start-work` returns a `conflict` payload; offers Join / Take over / Cancel |
@@ -654,6 +690,11 @@ Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 
 Worker access to Complete/Block/Unblock is intentional — workers are
 the ones who discover these conditions. Cancel stays manager-only.
+
+While the active session is under `blep_minimum_seconds`, the "Stop Work"
+button instead reads "Cancel" and deletes the just-started Blep (undoing
+the Start) rather than closing it — see §5.5. This is distinct from the
+manager-only task **Cancel** above.
 
 ### 10.3 Recent Time list (home page)
 
