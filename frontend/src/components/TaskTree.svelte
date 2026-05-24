@@ -360,15 +360,6 @@
   .grand-total-row { background: #ecfdf5; border-top: 2px solid #99f6e4; }
   .job-materials-header td { background: #fef9c3; padding-top: 8px; }
 
-  .status-pill {
-    padding: 2px 8px; border-radius: 10px; font-size: 12px;
-    font-weight: 600; text-transform: capitalize;
-  }
-  .status-pending { background: #f3f4f6; color: #374151; }
-  .status-in_progress { background: #dbeafe; color: #1e40af; }
-  .status-complete { background: #d1fae5; color: #065f46; }
-  .status-blocked { background: #fee2e2; color: #991b1b; }
-  .status-cancelled { background: #f3f4f6; color: #9ca3af; }
   .blocked-reason { font-size: 11px; color: #991b1b; }
 
   .actions-cell {

@@ -407,7 +407,8 @@ and `can_manage_time` rules.
   into one label vocabulary via `lib/taskActivity.js` — **Working** (an
   open Blep right now) / **Ongoing** (`in_progress`, none open) /
   **Unstarted** (`pending`) / **Blocked** — surfaced identically on the
-  board card, task detail, task tree, home, and schedule quick card.
+  board card, the job overview Tasks pillar, task detail, task tree, home,
+  and schedule quick card.
   `pending` vs `in_progress` stays distinct in the model (it gates
   material consumption) but reads as plain "Unstarted" vs "Ongoing"; the
   only real-time signal that stands out is "Working."
