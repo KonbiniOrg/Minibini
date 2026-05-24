@@ -255,9 +255,6 @@
                   onclick={() => loadSchedule(n)}>{n}</button>
         {/each}
       </div>
-      {#if $schedule.offset}
-        <button type="button" class="today-btn" onclick={() => resetToToday()}>Today</button>
-      {/if}
     {/if}
   </div>
   {#if $schedule === null}
@@ -267,7 +264,9 @@
     <div class="chart-area">
       <ScheduleHeader days={$schedule.days} laneLabelWidth={LANE_LABEL_WIDTH} {layout}
                       onPrev={() => scrollDays(-1)}
-                      onNext={() => scrollDays(1)} />
+                      onNext={() => scrollDays(1)}
+                      onToday={() => resetToToday()}
+                      atToday={!$schedule.offset} />
       {#if $schedule.workers.length === 0}
         <p class="empty">No assigned work in the visible horizon.</p>
       {:else}
@@ -330,12 +329,6 @@
   .days-control button.active {
     background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600;
   }
-  .today-btn {
-    font-size: 12px; padding: 3px 10px; border: 1px solid #2563eb;
-    background: #fff; color: #2563eb; border-radius: 5px; cursor: pointer;
-    font-weight: 600;
-  }
-  .today-btn:hover { background: #eff6ff; }
   .chart-area { margin-top: 8px; }
   .chart { position: relative; }
   /* Stacking: off-hours background (0) < lanes/bars (1) < bands & now-line (2) */
