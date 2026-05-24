@@ -17,9 +17,11 @@
     return panelLayout ? panelLayout.timeToX(t) : 0;
   }
 
+  // Reorder positions are driven by FORECAST bars (the rearrangeable future
+  // queue); a task's past `actual` pieces don't affect where it drops.
   function taskStartX(id) {
     const xs = worker.bars
-      .filter(b => b.task_id === id)
+      .filter(b => b.task_id === id && b.kind === 'forecast')
       .map(b => timeToX(new Date(b.segments[0]?.start)))
       .filter(v => !Number.isNaN(v));
     return xs.length ? Math.min(...xs) : Infinity;
@@ -27,7 +29,7 @@
 
   function taskEndX(id) {
     const xs = worker.bars
-      .filter(b => b.task_id === id)
+      .filter(b => b.task_id === id && b.kind === 'forecast')
       .flatMap(b => b.segments.map(s => timeToX(new Date(s.end))))
       .filter(v => !Number.isNaN(v));
     return xs.length ? Math.max(...xs) : -Infinity;
@@ -37,7 +39,7 @@
     const seen = new Set();
     const ids = [];
     for (const bar of worker.bars) {
-      if (bar.kind === 'historical') continue;
+      if (bar.kind !== 'forecast') continue;  // only future work reorders
       if (bar.task_id === excludedId) continue;
       if (seen.has(bar.task_id)) continue;
       seen.add(bar.task_id);
@@ -59,7 +61,7 @@
     const fullIds = [];
     const seenFull = new Set();
     for (const bar of worker.bars) {
-      if (bar.kind === 'historical') continue;
+      if (bar.kind !== 'forecast') continue;
       if (seenFull.has(bar.task_id)) continue;
       seenFull.add(bar.task_id);
       fullIds.push(bar.task_id);

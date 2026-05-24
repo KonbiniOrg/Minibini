@@ -1,10 +1,10 @@
 # Schedule view
 
 The `#/schedule` page visualizes each worker's assigned work on a time-axis
-calendar over a rolling N-day horizon. Tasks render as horizontal bars in
-queue order, anchored to actual blep times where work has happened and
-projected forward by estimate where it hasn't, pivoting at a live "now" line.
-Drag-to-reorder rearranges a worker's queue without reassigning.
+calendar over a rolling N-day horizon. Past work renders as dark `actual` bars
+straight from the bleps; future work as light `forecast` bars sized by
+`est_worker_time` — the two split at a live "now" line. Drag-to-reorder
+rearranges a worker's queue (the forecast bars) without reassigning.
 
 Audience: shop manager (capacity planning) and workers (reading their own
 row). All authenticated users can view; the drag is gated only by the
@@ -65,30 +65,27 @@ spans `horizon_days`. Each `days[]` entry carries `date`, `label`,
 is `pending`/`in_progress`/`blocked`, or `complete` with a blep ending today.
 Ordered by name.
 
-**Per-worker walk.** Tasks are ordered by `(phase, worker_queue, pk)`, where
-`phase` groups by how a task relates to the clock — **not** by status:
-completed actuals (0) first, then the live session / open blep (1), then
-everything **floating** (2: pending / in-progress-without-an-open-blep /
-blocked). The floating bucket orders by `worker_queue` alone, so it mirrors the
-job board and a drag-reorder on either view holds on both. A `cursor` threads
-forward through the walk (normalized past workday-end / weekends via
-`next_workable_moment`); a completed task may pull it backward to its actual
-end, but a floating forecast never starts before `now`. Each task emits one or
-more **bars**:
+**Per-worker walk.** Tasks are walked in pure `(worker_queue, pk)` order —
+exactly the job board's order. Each task emits **two kinds of bar**, divided by
+the live now-line:
 
-| `kind` | Source | Layers |
+| `kind` | Source | Colour |
 |---|---|---|
-| `historical` | Past blep groups | Dark actual; light estimate coextensive for completed |
-| `active` | The current in-progress session | Light (estimate) + dark (elapsed), both anchored at the session's first blep |
-| `forecast` | Projected slot for a workable task — pending, in-progress-without-an-open-blep, or **blocked** | Light; a blocked bar adds a red diagonal hatch + ring (no separate strip) |
+| `actual` | one per contiguous blep session (immutable past); the session holding an open blep ends at `now` and is flagged `is_running` | dark (darkened accent) |
+| `forecast` | the assignee's remaining estimate of unfinished work — full estimate if unstarted, `est − logged` otherwise, floored at `MIN_FORECAST` (10 min) so an overrun-but-open or tiny task never vanishes | light (accent); blocked adds a red diagonal hatch + ring |
 
-A bar's `segments` split the wall-clock interval at every overnight / weekend
-boundary; each segment carries `est_fill_to` / `actual_fill_to` (where the
-light / dark layers end) and `continues_left` / `continues_right` flags that
-drive the zigzag edges. Floating (forecast) bars advance the cursor by
-`est_worker_time + buffer`; an in-progress bar advances it past the later of its estimate
-projection and its actual end (`now` if running). Completed bars end at the
-actual end, so finishing early or running long shifts downstream tasks.
+Actual pieces are wall-clock-anchored and `<= now`; forecasts cascade from a
+`cursor` (queue order, floored at `now`) and are `>= now`. So the cursor only
+positions forecasts, and **no two bars in a lane can overlap** — a worker's own
+sessions never overlap in time, and past/future are separated by the now-line
+(this is why no phase grouping is needed). A completed task emits only actuals;
+a non-assignee blepper shows only their own sessions, never a forecast.
+
+A bar is a single solid colour (no estimate-vs-actual layers — plan-vs-actual
+lives on the task page). Its `segments` split the wall-clock interval at every
+overnight / weekend boundary and carry `continues_left` / `continues_right`
+flags that drive the zigzag edges. Forecast bars advance the cursor by
+`duration + buffer`.
 
 The work-time math lives in `calendar_arithmetic.py` as pure functions over a
 `DayShape(workday_start, workday_end, task_buffer_minutes)`:
@@ -100,13 +97,11 @@ overnight/weekend), `segments_for`, `work_minutes_between`,
 already logged (e.g. a completed task that ran past closing) — fell outside
 configured hours, the *display* day shape widens (start floored / end ceiled
 to the hour) to cover it, plus a running blep's estimate projection. Work
-crossing midnight only extends the early edge. Without this, off-hours bar
-portions would clamp to the configured edges and vanish. Forecasts still
-cascade on the configured hours — config drives the cascade, display drives
-the axis. A completed task's estimate layer is also capped at the day edge so
-a late start can't wrap a tiny estimate tail into the next morning (a phantom
-continuation chevron). The response carries both shapes so the frontend shades
-the off-hours margins.
+crossing midnight only extends the early edge (run to end-of-day for near-
+midnight work; a `time` can't hold 24:00). Without this, off-hours actual
+pieces would clamp to the configured edges and vanish. Forecasts still cascade
+on the configured hours — config drives the cascade, display drives the axis.
+The response carries both shapes so the frontend shades the off-hours margins.
 
 ---
 
@@ -131,7 +126,7 @@ working-day scroll offset (clamped ±60). Response envelope:
   "days":    [ { "date": "…", "is_working": true, "label": "Mon · May 19" } ],
   "jobs":    [ { "job_id": 110, "name": "…", "accent_color": "#dc2626", … } ],
   "workers": [ { "user": { "id": 5, "name": "…", "initials": "RP" },
-                 "bars": [ { "task_id": …, "kind": "active", "segments": [ … ] } ] } ]
+                 "bars": [ { "task_id": …, "kind": "actual", "is_running": true, "segments": [ … ] } ] } ]
 }
 ```
 
@@ -149,9 +144,10 @@ the SPA refetches after a successful reorder.
 auto-refresh + reorder). The Board's `JobChipStrip` is reused at the top.
 
 - **Layout math** (client): each working day gets an equal panel; a segment
-  maps to an absolutely-positioned div, with light/dark layer widths derived
-  from `est_fill_to` / `actual_fill_to`. Zigzag edges via `clip-path` on
-  segments flagged `continues_left/right`. Completed bars render dimmed.
+  maps to an absolutely-positioned div, filled with one solid colour by kind
+  (`forecast` bright accent, `actual` darkened). Zigzag edges via `clip-path`
+  on segments flagged `continues_left/right`. `actual` bars recede slightly;
+  the running session keeps full opacity with a bright ring.
 - **Now line** seeds from the payload `now` and ticks client-side each minute;
   hidden when "now" is off the scrolled window. ‹/› and "Today" drive
   `offset`; a day-count control drives `?days=N`.

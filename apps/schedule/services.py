@@ -12,9 +12,13 @@ from django.utils import timezone
 from apps.core.models import Configuration
 from apps.schedule.calendar_arithmetic import (
     DayShape, add_work_time, is_working_day, next_workable_moment,
-    segments_for, shift_working_days, work_minutes_between, workday_end_on,
-    workday_start_on,
+    segments_for, shift_working_days, work_minutes_between, workday_start_on,
 )
+
+# An unfinished task always forecasts at least this much, so overrun-but-open
+# work (logged >= estimate) and tiny/zero-estimate tasks still show a slot in
+# the worker's queue, keeping the schedule in sync with the job board.
+MIN_FORECAST = timedelta(minutes=10)
 
 
 # Configuration keys + defaults. Defaults are written into Configuration on
@@ -321,6 +325,26 @@ class ScheduleService:
         return replace(shape, workday_start=new_start, workday_end=new_end)
 
     @staticmethod
+    def _group_bleps(bleps):
+        """Split bleps (already sorted by start) into contiguous work sessions.
+        A new session begins whenever a blep starts after the previous one
+        ended (a gap). Back-to-back bleps merge. Returns a list of blep lists."""
+        groups = []
+        current = []
+        prev_end = None
+        for b in bleps:
+            if current and prev_end is not None and b.start_time > prev_end:
+                groups.append(current)
+                current = []
+            current.append(b)
+            # An open blep has no end (it's the running last one); floor on its
+            # start so a following blep — if any — would split off.
+            prev_end = b.end_time or b.start_time
+        if current:
+            groups.append(current)
+        return groups
+
+    @staticmethod
     def _build_lane(worker, local_now, shape, display_shape,
                     window_start, window_end):
         """Walk the worker's queue and emit bars in order.
@@ -365,32 +389,14 @@ class ScheduleService:
             pk__in=task_ids,
         ).select_related('job').order_by('worker_queue', 'pk')
 
-        # Order by PROCESSING PHASE, then worker_queue, then pk. The phase —
-        # not status — drives the sort so the forecast cursor still moves in
-        # time-natural order (past actuals → live session → future), while all
-        # *workable* tasks share one queue-ordered bucket. That shared bucket
-        # is what lets a pending task and an in-progress-without-an-open-blep
-        # task reorder freely by worker_queue, matching the job board.
-        # Anchored bars (completed actuals, the live session) draw at their
-        # wall-clock times regardless of queue, so processing them first is
-        # what prevents a later forecast landing on top of them — independent
-        # of queue position.
-        open_blep_task_ids = set(Blep.objects.filter(
-            user=worker, end_time__isnull=True,
-        ).values_list('task_id', flat=True))
-
-        def _phase(t):
-            if t.status == Task.STATUS_COMPLETE:
-                return 0  # anchored in the past; may pull the cursor back
-            if (t.status == Task.STATUS_IN_PROGRESS
-                    and t.pk in open_blep_task_ids):
-                return 1  # anchored to the live session
-            return 2      # floating: pending / in_progress-no-blep / blocked
-
-        tasks_qs = sorted(
+        # Pure worker_queue order — exactly the job board's order. Actual
+        # pieces are wall-clock-anchored and forecasts always start at/after
+        # now, so order only affects the forecast cascade; no phase grouping is
+        # needed (the running task is promoted to worker_queue=1, so its
+        # remaining-forecast still lands first).
+        tasks = sorted(
             tasks_qs,
             key=lambda t: (
-                _phase(t),
                 t.worker_queue if t.worker_queue is not None else 9999,
                 t.pk,
             ),
@@ -406,93 +412,41 @@ class ScheduleService:
         cursor = now_floor
         bars = []
 
-        # The cascade walks the lane in (phase, worker_queue, pk) order and
-        # threads a single `cursor` forward. Each task falls into one of three
-        # SHAPES — by how it relates to the clock, not by status:
-        #
-        # 1. Live session (an open blep): anchored to real time; advances the
-        #    cursor monotonically so later queued forecasts can't be pulled
-        #    back on top of work happening now.
-        # 2. Actuals only (completed, or any task blepped by a non-assignee):
-        #    show the logged work, never a forecast. A completed task advances
-        #    the cursor to its actual end — finishing early frees the slot and
-        #    can move the cursor BACKWARD (a following pending task is still
-        #    floored at `now`). A non-assignee's closed blep does NOT advance
-        #    the cursor (not their plan; it would also jitter with scroll).
-        # 3. Floating own work (the assignee's pending / in-progress-without-
-        #    an-open-blep / blocked): forecast from the cursor in queue order,
-        #    floored at `now`. With prior logged time (paused / worked-then-
-        #    blocked) draw the actuals and forecast only the REMAINING
-        #    estimate; otherwise forecast the full estimate.
-
-        for task in tasks_qs:
-            # Only THIS worker's bleps drive their lane's bars, so concurrent
-            # workers each show their own contribution to a shared task.
+        # Past = dark `actual` pieces (one per contiguous blep session); future
+        # = light `forecast` (the remaining estimate, floored at MIN_FORECAST
+        # while unfinished). The now-line divides them: actuals are wall-clock-
+        # anchored and <= now; forecasts cascade from `cursor` in queue order
+        # and are >= now. So the cursor only positions forecasts, and no two
+        # bars in a lane can overlap.
+        for task in tasks:
+            # Only THIS worker's bleps drive their lane's bars.
             bleps = list(task.blep_set.filter(user=worker).order_by('start_time'))
-            # The estimate belongs to the assignee's plan — a non-assignee
-            # helping out shows only their actual work, no estimate layer.
             is_assignee = task.assignee_id == worker.pk
-            has_open_blep = any(b.end_time is None for b in bleps)
-
-            # 1. Live session — anchored to the open blep, advances monotonically.
-            if has_open_blep:
-                active_bars, new_cursor = ScheduleService._emit_active(
-                    task, bleps, local_now, cursor, display_shape, shape,
-                    show_est=is_assignee,
-                )
-                bars.extend(active_bars)
-                if new_cursor is not None and new_cursor > cursor:
-                    cursor = new_cursor
-                continue
-
-            # 2. Actuals only — a completed task, or a non-assignee's logged
-            #    help. Never forecast. Completed advances the cursor to its
-            #    actual end (may move backward); a non-assignee's blep doesn't.
-            if task.status == Task.STATUS_COMPLETE or not is_assignee:
-                if bleps:
-                    advance_from = (
-                        cursor if task.status == Task.STATUS_COMPLETE else None
-                    )
-                    hist_bars, new_cursor = ScheduleService._emit_historical(
-                        task, bleps, local_now, display_shape, shape,
-                        advance_cursor_from=advance_from, show_est=is_assignee,
-                    )
-                    bars.extend(hist_bars)
-                    if advance_from is not None:
-                        cursor = new_cursor  # completed may pull cursor back
-                continue
-
-            # 3. Floating own work — assignee's pending / in-progress-no-blep /
-            #    blocked. Forecast from the cursor in queue order, floored at now.
-            duration = None  # forecast the full estimate by default
-            if bleps:
-                elapsed = ScheduleService._elapsed_worktime(bleps, local_now, shape)
-                remaining = (task.est_worker_time or timedelta(0)) - elapsed
-                if remaining > timedelta(0):
-                    # Paused / worked-then-blocked: show the actuals WITHOUT the
-                    # estimate layer (it lives on the forecast, so it can't
-                    # overlap the work), then forecast the remaining estimate.
-                    hist_bars, _ = ScheduleService._emit_historical(
-                        task, bleps, local_now, display_shape, shape, show_est=False,
-                    )
-                    bars.extend(hist_bars)
-                    duration = remaining
-                else:
-                    # Over-worked: the estimate fits inside the actual span, so
-                    # the est-vs-actual historical shows the overrun; nothing
-                    # left to forecast.
-                    hist_bars, _ = ScheduleService._emit_historical(
-                        task, bleps, local_now, display_shape, shape,
-                        show_est=is_assignee,
-                    )
-                    bars.extend(hist_bars)
-                    continue
-
-            cursor = max(cursor, now_floor)  # never forecast before now
-            forecast_bars, cursor = ScheduleService._emit_forecast(
-                task, cursor, shape, duration=duration,
+            # Total logged time, raw (matches Blep.elapsed / the task page);
+            # carried on every one of the task's bars.
+            total_elapsed = sum(
+                int(((b.end_time or local_now) - b.start_time).total_seconds()) // 60
+                for b in bleps
             )
-            bars.extend(forecast_bars)
+
+            # Past: one dark actual piece per contiguous work session. The
+            # session holding an open blep ends at now and is flagged running.
+            for group in ScheduleService._group_bleps(bleps):
+                bars.append(ScheduleService._emit_actual(
+                    task, group, local_now, display_shape, total_elapsed,
+                ))
+
+            # Future: the assignee's own remaining estimate, floored so an
+            # overrun-but-open or tiny task still holds a slot in the queue.
+            if is_assignee and task.status != Task.STATUS_COMPLETE:
+                worked = ScheduleService._elapsed_worktime(bleps, local_now, shape)
+                remaining = (task.est_worker_time or timedelta(0)) - worked
+                forecast_bars, cursor = ScheduleService._emit_forecast(
+                    task, cursor, shape,
+                    duration=max(remaining, MIN_FORECAST),
+                    elapsed_minutes=total_elapsed,
+                )
+                bars.extend(forecast_bars)
 
         return bars
 
@@ -507,12 +461,12 @@ class ScheduleService:
         return total
 
     @staticmethod
-    def _emit_forecast(task, cursor, shape, duration=None):
-        """Forecast bar from `cursor`, plus the advanced cursor (forecast end +
-        buffer). `duration` overrides the task's full estimate (used to forecast
-        the REMAINING time on a paused task). Returns (bars, new_cursor); with
-        no positive estimate there's no bar, but the cursor still steps past the
-        buffer (preserving prior behavior)."""
+    def _emit_forecast(task, cursor, shape, duration=None, elapsed_minutes=0):
+        """Light forecast bar from `cursor`, plus the advanced cursor (end +
+        buffer). `duration` overrides the task's full estimate (the remaining
+        time on a partly-worked task). Returns (bars, new_cursor); with no
+        positive duration there's no bar, but the cursor still steps past the
+        buffer."""
         est = duration if duration is not None else task.est_worker_time
         start = next_workable_moment(cursor, shape)
         buf = timedelta(minutes=shape.task_buffer_minutes)
@@ -521,150 +475,43 @@ class ScheduleService:
         end = add_work_time(start, est, shape)
         segments = segments_for(start, end, shape)
         bar = ScheduleService._build_bar(
-            task=task, kind='forecast',
-            segments=segments, elapsed_minutes=0, is_running=False,
-            est_layer_end=end, actual_layer_end=None,
+            task=task, kind='forecast', segments=segments,
+            elapsed_minutes=elapsed_minutes, is_running=False,
         )
         return [bar], next_workable_moment(end + buf, shape)
 
     @staticmethod
-    def _emit_active(task, bleps, local_now, cursor, pshape, sshape,
-                     show_est=True):
-        """Emit the active bar for an in-progress task with bleps.
-
-        `pshape` positions the bar (the display axis — may run off-hours);
-        `sshape` is the configured workday used to advance the scheduling
-        cursor so following pending tasks stay within configured hours.
-        `show_est=False` (a non-assignee's lane) suppresses the estimate
-        light layer — only the worker's actual blep span is drawn.
-        Returns (bars_list, new_cursor)."""
-        anchor_start = bleps[0].start_time.astimezone(local_now.tzinfo)
-        est = task.est_worker_time or timedelta(0)
-        est_layer_end = add_work_time(anchor_start, est, pshape) if show_est else None
-
-        last_blep = bleps[-1]
-        is_running = last_blep.end_time is None
-        if is_running:
-            dark_end_clock = local_now
-        else:
-            dark_end_clock = last_blep.end_time.astimezone(local_now.tzinfo)
-
-        elapsed_minutes = 0
-        for b in bleps:
-            b_start = b.start_time.astimezone(local_now.tzinfo)
-            b_end = (b.end_time or local_now).astimezone(local_now.tzinfo)
-            # Elapsed is the true logged duration (matches Blep.elapsed and the
-            # task page), independent of the display axis — off-hours work the
-            # axis can't fully cover still counts in full.
-            elapsed_minutes += int((b_end - b_start).total_seconds() // 60)
-
-        # A running blep with no estimate layer (a non-assignee's bar) is
-        # only as wide as the elapsed actual time, so it's invisible the
-        # instant it starts (e.g. a manager just started it on someone's
-        # behalf). Floor its dark layer to a minimum visible duration; once
-        # real elapsed exceeds the floor this no-ops. The estimate-bearing
-        # (assignee) bar is already wide enough, so it's left exact.
-        MIN_RUNNING = timedelta(minutes=15)
-        dark_render_end = dark_end_clock
-        if is_running and est_layer_end is None:
-            dark_render_end = max(
-                dark_end_clock, add_work_time(anchor_start, MIN_RUNNING, pshape),
-            )
-
-        if est_layer_end is None:
-            effective_end = dark_render_end
-        else:
-            effective_end = max(est_layer_end, dark_end_clock)
-        segments = segments_for(anchor_start, effective_end, pshape)
-
-        bar = ScheduleService._build_bar(
-            task=task, kind='active', segments=segments,
+    def _emit_actual(task, group, local_now, pshape, elapsed_minutes):
+        """A dark `actual` bar for one contiguous work session (immutable past
+        work). The session holding an open blep ends at now and is flagged
+        running. `pshape` is the display axis (widened for off-hours work). A
+        zero-width session — a blep viewed the instant it started — still
+        renders a one-minute sliver so it's visible."""
+        start = group[0].start_time.astimezone(local_now.tzinfo)
+        is_running = group[-1].end_time is None
+        end_dt = local_now if is_running else group[-1].end_time
+        end = end_dt.astimezone(local_now.tzinfo)
+        segments = segments_for(start, end, pshape)
+        if not segments:
+            segments = [(start, start + timedelta(minutes=1))]
+        return ScheduleService._build_bar(
+            task=task, kind='actual', segments=segments,
             elapsed_minutes=elapsed_minutes, is_running=is_running,
-            est_layer_end=est_layer_end, actual_layer_end=dark_render_end,
         )
-        buf = timedelta(minutes=sshape.task_buffer_minutes)
-        new_cursor = next_workable_moment(effective_end + buf, sshape)
-        return [bar], new_cursor
 
     @staticmethod
-    def _emit_historical(task, bleps, local_now, pshape, sshape,
-                         advance_cursor_from=None, show_est=True):
-        """Emit a historical bar for a task with bleps. Light layer = the
-        estimate (anchored at the first blep, always shown at full width —
-        never truncated to the actuals). Dark layer = the actual blep span.
-        Overrun shows as dark extending past light; an early finish shows
-        the full estimate light extending past the dark.
-
-        `pshape` positions the bar (display axis); `sshape` is the configured
-        workday used for cursor advancement. Cursor advances to the ACTUAL
-        end + buffer (a task that finished early still lets the next task
-        start earlier — its estimate light may overlap that next task, which
-        renders on top).
-
-        Contiguous-blep grouping into multiple bars is still YAGNI for v1.
-        Returns (bars, new_cursor_if_advance_requested)."""
-        if not bleps:
-            return [], advance_cursor_from
-        first = bleps[0].start_time.astimezone(local_now.tzinfo)
-        last_end_dt = bleps[-1].end_time or local_now
-        last = last_end_dt.astimezone(local_now.tzinfo)
-
-        est = task.est_worker_time or timedelta(0)
-        if show_est and est > timedelta(0):
-            est_layer_end = add_work_time(first, est, pshape)
-            # For a COMPLETED task we don't carry leftover estimate: cap the
-            # estimate layer at the day end of the actual work so a late start
-            # can't wrap a tiny estimate tail into the next morning (which
-            # would render as a phantom continuation chevron). Incomplete work
-            # keeps the wrap — it signals estimated time still expected.
-            from apps.jobs.models import Task
-            if task.status == Task.STATUS_COMPLETE:
-                est_layer_end = min(est_layer_end, workday_end_on(last.date(), pshape))
-        else:
-            est_layer_end = None
-        bar_end = last if est_layer_end is None else max(est_layer_end, last)
-        segments = segments_for(first, bar_end, pshape)
-
-        elapsed_minutes = 0
-        for b in bleps:
-            b_start = b.start_time.astimezone(local_now.tzinfo)
-            b_end = (b.end_time or local_now).astimezone(local_now.tzinfo)
-            # Elapsed is the true logged duration (matches Blep.elapsed and the
-            # task page), independent of the display axis — off-hours work the
-            # axis can't fully cover still counts in full.
-            elapsed_minutes += int((b_end - b_start).total_seconds() // 60)
-
-        bar = ScheduleService._build_bar(
-            task=task, kind='historical', segments=segments,
-            elapsed_minutes=elapsed_minutes, is_running=False,
-            est_layer_end=est_layer_end, actual_layer_end=last,
-        )
-        if advance_cursor_from is None:
-            return [bar], None
-        buf = timedelta(minutes=sshape.task_buffer_minutes)
-        new_cursor = next_workable_moment(last + buf, sshape)
-        return [bar], new_cursor
-
-    @staticmethod
-    def _build_bar(*, task, kind, segments, elapsed_minutes,
-                   is_running, est_layer_end, actual_layer_end):
-        """Assemble the bar dict from raw segments and layer endpoints."""
+    def _build_bar(*, task, kind, segments, elapsed_minutes, is_running):
+        """Assemble the bar dict. Each bar is a single solid colour by kind
+        (`forecast` light, `actual` dark); segments carry only their interval
+        and the zigzag continuation flags."""
         est_minutes = int(
             (task.est_worker_time or timedelta(0)).total_seconds() // 60
         )
         seg_dicts = []
         for seg_start, seg_end in segments:
-            est_fill_to = None
-            actual_fill_to = None
-            if est_layer_end is not None and est_layer_end > seg_start:
-                est_fill_to = min(est_layer_end, seg_end)
-            if actual_layer_end is not None and actual_layer_end > seg_start:
-                actual_fill_to = min(actual_layer_end, seg_end)
             seg_dicts.append({
                 'start': seg_start.isoformat(),
                 'end': seg_end.isoformat(),
-                'est_fill_to': est_fill_to.isoformat() if est_fill_to else None,
-                'actual_fill_to': actual_fill_to.isoformat() if actual_fill_to else None,
                 'continues_left': False,
                 'continues_right': False,
             })

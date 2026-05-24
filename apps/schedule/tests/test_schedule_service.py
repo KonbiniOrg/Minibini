@@ -150,8 +150,8 @@ class OffHoursInProgressTest(BaseTestCase):
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         bars = {(b['task_id'], b['kind']): b for b in worker['bars']}
 
-        # Active bar starts at the actual 07:00 (not clamped to 08:00).
-        active_bar = bars[(active.pk, 'active')]
+        # The running actual piece starts at the real 07:00 (not clamped to 08:00).
+        active_bar = bars[(active.pk, 'actual')]
         active_first = datetime.fromisoformat(active_bar['segments'][0]['start'])
         self.assertEqual(active_first.hour, 7)
 
@@ -246,7 +246,7 @@ class PendingTaskCrossingsTest(BaseTestCase):
 
 class InProgressTaskTest(BaseTestCase):
 
-    def test_in_progress_with_running_blep_emits_active_bar(self):
+    def test_in_progress_with_running_blep_emits_actual_and_forecast(self):
         user, task = _seed_user_with_pending_task(est_minutes=180)
         task.status = Task.STATUS_IN_PROGRESS
         task.save()
@@ -257,16 +257,17 @@ class InProgressTaskTest(BaseTestCase):
 
         data = ScheduleService.get_schedule(now=now)
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
-        actives = [b for b in worker['bars'] if b['kind'] == 'active']
-        self.assertEqual(len(actives), 1)
-        bar = actives[0]
-        self.assertTrue(bar['is_running'])
-        self.assertEqual(bar['est_minutes'], 180)
-        self.assertEqual(bar['elapsed_minutes'], 60)
-        self.assertEqual(len(bar['segments']), 1)
-        seg = bar['segments'][0]
-        self.assertIsNotNone(seg['est_fill_to'])
-        self.assertIsNotNone(seg['actual_fill_to'])
+        actuals = [b for b in worker['bars'] if b['kind'] == 'actual']
+        forecasts = [b for b in worker['bars'] if b['kind'] == 'forecast']
+        # A running actual piece up to now, plus the remaining estimate forecast.
+        self.assertEqual(len(actuals), 1)
+        self.assertTrue(actuals[0]['is_running'])
+        self.assertEqual(actuals[0]['est_minutes'], 180)
+        self.assertEqual(actuals[0]['elapsed_minutes'], 60)
+        self.assertEqual(
+            datetime.fromisoformat(actuals[0]['segments'][-1]['end']), now,
+        )
+        self.assertEqual(len(forecasts), 1)
 
 
 class OverrunCascadeTest(BaseTestCase):
@@ -320,7 +321,7 @@ class CompletedEarlyTest(BaseTestCase):
         data = ScheduleService.get_schedule(now=now)
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         bars_by_task = {b['task_id']: b for b in worker['bars']}
-        self.assertEqual(bars_by_task[task1.pk]['kind'], 'historical')
+        self.assertEqual(bars_by_task[task1.pk]['kind'], 'actual')
         t2_start = datetime.fromisoformat(
             bars_by_task[task2.pk]['segments'][0]['start']
         )
@@ -392,8 +393,8 @@ class BlockedTaskTest(BaseTestCase):
         )
         self.assertGreaterEqual(after_start, blocked_end)
 
-    def test_blocked_with_prior_bleps_shows_historical_plus_remainder(self):
-        # Worked 20 of 60 min, then blocked → past actuals (historical) plus a
+    def test_blocked_with_prior_bleps_shows_actual_plus_remainder(self):
+        # Worked 20 of 60 min, then blocked → a dark actual piece plus a
         # forecast of the remaining time, exactly like a paused task.
         user, blocked = _seed_user_with_pending_task(
             est_minutes=60, name='BlockedWorked', username='blkw_user',
@@ -410,48 +411,32 @@ class BlockedTaskTest(BaseTestCase):
         data = ScheduleService.get_schedule(now=now)
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         kinds = {b['kind'] for b in worker['bars'] if b['task_id'] == blocked.pk}
-        self.assertIn('historical', kinds)
+        self.assertIn('actual', kinds)
         self.assertIn('forecast', kinds)
         self.assertNotIn('parked', kinds)
 
 
-class HistoricalShowsEstimateTest(BaseTestCase):
-    """Completed (historical) bars show the full estimate as the light
-    layer and the actuals as the dark layer — never truncating the
-    estimate to the actual span."""
+class CompletedTaskShowsActualOnlyTest(BaseTestCase):
+    """A completed task renders only its dark actual work — no estimate
+    layer, no forecast (plan-vs-actual lives on the task page now)."""
 
-    def _completed_task(self, est_minutes, actual_minutes, username):
+    def test_completed_task_is_a_single_actual_bar(self):
         user, task = _seed_user_with_pending_task(
-            est_minutes=est_minutes, name='C', username=username,
+            est_minutes=60, name='C', username='completed_user',
         )
         d = date_at_weekday(2)
         start = local_dt(d, 9, 0)
-        end = start + timedelta(minutes=actual_minutes)
+        end = start + timedelta(minutes=30)
         task.status = Task.STATUS_IN_PROGRESS; task.save()
         task.status = Task.STATUS_COMPLETE; task.save()
         Blep.objects.create(user=user, task=task, start_time=start, end_time=end)
         now = end + timedelta(minutes=30)
+
         data = ScheduleService.get_schedule(now=now)
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
-        bar = next(b for b in worker['bars'] if b['task_id'] == task.pk)
-        return bar
-
-    def test_early_finish_shows_estimate_past_actuals(self):
-        # est 60m, took 30m → light (est) ends after dark (actual).
-        bar = self._completed_task(60, 30, 'hist_early')
-        self.assertEqual(bar['kind'], 'historical')
-        seg = bar['segments'][-1]
-        est_end = datetime.fromisoformat(seg['est_fill_to'])
-        actual_end = datetime.fromisoformat(seg['actual_fill_to'])
-        self.assertGreater(est_end, actual_end)
-
-    def test_overrun_shows_actuals_past_estimate(self):
-        # est 30m, took 60m → dark (actual) ends after light (est).
-        bar = self._completed_task(30, 60, 'hist_over')
-        seg = bar['segments'][-1]
-        est_end = datetime.fromisoformat(seg['est_fill_to'])
-        actual_end = datetime.fromisoformat(seg['actual_fill_to'])
-        self.assertGreater(actual_end, est_end)
+        bars = [b for b in worker['bars'] if b['task_id'] == task.pk]
+        self.assertEqual([b['kind'] for b in bars], ['actual'])
+        self.assertEqual(bars[0]['elapsed_minutes'], 30)
 
 
 class OnBehalfApearsOnScheduleTest(BaseTestCase):
@@ -548,12 +533,11 @@ class FourTaskWorkerWithActiveBlepTest(BaseTestCase):
 
 
 class PausedInProgressTaskTest(BaseTestCase):
-    """A task started then abandoned for another (in_progress, only a closed
-    blep) must not stamp a full estimate bar onto its brief past blep — that
-    overlaps the actually-active task. It forecasts the remaining estimate
-    ahead instead, leaving the active task fully visible."""
+    """A task started then set aside for another (a closed blep, no open one)
+    shows its past work as a dark actual piece and forecasts the remaining
+    estimate ahead — it never paints over the actually-running task."""
 
-    def test_paused_task_does_not_overlap_active_task(self):
+    def test_paused_task_forecasts_after_active_no_overlap(self):
         worker, t_active = _seed_user_with_pending_task(
             est_minutes=60, name='Active', username='paused_worker',
         )
@@ -567,13 +551,11 @@ class PausedInProgressTaskTest(BaseTestCase):
         Task.objects.filter(pk=t_active.pk).update(status=Task.STATUS_IN_PROGRESS)
 
         d = date_at_weekday(2)
-        # Paused: a 34-second closed blep, then the worker switched to active.
         Blep.objects.create(
             user=worker, task=t_paused,
             start_time=local_dt(d, 9, 0),
             end_time=local_dt(d, 9, 0) + timedelta(seconds=34),
         )
-        # Active: open blep started right after.
         Blep.objects.create(
             user=worker, task=t_active,
             start_time=local_dt(d, 9, 0) + timedelta(seconds=34), end_time=None,
@@ -583,33 +565,32 @@ class PausedInProgressTaskTest(BaseTestCase):
         data = ScheduleService.get_schedule(now=now)
         lane = next(w for w in data['workers'] if w['user']['id'] == worker.pk)
 
-        active_bar = next(b for b in lane['bars']
-                          if b['task_id'] == t_active.pk and b['kind'] == 'active')
-        # The paused task forecasts AHEAD (a forecast bar), not an active bar
-        # anchored to its past blep.
+        active_actual = next(b for b in lane['bars']
+                             if b['task_id'] == t_active.pk and b['kind'] == 'actual')
+        self.assertTrue(active_actual['is_running'])
         paused_forecast = next(
             (b for b in lane['bars']
              if b['task_id'] == t_paused.pk and b['kind'] == 'forecast'), None,
         )
         self.assertIsNotNone(paused_forecast, "paused task should forecast ahead")
+        # The paused task's own past work is not running, and its forecast sits
+        # after the active session, not on top of it.
         self.assertFalse(
-            any(b['task_id'] == t_paused.pk and b['kind'] == 'active'
+            any(b['task_id'] == t_paused.pk and b['is_running']
                 for b in lane['bars']),
-            "paused task should not render as an active bar",
         )
-        # The paused forecast starts at/after the active task's end (no overlap).
         active_end = max(datetime.fromisoformat(s['end'])
-                         for s in active_bar['segments'])
+                         for s in active_actual['segments'])
         forecast_start = datetime.fromisoformat(paused_forecast['segments'][0]['start'])
         self.assertGreaterEqual(forecast_start, active_end)
 
 
 class OverworkedPausedTaskTest(BaseTestCase):
-    """A worked-past-estimate task that isn't marked complete (in_progress,
-    one closed blep, no remaining) must still show its planned time as the
-    est-vs-actual historical — the overrun must not suppress it."""
+    """A worked-past-estimate task that isn't complete shows its full actual
+    span (not capped to the estimate) and still holds a minimum forecast slot
+    so it doesn't vanish from the queue."""
 
-    def test_overworked_paused_task_shows_estimate_layer(self):
+    def test_overworked_paused_shows_full_actual_and_floor_forecast(self):
         worker, task = _seed_user_with_pending_task(
             est_minutes=60, name='Overrun', username='overrun_worker',
         )
@@ -624,16 +605,17 @@ class OverworkedPausedTaskTest(BaseTestCase):
 
         data = ScheduleService.get_schedule(now=now)
         lane = next(w for w in data['workers'] if w['user']['id'] == worker.pk)
-        bars = [b for b in lane['bars'] if b['task_id'] == task.pk]
-        self.assertTrue(bars, "overworked paused task should still appear")
-        hist = next(b for b in bars if b['kind'] == 'historical')
-        # The estimate (light) layer is present and ends BEFORE the actuals
-        # (dark), i.e. the overrun shows.
-        seg = hist['segments'][0]
-        self.assertIsNotNone(seg['est_fill_to'], "planned time (estimate) should show")
-        est_end = datetime.fromisoformat(seg['est_fill_to'])
-        actual_end = datetime.fromisoformat(seg['actual_fill_to'])
-        self.assertGreater(actual_end, est_end)
+        actuals = [b for b in lane['bars']
+                   if b['task_id'] == task.pk and b['kind'] == 'actual']
+        forecasts = [b for b in lane['bars']
+                     if b['task_id'] == task.pk and b['kind'] == 'forecast']
+        self.assertEqual(len(actuals), 1)
+        a = actuals[0]
+        # Full worked span shown, not truncated to the 60-min estimate.
+        self.assertEqual(datetime.fromisoformat(a['segments'][0]['start']), local_dt(d, 9, 0))
+        self.assertEqual(datetime.fromisoformat(a['segments'][-1]['end']), local_dt(d, 11, 0))
+        self.assertEqual(a['elapsed_minutes'], 120)
+        self.assertEqual(len(forecasts), 1, "10-minute floor keeps it in the queue")
 
 
 class NonAssigneeClosedBlepNoForecastTest(BaseTestCase):
@@ -642,7 +624,7 @@ class NonAssigneeClosedBlepNoForecastTest(BaseTestCase):
     work that isn't theirs and (b) make their lane depend on which scroll
     window the closed blep falls in."""
 
-    def test_non_assignee_closed_blep_emits_only_historical(self):
+    def test_non_assignee_closed_blep_emits_only_actual(self):
         assignee, task = _seed_user_with_pending_task(
             est_minutes=60, name='NotMine', username='nacb_assignee',
         )
@@ -659,11 +641,11 @@ class NonAssigneeClosedBlepNoForecastTest(BaseTestCase):
 
         data = ScheduleService.get_schedule(now=now)
         helper_lane = next(w for w in data['workers'] if w['user']['id'] == helper.pk)
-        kinds = {b['kind'] for b in helper_lane['bars'] if b['task_id'] == task.pk}
-        self.assertIn('historical', kinds)
-        self.assertNotIn('forecast', kinds,
-                         "non-assignee helped task must not forecast in their lane")
-        self.assertNotIn('active', kinds)
+        bars = [b for b in helper_lane['bars'] if b['task_id'] == task.pk]
+        kinds = {b['kind'] for b in bars}
+        self.assertEqual(kinds, {'actual'},
+                         "non-assignee shows only their actual work, no forecast")
+        self.assertFalse(any(b['is_running'] for b in bars))
 
 
 class FreshNonAssigneeBlepTest(BaseTestCase):
@@ -716,20 +698,22 @@ class ConcurrentBlepsTest(BaseTestCase):
         self.assertIn(other.pk, lanes)
 
         a_bar = next(b for b in lanes[assignee.pk]['bars']
-                     if b['task_id'] == task.pk and b['kind'] == 'active')
+                     if b['task_id'] == task.pk and b['kind'] == 'actual')
         b_bar = next(b for b in lanes[other.pk]['bars']
-                     if b['task_id'] == task.pk and b['kind'] == 'active')
+                     if b['task_id'] == task.pk and b['kind'] == 'actual')
 
-        # Each lane's bar is anchored to that worker's own blep start.
-        a_first = datetime.fromisoformat(a_bar['segments'][0]['start'])
-        b_first = datetime.fromisoformat(b_bar['segments'][0]['start'])
-        self.assertEqual(a_first, a_start)
-        self.assertEqual(b_first, b_start)
+        # Each lane's running actual piece is anchored to that worker's own blep.
+        self.assertEqual(datetime.fromisoformat(a_bar['segments'][0]['start']), a_start)
+        self.assertEqual(datetime.fromisoformat(b_bar['segments'][0]['start']), b_start)
+        self.assertTrue(a_bar['is_running'])
+        self.assertTrue(b_bar['is_running'])
 
-        # The assignee's bar carries the estimate (light layer); the
-        # non-assignee's shows only their actuals (no estimate layer).
-        self.assertTrue(any(s['est_fill_to'] for s in a_bar['segments']))
-        self.assertTrue(all(s['est_fill_to'] is None for s in b_bar['segments']))
+        # The assignee (owner) also forecasts the remaining estimate; the
+        # non-assignee helper shows only their actual work, no forecast.
+        self.assertTrue(any(b['kind'] == 'forecast'
+                            for b in lanes[assignee.pk]['bars'] if b['task_id'] == task.pk))
+        self.assertFalse(any(b['kind'] == 'forecast'
+                             for b in lanes[other.pk]['bars'] if b['task_id'] == task.pk))
 
 
 class CompletedPlusActiveOrderingTest(BaseTestCase):
@@ -806,6 +790,114 @@ class YesterdayCompletedExcludedTest(BaseTestCase):
         data = ScheduleService.get_schedule(now=now)
         workers = [w for w in data['workers'] if w['user']['id'] == user.pk]
         self.assertEqual(workers, [])
+
+
+class GroupBlepsTest(BaseTestCase):
+    """_group_bleps splits a worker's bleps on a task into contiguous
+    sessions, starting a new group at any gap."""
+
+    def _b(self, sh, sm, eh=None, em=None):
+        from types import SimpleNamespace
+        d = date_at_weekday(2)
+        return SimpleNamespace(
+            start_time=local_dt(d, sh, sm),
+            end_time=local_dt(d, eh, em) if eh is not None else None,
+        )
+
+    def test_back_to_back_bleps_merge(self):
+        groups = ScheduleService._group_bleps([self._b(9, 0, 10, 0),
+                                               self._b(10, 0, 11, 0)])
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(len(groups[0]), 2)
+
+    def test_gap_starts_new_group(self):
+        groups = ScheduleService._group_bleps([self._b(9, 0, 10, 0),
+                                               self._b(11, 0, 12, 0)])
+        self.assertEqual(len(groups), 2)
+
+    def test_open_blep_after_gap_is_own_group(self):
+        groups = ScheduleService._group_bleps([self._b(9, 0, 10, 0),
+                                               self._b(14, 0)])
+        self.assertEqual(len(groups), 2)
+        self.assertIsNone(groups[1][0].end_time)
+
+    def test_empty(self):
+        self.assertEqual(ScheduleService._group_bleps([]), [])
+
+
+class ActualForecastModelTest(BaseTestCase):
+    """Past = discrete dark `actual` pieces (one per blep session); future =
+    light `forecast`; the now-line divides them."""
+
+    def test_gapped_sessions_render_as_discrete_actual_pieces(self):
+        worker, task = _seed_user_with_pending_task(
+            est_minutes=180, name='Split', username='split_user',
+        )
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        d = date_at_weekday(2)
+        Blep.objects.create(user=worker, task=task,
+                            start_time=local_dt(d, 9, 0), end_time=local_dt(d, 10, 0))
+        Blep.objects.create(user=worker, task=task,
+                            start_time=local_dt(d, 10, 30), end_time=local_dt(d, 11, 0))
+        now = local_dt(d, 12, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == worker.pk)
+        actuals = [b for b in lane['bars']
+                   if b['task_id'] == task.pk and b['kind'] == 'actual']
+        self.assertEqual(len(actuals), 2, "two sessions, not one spanning the gap")
+        spans = sorted(
+            (datetime.fromisoformat(b['segments'][0]['start']),
+             datetime.fromisoformat(b['segments'][-1]['end'])) for b in actuals
+        )
+        self.assertEqual(spans[0], (local_dt(d, 9, 0), local_dt(d, 10, 0)))
+        self.assertEqual(spans[1], (local_dt(d, 10, 30), local_dt(d, 11, 0)))
+
+    def test_running_task_actual_to_now_plus_remaining_forecast(self):
+        worker, task = _seed_user_with_pending_task(
+            est_minutes=120, name='Run', username='run_user',
+        )
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        d = date_at_weekday(2)
+        Blep.objects.create(user=worker, task=task,
+                            start_time=local_dt(d, 9, 0), end_time=None)
+        now = local_dt(d, 9, 30)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == worker.pk)
+        actuals = [b for b in lane['bars']
+                   if b['task_id'] == task.pk and b['kind'] == 'actual']
+        forecasts = [b for b in lane['bars']
+                     if b['task_id'] == task.pk and b['kind'] == 'forecast']
+        self.assertEqual(len(actuals), 1)
+        self.assertTrue(actuals[0]['is_running'])
+        self.assertEqual(
+            datetime.fromisoformat(actuals[0]['segments'][-1]['end']), now,
+        )
+        self.assertEqual(len(forecasts), 1)
+        self.assertEqual(
+            datetime.fromisoformat(forecasts[0]['segments'][0]['start']), now,
+        )
+
+    def test_overrun_in_progress_still_shows_minimum_forecast(self):
+        worker, task = _seed_user_with_pending_task(
+            est_minutes=60, name='Over', username='over_user',
+        )
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        d = date_at_weekday(2)
+        # Logged 90 min on a 60-min estimate, paused (over estimate).
+        Blep.objects.create(user=worker, task=task,
+                            start_time=local_dt(d, 9, 0), end_time=local_dt(d, 10, 30))
+        now = local_dt(d, 14, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == worker.pk)
+        forecasts = [b for b in lane['bars']
+                     if b['task_id'] == task.pk and b['kind'] == 'forecast']
+        self.assertEqual(len(forecasts), 1, "overrun task must not vanish")
+        dur = (datetime.fromisoformat(forecasts[0]['segments'][-1]['end'])
+               - datetime.fromisoformat(forecasts[0]['segments'][0]['start']))
+        self.assertEqual(dur, timedelta(minutes=10), "10-minute floor")
 
 
 class FloatingOrderMatchesQueueTest(BaseTestCase):
@@ -890,7 +982,7 @@ class CompletedLateWorkTest(BaseTestCase):
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         bar = next(b for b in worker['bars'] if b['task_id'] == task.pk)
         self.assertEqual(len(bar['segments']), 1, bar['segments'])
-        actual_end = datetime.fromisoformat(bar['segments'][0]['actual_fill_to'])
+        actual_end = datetime.fromisoformat(bar['segments'][0]['end'])
         self.assertEqual((actual_end.hour, actual_end.minute), (17, 10))
 
     def test_future_window_not_widened_by_running_off_hours_blep(self):
@@ -935,5 +1027,5 @@ class CompletedLateWorkTest(BaseTestCase):
         bar = next(b for b in worker['bars'] if b['task_id'] == task.pk)
         # The full 75 minutes is reported, matching Blep.elapsed / the task page.
         self.assertEqual(bar['elapsed_minutes'], 75)
-        actual_end = datetime.fromisoformat(bar['segments'][-1]['actual_fill_to'])
+        actual_end = datetime.fromisoformat(bar['segments'][-1]['end'])
         self.assertEqual((actual_end.hour, actual_end.minute), (23, 58))

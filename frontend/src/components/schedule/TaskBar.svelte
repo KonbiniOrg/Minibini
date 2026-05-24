@@ -17,21 +17,17 @@
       .join('');
   }
 
-  let lightColor = $derived(bar.accent_color || '#888');
-  let darkColor = $derived(darken(lightColor));
+  // Future (forecast) = bright accent; past (actual) = darkened accent. Each
+  // bar is a single solid colour — the now-line divides past from future.
+  let accent = $derived(bar.accent_color || '#888');
+  let fill = $derived(bar.kind === 'actual' ? darken(accent) : accent);
 
-  // No estimate layer anywhere (a non-assignee's bar) → there is no top
-  // half, so the label sits on the dark bottom-half stripe instead.
-  let hasEst = $derived(bar.segments.some(s => s.est_fill_to));
-
-  // Keep both ISO strings (for TZ-agnostic positioning via timeToX) and
-  // Date objects (for absolute-moment range filtering against panelStart/End).
+  // Keep ISO strings (for TZ-agnostic positioning via timeToX) and Date
+  // objects (for absolute-moment range filtering against panelStart/End).
   let segs = $derived(bar.segments
     .map(s => ({
       start_iso: s.start,
       end_iso: s.end,
-      est_iso: s.est_fill_to,
-      actual_iso: s.actual_fill_to,
       start: new Date(s.start),
       end: new Date(s.end),
       continues_left: s.continues_left,
@@ -69,6 +65,7 @@
     draggingTaskId.set(null);
   }
 
+  // Only future (forecast) bars are rearrangeable; past actuals are immutable.
   let isDraggable = $derived(bar.kind === 'forecast' && !dimmed);
 </script>
 
@@ -76,8 +73,6 @@
   {@const left = timeToX(seg.start < panelStart ? panelStart : seg.start_iso)}
   {@const right = timeToX(seg.end > panelEnd ? panelEnd : seg.end_iso)}
   {@const width = Math.max(2, right - left)}
-  {@const estWidth = seg.est_iso ? Math.max(0, timeToX(seg.est_iso) - left) : 0}
-  {@const actWidth = seg.actual_iso ? Math.max(0, timeToX(seg.actual_iso) - left) : 0}
   {@const zigClass = seg.continues_left && seg.continues_right
                      ? 'zig-both'
                      : seg.continues_left ? 'zig-left'
@@ -86,29 +81,21 @@
   <div class="task-bar {zigClass} kind-{bar.kind}"
        class:dimmed
        class:blocked={bar.status === 'blocked'}
+       class:running={bar.is_running}
        draggable={isDraggable}
        ondragstart={handleDragStart}
        ondragend={handleDragEnd}
        onclick={() => { if (!dimmed && onSelect) onSelect(bar); }}
        data-task-id={bar.task_id}
-       style="left: {left}px; width: {width}px; cursor: {dimmed ? 'default' : 'pointer'};"
+       style="left: {left}px; width: {width}px; background: {fill}; cursor: {dimmed ? 'default' : 'pointer'};"
        title="{bar.name}{bar.status === 'blocked' && bar.blocked_reason ? ' · BLOCKED: ' + bar.blocked_reason : ''} · est {bar.est_minutes}m · elapsed {bar.elapsed_minutes}m">
-    {#if estWidth > 0}
-      <div class="layer-est" style="width: {estWidth}px; background: {lightColor};"></div>
-    {/if}
-    {#if actWidth > 0}
-      <!-- Actuals are the dark layer overlaying the bottom half of the
-           full-height estimate. The estimate only appears for the assignee —
-           a non-assignee's bar is just this dark blep stripe, no estimate. -->
-      <div class="layer-actual" style="width: {actWidth}px; background: {darkColor};"></div>
-    {/if}
     {#if bar.status === 'blocked'}
       <!-- Blocked: a red diagonal hatch over the forecast, echoing the
            board's red treatment. -->
       <div class="blocked-overlay"></div>
     {/if}
     {#if i === 0}
-      <span class="label" class:bottom={!hasEst}>{bar.name}</span>
+      <span class="label">{bar.name}</span>
     {/if}
   </div>
 {/each}
@@ -120,12 +107,10 @@
     height: 100%;
     overflow: hidden;
   }
-  .layer-est, .layer-actual { position: absolute; left: 0; }
-  /* The plan (estimate) is the full-height light bar; the blep (actual)
-     overlays its bottom half. Actual renders after est in the DOM, so it
-     paints on top. */
-  .layer-est    { top: 0;    height: 100%; }
-  .layer-actual { bottom: 0; height: 50%; }
+  /* Past work recedes slightly; the live (running) session stays prominent. */
+  .kind-actual { opacity: 0.82; }
+  .task-bar.running { opacity: 1; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85); }
+  .task-bar.dimmed { opacity: 0.18; }
   .blocked-overlay {
     position: absolute; inset: 0;
     pointer-events: none;
@@ -142,10 +127,6 @@
     text-shadow: 0 0 2px rgba(0,0,0,0.5);
     pointer-events: none; white-space: nowrap;
   }
-  /* No estimate layer: label rides the dark bottom-half stripe. */
-  .label.bottom { top: auto; bottom: 2px; }
-  .kind-historical { opacity: 0.55; }
-  .task-bar.dimmed { opacity: 0.18; }
 
   .zig-right { clip-path: polygon(
     0 0, 100% 0,
