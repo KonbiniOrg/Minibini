@@ -186,7 +186,6 @@
   <p>No {$viewMode === 'lite' ? 'open ' : ''}bills.</p>
 {/if}
 
-<h3>History</h3>
 <HistoryPanel {history} {onAddNote} />
 
 <p>
