@@ -4,6 +4,18 @@ from django.core.validators import EmailValidator
 from apps.core.history import history
 
 
+class Tag(models.Model):
+    tag_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        db_table = 'tags'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 @history(exclude=[])
 class Contact(models.Model):
     contact_id = models.AutoField(primary_key=True)
@@ -27,6 +39,8 @@ class Contact(models.Model):
     # Contacts with a business use business.qbo_customer_id instead.
     # blank=True required because ContactService calls full_clean().
     qbo_customer_id = models.CharField(max_length=50, null=True, blank=True)
+
+    tags = models.ManyToManyField('Tag', blank=True, related_name='contacts', db_table='contact_tags')
 
     class Meta:
         db_table = 'contacts'
@@ -152,6 +166,8 @@ class Business(models.Model):
     # QuickBooks Online sync IDs
     qbo_customer_id = models.CharField(max_length=50, null=True)
     qbo_vendor_id = models.CharField(max_length=50, null=True)
+
+    tags = models.ManyToManyField('Tag', blank=True, related_name='businesses', db_table='business_tags')
 
     class Meta:
         db_table = 'businesses'
