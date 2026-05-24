@@ -86,8 +86,6 @@
     '/profile': ProfilePage,
   };
 
-  let sidebarOpen = $state(false);
-
   checkAuth();
 
   // Refresh the global current-Blep band on auth + every SPA route change.
@@ -108,18 +106,12 @@
   <LoginPage />
 {:else}
   <CurrentBlepBand />
-  <Sidebar bind:open={sidebarOpen} />
+  <Sidebar />
   <!--
-    Push behavior: margin-left shifts content when sidebar opens.
-    To switch to overlay: remove the style:margin-left line below.
+    Overlay behavior: the sidebar is position:fixed / z-index:999, so it
+    slides in on top of the page without shifting content.
   -->
-  <div class="page-content" style:margin-left={sidebarOpen ? '120px' : '0'}>
+  <div class="page-content">
     <Router {routes} />
   </div>
 {/if}
-
-<style>
-  .page-content {
-    transition: margin-left 0.25s ease;
-  }
-</style>

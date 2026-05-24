@@ -610,8 +610,9 @@ content (`entry.data.text`); full mode shows everything.
 `frontend/src/components/Sidebar.svelte` is the nav for every SPA page.
 Always-visible 44x44 hamburger icon pinned top-left, dark
 `#1a3344` background. Hover the hamburger or sidebar to open; ~300 ms
-delay before close on mouseleave. 120 px wide, push behavior (page
-content shifts via `margin-left`). Slides in 0.25 s ease.
+delay before close on mouseleave. 120 px wide, overlay behavior — the
+sidebar is `position: fixed` / `z-index: 999` and slides in on top of the
+page (0.25 s ease) without shifting content.
 
 **Link list** (in order):
 
