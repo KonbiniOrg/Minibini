@@ -1,6 +1,7 @@
 <script>
   import FullOnly from '../FullOnly.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
+  import TagEditor from '../TagEditor.svelte';
   import { viewMode } from '../../stores/viewMode.js';
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
   const {
@@ -74,6 +75,9 @@
   <dt>Default Contact</dt>
   <dd><a href="#/contacts/{business.default_contact.contact_id}">{business.default_contact.name}</a></dd>
 </dl>
+
+<h3>Tags</h3>
+<TagEditor endpoint="/api/businesses/{business.business_id}" initialTags={business.tags || []} />
 
 <FullOnly>
   <h3>Contacts</h3>

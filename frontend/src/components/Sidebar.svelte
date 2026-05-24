@@ -1,5 +1,5 @@
 <script>
-  import { link } from 'svelte-spa-router';
+  import { link, push } from 'svelte-spa-router';
   import { user, logout } from '../stores/auth.js';
   import { viewMode, toggleViewMode } from '../stores/viewMode.js';
 
@@ -12,8 +12,9 @@
   }
 
   function scheduleClose() {
+    if (searchFocused) return;
     closeTimeout = setTimeout(() => {
-      open = false;
+      if (!searchFocused) open = false;
     }, 300);
   }
 
@@ -27,6 +28,19 @@
 
   let showFinancials = $derived(hasPerm('can_manage_financials'));
   let showAdminLabel = $derived(showFinancials || hasPerm('can_manage_config'));
+
+  let searchQuery = $state('');
+  let searchFocused = $state(false);
+
+  function handleSearch(e) {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    searchQuery = '';
+    searchFocused = false;
+    open = false;
+    push(`/search?q=${encodeURIComponent(q)}`);
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -63,6 +77,16 @@
     {#if hasPerm('can_manage_config')}
       <a href="/settings" use:link>Settings</a>
     {/if}
+    <form class="sidebar-search" onsubmit={handleSearch}>
+      <input
+        type="search"
+        placeholder="Search..."
+        bind:value={searchQuery}
+        aria-label="Search"
+        onfocus={() => searchFocused = true}
+        onblur={() => { searchFocused = false; scheduleClose(); }}
+      />
+    </form>
     <div class="spacer"></div>
     <div class="view-mode-toggle">
       {#if $viewMode === 'full'}
@@ -163,6 +187,29 @@
     text-transform: uppercase;
     color: #6a9aab;
     letter-spacing: 0.5px;
+  }
+
+  .sidebar-search {
+    padding: 8px 12px;
+    margin: 0;
+  }
+  .sidebar-search input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #264a5e;
+    border: 1px solid #3d6a7e;
+    color: #eee;
+    padding: 5px 7px;
+    font-size: 13px;
+    border-radius: 3px;
+    font-family: inherit;
+  }
+  .sidebar-search input::placeholder {
+    color: #6a9aab;
+  }
+  .sidebar-search input:focus {
+    outline: none;
+    border-color: #6a9aab;
   }
 
   .spacer { flex: 1; }
