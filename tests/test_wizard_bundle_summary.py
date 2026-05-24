@@ -3,9 +3,11 @@ RateScheme and identical active_modifiers, the line item is summarized
 (units = scheme unit_label, qty = summed actuals, price = effective rate)
 instead of the qty=1 / units='none' fallback."""
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration
@@ -14,7 +16,7 @@ from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import Material, PlanMaterial, PriceListItem
 from apps.invoicing.models import Invoice
 from apps.invoicing.services import InvoiceWizardService
-from apps.jobs.models import Job, PlanTask, RateScheme, Task
+from apps.jobs.models import Blep, Job, PlanTask, RateScheme, Task
 
 
 class InvoiceWizardBundleSummaryTest(TestCase):
@@ -73,6 +75,25 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.units, 'widgets')
         self.assertEqual(li.qty, Decimal('6'))
         self.assertEqual(li.price, Decimal('15.00'))  # 10.00 * 1.5
+
+    def test_elapsed_time_same_scheme_sums_blep_hours(self):
+        # elapsed_time bills logged time: the bundle sums each task's Blep
+        # hours (the actuals), never est_qty. These tasks carry no est_qty,
+        # so a non-zero summed qty can only come from the Bleps.
+        scheme_hourly = RateScheme.objects.create(
+            name='Bench', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50.00'), unit_label='hours',
+            accounting_category=self.cat,
+        )
+        a = Task.objects.create(job=self.job, name='T', rate_scheme=scheme_hourly)
+        b = Task.objects.create(job=self.job, name='T', rate_scheme=scheme_hourly)
+        start = timezone.now()
+        Blep.objects.create(task=a, start_time=start, end_time=start + timedelta(hours=2))
+        Blep.objects.create(task=b, start_time=start, end_time=start + timedelta(hours=3))
+        li = self._bundle(a, b)
+        self.assertEqual(li.units, 'hours')
+        self.assertEqual(li.qty, Decimal('5.00'))  # 2h + 3h from Bleps, not 1
+        self.assertEqual(li.price, Decimal('50.00'))
 
     def test_different_schemes_fall_back(self):
         a = self._task(self.scheme, 3)        # 3 * 10 = 30
@@ -182,6 +203,22 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.units, 'widgets')
         self.assertEqual(li.qty, Decimal('6'))
         self.assertEqual(li.price, Decimal('15.00'))
+
+    def test_flat_fee_same_scheme_summed(self):
+        # flat_fee carries its unit price as a dict in active_modifiers; same
+        # scheme + same price still summarizes — est_qty summed, not set to 1.
+        scheme_flat = RateScheme.objects.create(
+            name='E-Tapping', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('0.00'), unit_label='holes',
+            accounting_category=self.cat,
+        )
+        li = self._bundle(
+            self._pt(scheme_flat, 4, {'flat_fee_price': '7.00'}),
+            self._pt(scheme_flat, 6, {'flat_fee_price': '7.00'}),
+        )
+        self.assertEqual(li.units, 'holes')
+        self.assertEqual(li.qty, Decimal('10'))  # 4 + 6 est_qty, not 1
+        self.assertEqual(li.price, Decimal('7.00'))
 
     def test_different_schemes_fall_back(self):
         li = self._bundle(
