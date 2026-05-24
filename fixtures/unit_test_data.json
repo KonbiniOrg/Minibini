@@ -251,20 +251,6 @@
     },
     {
         "model": "core.configuration",
-        "pk": "bill_number_sequence",
-        "fields": {
-            "value": "BILL-{year}-{counter:04d}"
-        }
-    },
-    {
-        "model": "core.configuration",
-        "pk": "bill_counter",
-        "fields": {
-            "value": "0"
-        }
-    },
-    {
-        "model": "core.configuration",
         "pk": "board_closed_retention_days",
         "fields": {
             "value": "14"
@@ -275,6 +261,82 @@
         "pk": "units_list",
         "fields": {
             "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
+        }
+    },
+    {
+        "model": "core.accountingcategory",
+        "pk": 901,
+        "fields": {
+            "code": "SVC",
+            "name": "Service",
+            "taxable": false,
+            "default_description": "Professional services and labor",
+            "is_active": true,
+            "qbo_item_id": "",
+            "qbo_expense_account_id": ""
+        }
+    },
+    {
+        "model": "core.accountingcategory",
+        "pk": 902,
+        "fields": {
+            "code": "MTL",
+            "name": "Material",
+            "taxable": true,
+            "default_description": "Raw materials",
+            "is_active": true,
+            "qbo_item_id": "",
+            "qbo_expense_account_id": ""
+        }
+    },
+    {
+        "model": "jobs.ratescheme",
+        "pk": 1,
+        "fields": {
+            "name": "Std Hourly",
+            "description": "Standard hourly rate for bench work",
+            "algorithm": "elapsed_time",
+            "rate": "45.00",
+            "unit_label": "hour",
+            "modifiers": [],
+            "accounting_category": 901
+        }
+    },
+    {
+        "model": "jobs.ratescheme",
+        "pk": 2,
+        "fields": {
+            "name": "Std CNC Router",
+            "description": "Per-minute CNC charge with optional modifiers",
+            "algorithm": "entered_qty",
+            "rate": "4.00",
+            "unit_label": "minute",
+            "modifiers": [
+                {
+                    "key": "messy",
+                    "label": "Messy materials",
+                    "percent": 10
+                },
+                {
+                    "key": "doublestick",
+                    "label": "Doublestick tape",
+                    "percent": 5
+                }
+            ],
+            "accounting_category": 901
+        }
+    },
+    {
+        "model": "jobs.ratescheme",
+        "pk": 3,
+        "fields": {
+            "name": "Std Setup Fee",
+            "description": "Flat setup charge",
+            "algorithm": "flat_fee",
+            "rate": "50.00",
+            "unit_label": "job",
+            "modifiers": [],
+            "accounting_category": 901
         }
     },
     {
@@ -309,13 +371,13 @@
         "fields": {
             "assignee": 2,
             "name": "Kitchen demolition",
-            "units": "hours",
-            "rate": "75.00",
-            "est_qty": "8.00",
             "description": "",
             "sort_order": null,
-            "accounting_category": null,
-            "job": 1
+            "job": 1,
+            "rate_scheme": 1,
+            "active_modifiers": [],
+            "actual_qty": null,
+            "est_qty": null
         }
     },
     {
@@ -324,13 +386,13 @@
         "fields": {
             "assignee": 2,
             "name": "Electrical rough-in",
-            "units": "ln ft",
-            "rate": "12.50",
-            "est_qty": "150.00",
             "description": "",
             "sort_order": null,
-            "accounting_category": null,
-            "job": 1
+            "job": 1,
+            "rate_scheme": 1,
+            "active_modifiers": [],
+            "actual_qty": null,
+            "est_qty": null
         }
     },
     {
@@ -394,7 +456,6 @@
         "model": "purchasing.bill",
         "pk": 1,
         "fields": {
-            "bill_number": "BILL-2024-0001",
             "purchase_order": 1,
             "business": 2,
             "contact": 3,
@@ -405,37 +466,10 @@
         "model": "purchasing.bill",
         "pk": 2,
         "fields": {
-            "bill_number": "BILL-2024-0002",
             "purchase_order": 2,
             "business": 2,
             "contact": 3,
             "vendor_invoice_number": "ACME-INV-002"
-        }
-    },
-    {
-        "model": "core.accountingcategory",
-        "pk": 901,
-        "fields": {
-            "code": "SVC",
-            "name": "Service",
-            "taxable": false,
-            "default_description": "Professional services and labor",
-            "is_active": true,
-            "qbo_item_id": "",
-            "qbo_expense_account_id": ""
-        }
-    },
-    {
-        "model": "core.accountingcategory",
-        "pk": 902,
-        "fields": {
-            "code": "MTL",
-            "name": "Material",
-            "taxable": true,
-            "default_description": "Raw materials",
-            "is_active": true,
-            "qbo_item_id": "",
-            "qbo_expense_account_id": ""
         }
     },
     {
@@ -491,7 +525,6 @@
         "pk": 1,
         "fields": {
             "estimate": 1,
-            "task": null,
             "price_list_item": 1,
             "line_number": 1,
             "qty": "50.00",
@@ -505,7 +538,6 @@
         "pk": 2,
         "fields": {
             "estimate": 1,
-            "task": null,
             "price_list_item": null,
             "line_number": 2,
             "qty": "8.00",
@@ -574,7 +606,6 @@
         "fields": {
             "template_name": "Standard Kitchen Renovation",
             "description": "Complete template for kitchen renovation projects",
-            "is_active": true,
             "created_date": "2023-01-15T10:00:00Z"
         }
     },
@@ -584,7 +615,6 @@
         "fields": {
             "template_name": "Basic Maintenance",
             "description": "Template for routine maintenance work",
-            "is_active": true,
             "created_date": "2023-02-20T14:30:00Z"
         }
     },
@@ -594,10 +624,10 @@
         "fields": {
             "template_name": "Site Preparation",
             "description": "Standard site preparation and safety setup",
-            "units": "ea",
-            "rate": "350.00",
             "is_active": true,
-            "created_date": "2023-01-15T10:30:00Z"
+            "created_date": "2023-01-15T10:30:00Z",
+            "rate_scheme": 3,
+            "default_billable_qty": "1.00"
         }
     },
     {
@@ -606,10 +636,10 @@
         "fields": {
             "template_name": "Material Delivery",
             "description": "Material procurement and delivery setup",
-            "units": "ea",
-            "rate": "125.00",
             "is_active": true,
-            "created_date": "2023-01-15T11:00:00Z"
+            "created_date": "2023-01-15T11:00:00Z",
+            "rate_scheme": 3,
+            "default_billable_qty": "1.00"
         }
     },
     {
@@ -618,10 +648,10 @@
         "fields": {
             "template_name": "Electrical Installation",
             "description": "Standard electrical rough-in work",
-            "units": "ln ft",
-            "rate": "12.50",
             "is_active": true,
-            "created_date": "2023-01-15T11:30:00Z"
+            "created_date": "2023-01-15T11:30:00Z",
+            "rate_scheme": 1,
+            "default_billable_qty": "1.00"
         }
     },
     {
@@ -630,10 +660,10 @@
         "fields": {
             "template_name": "Construction Work",
             "description": "General construction and installation",
-            "units": "sq ft",
-            "rate": "25.75",
             "is_active": true,
-            "created_date": "2023-01-15T12:00:00Z"
+            "created_date": "2023-01-15T12:00:00Z",
+            "rate_scheme": 1,
+            "default_billable_qty": "1.00"
         }
     },
     {

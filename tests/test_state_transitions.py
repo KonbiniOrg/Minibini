@@ -73,12 +73,14 @@ class JobStateTransitionTest(TestCase):
         self.assertEqual(job.status, Job.STATUS_REJECTED)
 
     def test_approved_to_completed(self):
-        """Test Approved > Work Complete > Completed transition."""
+        """Test Approved > In Progress > Work Complete > Completed transition."""
         job = Job.objects.create(
             job_number="JOB005",
             contact=self.contact,
             status=Job.STATUS_APPROVED
         )
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
         job.status = Job.STATUS_WORK_COMPLETE
         job.save()
         job.status = Job.STATUS_COMPLETED
@@ -170,7 +172,8 @@ class JobStateTransitionTest(TestCase):
             job.refresh_from_db()  # Reset to completed
 
     def test_cancelled_to_any_invalid(self):
-        """Test that Cancelled is a terminal state and cannot transition."""
+        """Cancelled cannot transition anywhere except in_progress (Bug 4
+        reactivation), which is intentionally excluded from this list."""
         job = Job.objects.create(
             job_number="JOB016",
             contact=self.contact,
@@ -227,7 +230,7 @@ class JobStateTransitionTest(TestCase):
             job.save()
 
     def test_full_valid_path_to_completed(self):
-        """Test full path: Draft > Submitted > Approved > Completed."""
+        """Test full path: Draft > Submitted > Approved > In Progress > Work Complete > Completed."""
         job = Job.objects.create(
             job_number="JOB100",
             contact=self.contact,
@@ -241,6 +244,10 @@ class JobStateTransitionTest(TestCase):
         job.status = Job.STATUS_APPROVED
         job.save()
         self.assertEqual(job.status, Job.STATUS_APPROVED)
+
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
 
         job.status = Job.STATUS_WORK_COMPLETE
         job.save()
@@ -376,6 +383,8 @@ class JobStateTransitionTest(TestCase):
         )
         self.assertIsNone(job.completed_date)
 
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
         job.status = Job.STATUS_WORK_COMPLETE
         job.save()
 
@@ -415,6 +424,8 @@ class JobStateTransitionTest(TestCase):
             contact=self.contact,
             status=Job.STATUS_APPROVED
         )
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
         job.status = Job.STATUS_WORK_COMPLETE
         job.save()
         job.status = Job.STATUS_COMPLETED

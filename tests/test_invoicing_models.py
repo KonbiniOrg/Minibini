@@ -2,7 +2,7 @@ from django.test import TestCase
 from decimal import Decimal
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import PriceListItem
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import Estimate
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.contacts.models import Contact, Business
@@ -112,8 +112,6 @@ class InvoiceModelTest(TestCase):
 class InvoiceLineItemModelTest(TestCase):
     def setUp(self):
         # Create Configuration for number generation
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
@@ -137,9 +135,14 @@ class InvoiceLineItemModelTest(TestCase):
             job=self.job,
             estimate_number="EST001"
         )
+        self.scheme = RateScheme.objects.create(
+            name='S-inv', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job,
             name="Test Task",
+            rate_scheme=self.scheme,
         )
         self.purchase_order = PurchaseOrder.objects.create(
             business=self.business,

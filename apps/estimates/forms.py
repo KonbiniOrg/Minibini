@@ -16,30 +16,27 @@ class WorkTemplateForm(forms.ModelForm):
         }
 
 
-class TaskTemplateForm(UnitsFieldMixin, forms.ModelForm):
+class TaskTemplateForm(forms.ModelForm):
     class Meta:
         model = TaskTemplate
-        fields = ['template_name', 'description', 'units', 'rate', 'accounting_category']
+        fields = ['template_name', 'description']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
-            'rate': forms.NumberInput(attrs={'step': '0.01', 'placeholder': '0.00'}),
         }
 
 
 class EstWorksheetForm(forms.ModelForm):
     """Form for creating/editing EstWorksheet"""
+    template = forms.ModelChoiceField(
+        queryset=WorkTemplate.objects.all(),
+        required=False, empty_label="-- No Template (Manual) --",
+        widget=forms.Select(attrs={'class': 'form-control'}),
+        help_text="If set, the worksheet is populated from this template after creation; the template is not stored on the worksheet.",
+    )
+
     class Meta:
         model = EstWorksheet
-        fields = ['job', 'template']  # Removed 'status' - always starts as draft
-        widgets = {
-            'template': forms.Select(attrs={'class': 'form-control'}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Template is optional
-        self.fields['template'].required = False
-        self.fields['template'].empty_label = "-- No Template (Manual) --"
+        fields = ['job']  # Removed 'status' - always starts as draft
 
 
 class ManualLineItemForm(UnitsFieldMixin, forms.ModelForm):

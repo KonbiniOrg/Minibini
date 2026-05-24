@@ -145,7 +145,7 @@ class JobEditForm(forms.ModelForm):
         return str(contact)
 
 
-class TaskEditForm(UnitsFieldMixin, forms.ModelForm):
+class TaskEditForm(forms.ModelForm):
     """Form for editing an existing PlanTask's details (worksheet-side).
 
     HTML UI currently only edits worksheet-side tasks; WO-side task edits
@@ -153,11 +153,7 @@ class TaskEditForm(UnitsFieldMixin, forms.ModelForm):
     """
     class Meta:
         model = PlanTask
-        fields = ['name', 'description', 'units', 'rate', 'est_qty', 'accounting_category']
-        widgets = {
-            'est_qty': forms.NumberInput(attrs={'step': '0.01'}),
-            'rate': forms.NumberInput(attrs={'step': '0.01'}),
-        }
+        fields = ['name', 'description']
 
 
 class TaskFromTemplateForm(forms.Form):

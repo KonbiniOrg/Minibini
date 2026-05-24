@@ -36,10 +36,10 @@ class AdHocPurchaseTest(TestCase):
             contact=self.contact,
         )
 
-        cat = AccountingCategory.objects.create(code='CAT1', name='c')
+        self.cat = AccountingCategory.objects.create(code='CAT1', name='c')
         self.pli = PriceListItem.objects.create(
             code='I',
-            accounting_category=cat,
+            accounting_category=self.cat,
             is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
@@ -87,6 +87,7 @@ class AdHocPurchaseTest(TestCase):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='z',
             quantity=Decimal('1'), price_list_item=None,
+            accounting_category=self.cat,
         )
         # Should not raise
         InventoryService.receive_ad_hoc_purchase(m)

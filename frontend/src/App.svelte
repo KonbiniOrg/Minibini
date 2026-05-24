@@ -24,8 +24,12 @@
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
+  import PlanTaskDetailPage from './routes/worksheets/PlanTaskDetailPage.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
+  import EstimateWizardPage from './routes/estimates/EstimateWizardPage.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
+  import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
+  import PackingListPrint from './routes/shipments/PackingListPrint.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
   import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
@@ -56,8 +60,12 @@
     '/jobs/:id/edit': JobEditPage,
     '/jobs/:id/create-worksheet': CreateWorksheetPage,
     '/jobs/:id/tasklist': JobTaskListPage,
+    '/jobs/:jobId/shipments': JobShipmentsPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
+    '/shipments/:sid/print': PackingListPrint,
     '/worksheets/:id': WorksheetDetailPage,
+    '/worksheets/:wsId/plan-tasks/:planTaskId': PlanTaskDetailPage,
+    '/estimates/:id/wizard': EstimateWizardPage,
     '/estimates/:id': EstimateDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
     '/purchase-orders/new': PurchaseOrderFormPage,
@@ -77,8 +85,6 @@
     '/email/:id': EmailDetailPage,
     '/profile': ProfilePage,
   };
-
-  let sidebarOpen = $state(false);
 
   checkAuth();
 
@@ -100,19 +106,12 @@
   <LoginPage />
 {:else}
   <CurrentBlepBand />
-  <Sidebar bind:open={sidebarOpen} />
+  <Sidebar />
   <!--
-    Push behavior: margin-left shifts content when sidebar opens.
-    To switch to overlay: remove the style:margin-left line below.
+    Overlay behavior: the sidebar is position:fixed / z-index:999, so it
+    slides in on top of the page without shifting content.
   -->
-  <div class="page-content" style:margin-left={sidebarOpen ? '120px' : '0'}>
+  <div class="page-content">
     <Router {routes} />
   </div>
 {/if}
-
-<style>
-  .page-content {
-    transition: margin-left 0.25s ease;
-    padding-top: 8px;
-  }
-</style>

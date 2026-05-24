@@ -23,7 +23,8 @@ class MaterialPOLineItemFKTest(TestCase):
         )
 
     def test_material_has_nullable_po_line_item_fk(self):
-        mat = Material.objects.create(job=self.job, quantity=Decimal('5.00'))
+        mat = Material.objects.create(job=self.job, quantity=Decimal('5.00'),
+                                      accounting_category=self.category)
         self.assertIsNone(mat.po_line_item)
 
     def test_material_can_link_to_po_line(self):
@@ -33,6 +34,7 @@ class MaterialPOLineItemFKTest(TestCase):
         )
         mat = Material.objects.create(
             job=self.job, quantity=Decimal('5.00'), po_line_item=line,
+            accounting_category=self.category,
         )
         mat.refresh_from_db()
         self.assertEqual(mat.po_line_item_id, line.pk)
@@ -44,6 +46,7 @@ class MaterialPOLineItemFKTest(TestCase):
         )
         mat = Material.objects.create(
             job=self.job, quantity=Decimal('5.00'), po_line_item=line,
+            accounting_category=self.category,
         )
         self.assertEqual(line.linked_material, mat)
 

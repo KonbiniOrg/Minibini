@@ -6,7 +6,7 @@ from apps.jobs.models import Job, Task
 from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
 from apps.core.models import AccountingCategory
 from apps.estimates.models import EstWorksheet
-from apps.jobs.models import PlanTask
+from apps.jobs.models import PlanTask, RateScheme
 
 
 class MaterialFieldsTest(TestCase):
@@ -17,12 +17,17 @@ class MaterialFieldsTest(TestCase):
             email='test@example.com', work_number='555-0100',
         )
         self.job = Job.objects.create(job_number='JOB-TEST-1', contact=self.contact)
-        self.task = Task.objects.create(job=self.job, name='t')
+        self.scheme = RateScheme.objects.create(
+            name='S-mf', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.cat,
+        )
+        self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
 
     def test_material_has_job_consumption_state_restocked_qty(self):
         m = Material.objects.create(
             task=self.task, job=self.job,
             description='x', quantity=Decimal('2.00'),
+            accounting_category=self.cat,
         )
         self.assertEqual(m.job_id, self.job.pk)
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
@@ -32,6 +37,7 @@ class MaterialFieldsTest(TestCase):
         m = Material.objects.create(
             task=self.task, job=self.job,
             description='no-pli', quantity=Decimal('1.00'),
+            accounting_category=self.cat,
         )
         self.assertIsNone(m.price_list_item)
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
@@ -42,12 +48,14 @@ class MaterialFieldsTest(TestCase):
             Material.objects.create(
                 task=self.task, job=job_b,
                 description='x', quantity=Decimal('1.00'),
+                accounting_category=self.cat,
             )
 
     def test_material_rejects_negative_restocked_qty(self):
         m = Material.objects.create(
             task=self.task, job=self.job,
             description='x', quantity=Decimal('2.00'),
+            accounting_category=self.cat,
         )
         m.restocked_qty = Decimal('-1.00')
         with self.assertRaises(ValidationError):
@@ -62,12 +70,22 @@ class PlanMaterialFieldsTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-PLAN-1', contact=self.contact)
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.pt = PlanTask.objects.create(est_worksheet=self.ws, name='pt1')
+        self.pmf_ac = AccountingCategory.objects.create(name='pmf-ac', code='PMF-AC')
+        self.pmf_scheme = RateScheme.objects.create(
+            name='S-pmf', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea',
+            accounting_category=self.pmf_ac,
+        )
+        self.pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='pt1',
+            rate_scheme=self.pmf_scheme, est_qty=Decimal('1'),
+        )
 
     def test_plan_material_has_est_worksheet(self):
         pm = PlanMaterial.objects.create(
             plan_task=self.pt, est_worksheet=self.ws,
             description='x', quantity=Decimal('1.00'),
+            accounting_category=self.pmf_ac,
         )
         self.assertEqual(pm.est_worksheet_id, self.ws.pk)
 
@@ -78,6 +96,7 @@ class PlanMaterialFieldsTest(TestCase):
             PlanMaterial.objects.create(
                 plan_task=self.pt, est_worksheet=other_ws,
                 description='x', quantity=Decimal('1.00'),
+                accounting_category=self.pmf_ac,
             )
 
 
@@ -90,12 +109,19 @@ class MaterialTaskSetNullTest(TestCase):
             email='nulltest@example.com',
         )
         self.job = Job.objects.create(job_number='JOB-TSN-1', contact=self.contact)
-        self.task = Task.objects.create(job=self.job, name='deletable')
+        cat = AccountingCategory.objects.create(name='tsn-cat', code='TSN1')
+        scheme = RateScheme.objects.create(
+            name='S-tsn', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=cat,
+        )
+        self.task = Task.objects.create(job=self.job, name='deletable', rate_scheme=scheme)
 
     def test_delete_task_keeps_material_with_null_task_and_original_job(self):
+        cat = AccountingCategory.objects.create(name='tsn-mat', code='TSN-MAT')
         m = Material.objects.create(
             task=self.task, job=self.job,
             description='widget', quantity=Decimal('3.00'),
+            accounting_category=cat,
         )
         task_pk = self.task.pk
         material_pk = m.pk
@@ -126,6 +152,7 @@ class MaterialJobCascadeTest(TestCase):
         m = Material.objects.create(
             job=self.job, description='bolt', quantity=Decimal('5.00'),
             price_list_item=self.pli,
+            # accounting_category is auto-filled from pli
         )
         Earmark.objects.create(
             price_list_item=self.pli, job=self.job, quantity=Decimal('5.00'),
@@ -157,6 +184,7 @@ class MaterialPropertiesTest(TestCase):
         user = User.objects.create_user('prop_user', password='p')
         m = Material.objects.create(
             job=self.job, description='x', quantity=Decimal('1.00'),
+            accounting_category=self.cat,
         )
         self.assertFalse(m.is_expense_bound, 'No expenses yet — should be False')
         Expense.objects.create(

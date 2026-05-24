@@ -47,7 +47,7 @@ class PipelineSubStatusTest(FixtureTestCase):
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'estimating')
 
-    def test_estimate_ready_when_worksheet_final_estimate_draft(self):
+    def test_estimating_when_worksheet_final_estimate_draft(self):
         from apps.jobs.services import BoardService
         job = self._make_job()
         estimate = Estimate.objects.create(
@@ -56,7 +56,7 @@ class PipelineSubStatusTest(FixtureTestCase):
         ws = EstWorksheet.objects.create(job=job, estimate=estimate)
         EstWorksheet.objects.filter(pk=ws.pk).update(status='final')
         result = BoardService.compute_sub_status(job)
-        self.assertEqual(result, 'estimate-ready')
+        self.assertEqual(result, 'estimating')
 
     def test_awaiting_response_when_estimate_open(self):
         from apps.jobs.services import BoardService
@@ -67,9 +67,58 @@ class PipelineSubStatusTest(FixtureTestCase):
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'awaiting-response')
 
+    def test_estimating_when_draft_estimate_no_worksheet(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', status='draft'
+        )
+        result = BoardService.compute_sub_status(job)
+        self.assertEqual(result, 'estimating')
+
+    def test_estimating_when_draft_estimate_with_superseded_sibling(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        old = Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', status='draft'
+        )
+        Estimate.objects.filter(pk=old.pk).update(status='superseded')
+        Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', version=2, status='draft'
+        )
+        result = BoardService.compute_sub_status(job)
+        self.assertEqual(result, 'estimating')
+
+    def test_needs_scoping_when_only_terminal_estimate_no_worksheet(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        est = Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', status='draft'
+        )
+        Estimate.objects.filter(pk=est.pk).update(status='rejected')
+        result = BoardService.compute_sub_status(job)
+        self.assertEqual(result, 'needs-scoping')
+
+    def test_needs_scoping_when_only_terminal_estimate_with_worksheet(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        est = Estimate.objects.create(
+            job=job, estimate_number='EST-TEST-001', status='draft'
+        )
+        ws = EstWorksheet.objects.create(job=job, estimate=est)
+        EstWorksheet.objects.filter(pk=ws.pk).update(status='final')
+        Estimate.objects.filter(pk=est.pk).update(status='rejected')
+        result = BoardService.compute_sub_status(job)
+        self.assertEqual(result, 'needs-scoping')
+
 
 class ApprovedSubStatusTest(FixtureTestCase):
-    """Test sub-status derivation for Approved jobs (tasks live on job)."""
+    """Test sub-status derivation for Approved and In Progress jobs.
+
+    'approved' jobs now have the fixed sub-status 'awaiting-prep' (estimate
+    accepted, not yet released to floor). 'in_progress' jobs carry the
+    task-derived sub-statuses that used to belong to 'approved'.
+    """
 
     def setUp(self):
         super().setUp()
@@ -78,36 +127,48 @@ class ApprovedSubStatusTest(FixtureTestCase):
             defaults={'value': '14'}
         )
         self.contact = Contact.objects.first()
-        self.job = Job.objects.create(
+        self.approved_job = Job.objects.create(
             job_number='JOB-TEST-0001',
             name='Approved Job',
             status=Job.STATUS_APPROVED,
             contact=self.contact,
         )
+        self.in_progress_job = Job.objects.create(
+            job_number='JOB-TEST-0002',
+            name='In Progress Job',
+            status=Job.STATUS_IN_PROGRESS,
+            contact=self.contact,
+        )
+
+    def test_approved_job_has_awaiting_prep_sub_status(self):
+        """Approved job (estimate accepted, not yet released) → 'awaiting-prep'."""
+        from apps.jobs.services import BoardService
+        result = BoardService.compute_sub_status(self.approved_job)
+        self.assertEqual(result, 'awaiting-prep')
 
     def test_needs_tasks_when_no_tasks_exist(self):
-        """Approved Job with no tasks has sub-status 'needs-tasks'."""
+        """In Progress Job with no tasks has sub-status 'needs-tasks'."""
         from apps.jobs.services import BoardService
-        result = BoardService.compute_sub_status(self.job)
+        result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'needs-tasks')
 
     def test_work_ready_when_tasks_pending(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.job, status='pending')
-        result = BoardService.compute_sub_status(self.job)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='pending', rate_scheme_id=1)
+        result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'work-ready')
 
     def test_in_progress_when_tasks_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.job, status='in_progress')
-        result = BoardService.compute_sub_status(self.job)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', rate_scheme_id=1)
+        result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'in-progress')
 
     def test_blocked_takes_priority_over_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.job, status='in_progress')
-        Task.objects.create(name='Task 2', job=self.job, status='blocked')
-        result = BoardService.compute_sub_status(self.job)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', rate_scheme_id=1)
+        Task.objects.create(name='Task 2', job=self.in_progress_job, status='blocked', rate_scheme_id=1)
+        result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'blocked')
 
 
@@ -213,15 +274,40 @@ class BoardDataAssemblyTest(FixtureTestCase):
         self.assertIn('draft', statuses)
         self.assertIn('submitted', statuses)
 
-    def test_approved_jobs_in_approved_section(self):
+    def test_in_progress_jobs_in_approved_section(self):
+        """in_progress jobs appear in the 'approved' board section (In Progress column)."""
+        from apps.jobs.services import BoardService
+        Job.objects.create(
+            job_number='JOB-INP-001', name='In Progress Job',
+            status='in_progress', contact=self.contact,
+        )
+        data = BoardService.get_board_data()
+        approved_names = [j['name'] for j in data['approved']['jobs']]
+        self.assertIn('In Progress Job', approved_names)
+
+    def test_approved_jobs_in_pipeline_section(self):
+        """approved jobs now appear in the pipeline column."""
         from apps.jobs.services import BoardService
         Job.objects.create(
             job_number='JOB-APP-001', name='Approved Job',
             status='approved', contact=self.contact,
         )
         data = BoardService.get_board_data()
-        approved_names = [j['name'] for j in data['approved']['jobs']]
-        self.assertIn('Approved Job', approved_names)
+        pipeline_statuses = [j['status'] for j in data['pipeline']]
+        self.assertIn('approved', pipeline_statuses)
+
+    def test_closed_includes_recently_rejected_jobs(self):
+        """Bug 3: a job rejected within the retention window shows in Closed."""
+        from apps.jobs.services import BoardService
+        job = Job.objects.create(
+            job_number='JOB-REJ-001', name='Rejected Job',
+            status='draft', contact=self.contact,
+        )
+        job.status = 'rejected'
+        job.save()
+        data = BoardService.get_board_data()
+        names = [j['name'] for j in data['closed']]
+        self.assertIn('Rejected Job', names)
 
     def test_closed_excludes_old_jobs(self):
         from apps.jobs.services import BoardService
@@ -247,13 +333,14 @@ class BoardDataAssemblyTest(FixtureTestCase):
         from apps.jobs.services import BoardService
         job = Job.objects.create(
             job_number='JOB-APP-WRK', name='Job',
-            status='approved', contact=self.contact,
+            status='in_progress', contact=self.contact,
         )
         Task.objects.create(
             name='Assigned task', job=job,
-            assignee=self.worker, worker_queue=1,
+            assignee=self.worker, worker_queue=1, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
         )
-        Task.objects.create(name='Unassigned task', job=job)
+        Task.objects.create(name='Unassigned task', job=job, rate_scheme_id=1)
         data = BoardService.get_board_data()
         self.assertEqual(len(data['approved']['workers']), 1)
         self.assertEqual(data['approved']['workers'][0]['user']['id'], self.worker.pk)
@@ -268,11 +355,12 @@ class BoardDataAssemblyTest(FixtureTestCase):
         )
         job = Job.objects.create(
             job_number='JOB-APP-AV', name='Job',
-            status='approved', contact=self.contact,
+            status='in_progress', contact=self.contact,
         )
         Task.objects.create(
             name='Assigned task', job=job,
-            assignee=self.worker, worker_queue=1,
+            assignee=self.worker, worker_queue=1, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
         )
         data = BoardService.get_board_data()
         available_ids = [w['id'] for w in data['approved']['available_workers']]
@@ -311,7 +399,8 @@ class LazyBoardMethodsTest(FixtureTestCase):
             **kwargs,
         )
 
-    def test_get_pipeline_data_returns_draft_and_submitted(self):
+    def test_get_pipeline_data_returns_draft_submitted_and_approved(self):
+        """Pipeline now includes draft, submitted, AND approved jobs."""
         from apps.jobs.services import BoardService
         self._make_job(status='draft')
         self._make_job(status='submitted')
@@ -320,16 +409,26 @@ class LazyBoardMethodsTest(FixtureTestCase):
         statuses = [j['status'] for j in data['jobs']]
         self.assertIn('draft', statuses)
         self.assertIn('submitted', statuses)
-        self.assertNotIn('approved', statuses)
+        self.assertIn('approved', statuses)
 
-    def test_get_approved_data_only_includes_approved(self):
-        """Approved section returns only approved jobs (work_complete goes to unpaid)."""
+    def test_get_pipeline_data_excludes_in_progress(self):
+        """in_progress jobs belong in the In Progress (approved) column, not pipeline."""
+        from apps.jobs.services import BoardService
+        self._make_job(status='in_progress')
+        data = BoardService.get_pipeline_data()
+        statuses = [j['status'] for j in data['jobs']]
+        self.assertNotIn('in_progress', statuses)
+
+    def test_get_approved_data_only_includes_in_progress(self):
+        """In Progress column (get_approved_data) returns only in_progress jobs."""
         from apps.jobs.services import BoardService
         approved_job = self._make_job(status=Job.STATUS_APPROVED)
+        in_progress_job = self._make_job(status=Job.STATUS_IN_PROGRESS)
         wc_job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
         data = BoardService.get_approved_data()
         job_ids = [j['job_id'] for j in data['jobs']]
-        self.assertIn(approved_job.job_id, job_ids)
+        self.assertIn(in_progress_job.job_id, job_ids)
+        self.assertNotIn(approved_job.job_id, job_ids)
         self.assertNotIn(wc_job.job_id, job_ids)
 
     def test_get_unpaid_data_only_returns_work_complete_jobs(self):
@@ -571,9 +670,16 @@ class UnpaidDataTest(FixtureTestCase):
         InvoiceLineItem.objects.create(
             invoice=inv, qty=Decimal('1'), price=Decimal('500.00'),
         )
+        from apps.jobs.models import RateScheme
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.create(code='LBR-bs', name='lbr-bs')
+        scheme = RateScheme.objects.create(
+            name='Hourly-bs', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50.00'), unit_label='hours', accounting_category=cat,
+        )
         task = Task.objects.create(
-            job=job, name='Labor task',
-            status='in_progress', rate=Decimal('50.00'),
+            job=job, name='Labor task', status='in_progress',
+            rate_scheme=scheme,
         )
         start = timezone.now() - timedelta(hours=2)
         Blep.objects.create(

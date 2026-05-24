@@ -19,3 +19,4 @@ runserver_commands.txt
 .worktrees/
 media/
 nealsdata/datasets/
+.claude/

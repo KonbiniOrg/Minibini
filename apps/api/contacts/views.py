@@ -9,12 +9,13 @@ from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.contacts.services import ContactService
 from apps.core.models import HistoryEntry
 from apps.core.services import ServiceError, NotFoundError
+from apps.api.mixins import ConfirmDeleteMixin
 from apps.api.permissions import CanManageJobs
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import ContactSerializer, ContactDetailSerializer, BusinessSerializer, BusinessDetailSerializer, PaymentTermsSerializer
 
 
-class ContactViewSet(viewsets.ModelViewSet):
+class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
     queryset = Contact.objects.all().order_by('last_name', 'first_name')
     serializer_class = ContactSerializer
     lookup_field = 'pk'
@@ -54,20 +55,11 @@ class ContactViewSet(viewsets.ModelViewSet):
         ContactService.update_contact(self.get_object().pk, **kwargs)
         serializer.instance = Contact.objects.get(pk=self.get_object().pk)
 
-    def destroy(self, request, *args, **kwargs):
-        contact = self.get_object()
-        confirm = request.query_params.get('confirm', '').lower() == 'true'
+    def get_deletion_impact(self, contact):
+        from apps.jobs.models import Job
+        return {'jobs': Job.objects.filter(contact=contact).count()}
 
-        if not confirm:
-            from apps.jobs.models import Job
-            impact = {
-                'jobs': Job.objects.filter(contact=contact).count(),
-            }
-            return Response({
-                'confirm_required': True,
-                'impact': impact,
-            })
-
+    def perform_confirmed_destroy(self, contact):
         try:
             ContactService.delete_contact(contact.pk)
         except ProtectedError:
@@ -115,7 +107,7 @@ class ContactViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class BusinessViewSet(viewsets.ModelViewSet):
+class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
     queryset = Business.objects.all().order_by('business_name')
     serializer_class = BusinessSerializer
     lookup_field = 'pk'
@@ -143,24 +135,17 @@ class BusinessViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         ContactService.update_business(self.get_object().pk, **serializer.validated_data)
 
-    def destroy(self, request, *args, **kwargs):
-        business = self.get_object()
-        confirm = request.query_params.get('confirm', '').lower() == 'true'
+    def get_deletion_impact(self, business):
+        from apps.jobs.models import Job
+        from apps.purchasing.models import PurchaseOrder, Bill
+        return {
+            'jobs': Job.objects.filter(contact__business=business).count(),
+            'purchase_orders': PurchaseOrder.objects.filter(business=business).count(),
+            'bills': Bill.objects.filter(business=business).count(),
+            'contacts': Contact.objects.filter(business=business).count(),
+        }
 
-        if not confirm:
-            from apps.jobs.models import Job
-            from apps.purchasing.models import PurchaseOrder, Bill
-            impact = {
-                'jobs': Job.objects.filter(contact__business=business).count(),
-                'purchase_orders': PurchaseOrder.objects.filter(business=business).count(),
-                'bills': Bill.objects.filter(business=business).count(),
-                'contacts': Contact.objects.filter(business=business).count(),
-            }
-            return Response({
-                'confirm_required': True,
-                'impact': impact,
-            })
-
+    def perform_confirmed_destroy(self, business):
         contact_count = Contact.objects.filter(business=business).count()
         business_name = business.business_name
 

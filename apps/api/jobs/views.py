@@ -10,27 +10,36 @@ from apps.jobs.models import Job, Task
 from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
 from apps.core.models import HistoryEntry
-from apps.core.services import NotFoundError, ServiceError
+from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
 from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
-from apps.api.mixins import StatusTransitionMixin, JobTaskMixin
+from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin
 from apps.api.permissions import CanManageJobs
 from apps.api.history.serializers import HistoryEntrySerializer
 from apps.api.tasks.serializers import TaskSerializer
 from .serializers import JobSerializer
 
 
-class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
-    queryset = Job.objects.select_related('contact', 'template') \
+class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
+    queryset = Job.objects.select_related('contact') \
         .prefetch_related(
-            Prefetch('tasks', queryset=Task.objects.select_related('assignee').order_by('sort_order')),
-            Prefetch('materials', queryset=Material.objects.select_related('price_list_item')),
-            'template__templatetaskassociation_set__task_template',
-            'template__bundles',
+            Prefetch(
+                'tasks',
+                queryset=Task.objects.select_related(
+                    'assignee', 'rate_scheme', 'source_plan_task',
+                ).prefetch_related('blep_set').order_by('sort_order'),
+            ),
+            Prefetch(
+                'materials',
+                queryset=Material.objects.select_related(
+                    'price_list_item', 'po_line_item__purchase_order',
+                ),
+            ),
         ) \
         .all().order_by('-created_date')
     serializer_class = JobSerializer
     lookup_field = 'pk'
     task_serializer_class = TaskSerializer
+    destroy_response_message = 'Job deleted.'
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve', 'history', 'notes')
@@ -146,6 +155,9 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     def work_complete(self, request, pk=None):
         job = self.get_object()
         try:
+            # Walk approved → in_progress → work_complete if needed.
+            if job.status == Job.STATUS_APPROVED:
+                job = JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
             job = JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
         except ValidationError as e:
             return Response(
@@ -174,32 +186,8 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
             )
         try:
             JobService.populate_from_template(job, template)
-        except ValidationError as e:
-            return Response(
-                {'detail': e.message if hasattr(e, 'message') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        job.refresh_from_db()
-        return Response(self.get_serializer(job).data)
-
-    @action(detail=True, methods=['post'], url_path='populate-from-estimate')
-    def populate_from_estimate(self, request, pk=None):
-        job = self.get_object()
-        estimate_pk = request.data.get('estimate_id')
-        if not estimate_pk:
-            return Response(
-                {'estimate_id': ['This field is required.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            estimate = Estimate.objects.get(pk=estimate_pk)
-        except Estimate.DoesNotExist:
-            return Response(
-                {'estimate_id': ['Estimate not found.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            JobService.populate_from_estimate(job, estimate)
+        except SchemeSupersededError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except ValidationError as e:
             return Response(
                 {'detail': e.message if hasattr(e, 'message') else str(e)},
@@ -225,7 +213,7 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            JobService.copy_from_worksheet(job.pk, ws.pk, template=ws.template)
+            JobService.copy_from_worksheet(job.pk, ws.pk)
         except (ValidationError, NotFoundError) as e:
             return Response(
                 {'detail': e.message if hasattr(e, 'message') else str(e)},
@@ -287,13 +275,18 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                 job=job, task=None,
                 description=data.get('description', ''),
                 quantity=_Decimal(str(data.get('quantity', 0))),
+                units=data.get('units', 'none'),
                 unit_cost=_Decimal(str(data.get('unit_cost', 0))),
                 sell_price=_Decimal(str(data.get('sell_price', 0))),
                 price_list_item=pli,
                 accounting_category=ac,
             )
         except ValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            # Surface field-level errors as {field: [messages]} so the SPA
+            # can format each line; fall back to a flat detail otherwise.
+            if hasattr(e, 'message_dict'):
+                return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': '; '.join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='add-from-template')
@@ -301,6 +294,10 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
         job = self.get_object()
         task_template_id = request.data.get('task_template_id')
         est_qty_raw = request.data.get('est_qty')
+        name = request.data.get('name') or None
+        description = request.data.get('description')  # None means "not provided"
+        active_modifiers = request.data.get('active_modifiers')  # None means use template default
+        est_worker_time = request.data.get('est_worker_time') or None
 
         if not task_template_id:
             return Response(
@@ -321,6 +318,17 @@ class JobViewSet(StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
                 {'est_qty': ['Invalid decimal value.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        task = template.generate_task(job, est_qty)
+        try:
+            task = template.generate_task(
+                job, est_qty,
+                name=name,
+                description=description,
+                active_modifiers=active_modifiers,
+                est_worker_time=est_worker_time,
+            )
+        except SchemeSupersededError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
+        except ServiceError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         serializer = TaskSerializer(task)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

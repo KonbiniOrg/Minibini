@@ -182,7 +182,6 @@ class AccountingCategory(models.Model):
 
 class AbstractWorkContainer(models.Model):
     """Abstract base class for work containers (Job, EstWorksheet) containing common fields."""
-    template = models.ForeignKey('estimates.WorkTemplate', on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         abstract = True
@@ -191,8 +190,9 @@ class AbstractWorkContainer(models.Model):
         """Populate this container's tasks from a WorkTemplate.
 
         Subclasses implement by reading the template's TemplateTaskAssociations
-        and TemplateBundles and creating the appropriate task type
-        (PlanTask on EstWorksheet, Task on Job).
+        and creating the appropriate task type
+        (PlanTask on EstWorksheet, Task on Job). The WorkTemplate is not
+        stored on the container — only its child tasks are materialized.
         """
         raise NotImplementedError
 
@@ -204,9 +204,11 @@ class BaseLineItem(models.Model):
     PurchaseOrderLineItem, and BillLineItem.
     """
     line_item_id = models.AutoField(primary_key=True)
-    # NOTE: `task` FK is defined on each concrete subclass because it targets
-    # different models depending on the line item type (EstimateLineItem -> PlanTask,
-    # everything else -> Task).
+    # NOTE: `task` FK is defined only on subclasses that need it
+    # (PurchaseOrderLineItem, BillLineItem — both target jobs.Task and are
+    # reserved for a future "service PO" feature). EstimateLineItem and
+    # InvoiceLineItem do not carry a task FK; they link to their source
+    # atoms via EstimateLineItemSource / InvoiceLineItemSource respectively.
     price_list_item = models.ForeignKey('inventory.PriceListItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
     line_number = models.PositiveIntegerField(blank=True, null=True)
     qty = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -234,13 +236,23 @@ class BaseLineItem(models.Model):
         abstract = True
 
     def clean(self):
-        """Validate that line item cannot have both task and price_list_item."""
-        super().clean()
-        has_task = self.task is not None
-        has_price_item = self.price_list_item is not None
+        """Validate that line item cannot have both task and price_list_item.
 
-        if has_task and has_price_item:
-            raise ValidationError("LineItem cannot have both task and price_list_item")
+        Only applies to subclasses that still carry a task FK (e.g. PurchaseOrderLineItem,
+        BillLineItem). EstimateLineItem dropped its task FK in favour of EstimateLineItemSource.
+        """
+        super().clean()
+        try:
+            task_fk = self._meta.get_field('task')
+        except Exception:
+            task_fk = None
+
+        if task_fk is not None:
+            has_task = self.task is not None
+            has_price_item = self.price_list_item is not None
+
+            if has_task and has_price_item:
+                raise ValidationError("LineItem cannot have both task and price_list_item")
 
     def _populate_from_pli(self):
         """Copy description/units/accounting_category from linked PriceListItem if not already set.

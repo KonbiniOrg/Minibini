@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { refreshCurrentBlep } from '../../stores/currentBlep.js';
+  import { modalKeys } from '../../lib/modalKeys.js';
 
   let {
     conflict = null,
@@ -28,7 +29,8 @@
 </script>
 
 {#if conflict}
-  <div class="overlay">
+  <!-- Esc-only: Join vs Take over is an ambiguous, irreversible choice — don't bind Enter. -->
+  <div class="overlay" use:modalKeys={{ onCancel }}>
     <div class="modal">
       <h3>Someone is already working on this task</h3>
       <p>

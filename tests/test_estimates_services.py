@@ -7,7 +7,7 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Job, Task, PlanTask, PlanBundle
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.jobs.services import JobService
 from apps.inventory.models import Material, PlanMaterial
 from apps.core.services import NotFoundError
@@ -32,6 +32,13 @@ class EstimatesTestBase(TestCase):
         self.contact.save()
         self.lit, _ = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': True},
+        )
+        self.scheme, _ = RateScheme.objects.get_or_create(
+            name='Test Hourly Default', defaults={
+                'algorithm': RateScheme.ENTERED_QTY,
+                'rate': Decimal('50.00'), 'unit_label': 'hour',
+                'accounting_category': self.lit,
+            },
         )
         from apps.jobs.services import JobService
         self.job = JobService.create_job(name='Test Job', contact=self.contact)
@@ -97,12 +104,12 @@ class TaskTemplateServiceCreateTest(EstimatesTestBase):
     def test_create_task_template(self):
         from apps.estimates.services import WorkTemplateService
         tt = WorkTemplateService.create_task_template(
-            template_name='Welding', units='hours',
-            rate=Decimal('85.00'), accounting_category=self.lit,
+            template_name='Welding',
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.assertIsNotNone(tt.pk)
         self.assertEqual(tt.template_name, 'Welding')
-        self.assertEqual(tt.rate, Decimal('85.00'))
+        self.assertEqual(tt.rate_scheme, self.scheme)
 
 
 class TaskTemplateServiceUpdateTest(EstimatesTestBase):
@@ -111,7 +118,8 @@ class TaskTemplateServiceUpdateTest(EstimatesTestBase):
     def test_update_task_template(self):
         from apps.estimates.services import WorkTemplateService
         tt = WorkTemplateService.create_task_template(
-            template_name='Old', accounting_category=self.lit,
+            template_name='Old',
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         updated = WorkTemplateService.update_task_template(
             tt.pk, template_name='New',
@@ -130,7 +138,8 @@ class TaskTemplateServiceDeleteTest(EstimatesTestBase):
     def test_delete_unused_task_template(self):
         from apps.estimates.services import WorkTemplateService
         tt = WorkTemplateService.create_task_template(
-            template_name='Del', accounting_category=self.lit,
+            template_name='Del',
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         pk = tt.pk
         WorkTemplateService.delete_task_template(pk)
@@ -141,7 +150,8 @@ class TaskTemplateServiceDeleteTest(EstimatesTestBase):
         from apps.estimates.services import WorkTemplateService
         wo_tmpl = WorkTemplateService.create_template(template_name='WO')
         tt = WorkTemplateService.create_task_template(
-            template_name='Used', accounting_category=self.lit,
+            template_name='Used',
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=wo_tmpl, task_template=tt,
@@ -190,14 +200,23 @@ class EstimateServiceMarkOpenTest(EstimatesTestBase):
     """Tests for EstimateService.mark_open."""
 
     def test_mark_open(self):
+        from apps.deliverables.models import Deliverable
         est = EstimateService.create_for_job(self.job.pk)
         EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
+        # mark_open requires the job to have at least one Deliverable.
+        Deliverable.objects.create(
+            job=self.job, description='Widget', qty_ordered=Decimal('1'), units='ea',
+        )
         updated = EstimateService.mark_open(est.pk)
         self.assertEqual(updated.status, Estimate.STATUS_OPEN)
 
     def test_mark_open_updates_worksheet(self):
+        from apps.deliverables.models import Deliverable
         est = EstimateService.create_for_job(self.job.pk)
         EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
+        Deliverable.objects.create(
+            job=self.job, description='Widget', qty_ordered=Decimal('1'), units='ea',
+        )
         ws = EstWorksheet.objects.create(
             job=self.job, estimate=est, status=Job.STATUS_DRAFT,
         )
@@ -362,12 +381,6 @@ class WorksheetServiceCreateTest(EstimatesTestBase):
         self.assertEqual(ws.job, self.job)
         self.assertEqual(ws.status, EstWorksheet.STATUS_DRAFT)
 
-    def test_create_worksheet_from_template(self):
-        from apps.estimates.services import WorksheetService, WorkTemplateService
-        tmpl = WorkTemplateService.create_template(template_name='Tmpl')
-        ws = WorksheetService.create_worksheet(self.job.pk, template=tmpl)
-        self.assertEqual(ws.template, tmpl)
-
     def test_create_worksheet_job_not_found(self):
         from apps.estimates.services import WorksheetService
         with self.assertRaises(NotFoundError):
@@ -381,7 +394,10 @@ class WorksheetServiceReviseTest(EstimatesTestBase):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
         # Add a task to make it non-empty
-        PlanTask.objects.create(est_worksheet=ws, name='Task 1', sort_order=1)
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task 1', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
         new_ws = WorksheetService.revise_worksheet(ws.pk)
         self.assertEqual(new_ws.version, 2)
         self.assertEqual(new_ws.status, EstWorksheet.STATUS_DRAFT)
@@ -391,11 +407,40 @@ class WorksheetServiceReviseTest(EstimatesTestBase):
     def test_revise_copies_tasks(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        PlanTask.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
-        PlanTask.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task A', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task B', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
         new_ws = WorksheetService.revise_worksheet(ws.pk)
         new_tasks = PlanTask.objects.filter(est_worksheet=new_ws)
         self.assertEqual(new_tasks.count(), 2)
+
+
+class WorksheetServiceDeleteTest(EstimatesTestBase):
+    """Tests for WorksheetService.delete_worksheet."""
+
+    def test_deletes_worksheet_with_no_estimate(self):
+        from apps.estimates.services import WorksheetService
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        ws_pk = ws.pk
+        WorksheetService.delete_worksheet(ws)
+        self.assertFalse(EstWorksheet.objects.filter(pk=ws_pk).exists())
+
+    def test_refuses_when_estimate_linked(self):
+        from apps.estimates.services import WorksheetService, EstimateWizardService
+        from django.core.exceptions import ValidationError
+        ws = WorksheetService.create_worksheet(self.job.pk)
+        EstimateWizardService.open_for_worksheet(ws)
+        ws.refresh_from_db()
+        self.assertIsNotNone(ws.estimate_id)
+        with self.assertRaises(ValidationError):
+            WorksheetService.delete_worksheet(ws)
+        # Worksheet survives
+        self.assertTrue(EstWorksheet.objects.filter(pk=ws.pk).exists())
 
 
 class WorksheetServiceAddTaskTest(EstimatesTestBase):
@@ -409,8 +454,8 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
     def test_add_task_from_template(self):
         from apps.estimates.services import WorksheetService, WorkTemplateService
         tt = WorkTemplateService.create_task_template(
-            template_name='Welding', units='hours',
-            rate=Decimal('85.00'), accounting_category=self.lit,
+            template_name='Welding',
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         task = WorksheetService.add_task_from_template(
             self.ws.pk, tt.pk, est_qty=Decimal('4.00'),
@@ -421,9 +466,15 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
 
     def test_add_task_manual(self):
         from apps.estimates.services import WorksheetService
+        from apps.jobs.models import RateScheme
+        ac = AccountingCategory.objects.create(code='X-atm', name='X-atm')
+        scheme = RateScheme.objects.create(
+            name='S-atm', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=ac,
+        )
         task = WorksheetService.add_task_manual(
-            self.ws.pk, name='Custom task', units='ea',
-            rate=Decimal('50.00'), est_qty=Decimal('1.00'),
+            self.ws.pk, name='Custom task', rate_scheme_id=scheme.pk,
+            est_qty=Decimal('1.00'),
         )
         self.assertEqual(task.name, 'Custom task')
         self.assertEqual(task.est_worksheet, self.ws)
@@ -434,7 +485,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         self.ws.save()
         with self.assertRaises(ValidationError):
             WorksheetService.add_task_manual(
-                self.ws.pk, name='X', units='ea',
+                self.ws.pk, name='X',
             )
 
 
@@ -447,11 +498,12 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         from apps.estimates.services import WorkTemplateService
         tmpl = WorkTemplateService.create_template(template_name='T')
         tt = WorkTemplateService.create_task_template(
-            template_name='Task', accounting_category=self.lit,
+            template_name='Task',
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_template=tmpl, task_template=tt,
-            mapping_strategy='direct', sort_order=1,
+            sort_order=1,
         )
         pk = assoc.pk
         WorkTemplateService.delete_association(tmpl.pk, pk)
@@ -468,11 +520,12 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         tmpl1 = WorkTemplateService.create_template(template_name='T1')
         tmpl2 = WorkTemplateService.create_template(template_name='T2')
         tt = WorkTemplateService.create_task_template(
-            template_name='Task', accounting_category=self.lit,
+            template_name='Task',
+            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_template=tmpl1, task_template=tt,
-            mapping_strategy='direct', sort_order=1,
+            sort_order=1,
         )
         with self.assertRaises(NotFoundError):
             WorkTemplateService.delete_association(tmpl2.pk, assoc.pk)
@@ -511,37 +564,29 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
     def test_copy_tasks(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        PlanTask.objects.create(est_worksheet=ws, name='Task A', sort_order=1)
-        PlanTask.objects.create(est_worksheet=ws, name='Task B', sort_order=2)
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task A', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        PlanTask.objects.create(
+            est_worksheet=ws, name='Task B', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
 
         JobService.copy_from_worksheet(self.job.pk, ws.pk)
         self.assertEqual(Task.objects.filter(job=self.job).count(), 2)
 
-    def test_copy_bundles_drops_bundle_info(self):
-        """PlanBundles on the worksheet are NOT copied; bundled PlanTasks become flat Tasks."""
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        bundle = PlanBundle.objects.create(
-            est_worksheet=ws, name='Bundle 1',
-            accounting_category=self.lit, sort_order=1,
-        )
-        PlanTask.objects.create(
-            est_worksheet=ws, name='Bundled', sort_order=1,
-            mapping_strategy='bundle', bundle=bundle,
-        )
-
-        JobService.copy_from_worksheet(self.job.pk, ws.pk)
-        tasks = Task.objects.filter(job=self.job)
-        self.assertEqual(tasks.count(), 1)
-        self.assertEqual(tasks.first().name, 'Bundled')
-
     def test_copy_materials(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
-        task = PlanTask.objects.create(est_worksheet=ws, name='Task', sort_order=1)
+        task = PlanTask.objects.create(
+            est_worksheet=ws, name='Task', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
         PlanMaterial.objects.create(
             est_worksheet=ws,
             plan_task=task, description='Steel', quantity=Decimal('5.00'),
+            accounting_category=self.lit,
         )
 
         JobService.copy_from_worksheet(self.job.pk, ws.pk)
@@ -549,11 +594,55 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
         self.assertEqual(job_task.materials.count(), 1)
         self.assertEqual(job_task.materials.first().description, 'Steel')
 
-    def test_copy_with_template_sets_template(self):
-        """Template arg should be linked onto the job."""
-        from apps.estimates.services import WorksheetService, WorkTemplateService
-        tmpl = WorkTemplateService.create_template(template_name='Tmpl')
-        ws = WorksheetService.create_worksheet(self.job.pk, template=tmpl)
-        JobService.copy_from_worksheet(self.job.pk, ws.pk, template=tmpl)
-        self.job.refresh_from_db()
-        self.assertEqual(self.job.template, tmpl)
+
+class EstimateServiceDiscardDraftTest(EstimatesTestBase):
+    """Tests for EstimateService.discard_draft."""
+
+    def _make_estimate_with_sources(self):
+        from apps.estimates.models import EstimateLineItemSource
+        worksheet = EstWorksheet.objects.create(job=self.job)
+        plan_task = PlanTask.objects.create(
+            est_worksheet=worksheet, name='T1',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        plan_material = PlanMaterial.objects.create(
+            est_worksheet=worksheet, description='steel',
+            quantity=Decimal('2'), sell_price=Decimal('5'),
+            accounting_category=self.lit,
+        )
+        estimate = EstimateService.create_for_job(self.job.pk)
+        line_item = EstimateLineItem.objects.create(
+            estimate=estimate, qty=Decimal('1'), units='each',
+            price=Decimal('10'), description='', accounting_category=self.lit,
+        )
+        src1 = EstimateLineItemSource.objects.create(
+            estimate_line_item=line_item,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=plan_task.pk,
+        )
+        src2 = EstimateLineItemSource.objects.create(
+            estimate_line_item=line_item,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL,
+            source_pk=plan_material.pk,
+        )
+        return estimate, line_item, src1, src2
+
+    def test_discard_draft_cascades_estimate_line_items_and_sources(self):
+        from apps.estimates.models import EstimateLineItemSource
+        estimate, line_item, src1, src2 = self._make_estimate_with_sources()
+
+        EstimateService.discard_draft(estimate)
+
+        self.assertFalse(Estimate.objects.filter(pk=estimate.pk).exists())
+        self.assertFalse(EstimateLineItem.objects.filter(pk=line_item.pk).exists())
+        self.assertFalse(
+            EstimateLineItemSource.objects.filter(pk__in=[src1.pk, src2.pk]).exists()
+        )
+
+    def test_discard_draft_rejects_non_draft(self):
+        estimate = EstimateService.create_for_job(self.job.pk)
+        Estimate.objects.filter(pk=estimate.pk).update(status=Estimate.STATUS_OPEN)
+        estimate.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            EstimateService.discard_draft(estimate)
+        self.assertTrue(Estimate.objects.filter(pk=estimate.pk).exists())

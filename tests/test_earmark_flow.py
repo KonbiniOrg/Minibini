@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.inventory.models import Material, PriceListItem, Earmark
 from apps.inventory.services import InventoryService
 
@@ -52,15 +52,21 @@ class EarmarkPreviewTest(TestCase):
             accounting_category=self.category,
         )
 
+        self.scheme = RateScheme.objects.create(
+            name='S-emk', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
         self.task_a = Task.objects.create(
             job=self.job,
             name='Build cabinets',
             sort_order=1,
+            rate_scheme=self.scheme,
         )
         self.task_b = Task.objects.create(
             job=self.job,
             name='Install trim',
             sort_order=2,
+            rate_scheme=self.scheme,
         )
 
     def test_preview_aggregates_by_item(self):
@@ -137,6 +143,7 @@ class EarmarkPreviewTest(TestCase):
             job=self.job, task=self.task_a,
             description='Custom brackets',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
+            accounting_category=self.category,
         )
         preview = InventoryService.get_earmark_preview(self.job)
         self.assertEqual(len(preview), 0)
@@ -235,7 +242,7 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         any earmark rows."""
         from decimal import Decimal
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import Job, PlanTask
+        from apps.jobs.models import Job, PlanTask, RateScheme
         from apps.estimates.models import EstWorksheet
         from apps.inventory.models import PriceListItem, PlanMaterial, Earmark
         from apps.inventory.services import InventoryService
@@ -246,12 +253,20 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         biz = Business.objects.create(business_name='B', default_contact=contact)
         contact.business = biz; contact.save()
         cat = AccountingCategory.objects.create(name='c', code='NOP1')
+        scheme_ac = AccountingCategory.objects.create(name='nop-sc', code='NOP-SC')
+        scheme = RateScheme.objects.create(
+            name='S-nop', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=scheme_ac,
+        )
         pli = PriceListItem.objects.create(
             code='I-NOP', accounting_category=cat, is_inventoried=True,
         )
         src_job = Job.objects.create(job_number='JOB-NOP-SRC', contact=contact)
         ws = EstWorksheet.objects.create(job=src_job)
-        pt = PlanTask.objects.create(est_worksheet=ws, name='pt')
+        pt = PlanTask.objects.create(
+            est_worksheet=ws, name='pt',
+            rate_scheme=scheme, est_qty=Decimal('1'),
+        )
         PlanMaterial.objects.create(
             plan_task=pt, est_worksheet=ws,
             description='x', quantity=Decimal('3'), price_list_item=pli,

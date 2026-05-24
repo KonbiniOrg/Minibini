@@ -8,98 +8,19 @@ from apps.core.services import NumberGenerationService
 from decimal import Decimal
 
 
-class BillNumberGenerationTest(TestCase):
-    """Test that Bill numbers are auto-generated using NumberGenerationService."""
+class BillStrTest(TestCase):
+    """Test Bill's __str__ representation."""
 
-    def setUp(self):
-        """Set up test data and configuration."""
-        # Create configuration for bill numbering
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
-
-        # Create default contact for business
-        self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
-
-        # Create business and contact for bills
-        self.business = Business.objects.create(business_name="Test Vendor Business", default_contact=self.default_contact)
-        self.contact = Contact.objects.create(first_name='Test Vendor', last_name='', email='test.vendor@test.com', business=self.business)
-
-    def test_bill_number_generated_on_form_save(self):
-        """Test that bill number is automatically generated when using BillForm."""
-        form = BillForm(data={
-            'business': self.business.business_id,
-            'contact': self.contact.contact_id,
-            'vendor_invoice_number': 'VIN001',
-        })
-
-        self.assertTrue(form.is_valid())
-        bill = form.save()
-
-        # Verify bill number was generated
-        self.assertIsNotNone(bill.bill_number)
-        self.assertTrue(bill.bill_number.startswith('BILL-'))
-        self.assertIn('-0001', bill.bill_number)
-
-    def test_bill_numbers_increment_sequentially(self):
-        """Test that bill numbers increment sequentially."""
-        # Create first bill
-        form1 = BillForm(data={
-            'business': self.business.business_id,
-            'contact': self.contact.contact_id,
-            'vendor_invoice_number': 'VIN001',
-        })
-        bill1 = form1.save()
-
-        # Create second bill
-        form2 = BillForm(data={
-            'business': self.business.business_id,
-            'contact': self.contact.contact_id,
-            'vendor_invoice_number': 'VIN002',
-        })
-        bill2 = form2.save()
-
-        # Create third bill
-        form3 = BillForm(data={
-            'business': self.business.business_id,
-            'contact': self.contact.contact_id,
-            'vendor_invoice_number': 'VIN003',
-        })
-        bill3 = form3.save()
-
-        # Verify sequential numbering
-        self.assertIn('-0001', bill1.bill_number)
-        self.assertIn('-0002', bill2.bill_number)
-        self.assertIn('-0003', bill3.bill_number)
-
-    def test_bill_number_is_unique(self):
-        """Test that bill numbers are unique."""
-        # Create bill
-        form = BillForm(data={
-            'business': self.business.business_id,
-            'contact': self.contact.contact_id,
-            'vendor_invoice_number': 'VIN001',
-        })
-        bill1 = form.save()
-
-        # Try to create another bill with same bill_number (should fail)
-        with self.assertRaises(Exception):
-            Bill.objects.create(
-                bill_number=bill1.bill_number,
-                business=self.business,
-                contact=self.contact,
-                vendor_invoice_number='VIN002'
-            )
-
-    def test_bill_str_method_uses_bill_number(self):
-        """Test that Bill's __str__ method uses bill_number."""
-        form = BillForm(data={
-            'business': self.business.business_id,
-            'contact': self.contact.contact_id,
-            'vendor_invoice_number': 'VIN001',
-        })
-        bill = form.save()
-
-        self.assertEqual(str(bill), f"Bill {bill.bill_number}")
+    def test_bill_str_uses_vendor_invoice_number(self):
+        contact = Contact.objects.create(first_name='V', last_name='I')
+        business = Business.objects.create(business_name='Vendor', default_contact=contact)
+        contact.business = business
+        contact.save()
+        bill = Bill.objects.create(
+            business=business, contact=contact,
+            vendor_invoice_number='VIN-XYZ',
+        )
+        self.assertEqual(str(bill), 'Bill VIN-XYZ')
 
 
 class BillLineItemManualEntryTest(TestCase):
@@ -107,10 +28,6 @@ class BillLineItemManualEntryTest(TestCase):
 
     def setUp(self):
         """Set up test data."""
-        # Create configuration for bill numbering
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
-
         # Create default contact for business
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
 
@@ -211,10 +128,6 @@ class BillDraftStateValidationTest(TestCase):
 
     def setUp(self):
         """Set up test data."""
-        # Create configuration for bill numbering
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
-
         # Create default contact for business
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')
 

@@ -1,16 +1,17 @@
 <script>
-  import { link } from 'svelte-spa-router';
+  import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import TaskTree from '../../components/TaskTree.svelte';
-  import TaskModal from '../../components/TaskModal.svelte';
+  import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
-  import SubtaskModal from '../../components/SubtaskModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   let { params = {} } = $props();
 
   let job = $state(null);
+  let contact = $state(null);
   let enrichedTasks = $state([]);
   let jobMaterials = $state([]);
   let templates = $state([]);
@@ -20,7 +21,7 @@
 
   // Modal state
   let taskModalOpen = $state(false);
-  let taskModalMode = $state('create-freeform');
+  let taskModalMode = $state('manual');
   let taskModalTask = $state(null);
 
   let materialModalOpen = $state(false);
@@ -43,9 +44,17 @@
   const canManageJobs = $derived(
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
+  const canManageFinancials = $derived(
+    $userStore?.permissions?.includes('can_manage_financials') ?? false
+  );
 
   const jobLocked = $derived(
     job && ['completed', 'cancelled', 'rejected'].includes(job.status)
+  );
+
+  const canBuildInvoice = $derived(
+    (canManageJobs || canManageFinancials) &&
+    job && ['approved', 'work_complete', 'completed'].includes(job.status)
   );
 
   async function loadJob() {
@@ -55,6 +64,13 @@
       job = await api.get(`/api/jobs/${params.id}/`);
       jobMaterials = (job.materials || []).filter(m => !m.task);
       await enrichTasks();
+      if (job.contact) {
+        try {
+          contact = await api.get(`/api/contacts/${job.contact}/`);
+        } catch (e) {
+          contact = null;
+        }
+      }
     } catch (e) {
       error = e.message || 'Could not load job.';
     } finally {
@@ -131,15 +147,21 @@
   });
 
   // Task modal handlers
-  function openAddTask() {
+  function openAddManualTask() {
     taskModalTask = null;
-    taskModalMode = 'create-freeform';
+    taskModalMode = 'manual';
+    taskModalOpen = true;
+  }
+
+  function openAddTemplateTask() {
+    taskModalTask = null;
+    taskModalMode = 'template';
     taskModalOpen = true;
   }
 
   function openEditTask(task) {
     taskModalTask = task;
-    taskModalMode = 'edit';
+    taskModalMode = 'manual';
     taskModalOpen = true;
   }
 
@@ -186,15 +208,12 @@
     materialModalOpen = true;
   }
 
-  async function handleEditMaterialDescription(material, _task) {
-    const next = window.prompt('Edit description:', material.description || '');
-    if (next === null) return;
-    try {
-      await api.patch(`/api/materials/${material.material_id}/`, { description: next });
-      await reload();
-    } catch (e) {
-      alert(e.message || 'Could not edit description.');
-    }
+  function openEditMaterial(material, task) {
+    materialModalMaterial = material;
+    materialModalTaskId = task ? task.task_id : null;
+    materialModalJobId = task ? null : job.job_id;
+    materialModalMode = 'edit';
+    materialModalOpen = true;
   }
 
   async function handleConsumeMaterial(material, _task) {
@@ -283,6 +302,15 @@
     }
   }
 
+  async function startInvoiceWizard() {
+    try {
+      const { invoice_id } = await api.post(`/api/jobs/${job.job_id}/start-invoice-wizard/`);
+      push(`/invoices/${invoice_id}/wizard`);
+    } catch (e) {
+      alert(e.message || 'Failed to start invoice wizard.');
+    }
+  }
+
   // Mark all work complete
   async function handleWorkComplete() {
     if (!confirm('Mark all work complete on this job?')) return;
@@ -303,31 +331,22 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if job}
-  <h2>Tasks for Job {job.job_number}</h2>
+  <JobHeader {job} {contact} onStatusChange={reload} />
 
-  <p>
-    <a href={`/jobs/${job.job_id}`} use:link>&laquo; Back to Job</a>
-  </p>
-
-  <div class="status-line">
-    <span class="status-badge status-{job.status}">{job.status}</span>
-    {#if job.template?.name}
-      <span class="meta">Template: {job.template.name}</span>
+  <div class="toolbar">
+    <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
+    {#if !jobLocked}
+      <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
+      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
+      <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+      {#if canBuildInvoice}
+        <button type="button" onclick={startInvoiceWizard}>Open invoice wizard</button>
+      {/if}
+    {/if}
+    {#if canManageJobs}
+      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
     {/if}
   </div>
-
-  {#if canManageJobs}
-    <div class="action-bar">
-      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
-    </div>
-  {/if}
-
-  {#if !jobLocked}
-    <div class="action-bar">
-      <button type="button" onclick={openAddTask}>Add Task</button>
-      <button type="button" onclick={openAddJobMaterial}>Add Material</button>
-    </div>
-  {/if}
 
   <TaskTree
     tasks={enrichedTasks}
@@ -337,7 +356,7 @@
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onAddMaterial={openAddMaterial}
-    onEditMaterial={handleEditMaterialDescription}
+    onEditMaterial={openEditMaterial}
     onConsumeMaterial={handleConsumeMaterial}
     onRestockMaterial={handleRestockMaterial}
     onDrawMoreMaterial={handleDrawMoreMaterial}
@@ -351,13 +370,14 @@
   />
 
   <!-- Modals -->
-  <TaskModal
+  <WorkItemForm
     open={taskModalOpen}
     mode={taskModalMode}
-    task={taskModalTask}
-    jobId={job.job_id}
+    context="job"
+    contextId={job.job_id}
+    item={taskModalTask}
+    isEdit={!!taskModalTask}
     {templates}
-    {categories}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
   />
@@ -373,9 +393,12 @@
     onClose={() => { materialModalOpen = false; }}
   />
 
-  <SubtaskModal
+  <WorkItemForm
     open={subtaskModalOpen}
-    parentTaskId={subtaskModalParentTaskId}
+    mode="manual"
+    context="subtask"
+    contextId={subtaskModalParentTaskId}
+    templates={[]}
     onSaved={handleSubtaskSaved}
     onClose={() => { subtaskModalOpen = false; }}
   />
@@ -390,24 +413,15 @@
 
 <style>
   .error { color: #a8071a; }
-  .status-line { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
-  .status-badge {
-    padding: 4px 12px; border-radius: 12px; font-size: 13px;
-    font-weight: 600; text-transform: capitalize;
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 24px;
   }
-  .status-draft { background: #f3f4f6; color: #374151; }
-  .status-submitted { background: #dbeafe; color: #1e40af; }
-  .status-approved { background: #dcfce7; color: #166534; }
-  .status-work_complete { background: #ccfbf1; color: #115e59; }
-  .status-completed { background: #dbeafe; color: #1e40af; }
-  .status-rejected { background: #fee2e2; color: #991b1b; }
-  .status-cancelled { background: #fef3c7; color: #92400e; }
-  .meta { color: #888; font-size: 13px; }
-  .action-bar { display: flex; gap: 8px; margin-bottom: 16px; }
-  .action-bar button {
+  .back-link { font-size: 13px; }
+  .toolbar button {
     padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;
     background: #fff; cursor: pointer; font-size: 13px;
   }
-  .action-bar button:hover { background: #f3f4f6; }
-  .action-bar button:disabled { opacity: 0.5; cursor: default; }
+  .toolbar button:hover { background: #f3f4f6; }
+  .toolbar button:disabled { opacity: 0.5; cursor: default; }
 </style>

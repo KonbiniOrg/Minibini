@@ -53,7 +53,7 @@
     </tr>
     <tr>
         <td>Description</td>
-        <td>{{ job.description|default:"No description" }}</td>
+        <td class="preserve-breaks">{{ job.description|default:"No description" }}</td>
     </tr>
 </table>
 
@@ -89,9 +89,6 @@
                 </td>
                 <td>
                     <a href="{% url 'estimates:estworksheet_detail' worksheet.est_worksheet_id %}">View Details</a>
-                    {% if worksheet.status == 'draft' %}
-                        | <a href="{% url 'estimates:estworksheet_generate_estimate' worksheet.est_worksheet_id %}">Generate Estimate</a>
-                    {% endif %}
                 </td>
             </tr>
             {% endfor %}

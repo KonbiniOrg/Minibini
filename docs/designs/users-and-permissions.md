@@ -1,0 +1,442 @@
+# Users and Permissions
+
+Authoritative reference for the user model, permission atoms, authentication, owner-side user administration, and self-service profile. Login tracking is documented here as a preserved design (not implemented).
+
+## Scope
+
+This doc owns:
+
+- The `User` model and its custom permission atoms
+- The four permission atoms and the DRF permission classes derived from them
+- Authentication endpoints (`/api/auth/`)
+- Owner-side user admin (`/api/users/` and the SPA `/users` pages)
+- Self-service profile (`/api/auth/me/` and the SPA `/profile` page)
+- The login-tracking design (preserved verbatim-ish, not built)
+
+Permissions are atom-only. Django Groups are not used by this project — `set_permissions` writes directly to `user_permissions`, and the admin UI uses per-atom checkboxes.
+
+Sibling docs that cover the surrounding mechanics:
+
+- `architecture-and-conventions.md` — session authentication, CSRF, DRF mixins, DELETE-200-JSON convention, two-phase delete pattern, `lib/api.js`
+- The "Permissions" section of `CLAUDE.md` — short-form atom-to-action summary
+
+## User model
+
+`apps.core.models.User` is an `AbstractUser` subclass with a single extra field and the project's custom permission atoms.
+
+| Field | Type | Notes |
+|---|---|---|
+| `contact` | `OneToOneField(contacts.Contact, on_delete=SET_NULL, null, blank)` | Optional link to the Contact record representing this user as a person. Nullable — many user accounts have no Contact yet. |
+| (inherited) | `AbstractUser` fields | `username`, `email`, `first_name`, `last_name`, `password`, `is_active`, `is_staff`, `is_superuser`, `date_joined`, `last_login`, `user_permissions`, `groups`. |
+
+`Meta`:
+
+- `db_table = 'auth_user'`
+- `permissions = [...]` — the four custom atoms (see next section)
+
+`AUTH_USER_MODEL = 'core.User'` in `minibini/settings.py`.
+
+### Flag semantics
+
+| Flag | What it does | How the project uses it |
+|---|---|---|
+| `is_active` | Django blocks authentication entirely when `False`. | The primitive for "deactivate user". User-admin endpoints flip this; the assignee dropdown filters on it. |
+| `is_staff` | Permits login at `/admin/`. | Set on dev seed data; never read by production code. Orthogonal to the atom system. |
+| `is_superuser` | `user.has_perm(anything)` returns `True` unconditionally — Django built-in `ModelBackend` behaviour. | Bypasses every atom check. Set on `dev_user` and in some tests. Surfaced read-only in the user admin UI; never editable from the SPA. Create new superusers with `manage.py createsuperuser`. |
+
+Inactive users never reach atom checks because authentication itself fails first. `is_superuser=True` and atom membership are independent paths to "full access" — removing an atom does nothing if the user is a superuser.
+
+## Permission atoms
+
+The project defines four custom permission atoms on `User.Meta.permissions`:
+
+| Atom | Scope |
+|---|---|
+| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, contacts, businesses. Status transitions on each. Email-to-job actions: link, unlink, create-job-from-email. |
+| `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. |
+| `can_manage_time` | Edit or delete any user's bleps. (Editing one's own bleps is `IsAuthenticated`.) |
+| `can_manage_config` | Settings endpoint, work and task templates, accounting categories, user admin viewset, QBO connection management. |
+
+DRF permission classes in `apps/api/permissions.py`:
+
+```python
+CanManageJobs       = atom_permission('can_manage_jobs')
+CanManageFinancials = atom_permission('can_manage_financials')
+CanManageTime       = atom_permission('can_manage_time')
+CanManageConfig     = atom_permission('can_manage_config')
+```
+
+`atom_permission(codename)` is a factory returning a `BasePermission` subclass whose `has_permission` calls `request.user.has_perm(f'core.{codename}')`.
+
+### `IsAuthenticated` (no atom)
+
+Any logged-in user gets read access to jobs, estimates, worksheets, tasks, bleps, contacts, businesses, payment terms, templates, accounting categories, search, price-list items, invoices, purchase orders, bills, and emails. They also get write access to notes on jobs/contacts/businesses, can add tasks to existing jobs, and can track their own time and submit their own expenses.
+
+### `is_superuser` bypass
+
+`is_superuser=True` short-circuits every permission check. A superuser does not need any atom. The owner-side admin UI surfaces this flag read-only with a note; it cannot be toggled through the API. Creating a new superuser is a developer task (`manage.py createsuperuser`).
+
+### Implicit (any authenticated user)
+
+- Track own time (clock in/out, start/stop bleps)
+- Submit own expenses
+- View own expenses and time entries
+
+### Endpoint-to-atom mapping
+
+Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete and most action endpoints require the resource's atom. Exceptions are called out in the "Special cases" subsection below.
+
+| Resource | Read (list / retrieve) | Write (create / update / delete) | Notes |
+|---|---|---|---|
+| `/api/jobs/` | `IsAuthenticated` | `can_manage_jobs` | several action exceptions — see below |
+| `/api/contacts/` | `IsAuthenticated` | `can_manage_jobs` | |
+| `/api/businesses/` | `IsAuthenticated` | `can_manage_jobs` | |
+| `/api/payment-terms/` | `IsAuthenticated` | (read-only) | |
+| `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` | |
+| `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` | |
+| `/api/tasks/` (job-side) | `IsAuthenticated` | `IsAuthenticated` | service enforces ownership and lifecycle rules |
+| `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` | retrieve open to all |
+| `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 24h rolling rule + `can_manage_time` for editing others |
+| `/api/rate-schemes/` | `IsAuthenticated` | `can_manage_config` | `supersede` action also `can_manage_config` |
+| `/api/work-templates/` | `IsAuthenticated` | `can_manage_config` | |
+| `/api/task-templates/` | `IsAuthenticated` | `can_manage_config` | |
+| `/api/accounting-categories/` | `IsAuthenticated` | `can_manage_config` | |
+| `/api/invoices/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
+| `/api/purchase-orders/` | `IsAuthenticated` | `can_manage_financials` | |
+| `/api/bills/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
+| `/api/price-list-items/` | `IsAuthenticated` | `can_manage_financials` | |
+| `/api/materials/` | `IsAuthenticated` | `IsAuthenticated` | service enforces consumption-state and immutability rules |
+| `/api/expenses/` | `IsAuthenticated` | `can_manage_financials` for update / destroy / reject / retry-sync | list / retrieve auto-scoped to `purchased_by=user` unless `can_manage_financials`; create open to authenticated |
+| `/api/reimbursements/` | `can_manage_financials` | `can_manage_financials` | |
+| `/api/users/` (admin) | `can_manage_config` | `can_manage_config` | DELETE returns 405 — use deactivate |
+| `/api/auth/users/` (assignee dropdown) | `IsAuthenticated` | — | distinct from `/api/users/` |
+| `/api/emails/` | `IsAuthenticated` | (no writes from this viewset) | reads only |
+| `/api/emails/{id}/link-to-job/` etc. | — | `can_manage_jobs` | link, unlink, create-job-from-email |
+| `/api/search/` | `IsAuthenticated` | — | |
+| `/api/jobs/board/*` | `IsAuthenticated` | — | one bulk reorder endpoint requires `can_manage_jobs` |
+| `/api/home/` | `IsAuthenticated` | — | |
+| `/api/settings/` | `IsAuthenticated` | `can_manage_config` | including `/api/settings/units/` |
+| `/api/qbo/*` | `can_manage_config` | `can_manage_config` | OAuth + connection state — see `quickbooks-integration.md` |
+
+#### Special cases
+
+- **`POST /api/jobs/{id}/tasks/`** — adding a task requires `can_manage_jobs`. **`GET /api/jobs/{id}/tasks/`** is `IsAuthenticated`.
+- **`POST /api/jobs/{id}/add-from-template/`** and **`POST /api/jobs/{id}/create_material/`** are `IsAuthenticated` only — workers can self-serve adding template-driven tasks and materials.
+- **`POST /api/jobs/{id}/start-invoice-wizard/`** accepts `can_manage_jobs` OR `can_manage_financials` — either side can spawn the draft so the other side can fill it.
+- **`POST /api/jobs/{id}/notes/`**, **`POST /api/contacts/{id}/notes/`**, **`POST /api/businesses/{id}/notes/`** are `IsAuthenticated` — anyone can add a note.
+
+#### Stub endpoints
+
+501 stubs that need atom assignments when implemented:
+
+- `POST /api/auth/refresh/` (placeholder for token refresh)
+- `POST /api/emails/send/` (outbound email — `can_manage_jobs` is the natural fit)
+- `POST /api/shifts/clock-in/`, `POST /api/shifts/clock-out/` (`IsAuthenticated` for self; `can_manage_time` for others)
+- `GET /api/time-tracking/status/`, `GET /api/time-tracking/active/`
+
+## Authentication
+
+Session authentication only — see `architecture-and-conventions.md` for the underlying DRF setup, CSRF handling, and `lib/api.js` client behaviour.
+
+### Endpoints
+
+All live under `/api/auth/` (`apps/api/auth/`):
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| `POST` | `/api/auth/login/` | `AllowAny` | Authenticate; sets session cookie; returns `UserSerializer` body. 400 on invalid credentials with `{"detail": "Invalid credentials."}`. |
+| `POST` | `/api/auth/logout/` | `IsAuthenticated` | Clears session; returns `{"detail": "Logged out."}`. |
+| `GET` | `/api/auth/me/` | `IsAuthenticated` | Returns the current user as `UserSerializer`. |
+| `PATCH` | `/api/auth/me/` | `IsAuthenticated` | Updates own profile (`email`, `first_name`, `last_name`). Returns `UserSerializer` shape. |
+| `POST` | `/api/auth/me/password/` | `IsAuthenticated` | Change own password. Returns `{"detail": "Password changed."}`. |
+| `GET` | `/api/auth/users/` | `IsAuthenticated` | Lightweight assignee dropdown payload: `[{id, username, name}]` filtered to `is_active=True`, ordered by first name then username. Distinct from the admin `/api/users/` namespace. |
+| `POST` | `/api/auth/refresh/` | `AllowAny` | 501 stub. Reserved for token refresh if/when the project moves off session auth. |
+
+`UserSerializer` returns `{id, username, email, first_name, last_name, permissions}` where `permissions` is a sorted list of atom codenames the user effectively has (via `get_all_permissions()`, filtered to `core.can_*`). Superusers' `permissions` list reflects the framework view — Django reports all permissions for a superuser.
+
+### Login flow (SPA)
+
+1. `frontend/src/components/LoginPage.svelte` is shown when `$user` is `null` after the initial `checkAuth()` mount probe.
+2. The form posts to `/api/auth/login/` via `frontend/src/stores/auth.js`'s `login(username, password)`. Success sets the `user` store; the SPA re-renders into the authenticated tree.
+3. `checkAuth()` on subsequent loads calls `GET /api/auth/me/` to populate the store from the existing session.
+
+## User admin
+
+`apps/api/users/` — viewset, serializers, service, URL registration. Mounted at `/api/users/`. All actions require `[IsAuthenticated, CanManageConfig]`.
+
+### Endpoints
+
+| Method | Path | Action | Body / Returns |
+|---|---|---|---|
+| `GET` | `/api/users/` | list | Plain JSON array (no pagination). `UserListSerializer`. Ordered `-is_active, username` so active users appear first. |
+| `POST` | `/api/users/` | create | `UserCreateSerializer` in; `UserDetailSerializer` out at 201. |
+| `GET` | `/api/users/:id/` | retrieve | `UserDetailSerializer`. |
+| `PATCH` | `/api/users/:id/` | partial_update | `UserUpdateSerializer` in; `UserDetailSerializer` out. |
+| `DELETE` | `/api/users/:id/` | destroy | **405 Method Not Allowed** — use deactivate instead. |
+| `POST` | `/api/users/:id/activate/` | activate action | `UserDetailSerializer`. |
+| `POST` | `/api/users/:id/deactivate/` | deactivate action | `UserDetailSerializer`. |
+| `POST` | `/api/users/:id/reset-password/` | reset_password action | `PasswordResetSerializer` in; `{"detail": "Password reset."}` out. |
+| `PUT` | `/api/users/:id/permissions/` | permissions action | `PermissionsUpdateSerializer` in; `UserDetailSerializer` out. |
+
+`pagination_class = None` — small shops, small lists. Revisit if user counts grow beyond a few hundred.
+
+### Serializers
+
+- **`UserListSerializer`** — `id, username, first_name, last_name, email, is_active, is_superuser, permissions`. All read-only. `permissions` is the user's directly granted atom codenames (filtered to `core.can_*`), sorted.
+- **`UserDetailSerializer`** — list fields plus `date_joined`. All read-only. The viewset writes via `UserUpdateSerializer` and the dedicated action serializers, then returns this for the response body.
+- **`UserCreateSerializer`** — `username, email, first_name, last_name, password, password_confirm`. All required. `email` is `EmailField`. `first_name` and `last_name` override Django's default `blank=True` to required. Passwords are `write_only`, validated against `AUTH_PASSWORD_VALIDATORS`, must match. `create()` calls `User.objects.create_user(...)` (which hashes the password). New users default to `is_active=True` and have zero atoms — the admin grants atoms separately via the permissions endpoint.
+- **`UserUpdateSerializer`** — `username, email, first_name, last_name`. All optional. Admins CAN change username here (unlike the self-service serializer). The fields allowlist is the privilege-escalation guard: `password`, `is_active`, `is_staff`, `is_superuser`, `user_permissions`, `groups` are not in the list and are ignored even if sent.
+- **`PasswordResetSerializer`** — pure `Serializer` (not `ModelSerializer`). `password`, `password_confirm`, both write-only. Runs `validate_password`. `save()` calls `target.set_password(...); target.save(update_fields=['password'])`. Does NOT call `update_session_auth_hash` — that's only meaningful for the actor's own session. Target's existing sessions are invalidated on their next request (Django checks the session auth hash against the stored hash).
+- **`PermissionsUpdateSerializer`** — pure `Serializer`. `permissions = ListField(child=CharField, allow_empty=True)`. Validates every codename is one of the four atoms by deriving the known set from `User._meta.permissions` at import time. Unknown codenames raise `'Unknown permission codename(s): ...'`.
+
+### `UserAdminService`
+
+`apps/api/users/services.py`. Owns all business logic. Viewset is a thin wrapper.
+
+**Public methods:**
+
+| Method | Purpose |
+|---|---|
+| `deactivate_user(actor, target)` | Self-lockout checks, then flip `is_active=False`, close open bleps, kill sessions. |
+| `activate_user(actor, target)` | Flip `is_active=True`. No side effects. |
+| `set_permissions(actor, target, atom_codenames)` | Lockout checks, then replace `target.user_permissions` M2M with the matching `Permission` rows. |
+| `_kill_sessions_for_user(user)` | Iterate `Session` table, decode each, delete those matching the target's pk. |
+
+`reset_password` is handled inside the serializer's `save()` (the service does not own it — by design the password reset is a one-line `set_password/save` call).
+
+**Lockout checks:**
+
+- **D1 (self-deactivate)**: `actor.pk == target.pk` blocks deactivation with `'You cannot deactivate yourself.'`
+- **D2 (remove own admin atom)**: actor is target, the new atom set lacks `can_manage_config`, and the target currently has `can_manage_config` → `'You cannot remove your own can_manage_config permission.'`
+- **D3 (last admin)**: target currently has `can_manage_config`, the operation would leave them without it, and they are the only active user with that atom → `'Cannot deactivate the last user who can manage config.'` or `'Cannot remove can_manage_config from the last user who has it.'`
+
+Last-admin count query:
+
+```python
+User.objects.filter(
+    is_active=True,
+    user_permissions__codename='can_manage_config',
+    user_permissions__content_type__app_label='core',
+).distinct().count()
+```
+
+**Deactivation side effects:**
+
+- `BlepService.close_user_open_bleps(target)` — public wrapper around the internal `BlepService._close_open(user=target)`. Closes any open time entries the deactivated user had running.
+- `_kill_sessions_for_user(target)` — iterates `django.contrib.sessions.models.Session`, decodes each, deletes those whose `_auth_user_id` matches the target. Forces logout in any active browser. Iteration is fine for small shops; revisit if the session table grows large.
+- Does NOT auto-unassign the user's tasks. Managers reassign manually.
+
+### Activation
+
+`activate_user` is intentionally minimal: flip the flag, no blep reopening, no session restoration, no permission mutation. There are no lockout checks — activating a user can never take anyone offline.
+
+### Password reset
+
+Admin enters a new password directly. The serializer:
+
+1. Validates `password` against Django's configured `AUTH_PASSWORD_VALIDATORS`.
+2. Validates `password == password_confirm`.
+3. Calls `target.set_password(new); target.save(update_fields=['password'])`.
+
+If `actor == target` (an admin resetting their own password through this endpoint), their own current session is also invalidated on next request. They must log in again with the new password. The graceful in-session change path is `POST /api/auth/me/password/`.
+
+### Frontend
+
+| Route | Component | Purpose |
+|---|---|---|
+| `/users` | `frontend/src/routes/users/UserListPage.svelte` | List all users with a compact permissions column (short labels). Active first, deactivated grouped below. "New user" link. |
+| `/users/new` | `frontend/src/routes/users/UserCreatePage.svelte` | Create form. On success pushes to the new user's detail page. |
+| `/users/:id` | `frontend/src/routes/users/UserDetailPage.svelte` | Four independent sub-forms (Profile, Permissions, Reset password, Account status) plus a `UserReimbursementPanel` for expenses. Self-lockout hints rendered client-side; D3 (last-admin) is server-only. |
+
+The sidebar Users link gates on `hasPerm('can_manage_config')`. The atom labels and codename list are hardcoded in `UserDetailPage.svelte` (`ATOMS` array, four entries). The component uses `currentUser` from the auth store to compute `isSelf` and disable the deactivate button and the `can_manage_config` checkbox when applicable.
+
+The list page renders permissions with a short-label dictionary: `can_manage_jobs → "jobs"`, `can_manage_financials → "financials"`, `can_manage_time → "time"`, `can_manage_config → "config"`.
+
+## Self-service profile
+
+`apps/api/auth/views.py` extends `me_view` to accept `PATCH` and adds `change_password_view`. Both require `IsAuthenticated` only — every user manages their own account.
+
+### `PATCH /api/auth/me/`
+
+`MeUpdateSerializer` on `User` with `fields = ['email', 'first_name', 'last_name']`. Partial update. Fields not listed (`username`, `password`, `is_active`, `is_staff`, `is_superuser`, `user_permissions`, `groups`) are silently ignored — this is the privilege-escalation guard. Returns the `UserSerializer` body so the frontend can update its store.
+
+### `POST /api/auth/me/password/`
+
+`PasswordChangeSerializer` (pure `Serializer`):
+
+- `current_password` — required, validated via `user.check_password(value)`. Wrong current → `400 {"current_password": ["Current password is incorrect."]}`.
+- `new_password` — required, run through `django.contrib.auth.password_validation.validate_password(value, user)`. Validator messages re-raised as a DRF list under the `new_password` key.
+- `new_password_confirm` — required. Mismatch raises `{"new_password_confirm": ["Passwords do not match."]}`.
+- `save()` calls `user.set_password(new); user.save()`.
+
+After `serializer.save()`, the view calls `update_session_auth_hash(request, user)` so the user's own session survives the change. Returns `{"detail": "Password changed."}`.
+
+### Frontend
+
+`frontend/src/routes/ProfilePage.svelte` — two independent forms (account info, change password) plus the view-mode toggle. Initializes from the `$user` store on first render; updates the store after a successful profile PATCH so the sidebar username stays in sync.
+
+- Account form fields: `email`, `first_name`, `last_name`. Username is shown read-only.
+- Password form fields: `current_password` (autocomplete `current-password`), `new_password` and `new_password_confirm` (both `new-password`).
+- Field-level errors rendered via `fieldErrors(errorsObject, fieldName)` from `frontend/src/lib/formErrors.js`.
+
+## Login tracking — DESIGNED, NOT YET IMPLEMENTED
+
+Preserved here so a future implementer can act on it. Nothing in this section is built. `frontend/src/components/home/RecentLoginsList.svelte` is a static placeholder ("Not yet implemented"). There is no `LoginEvent` model, no signal handler, no `recent_logins` field on the home payload, no prune command.
+
+### Purpose
+
+Record a history of successful logins per user so the home page (and a future security/account-review screen) can display "your recent logins over the last N days". Django's `User.last_login` is a single overwritable timestamp — insufficient.
+
+### Non-goals
+
+- Not an admin audit log. A broader audit trail is a separate concern.
+- Not a session manager — no "log out this device" enforcement.
+- Not rate limiting or brute-force protection.
+- No tracking of failed login attempts (first pass).
+
+### Model
+
+New model in `apps/core/models.py`:
+
+```python
+class LoginEvent(models.Model):
+    user = models.ForeignKey(
+        'core.User', on_delete=models.CASCADE,
+        related_name='login_events',
+    )
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True, default='')
+
+    class Meta:
+        db_table = 'login_events'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['user', '-timestamp']),
+        ]
+```
+
+Rationale:
+
+- `CASCADE` on user — personal history, not admin audit. Deleting a user takes their login history with them.
+- `ip_address` and `user_agent` nullable/blank so unusual login paths (management commands, tests, proxy misconfigs) don't crash the handler.
+- Compound `(user, -timestamp)` index supports "most recent N for this user".
+
+### Recording logins
+
+Signal handler on `django.contrib.auth.signals.user_logged_in`. Fires for every successful auth path — DRF session login, the Django admin, the `login()` view, any custom `django.contrib.auth.login()` call.
+
+```python
+# apps/core/signals.py
+from django.contrib.auth.signals import user_logged_in
+from django.dispatch import receiver
+from .models import LoginEvent
+
+
+def _client_ip(request):
+    if request is None:
+        return None
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR') or None
+
+
+@receiver(user_logged_in)
+def record_login_event(sender, request, user, **kwargs):
+    LoginEvent.objects.create(
+        user=user,
+        ip_address=_client_ip(request),
+        user_agent=(request.META.get('HTTP_USER_AGENT', '') if request else '')[:500],
+    )
+```
+
+Connect the signal in `apps/core/apps.py`'s `ready()`.
+
+Edge cases:
+
+- `request` can be `None` when `login()` is called programmatically (tests, scripts). Handler must tolerate this.
+- `HTTP_X_FORWARDED_FOR` may be spoofed. Trust only when running behind a known reverse proxy. Production needs a `TRUSTED_PROXIES` story; dev/tests are fine.
+- User agent truncated to 500 chars to defend against pathological headers.
+
+### Retention
+
+First pass: query-time filter only. Consumers query with `timestamp__gte = now - timedelta(days=14)`. Rows accumulate indefinitely.
+
+For a small-shop deployment this is negligible storage (tens of rows per user per week). If pruning becomes necessary, add a cron-driven management command:
+
+```python
+# apps/core/management/commands/prune_login_events.py
+class Command(BaseCommand):
+    def handle(self, *args, **options):
+        cutoff = timezone.now() - timedelta(days=90)
+        LoginEvent.objects.filter(timestamp__lt=cutoff).delete()
+```
+
+Scheduling would live alongside the existing crontab config. Out of initial scope.
+
+### API
+
+Extend `HomeService.get_home_data(user)` to include a `recent_logins` key:
+
+```json
+{
+  "assigned_tasks": [...],
+  "recent_jobs": [...],
+  "recent_logins": [
+    {"timestamp": "2026-04-04T08:13:22Z", "ip_address": "192.0.2.10"}
+  ]
+}
+```
+
+Query:
+
+```python
+cutoff = timezone.now() - timedelta(days=14)
+LoginEvent.objects.filter(
+    user=user, timestamp__gte=cutoff,
+).order_by('-timestamp')
+```
+
+No separate endpoint initially — the home widget is the only consumer. Add `GET /api/login-events/` later if a profile/security screen wants paginated access.
+
+User agent is kept in the DB for future support investigation but omitted from the API payload by default — long, mostly uninformative to end users, privacy-adjacent.
+
+### Frontend
+
+Replace the placeholder `RecentLoginsList.svelte`:
+
+- Takes a `logins` prop (the `recent_logins` array from the home payload).
+- Plain list, one row per login: localised timestamp + IP address.
+- Empty state: "No logins in the last 14 days" — though the current session itself should produce at least one row.
+
+`Home.svelte` passes the prop through the same way it does for `recent_jobs`.
+
+The component already exists at `frontend/src/components/home/RecentLoginsList.svelte` as a static stub; its contents need to be replaced with the design above.
+
+### Testing
+
+- `LoginEvent` model: field defaults; query uses the compound index.
+- Signal handler: `self.client.login(...)` creates a row; logout does not; programmatic `login(request=None, ...)` does not crash.
+- Home payload: includes `recent_logins` scoped to the requester; excludes events older than 14 days; ordered most-recent first.
+- Failed login attempts do not create rows (sanity check).
+
+### Migration
+
+`python manage.py makemigrations core` — creates `login_events` and indexes. Per CLAUDE.md, only the human operator applies migrations.
+
+### Open questions
+
+- **Trusted proxy configuration for `X-Forwarded-For`.** The app runs behind nginx per `docker-compose`. Production should only trust `X-Forwarded-For` when the immediate upstream is a known proxy. Dev doesn't care. Could tie into a future `TRUSTED_PROXIES` setting.
+- **Logout tracking?** Not in this design. Rarely interesting to users, and `user_logged_out` doesn't fire reliably for expired sessions or closed browsers.
+
+## Unfinished work
+
+| Item | Source | Notes |
+|---|---|---|
+| Implement login tracking end-to-end | `2026-04-04-login-tracking.md`, this doc | Model, signal, home-payload extension, retention command, frontend list. `RecentLoginsList.svelte` is the placeholder. |
+| Deactivated-assignee visual indicator | `2026-04-10-user-admin-design.md` | Wherever a username/assignee renders (task cards, detail pages, task lists, history feed, search results) show "(deactivated)" or a greyed style when `is_active=False`. Requires an audit of all assignee-rendering components. |
+| User-to-Contact association in user admin UI | `2026-04-10-user-admin-design.md` | `User.contact` is already nullable; the admin form does not yet let the owner link or create a Contact. |
+| Admin-action history logging | `2026-04-10-user-admin-design.md` | `HistoryEntry` already supports it; create/deactivate/reset/re-permission events should be logged. |
+| Forgot-password email flow | `2026-04-10-user-admin-design.md`, `2026-04-10-user-self-service-design.md` | Requires email-sending infra. |
+| Atom assignments for the stub endpoints | `2026-03-24-permission-atom-redesign.md` | `/api/shifts/...`, `/api/time-tracking/...`, `/api/emails/send/`, `/api/auth/refresh/` are 501 stubs. When implemented they need the right permission gating wired in. Candidates: `can_manage_time` for shifts/time-tracking, no atom for own-expense submission. |

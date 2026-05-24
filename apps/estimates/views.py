@@ -8,10 +8,10 @@ from django.db import models
 from django.views.decorators.http import require_POST
 from .models import (
     Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
-    TaskTemplate, TemplateTaskAssociation, TemplateBundle
+    TaskTemplate, TemplateTaskAssociation,
 )
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, PlanTask, PlanBundle
+from apps.jobs.models import Job, PlanTask
 from apps.core.services import TaxCalculationService, NotFoundError
 from .services import (
     EstimateService, WorkTemplateService, WorksheetService,
@@ -25,120 +25,59 @@ from apps.jobs.forms import TaskEditForm, TaskFromTemplateForm
 
 def _build_container_items_from_associations(associations):
     """Normalize TemplateTaskAssociations into the shared container_items format."""
-    bundles_by_id = {}
-    unbundled = []
-
+    container_items = []
     for assoc in associations:
         item = {
             'id': assoc.pk,
             'name': assoc.task_template.template_name,
             'description': assoc.task_template.description,
-            'units': assoc.task_template.units,
-            'rate': assoc.task_template.rate,
             'est_qty': assoc.est_qty,
-            'mapping_strategy': assoc.mapping_strategy,
             'remove_id': assoc.task_template.template_id,
             'sort_order': assoc.sort_order,
         }
-        if assoc.mapping_strategy == 'bundle' and assoc.bundle:
-            bid = assoc.bundle.pk
-            if bid not in bundles_by_id:
-                bundles_by_id[bid] = {
-                    'id': bid,
-                    'name': assoc.bundle.name,
-                    'accounting_category_name': assoc.bundle.accounting_category.name,
-                    'sort_order': assoc.bundle.sort_order,
-                    'items': [],
-                }
-            bundles_by_id[bid]['items'].append(item)
-        else:
-            unbundled.append((assoc.sort_order, item))
-
-    # Sort within each bundle
-    for bundle_data in bundles_by_id.values():
-        bundle_data['items'].sort(key=lambda i: i['sort_order'])
-
-    # Build interleaved list
-    container_items = []
-    for sort_order, item in unbundled:
-        container_items.append(('task', item, sort_order))
-    for bundle_data in bundles_by_id.values():
-        container_items.append(('bundle', bundle_data, bundle_data['sort_order']))
+        container_items.append(('task', item, assoc.sort_order))
     container_items.sort(key=lambda x: x[2])
     return container_items
 
 
 def _next_container_sort_order(template):
-    """Get the next sort_order in the shared container-level space (bundles + unbundled associations)."""
-    from .models import TemplateTaskAssociation, TemplateBundle
+    """Get the next sort_order for associations on a template."""
     max_assoc = TemplateTaskAssociation.objects.filter(
-        work_template=template, bundle__isnull=True
+        work_template=template,
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-    max_bundle = TemplateBundle.objects.filter(
-        work_template=template
-    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-    return max(max_assoc, max_bundle) + 1
+    return max_assoc + 1
 
 
 def _build_container_items_from_tasks(worksheet):
-    """Normalize worksheet PlanTasks/PlanBundles into the shared container_items format."""
+    """Normalize worksheet PlanTasks into the shared container_items format."""
     tasks = PlanTask.objects.filter(
         est_worksheet=worksheet
-    ).select_related('bundle').prefetch_related('plan_materials').order_by('sort_order', 'plan_task_id')
+    ).prefetch_related('plan_materials').order_by('sort_order', 'plan_task_id')
 
-    bundles_by_id = {}
-    unbundled = []
-
+    container_items = []
     for task in tasks:
         materials = list(task.plan_materials.all())
         item = {
             'id': task.plan_task_id,
             'name': task.name,
             'description': task.description,
-            'units': task.units,
-            'rate': task.rate,
-            'est_qty': task.est_qty,
-            'mapping_strategy': task.mapping_strategy,
             'remove_id': task.plan_task_id,
             'sort_order': task.sort_order or 0,
             'detail_url': reverse('jobs:task_detail', args=[task.plan_task_id]),
             'materials': materials,
         }
-        if task.mapping_strategy == 'bundle' and task.bundle:
-            bid = task.bundle_id
-            if bid not in bundles_by_id:
-                bundles_by_id[bid] = {
-                    'id': bid,
-                    'name': task.bundle.name,
-                    'accounting_category_name': task.bundle.accounting_category.name,
-                    'sort_order': task.bundle.sort_order,
-                    'items': [],
-                }
-            bundles_by_id[bid]['items'].append(item)
-        else:
-            unbundled.append((task.sort_order or 0, item))
+        container_items.append(('task', item, task.sort_order or 0))
 
-    for bundle_data in bundles_by_id.values():
-        bundle_data['items'].sort(key=lambda i: i['sort_order'])
-
-    container_items = []
-    for sort_order, item in unbundled:
-        container_items.append(('task', item, sort_order))
-    for bundle_data in bundles_by_id.values():
-        container_items.append(('bundle', bundle_data, bundle_data['sort_order']))
     container_items.sort(key=lambda x: x[2])
     return container_items
 
 
 def _next_worksheet_sort_order(worksheet):
-    """Get the next sort_order in the shared container-level space for a worksheet."""
+    """Get the next sort_order for tasks on a worksheet."""
     max_task = PlanTask.objects.filter(
-        est_worksheet=worksheet, bundle__isnull=True
-    ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-    max_bundle = PlanBundle.objects.filter(
         est_worksheet=worksheet
     ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-    return max(max_task, max_bundle) + 1
+    return max_task + 1
 
 
 def estimate_list(request):
@@ -273,7 +212,7 @@ def work_template_detail(request, template_id):
                 messages.warning(request, f'Task Template "{task_template.template_name}" is already associated.')
         return redirect('estimates:work_template_detail', template_id=template_id)
 
-    # Handle TaskTemplate removal (unbundle if bundled, delete if unbundled)
+    # Handle TaskTemplate removal
     if request.method == 'POST' and 'remove_task' in request.POST:
         task_template_id = request.POST.get('remove_task')
         if task_template_id:
@@ -282,67 +221,30 @@ def work_template_detail(request, template_id):
                 work_template=template,
                 task_template=task_template
             ).first()
-            if assoc and assoc.mapping_strategy == 'bundle' and assoc.bundle:
-                WorkTemplateService.unbundle_association(template.pk, assoc.pk)
-                messages.success(request, f'"{task_template.template_name}" unbundled.')
-            elif assoc:
+            if assoc:
                 WorkTemplateService.delete_association(template.pk, assoc.pk)
                 messages.success(request, f'Task Template "{task_template.template_name}" removed.')
         return redirect('estimates:work_template_detail', template_id=template_id)
 
-    # Handle bundle creation
-    if request.method == 'POST' and 'bundle_tasks' in request.POST:
-        from apps.core.models import AccountingCategory
-
-        selected_ids = request.POST.getlist('selected_tasks')
-        bundle_name = request.POST.get('bundle_name', '').strip()
-        accounting_category_id = request.POST.get('accounting_category')
-
-        if not bundle_name:
-            messages.error(request, 'Bundle name is required.')
-        elif not accounting_category_id:
-            messages.error(request, 'Line item type is required.')
-        else:
-            accounting_category = get_object_or_404(AccountingCategory, pk=accounting_category_id)
-            try:
-                WorkTemplateService.bundle_associations(
-                    template.pk,
-                    [int(i) for i in selected_ids],
-                    bundle_name,
-                    accounting_category,
-                )
-                messages.success(request, f'Bundle "{bundle_name}" updated.')
-            except ValidationError as e:
-                messages.error(request, str(e.message if hasattr(e, 'message') else e))
-
-        return redirect('estimates:work_template_detail', template_id=template_id)
-
-    # Get task template associations with bundle info
-    from apps.core.models import AccountingCategory
-
+    # Get task template associations
     associations = TemplateTaskAssociation.objects.filter(
         work_template=template,
         task_template__is_active=True
-    ).select_related('task_template', 'bundle').order_by('sort_order', 'task_template__template_name')
+    ).select_related('task_template').order_by('sort_order', 'task_template__template_name')
 
-    # Build normalized container_items for shared _bundle_table.html partial
+    # Build normalized container_items
     container_items = _build_container_items_from_associations(associations)
 
     # Get available task templates (not yet associated)
     associated_task_ids = associations.values_list('task_template_id', flat=True)
     available_templates = TaskTemplate.objects.filter(is_active=True).exclude(template_id__in=associated_task_ids)
 
-    # Get line item types for bundle form
-    accounting_categories = AccountingCategory.objects.all().order_by('name')
-
     return render(request, 'jobs/work_template_detail.html', {
         'template': template,
         'container_items': container_items,
         'available_templates': available_templates,
-        'accounting_categories': accounting_categories,
         'can_edit': True,
         'reorder_container_url': 'estimates:template_reorder_item',
-        'reorder_in_bundle_url': 'estimates:template_reorder_in_bundle',
         'container_id': template.template_id,
     })
 
@@ -354,141 +256,24 @@ def estworksheet_list(request):
 
 
 def estworksheet_detail(request, worksheet_id):
-    """Show details of a specific EstWorksheet with its tasks and bundle editing."""
+    """Show details of a specific EstWorksheet with its tasks."""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
     can_edit = worksheet.status == EstWorksheet.STATUS_DRAFT
 
-    # Handle bundle creation
-    if request.method == 'POST' and 'bundle_tasks' in request.POST and can_edit:
-        from apps.core.models import AccountingCategory
-
-        selected_ids = request.POST.getlist('selected_tasks')
-        bundle_name = request.POST.get('bundle_name', '').strip()
-        accounting_category_id = request.POST.get('accounting_category')
-
-        if not bundle_name:
-            messages.error(request, 'Bundle name is required.')
-        elif not accounting_category_id:
-            messages.error(request, 'Line item type is required.')
-        else:
-            accounting_category = get_object_or_404(AccountingCategory, pk=accounting_category_id)
-            try:
-                WorksheetService.bundle_tasks(
-                    worksheet.pk,
-                    [int(i) for i in selected_ids],
-                    bundle_name,
-                    accounting_category,
-                )
-                messages.success(request, f'Bundle "{bundle_name}" updated.')
-            except ValidationError as e:
-                messages.error(request, str(e.message if hasattr(e, 'message') else e))
-
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    # Handle unbundle / remove
-    if request.method == 'POST' and 'remove_task' in request.POST and can_edit:
-        task_id = request.POST.get('remove_task')
-        task = get_object_or_404(PlanTask, plan_task_id=task_id, est_worksheet=worksheet)
-
-        if task.mapping_strategy == 'bundle' and task.bundle:
-            WorksheetService.unbundle_task(worksheet.pk, task.pk)
-            messages.success(request, f'"{task.name}" unbundled.')
-        else:
-            messages.info(request, f'Task "{task.name}" is not bundled.')
-
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
     # Build context
-    from apps.core.models import AccountingCategory
-
     container_items = _build_container_items_from_tasks(worksheet)
-    accounting_categories = AccountingCategory.objects.all().order_by('name')
 
     # Calculate total cost from all tasks
-    all_tasks = PlanTask.objects.filter(est_worksheet=worksheet)
-    total_cost = sum(
-        (t.rate * t.est_qty) for t in all_tasks if t.rate and t.est_qty
-    )
+    all_tasks = PlanTask.objects.filter(est_worksheet=worksheet).select_related('rate_scheme')
+    total_cost = sum(t.compute_amount() for t in all_tasks)
 
     return render(request, 'jobs/estworksheet_detail.html', {
         'worksheet': worksheet,
         'container_items': container_items,
-        'accounting_categories': accounting_categories,
         'total_cost': total_cost,
         'can_edit': can_edit,
         'reorder_container_url': 'estimates:worksheet_reorder_item',
-        'reorder_in_bundle_url': 'estimates:worksheet_reorder_in_bundle',
         'container_id': worksheet.est_worksheet_id,
-    })
-
-
-def estworksheet_generate_estimate(request, worksheet_id):
-    """Generate an estimate from a worksheet using EstimateGenerationService"""
-    worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-
-    # Prevent generating estimates from non-draft worksheets
-    if worksheet.status != EstWorksheet.STATUS_DRAFT:
-        messages.error(request, f'Cannot generate estimate from a {worksheet.get_status_display().lower()} worksheet.')
-        return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    if request.method == 'POST':
-        # Save any accounting_category assignments from the form
-        from apps.core.models import AccountingCategory
-        for key, value in request.POST.items():
-            if key.startswith('task_accounting_category_') and value:
-                task_pk = key.replace('task_accounting_category_', '')
-                try:
-                    lit = AccountingCategory.objects.get(pk=value)
-                    plan_task = PlanTask.objects.get(pk=int(task_pk))
-                    plan_task.accounting_category = lit
-                    plan_task.full_clean()
-                    plan_task.save()
-                except (PlanTask.DoesNotExist, AccountingCategory.DoesNotExist):
-                    pass
-
-        # Check if any direct tasks still lack accounting_category
-        untyped_direct = PlanTask.objects.filter(
-            est_worksheet=worksheet,
-            mapping_strategy='direct',
-            accounting_category__isnull=True,
-            bundle__isnull=True,
-        )
-        if untyped_direct.exists():
-            messages.error(request, 'All direct tasks must have a line item type before generating an estimate.')
-            return redirect('estimates:estworksheet_generate_estimate', worksheet_id=worksheet_id)
-
-        try:
-            from .services import EstimateGenerationService
-            service = EstimateGenerationService()
-            estimate = service.generate_estimate_from_worksheet(worksheet)
-
-            messages.success(request, f'Estimate {estimate.estimate_number} generated successfully!')
-            return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
-
-        except Exception as e:
-            messages.error(request, f'Error generating estimate: {str(e)}')
-            return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
-
-    # Show confirmation page
-    tasks = PlanTask.objects.filter(est_worksheet=worksheet).prefetch_related('plan_materials')
-    total_cost = sum(task.rate * task.est_qty for task in tasks if task.rate and task.est_qty)
-
-    # Find direct tasks missing accounting_category
-    from apps.core.models import AccountingCategory
-    untyped_tasks = list(PlanTask.objects.filter(
-        est_worksheet=worksheet,
-        mapping_strategy='direct',
-        accounting_category__isnull=True,
-        bundle__isnull=True,
-    ))
-    accounting_categories = AccountingCategory.objects.filter(is_active=True)
-
-    return render(request, 'jobs/estworksheet_generate_estimate.html', {
-        'worksheet': worksheet,
-        'tasks': tasks,
-        'total_cost': total_cost,
-        'untyped_tasks': untyped_tasks,
-        'accounting_categories': accounting_categories,
     })
 
 
@@ -589,13 +374,12 @@ def estworksheet_create_for_job(request, job_id):
         form = EstWorksheetForm(request.POST, initial={'job': job})
         if form.is_valid():
             template = form.cleaned_data.get('template')
-            worksheet = WorksheetService.create_worksheet(
-                job.pk, template=template,
-            )
+            worksheet = WorksheetService.create_worksheet(job.pk)
 
-            # If a template was selected, generate tasks (and bundles) from it
+            # If a template was selected, generate tasks and materials from it
             if template:
-                template.generate_tasks_for_worksheet(worksheet)
+                task_pairing = template.generate_tasks_for_worksheet(worksheet)
+                template.generate_materials_for_worksheet(worksheet, task_pairing=task_pairing)
                 messages.success(request, f'Worksheet created from template "{template.template_name}" for Job {job.job_number}')
             else:
                 messages.success(request, f'Worksheet created successfully for Job {job.job_number}')
@@ -628,7 +412,8 @@ def task_add_from_template(request, worksheet_id):
             est_qty = form.cleaned_data['est_qty']
 
             task = WorksheetService.add_task_from_template(
-                worksheet.pk, template.pk, est_qty=est_qty,
+                worksheet.pk, template.pk,
+                est_qty=est_qty,
             )
 
             messages.success(request, f'Task "{task.name}" added from template')
@@ -856,16 +641,6 @@ def template_reorder_item(request, template_id, item_type, item_id, direction):
     return redirect('estimates:work_template_detail', template_id=template_id)
 
 
-@require_POST
-def template_reorder_in_bundle(request, template_id, association_id, direction):
-    """Reorder a task within its bundle."""
-    template = get_object_or_404(WorkTemplate, template_id=template_id)
-    try:
-        WorkTemplateService.reorder_in_bundle(template.pk, association_id, direction)
-    except (NotFoundError, ValidationError) as e:
-        messages.error(request, str(e))
-    return redirect('estimates:work_template_detail', template_id=template_id)
-
 
 @require_POST
 def worksheet_reorder_item(request, worksheet_id, item_type, item_id, direction):
@@ -877,15 +652,5 @@ def worksheet_reorder_item(request, worksheet_id, item_type, item_id, direction)
         messages.error(request, str(e))
     return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
-
-@require_POST
-def worksheet_reorder_in_bundle(request, worksheet_id, task_id, direction):
-    """Reorder a task within its bundle on a worksheet."""
-    worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-    try:
-        WorksheetService.reorder_in_bundle(worksheet.pk, task_id, direction)
-    except (NotFoundError, ValidationError) as e:
-        messages.error(request, str(e))
-    return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
 

@@ -199,14 +199,6 @@ class Estimate(models.Model):
                 estimate=self,
             )
 
-        # Signal when approved estimate is superseded
-        elif self.status == Estimate.STATUS_SUPERSEDED and old_status == Estimate.STATUS_ACCEPTED:
-            estimate_status_changed_for_job.send(
-                sender=self.__class__,
-                estimate=self,
-                new_job_status='blocked'  # NOTE: 'blocked' is not in Job's status choices
-            )
-
     def __str__(self):
         return f"Estimate {self.estimate_number}"
 
@@ -249,7 +241,7 @@ class EstWorksheet(AbstractWorkContainer):
 
     def create_new_version(self):
         """Create a new version of this worksheet, marking this one as superseded."""
-        from apps.jobs.models import PlanTask, PlanBundle
+        from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
 
         # Mark current worksheet as superseded
@@ -259,38 +251,22 @@ class EstWorksheet(AbstractWorkContainer):
         # Create new worksheet with this one as parent
         new_worksheet = EstWorksheet.objects.create(
             job=self.job,
-            template=self.template,
             status=EstWorksheet.STATUS_DRAFT,
             version=self.version + 1,
             parent=self,  # New worksheet points to this one as parent
             estimate=None  # New version starts without an estimate
         )
 
-        # Copy PlanBundles, mapping old bundle PKs to new ones
-        bundle_mapping = {}
-        for bundle in self.plan_bundles.all():
-            new_bundle = PlanBundle.objects.create(
-                est_worksheet=new_worksheet,
-                name=bundle.name,
-                accounting_category=bundle.accounting_category,
-                sort_order=bundle.sort_order,
-                source_template_bundle=bundle.source_template_bundle,
-            )
-            bundle_mapping[bundle.pk] = new_bundle
-
         # Copy all plan tasks to the new worksheet
+        from apps.jobs.models import copy_active_modifiers
         for plan_task in self.plan_tasks.all():
-            new_bundle = bundle_mapping.get(plan_task.bundle_id) if plan_task.bundle_id else None
             new_plan_task = PlanTask.objects.create(
                 est_worksheet=new_worksheet,
                 name=plan_task.name,
                 description=plan_task.description,
-                units=plan_task.units,
-                rate=plan_task.rate,
+                rate_scheme=plan_task.rate_scheme,
+                active_modifiers=copy_active_modifiers(plan_task.active_modifiers),
                 est_qty=plan_task.est_qty,
-                accounting_category=plan_task.accounting_category,
-                mapping_strategy=plan_task.mapping_strategy,
-                bundle=new_bundle,
             )
 
             # Copy plan materials to the new plan task
@@ -325,8 +301,6 @@ class WorkTemplate(models.Model):
     # Pricing
     base_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
-    # is_active no longer used but kept in case we change our minds later and to avoid a migration
-    is_active = models.BooleanField(default=True)
     created_date = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -336,111 +310,118 @@ class WorkTemplate(models.Model):
         return self.template_name
 
     def generate_tasks_for_worksheet(self, worksheet, quantity=1):
-        """Generate all plan tasks for a worksheet, with proper product grouping and bundling."""
-        from apps.jobs.models import PlanBundle
+        """Generate plan tasks for a worksheet from this template.
 
-        generated_tasks = []
+        Returns a list of (TemplateTaskAssociation, instance_index, PlanTask) tuples
+        so callers (e.g. generate_materials_for_worksheet) can pair generated
+        materials with their matching PlanTasks.
+        """
+        generated = []
 
         for instance in range(1, quantity + 1):
-            bundle_identifier = f"{self.template_name}_{worksheet.est_worksheet_id}_{instance}"
-
-            # Create PlanBundles from TemplateBundles
-            template_to_instance_bundle = {}
-            for template_bundle in self.bundles.all():
-                plan_bundle = PlanBundle.objects.create(
-                    est_worksheet=worksheet,
-                    name=template_bundle.name,
-                    accounting_category=template_bundle.accounting_category,
-                    sort_order=template_bundle.sort_order,
-                    source_template_bundle=template_bundle,
-                )
-                template_to_instance_bundle[template_bundle.pk] = plan_bundle
-
-            # Get task template associations for this work order template
             associations = TemplateTaskAssociation.objects.filter(
                 work_template=self,
-                task_template__is_active=True
-            ).select_related('bundle').order_by('sort_order', 'task_template__template_name')
+                task_template__is_active=True,
+            ).order_by('sort_order', 'task_template__template_name')
 
             for association in associations:
-                # Resolve instance-level bundle for this association
-                instance_bundle = None
-                if association.bundle_id:
-                    instance_bundle = template_to_instance_bundle.get(association.bundle_id)
-
                 task = association.task_template.generate_task(
                     worksheet,
                     est_qty=association.est_qty,
-                    bundle_identifier=bundle_identifier,
                     product_instance=instance if quantity > 1 else None,
-                    mapping_strategy=association.mapping_strategy,
-                    bundle=instance_bundle,
                     sort_order=association.sort_order,
                 )
-                generated_tasks.append(task)
+                generated.append((association, instance, task))
 
-        return generated_tasks
+        return generated
 
-    def generate_materials_for_worksheet(self, worksheet, quantity=1):
+    def generate_tasks_for_job(self, job, quantity=1):
+        """Generate Tasks on a Job from this template's TaskTemplates.
+
+        Returns a list of (TemplateTaskAssociation, instance_index, Task) tuples
+        so generate_materials_for_job can pair generated Materials with their
+        matching Tasks. Mirrors generate_tasks_for_worksheet.
+        """
+        generated = []
+
+        for instance in range(1, quantity + 1):
+            associations = TemplateTaskAssociation.objects.filter(
+                work_template=self,
+                task_template__is_active=True,
+            ).order_by('sort_order', 'task_template__template_name')
+
+            for association in associations:
+                task = association.task_template.generate_task(
+                    job,
+                    est_qty=association.est_qty,
+                    product_instance=instance if quantity > 1 else None,
+                    sort_order=association.sort_order,
+                )
+                generated.append((association, instance, task))
+
+        return generated
+
+    def generate_materials_for_worksheet(self, worksheet, quantity=1, task_pairing=None):
+        """Generate PlanMaterials for a worksheet from this template's
+        material associations. Pairs each association's generated PlanMaterial
+        with the matching generated PlanTask via task_pairing (a list of
+        (TemplateTaskAssociation, instance_index, PlanTask) tuples returned by
+        generate_tasks_for_worksheet).
+
+        If task_pairing is None, all generated materials are task-less.
+        """
         from apps.inventory.models import PlanMaterial
-        for tm in self.materials.all():
-            for _ in range(quantity):
+
+        # Build (tta_pk, instance) -> PlanTask lookup if pairing was provided
+        pairing = {}
+        if task_pairing:
+            for tta, instance, pt in task_pairing:
+                pairing[(tta.pk, instance)] = pt
+
+        associations = self.material_associations.all()
+        for instance in range(1, quantity + 1):
+            for assoc in associations:
+                paired_pt = None
+                if assoc.template_task_association_id is not None:
+                    paired_pt = pairing.get((assoc.template_task_association_id, instance))
                 PlanMaterial.objects.create(
                     est_worksheet=worksheet,
-                    plan_task=None,
-                    description=tm.description,
-                    quantity=tm.quantity,
-                    unit_cost=tm.unit_cost,
-                    sell_price=tm.sell_price,
-                    price_list_item=tm.price_list_item,
-                    accounting_category=tm.accounting_category,
+                    plan_task=paired_pt,
+                    quantity=assoc.quantity,
+                    price_list_item=assoc.price_list_item,
                 )
 
-    def generate_materials_for_job(self, job, quantity=1):
+    def generate_materials_for_job(self, job, quantity=1, task_pairing=None):
+        """Generate Materials for a job from this template's material associations.
+
+        Pairs each association's generated Material with the matching generated
+        Task via task_pairing (a list of (TemplateTaskAssociation, instance_index,
+        Task) tuples returned by generate_tasks_for_job).
+
+        If task_pairing is None, all generated materials are task-less.
+        """
         from apps.inventory.services import MaterialService
-        for tm in self.materials.all():
-            for _ in range(quantity):
+
+        pairing = {}
+        if task_pairing:
+            for tta, instance, t in task_pairing:
+                pairing[(tta.pk, instance)] = t
+
+        associations = self.material_associations.all()
+        for instance in range(1, quantity + 1):
+            for assoc in associations:
+                paired_t = None
+                if assoc.template_task_association_id is not None:
+                    paired_t = pairing.get((assoc.template_task_association_id, instance))
                 MaterialService.create_on_job(
-                    job=job, task=None,
-                    description=tm.description,
-                    quantity=tm.quantity,
-                    unit_cost=tm.unit_cost,
-                    sell_price=tm.sell_price,
-                    price_list_item=tm.price_list_item,
-                    accounting_category=tm.accounting_category,
+                    job=job, task=paired_t,
+                    quantity=assoc.quantity,
+                    price_list_item=assoc.price_list_item,
                 )
-
-
-class TemplateBundle(models.Model):
-    """
-    A named grouping within a WorkTemplate that becomes one line item.
-
-    TemplateTaskAssociations point to a bundle to indicate they should be
-    combined into a single line item on the estimate.
-    """
-    work_template = models.ForeignKey(
-        WorkTemplate,
-        on_delete=models.CASCADE,
-        related_name='bundles'
-    )
-    name = models.CharField(max_length=100)
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
-        on_delete=models.PROTECT
-    )
-    sort_order = models.IntegerField(default=0)
-
-    class Meta:
-        db_table = 'template_bundles'
-        unique_together = ['work_template', 'name']
-        ordering = ['sort_order', 'name']
-
-    def __str__(self):
-        return f"{self.work_template.template_name} - {self.name}"
 
 
 class TemplateTaskAssociation(models.Model):
-    """Association between WorkTemplate and TaskTemplate with mapping configuration."""
+    """Association between WorkTemplate and TaskTemplate with ordering."""
     work_template = models.ForeignKey(WorkTemplate, on_delete=models.CASCADE)
     task_template = models.ForeignKey('TaskTemplate', on_delete=models.CASCADE)
 
@@ -448,30 +429,10 @@ class TemplateTaskAssociation(models.Model):
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, default=1)
     sort_order = models.IntegerField(default=0)
 
-    # Mapping configuration
-    MAPPING_CHOICES = [
-        ('direct', 'Direct - becomes its own line item'),
-        ('bundle', 'Bundle - part of a bundled line item'),
-        ('exclude', 'Exclude - internal only, not on estimate'),
-    ]
-    mapping_strategy = models.CharField(max_length=20, choices=MAPPING_CHOICES, default='direct')
-    bundle = models.ForeignKey(
-        TemplateBundle,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='associations'
-    )
-
     class Meta:
         db_table = 'template_task_assoc'
         unique_together = ['work_template', 'task_template']
         ordering = ['sort_order']
-
-    def clean(self):
-        from django.core.exceptions import ValidationError
-        if self.bundle and self.bundle.work_template != self.work_template:
-            raise ValidationError("Bundle must belong to the same WorkTemplate")
 
     def __str__(self):
         return f"{self.work_template.template_name} -> {self.task_template.template_name}"
@@ -483,23 +444,24 @@ class TaskTemplate(models.Model):
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    units = models.CharField(max_length=50, default='none')
-    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-
-    # AccountingCategory determines what type of line item this task produces when mapped directly
-    accounting_category = models.ForeignKey(
-        'core.AccountingCategory',
+    rate_scheme = models.ForeignKey(
+        'jobs.RateScheme',
         on_delete=models.PROTECT,
-        null=True,  # Temporarily nullable for migration
-        blank=True,
-        help_text="Type of line item this task produces when mapped directly"
+        help_text="Default billing scheme for tasks from this template"
+    )
+    default_active_modifiers = models.JSONField(
+        default=list, blank=True,
+        help_text="Pre-checked modifier keys from the scheme"
+    )
+    default_billable_qty = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        help_text="Typical estimated billable quantity"
     )
 
     # Relationships
     work_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='task_templates')
 
     created_date = models.DateTimeField(auto_now_add=True)
-    # is_active no longer used but kept in case we change our minds later and to avoid a migration
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -508,37 +470,79 @@ class TaskTemplate(models.Model):
     def __str__(self):
         return self.template_name
 
+    def clean(self):
+        super().clean()
+        from apps.jobs.models import RateScheme
+        # A flat-fee template carries its own unit price in
+        # default_active_modifiers ({'flat_fee_price': str}). Without one, a
+        # generated task would silently fall back to the shared scheme rate.
+        if self.rate_scheme_id and self.rate_scheme.algorithm == RateScheme.FLAT_FEE:
+            price = RateScheme._flat_fee_price(self.default_active_modifiers)
+            if price is None or price <= 0:
+                raise ValidationError({
+                    'default_active_modifiers':
+                        'A flat-fee task template must carry a positive '
+                        'flat_fee_price.',
+                })
+
+    @property
+    def effective_accounting_category(self):
+        return self.rate_scheme.accounting_category
+
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
-                       assignee=None, mapping_strategy='direct', bundle=None, sort_order=None):
-        """Generate a PlanTask or Task from this template with specified quantity and mapping config.
+                       assignee=None, sort_order=None,
+                       name=None, description=None,
+                       active_modifiers=None, est_worker_time=None):
+        """Generate a PlanTask or Task from this template with specified quantity.
 
         The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
+
+        Optional overrides:
+          name            – if truthy, replaces template_name; empty string falls back to template default.
+          description     – if not None, replaces template description (empty string is kept as-is).
+          active_modifiers – list of modifier keys; falls back to template defaults when None.
+          est_worker_time – ISO 8601 duration string or None.
         """
-        from apps.jobs.models import Job, Task, PlanTask
+        from apps.jobs.models import Job, Task, PlanTask, copy_active_modifiers
+        from apps.core.services import SchemeSupersededError
+        from django.db import transaction
+
+        if self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None:
+            raise SchemeSupersededError(
+                f'Template "{self.template_name}" references a superseded '
+                f'RateScheme. Update the template before adding tasks from it.'
+            )
+
+        resolved_name = name if name else self.template_name
+        resolved_description = description if description is not None else self.description
+        resolved_modifiers = copy_active_modifiers(
+            active_modifiers if active_modifiers is not None
+            else self.default_active_modifiers
+        )
 
         if isinstance(container, Job):
-            return Task.objects.create(
-                job=container,
-                name=self.template_name,
-                description=self.description,
-                units=self.units,
-                rate=self.rate,
-                est_qty=est_qty,
-                accounting_category=self.accounting_category,
-                assignee=assignee,
-                sort_order=sort_order,
-            )
+            with transaction.atomic():
+                task = Task.objects.create(
+                    job=container,
+                    name=resolved_name,
+                    description=resolved_description,
+                    assignee=assignee,
+                    sort_order=sort_order,
+                    rate_scheme=self.rate_scheme,
+                    active_modifiers=resolved_modifiers,
+                    est_qty=est_qty,
+                    est_worker_time=est_worker_time,
+                )
+            return task
         else:  # EstWorksheet
             return PlanTask.objects.create(
                 est_worksheet=container,
-                name=self.template_name,
-                description=self.description,
-                units=self.units,
-                rate=self.rate,
+                name=resolved_name,
+                description=resolved_description,
+                rate_scheme=self.rate_scheme,
+                active_modifiers=resolved_modifiers,
                 est_qty=est_qty,
-                accounting_category=self.accounting_category,
-                mapping_strategy=mapping_strategy,
-                bundle=bundle,
+                est_worker_time=est_worker_time,
                 sort_order=sort_order,
             )
 
@@ -547,10 +551,11 @@ class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
-    task = models.ForeignKey('jobs.PlanTask', on_delete=models.PROTECT, null=True, blank=True)
-    material = models.ForeignKey(
-        'inventory.PlanMaterial', on_delete=models.SET_NULL,
+    source_template = models.ForeignKey(
+        'estimates.TaskTemplate',
+        on_delete=models.SET_NULL,
         null=True, blank=True,
+        help_text='TaskTemplate this line item was created from (preserves catalog ref for direct-estimate carry-over).',
     )
 
     class Meta:
@@ -564,3 +569,47 @@ class EstimateLineItem(BaseLineItem):
 
     def __str__(self):
         return f"Estimate Line Item {self.pk} for {self.estimate.estimate_number}"
+
+
+class EstimateLineItemSource(models.Model):
+    """Polymorphic join between an EstimateLineItem and its source atom (PlanTask or PlanMaterial).
+
+    The unique_together on (source_type, source_pk) enforces whole-atom claim at the
+    database level: an atom can be referenced by at most one estimate line item.
+
+    Note: unlike InvoiceLineItemSource, this constraint is NOT scoped by Estimate status
+    on the plan side. Worksheet revisions copy atoms (creating new instances), so the
+    constraint never needs to fire across revisions in practice.
+    """
+    SOURCE_PLAN_TASK = 'plan_task'
+    SOURCE_PLAN_MATERIAL = 'plan_material'
+    SOURCE_TYPE_CHOICES = [
+        (SOURCE_PLAN_TASK, 'PlanTask'),
+        (SOURCE_PLAN_MATERIAL, 'PlanMaterial'),
+    ]
+
+    source_id = models.AutoField(primary_key=True)
+    estimate_line_item = models.ForeignKey(
+        EstimateLineItem,
+        on_delete=models.CASCADE,
+        related_name='sources',
+    )
+    source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES)
+    source_pk = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = 'estimate_line_item_sources'
+        unique_together = [('source_type', 'source_pk')]
+
+    def resolve(self):
+        """Return the concrete atom instance (PlanTask or PlanMaterial) referenced by this source."""
+        if self.source_type == self.SOURCE_PLAN_TASK:
+            from apps.jobs.models import PlanTask
+            return PlanTask.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_PLAN_MATERIAL:
+            from apps.inventory.models import PlanMaterial
+            return PlanMaterial.objects.get(pk=self.source_pk)
+        raise ValueError(f'Unknown source_type: {self.source_type}')
+
+    def __str__(self):
+        return f'Source {self.source_id}: {self.source_type}:{self.source_pk} → EstLineItem {self.estimate_line_item_id}'

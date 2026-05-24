@@ -99,7 +99,7 @@
       <dd>{contact.business.business_phone}</dd>
 
       <dt>Address</dt>
-      <dd>{contact.business.business_address}</dd>
+      <dd class="preserve-breaks">{contact.business.business_address}</dd>
 
       <dt>Website</dt>
       <dd>{contact.business.website || ''}</dd>
@@ -161,10 +161,10 @@
     <p>
       {pageRange(purchaseOrders)}
       {#if purchaseOrders.previous}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onPOPageChange(pageFromUrl(purchaseOrders.previous)); }}>Previous</a>
+        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.previous))}>Previous</button>
       {/if}
       {#if purchaseOrders.next}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onPOPageChange(pageFromUrl(purchaseOrders.next)); }}>Next</a>
+        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.next))}>Next</button>
       {/if}
     </p>
   {/if}
@@ -176,13 +176,12 @@
 {#if visibleBills.length > 0}
   <table border="1">
     <thead>
-      <tr><th>Bill #</th><th>Vendor Invoice</th><th>Status</th></tr>
+      <tr><th>Vendor Invoice</th><th>Status</th></tr>
     </thead>
     <tbody>
       {#each visibleBills as bill}
         <tr>
-          <td><a href="#/bills/{bill.bill_id}">{bill.bill_number}</a></td>
-          <td>{bill.vendor_invoice_number}</td>
+          <td><a href="#/bills/{bill.bill_id}">{bill.vendor_invoice_number || `Bill ${bill.bill_id}`}</a></td>
           <td>{bill.status}</td>
         </tr>
       {/each}
@@ -192,10 +191,10 @@
     <p>
       {pageRange(bills)}
       {#if bills.previous}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onBillPageChange(pageFromUrl(bills.previous)); }}>Previous</a>
+        | <button type="button" onclick={() => onBillPageChange(pageFromUrl(bills.previous))}>Previous</button>
       {/if}
       {#if bills.next}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onBillPageChange(pageFromUrl(bills.next)); }}>Next</a>
+        | <button type="button" onclick={() => onBillPageChange(pageFromUrl(bills.next))}>Next</button>
       {/if}
     </p>
   {/if}

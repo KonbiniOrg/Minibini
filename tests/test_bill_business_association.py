@@ -40,7 +40,6 @@ class BillBusinessAutoAssociationTest(TestCase):
         the Business is automatically associated with the Bill.
         """
         bill = Bill.objects.create(
-            bill_number="BILL-039",
             contact=self.contact_with_business,
             vendor_invoice_number="INV001"
         )
@@ -58,7 +57,6 @@ class BillBusinessAutoAssociationTest(TestCase):
 
         # Try to create bill with explicit business that differs from contact's business
         bill = Bill(
-            bill_number="BILL-041",
             contact=self.contact_with_business,  # has business1
             business=self.business2,  # explicitly set to different business
             vendor_invoice_number="INV003"
@@ -76,7 +74,6 @@ class BillBusinessAutoAssociationTest(TestCase):
         """
         # Create bill with auto-associated business
         bill = Bill.objects.create(
-            bill_number="BILL-042",
             contact=self.contact_with_business,
             vendor_invoice_number="INV004"
         )
@@ -112,7 +109,6 @@ class BillBusinessAutoAssociationTest(TestCase):
 
         # Create bill with PO and contact with business
         bill = Bill.objects.create(
-            bill_number="BILL-044",
             purchase_order=po,
             contact=self.contact_with_business,
             vendor_invoice_number="INV006"

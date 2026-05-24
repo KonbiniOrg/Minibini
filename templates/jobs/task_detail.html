@@ -20,7 +20,7 @@
     </tr>
     <tr>
         <td>Description</td>
-        <td>{{ task.description|default:"-" }}</td>
+        <td class="preserve-breaks">{{ task.description|default:"-" }}</td>
     </tr>
     <tr>
         <td>Container</td>
@@ -157,7 +157,7 @@
     </tr>
     {% for material in task.materials.all %}
     <tr>
-        <td>{{ material.description }}</td>
+        <td class="preserve-breaks">{{ material.description }}</td>
         <td>{{ material.quantity }}</td>
         <td>${{ material.unit_cost }}</td>
         <td>${{ material.sell_price }}</td>

@@ -3,6 +3,7 @@
   import WorkerColumns from './WorkerColumns.svelte';
   import UnassignedPool from './UnassignedPool.svelte';
   import ResizeHandle from './ResizeHandle.svelte';
+  import WorkerTimePromptModal from './WorkerTimePromptModal.svelte';
   import { api } from '../../lib/api.js';
 
   let { data = {}, canManage = false, onUpdate = () => {} } = $props();
@@ -13,6 +14,10 @@
   let unassigned = $state([]);
   let availableWorkers = $state([]);
   let addedWorkers = $state([]);
+
+  // Holds a pending drop while the worker-time prompt is open:
+  // {taskId, targetWorkerId, insertIndex, taskName}
+  let workerTimeModal = $state(null);
 
   // Sync from props when data changes
   $effect(() => {
@@ -38,7 +43,47 @@
     addedWorkers = [...addedWorkers, { user, tasks: [] }];
   }
 
-  async function assignTask(taskId, targetWorkerId, insertIndex = -1) {
+  // Locate a task without mutating any column — used to peek at its
+  // estimated worker time before committing an optimistic drop.
+  function findTask(taskId) {
+    const inU = unassigned.find(t => t.task_id === taskId);
+    if (inU) return inU;
+    for (const w of [...workers, ...addedWorkers]) {
+      const t = w.tasks.find(t => t.task_id === taskId);
+      if (t) return t;
+    }
+    return null;
+  }
+
+  // Gatekeeper: a task with no estimated worker time can't be scheduled,
+  // so dragging one onto a worker interrupts with a duration prompt before
+  // the drop is committed. Unassigning and reordering pass straight through.
+  function assignTask(taskId, targetWorkerId, insertIndex = -1) {
+    if (targetWorkerId !== null) {
+      const task = findTask(taskId);
+      if (task && !task.est_worker_time) {
+        workerTimeModal = {
+          taskId, targetWorkerId, insertIndex, taskName: task.name,
+        };
+        return;
+      }
+    }
+    doAssign(taskId, targetWorkerId, insertIndex);
+  }
+
+  function submitWorkerTime(estWorkerTimeISO) {
+    const pending = workerTimeModal;
+    workerTimeModal = null;
+    if (pending) {
+      doAssign(
+        pending.taskId, pending.targetWorkerId,
+        pending.insertIndex, estWorkerTimeISO,
+      );
+    }
+  }
+
+  async function doAssign(taskId, targetWorkerId, insertIndex = -1,
+                          estWorkerTimeISO = null) {
     // Find the task object and remove from its current location
     let task = null;
 
@@ -93,7 +138,10 @@
         targetWorker = addedWorkers.find(w => w.user.id === targetWorkerId);
       }
       if (targetWorker) {
-        task = {...task, assignee_id: targetWorkerId};
+        task = {
+          ...task, assignee_id: targetWorkerId,
+          ...(estWorkerTimeISO ? { est_worker_time: estWorkerTimeISO } : {}),
+        };
 
         // Insert at specified position or append
         if (insertIndex >= 0 && insertIndex <= targetWorker.tasks.length) {
@@ -123,10 +171,18 @@
     try {
       if (targetWorkerId !== null) {
         // Assign (handles assignee change + initial queue position)
-        await api.post(`/api/tasks/${taskId}/assign/`, {
+        const assignBody = {
           assignee: targetWorkerId,
           worker_queue: task.worker_queue,
-        });
+        };
+        if (estWorkerTimeISO) assignBody.est_worker_time = estWorkerTimeISO;
+        const resp = await api.post(`/api/tasks/${taskId}/assign/`, assignBody);
+        if (resp && resp.needs_worker_time) {
+          // Stale board data — the task actually has no estimate. Revert
+          // the optimistic drop by refreshing from the server.
+          onUpdate();
+          return;
+        }
 
         // Reorder the full column to persist the exact order
         const targetWorker = workers.find(w => w.user.id === targetWorkerId)
@@ -183,6 +239,13 @@
     </div>
   </div>
 </div>
+
+<WorkerTimePromptModal
+  open={workerTimeModal !== null}
+  taskName={workerTimeModal?.taskName || ''}
+  onSubmit={submitWorkerTime}
+  onCancel={() => { workerTimeModal = null; }}
+/>
 
 <style>
   .approved-header { padding: 14px 16px 10px; display: flex; align-items: center; justify-content: center; gap: 10px; border-bottom: 3px solid #4ade80; flex-shrink: 0; }

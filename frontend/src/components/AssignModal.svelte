@@ -1,5 +1,7 @@
 <script>
   import { api } from '../lib/api.js';
+  import { parseDurationToISO } from '../lib/format.js';
+  import { modalKeys } from '../lib/modalKeys.js';
 
   let {
     open = false,
@@ -10,12 +12,19 @@
 
   let users = $state([]);
   let selectedUserId = $state('');
+  let estWorkerTime = $state('');
   let busy = $state(false);
   let error = $state('');
+
+  // A task with no estimated worker time can't be scheduled, so assigning
+  // it requires the duration up front. Unassigning never does.
+  const needsWorkerTime = $derived(!task?.est_worker_time);
+  const isAssigning = $derived(!!selectedUserId);
 
   $effect(() => {
     if (open) {
       selectedUserId = task?.assignee ?? '';
+      estWorkerTime = '';
       error = '';
       loadUsers();
     }
@@ -30,13 +39,34 @@
   }
 
   async function save() {
-    busy = true;
     error = '';
+    const body = { assignee: selectedUserId || null, worker_queue: null };
+
+    if (isAssigning && needsWorkerTime) {
+      const iso = parseDurationToISO(estWorkerTime);
+      if (iso === null) {
+        error = 'Estimated worker time is required to assign this task.';
+        return;
+      }
+      if (iso === false) {
+        error = `Could not read "${estWorkerTime}" as a duration. `
+          + 'Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).';
+        return;
+      }
+      if (iso === 'PT0H0M') {
+        error = 'Estimated worker time must be greater than zero.';
+        return;
+      }
+      body.est_worker_time = iso;
+    }
+
+    busy = true;
     try {
-      await api.post(`/api/tasks/${task.task_id}/assign/`, {
-        assignee: selectedUserId || null,
-        worker_queue: null,
-      });
+      const resp = await api.post(`/api/tasks/${task.task_id}/assign/`, body);
+      if (resp && resp.needs_worker_time) {
+        error = 'Estimated worker time is required to assign this task.';
+        return;
+      }
       onSaved();
     } catch (e) {
       if (e.data && typeof e.data === 'object' && !e.data.detail) {
@@ -53,7 +83,7 @@
 </script>
 
 {#if open}
-  <div class="overlay">
+  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy) save(); }, onCancel: onClose }}>
     <div class="modal">
       <h3>Assign Task: {task?.name}</h3>
 
@@ -67,6 +97,15 @@
           </select>
         </label>
       </p>
+
+      {#if needsWorkerTime && isAssigning}
+        <p>
+          <label><strong>Estimated worker time *</strong><br>
+            <input type="text" bind:value={estWorkerTime} placeholder="e.g. 1:30 or 1.5">
+          </label><br>
+          <small>HH:MM or decimal hours.</small>
+        </p>
+      {/if}
 
       <div class="buttons">
         <button type="button" onclick={save} disabled={busy}>Save</button>

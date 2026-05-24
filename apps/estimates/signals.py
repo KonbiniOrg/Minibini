@@ -40,14 +40,18 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
 
     Business rules:
     - When estimate is accepted, job becomes approved (unless already complete)
-    - When approved estimate is superseded, job becomes blocked (unless already complete)
     - Respects state transition rules: must go through intermediate states
     - Creates an action-type HistoryEntry for each status change
     """
     from apps.core.models import HistoryEntry, User
     from apps.jobs.models import Job
+    from apps.jobs.services import JobService
 
     job = estimate.job
+    # Decide against current DB state — the cached estimate.job instance may
+    # be stale (status changes now route through JobService.update_job, which
+    # does not mutate this instance in place).
+    job.refresh_from_db()
 
     # Don't update completed or cancelled jobs
     if job.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
@@ -78,8 +82,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
         # If trying to go to 'approved' from 'draft', first go through 'submitted'
         if new_job_status == Job.STATUS_APPROVED and job.status == Job.STATUS_DRAFT:
             old_status = job.status
-            job.status = Job.STATUS_SUBMITTED
-            job.save()
+            JobService.update_job(job.pk, status=Job.STATUS_SUBMITTED)
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='job',
@@ -88,8 +91,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
                 changes={'status': {'old': old_status, 'new': Job.STATUS_SUBMITTED}, '_action': action_desc},
             )
             # Now transition to approved
-            job.status = Job.STATUS_APPROVED
-            job.save()
+            JobService.update_job(job.pk, status=Job.STATUS_APPROVED)
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='job',
@@ -100,8 +102,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             return 2  # Two transitions made
         else:
             old_status = job.status
-            job.status = new_job_status
-            job.save()
+            JobService.update_job(job.pk, status=new_job_status)
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='job',
@@ -112,3 +113,12 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             return 1
 
     return 0
+
+
+@receiver(estimate_accepted)
+def trigger_atom_carry_over(sender, estimate, **kwargs):
+    """When an Estimate is accepted, carry over atoms from its worksheet (and from
+    any direct-estimate line items with template refs) to the Job.
+    """
+    from apps.estimates.carry_over import AtomCarryOverService
+    AtomCarryOverService.carry_over_for_estimate(estimate)

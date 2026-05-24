@@ -112,7 +112,6 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/estimates/1/line-items/',
         '/api/est-worksheets/1/',
         '/api/est-worksheets/1/tasks/',
-        '/api/est-worksheets/1/bundles/',
         '/api/bleps/1/',
         '/api/contacts/1/',
         '/api/contacts/1/history/',
@@ -225,8 +224,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         ('patch', '/api/est-worksheets/1/', {'notes': 'test'}),
         ('delete', '/api/est-worksheets/1/', None),
         ('post', '/api/est-worksheets/1/tasks/', {'name': 'Test'}),
-        ('post', '/api/est-worksheets/1/bundles/', {'name': 'Test'}),
-        ('post', '/api/est-worksheets/1/generate-estimate/', {}),
         ('post', '/api/est-worksheets/1/revise/', {}),
     ]
 
@@ -237,7 +234,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         ('delete', '/api/jobs/1/tasks/1/', None),
         ('post', '/api/jobs/1/work-complete/', {}),
         ('post', '/api/jobs/1/populate-from-template/', {'template_id': 1}),
-        ('post', '/api/jobs/1/populate-from-estimate/', {'estimate_id': 1}),
         ('post', '/api/jobs/1/copy-from-worksheet/', {'worksheet_id': 1}),
         ('post', '/api/jobs/1/reorder-tasks/', {'task_id': 1, 'direction': 'up'}),
     ]

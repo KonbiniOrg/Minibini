@@ -8,13 +8,22 @@ InventoryService.create_earmarks_for_job().
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
     TaskTemplate, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
 from apps.jobs.services import JobService
+
+
+def _make_scheme(suffix):
+    from apps.core.models import AccountingCategory
+    ac = AccountingCategory.objects.create(code=f'AEM-{suffix}', name=f'aem-{suffix}')
+    return RateScheme.objects.create(
+        name=f'S-aem-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class EarmarkOnCopyFromWorksheetTest(TestCase):
@@ -49,9 +58,11 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
             is_inventoried=True, accounting_category=self.category,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.scheme = _make_scheme('cfw')
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build cabinets', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_earmarks_created_on_copy_from_worksheet(self):
@@ -84,6 +95,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
         plan_task_b = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install trim', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,
@@ -109,6 +121,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
             description='Custom brackets',
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'),
             sell_price=Decimal('20.00'),
+            accounting_category=self.category,
         )
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
@@ -134,12 +147,13 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         )
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.create(name='Labor')
+        scheme = _make_scheme('eoct')
         self.template = WorkTemplate.objects.create(
-            template_name='Quick', is_active=True,
+            template_name='Quick',
         )
         tt = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,
-            units='each', rate=100, accounting_category=cat,
+            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
@@ -149,34 +163,6 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
     def test_no_earmarks_from_template_with_no_materials(self):
         """Template -> WO has no materials, so no earmarks."""
         JobService.populate_from_template(self.job, self.template)
-        self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
-
-
-class EarmarkOnCreateFromEstimateTest(TestCase):
-    """Earmarks created (if any materials copy over) after create_from_estimate."""
-
-    def setUp(self):
-        self.contact = Contact.objects.create(
-            first_name='Test', last_name='Contact',
-            email='test@example.com', work_number='555-0100',
-        )
-        self.job = Job.objects.create(
-            job_number='J-AEM-003', contact=self.contact,
-        )
-        self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-AEM-001', version=1,
-        )
-
-    def test_no_earmarks_from_estimate_with_no_materials(self):
-        """Estimate -> WO with no task materials produces no earmarks."""
-        EstimateLineItem.objects.create(
-            estimate=self.estimate, description='Manual item',
-            price=Decimal('100.00'),
-        )
-        self.estimate.status = Estimate.STATUS_OPEN
-        self.estimate.save()
-
-        JobService.populate_from_estimate(self.job, self.estimate)
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
 
@@ -205,9 +191,11 @@ class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job, estimate=self.estimate, version=1,
         )
+        self.eanc_scheme = _make_scheme('eanc')
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build stuff', sort_order=1,
+            rate_scheme=self.eanc_scheme, est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,

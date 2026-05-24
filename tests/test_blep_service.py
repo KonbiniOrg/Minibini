@@ -11,8 +11,8 @@ class BlepServicePrimitivesTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Task', job=self.job)
-        self.other_task = Task.objects.create(name='Other', job=self.job)
+        self.task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
+        self.other_task = Task.objects.create(name='Other', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
         self.other_user = User.objects.create_user(username='worker2', password='x')
 
@@ -70,7 +70,10 @@ class CreateHistoricalTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job)
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_historical', password='x')
         self.manager = User.objects.create_user(username='m', password='x')
         from django.contrib.auth.models import Permission
@@ -148,12 +151,61 @@ class CreateHistoricalTest(BaseTestCase):
         blep = BlepService.create_historical(self.user, self.task, start, end)
         self.assertIsNotNone(blep)
 
+    def test_create_historical_promotes_pending_task(self):
+        self.assertEqual(self.task.status, Task.STATUS_PENDING)
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+
+    def test_create_historical_leaves_in_progress_task_unchanged(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+
+    def test_create_historical_does_not_reopen_complete_task(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
+
+    def test_create_historical_consumes_materials_on_pending_task(self):
+        from apps.inventory.models import Material
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first()
+        mat = Material.objects.create(
+            job=self.job, task=self.task, description='Test Material',
+            accounting_category=cat,
+        )
+        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        mat.refresh_from_db()
+        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+
+    def test_create_historical_on_in_progress_task_does_not_consume(self):
+        from apps.inventory.models import Material
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first()
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        mat = Material.objects.create(
+            job=self.job, task=self.task, description='M',
+            accounting_category=cat,
+        )
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        mat.refresh_from_db()
+        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+
 
 class UpdateBlepTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_update', password='x')
         from django.contrib.auth.models import Permission
         self.manager = User.objects.create_user(username='m', password='x')
@@ -239,7 +291,7 @@ class DeleteBlepTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_delete', password='x')
         from django.contrib.auth.models import Permission
         self.manager = User.objects.create_user(username='m', password='x')

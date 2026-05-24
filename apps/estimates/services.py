@@ -3,7 +3,6 @@ Service classes for Estimate generation and management.
 """
 
 from decimal import Decimal
-from collections import defaultdict
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -13,6 +12,7 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.core.services import NumberGenerationService, NotFoundError
+from apps.core.wizard import BaseWizardService
 from apps.inventory.models import PriceListItem
 
 
@@ -72,6 +72,12 @@ class EstimateService:
             raise NotFoundError(f'Estimate {pk} not found')
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Only draft estimates can be marked as open.')
+
+        # Guard: estimate cannot be sent without a non-empty Deliverables list.
+        from apps.deliverables.models import Deliverable
+        if not Deliverable.objects.filter(job=estimate.job).exists():
+            raise ValidationError('Cannot send estimate: job has no deliverables.')
+
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
 
@@ -102,11 +108,11 @@ class EstimateService:
             parent=parent,
         )
 
-        # Copy line items
+        # Copy line items (source rows are NOT carried forward; the new revision
+        # gets fresh atoms via worksheet revision or manual adds)
         for li in EstimateLineItem.objects.filter(estimate=parent):
             EstimateLineItem.objects.create(
                 estimate=new_estimate,
-                task=li.task,
                 price_list_item=li.price_list_item,
                 qty=li.qty,
                 units=li.units,
@@ -197,6 +203,16 @@ class EstimateService:
                 'Cannot modify line items on a non-draft estimate.'
             )
         return LineItemService.delete_line_item_with_renumber(li)
+
+    @staticmethod
+    def discard_draft(estimate):
+        """Hard-delete a draft estimate; cascades to line items and sources."""
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError(
+                f'Cannot discard estimate in status "{estimate.status}". '
+                f'Estimate must be in draft.'
+            )
+        estimate.delete()
 
     @staticmethod
     def add_line_item_from_pli(estimate_pk, pli_pk, qty):
@@ -300,7 +316,7 @@ class WorkTemplateService:
 
     @staticmethod
     def delete_association(template_pk, assoc_pk):
-        """Delete an unbundled association from a template."""
+        """Delete an association from a template."""
         try:
             tmpl = WorkTemplate.objects.get(pk=template_pk)
         except WorkTemplate.DoesNotExist:
@@ -312,84 +328,6 @@ class WorkTemplateService:
         except TemplateTaskAssociation.DoesNotExist:
             raise NotFoundError(f'TemplateTaskAssociation {assoc_pk} not found')
         assoc.delete()
-
-    # --- Bundling operations ---
-
-    @staticmethod
-    def bundle_associations(template_pk, assoc_ids, bundle_name, accounting_category):
-        """Bundle associations on a template. Requires >= 2 associations."""
-        from apps.core.services import BundlingService
-        from apps.estimates.models import TemplateBundle
-        from django.db import models as db_models
-
-        try:
-            tmpl = WorkTemplate.objects.get(pk=template_pk)
-        except WorkTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkTemplate {template_pk} not found')
-        if len(assoc_ids) < 2:
-            raise ValidationError('Please select at least 2 tasks to bundle.')
-
-        # Calculate next sort_order at container level
-        max_assoc = TemplateTaskAssociation.objects.filter(
-            work_template=tmpl, bundle__isnull=True,
-        ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
-        max_bundle = TemplateBundle.objects.filter(
-            work_template=tmpl,
-        ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
-        next_sort = max(max_assoc, max_bundle) + 1
-
-        bundle, _ = TemplateBundle.objects.get_or_create(
-            work_template=tmpl, name=bundle_name,
-            defaults={
-                'accounting_category': accounting_category,
-                'sort_order': next_sort,
-            },
-        )
-
-        selected = TemplateTaskAssociation.objects.filter(
-            pk__in=assoc_ids, work_template=tmpl,
-        ).order_by('sort_order', 'pk')
-        BundlingService.bundle_items(selected, bundle)
-
-        # Auto-dissolve other bundles that lost members
-        all_bundles = TemplateBundle.objects.filter(work_template=tmpl)
-        BundlingService.auto_dissolve_bundles(
-            all_bundles, TemplateTaskAssociation, exclude_pk=bundle.pk,
-        )
-
-        return bundle
-
-    @staticmethod
-    def unbundle_association(template_pk, assoc_pk):
-        """Unbundle an association from its bundle on a template."""
-        from apps.core.services import BundlingService
-        from apps.estimates.models import TemplateBundle
-
-        try:
-            tmpl = WorkTemplate.objects.get(pk=template_pk)
-        except WorkTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkTemplate {template_pk} not found')
-        try:
-            assoc = TemplateTaskAssociation.objects.get(
-                pk=assoc_pk, work_template=tmpl,
-            )
-        except TemplateTaskAssociation.DoesNotExist:
-            raise NotFoundError(f'TemplateTaskAssociation {assoc_pk} not found')
-        if assoc.mapping_strategy != 'bundle' or not assoc.bundle:
-            return
-
-        container_items_qs = TemplateTaskAssociation.objects.filter(
-            work_template=tmpl, bundle__isnull=True,
-        )
-        container_bundles_qs = TemplateBundle.objects.filter(
-            work_template=tmpl,
-        )
-        BundlingService.unbundle_item(assoc, container_items_qs, container_bundles_qs)
-
-        BundlingService.auto_dissolve_bundles(
-            TemplateBundle.objects.filter(work_template=tmpl),
-            TemplateTaskAssociation,
-        )
 
     @staticmethod
     def reorder_items(template_pk, item_type, item_id, direction):
@@ -407,25 +345,6 @@ class WorkTemplateService:
         BundlingService.reorder_container_items(
             items_qs, item_type, item_id, direction,
         )
-
-    @staticmethod
-    def reorder_in_bundle(template_pk, assoc_pk, direction):
-        """Reorder an association within its bundle on a template."""
-        from apps.core.services import BundlingService
-
-        try:
-            tmpl = WorkTemplate.objects.get(pk=template_pk)
-        except WorkTemplate.DoesNotExist:
-            raise NotFoundError(f'WorkTemplate {template_pk} not found')
-        try:
-            assoc = TemplateTaskAssociation.objects.get(
-                pk=assoc_pk, work_template=tmpl,
-                mapping_strategy='bundle', bundle__isnull=False,
-            )
-        except TemplateTaskAssociation.DoesNotExist:
-            raise NotFoundError(f'TemplateTaskAssociation {assoc_pk} not found in bundle')
-        bundle_items_qs = TemplateTaskAssociation.objects.filter(bundle=assoc.bundle)
-        BundlingService.reorder_in_bundle(bundle_items_qs, assoc, direction)
 
 
 class WorksheetService:
@@ -453,8 +372,34 @@ class WorksheetService:
         return ws.create_new_version()
 
     @staticmethod
-    def add_task_from_template(worksheet_pk, template_pk, est_qty=Decimal('1.00')):
-        """Add a PlanTask to a draft worksheet from a TaskTemplate."""
+    def delete_worksheet(worksheet):
+        """Delete a worksheet. Refuses if an estimate is linked — the
+        estimate must be deleted first so its line items and source rows
+        don't outlive the plan_tasks/plan_materials they reference.
+        """
+        if worksheet.estimate_id is not None:
+            raise ValidationError(
+                'Cannot delete a worksheet with an associated estimate. '
+                'Delete the estimate first.'
+            )
+        worksheet.delete()
+
+    @staticmethod
+    def add_task_from_template(
+        worksheet_pk, template_pk,
+        rate_scheme_id=None,
+        active_modifiers=None,
+        est_qty=None,
+        est_worker_time=None,
+        name=None,
+        description=None,
+    ):
+        """Add a PlanTask to a draft worksheet from a TaskTemplate.
+
+        Optional overrides:
+          name        – if truthy, replaces template_name; empty string falls back to template default.
+          description – if not None, replaces template description (empty string is kept as-is).
+        """
         from apps.jobs.models import PlanTask
         try:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
@@ -469,14 +414,24 @@ class WorksheetService:
         except TaskTemplate.DoesNotExist:
             raise NotFoundError(f'TaskTemplate {template_pk} not found')
 
+        # Guard: refuse to use a template whose RateScheme has been superseded.
+        # Only fires when the caller is relying on the template's rate_scheme
+        # (i.e. they didn't supply an explicit override).
+        if rate_scheme_id is None and tt.rate_scheme_id and tt.rate_scheme.replaced_by_id is not None:
+            from apps.core.services import SchemeSupersededError
+            raise SchemeSupersededError(
+                f'Template "{tt.template_name}" references a superseded '
+                f'RateScheme. Update the template before adding tasks from it.'
+            )
+
         task = PlanTask.objects.create(
-            name=tt.template_name,
-            description=tt.description,
-            accounting_category=tt.accounting_category,
+            name=name if name else tt.template_name,
+            description=description if description is not None else tt.description,
             est_worksheet=ws,
-            est_qty=est_qty,
-            units=tt.units,
-            rate=tt.rate,
+            rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
+            active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
+            est_qty=est_qty if est_qty is not None else tt.default_billable_qty,
+            est_worker_time=est_worker_time,
         )
         return task
 
@@ -492,82 +447,14 @@ class WorksheetService:
             raise ValidationError(
                 f'Cannot add tasks to a {ws.get_status_display().lower()} worksheet.'
             )
+        if not kwargs.get('rate_scheme_id') and not kwargs.get('rate_scheme'):
+            raise ValidationError(
+                {'rate_scheme': 'A RateScheme is required to add a task.'}
+            )
         task = PlanTask(est_worksheet=ws, **kwargs)
         task.full_clean()
         task.save()
         return task
-
-    @staticmethod
-    def bundle_tasks(worksheet_pk, task_ids, bundle_name, accounting_category):
-        """Bundle PlanTasks on a draft worksheet. Requires >= 2 tasks."""
-        from apps.jobs.models import PlanTask, PlanBundle
-        from apps.core.services import BundlingService
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
-            raise ValidationError('Cannot bundle tasks on a non-draft worksheet.')
-        if len(task_ids) < 2:
-            raise ValidationError('Please select at least 2 tasks to bundle.')
-
-        # Get or create the bundle
-        from django.db import models as db_models
-        max_task = PlanTask.objects.filter(
-            est_worksheet=ws, bundle__isnull=True,
-        ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
-        max_bundle = PlanBundle.objects.filter(
-            est_worksheet=ws,
-        ).aggregate(db_models.Max('sort_order'))['sort_order__max'] or 0
-        next_sort = max(max_task, max_bundle) + 1
-
-        bundle, _ = PlanBundle.objects.get_or_create(
-            est_worksheet=ws, name=bundle_name,
-            defaults={
-                'accounting_category': accounting_category,
-                'sort_order': next_sort,
-            },
-        )
-
-        selected = PlanTask.objects.filter(
-            plan_task_id__in=task_ids, est_worksheet=ws,
-        ).order_by('sort_order', 'plan_task_id')
-        BundlingService.bundle_items(selected, bundle)
-
-        # Auto-dissolve other bundles that lost members
-        all_bundles = PlanBundle.objects.filter(est_worksheet=ws)
-        BundlingService.auto_dissolve_bundles(all_bundles, PlanTask, exclude_pk=bundle.pk)
-
-        return bundle
-
-    @staticmethod
-    def unbundle_task(worksheet_pk, task_pk):
-        """Unbundle a PlanTask from its bundle on a draft worksheet."""
-        from apps.jobs.models import PlanTask, PlanBundle
-        from apps.core.services import BundlingService
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
-            raise ValidationError('Cannot unbundle tasks on a non-draft worksheet.')
-        try:
-            task = PlanTask.objects.get(pk=task_pk, est_worksheet=ws)
-        except PlanTask.DoesNotExist:
-            raise NotFoundError(f'PlanTask {task_pk} not found')
-        if task.mapping_strategy != 'bundle' or not task.bundle:
-            return  # Nothing to unbundle
-
-        container_items_qs = PlanTask.objects.filter(
-            est_worksheet=ws, bundle__isnull=True,
-        )
-        container_bundles_qs = PlanBundle.objects.filter(est_worksheet=ws)
-        BundlingService.unbundle_item(task, container_items_qs, container_bundles_qs)
-
-        # Auto-dissolve bundles that may now have 0 or 1 items
-        BundlingService.auto_dissolve_bundles(
-            PlanBundle.objects.filter(est_worksheet=ws), PlanTask,
-        )
 
     @staticmethod
     def reorder_items(worksheet_pk, item_type, item_id, direction):
@@ -587,27 +474,6 @@ class WorksheetService:
         )
 
     @staticmethod
-    def reorder_in_bundle(worksheet_pk, task_pk, direction):
-        """Reorder a PlanTask within its bundle on a draft worksheet."""
-        from apps.jobs.models import PlanTask
-        from apps.core.services import BundlingService
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
-            raise ValidationError('Cannot reorder on a non-draft worksheet.')
-        try:
-            task = PlanTask.objects.get(
-                pk=task_pk, est_worksheet=ws,
-                mapping_strategy='bundle', bundle__isnull=False,
-            )
-        except PlanTask.DoesNotExist:
-            raise NotFoundError(f'PlanTask {task_pk} not found in bundle')
-        bundle_items_qs = PlanTask.objects.filter(bundle=task.bundle)
-        BundlingService.reorder_in_bundle(bundle_items_qs, task, direction)
-
-    @staticmethod
     def finalize(worksheet_pk):
         """Mark a draft worksheet as final."""
         try:
@@ -623,185 +489,322 @@ class WorksheetService:
         return ws
 
 
-class EstimateGenerationService:
-    """Service for converting EstWorksheets to Estimates using instance-level bundling."""
+class EstimateClaimConflict(Exception):
+    """Raised when the estimate wizard tries to claim an atom already claimed elsewhere."""
 
-    def __init__(self):
-        self.line_number = 1
-        self._default_accounting_category = None
+    def __init__(self, atom_ids):
+        self.atom_ids = atom_ids
+        super().__init__(f'Atoms already claimed: {atom_ids}')
 
-    def _get_default_accounting_category(self):
-        """Get a fallback AccountingCategory when none is available from the source object."""
-        if self._default_accounting_category is None:
-            from apps.core.models import AccountingCategory
-            self._default_accounting_category = AccountingCategory.objects.filter(is_active=True).first()
-        return self._default_accounting_category
 
-    @transaction.atomic
-    def generate_estimate_from_worksheet(self, worksheet) -> 'Estimate':
+class EstimateWizardService(BaseWizardService):
+    """Orchestration layer for the estimate wizard.
+
+    Composes on top of EstimateService rather than replacing it; manual
+    line-item CRUD continues to use EstimateService. Shared
+    line-items-from-atoms logic lives in BaseWizardService.
+    """
+
+    container_attr = 'estimate'
+    source_fk = 'estimate_line_item'
+    claim_conflict_exc = EstimateClaimConflict
+
+    @staticmethod
+    def _validate_draft_worksheet(worksheet):
+        from apps.estimates.models import EstWorksheet
+        if worksheet.status != EstWorksheet.STATUS_DRAFT:
+            raise ValidationError(
+                f'Cannot run wizard on worksheet in status "{worksheet.status}". '
+                f'Worksheet must be in draft.'
+            )
+
+    @staticmethod
+    def open_for_worksheet(worksheet):
+        """Return the worksheet's draft Estimate, creating one if none exists.
+
+        Raises ValidationError if the worksheet is not in draft, or if the
+        worksheet is linked to a non-draft estimate (which should not be
+        possible — the worksheet should have been promoted to FINAL when its
+        estimate moved out of draft).
         """
-        Convert EstWorksheet to Estimate using instance-level mapping config.
+        from apps.estimates.models import Estimate
+        EstimateWizardService._validate_draft_worksheet(worksheet)
 
-        Tasks are processed based on their own mapping_strategy field:
-        - 'direct': Task becomes its own line item
-        - 'bundle': Tasks in same PlanBundle are combined into one line item
-        - 'exclude': Task is not included on estimate
-        """
-        plan_tasks = worksheet.plan_tasks.select_related('bundle').prefetch_related('plan_materials').all()
+        if worksheet.estimate is not None:
+            if worksheet.estimate.status == Estimate.STATUS_DRAFT:
+                return worksheet.estimate
+            raise ValidationError(
+                'Worksheet is in an inconsistent state — please reload the '
+                'worksheet and try again.'
+            )
 
-        if not plan_tasks:
-            raise ValueError(f"EstWorksheet {worksheet.pk} has no tasks to convert")
-
-        # Create the estimate
-        estimate = self._create_estimate(worksheet)
-
-        # Categorize plan tasks by their instance-level mapping strategy
-        direct_tasks = []
-        bundles = defaultdict(list)  # bundle_id -> [plan tasks]
-
-        for plan_task in plan_tasks:
-            if plan_task.mapping_strategy == 'exclude':
-                continue
-            elif plan_task.mapping_strategy == 'bundle' and plan_task.bundle:
-                bundles[plan_task.bundle_id].append(plan_task)
-            else:
-                direct_tasks.append(plan_task)
-
-        # Generate line items
-        line_items = []
-
-        # Process bundled plan tasks
-        for bundle_id, bundle_tasks in bundles.items():
-            plan_bundle = bundle_tasks[0].bundle
-            line_item = self._create_bundle_line_item(bundle_tasks, plan_bundle, estimate)
-            line_items.append(line_item)
-
-        # Process direct plan tasks
-        for plan_task in direct_tasks:
-            has_materials = plan_task.plan_materials.exists()
-            is_pass_through = (not plan_task.rate or plan_task.rate == Decimal('0.00')) and has_materials
-
-            # Skip labor line item for pass-through tasks (no rate, only materials)
-            if not is_pass_through:
-                line_item = self._create_direct_line_item(plan_task, estimate)
-                line_items.append(line_item)
-
-            # Create material line items for each plan material on direct plan tasks
-            for plan_material in plan_task.plan_materials.all():
-                mat_li = self._create_material_line_item(plan_material, estimate)
-                line_items.append(mat_li)
-
-        # Task-less plan materials (attached to worksheet but no plan_task)
-        for pm in worksheet.plan_materials.filter(plan_task__isnull=True):
-            line_items.append(self._create_material_line_item(pm, estimate))
-
-        # Bulk create all line items
-        if line_items:
-            EstimateLineItem.objects.bulk_create(line_items)
-
-        # Link worksheet to estimate and finalize
-        worksheet.estimate = estimate
-        worksheet.save()
-        if worksheet.status == EstWorksheet.STATUS_DRAFT:
-            WorksheetService.finalize(worksheet.pk)
-
-        return estimate
-
-    def _create_estimate(self, worksheet) -> 'Estimate':
-        """Create a new estimate for the worksheet's job."""
-        version = 1
-        parent_estimate = None
-
-        if worksheet.parent and worksheet.parent.estimate:
-            parent_estimate = worksheet.parent.estimate
-            estimate_number = parent_estimate.estimate_number
-            version = parent_estimate.version + 1
-            parent_estimate.status = Estimate.STATUS_SUPERSEDED
-            parent_estimate.save()
-        else:
+        with transaction.atomic():
             estimate_number = NumberGenerationService.generate_next_number('estimate')
-
-        estimate = Estimate.objects.create(
-            job=worksheet.job,
-            estimate_number=estimate_number,
-            version=version,
-            parent=parent_estimate,
-            status=Estimate.STATUS_DRAFT
-        )
-
+            estimate = Estimate.objects.create(
+                job=worksheet.job,
+                estimate_number=estimate_number,
+                status=Estimate.STATUS_DRAFT,
+            )
+            worksheet.estimate = estimate
+            worksheet.save()
         return estimate
 
-    def _create_direct_line_item(self, task, estimate) -> 'EstimateLineItem':
-        """Create a line item for a direct-mapped task."""
-        qty = task.est_qty or Decimal('1.00')
-        rate = task.rate or Decimal('0.00')
+    @staticmethod
+    def _resolve_atom(atom_ref):
+        """Convert {'type': 'plan_task'|'plan_material', 'id': N} to a model instance."""
+        from apps.jobs.models import PlanTask
+        from apps.inventory.models import PlanMaterial
+        atom_type = atom_ref.get('type')
+        atom_id = atom_ref.get('id')
+        if atom_type == 'plan_task':
+            try:
+                return PlanTask.objects.get(pk=atom_id)
+            except PlanTask.DoesNotExist:
+                raise ValidationError(f'PlanTask {atom_id} not found')
+        if atom_type == 'plan_material':
+            try:
+                return PlanMaterial.objects.get(pk=atom_id)
+            except PlanMaterial.DoesNotExist:
+                raise ValidationError(f'PlanMaterial {atom_id} not found')
+        raise ValidationError(f'Unknown atom type: {atom_type}')
 
-        # Get accounting_category from task directly
-        accounting_category = task.accounting_category
+    @staticmethod
+    def _atom_source_type(atom_instance):
+        from apps.jobs.models import PlanTask
+        from apps.inventory.models import PlanMaterial
+        from apps.estimates.models import EstimateLineItemSource
+        if isinstance(atom_instance, PlanTask):
+            return EstimateLineItemSource.SOURCE_PLAN_TASK
+        if isinstance(atom_instance, PlanMaterial):
+            return EstimateLineItemSource.SOURCE_PLAN_MATERIAL
+        raise ValueError(f'Unknown atom instance type: {type(atom_instance)}')
 
-        if accounting_category is None:
-            accounting_category = self._get_default_accounting_category()
+    @staticmethod
+    def _atom_units(atom_instance):
+        """Return the units label for an atom.
 
-        line_item = EstimateLineItem(
-            estimate=estimate,
-            task=task,
-            line_number=self.line_number,
-            description=task.name,
-            qty=qty,
-            units=task.units or 'none',
-            price=rate,
-            accounting_category=accounting_category
+        PlanTask: from rate_scheme.unit_label (or 'none' if no scheme).
+        PlanMaterial: from the atom's own units field (which is populated
+                      from the linked PLI at create time via _populate_from_pli,
+                      so PLI-linked PMs reflect the PLI's units; freeform PMs
+                      carry whatever units the user set).
+        """
+        from apps.jobs.models import PlanTask
+        from apps.inventory.models import PlanMaterial
+        if isinstance(atom_instance, PlanTask):
+            if atom_instance.rate_scheme_id:
+                return atom_instance.rate_scheme.unit_label
+            return 'none'
+        if isinstance(atom_instance, PlanMaterial):
+            return atom_instance.units or 'none'
+        return 'none'
+
+    @staticmethod
+    def get_source_pool(worksheet):
+        """Walk the worksheet's atoms and return a flat pool with claim state.
+
+        Returns: {'atoms': [
+            {'type': 'plan_task'|'plan_material', 'id': N, 'description': str,
+             'qty': Decimal, 'rate': Decimal, 'amount': Decimal,
+             'state': 'available'|'claimed_by_current'|'claimed_by_other',
+             'category_id': N or None, 'units': str}
+        ]}
+        """
+        from apps.estimates.models import EstimateLineItemSource
+        from apps.jobs.models import PlanTask
+        from apps.inventory.models import PlanMaterial
+
+        # Build the claim lookup: (source_type, source_pk) -> state info
+        # Plan-side does NOT release on supersede, so we don't filter by status.
+        claimed_sources = (
+            EstimateLineItemSource.objects
+            .filter(estimate_line_item__estimate__job=worksheet.job)
+            .select_related('estimate_line_item', 'estimate_line_item__estimate')
+        )
+        current_estimate_pk = worksheet.estimate_id
+        claims = {}
+        for src in claimed_sources:
+            li = src.estimate_line_item
+            est = li.estimate
+            key = (src.source_type, src.source_pk)
+            if est.pk == current_estimate_pk:
+                claims[key] = {
+                    'state': 'claimed_by_current',
+                    'claiming_line_item_id': li.pk,
+                    'claiming_line_number': li.line_number,
+                    'claiming_estimate_id': None,
+                    'claiming_estimate_number': None,
+                }
+            else:
+                claims[key] = {
+                    'state': 'claimed_by_other',
+                    'claiming_line_item_id': None,
+                    'claiming_line_number': None,
+                    'claiming_estimate_id': est.pk,
+                    'claiming_estimate_number': est.estimate_number,
+                }
+
+        default_state = {
+            'state': 'available',
+            'claiming_line_item_id': None,
+            'claiming_line_number': None,
+            'claiming_estimate_id': None,
+            'claiming_estimate_number': None,
+        }
+
+        atoms = []
+
+        for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
+            'rate_scheme', 'rate_scheme__accounting_category',
+        ):
+            key = (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk)
+            state_info = claims.get(key, default_state)
+            eff_cat = pt.effective_accounting_category
+            detail = EstimateWizardService._atom_detail(pt)
+            atoms.append({
+                'type': 'plan_task',
+                'id': pt.pk,
+                'description': pt.name,
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'amount': detail['amount'],
+                'units': detail['units'],
+                'category_id': eff_cat.pk if eff_cat else None,
+                **state_info,
+            })
+
+        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
+            'accounting_category', 'price_list_item',
+        ):
+            key = (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk)
+            state_info = claims.get(key, default_state)
+            detail = EstimateWizardService._atom_detail(pm)
+            atoms.append({
+                'type': 'plan_material',
+                'id': pm.pk,
+                'description': pm.description,
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'amount': detail['amount'],
+                'units': detail['units'],
+                'category_id': pm.accounting_category_id,
+                **state_info,
+            })
+
+        return {'atoms': atoms}
+
+    @staticmethod
+    def send_all_atoms_to_estimate(worksheet):
+        """Bulk 1:1 conversion of unclaimed atoms on the worksheet to EstimateLineItems.
+
+        Iterates all PlanTasks and PlanMaterials on the worksheet that aren't yet
+        claimed by any EstimateLineItemSource, and creates one EstimateLineItem per
+        atom (with one source row pointing at the atom).
+
+        Deliberately NOT wrapped in a transaction: if one atom fails (e.g. concurrent
+        claim), the successful conversions are kept so the caller can re-run to finish.
+
+        Returns: {'estimate': Estimate, 'created_count': int}
+        """
+        from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
+        from apps.jobs.models import PlanTask
+        from apps.inventory.models import PlanMaterial
+
+        estimate = EstimateWizardService.open_for_worksheet(worksheet)
+        EstimateWizardService._validate_draft(estimate)
+
+        # Build set of currently-claimed (type, pk) pairs, scoped to this job's estimates
+        claimed = set(
+            EstimateLineItemSource.objects
+            .filter(estimate_line_item__estimate__job=worksheet.job)
+            .values_list('source_type', 'source_pk')
         )
 
-        self.line_number += 1
-        return line_item
+        created_count = 0
 
-    def _create_material_line_item(self, material, estimate) -> 'EstimateLineItem':
-        """Create a line item for a material on a direct-mapped task."""
-        # Derive accounting_category: PLI first, then material's own field, then fallback
-        accounting_category = None
-        if material.price_list_item:
-            accounting_category = material.price_list_item.accounting_category
-        if accounting_category is None:
-            accounting_category = material.accounting_category
-        if accounting_category is None:
-            accounting_category = self._get_default_accounting_category()
+        # PlanTasks
+        for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
+            'rate_scheme', 'rate_scheme__accounting_category',
+        ):
+            if (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk) in claimed:
+                continue
+            total = pt.compute_amount().quantize(Decimal('0.01'))
+            qty, price = EstimateWizardService._atom_qty_and_price(pt, total)
+            li = EstimateLineItem.objects.create(
+                estimate=estimate,
+                description=pt.name,
+                qty=qty,
+                units=EstimateWizardService._atom_units(pt),
+                price=price,
+                accounting_category=pt.effective_accounting_category,
+            )
+            EstimateLineItemSource.objects.create(
+                estimate_line_item=li,
+                source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+                source_pk=pt.pk,
+            )
+            created_count += 1
 
-        line_item = EstimateLineItem(
-            estimate=estimate,
-            material=material,
-            line_number=self.line_number,
-            description=material.description,
-            qty=material.quantity,
-            units='none',
-            price=material.sell_price,
-            accounting_category=accounting_category,
-        )
+        # PlanMaterials
+        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
+            'accounting_category', 'price_list_item',
+        ):
+            if (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk) in claimed:
+                continue
+            total = pm.compute_amount().quantize(Decimal('0.01'))
+            qty, price = EstimateWizardService._atom_qty_and_price(pm, total)
+            li = EstimateLineItem.objects.create(
+                estimate=estimate,
+                description=pm.description,
+                qty=qty,
+                units=EstimateWizardService._atom_units(pm),
+                price=price,
+                accounting_category=pm.accounting_category,
+            )
+            EstimateLineItemSource.objects.create(
+                estimate_line_item=li,
+                source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL,
+                source_pk=pm.pk,
+            )
+            created_count += 1
 
-        self.line_number += 1
-        return line_item
+        return {'estimate': estimate, 'created_count': created_count}
 
-    def _create_bundle_line_item(self, tasks, bundle, estimate) -> 'EstimateLineItem':
-        """Create a single line item for bundled tasks, including material costs."""
-        total_price = Decimal('0.00')
+    # ── BaseWizardService hooks ────────────────────────────────────────
+    @classmethod
+    def _line_item_model(cls):
+        from apps.estimates.models import EstimateLineItem
+        return EstimateLineItem
 
-        for task in tasks:
-            qty = task.est_qty or Decimal('1.00')
-            rate = task.rate or Decimal('0.00')
-            total_price += qty * rate
-            # Add material sell totals to bundle price
-            for material in task.plan_materials.all():
-                total_price += material.total_sell
+    @classmethod
+    def _source_model(cls):
+        from apps.estimates.models import EstimateLineItemSource
+        return EstimateLineItemSource
 
-        line_item = EstimateLineItem(
-            estimate=estimate,
-            line_number=self.line_number,
-            description=bundle.name,
-            qty=Decimal('1.00'),
-            units='none',
-            price=total_price,
-            accounting_category=bundle.accounting_category
-        )
+    @classmethod
+    def _task_model(cls):
+        from apps.jobs.models import PlanTask
+        return PlanTask
 
-        self.line_number += 1
-        return line_item
+    @classmethod
+    def _material_model(cls):
+        from apps.inventory.models import PlanMaterial
+        return PlanMaterial
+
+    @classmethod
+    def _validate_draft(cls, container):
+        from apps.estimates.models import Estimate
+        if container.status != Estimate.STATUS_DRAFT:
+            raise ValidationError(
+                f'Cannot modify line items on estimate in status "{container.status}".'
+            )
+
+    @classmethod
+    def _task_qty_and_price(cls, task, total_price):
+        if task.rate_scheme_id and task.est_qty is not None:
+            return task.est_qty, task.effective_rate()
+        return Decimal('1'), total_price
+
+    @classmethod
+    def _task_actual_qty(cls, task):
+        return task.est_qty

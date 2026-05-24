@@ -117,7 +117,6 @@
             "template_name": "Mixed Test Template",
             "description": "Template for testing mixed scenarios",
             "base_price": "500.00",
-            "is_active": true,
             "created_date": "2024-01-10T09:00:00Z"
         }
     },
@@ -127,8 +126,6 @@
         "fields": {
             "template_name": "Mixed Assembly Task",
             "description": "Assembly task for mixed testing",
-            "units": "hours",
-            "rate": "40.00",
             "is_active": true,
             "created_date": "2024-01-10T09:00:00Z"
         }
@@ -138,7 +135,6 @@
         "pk": 200,
         "fields": {
             "job": 200,
-            "template": 200,
             "estimate": 200,
             "status": "final",
             "version": 1,
@@ -171,8 +167,7 @@
             "description": "",
             "sort_order": null,
             "mapping_strategy": "direct",
-            "bundle": null,
-            "accounting_category": null
+            "bundle": null
         }
     },
     {

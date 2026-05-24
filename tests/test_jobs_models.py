@@ -4,10 +4,19 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from datetime import timedelta
 from decimal import Decimal
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import Estimate, EstWorksheet, WorkTemplate, TaskTemplate
 from apps.contacts.models import Contact
-from apps.core.models import User
+from apps.core.models import User, AccountingCategory
+
+
+def _make_scheme(suffix):
+    """Helper: create a minimal RateScheme + AccountingCategory for tests."""
+    ac = AccountingCategory.objects.create(code=f'JM-{suffix}', name=f'jm-{suffix}')
+    return RateScheme.objects.create(
+        name=f'S-jm-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class JobModelTest(TestCase):
@@ -66,23 +75,6 @@ class JobModelTest(TestCase):
         self.assertEqual(Job.STATUS_WORK_COMPLETE, 'work_complete')
         choice_values = [v for v, _ in Job.JOB_STATUS_CHOICES]
         self.assertIn(Job.STATUS_WORK_COMPLETE, choice_values)
-
-    def test_job_has_template_fk(self):
-        """Job extends AbstractWorkContainer, so it has a nullable template FK."""
-        template = WorkTemplate.objects.create(template_name="T1")
-        job = Job.objects.create(
-            job_number="JOB_TMPL",
-            contact=self.contact,
-            template=template,
-        )
-        self.assertEqual(job.template, template)
-
-    def test_job_template_is_nullable(self):
-        job = Job.objects.create(
-            job_number="JOB_NO_TMPL",
-            contact=self.contact,
-        )
-        self.assertIsNone(job.template)
 
     def test_job_with_completed_date(self):
         completion_time = timezone.now()
@@ -165,7 +157,7 @@ class JobStatusTransitionTest(TestCase):
             Job.STATUS_DRAFT: [Job.STATUS_DRAFT],
             Job.STATUS_SUBMITTED: [Job.STATUS_SUBMITTED],
             Job.STATUS_APPROVED: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED],
-            Job.STATUS_WORK_COMPLETE: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE],
+            Job.STATUS_WORK_COMPLETE: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE],
         }
         for s in path_map[status]:
             job.status = s
@@ -173,7 +165,10 @@ class JobStatusTransitionTest(TestCase):
         return job
 
     def test_approved_to_work_complete_allowed(self):
+        """approved → in_progress → work_complete is the valid path."""
         job = self._job(Job.STATUS_APPROVED)
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
         job.status = Job.STATUS_WORK_COMPLETE
         job.save()
         job.refresh_from_db()
@@ -213,6 +208,127 @@ class JobStatusTransitionTest(TestCase):
         job.save()  # no-op, should succeed
         job.refresh_from_db()
         self.assertEqual(job.status, Job.STATUS_WORK_COMPLETE)
+
+
+class RejectedJobCompletedDateTest(TestCase):
+    """Bug 3: a Job transitioning to REJECTED should get completed_date set,
+    so it shows in the board's Closed section (which filters on
+    completed_date >= cutoff)."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='R', last_name='J', email='r@j.com',
+        )
+
+    def _draft_job(self):
+        return Job.objects.create(
+            job_number=f'J-REJ-{timezone.now().timestamp()}',
+            contact=self.contact,
+            status=Job.STATUS_DRAFT,
+        )
+
+    def test_rejected_transition_sets_completed_date(self):
+        job = self._draft_job()
+        self.assertIsNone(job.completed_date)
+        job.status = Job.STATUS_REJECTED
+        job.save()
+        job.refresh_from_db()
+        self.assertIsNotNone(job.completed_date)
+
+    def test_completed_transition_still_sets_completed_date(self):
+        job = self._draft_job()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                  Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
+                  Job.STATUS_COMPLETED):
+            job.status = s
+            job.save()
+        job.refresh_from_db()
+        self.assertIsNotNone(job.completed_date)
+
+    def test_cancelled_transition_still_sets_completed_date(self):
+        job = self._draft_job()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                  Job.STATUS_CANCELLED):
+            job.status = s
+            job.save()
+        job.refresh_from_db()
+        self.assertIsNotNone(job.completed_date)
+
+
+class JobReactivationTest(TestCase):
+    """Bug 4: a Job can be moved back to IN_PROGRESS from WORK_COMPLETE or
+    CANCELLED. completed_date is cleared on the CANCELLED reactivation."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Re', last_name='Act', email='re@act.com',
+        )
+
+    def _job_at(self, *statuses):
+        job = Job.objects.create(
+            job_number=f'J-RA-{timezone.now().timestamp()}',
+            contact=self.contact, status=Job.STATUS_DRAFT,
+        )
+        for s in statuses:
+            job.status = s
+            job.save()
+        return job
+
+    def test_work_complete_can_return_to_in_progress(self):
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+            Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
+        )
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_cancelled_can_return_to_in_progress(self):
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_CANCELLED,
+        )
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_cancelled_to_in_progress_clears_completed_date(self):
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_CANCELLED,
+        )
+        job.refresh_from_db()
+        self.assertIsNotNone(job.completed_date)
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        job.refresh_from_db()
+        self.assertIsNone(job.completed_date)
+
+    def test_work_complete_to_in_progress_completed_date_stays_none(self):
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+            Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
+        )
+        self.assertIsNone(job.completed_date)
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        job.refresh_from_db()
+        self.assertIsNone(job.completed_date)
+
+    def test_completed_date_immutable_on_non_reactivation(self):
+        """Regression: completed_date stays protected for ordinary saves."""
+        job = self._job_at(
+            Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+            Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
+            Job.STATUS_COMPLETED,
+        )
+        job.refresh_from_db()
+        original = job.completed_date
+        self.assertIsNotNone(original)
+        job.completed_date = original - timedelta(days=5)
+        job.save()
+        job.refresh_from_db()
+        self.assertEqual(job.completed_date, original)
 
 
 class EstimateModelTest(TestCase):
@@ -310,27 +426,56 @@ class TaskModelTest(TestCase):
             contact=self.contact
         )
         self.user = User.objects.create_user(username="testuser")
+        self.scheme = _make_scheme('tm')
 
     def test_task_creation(self):
         parent_task = Task.objects.create(
             job=self.job,
             name="Parent Task",
+            rate_scheme=self.scheme,
         )
         task = Task.objects.create(
             parent_task=parent_task,
             assignee=self.user,
+            est_worker_time=timedelta(hours=1),
             job=self.job,
             name="Installation Task",
+            rate_scheme=self.scheme,
         )
         self.assertEqual(task.parent_task, parent_task)
         self.assertEqual(task.assignee, self.user)
         self.assertEqual(task.job, self.job)
         self.assertEqual(task.name, "Installation Task")
 
+    def test_assigned_task_requires_est_worker_time(self):
+        """An assigned task must carry an estimated worker time — assigned
+        work has to be schedulable."""
+        with self.assertRaises(ValidationError) as ctx:
+            Task.objects.create(
+                job=self.job, name="Assigned, no estimate",
+                rate_scheme=self.scheme, assignee=self.user,
+            )
+        self.assertIn('est_worker_time', ctx.exception.message_dict)
+
+    def test_assigned_task_with_est_worker_time_allowed(self):
+        task = Task.objects.create(
+            job=self.job, name="Assigned, estimated",
+            rate_scheme=self.scheme, assignee=self.user,
+            est_worker_time=timedelta(hours=2),
+        )
+        self.assertEqual(task.assignee, self.user)
+
+    def test_unassigned_task_needs_no_est_worker_time(self):
+        task = Task.objects.create(
+            job=self.job, name="Unassigned", rate_scheme=self.scheme,
+        )
+        self.assertIsNone(task.est_worker_time)
+
     def test_task_str_method(self):
         task = Task.objects.create(
             job=self.job,
             name="Test Task",
+            rate_scheme=self.scheme,
         )
         self.assertEqual(str(task), "Test Task")
 
@@ -338,51 +483,20 @@ class TaskModelTest(TestCase):
         task = Task.objects.create(
             job=self.job,
             name="Basic Task",
+            rate_scheme=self.scheme,
         )
         self.assertIsNone(task.parent_task)
         self.assertIsNone(task.assignee)
-
-    def test_task_new_fields(self):
-        task = Task.objects.create(
-            job=self.job,
-            name="Labor Task",
-            units="hours",
-            rate=Decimal('75.50'),
-            est_qty=Decimal('8.00')
-        )
-        self.assertEqual(task.units, "hours")
-        self.assertEqual(task.rate, Decimal('75.50'))
-        self.assertEqual(task.est_qty, Decimal('8.00'))
-
-    def test_task_new_fields_optional(self):
-        task = Task.objects.create(
-            job=self.job,
-            name="Simple Task"
-        )
-        self.assertEqual(task.units, "none")
-        self.assertIsNone(task.rate)
-        self.assertIsNone(task.est_qty)
-
-    def test_task_calculated_total(self):
-        task = Task.objects.create(
-            job=self.job,
-            name="Material Task",
-            units="sheets",
-            rate=Decimal('45.00'),
-            est_qty=Decimal('10.00')
-        )
-        expected_total = task.rate * task.est_qty if task.rate and task.est_qty else Decimal('0.00')
-        self.assertEqual(expected_total, Decimal('450.00'))
 
     def test_task_requires_job(self):
         """Task.job is non-nullable. Creating without job raises."""
         with self.assertRaises(Exception):  # ValidationError (full_clean in save) or IntegrityError
             with transaction.atomic():
-                Task.objects.create(name="No Job Task")
+                Task.objects.create(name="No Job Task", rate_scheme=self.scheme)
 
     def test_deleting_job_cascades_to_tasks(self):
-        Task.objects.create(job=self.job, name="T1")
-        Task.objects.create(job=self.job, name="T2")
+        Task.objects.create(job=self.job, name="T1", rate_scheme=self.scheme)
+        Task.objects.create(job=self.job, name="T2", rate_scheme=self.scheme)
         self.assertEqual(Task.objects.filter(job=self.job).count(), 2)
         job_pk = self.job.pk
         self.job.delete()
@@ -391,10 +505,10 @@ class TaskModelTest(TestCase):
     def test_task_sort_order_scoped_to_job(self):
         """Auto sort_order is per-job, not global."""
         other_job = Job.objects.create(job_number="JOB_OTHER", contact=self.contact)
-        t1 = Task.objects.create(job=self.job, name="T1")
-        t2 = Task.objects.create(job=self.job, name="T2")
-        t3 = Task.objects.create(job=other_job, name="T3")
-        t4 = Task.objects.create(job=other_job, name="T4")
+        t1 = Task.objects.create(job=self.job, name="T1", rate_scheme=self.scheme)
+        t2 = Task.objects.create(job=self.job, name="T2", rate_scheme=self.scheme)
+        t3 = Task.objects.create(job=other_job, name="T3", rate_scheme=self.scheme)
+        t4 = Task.objects.create(job=other_job, name="T4", rate_scheme=self.scheme)
         self.assertEqual(t1.sort_order, 1)
         self.assertEqual(t2.sort_order, 2)
         # Other job's tasks start counting from 1 independently
@@ -409,11 +523,13 @@ class BlepModelTest(TestCase):
             job_number="JOB001",
             contact=self.contact
         )
+        self.user = User.objects.create_user(username="testuser")
+        self.scheme = _make_scheme('blep')
         self.task = Task.objects.create(
             job=self.job,
             name="Test Task",
+            rate_scheme=self.scheme,
         )
-        self.user = User.objects.create_user(username="testuser")
 
     def test_blep_creation(self):
         start_time = timezone.now()
@@ -440,11 +556,9 @@ class WorkTemplateModelTest(TestCase):
         template = WorkTemplate.objects.create(
             template_name="Standard Installation",
             description="Standard installation workflow template",
-            is_active=True
         )
         self.assertEqual(template.template_name, "Standard Installation")
         self.assertEqual(template.description, "Standard installation workflow template")
-        self.assertTrue(template.is_active)
         self.assertIsNotNone(template.created_date)
 
     def test_work_template_str_method(self):
@@ -457,15 +571,7 @@ class WorkTemplateModelTest(TestCase):
         template = WorkTemplate.objects.create(
             template_name="Basic Template"
         )
-        self.assertTrue(template.is_active)
         self.assertEqual(template.description, "")
-
-    def test_work_template_inactive(self):
-        template = WorkTemplate.objects.create(
-            template_name="Inactive Template",
-            is_active=False
-        )
-        self.assertFalse(template.is_active)
 
 
 class TaskTemplateModelTest(TestCase):
@@ -475,21 +581,24 @@ class TaskTemplateModelTest(TestCase):
             job_number="JOB001",
             contact=self.contact
         )
+        self.scheme = _make_scheme('tmt')
         self.task = Task.objects.create(
             job=self.job,
             name="Test Task",
+            rate_scheme=self.scheme,
         )
         self.work_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
         )
+        self.scheme = _make_scheme('ttm')
 
     def test_task_template_creation(self):
         template = TaskTemplate.objects.create(
             template_name="Electrical Installation",
             description="Standard electrical installation task",
-            units="ea",
-            rate=Decimal('45.00'),
-            is_active=True
+            is_active=True,
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
         from apps.estimates.models import TemplateTaskAssociation
@@ -501,8 +610,6 @@ class TaskTemplateModelTest(TestCase):
 
         self.assertEqual(template.template_name, "Electrical Installation")
         self.assertEqual(template.description, "Standard electrical installation task")
-        self.assertEqual(template.units, "ea")
-        self.assertEqual(template.rate, Decimal('45.00'))
         self.assertIn(self.work_template, template.work_templates.all())
         self.assertEqual(association.est_qty, Decimal('12.00'))
         self.assertTrue(template.is_active)
@@ -510,56 +617,57 @@ class TaskTemplateModelTest(TestCase):
 
     def test_task_template_str_method(self):
         template = TaskTemplate.objects.create(
-            template_name="Plumbing Setup"
+            template_name="Plumbing Setup",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(str(template), "Plumbing Setup")
 
     def test_task_template_defaults(self):
         template = TaskTemplate.objects.create(
-            template_name="Default Template"
+            template_name="Default Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertTrue(template.is_active)
         self.assertEqual(template.description, "")
-        self.assertEqual(template.units, "none")
-        self.assertIsNone(template.rate)
         self.assertEqual(template.work_templates.count(), 0)
 
     def test_task_template_new_fields_optional(self):
         template = TaskTemplate.objects.create(
-            template_name="Simple Template"
+            template_name="Simple Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
-        self.assertEqual(template.units, "none")
-        self.assertIsNone(template.rate)
-
-    def test_task_template_pricing_calculation(self):
-        template = TaskTemplate.objects.create(
-            template_name="Material Template",
-            units="sq ft",
-            rate=Decimal('15.25')
-        )
-
-        from apps.estimates.models import TemplateTaskAssociation
-        association = TemplateTaskAssociation.objects.create(
-            work_template=self.work_template,
-            task_template=template,
-            est_qty=Decimal('200.00')
-        )
-
-        estimated_cost = template.rate * association.est_qty if template.rate and association.est_qty else Decimal('0.00')
-        self.assertEqual(estimated_cost, Decimal('3050.00'))
+        # units/rate dropped from TaskTemplate; billing now lives on rate_scheme
+        self.assertEqual(template.rate_scheme, self.scheme)
 
     def test_task_template_without_work_template(self):
         template = TaskTemplate.objects.create(
-            template_name="Standalone Template"
+            template_name="Standalone Template",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(template.work_templates.count(), 0)
 
     def test_template_task_association_sort_order(self):
         from apps.estimates.models import TemplateTaskAssociation
 
-        task_template1 = TaskTemplate.objects.create(template_name="First Task")
-        task_template2 = TaskTemplate.objects.create(template_name="Second Task")
-        task_template3 = TaskTemplate.objects.create(template_name="Third Task")
+        task_template1 = TaskTemplate.objects.create(
+            template_name="First Task",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
+        task_template2 = TaskTemplate.objects.create(
+            template_name="Second Task",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
+        task_template3 = TaskTemplate.objects.create(
+            template_name="Third Task",
+            rate_scheme=self.scheme,
+            default_billable_qty=Decimal('1.00'),
+        )
 
         TemplateTaskAssociation.objects.create(
             work_template=self.work_template,
@@ -599,7 +707,9 @@ class TaskTemplateModelTest(TestCase):
         task_templates = []
         for i in range(5):
             template = TaskTemplate.objects.create(
-                template_name=f"Task {i+1}"
+                template_name=f"Task {i+1}",
+                rate_scheme=self.scheme,
+                default_billable_qty=Decimal('1.00'),
             )
             task_templates.append(template)
 

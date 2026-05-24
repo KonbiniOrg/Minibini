@@ -244,7 +244,7 @@ class BillServiceCreateTest(PurchasingTestBase):
             business=self.business, vendor_invoice_number='VINV-001',
         )
         self.assertIsNotNone(bill.pk)
-        self.assertTrue(bill.bill_number.startswith('BILL'))
+        self.assertEqual(bill.vendor_invoice_number, 'VINV-001')
         self.assertEqual(bill.status, Bill.STATUS_DRAFT)
 
     def test_create_bill_from_po(self):

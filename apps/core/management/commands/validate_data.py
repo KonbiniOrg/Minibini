@@ -18,16 +18,23 @@ Per-model field checks:
                    E  default_contact must belong to this business
                    W  empty reference code
   Job              E  valid status value
-                   W  approved/completed/cancelled: missing start_date
-                   W  completed/cancelled: missing completed_date
+                   W  approved+ : missing start_date
+                   W  draft/submitted/rejected: stray start_date
+                   W  completed/cancelled/rejected: missing completed_date
+                   W  non-terminal: stray completed_date
+  RateScheme       E  valid algorithm value
+                   E  missing accounting_category
+                   E  replaced_by/replaced_at must be set together
   Estimate         E  valid status value
                    E  max one accepted estimate per job
+                   E  max one draft estimate per job
+                   E  draft: must not have sent_date or closed_date
                    W  open: missing sent_date
                    W  accepted/rejected/superseded/expired: missing closed_date
   EstWorksheet     E  valid status value
   Task             E  must belong to a Job
-                   E  mapping_strategy='bundle' requires bundle; bundle requires strategy='bundle'
-  PlanBundle       E  must belong to an EstWorksheet
+                   E  valid status value
+  PlanTask         E  must belong to an EstWorksheet
   Material         E  must have description or price_list_item
                    E  negative quantity
                    W  has PLI but empty description (--fix: auto-fill)
@@ -43,6 +50,13 @@ Per-model field checks:
                    E  cannot link to draft PO
                    E  non-draft must have at least one line item
   Invoice          E  valid status value
+  Deliverable      E  must belong to a Job; qty_ordered must be positive
+                   W  missing units
+  Shipment         E  valid status value
+                   E  picked_up missing picked_up_date / prepared has one
+                   W  job has no accepted estimate
+  ShipmentItem     E  qty must be positive
+                   E  shipped qty per deliverable exceeds qty_ordered
   PriceListItem    E  missing accounting_category (causes silent tax-exemption)
                    E  negative purchase_price, selling_price, qty_on_hand, qty_sold, qty_wasted
                    E  duplicate code
@@ -59,6 +73,8 @@ Cross-model relationship checks:
                    W  completed job: missing accepted estimate (may predate estimate workflow)
                    E  draft/submitted job must not have accepted estimate
                    E  accepted estimate's job must not be draft/submitted/rejected
+                   E  open estimate's job must not be draft/rejected (signal should
+                      have moved job to submitted+)
                    E  completed/cancelled job must not have draft/open estimates
   Est/Worksheet    E  worksheet with linked estimate must be 'final' (not 'draft')
                    E  worksheet with superseded estimate must be 'superseded'
@@ -66,9 +82,7 @@ Cross-model relationship checks:
   Worksheet ver.   E  parent version must be lower than child
                    E  parent must belong to same job
                    W  parent should be 'superseded'
-  Task/Bundle      E  task's bundle must be on the same container as the task
-  Bundle/Tasks     E  all tasks in a bundle must be on the bundle's container
-  EstLineItem/Job  E  task-sourced line item's job must match estimate's job
+  EstLineItem/Job  E  PlanTask/PlanMaterial source row's job must match estimate's job
   PO contact/biz   E  contact's business must match PO's business
   Bill/PO biz      E  bill's business must match linked PO's business
   Earmark/Job      W  earmark on completed/cancelled/rejected job
@@ -105,15 +119,18 @@ class Command(BaseCommand):
         self.check_contacts()
         self.check_businesses()
         self.check_jobs()
+        self.check_rate_schemes()
         self.check_estimates()
         self.check_worksheets()
         self.check_tasks()
-        self.check_task_bundles()
         self.check_materials()
         self.check_line_items()
         self.check_purchase_orders()
         self.check_bills()
         self.check_invoices()
+        self.check_deliverables()
+        self.check_shipments()
+        self.check_shipment_items()
         self.check_price_list_items()
         self.check_earmarks()
         self.check_inventory_adjustments()
@@ -124,8 +141,6 @@ class Command(BaseCommand):
         self.check_estimate_worksheet_status_alignment()
         self.check_worksheet_job_consistency()
         self.check_worksheet_versioning()
-        self.check_task_container_job_consistency()
-        self.check_bundle_container_consistency()
         self.check_estimate_line_item_job_consistency()
         self.check_po_contact_business_match()
         self.check_bill_po_business_match()
@@ -185,11 +200,23 @@ class Command(BaseCommand):
             if j.status not in valid_statuses:
                 self.errors.append(f'Job {j.job_number}: invalid status "{j.status}"')
             # Approved and beyond should have start_date (set on approval)
-            if j.status in (Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED) and not j.start_date:
+            if j.status in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+                            Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED,
+                            Job.STATUS_CANCELLED) and not j.start_date:
                 self.warnings.append(f'Job {j.job_number}: status is {j.status} but no start_date')
+            # Pre-approval states should not carry a start_date
+            if j.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                            Job.STATUS_REJECTED) and j.start_date:
+                self.warnings.append(f'Job {j.job_number}: status is {j.status} but start_date is set')
             # Terminal states should have completed_date
-            if j.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED) and not j.completed_date:
+            if j.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
+                            Job.STATUS_REJECTED) and not j.completed_date:
                 self.warnings.append(f'Job {j.job_number}: status is {j.status} but no completed_date')
+            # Non-terminal states should not carry a completed_date
+            if j.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                            Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+                            Job.STATUS_WORK_COMPLETE) and j.completed_date:
+                self.warnings.append(f'Job {j.job_number}: status is {j.status} but completed_date is set')
 
     # ── Estimates ─────────────────────────────────────────────
 
@@ -210,12 +237,32 @@ class Command(BaseCommand):
             if e.status in (Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED, Estimate.STATUS_SUPERSEDED, Estimate.STATUS_EXPIRED) and not e.closed_date:
                 self.warnings.append(f'Estimate {e.estimate_number}: status is {e.status} but no closed_date')
 
+            # Draft estimates must not have sent_date or closed_date — the model's
+            # save() only populates these on transitions out of draft, so if they're
+            # set, the data was hand-built bypassing the model.
+            if e.status == Estimate.STATUS_DRAFT:
+                if e.sent_date:
+                    self.errors.append(
+                        f'Estimate {e.estimate_number} v{e.version}: status is draft but sent_date is set'
+                    )
+                if e.closed_date:
+                    self.errors.append(
+                        f'Estimate {e.estimate_number} v{e.version}: status is draft but closed_date is set'
+                    )
+
         # Only one accepted estimate per job
+        # Only one draft estimate per job (older drafts should be superseded
+        # before a new revision is opened)
         for job in Job.objects.all():
             accepted_count = Estimate.objects.filter(job=job, status=Estimate.STATUS_ACCEPTED).count()
             if accepted_count > 1:
                 self.errors.append(
                     f'Job {job.job_number}: has {accepted_count} accepted estimates (max 1)'
+                )
+            draft_count = Estimate.objects.filter(job=job, status=Estimate.STATUS_DRAFT).count()
+            if draft_count > 1:
+                self.errors.append(
+                    f'Job {job.job_number}: has {draft_count} draft estimates (max 1)'
                 )
 
     # ── Worksheets ────────────────────────────────────────────
@@ -231,30 +278,17 @@ class Command(BaseCommand):
 
     def check_tasks(self):
         from apps.jobs.models import Task, PlanTask
+        valid_task_statuses = {s[0] for s in Task.TASK_STATUS_CHOICES}
         # Tasks now belong directly to a Job (post-WorkOrder-removal).
         for t in Task.objects.select_related('job').all():
             if not t.job_id:
                 self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
+            if t.status not in valid_task_statuses:
+                self.errors.append(f'Task {t.pk} ({t.name}): invalid status "{t.status}"')
         # Plan tasks: PlanTask is worksheet-only
-        for t in PlanTask.objects.select_related('est_worksheet', 'bundle').all():
+        for t in PlanTask.objects.select_related('est_worksheet').all():
             if not t.est_worksheet_id:
                 self.errors.append(f'PlanTask {t.pk} ({t.name}): not attached to an EstWorksheet')
-            if t.mapping_strategy == 'bundle' and not t.bundle:
-                self.errors.append(f'PlanTask {t.pk} ({t.name}): mapping_strategy=bundle but no bundle assigned')
-            if t.bundle and t.mapping_strategy != 'bundle':
-                self.errors.append(
-                    f'PlanTask {t.pk} ({t.name}): has bundle but mapping_strategy={t.mapping_strategy}'
-                )
-
-    # ── PlanBundles ───────────────────────────────────────────
-
-    def check_task_bundles(self):
-        from apps.jobs.models import PlanBundle
-        for pb in PlanBundle.objects.select_related('est_worksheet').all():
-            if not pb.est_worksheet_id:
-                self.errors.append(
-                    f'PlanBundle {pb.pk} ({pb.name}): not attached to an EstWorksheet'
-                )
 
     # ── Materials ─────────────────────────────────────────────
 
@@ -301,10 +335,11 @@ class Command(BaseCommand):
         from apps.invoicing.models import InvoiceLineItem
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 
-        # (name, model, has_task_fk) — InvoiceLineItem's task FK was dropped in
-        # favour of InvoiceLineItemSource, so it can't be included in select_related.
+        # (name, model, has_task_fk) — EstimateLineItem.task FK was dropped in
+        # favour of EstimateLineItemSource; InvoiceLineItem.task was dropped for
+        # InvoiceLineItemSource. Neither can use select_related('task').
         line_item_models = [
-            ('EstimateLineItem', EstimateLineItem, True),
+            ('EstimateLineItem', EstimateLineItem, False),
             ('InvoiceLineItem', InvoiceLineItem, False),
             ('PurchaseOrderLineItem', PurchaseOrderLineItem, True),
             ('BillLineItem', BillLineItem, True),
@@ -317,7 +352,8 @@ class Command(BaseCommand):
                 qs = model.objects.select_related('price_list_item').all()
             for li in qs:
                 # Mutual exclusivity: cannot have both task and price_list_item
-                if li.task and li.price_list_item:
+                # (only applicable to models that still have a task FK)
+                if has_task_fk and li.task and li.price_list_item:
                     self.errors.append(
                         f'{name} {li.pk}: has both task and price_list_item (mutually exclusive)'
                     )
@@ -359,23 +395,23 @@ class Command(BaseCommand):
 
         for bill in Bill.objects.select_related('business', 'contact', 'purchase_order').all():
             if bill.status not in valid_statuses:
-                self.errors.append(f'Bill {bill.bill_number}: invalid status "{bill.status}"')
+                self.errors.append(f'Bill {(bill.vendor_invoice_number or bill.pk)}: invalid status "{bill.status}"')
 
             # Contact must have a business
             if bill.contact and not bill.contact.business_id:
-                self.errors.append(f'Bill {bill.bill_number}: contact has no business')
+                self.errors.append(f'Bill {(bill.vendor_invoice_number or bill.pk)}: contact has no business')
 
             # Bill linked to draft PO
             if bill.purchase_order and bill.purchase_order.status == PurchaseOrder.STATUS_DRAFT:
                 self.errors.append(
-                    f'Bill {bill.bill_number}: linked to draft PO {bill.purchase_order.po_number}'
+                    f'Bill {(bill.vendor_invoice_number or bill.pk)}: linked to draft PO {bill.purchase_order.po_number}'
                 )
 
             # Non-draft bills need at least one line item
             if bill.status != Bill.STATUS_DRAFT:
                 if not BillLineItem.objects.filter(bill=bill).exists():
                     self.errors.append(
-                        f'Bill {bill.bill_number}: status is {bill.status} but has no line items'
+                        f'Bill {(bill.vendor_invoice_number or bill.pk)}: status is {bill.status} but has no line items'
                     )
 
     # ── Invoices ──────────────────────────────────────────────
@@ -386,6 +422,84 @@ class Command(BaseCommand):
         for inv in Invoice.objects.all():
             if inv.status not in valid_statuses:
                 self.errors.append(f'Invoice {inv.invoice_number}: invalid status "{inv.status}"')
+
+    # ── Rate Schemes ──────────────────────────────────────────
+
+    def check_rate_schemes(self):
+        from apps.jobs.models import RateScheme
+        valid_algorithms = {a[0] for a in RateScheme.ALGORITHM_CHOICES}
+        for rs in RateScheme.objects.select_related('accounting_category').all():
+            if rs.algorithm not in valid_algorithms:
+                self.errors.append(
+                    f'RateScheme {rs.pk} ({rs.name}): invalid algorithm "{rs.algorithm}"'
+                )
+            if not rs.accounting_category_id:
+                self.errors.append(
+                    f'RateScheme {rs.pk} ({rs.name}): missing accounting_category'
+                )
+            # replaced_by and replaced_at are set together by supersede()
+            if bool(rs.replaced_by_id) != bool(rs.replaced_at):
+                self.errors.append(
+                    f'RateScheme {rs.pk} ({rs.name}): replaced_by and replaced_at '
+                    f'must both be set or both be null'
+                )
+
+    # ── Deliverables ──────────────────────────────────────────
+
+    def check_deliverables(self):
+        from apps.deliverables.models import Deliverable
+        for d in Deliverable.objects.select_related('job').all():
+            if not d.job_id:
+                self.errors.append(f'Deliverable {d.pk}: not attached to a Job')
+            if d.qty_ordered is None or d.qty_ordered <= 0:
+                self.errors.append(
+                    f'Deliverable {d.pk}: qty_ordered must be positive (got {d.qty_ordered})'
+                )
+            if not d.units or not d.units.strip():
+                self.warnings.append(f'Deliverable {d.pk}: missing units')
+
+    # ── Shipments ─────────────────────────────────────────────
+
+    def check_shipments(self):
+        from apps.deliverables.models import Shipment
+        from apps.estimates.models import Estimate
+        valid_statuses = {s[0] for s in Shipment.STATUS_CHOICES}
+        for s in Shipment.objects.select_related('job').all():
+            if s.status not in valid_statuses:
+                self.errors.append(f'Shipment {s.pk}: invalid status "{s.status}"')
+            # picked_up requires a picked_up_date; prepared must not have one
+            if s.status == Shipment.STATUS_PICKED_UP and not s.picked_up_date:
+                self.errors.append(f'Shipment {s.pk}: picked_up but no picked_up_date')
+            if s.status == Shipment.STATUS_PREPARED and s.picked_up_date:
+                self.errors.append(f'Shipment {s.pk}: prepared but picked_up_date is set')
+            # A shipment should only exist once the job has an accepted estimate
+            if s.job_id and not Estimate.objects.filter(
+                    job_id=s.job_id, status=Estimate.STATUS_ACCEPTED).exists():
+                self.warnings.append(
+                    f'Shipment {s.pk}: job {s.job_id} has no accepted estimate'
+                )
+
+    # ── Shipment Items ────────────────────────────────────────
+
+    def check_shipment_items(self):
+        from collections import defaultdict
+        from apps.deliverables.models import ShipmentItem, Deliverable
+        shipped = defaultdict(Decimal)
+        for si in ShipmentItem.objects.select_related('deliverable').all():
+            if si.qty is None or si.qty <= 0:
+                self.errors.append(
+                    f'ShipmentItem {si.pk}: qty must be positive (got {si.qty})'
+                )
+            if si.deliverable_id:
+                shipped[si.deliverable_id] += si.qty or Decimal('0')
+        # Total shipped per deliverable must not exceed its ordered quantity
+        for deliverable_id, total in shipped.items():
+            d = Deliverable.objects.filter(pk=deliverable_id).first()
+            if d and total > d.qty_ordered:
+                self.errors.append(
+                    f'Deliverable {deliverable_id}: shipped qty {total} exceeds '
+                    f'qty_ordered {d.qty_ordered}'
+                )
 
     # ── Price List Items ──────────────────────────────────────
 
@@ -537,6 +651,17 @@ class Command(BaseCommand):
                         f'job {job.job_number} status is "{job.status}"'
                     )
 
+            # Open estimate's job must be submitted+ — when an estimate is sent
+            # (draft → open), the signal moves a draft job to submitted. If we see
+            # an open estimate on a draft or rejected job, the data is inconsistent.
+            for e in Estimate.objects.filter(job=job, status=Estimate.STATUS_OPEN):
+                if job.status in (Job.STATUS_DRAFT, Job.STATUS_REJECTED):
+                    self.errors.append(
+                        f'Estimate {e.estimate_number} v{e.version}: status is open but '
+                        f'job {job.job_number} status is "{job.status}" '
+                        f'(should be submitted+ once an estimate is sent)'
+                    )
+
             # Completed/cancelled jobs should not have unresolved estimates
             if job.status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
                 unresolved = Estimate.objects.filter(
@@ -551,17 +676,13 @@ class Command(BaseCommand):
     def check_estimate_worksheet_status_alignment(self):
         """Worksheet status must be consistent with its linked estimate's status.
 
-        Creating an estimate FROM a worksheet locks the worksheet to 'final'.
-        So any worksheet with a linked estimate should be 'final' or 'superseded',
-        never 'draft'.
+        Generating an estimate from a worksheet locks the worksheet — once a
+        worksheet has an estimate attached, it should be 'final' (or
+        'superseded' if the estimate has been superseded), never 'draft'.
 
         Rules:
         - estimate superseded -> worksheet must be superseded
-        - any other estimate status -> worksheet must be final
-
-        NOTE: the signal in Estimate._get_worksheet_status currently maps
-        estimate 'draft' -> worksheet 'draft', which is a bug. The correct
-        behavior is that generating an estimate locks the worksheet to 'final'.
+        - any other estimate status (incl. draft) -> worksheet must be final
         """
         from apps.estimates.models import EstWorksheet
 
@@ -616,45 +737,47 @@ class Command(BaseCommand):
                     f'parent worksheet belongs to job {ws.parent.job_id}'
                 )
 
-    def check_task_container_job_consistency(self):
-        """PlanTasks with a bundle should share the same worksheet as the bundle."""
-        from apps.jobs.models import PlanTask
-
-        for t in PlanTask.objects.select_related(
-            'est_worksheet__job', 'bundle'
-        ).all():
-            if t.bundle and t.bundle.est_worksheet_id != t.est_worksheet_id:
-                self.errors.append(
-                    f'PlanTask {t.pk} ({t.name}): bundle {t.bundle.pk} belongs to '
-                    f'worksheet {t.bundle.est_worksheet_id}, task is on worksheet {t.est_worksheet_id}'
-                )
-
-    def check_bundle_container_consistency(self):
-        """PlanBundles should only contain PlanTasks from the same worksheet."""
-        from apps.jobs.models import PlanBundle, PlanTask
-
-        for pb in PlanBundle.objects.select_related('est_worksheet').all():
-            plan_tasks = PlanTask.objects.filter(bundle=pb)
-            for t in plan_tasks:
-                if t.est_worksheet_id != pb.est_worksheet_id:
-                    self.errors.append(
-                        f'PlanBundle {pb.pk} ({pb.name}): contains plan task {t.pk} from '
-                        f'worksheet {t.est_worksheet_id}, bundle is on worksheet {pb.est_worksheet_id}'
-                    )
-
     def check_estimate_line_item_job_consistency(self):
-        """EstimateLineItems with a task source: the task's worksheet should
-        belong to the same job as the estimate."""
-        from apps.estimates.models import EstimateLineItem
+        """EstimateLineItemSource rows must point at atoms (PlanTask or PlanMaterial)
+        belonging to the same job as the line item's estimate."""
+        from apps.estimates.models import EstimateLineItemSource
+        from apps.jobs.models import PlanTask
+        from apps.inventory.models import PlanMaterial
 
-        for li in EstimateLineItem.objects.select_related(
-            'estimate__job', 'task__est_worksheet__job'
-        ).filter(task__isnull=False):
-            task_worksheet = li.task.est_worksheet
-            if task_worksheet and task_worksheet.job_id != li.estimate.job_id:
+        for source in EstimateLineItemSource.objects.filter(
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK
+        ).select_related('estimate_line_item__estimate__job'):
+            try:
+                pt = PlanTask.objects.select_related('est_worksheet').get(pk=source.source_pk)
+            except PlanTask.DoesNotExist:
+                self.errors.append(
+                    f'EstimateLineItemSource {source.pk}: dangling PlanTask ref pk={source.source_pk}'
+                )
+                continue
+            ws = pt.est_worksheet
+            li = source.estimate_line_item
+            if ws and ws.job_id != li.estimate.job_id:
                 self.errors.append(
                     f'EstimateLineItem {li.pk}: estimate is for job {li.estimate.job_id} '
-                    f'but plan task {li.task.pk} belongs to job {task_worksheet.job_id}'
+                    f'but PlanTask {source.source_pk} belongs to job {ws.job_id}'
+                )
+
+        for source in EstimateLineItemSource.objects.filter(
+            source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL
+        ).select_related('estimate_line_item__estimate__job'):
+            try:
+                pm = PlanMaterial.objects.select_related('est_worksheet').get(pk=source.source_pk)
+            except PlanMaterial.DoesNotExist:
+                self.errors.append(
+                    f'EstimateLineItemSource {source.pk}: dangling PlanMaterial ref pk={source.source_pk}'
+                )
+                continue
+            ws = pm.est_worksheet
+            li = source.estimate_line_item
+            if ws and ws.job_id != li.estimate.job_id:
+                self.errors.append(
+                    f'EstimateLineItem {li.pk}: estimate is for job {li.estimate.job_id} '
+                    f'but PlanMaterial {source.source_pk} belongs to job {ws.job_id}'
                 )
 
     def check_po_contact_business_match(self):
@@ -679,7 +802,7 @@ class Command(BaseCommand):
         ):
             if bill.business_id != bill.purchase_order.business_id:
                 self.errors.append(
-                    f'Bill {bill.bill_number}: business is "{bill.business}" '
+                    f'Bill {(bill.vendor_invoice_number or bill.pk)}: business is "{bill.business}" '
                     f'but linked PO {bill.purchase_order.po_number} '
                     f'is for "{bill.purchase_order.business}"'
                 )

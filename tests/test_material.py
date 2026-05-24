@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, PlanTask
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial
 from apps.inventory.models import PriceListItem
@@ -31,11 +31,19 @@ class MaterialTestBase(TestCase):
         self.worksheet = EstWorksheet.objects.create(
             job=self.job,
         )
+        self.scheme_ac = AccountingCategory.objects.create(
+            name='Material-scheme', code='MAT-SCHEME',
+        )
+        self.scheme = RateScheme.objects.create(
+            name='S-mat', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea',
+            accounting_category=self.scheme_ac,
+        )
         self.task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install shelving',
-            rate=Decimal('50.00'),
-            est_qty=Decimal('4.00'),
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
         self.category = AccountingCategory.objects.create(
             name='Material', code='MAT',
@@ -70,6 +78,7 @@ class MaterialModelTest(MaterialTestBase):
             quantity=Decimal('4.00'),
             unit_cost=Decimal('5.00'),
             sell_price=Decimal('10.00'),
+            accounting_category=self.category,
         )
         self.assertEqual(material.description, 'Custom bracket')
         self.assertEqual(material.quantity, Decimal('4.00'))
@@ -124,6 +133,7 @@ class MaterialModelTest(MaterialTestBase):
             quantity=Decimal('100.00'),
             unit_cost=Decimal('0.10'),
             sell_price=Decimal('0.20'),
+            accounting_category=self.category,
         )
         self.assertEqual(material.total_cost, Decimal('10.00'))
 
@@ -135,6 +145,7 @@ class MaterialModelTest(MaterialTestBase):
             quantity=Decimal('100.00'),
             unit_cost=Decimal('0.10'),
             sell_price=Decimal('0.20'),
+            accounting_category=self.category,
         )
         self.assertEqual(material.total_sell, Decimal('20.00'))
 
@@ -156,6 +167,7 @@ class MaterialModelTest(MaterialTestBase):
             plan_task=self.task,
             description='Will be deleted',
             quantity=Decimal('1.00'),
+            accounting_category=self.category,
         )
         plan_material_id = material.plan_material_id
         self.task.delete()
@@ -179,16 +191,19 @@ class MaterialModelTest(MaterialTestBase):
             est_worksheet=self.worksheet,
             plan_task=self.task, description='Plywood',
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'), sell_price=Decimal('90.00'),
+            accounting_category=self.category,
         )
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet,
             plan_task=self.task, description='Screws',
             quantity=Decimal('50.00'), unit_cost=Decimal('0.05'), sell_price=Decimal('0.10'),
+            accounting_category=self.category,
         )
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet,
             plan_task=self.task, description='Glue',
             quantity=Decimal('1.00'), unit_cost=Decimal('8.00'), sell_price=Decimal('12.00'),
+            accounting_category=self.category,
         )
         self.assertEqual(self.task.plan_materials.count(), 3)
 
@@ -228,6 +243,7 @@ class MaterialModelTest(MaterialTestBase):
             plan_task=self.task,
             description='Edge banding',
             quantity=Decimal('20.00'),
+            accounting_category=self.category,
         )
         self.assertEqual(str(material), 'Edge banding (qty: 20.00)')
 
@@ -253,6 +269,7 @@ class MaterialWorksheetVersioningTest(MaterialTestBase):
             quantity=Decimal('4.00'),
             unit_cost=Decimal('5.00'),
             sell_price=Decimal('10.00'),
+            accounting_category=self.category,
         )
 
         new_worksheet = self.worksheet.create_new_version()
@@ -284,6 +301,7 @@ class MaterialWorksheetVersioningTest(MaterialTestBase):
             quantity=Decimal('5.00'),
             unit_cost=Decimal('10.00'),
             sell_price=Decimal('20.00'),
+            accounting_category=self.category,
         )
 
         new_worksheet = self.worksheet.create_new_version()

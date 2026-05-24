@@ -61,7 +61,6 @@
             "template_name": "Test Product Template",
             "description": "Template for testing WorkOrder creation",
             "base_price": "1000.00",
-            "is_active": true,
             "created_date": "2024-01-01T09:00:00Z"
         }
     },
@@ -71,8 +70,6 @@
         "fields": {
             "template_name": "Parent Task Template",
             "description": "Parent task for hierarchy testing",
-            "units": "hours",
-            "rate": "50.00",
             "is_active": true,
             "created_date": "2024-01-01T09:00:00Z"
         }
@@ -83,8 +80,6 @@
         "fields": {
             "template_name": "Child Task Template",
             "description": "Child task for hierarchy testing",
-            "units": "hours",
-            "rate": "45.00",
             "is_active": true,
             "created_date": "2024-01-01T09:00:00Z"
         }
@@ -94,7 +89,6 @@
         "pk": 100,
         "fields": {
             "job": 100,
-            "template": 50,
             "estimate": 100,
             "status": "final",
             "version": 1,
@@ -107,7 +101,6 @@
         "pk": 101,
         "fields": {
             "job": 101,
-            "template": null,
             "estimate": null,
             "status": "draft",
             "version": 1,
@@ -179,8 +172,7 @@
             "description": "",
             "sort_order": null,
             "mapping_strategy": "direct",
-            "bundle": null,
-            "accounting_category": null
+            "bundle": null
         }
     },
     {
@@ -195,8 +187,7 @@
             "description": "",
             "sort_order": null,
             "mapping_strategy": "direct",
-            "bundle": null,
-            "accounting_category": null
+            "bundle": null
         }
     },
     {
@@ -211,8 +202,7 @@
             "description": "",
             "sort_order": null,
             "mapping_strategy": "direct",
-            "bundle": null,
-            "accounting_category": null
+            "bundle": null
         }
     },
     {
@@ -227,8 +217,7 @@
             "description": "",
             "sort_order": null,
             "mapping_strategy": "direct",
-            "bundle": null,
-            "accounting_category": null
+            "bundle": null
         }
     },
     {
@@ -243,8 +232,7 @@
             "description": "",
             "sort_order": null,
             "mapping_strategy": "direct",
-            "bundle": null,
-            "accounting_category": null
+            "bundle": null
         }
     },
     {

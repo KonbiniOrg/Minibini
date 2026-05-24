@@ -24,44 +24,16 @@
     {% for task in tasks %}
     <tr>
         <td>{{ task.name }}</td>
-        <td>
-            {% if task.rate and task.est_qty %}
-                ${{ task.rate|floatformat:2 }} x {{ task.est_qty|floatformat:2 }}
-            {% else %}
-                $0.00
-            {% endif %}
-        </td>
-        <td>
-            {% if task.accounting_category %}
-                {{ task.accounting_category }}
-            {% elif task.mapping_strategy == 'bundle' %}
-                (via bundle)
-            {% else %}
-                -
-            {% endif %}
-        </td>
-        <td>
-            {% if task.mapping_strategy == 'exclude' %}
-                No (internal task)
-            {% else %}
-                Yes
-            {% endif %}
-        </td>
+        <td>${{ task.compute_amount|floatformat:2 }}</td>
+        <td>{{ task.accounting_category|default:"-" }}</td>
+        <td>Yes</td>
     </tr>
     {% for mat in task.materials.all %}
     <tr style="background-color: #f9f5e8;">
         <td style="padding-left: 20px; font-size: 0.9em;">&#9642; {{ mat.description }}</td>
         <td>${{ mat.sell_price|floatformat:2 }} x {{ mat.quantity|floatformat:2 }}</td>
         <td>{{ mat.accounting_category|default:"-" }}</td>
-        <td>
-            {% if task.mapping_strategy == 'exclude' %}
-                No (internal task)
-            {% elif task.mapping_strategy == 'bundle' %}
-                Yes (in bundle price)
-            {% else %}
-                Yes (separate line item)
-            {% endif %}
-        </td>
+        <td>Yes (separate line item)</td>
     </tr>
     {% endfor %}
     {% endfor %}

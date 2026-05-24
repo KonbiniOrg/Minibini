@@ -68,6 +68,12 @@ class PriceListItem(models.Model):
 
     class Meta:
         db_table = 'price_list'
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(qty_on_hand__gte=0),
+                name='price_list_qty_on_hand_non_negative',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.code} - {self.description[:50]}"
@@ -96,6 +102,7 @@ class MaterialBase(models.Model):
     """Abstract base for PlanMaterial (planning) and Material (actual)."""
     description = models.CharField(max_length=255, blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    units = models.CharField(max_length=50, default='none')
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     sell_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     price_list_item = models.ForeignKey(
@@ -103,8 +110,7 @@ class MaterialBase(models.Model):
         null=True, blank=True,
     )
     accounting_category = models.ForeignKey(
-        'core.AccountingCategory', on_delete=models.SET_NULL,
-        null=True, blank=True,
+        'core.AccountingCategory', on_delete=models.PROTECT,
     )
 
     class Meta:
@@ -118,16 +124,26 @@ class MaterialBase(models.Model):
     def total_sell(self):
         return self.quantity * self.sell_price
 
+    def compute_amount(self, active_modifiers=None):
+        """Uniform atom interface: total billable amount for this material.
+
+        Materials have no modifier concept; the parameter is accepted to match
+        the BillableAtom interface shared with TaskCharge/PlanTask.
+        """
+        return self.quantity * self.sell_price
+
     def _populate_from_pli(self):
-        """Copy description/unit_cost/sell_price/accounting_category from linked PriceListItem if not already set."""
+        """Copy description/units/unit_cost/sell_price/accounting_category from linked PriceListItem if not already set."""
         if self.price_list_item:
             if not self.description:
                 self.description = self.price_list_item.description[:255]
+            if self.units == 'none' or not self.units:
+                self.units = self.price_list_item.units
             if self.unit_cost == Decimal('0.00'):
                 self.unit_cost = self.price_list_item.purchase_price
             if self.sell_price == Decimal('0.00'):
                 self.sell_price = self.price_list_item.selling_price
-            if not self.accounting_category:
+            if not self.accounting_category_id:
                 self.accounting_category = self.price_list_item.accounting_category
 
 
@@ -158,27 +174,61 @@ class PlanMaterial(MaterialBase):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.description} (qty: {self.quantity})"
+        if self.units and self.units != 'none':
+            return f"{self.description} (qty: {self.quantity:.2f} {self.units})"
+        return f"{self.description} (qty: {self.quantity:.2f})"
 
 
-class TemplateMaterial(MaterialBase):
-    """Template-level material on a WorkTemplate. Populated as task-less PlanMaterial
-    (on EstWorksheet) or task-less Material (on Job)."""
-    template_material_id = models.AutoField(primary_key=True)
+class TemplateMaterialAssociation(models.Model):
+    """A reusable PriceListItem associated with a WorkTemplate.
+
+    Replaces the old TemplateMaterial model: PLI is already the catalog of
+    reusable materials, so a TemplateMaterial-as-separate-catalog was
+    redundant. This model just pins which PLI belongs to which WorkTemplate
+    (with quantity), optionally pairing to a TemplateTaskAssociation so the
+    generated PlanMaterial/Material attaches to the corresponding generated
+    PlanTask/Task.
+
+    Generation semantics: for `quantity` instances of the parent WorkTemplate,
+    each instance gets one PlanMaterial/Material per association, attached
+    to the same-instance PlanTask/Task when `template_task_association` is set.
+    """
+    template_material_association_id = models.AutoField(primary_key=True)
     work_template = models.ForeignKey(
         'estimates.WorkTemplate', on_delete=models.CASCADE,
-        related_name='materials',
+        related_name='material_associations',
     )
+    price_list_item = models.ForeignKey(
+        'PriceListItem', on_delete=models.PROTECT,
+    )
+    template_task_association = models.ForeignKey(
+        'estimates.TemplateTaskAssociation',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='material_associations',
+        help_text='If set, generated material attaches to the corresponding '
+                  'generated PlanTask/Task.',
+    )
+    quantity = models.DecimalField(max_digits=10, decimal_places=2)
     sort_order = models.IntegerField(default=0)
 
     class Meta:
-        db_table = 'template_materials'
+        db_table = 'template_material_assoc'
         ordering = ['sort_order']
 
-    def save(self, *args, **kwargs):
-        self._populate_from_pli()
-        self.full_clean()
-        super().save(*args, **kwargs)
+    def __str__(self):
+        return f'{self.work_template.template_name} → {self.price_list_item.code} (qty {self.quantity})'
+
+    def clean(self):
+        super().clean()
+        if (
+            self.template_task_association_id is not None
+            and self.template_task_association.work_template_id != self.work_template_id
+        ):
+            from django.core.exceptions import ValidationError
+            raise ValidationError(
+                'template_task_association.work_template must match work_template'
+            )
 
 
 class Material(MaterialBase):
@@ -211,6 +261,13 @@ class Material(MaterialBase):
         null=True, blank=True,
         related_name='+',
     )
+    source_plan_material = models.OneToOneField(
+        'inventory.PlanMaterial',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='carried_material',
+        help_text='PlanMaterial this material was carried over from (carry-over idempotency)',
+    )
 
     class Meta:
         db_table = 'materials'
@@ -234,4 +291,6 @@ class Material(MaterialBase):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.description} (qty: {self.quantity})"
+        if self.units and self.units != 'none':
+            return f"{self.description} (qty: {self.quantity:.2f} {self.units})"
+        return f"{self.description} (qty: {self.quantity:.2f})"

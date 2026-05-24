@@ -111,8 +111,10 @@ class TaskModelFixtureTest(FixtureTestCase):
 
         new_task = Task.objects.create(
             assignee=user,
+            est_worker_time=timedelta(hours=1),
             job=job,
             name="Cabinet installation",
+            rate_scheme_id=1,
         )
         self.assertEqual(new_task.job, job)
         self.assertEqual(Task.objects.count(), 3)  # 2 from fixture + 1 new

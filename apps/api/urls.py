@@ -24,6 +24,7 @@ from apps.api.templates_config.views import (
     WorkTemplateViewSet, TaskTemplateViewSet,
     AccountingCategoryViewSet, settings_view, units_view,
 )
+from apps.api.rate_schemes.views import RateSchemeViewSet
 
 
 @api_view(['GET'])
@@ -50,6 +51,7 @@ def api_root(request):
         'task-templates': '/api/task-templates/',
         'settings': '/api/settings/',
         'accounting-categories': '/api/accounting-categories/',
+        'rate-schemes': '/api/rate-schemes/',
     })
 
 
@@ -73,6 +75,7 @@ router.register(r'bleps', BlepViewSet, basename='blep')
 router.register(r'work-templates', WorkTemplateViewSet, basename='work-template')
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
+router.register(r'rate-schemes', RateSchemeViewSet, basename='rate-scheme')
 
 urlpatterns = [
     path('', api_root, name='api-root'),
@@ -86,6 +89,7 @@ urlpatterns = [
     path('reimbursements/', include('apps.api.reimbursements.urls')),
     path('qbo/', include('apps.qbo.urls')),
     path('users/', include('apps.api.users.urls')),
+    path('', include('apps.api.deliverables.urls')),
     path('jobs/board/pipeline/', pipeline_view, name='board-pipeline'),
     path('jobs/board/approved/', approved_view, name='board-approved'),
     path('jobs/board/unpaid/', unpaid_view, name='board-unpaid'),
@@ -95,6 +99,6 @@ urlpatterns = [
     path('bleps/current/', current_blep_view, name='bleps-current'),
     path('tasks/reorder/', task_reorder_view, name='task-reorder'),
     path('tasks/<int:task_pk>/assign/', task_assign_view, name='task-assign'),
-    path('time-tracking/status/', stub_501('GET /api/time-tracking/status/'), name='time-tracking-status'),
+path('time-tracking/status/', stub_501('GET /api/time-tracking/status/'), name='time-tracking-status'),
     path('time-tracking/active/', stub_501('GET /api/time-tracking/active/'), name='time-tracking-active'),
 ] + router.urls

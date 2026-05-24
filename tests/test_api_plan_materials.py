@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from rest_framework.test import APITestCase
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, PlanTask
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial
 from apps.contacts.models import Contact, Business
@@ -25,12 +25,16 @@ class PlanMaterialsApiTest(APITestCase):
         contact.save()
         self.job = Job.objects.create(job_number='JOB-PM-1', contact=contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.scheme_ac = AccountingCategory.objects.create(name='pmapi-sc', code='PMAPI-SC')
+        self.scheme = RateScheme.objects.create(
+            name='S-pmapi', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.scheme_ac,
+        )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Task 1',
-            units='each',
-            rate=Decimal('50.00'),
-            est_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
+            est_qty=Decimal('1'),
         )
 
     def test_post_without_plan_task_creates_worksheet_level(self):
@@ -41,6 +45,7 @@ class PlanMaterialsApiTest(APITestCase):
             'quantity': '5',
             'unit_cost': '1.50',
             'sell_price': '2.00',
+            'accounting_category': self.cat.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
         mat = PlanMaterial.objects.get(pk=resp.data['plan_material_id'])
@@ -55,6 +60,7 @@ class PlanMaterialsApiTest(APITestCase):
             'description': 'task bolt',
             'quantity': '3',
             'plan_task': self.plan_task.pk,
+            'accounting_category': self.cat.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
         mat = PlanMaterial.objects.get(pk=resp.data['plan_material_id'])
@@ -65,9 +71,11 @@ class PlanMaterialsApiTest(APITestCase):
         """GET plan-materials returns both task-level and worksheet-level items."""
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=None, description='loose',
+            accounting_category=self.cat,
         )
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=self.plan_task, description='task-attached',
+            accounting_category=self.cat,
         )
         url = f'/api/est-worksheets/{self.worksheet.pk}/plan-materials/'
         resp = self.client.get(url)
@@ -78,6 +86,7 @@ class PlanMaterialsApiTest(APITestCase):
         """PATCH plan-materials/{id}/ updates the material."""
         mat = PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=None, description='old desc',
+            accounting_category=self.cat,
         )
         url = f'/api/est-worksheets/{self.worksheet.pk}/plan-materials/{mat.pk}/'
         resp = self.client.patch(url, {'description': 'new desc'}, format='json')
@@ -89,6 +98,7 @@ class PlanMaterialsApiTest(APITestCase):
         """DELETE plan-materials/{id}/ removes the material."""
         mat = PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=None, description='to delete',
+            accounting_category=self.cat,
         )
         url = f'/api/est-worksheets/{self.worksheet.pk}/plan-materials/{mat.pk}/'
         resp = self.client.delete(url)

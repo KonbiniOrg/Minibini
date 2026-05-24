@@ -32,9 +32,7 @@
 {% endif %}
 
 <p>
-    {% if worksheet.status == 'draft' %}
-        <a href="{% url 'estimates:estworksheet_generate_estimate' worksheet.est_worksheet_id %}">Generate Estimate</a> |
-    {% else %}
+    {% if worksheet.status != 'draft' %}
         <form method="post" action="{% url 'estimates:estworksheet_revise' worksheet.est_worksheet_id %}" style="display: inline;">
             {% csrf_token %}
             <button type="submit">Revise Worksheet</button>

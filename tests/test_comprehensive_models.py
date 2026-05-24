@@ -7,7 +7,7 @@ from decimal import Decimal
 from datetime import timedelta
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.core.models import User, Configuration, AccountingCategory
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import Estimate, TaskTemplate
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import PriceListItem
@@ -19,8 +19,6 @@ from apps.purchasing.models import PurchaseOrder, Bill
 class ComprehensiveModelIntegrationTest(TestCase):
     def setUp(self):
         # Create Configuration for number generation
-        Configuration.objects.create(key='bill_number_sequence', value='BILL-{year}-{counter:04d}')
-        Configuration.objects.create(key='bill_counter', value='0')
 
         self.group, _ = Group.objects.get_or_create(name="Manager")
         self.user = User.objects.create_user(username="testuser", email="test@example.com")
@@ -43,6 +41,10 @@ class ComprehensiveModelIntegrationTest(TestCase):
             business=self.business
         )
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+        self.scheme = RateScheme.objects.create(
+            name='S-cm-int', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
 
     def test_complete_job_workflow(self):
         job = Job.objects.create(
@@ -61,8 +63,10 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         task = Task.objects.create(
             assignee=self.user,
+            est_worker_time=timedelta(hours=1),
             job=job,
             name="Test Task",
+            rate_scheme=self.scheme,
         )
 
         blep = Blep.objects.create(
@@ -141,7 +145,6 @@ class ComprehensiveModelIntegrationTest(TestCase):
         purchase_order.save()
 
         bill = Bill.objects.create(
-            bill_number="BILL-TEST-001",
             purchase_order=purchase_order,
             business=self.business,
             contact=self.contact,
@@ -211,12 +214,20 @@ class ComprehensiveModelIntegrationTest(TestCase):
             contact=self.contact
         )
 
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='S-cmtw', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
+        )
         task = Task.objects.create(
             job=job,
             name="Planning Task",
+            rate_scheme=scheme,
         )
         task_template = TaskTemplate.objects.create(
-            template_name="Planning Task Template"
+            template_name="Planning Task Template",
+            rate_scheme=scheme,
+            default_billable_qty=Decimal('1.00'),
         )
 
         self.assertEqual(task.job, job)
@@ -252,7 +263,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             contact=self.contact
         )
 
-        task = Task.objects.create(job=job, name="Test Task")
+        task = Task.objects.create(job=job, name="Test Task", rate_scheme=self.scheme)
 
         initial_task_count = Task.objects.count()
 
@@ -308,16 +319,21 @@ class ComprehensiveModelIntegrationTest(TestCase):
             with transaction.atomic():
                 Job.objects.create(job_number="UNIQUE001", contact=self.contact)
 
+        # Two invoices with the same invoice_number must collide on the
+        # invoice_number unique constraint. Use status=OPEN on both so
+        # the single-draft-per-job rule doesn't fire first.
         invoice = Invoice.objects.create(
             job=job,
-            invoice_number="INV_UNIQUE001"
+            invoice_number="INV_UNIQUE001",
+            status=Invoice.STATUS_OPEN,
         )
 
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 Invoice.objects.create(
                     job=job,
-                    invoice_number="INV_UNIQUE001"
+                    invoice_number="INV_UNIQUE001",
+                    status=Invoice.STATUS_OPEN,
                 )
 
     def test_model_str_representations(self):
@@ -366,23 +382,31 @@ class LineItemValidationTest(TestCase):
         self.purchase_order.save()
 
         self.bill = Bill.objects.create(
-            bill_number="BILL-TEST-002",
             purchase_order=self.purchase_order,
             business=self.business,
             contact=self.contact,
             vendor_invoice_number="VIN_VALID001"
         )
+        # EstimateLineItem.task targets PlanTask, not Task
+        from apps.estimates.models import EstWorksheet
+        from apps.jobs.models import PlanTask, RateScheme
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        self.cm_ac = AccountingCategory.objects.create(code='CM-AC', name='cm-ac')
+        self.cm_scheme = RateScheme.objects.create(
+            name='S-cm', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('1'), unit_label='ea',
+            accounting_category=self.cm_ac,
+        )
         self.task = Task.objects.create(
             job=self.job,
             name="Test Task",
+            rate_scheme=self.cm_scheme,
         )
-        # EstimateLineItem.task targets PlanTask, not Task
-        from apps.estimates.models import EstWorksheet
-        from apps.jobs.models import PlanTask
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name="Plan Test Task",
+            rate_scheme=self.cm_scheme,
+            est_qty=Decimal('1'),
         )
 
         # Create price list item
@@ -394,28 +418,25 @@ class LineItemValidationTest(TestCase):
         )
 
     def test_estimate_line_item_validation_both_null_allowed(self):
-        """Test EstimateLineItem allows both task and price_list_item to be null"""
+        """Test EstimateLineItem allows price_list_item to be null (manual line item)"""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            task=None,
             price_list_item=None,
-            description="No task or price item"
+            description="Manual line item with no price list item"
         )
         line_item.full_clean()  # Should not raise
-        self.assertIsNone(line_item.task)
         self.assertIsNone(line_item.price_list_item)
 
     def test_estimate_line_item_validation_cannot_have_both(self):
-        """Test EstimateLineItem cannot have both task and price_list_item"""
+        """EstimateLineItem no longer has a task FK; mutual-exclusivity check is skipped.
+        This test verifies that a line item with only price_list_item passes validation."""
         line_item = EstimateLineItem(
             estimate=self.estimate,
-            task=self.plan_task,
             price_list_item=self.price_list_item,
-            description="Invalid - has both"
+            description="PLI-backed line item"
         )
-        with self.assertRaises(ValidationError) as context:
-            line_item.full_clean()
-        self.assertIn("cannot have both task and price_list_item", str(context.exception))
+        # Should NOT raise — ELI dropped its task FK, so no mutual-exclusivity check
+        line_item.full_clean()
 
     def test_purchase_order_line_item_validation_both_null_allowed(self):
         """Test PurchaseOrderLineItem allows both task and price_list_item to be null"""

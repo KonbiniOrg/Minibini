@@ -12,7 +12,7 @@ from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, Blep, RateScheme, copy_active_modifiers
 from apps.estimates.models import (
     Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
@@ -28,6 +28,31 @@ from apps.core.services import NumberGenerationService, NotFoundError
 
 class BlepPermissionError(Exception):
     """Raised when a caller is not permitted to perform a blep operation."""
+    pass
+
+
+class TaskActualQtyRequired(Exception):
+    """Raised when completing an ENTERED_QTY task that has no worker-entered
+    quantity. Carries the rate scheme's unit label so the caller can prompt
+    for the value."""
+    def __init__(self, unit_label=''):
+        self.unit_label = unit_label
+        super().__init__(
+            'A quantity must be entered before this task can be completed.'
+        )
+
+
+class TaskTimeRequired(Exception):
+    """Raised when completing an ELAPSED_TIME task that has no recorded time
+    (no bleps, or zero total). The caller should prompt for a historical
+    time entry."""
+    pass
+
+
+class TaskWorkerTimeRequired(Exception):
+    """Raised when assigning a task to a worker while it has no estimated
+    worker time. Assigned work has to be schedulable, and it can't be
+    scheduled without a duration — the caller should prompt for an estimate."""
     pass
 
 
@@ -58,6 +83,17 @@ def _existing_overlaps(user, start_time, end_time, exclude_blep_id=None):
     if exclude_blep_id is not None:
         qs = qs.exclude(blep_id=exclude_blep_id)
     return qs.exists()
+
+
+def _assert_job_allows_blep(job, allowed_statuses, action):
+    """Reject Blep creation when the Task's Job is in a status where work
+    should not be recorded against it."""
+    if job.status not in allowed_statuses:
+        labels = ', '.join(f"'{s}'" for s in allowed_statuses)
+        raise ValidationError(
+            f"Cannot {action}: job status is '{job.status}', "
+            f"must be one of {labels}."
+        )
 
 
 class BlepService:
@@ -128,6 +164,12 @@ class BlepService:
                 "Creating a time entry for another user requires can_manage_time."
             )
         # Post-split: task is always a Task (work-order side); no container check needed.
+        _assert_job_allows_blep(
+            task.job,
+            (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+             Job.STATUS_WORK_COMPLETE),
+            'log time',
+        )
         if end_time < start_time:
             raise ValidationError("end_time must be >= start_time.")
         if not _within_edit_window(start_time) and not _has_manage_time(actor):
@@ -138,9 +180,13 @@ class BlepService:
             raise ValidationError(
                 "This time entry overlaps an existing entry for the user."
             )
-        return BlepService._create(
-            task, target_user, start_time=start_time, end_time=end_time,
-        )
+        with transaction.atomic():
+            blep = BlepService._create(
+                task, target_user, start_time=start_time, end_time=end_time,
+            )
+            TaskLifecycleService._promote_pending_task(task)
+            JobService.mark_work_started(task.job)
+        return blep
 
     @staticmethod
     def update(blep, actor, **fields):
@@ -224,17 +270,42 @@ class JobService:
         job.save()
         return job
 
+    # Job statuses whose entry releases the job's earmarks (work is done or
+    # the job is dead — any reservation against inventory is freed).
+    _EARMARK_RELEASING_STATUSES = (
+        Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED, Job.STATUS_REJECTED,
+    )
+
     @staticmethod
     def update_job(pk, **kwargs):
-        """Update an existing Job by PK."""
+        """Base Job update. Applies field changes and dispatches
+        status-transition side effects (loose-materials gate, earmark
+        release). update_status() is a thin wrapper over this — every Job
+        status change should flow through here."""
         try:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        old_status = job.status
         for field, value in kwargs.items():
             setattr(job, field, value)
+        status_changed = job.status != old_status
+
+        if status_changed and job.status == Job.STATUS_WORK_COMPLETE:
+            offenders = JobService._loose_pending_materials(job)
+            if offenders.exists():
+                names = ', '.join(m.description or str(m.pk) for m in offenders)
+                raise ValidationError(
+                    f'Cannot advance to work_complete: unresolved task-less materials: {names}'
+                )
+
         job.full_clean()
         job.save()
+
+        if status_changed and job.status in JobService._EARMARK_RELEASING_STATUSES:
+            from apps.inventory.services import InventoryService
+            InventoryService.release_earmarks_for_job(job)
+
         return job
 
     @staticmethod
@@ -251,95 +322,49 @@ class JobService:
         )
 
     @staticmethod
-    def update_status(pk, new_status):
-        """Update job status; triggers earmark release on entry to work_complete."""
-        try:
-            job = Job.objects.get(pk=pk)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {pk} not found')
-        if job.status == new_status:
-            return job
-
-        if new_status == Job.STATUS_WORK_COMPLETE:
-            offenders = JobService._loose_pending_materials(job)
-            if offenders.exists():
-                names = ', '.join(m.description or str(m.pk) for m in offenders)
-                raise ValidationError(
-                    f'Cannot advance to work_complete: unresolved task-less materials: {names}'
-                )
-
-        old_status = job.status
-        job.status = new_status
-        job.full_clean()
-        job.save()
-
-        if new_status == Job.STATUS_WORK_COMPLETE and old_status != Job.STATUS_WORK_COMPLETE:
-            from apps.inventory.services import InventoryService
-            InventoryService.release_earmarks_for_job(job)
-
-        return job
+    def release_loose_materials(job):
+        """Restock (release) any task-less PENDING materials still committed
+        to the job. Returns a list of {'description', 'quantity'} captured
+        before restock removes the rows — used for an audit record."""
+        from apps.inventory.services import MaterialService
+        released = []
+        for material in list(JobService._loose_pending_materials(job)):
+            released.append({
+                'description': material.description or f'Material {material.pk}',
+                'quantity': str(material.quantity),
+            })
+            MaterialService.restock(material, material.quantity)
+        return released
 
     @staticmethod
-    def populate_from_estimate(job, estimate):
-        """Populate a Job's tasks from an Estimate's line items.
+    def update_status(pk, new_status):
+        """Thin wrapper over update_job for a status-only change."""
+        return JobService.update_job(pk, status=new_status)
 
-        Only OPEN and ACCEPTED estimates are allowed.
-        """
-        if estimate.status not in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED]:
-            raise ValidationError(
-                f"Only Open and Accepted estimates can populate jobs. "
-                f"Estimate {estimate.estimate_number} is {estimate.status}."
-            )
-        from apps.inventory.services import InventoryService, MaterialService
-        for line_item in estimate.estimatelineitem_set.all():
-            pm = getattr(line_item, 'material', None)
-            if pm is not None and pm.plan_task_id is None:
-                # task-less PlanMaterial → task-less Material
-                MaterialService.create_on_job(
-                    job=job, task=None,
-                    description=pm.description,
-                    quantity=pm.quantity,
-                    unit_cost=pm.unit_cost,
-                    sell_price=pm.sell_price,
-                    price_list_item=pm.price_list_item,
-                    accounting_category=pm.accounting_category,
-                )
-            else:
-                TaskService.create_from_line_item(line_item, job)
-
-        InventoryService.create_earmarks_for_job(job)
-        return job
+    @staticmethod
+    def mark_work_started(job):
+        """Advance an APPROVED Job to IN_PROGRESS when work begins on it
+        (a Blep is created, or a Task is completed). No-op for any other
+        status — pre-APPROVED jobs are left alone, and the state machine
+        forbids a direct jump from DRAFT/SUBMITTED to IN_PROGRESS."""
+        if job.status == Job.STATUS_APPROVED:
+            JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
 
     @staticmethod
     def populate_from_template(job, template):
-        """Populate a Job from a WorkTemplate's task associations."""
-        if not template.is_active:
-            raise ValidationError(f"Template {template.template_name} is not active.")
-
-        job.template = template
-        job.save(update_fields=['template'])
-
-        from apps.estimates.models import TemplateTaskAssociation
-        associations = TemplateTaskAssociation.objects.filter(
-            work_template=template,
-            task_template__is_active=True,
-        ).order_by('sort_order', 'task_template__template_name')
-
-        for association in associations:
-            association.task_template.generate_task(job, association.est_qty)
-
-        template.generate_materials_for_job(job, quantity=1)
+        """Populate a Job's tasks and materials from a WorkTemplate. The
+        template itself is not stored on the Job; only its generated children
+        land here."""
+        task_pairing = template.generate_tasks_for_job(job)
+        template.generate_materials_for_job(job, task_pairing=task_pairing)
 
         from apps.inventory.services import InventoryService
         InventoryService.create_earmarks_for_job(job)
         return job
 
     @staticmethod
-    def copy_from_worksheet(job_pk, worksheet_pk, template=None):
-        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a job.
-
-        If `template` is provided, link it onto the job (for traceability).
-        """
+    def copy_from_worksheet(job_pk, worksheet_pk):
+        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a job."""
         from apps.estimates.models import EstWorksheet
         from apps.jobs.models import PlanTask
 
@@ -352,10 +377,6 @@ class JobService:
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
 
-        if template is not None:
-            job.template = template
-            job.save(update_fields=['template'])
-
         from apps.inventory.services import InventoryService, MaterialService
 
         for plan_task in PlanTask.objects.filter(
@@ -365,17 +386,18 @@ class JobService:
                 job=job,
                 name=plan_task.name,
                 description=plan_task.description,
-                units=plan_task.units,
-                rate=plan_task.rate,
-                est_qty=plan_task.est_qty,
-                accounting_category=plan_task.accounting_category,
                 sort_order=plan_task.sort_order,
+                rate_scheme=plan_task.rate_scheme,
+                active_modifiers=copy_active_modifiers(plan_task.active_modifiers),
+                est_qty=plan_task.est_qty,
+                est_worker_time=plan_task.est_worker_time,
             )
             for pm in plan_task.plan_materials.all():
                 MaterialService.create_on_job(
                     job=job, task=new_task,
                     description=pm.description,
                     quantity=pm.quantity,
+                    units=pm.units,
                     unit_cost=pm.unit_cost,
                     sell_price=pm.sell_price,
                     price_list_item=pm.price_list_item,
@@ -387,6 +409,7 @@ class JobService:
                 job=job, task=None,
                 description=pm.description,
                 quantity=pm.quantity,
+                units=pm.units,
                 unit_cost=pm.unit_cost,
                 sell_price=pm.sell_price,
                 price_list_item=pm.price_list_item,
@@ -400,109 +423,56 @@ class TaskService:
     """Service class for Task creation workflows."""
 
     @staticmethod
-    def create_from_line_item(line_item, job):
+    def create_from_template(template, job, assignee=None, est_qty=None):
         """
-        Generate appropriate Task(s) for a LineItem on a Job.
-
-        Dispatches to the right strategy based on line item source:
-        - Worksheet task: copies the source task with all fields
-        - Catalog PLI: creates task from PriceListItem data
-        - Manual: creates task from line item fields
-
-        Returns:
-            List[Task]: Tasks created for this LineItem
+        Create Task from TaskTemplate. Writes billing fields directly on Task.
         """
-        if line_item.task:
-            return TaskService._copy_worksheet_tasks(line_item, job)
-        elif line_item.price_list_item:
-            return TaskService._create_task_from_catalog_item(line_item, job)
-        else:
-            return TaskService._create_generic_task(line_item, job)
+        from apps.core.services import SchemeSupersededError
 
-    @staticmethod
-    def _copy_worksheet_tasks(line_item, job):
-        """Copy the PlanTask that contributed to this EstimateLineItem into a Task on the Job.
-
-        Note: after the spec 2026-04-05 model split, this function copies exactly one
-        PlanTask to one Task. The prior "multi-task with parent relationships" logic was
-        dead code (the source list was always a single element) and is removed.
-        """
-        plan_task = line_item.task  # now a PlanTask FK
-        new_task = Task.objects.create(
-            job=job,
-            name=plan_task.name,
-            description=plan_task.description,
-            units=plan_task.units,
-            rate=plan_task.rate,
-            est_qty=plan_task.est_qty,
-            accounting_category=plan_task.accounting_category,
-            # assignee and status use defaults; parent_task is None
-        )
-        return [new_task]
-
-    @staticmethod
-    def _create_task_from_catalog_item(line_item, job):
-        """Create a task from PriceListItem data."""
-        task_name = f"{line_item.price_list_item.code} - {line_item.price_list_item.description[:50]}"
-        if len(line_item.price_list_item.description) > 50:
-            task_name += "..."
-
-        task = Task.objects.create(
-            job=job,
-            name=task_name,
-            units=line_item.units if line_item.units not in ('', 'none') else line_item.price_list_item.units,
-            rate=line_item.price or line_item.price_list_item.selling_price,
-            est_qty=line_item.qty,
-            assignee=None,
-            parent_task=None
-        )
-        return [task]
-
-    @staticmethod
-    def _create_generic_task(line_item, job):
-        """Create a generic task from manual LineItem data."""
-        if line_item.description:
-            task_name = line_item.description[:255]
-        elif line_item.line_number:
-            task_name = f"Line Item {line_item.line_number}"
-        else:
-            task_name = f"Line Item {line_item.pk}"
-
-        task = Task.objects.create(
-            job=job,
-            name=task_name,
-            units=line_item.units,
-            rate=line_item.price,
-            est_qty=line_item.qty,
-            assignee=None,
-            parent_task=None
-        )
-        return [task]
-
-    @staticmethod
-    def create_from_template(template, job, assignee=None):
-        """
-        Create Task from TaskTemplate.
-        """
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
-
-        task = Task.objects.create(
-            job=job,
-            accounting_category=template.accounting_category,
-            name=template.template_name,
-            assignee=assignee
-        )
+        if template.rate_scheme_id and template.rate_scheme.replaced_by_id is not None:
+            raise SchemeSupersededError(
+                f'Template "{template.template_name}" references a superseded RateScheme.'
+            )
+        if not template.rate_scheme_id:
+            raise ValidationError(
+                f'Template "{template.template_name}" has no rate_scheme.'
+            )
+        with transaction.atomic():
+            task = Task.objects.create(
+                job=job,
+                name=template.template_name,
+                assignee=assignee,
+                rate_scheme=template.rate_scheme,
+                active_modifiers=copy_active_modifiers(template.default_active_modifiers),
+                est_qty=est_qty if est_qty is not None else template.default_billable_qty,
+            )
         return task
 
     @staticmethod
-    def create_direct(job, name, **kwargs):
-        """Create Task directly."""
-        return Task.objects.create(
-            job=job,
-            name=name,
-            **kwargs
-        )
+    def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
+                      est_qty=None, est_worker_time=None, actual_qty=None,
+                      **task_fields):
+        """Create Task directly. Requires rate_scheme_id."""
+        if not rate_scheme_id:
+            raise ValidationError({'rate_scheme': 'Required.'})
+        scheme = RateScheme.objects.get(pk=rate_scheme_id)
+        if scheme.replaced_by_id is not None:
+            raise ValidationError(
+                {'rate_scheme': 'Selected RateScheme is superseded.'}
+            )
+        with transaction.atomic():
+            task = Task.objects.create(
+                job=job, name=name,
+                rate_scheme=scheme,
+                active_modifiers=copy_active_modifiers(active_modifiers),
+                est_qty=est_qty,
+                est_worker_time=est_worker_time,
+                actual_qty=actual_qty,
+                **task_fields,
+            )
+        return task
 
     @staticmethod
     def update_task(pk, **kwargs):
@@ -560,13 +530,61 @@ class TaskService:
         task.refresh_from_db()
         return task
 
+    @staticmethod
+    def assign(task, assignee_id, worker_queue=None, est_worker_time=None):
+        """Assign (or unassign) a task to a worker.
+
+        Assigned work has to be schedulable, so a task being given an
+        assignee must carry an estimated worker time. When it has none and
+        the caller did not supply one, raise `TaskWorkerTimeRequired` up
+        front so the endpoint can answer with a prompt signal rather than a
+        generic validation error. The save still runs `Task.clean()`, which
+        is the actual enforcer of the invariant. Unassigning (`assignee_id`
+        falsy) has no such requirement.
+        """
+        if assignee_id and est_worker_time is None and not task.est_worker_time:
+            raise TaskWorkerTimeRequired()
+        task.assignee_id = assignee_id or None
+        task.worker_queue = worker_queue
+        if est_worker_time is not None:
+            task.est_worker_time = est_worker_time
+        task.save()
+        return task
+
 
 class TaskLifecycleService:
     """Service for managing Task status transitions and Blep (time tracking) lifecycle."""
 
     @staticmethod
-    def complete_task(task_pk):
-        """Transition task from pending/in_progress/blocked -> complete."""
+    def _promote_pending_task(task):
+        """A Blep means work has begun on the task: promote a `pending` task
+        to `in_progress` and consume its materials. No-op for any other
+        status (an `in_progress` task is already there; a backdated Blep
+        must not reopen a terminal or blocked task). The promotion is a
+        conditional UPDATE on the DB row, so a stale in-memory `task` cannot
+        cause a wrong promotion. Mutates `task` in place when it promotes.
+
+        Material consumption is a side effect of the pending -> in_progress
+        promotion, not of every clock-in — so it fires here, for both the
+        live (start_work) and historical (create_historical) paths."""
+        promoted = Task.objects.filter(
+            pk=task.pk, status=Task.STATUS_PENDING,
+        ).update(status=Task.STATUS_IN_PROGRESS)
+        if promoted:
+            task.status = Task.STATUS_IN_PROGRESS
+            from apps.inventory.services import MaterialService
+            for material in task.materials.all():
+                MaterialService.consume(material)
+
+    @staticmethod
+    def complete_task(task_pk, actual_qty=None):
+        """Transition task from pending/in_progress/blocked -> complete.
+
+        `actual_qty` (optional Decimal): the worker-entered quantity. An
+        ENTERED_QTY task cannot be completed without a positive quantity —
+        either passed here or already on the task. If it's missing, raises
+        `TaskActualQtyRequired` so the caller can prompt for it.
+        """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED):
@@ -574,12 +592,24 @@ class TaskLifecycleService:
                     f"Cannot complete task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
+            if actual_qty is not None:
+                if actual_qty <= 0:
+                    raise ValidationError('Quantity must be greater than 0.')
+                task.actual_qty = actual_qty
+            if (task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and (task.actual_qty is None or task.actual_qty <= 0)):
+                raise TaskActualQtyRequired(task.rate_scheme.unit_label)
+            if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
+                    and task.rate_scheme.get_actual_qty(task) <= 0):
+                raise TaskTimeRequired()
+            update_fields = {'status': Task.STATUS_COMPLETE, 'blocked_reason': ''}
+            if actual_qty is not None:
+                update_fields['actual_qty'] = actual_qty
             BlepService._close_open(task=task)
-            Task.objects.filter(pk=task.pk).update(
-                status=Task.STATUS_COMPLETE, blocked_reason='',
-            )
+            Task.objects.filter(pk=task.pk).update(**update_fields)
             task.status = Task.STATUS_COMPLETE
             task.blocked_reason = ''
+            JobService.mark_work_started(task.job)
             TaskLifecycleService._check_job_work_complete(task)
             return task
 
@@ -587,10 +617,12 @@ class TaskLifecycleService:
     def _check_job_work_complete(task):
         """Auto-advance Job to work_complete if all its tasks are terminal.
 
-        Only fires when the Job is currently in APPROVED status.
+        Fires when the Job is currently in APPROVED or IN_PROGRESS status.
+        When the job is APPROVED, it walks approved → in_progress → work_complete
+        so that the state machine is respected.
         """
         job = task.job
-        if job.status != Job.STATUS_APPROVED:
+        if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
             return
         terminal = {Task.STATUS_COMPLETE, Task.STATUS_CANCELLED}
         all_terminal = not Task.objects.filter(
@@ -598,6 +630,8 @@ class TaskLifecycleService:
         ).exclude(status__in=terminal).exists()
         if all_terminal:
             try:
+                if job.status == Job.STATUS_APPROVED:
+                    JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
                 JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
             except ValidationError:
                 pass  # Pending task-less materials block auto-advance; task completion itself succeeds.
@@ -680,6 +714,11 @@ class TaskLifecycleService:
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             # Post-split: task is always a Task (work-order side); no container check needed.
+            _assert_job_allows_blep(
+                task.job,
+                (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS),
+                'start work',
+            )
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
                 raise ValidationError(
                     f"Cannot start work: task status is '{task.status}', "
@@ -688,20 +727,16 @@ class TaskLifecycleService:
             now = timezone.now()
 
             if task.status == Task.STATUS_PENDING:
-                # First worker on a pending task: promote and consume materials.
-                # No conflict possible — nobody has touched it yet.
+                # First worker on a pending task: promote (which consumes the
+                # task's materials) and assign. No conflict possible — nobody
+                # has touched it yet.
                 BlepService._close_open(user=user, now=now)
-                updates = {'status': Task.STATUS_IN_PROGRESS}
+                TaskLifecycleService._promote_pending_task(task)
                 if not task.assignee_id:
-                    updates['assignee'] = user
-                Task.objects.filter(pk=task.pk).update(**updates)
-                task.status = Task.STATUS_IN_PROGRESS
-                if 'assignee' in updates:
+                    Task.objects.filter(pk=task.pk).update(assignee=user)
                     task.assignee = user
-                from apps.inventory.services import MaterialService
-                for material in task.materials.all():
-                    MaterialService.consume(material)
                 blep = BlepService._create(task, user, start_time=now)
+                JobService.mark_work_started(task.job)
                 return {'task': task, 'blep': blep}
 
             # Task is in_progress: check for other active workers.
@@ -725,6 +760,7 @@ class TaskLifecycleService:
             if action == 'takeover':
                 other_bleps.update(end_time=now)
             blep = BlepService._create(task, user, start_time=now)
+            JobService.mark_work_started(task.job)
             return {'task': task, 'blep': blep}
 
     @staticmethod
@@ -767,15 +803,15 @@ class BoardService:
 
         cutoff = timezone.now() - timedelta(days=retention_days)
 
-        # Pipeline: draft + submitted
+        # Pipeline: draft + submitted + approved (estimate accepted, awaiting prep)
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted']
+            status__in=['draft', 'submitted', 'approved']
         ).select_related('contact').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
-        # Approved
+        # In Progress (board column key kept as 'approved' for URL stability)
         approved_jobs = Job.objects.filter(
-            status='approved'
+            status='in_progress'
         ).select_related('contact').order_by('due_date')
         approved_list = []
         for i, job in enumerate(approved_jobs):
@@ -843,10 +879,10 @@ class BoardService:
 
     @staticmethod
     def get_pipeline_data():
-        """Return pipeline jobs (draft + submitted) with worksheet/estimate info."""
+        """Return pipeline jobs (draft + submitted + approved) with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted']
+            status__in=['draft', 'submitted', 'approved']
         ).select_related('contact').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
@@ -854,13 +890,18 @@ class BoardService:
 
     @staticmethod
     def get_approved_data():
-        """Return approved jobs where work is still active (not unpaid)."""
+        """Return in_progress jobs where work is still active (not unpaid).
+
+        Method name kept for URL/view stability. Conceptually this is now the
+        "In Progress" column — jobs that have been released to the floor.
+        Follow-up: rename to get_in_progress_data.
+        """
         from apps.jobs.models import Job, Task
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
         approved_jobs = Job.objects.filter(
-            status='approved'
+            status='in_progress'
         ).select_related('contact').order_by('due_date')
 
         approved_list = []
@@ -1044,21 +1085,32 @@ class BoardService:
             total=models.Sum(models.F('qty') * models.F('price'))
         )['total'] or Decimal('0.00')
 
-        # TODO: Replace task.rate / 2 with actual User.pay_rate once that
+        # TODO: Replace charge rate / 2 with actual User.pay_rate once that
         # field exists. Using half the billing rate as a temporary proxy.
         labor_cost = Decimal('0.00')
         bleps = Blep.objects.filter(
             task__job=job,
             start_time__isnull=False,
             end_time__isnull=False,
-        ).select_related('task')
+        ).select_related('task__rate_scheme')
         for blep in bleps:
-            if blep.task.rate:
+            try:
+                rate = blep.task.rate_scheme.rate
+            except AttributeError:
+                rate = None
+            if rate:
                 elapsed_hours = Decimal(str(blep.elapsed.total_seconds() / 3600))
-                labor_cost += elapsed_hours * (blep.task.rate / 2)
+                labor_cost += elapsed_hours * (rate / 2)
 
         spent = material_cost + labor_cost
-        return {'billed': billed, 'spent': spent, 'profit': billed - spent}
+        # qty x price aggregates and the labor loop all yield >2dp values;
+        # quantize to cents so the board profit display stays clean.
+        cents = Decimal('0.01')
+        return {
+            'billed': billed.quantize(cents),
+            'spent': spent.quantize(cents),
+            'profit': (billed - spent).quantize(cents),
+        }
 
     @staticmethod
     def _serialize_unpaid_job(job):
@@ -1098,6 +1150,9 @@ class BoardService:
             'blocked_reason': task.blocked_reason,
             'assignee_id': task.assignee_id,
             'worker_queue': task.worker_queue,
+            'est_worker_time': (
+                str(task.est_worker_time) if task.est_worker_time else None
+            ),
         }
 
     @staticmethod
@@ -1119,7 +1174,10 @@ class BoardService:
         if job.status in ('draft', 'submitted'):
             return BoardService._pipeline_sub_status(job)
         elif job.status == Job.STATUS_APPROVED:
-            return BoardService._approved_sub_status(job)
+            # approved = estimate accepted, awaiting prep / release to floor
+            return 'awaiting-prep'
+        elif job.status == Job.STATUS_IN_PROGRESS:
+            return BoardService._in_progress_sub_status(job)
         elif job.status == Job.STATUS_WORK_COMPLETE:
             return BoardService._work_complete_sub_status(job)
         return None
@@ -1128,36 +1186,29 @@ class BoardService:
     def _pipeline_sub_status(job):
         """Sub-status for Draft/Submitted jobs."""
         estimates = job.estimate_set.all()
-        open_estimate = estimates.filter(status='open').first()
-        if open_estimate:
+
+        if estimates.filter(status='open').exists():
             return 'awaiting-response'
 
-        worksheets = job.estworksheet_set.all()
-        if not worksheets.exists():
-            return 'needs-scoping'
-
-        latest_ws = worksheets.order_by('-pk').first()
-        if latest_ws.status == 'draft':
+        if estimates.filter(status='draft').exists():
             return 'estimating'
 
-        if latest_ws.status == 'final':
-            draft_estimate = estimates.filter(status='draft').first()
-            if draft_estimate:
-                return 'estimate-ready'
+        if not estimates.exists() and job.estworksheet_set.exists():
+            return 'estimating'
 
         return 'needs-scoping'
 
     UNPAID_SUB_STATUSES = {'invoice-sent', 'invoice-prepped', 'needs-invoice'}
 
     @staticmethod
-    def _approved_sub_status(job):
-        """Sub-status for Approved jobs.
+    def _in_progress_sub_status(job):
+        """Sub-status for In Progress jobs (status='in_progress').
 
-        Post-WorkOrder-removal: tasks live directly on the job. The
-        previous "needs-work-order" sub-status (no WO existed yet) is
-        now "needs-tasks" (no task has been created yet). Approved jobs
-        with all tasks terminal are auto-advanced to work_complete, so
-        invoice-related sub-statuses live on _work_complete_sub_status.
+        Tasks live directly on the job. Jobs with all tasks terminal are
+        auto-advanced to work_complete, so invoice-related sub-statuses
+        live on _work_complete_sub_status.
+
+        Renamed from _approved_sub_status — follow-up: remove the old name.
         """
         all_tasks = job.tasks.all()
         if not all_tasks.exists():

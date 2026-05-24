@@ -117,16 +117,17 @@ class LineItemModelFixtureTest(FixtureTestCase):
         self.assertEqual(estimate_item1.description, "Screws for kitchen cabinet installation")
         self.assertEqual(estimate_item1.price, Decimal('25.00'))
         self.assertEqual(estimate_item1.estimate.estimate_number, "EST-2024-0001")
-        self.assertIsNone(estimate_item1.task)
+        # EstimateLineItem.task FK dropped; check via sources instead
+        self.assertEqual(estimate_item1.sources.count(), 0)
         self.assertEqual(estimate_item1.price_list_item.code, "SCREW001")
-        
+
         estimate_item2 = EstimateLineItem.objects.get(line_number=2)
         self.assertEqual(estimate_item2.qty, Decimal('8.00'))
         self.assertEqual(estimate_item2.units, "hours")
         self.assertEqual(estimate_item2.description, "Electrical rough-in labor")
         self.assertEqual(estimate_item2.price, Decimal('600.00'))
-        # Post-split: fixture ELI task is null (ELI.task targets PlanTask, fixture has none)
-        self.assertIsNone(estimate_item2.task)
+        # EstimateLineItem.task FK dropped
+        self.assertEqual(estimate_item2.sources.count(), 0)
         self.assertIsNone(estimate_item2.price_list_item)
         
     def test_invoice_line_items_exist_from_fixture(self):
@@ -194,13 +195,12 @@ class LineItemModelFixtureTest(FixtureTestCase):
         invoice = invoice_item.invoice
         self.assertEqual(invoice.invoice_number, "INV-2024-0001")
         
-        # Post-split: ELI.task targets PlanTask; fixture line_number=2 items have null tasks.
-        # InvoiceLineItem.task FK was dropped entirely (replaced by InvoiceLineItemSource).
+        # EstimateLineItem.task FK was dropped (replaced by EstimateLineItemSource).
+        # InvoiceLineItem.task FK was dropped (replaced by InvoiceLineItemSource).
         estimate_item2 = EstimateLineItem.objects.get(line_number=2)
         invoice_item2 = InvoiceLineItem.objects.get(line_number=2)
-        # Post-split: ELI.task targets PlanTask (fixture has none)
-        self.assertIsNone(estimate_item2.task)
-        # InvoiceLineItem no longer has a task FK; the property returns None
+        # Neither model has a task field anymore; verify no sources on fixture items
+        self.assertEqual(estimate_item2.sources.count(), 0)
         self.assertIsNone(invoice_item2.task)
 
         # Test price list item relationship for items that have price list items
@@ -235,22 +235,14 @@ class LineItemModelFixtureTest(FixtureTestCase):
         
     def test_create_new_line_items_with_existing_relationships(self):
         """Test creating new line items with existing related objects from fixtures.
-        Post-split: ELI.task targets PlanTask. InvoiceLineItem no longer has a task FK."""
-        from apps.jobs.models import PlanTask
-        from apps.estimates.models import Estimate, EstWorksheet
+        EstimateLineItem.task FK was dropped; line items are now source-backed."""
+        from apps.estimates.models import Estimate
 
         estimate = Estimate.objects.get(estimate_number="EST-2024-0001")
         invoice = Invoice.objects.get(invoice_number="INV-2024-0001")
-        # Create a worksheet + plan task for ELI
-        worksheet = EstWorksheet.objects.create(job=estimate.job)
-        plan_task = PlanTask.objects.create(
-            est_worksheet=worksheet, name="Cleanup plan task",
-        )
-        price_item = PriceListItem.objects.get(code="LABOR001")
 
         new_estimate_item = EstimateLineItem.objects.create(
             estimate=estimate,
-            task=plan_task,
             price_list_item=None,
             line_number=5,
             qty=Decimal('2.00'),
@@ -270,7 +262,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
         )
 
         self.assertEqual(new_estimate_item.estimate, estimate)
-        self.assertEqual(new_estimate_item.task, plan_task)
+        self.assertEqual(new_estimate_item.sources.count(), 0)
         self.assertEqual(new_invoice_item.invoice, invoice)
         self.assertIsNone(new_invoice_item.task)
         self.assertEqual(EstimateLineItem.objects.count(), 3)  # 2 from fixture + 1 new

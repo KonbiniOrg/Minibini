@@ -63,8 +63,10 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return err
         serializer = MaterialWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        create_data = {k: v for k, v in serializer.validated_data.items()
+                       if k != 'propagate_to_pli'}
         mat = MaterialService.create_on_job(
-            job=task.job, task=task, **serializer.validated_data
+            job=task.job, task=task, **create_data
         )
         return Response(
             MaterialSerializer(mat).data,
@@ -112,9 +114,20 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             )
         serializer = MaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        for field, value in serializer.validated_data.items():
-            setattr(material, field, value)
-        material.save()
+        propagate = serializer.validated_data.get('propagate_to_pli', False)
+        if material.price_list_item_id is not None and (
+            'unit_cost' in serializer.validated_data
+            or 'sell_price' in serializer.validated_data
+        ):
+            MaterialService.update_pricing(
+                material,
+                unit_cost=serializer.validated_data.get('unit_cost'),
+                sell_price=serializer.validated_data.get('sell_price'),
+                propagate_to_pli=propagate,
+            )
+            material.refresh_from_db()
+            return Response(MaterialSerializer(material).data)
+        serializer.save()
         return Response(MaterialSerializer(material).data)
 
     # --- Subtask CRUD ---
@@ -138,10 +151,27 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
-        from apps.jobs.services import TaskLifecycleService
+        from decimal import Decimal, InvalidOperation
+        from apps.jobs.services import (
+            TaskLifecycleService, TaskActualQtyRequired, TaskTimeRequired,
+        )
         task = self._get_task_or_404(pk)
+        raw_qty = request.data.get('actual_qty') if request.data else None
+        actual_qty = None
+        if raw_qty is not None and raw_qty != '':
+            try:
+                actual_qty = Decimal(str(raw_qty))
+            except (InvalidOperation, ValueError):
+                return Response(
+                    {'detail': 'Invalid quantity.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         try:
-            TaskLifecycleService.complete_task(task.pk)
+            TaskLifecycleService.complete_task(task.pk, actual_qty=actual_qty)
+        except TaskActualQtyRequired as e:
+            return Response({'needs_actual_qty': True, 'unit_label': e.unit_label})
+        except TaskTimeRequired:
+            return Response({'needs_time_logged': True})
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': Task.STATUS_COMPLETE})
@@ -205,4 +235,22 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'ok'})
+
+    @action(detail=True, methods=['patch'], url_path='actual-qty',
+            permission_classes=[IsAuthenticated])
+    def actual_qty(self, request, pk=None):
+        """Allow any authenticated worker to record their actual qty on a task."""
+        task = self.get_object()
+        qty = request.data.get('actual_qty')
+        if qty is None:
+            return Response({'actual_qty': ['Required.']}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            from decimal import Decimal
+            task.actual_qty = Decimal(str(qty))
+        except Exception:
+            return Response({'actual_qty': ['Invalid decimal.']}, status=status.HTTP_400_BAD_REQUEST)
+        task.save(update_fields=['actual_qty'])
+        return Response({'actual_qty': str(task.actual_qty)})
+
+
 

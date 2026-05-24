@@ -40,10 +40,14 @@ class TaskTemplateAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_create_task_template(self):
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.get(pk=1)  # from fixture
         response = self.client.post('/api/task-templates/', {
             'template_name': 'API Test Template',
             'description': 'Created via API',
             'units': 'hours',
+            'rate_scheme': scheme.pk,
+            'default_billable_qty': '1.00',
         }, format='json')
         self.assertEqual(response.status_code, 201)
 

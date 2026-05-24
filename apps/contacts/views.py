@@ -780,23 +780,23 @@ def _process_business_deletion(request, business):
     for bill in direct_bills:
         action = request.POST.get(f'action_bill_{bill.bill_id}')
         if action not in ('delete', 'reassign'):
-            errors.append(f'Please select an action for Bill {bill.bill_number}.')
+            errors.append(f'Please select an action for Bill {(bill.vendor_invoice_number or bill.pk)}.')
             continue
         if action == 'delete' and bill.status != 'draft':
             errors.append(
-                f'Cannot delete Bill {bill.bill_number} (status: {bill.get_status_display()}). '
+                f'Cannot delete Bill {(bill.vendor_invoice_number or bill.pk)} (status: {bill.get_status_display()}). '
                 'Only draft bills can be deleted.'
             )
             continue
         if action == 'reassign':
             target_id = request.POST.get(f'reassign_bill_{bill.bill_id}_business')
             if not target_id:
-                errors.append(f'Please select a target business for Bill {bill.bill_number}.')
+                errors.append(f'Please select a target business for Bill {(bill.vendor_invoice_number or bill.pk)}.')
                 continue
             try:
                 target_biz = Business.objects.get(business_id=target_id)
             except Business.DoesNotExist:
-                errors.append(f'Invalid target business for Bill {bill.bill_number}.')
+                errors.append(f'Invalid target business for Bill {(bill.vendor_invoice_number or bill.pk)}.')
                 continue
             bill_actions[bill.bill_id] = ('reassign', target_biz)
         else:

@@ -93,6 +93,8 @@
   }
 </script>
 
+<!-- draggable card with hover preview: HTML5 DnD is mouse-only, no keyboard equivalent -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="task-card"
   class:urgent={isUrgent()}
@@ -110,7 +112,7 @@
       <div class="task-name">{task.name}</div>
       <div class="task-job-label">{deadlineLabel()}</div>
       {#if task.status === 'blocked' && task.blocked_reason}
-        <div class="task-blocked-reason">{task.blocked_reason}</div>
+        <div class="task-blocked-reason preserve-breaks">{task.blocked_reason}</div>
       {/if}
     </div>
     {#if STATUS_LABELS[task.status]}
@@ -136,7 +138,7 @@
         {/if}
       </div>
       {#if task.status === 'blocked' && task.blocked_reason}
-        <div class="tp-blocked-reason">{task.blocked_reason}</div>
+        <div class="tp-blocked-reason preserve-breaks">{task.blocked_reason}</div>
       {/if}
       {#if popupDeadlineText()}
         <div class="tp-deadline">{popupDeadlineText()}</div>

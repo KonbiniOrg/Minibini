@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError  # noqa: F401
 from apps.core.models import Configuration, AccountingCategory
 from apps.expenses.models import Expense, Reimbursement
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, RateScheme
 from apps.inventory.models import Material
 from apps.expenses.services import ExpenseService
 from apps.qbo.models import QBOSyncLog
@@ -560,6 +560,10 @@ class SFMOMAIntegrationTest(TestCase):
         contact.business = self.business
         contact.save()
         self.job = Job.objects.create(contact=contact, job_number='JOB-2026-0042')
+        self.scheme = RateScheme.objects.create(
+            name='S-sfmoma', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.cat,
+        )
 
     @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
     def test_two_new_material_expenses_create_two_taskless_materials(self, mock_push):
@@ -622,10 +626,11 @@ class SFMOMAIntegrationTest(TestCase):
         existing_task = Task.objects.create(
             job=self.job,
             name='Paint main gallery',
+            rate_scheme=self.scheme,
         )
         existing_material = Material.objects.create(
             job=self.job, task=existing_task, description='Acrylic paint 1gal',
-            quantity=2,
+            quantity=2, accounting_category=self.cat,
         )
 
         # Submit an expense linked to the existing material

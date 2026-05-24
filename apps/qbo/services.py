@@ -356,10 +356,10 @@ class QBOInvoiceSyncService:
             invoice.qbo_id = qbo_id
             invoice.save(update_fields=['qbo_id'])
 
-            # Attach job statement PDF
+            # Generate Minibini job statement PDF (attached to the customer
+            # email; no longer uploaded to QBO — see invoice-send design notes).
             from apps.invoicing.pdf import generate_job_statement_pdf
             statement_pdf = generate_job_statement_pdf(invoice)
-            QBOInvoiceSyncService._attach_pdf(client, qbo_id, statement_pdf, invoice)
 
             # Mark as sent in QBO (so it doesn't show "needs to be sent")
             QBOInvoiceSyncService._mark_as_sent(client, qbo_id)
@@ -423,29 +423,6 @@ class QBOInvoiceSyncService:
             qbo_inv.Line.append(line)
 
         return qbo_inv
-
-    @staticmethod
-    def _attach_pdf(client, qbo_invoice_id, pdf_bytes, invoice):
-        from quickbooks.objects.attachable import Attachable, AttachableRef
-        import tempfile
-        import os
-
-        filename = f"job_statement_{invoice.invoice_number}.pdf"
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
-            f.write(pdf_bytes)
-            temp_path = f.name
-
-        try:
-            attachable = Attachable()
-            attachable_ref = AttachableRef()
-            attachable_ref.EntityRef = {'type': 'Invoice', 'value': qbo_invoice_id}
-            attachable.AttachableRef = [attachable_ref]
-            attachable.FileName = filename
-            attachable.ContentType = 'application/pdf'
-            attachable._FilePath = temp_path
-            attachable.save(qb=client)
-        finally:
-            os.unlink(temp_path)
 
     @staticmethod
     def _mark_as_sent(client, qbo_id):

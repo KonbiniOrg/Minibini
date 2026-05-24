@@ -1,6 +1,7 @@
 <script>
   import UnitsSelect from '../UnitsSelect.svelte';
   import JobPicker from '../JobPicker.svelte';
+  import LinkifiedText from '../LinkifiedText.svelte';
 
   const {
     po,
@@ -227,7 +228,7 @@
         {:else}
           <tr class:cancelled-row={Number(li.qty_cancelled) >= Number(li.qty)}>
             <td>{li.line_number}</td>
-            <td>{li.description}</td>
+            <td class="preserve-breaks"><LinkifiedText text={li.description} /></td>
             <td class="text-right">{li.qty}</td>
             <td>{li.units || ''}</td>
             <td class="text-right">${Number(li.price).toFixed(2)}</td>
@@ -315,7 +316,7 @@
   <div class="overlay">
     <div class="dialog">
       <h3>Change Job for Line #{changeJobLine.line_number}</h3>
-      <p><strong>{changeJobLine.description}</strong></p>
+      <p class="preserve-breaks"><strong><LinkifiedText text={changeJobLine.description} /></strong></p>
       <JobPicker bind:value={changeJobPick} />
       <p>
         <button onclick={() => {

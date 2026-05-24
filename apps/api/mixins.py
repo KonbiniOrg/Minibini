@@ -5,6 +5,57 @@ from rest_framework.response import Response
 from apps.core.services import ServiceError, NotFoundError
 
 
+class JSONDestroyMixin:
+    """
+    Override DRF's default destroy() to return 200 with a JSON body instead of
+    the default 204 No Content. The SPA's `lib/api.js` wrapper assumes every
+    response has a JSON content-type; a 204 returns no body and triggers a
+    "Server error" path.
+
+    Subclasses may set `destroy_response_message` to customize the body, or
+    override destroy()/perform_destroy() entirely.
+    """
+    destroy_response_message = 'Deleted.'
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response({'message': self.destroy_response_message})
+
+
+class ConfirmDeleteMixin:
+    """
+    Two-phase delete confirmation. First DELETE returns 200 with
+    `{'confirm_required': True, 'impact': <dict>}`; DELETE ?confirm=true
+    actually deletes.
+
+    Subclasses implement:
+      - `get_deletion_impact(obj) -> dict` — counts/flags shown to the user.
+      - `perform_confirmed_destroy(obj) -> Response` — does the delete and
+        returns the success/failure Response.
+    """
+
+    def get_deletion_impact(self, obj):
+        raise NotImplementedError(
+            f'{type(self).__name__}.get_deletion_impact must be implemented.'
+        )
+
+    def perform_confirmed_destroy(self, obj):
+        raise NotImplementedError(
+            f'{type(self).__name__}.perform_confirmed_destroy must be implemented.'
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        confirm = request.query_params.get('confirm', '').lower() == 'true'
+        if not confirm:
+            return Response({
+                'confirm_required': True,
+                'impact': self.get_deletion_impact(obj),
+            })
+        return self.perform_confirmed_destroy(obj)
+
+
 class StatusTransitionMixin:
     """
     Mixin that auto-registers action endpoints from a status_actions dict.
@@ -202,25 +253,25 @@ class LineItemMixin:
             raise NotFound()
 
 
-class PlanTaskBundleMixin:
+class PlanTaskMixin:
     """
-    Adds plan-task and plan-bundle CRUD actions to the EstWorksheet viewset.
+    Adds plan-task CRUD actions to the EstWorksheet viewset.
 
-    Works against PlanTask and PlanBundle (worksheet-side models).
+    Works against PlanTask (worksheet-side model).
 
     Subclasses declare:
         plan_task_serializer_class = SomePlanTaskSerializer
-        plan_bundle_serializer_class = SomePlanBundleSerializer
     """
     plan_task_serializer_class = None
-    plan_bundle_serializer_class = None
 
     @action(detail=True, methods=['get', 'post'], url_path='tasks', url_name='tasks')
     def tasks(self, request, pk=None):
         worksheet = self.get_object()
         if request.method == 'GET':
             from apps.jobs.models import PlanTask
-            tasks = PlanTask.objects.filter(est_worksheet=worksheet).order_by('sort_order')
+            tasks = PlanTask.objects.filter(
+                est_worksheet=worksheet,
+            ).select_related('rate_scheme').order_by('sort_order')
             serializer = self.plan_task_serializer_class(tasks, many=True)
             return Response(serializer.data)
 
@@ -244,69 +295,6 @@ class PlanTaskBundleMixin:
         serializer.save()
         return Response(serializer.data)
 
-    @action(detail=True, methods=['get', 'post'], url_path='bundles', url_name='bundles')
-    def bundles(self, request, pk=None):
-        worksheet = self.get_object()
-        if request.method == 'GET':
-            from apps.jobs.models import PlanBundle
-            bundles = PlanBundle.objects.filter(est_worksheet=worksheet).order_by('sort_order')
-            serializer = self.plan_bundle_serializer_class(bundles, many=True)
-            return Response(serializer.data)
-
-        serializer = self.plan_bundle_serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(est_worksheet=worksheet)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['patch', 'delete'],
-            url_path='bundles/(?P<bundle_id>[0-9]+)', url_name='bundle-detail')
-    def bundle_detail(self, request, pk=None, bundle_id=None):
-        worksheet = self.get_object()
-        bundle = self._get_plan_bundle_or_404(worksheet, bundle_id)
-
-        if request.method == 'DELETE':
-            from apps.jobs.models import PlanTask
-            PlanTask.objects.filter(bundle=bundle).update(
-                bundle=None, mapping_strategy='direct'
-            )
-            bundle.delete()
-            return Response({'message': 'Bundle deleted.'})
-
-        serializer = self.plan_bundle_serializer_class(bundle, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'],
-            url_path='bundles/(?P<bundle_id>[0-9]+)/add-tasks', url_name='bundle-add-tasks')
-    def add_tasks_to_bundle(self, request, pk=None, bundle_id=None):
-        worksheet = self.get_object()
-        bundle = self._get_plan_bundle_or_404(worksheet, bundle_id)
-        task_ids = request.data.get('task_ids', [])
-        if not task_ids:
-            return Response({'task_ids': ['This field is required.']}, status=status.HTTP_400_BAD_REQUEST)
-        from apps.jobs.models import PlanTask
-        PlanTask.objects.filter(pk__in=task_ids, est_worksheet=worksheet).update(
-            bundle=bundle, mapping_strategy='bundle'
-        )
-        serializer = self.plan_bundle_serializer_class(bundle)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'],
-            url_path='bundles/(?P<bundle_id>[0-9]+)/remove-tasks', url_name='bundle-remove-tasks')
-    def remove_tasks_from_bundle(self, request, pk=None, bundle_id=None):
-        worksheet = self.get_object()
-        bundle = self._get_plan_bundle_or_404(worksheet, bundle_id)
-        task_ids = request.data.get('task_ids', [])
-        if not task_ids:
-            return Response({'task_ids': ['This field is required.']}, status=status.HTTP_400_BAD_REQUEST)
-        from apps.jobs.models import PlanTask
-        PlanTask.objects.filter(pk__in=task_ids, bundle=bundle).update(
-            bundle=None, mapping_strategy='direct'
-        )
-        serializer = self.plan_bundle_serializer_class(bundle)
-        return Response(serializer.data)
-
     def _get_plan_task_or_404(self, worksheet, task_id):
         from apps.jobs.models import PlanTask
         try:
@@ -315,21 +303,14 @@ class PlanTaskBundleMixin:
             from rest_framework.exceptions import NotFound
             raise NotFound()
 
-    def _get_plan_bundle_or_404(self, worksheet, bundle_id):
-        from apps.jobs.models import PlanBundle
-        try:
-            return PlanBundle.objects.get(pk=bundle_id, est_worksheet=worksheet)
-        except PlanBundle.DoesNotExist:
-            from rest_framework.exceptions import NotFound
-            raise NotFound()
+
+# Backwards-compat alias — remove after all callers updated
+PlanTaskBundleMixin = PlanTaskMixin
 
 
 class JobTaskMixin:
     """
-    Adds task CRUD actions to the Job viewset.
-
-    Works against Task (now belongs directly to Job after the 2026-04-12
-    WorkOrder removal). No bundles on the job side.
+    Adds task CRUD actions to the Job viewset. Works against Task.
 
     Subclasses declare:
         task_serializer_class = SomeTaskSerializer
@@ -345,16 +326,44 @@ class JobTaskMixin:
             serializer = self.task_serializer_class(tasks, many=True)
             return Response(serializer.data)
 
-        serializer = self.task_serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(job=job)
+        from apps.jobs.services import TaskService
+        from apps.jobs.models import RateScheme
+        data = request.data
+        try:
+            task = TaskService.create_direct(
+                job,
+                name=data.get('name', ''),
+                rate_scheme_id=data.get('rate_scheme'),
+                active_modifiers=data.get('active_modifiers') or [],
+                est_qty=data.get('est_qty'),
+                est_worker_time=data.get('est_worker_time'),
+                actual_qty=data.get('actual_qty'),
+                description=data.get('description', ''),
+                parent_task_id=data.get('parent_task'),
+                assignee_id=data.get('assignee'),
+            )
+        except RateScheme.DoesNotExist:
+            return Response(
+                {'detail': {'rate_scheme': 'RateScheme not found.'}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ValidationError as e:
+            detail = e.message_dict if hasattr(e, 'message_dict') else (
+                e.message if hasattr(e, 'message') else str(e)
+            )
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.task_serializer_class(task)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['patch', 'delete'],
+    @action(detail=True, methods=['get', 'patch', 'delete'],
             url_path='tasks/(?P<task_pk>[0-9]+)', url_name='task-detail')
     def task_detail(self, request, pk=None, task_pk=None):
         job = self.get_object()
         task = self._get_task_or_404(job, task_pk)
+
+        if request.method == 'GET':
+            serializer = self.task_serializer_class(task)
+            return Response(serializer.data)
 
         if request.method == 'DELETE':
             from django.core.exceptions import ValidationError

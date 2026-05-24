@@ -1,6 +1,7 @@
 <!-- frontend/src/components/invoices/SendToQBODialog.svelte -->
 <script>
   import { api } from '../../lib/api.js';
+  import { modalKeys } from '../../lib/modalKeys.js';
 
   const {
     invoiceId,
@@ -37,7 +38,7 @@
   }
 </script>
 
-<fieldset>
+<fieldset use:modalKeys={{ onSave: () => { if (!sending) send(); }, onCancel }}>
   <legend><strong>Send to QuickBooks</strong></legend>
 
   {#if error}

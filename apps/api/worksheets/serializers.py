@@ -1,66 +1,126 @@
+from decimal import Decimal
 from rest_framework import serializers
-from apps.estimates.models import EstWorksheet
-from apps.jobs.models import PlanTask, PlanBundle
+from apps.estimates.models import EstWorksheet, WorkTemplate
+from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
+from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
 
 
 class PlanMaterialSerializer(serializers.ModelSerializer):
+    units = UnitsField(read_only=True)
+
     class Meta:
         model = PlanMaterial
         fields = [
             'plan_material_id', 'description', 'quantity',
             'unit_cost', 'sell_price', 'price_list_item',
-            'accounting_category',
+            'accounting_category', 'units',
         ]
         read_only_fields = fields
 
 
 class PlanMaterialWriteSerializer(serializers.ModelSerializer):
     """Writable serializer for PlanMaterial; used by worksheet plan-materials endpoint."""
+    units = UnitsField(required=False)
+    propagate_to_pli = serializers.BooleanField(
+        write_only=True, required=False,
+    )
+    accounting_category = serializers.PrimaryKeyRelatedField(
+        queryset=AccountingCategory.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = PlanMaterial
         fields = [
             'plan_material_id', 'plan_task', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item', 'accounting_category',
+            'units', 'unit_cost', 'sell_price', 'price_list_item',
+            'accounting_category', 'propagate_to_pli',
         ]
         read_only_fields = ['plan_material_id']
 
+    def update(self, instance, validated_data):
+        from apps.inventory.serializer_helpers import (
+            enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED,
+            PLAN_MATERIAL_FREEFORM_ALLOWED,
+        )
+        # plan_task is reassignable on both freeform and PLI-linked rows;
+        # exclude it from the allowlist check.
+        scratch = dict(validated_data)
+        scratch.pop('plan_task', None)
+        if instance.price_list_item_id is not None:
+            enforce_pli_linked_allowlist(
+                instance, scratch, PLI_LINKED_PRICING_ALLOWED,
+            )
+        else:
+            disallowed = set(scratch.keys()) - PLAN_MATERIAL_FREEFORM_ALLOWED
+            if disallowed:
+                raise serializers.ValidationError({
+                    'detail': f'Disallowed fields on freeform PlanMaterial: {sorted(disallowed)}',
+                })
+        validated_data.pop('propagate_to_pli', None)
+        return super().update(instance, validated_data)
+
 
 class PlanTaskSerializer(serializers.ModelSerializer):
-    units = UnitsField()
     plan_materials = PlanMaterialSerializer(many=True, read_only=True)
+    amount = serializers.SerializerMethodField()
+    units = serializers.SerializerMethodField()
 
     class Meta:
         model = PlanTask
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
-            'units', 'rate', 'est_qty', 'accounting_category',
-            'mapping_strategy', 'bundle', 'plan_materials',
+            'rate_scheme', 'active_modifiers', 'est_qty', 'est_worker_time',
+            'amount', 'units', 'plan_materials',
         ]
-        read_only_fields = ['plan_task_id', 'sort_order']
+        read_only_fields = ['plan_task_id', 'sort_order', 'amount', 'units']
+
+    def get_amount(self, obj):
+        return str(obj.compute_amount().quantize(Decimal('0.01')))
+
+    def get_units(self, obj):
+        return obj.rate_scheme.unit_label if obj.rate_scheme_id else ''
 
 
-class PlanBundleSerializer(serializers.ModelSerializer):
-    plan_tasks = PlanTaskSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = PlanBundle
-        fields = [
-            'plan_bundle_id', 'name', 'accounting_category',
-            'sort_order', 'plan_tasks',
-        ]
-        read_only_fields = ['plan_bundle_id', 'sort_order']
+class PlanMaterialAssignTaskSerializer(serializers.Serializer):
+    plan_task = serializers.PrimaryKeyRelatedField(
+        queryset=PlanTask.objects.all(), allow_null=True,
+    )
 
 
 class EstWorksheetSerializer(serializers.ModelSerializer):
     tasks = PlanTaskSerializer(source='plan_tasks', many=True, read_only=True)
-    bundles = PlanBundleSerializer(source='plan_bundles', many=True, read_only=True)
+    taskless_materials = serializers.SerializerMethodField()
+    job_number = serializers.SerializerMethodField()
+    job_name = serializers.SerializerMethodField()
+    # Write-only: lets the create endpoint accept a WorkTemplate id to populate
+    # tasks/materials from at create time. Not stored on the worksheet.
+    template = serializers.PrimaryKeyRelatedField(
+        queryset=WorkTemplate.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     class Meta:
         model = EstWorksheet
         fields = [
-            'est_worksheet_id', 'job', 'template', 'estimate',
-            'status', 'version', 'parent', 'created_date', 'tasks', 'bundles',
+            'est_worksheet_id', 'job', 'job_number', 'job_name',
+            'template', 'estimate',
+            'status', 'version', 'parent', 'created_date',
+            'tasks', 'taskless_materials',
         ]
         read_only_fields = ['est_worksheet_id', 'created_date', 'status']
+
+    def get_taskless_materials(self, obj):
+        materials = PlanMaterial.objects.filter(
+            est_worksheet=obj, plan_task__isnull=True,
+        )
+        return PlanMaterialSerializer(materials, many=True).data
+
+    def get_job_number(self, obj):
+        return obj.job.job_number if obj.job_id else None
+
+    def get_job_name(self, obj):
+        return obj.job.name if obj.job_id else ''

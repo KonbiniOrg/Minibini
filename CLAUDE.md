@@ -30,14 +30,27 @@ python manage.py test tests.test_foo    # Run specific test module
 docker compose up                       # Full stack (app, mysql, nginx)
 
 # Scheduled jobs
-# Crontab file in docker config area (TBD: docker/ directory) runs management commands
-# e.g., payment status polling, temp email cleanup
+# Management commands like `poll_qbo_payments` exist; a crontab/scheduler to
+# run them is not yet wired in any deployed environment.
 
 # Data seeding
 ./scripts/seed_data.sh                  # Seed realistic data via API (requires dev server running)
 ```
 
-**CRITICAL:** NEVER run `python manage.py migrate` - only the human user applies migrations to the development database. Creating migrations with `makemigrations` is fine; tests create their own test database automatically.
+**CRITICAL — never write to the dev database.** Only the human user is allowed to mutate the dev DB. Specifically:
+
+- Never run `python manage.py migrate`. Creating migrations with `makemigrations` is fine; tests create their own test database automatically.
+- Never run `python manage.py shell` (or `shell_plus`) and execute ORM writes — `Model.objects.create(...)`, `.save()`, `.delete()`, etc. all commit to the dev DB.
+- Never run `python -c "import django; django.setup(); ..."` followed by ORM writes for the same reason.
+- Never run `python manage.py loaddata` against the dev DB.
+- Never connect to the DB directly via `mysql` / `psql` / a Python DB driver and execute writes.
+- Never run scripts in the repo (`scripts/seed_data.sh`, anything in `apps/core/management/commands/`) that mutate the DB.
+
+If you need to verify model behavior, write a test and run `python manage.py test` (which uses a separate test DB and tears it down). If you need to see the current state of dev data, ask the user to run the query themselves and paste the result.
+
+**Read-only dev DB access via SQL is OK** for diagnostics (e.g. `mysql ... -e "SELECT ..."`) but never write SQL.
+
+Subagents inherit this rule. When dispatching a subagent, repeat the rule in the prompt if the task involves any DB-related work — subagents tend to "verify" model definitions by spinning up a shell, which writes data.
 
 ## Architecture
 
@@ -46,78 +59,64 @@ Minibini/
 ├── apps/
 │   ├── api/        # REST API (DRF viewsets, serializers, permissions, mixins)
 │   ├── core/       # User, Configuration, BaseLineItem, AccountingCategory, HistoryEntry, Email
-│   ├── jobs/       # Job, Task, PlanTask, PlanBundle, Blep
+│   ├── jobs/       # Job, Task, PlanTask, Blep
 │   ├── estimates/  # Estimate, EstWorksheet, EstimateLineItem, Templates
 │   ├── contacts/   # Contact, Business, PaymentTerms
 │   ├── invoicing/  # Invoice, InvoiceLineItem
 │   ├── inventory/  # PriceListItem, Material, Earmark, InventoryAdjustment
 │   ├── purchasing/ # PurchaseOrder, Bill, line items
+│   ├── deliverables/ # Deliverable, Shipment, ShipmentItem
 │   └── search/     # Cross-entity search service
 ├── frontend/       # Svelte 5 SPA (Vite, svelte-spa-router)
 ├── templates/      # Django HTML templates (server-rendered views)
 ├── fixtures/       # Test data fixtures (JSON)
 ├── tests/          # Test suite
 ├── scripts/        # Utility scripts (seed_data.sh)
-├── docs/designs/   # Lasting design specs, architectural decisions, feature designs
-├── docs/plans/     # Working directory for implementation plans (deleted after completion)
+├── docs/designs/   # Topic reference docs (eight consolidated areas — see below)
+├── docs/plans/     # Working directory for short-lived implementation plans (currently empty)
 ├── minibini/       # Project configuration (settings, urls)
 └── manage.py
 ```
 
 **Key Patterns:**
-- HTML views: function-based views only (no CBVs); deprecated and will be removed
-- API views: DRF ModelViewSets with reusable mixins (StatusTransitionMixin, LineItemMixin, TaskBundleMixin, TaskLifecycleMixin)
+- HTML views: function-based views only (no CBVs); deprecated, being decommissioned opportunistically
+- API views: DRF ModelViewSets with reusable mixins (`StatusTransitionMixin`, `LineItemMixin`, `JobTaskMixin`, `PlanTaskMixin`) — see `docs/designs/architecture-and-conventions.md`
 - Service classes in `apps/*/services.py` contain business logic — viewsets are thin wrappers
-- Signals in `apps/jobs/signals.py` handle status change side effects
+- Job status side effects live in `apps/jobs/services.py` (`apps/jobs/signals.py` is empty). Estimate-driven cross-model side effects live in `apps/estimates/signals.py`
 - Abstract `BaseLineItem` shared by all line item types
-- Template system: `WorkTemplate` → `TaskTemplate` → `TemplateTaskAssociation` → `TemplateBundle`
+- Template system: `WorkTemplate` ↔ `TaskTemplate` via `TemplateTaskAssociation`, plus `TemplateMaterialAssociation` for materials
 
-**Workflow:** Job → EstWorksheet (from template) → Estimate → Tasks on Job → Invoice
+**Workflow:** Job → EstWorksheet (optionally from template) → Estimate → atoms carry over to Job on accept → Tasks worked → Invoice → QBO push
+
+## Topic reference docs
+
+`docs/designs/` holds eight consolidated docs. When working in a domain, start at its doc; cross-references link out where needed.
+
+| Doc | Covers |
+|---|---|
+| `architecture-and-conventions.md` | Service layer, mixin catalog, permissions plumbing, line-item pattern, view-mode, history capture, sidebar |
+| `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service, Deliverables, Shipments |
+| `estimates-and-prices.md` | RateScheme + supersession, billable atoms, Estimate + wizard, atom carry-over, AC pass-through |
+| `materials-inventory-and-purchasing.md` | PriceListItem, Material, PlanMaterial, Earmarks, units, PurchaseOrder, Bill |
+| `invoicing-and-expenses.md` | Invoice + wizard, send-to-customer flow, Expense + Reimbursement |
+| `quickbooks-integration.md` | QBO models, OAuth, sync services, polling, developer setup appendix |
+| `users-and-permissions.md` | User model, permission atoms, auth, user admin, self-service, login tracking (designed not built) |
+| `data-constraints.md` | Cross-model invariants and field-by-field constraints (validator-consumable reference) |
 
 ## Key Models
 
-### Core (`apps.core`)
-- **User** - Custom AbstractUser, links to Contact. Has 6 custom permission atoms (see Permissions section)
-- **Configuration** - Key-value store for system settings (document numbering sequences/counters, email settings). **Never add fields** - all settings are key-value pairs
-- **HistoryEntry** - Audit log and notes linked to any entity (jobs, contacts, businesses)
-- **AccountingCategory** - Categorizes line items (e.g., labor, materials)
-- **AbstractWorkContainer** (Abstract) - Base for Job and EstWorksheet; holds `template` FK and a `populate_from_template` method stub
-- **BaseLineItem** (Abstract) - Shared fields for all line items: task, price_list_item, line_number, qty, units, description, price_currency. Validates items can't have both task AND price_list_item
-- **EmailRecord** - Permanent record linking emails to jobs (message_id only, email server is source of truth)
-- **TempEmail** - Temporary cache of email metadata from IMAP (OneToOne with EmailRecord, cleaned up after retention period)
-
-### Jobs (`apps.jobs`)
-- **Job** - Central entity (extends AbstractWorkContainer). Status: draft → submitted → approved → work_complete → completed (terminal). Also rejected, cancelled (terminals). 'work_complete' means work is done; 'completed' means fully closed (invoiced/paid).
-- **Task** - Work items belonging directly to a Job (FK `Task.job`). Hierarchical with parent_task
-- **PlanTask** - Task template nodes used in worksheet planning
-- **PlanBundle** - Groups related tasks together
-- **Blep** - Time tracking (start/end times for task work)
-
-### Estimates (`apps.estimates`)
-- **Estimate** - Quotes with versioning. Status: draft → open → accepted/rejected/superseded
-- **EstWorksheet** - Working document for estimates (extends AbstractWorkContainer, declares its own `job` FK). Status: draft → final → superseded
-- **EstimateLineItem** - Line items for estimates (inherits BaseLineItem)
-- **Template System** - WorkTemplate, TaskTemplate, TemplateTaskAssociation, TemplateBundle
-
-### Contacts (`apps.contacts`)
-- **Contact** - Individual person with multiple phone numbers, address, linked to Business
-- **Business** - Company with tax info, payment terms, internal reference code
-- **PaymentTerms** - Payment conditions
-
-### Inventory (`apps.inventory`)
-- **PriceListItem** - Catalog items with purchase/selling prices, inventory tracking
-- **Material** - Materials used in jobs
-- **Earmark** - Inventory earmarking for specific jobs/tasks
-- **InventoryAdjustment** - Stock adjustments
-
-### Invoicing (`apps.invoicing`)
-- **Invoice** - Bills for completed work, linked to Job. Status: active/cancelled
-- **InvoiceLineItem** - Inherits BaseLineItem
-
-### Purchasing (`apps.purchasing`)
-- **PurchaseOrder** - Orders to vendors, optionally linked to Job
-- **Bill** - Vendor invoices, linked to PurchaseOrder and Contact
-- **PurchaseOrderLineItem & BillLineItem** - Inherit BaseLineItem
+| App | Models | Authoritative doc |
+|---|---|---|
+| `apps.core` | User, Configuration, AccountingCategory, BaseLineItem (abstract), AbstractWorkContainer (abstract), HistoryEntry, EmailRecord, TempEmail | architecture, users-and-permissions, data-constraints |
+| `apps.jobs` | Job, Task, PlanTask, Blep, RateScheme | jobs-tasks-and-worksheets (Job/Task/Blep/PlanTask) + estimates-and-prices (RateScheme) |
+| `apps.estimates` | Estimate, EstimateLineItem, EstimateLineItemSource, EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation | estimates-and-prices + jobs-tasks-and-worksheets (worksheets, templates) |
+| `apps.contacts` | Contact, Business, PaymentTerms | data-constraints §1.5, §1.4 |
+| `apps.inventory` | PriceListItem, Material, PlanMaterial, Earmark, InventoryAdjustment, TemplateMaterialAssociation | materials-inventory-and-purchasing |
+| `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem | materials-inventory-and-purchasing |
+| `apps.invoicing` | Invoice, InvoiceLineItem, InvoiceLineItemSource | invoicing-and-expenses |
+| `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |
+| `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-tasks-and-worksheets §12 |
+| `apps.qbo` | QBOConnection, QBOSyncLog | quickbooks-integration |
 
 ## Configuration Model
 
@@ -133,9 +132,9 @@ value = config.value  # always a string
 Configuration.objects.update_or_create(key='your_key', defaults={'value': 'val'})
 ```
 
-**Current keys:** `job_number_sequence`, `job_counter`, `estimate_number_sequence`, `estimate_counter`, `invoice_number_sequence`, `invoice_counter`, `po_number_sequence`, `po_counter`, `est_expire_days`, `email_retention_days`, `latest_email_date`, `email_display_limit`
+For the full list of in-use keys (document numbering, units list, QBO payment accounts, board retention, email retention, PO email templates, etc.) see `docs/designs/data-constraints.md` §1.1.
 
-When adding new keys, also add to test setUp() methods and fixture files.
+When adding new keys, also add to test `setUp()` methods and fixture files.
 
 ## Document Numbering (NumberGenerationService)
 
@@ -158,16 +157,20 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 - `/search/` - Search | `/inventory/` - Inventory
 
 ### REST API (`/api/`)
-- `/api/auth/` - Login, logout, me (session-based auth)
+- `/api/auth/` — login, logout, me, me/password, refresh stub, lightweight users dropdown
 - `/api/jobs/`, `/api/contacts/`, `/api/businesses/`, `/api/payment-terms/`
-- `/api/jobs/{id}/` sub-routes: `tasks/`, `tasks/{tid}/`, `work-complete/`, `populate-from-template/`, `populate-from-estimate/`, `copy-from-worksheet/`, `reorder-tasks/`, `add-from-template/`
-- `/api/estimates/`, `/api/est-worksheets/`
+- `/api/estimates/`, `/api/est-worksheets/`, `/api/plan-tasks/`, `/api/rate-schemes/`, `/api/tasks/`, `/api/bleps/`
 - `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
-- `/api/price-list-items/`, `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
-- `/api/emails/`, `/api/search/`, `/api/settings/`
+- `/api/price-list-items/`, `/api/materials/`, `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
+- `/api/expenses/`, `/api/reimbursements/`
+- `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
+- `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
+- `/api/emails/`, `/api/search/`, `/api/settings/`, `/api/home/`
+
+Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). Currently implements: home, contacts, businesses, jobs, job task list (`#/jobs/:id/tasklist`), some configuration. Other entities still use Django HTML views for the moment.
+Hash-based routing (`#/path`). The SPA is the primary UI; covers home, jobs (board + detail + task list + task detail), contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. Some legacy Django HTML views still exist for opportunistic decommissioning.
 
 ## Frontend (Svelte SPA)
 
@@ -181,25 +184,34 @@ The primary UI is a Svelte 5 SPA at `frontend/`, built with Vite and using hash-
 - **Dev:** Vite on `:9000` proxies `/api/*` to Django on `:8000`
 - **Prod:** `npm run build` → `dist/` served by nginx
 
+## UI Decisions
+
+Conventions to keep the SPA's interaction vocabulary consistent. New code follows these unless there's a specific reason not to.
+
+- **Links navigate; buttons act.** Use `<a href="...">` (or `use:link`) for anything that takes the user to a different view. Use `<button>` for anything that mutates state, opens a modal, or triggers an API call without a navigation. Don't dress a `<button>` as a link to navigate, and don't wrap a `<a>` around an action handler.
+- **Saves are explicit, never blur-only.** `onblur` (or any other implicit focus/navigation event) must never be the only trigger that commits a change to the server. Users move focus accidentally — losing or saving work as a side effect is hostile. Every mutation needs an explicit confirmation: a Save button, an Enter-on-form, an explicit modal "OK". `onblur` is fine as a secondary trigger (validating format, normalizing values into pending state) but the actual API call must wait for a deliberate action.
+
 ## REST API (`apps/api/`)
 
 DRF-based API serving the Svelte frontend. Session-based authentication (no tokens).
 
 **Key patterns:**
 - ViewSets use service classes for all business logic (`perform_create`/`perform_update` delegate to services)
-- Reusable mixins: `StatusTransitionMixin` (status change actions), `LineItemMixin` (CRUD for line items), `TaskBundleMixin` (task/bundle CRUD), `TaskLifecycleMixin` (task state machine)
-- Permission classes in `apps/api/permissions.py` — factory-generated from permission atoms
+- Reusable mixins: `StatusTransitionMixin`, `LineItemMixin`, `JobTaskMixin`, `PlanTaskMixin` — full catalog in `docs/designs/architecture-and-conventions.md`
+- Permission classes in `apps/api/permissions.py` — factory-generated from the four permission atoms
 - `StandardPagination`: 25 items/page, max 100, via `?page_size=N`
-- Delete confirmation pattern: first DELETE returns impact counts, second with `?confirm=true` executes
-- **All DELETE responses return 200 with a JSON body** (e.g. `{'message': '... deleted.'}`), never 204. The frontend `api.js` wrapper assumes every response has JSON. Override DRF's default `destroy()` on new viewsets. Some legacy viewsets still return 204 via `ModelViewSet` default — fix opportunistically
+- Delete confirmation pattern (two-phase): first DELETE returns impact counts, second with `?confirm=true` executes
+- **All DELETE responses return 200 with a JSON body** (e.g. `{'message': '... deleted.'}`), never 204. The frontend `api.js` wrapper assumes every response has JSON. Override DRF's default `destroy()` on new viewsets
 
-**Stubs (not yet implemented):** `/api/auth/refresh/`, `/api/emails/send/`, `/api/shifts/`, `/api/expenses/`, `/api/time-tracking/`
+501 stub list and viewset compliance details are in `docs/designs/architecture-and-conventions.md` §3.6 and §3.8.
 
 ## Template/HTML Conventions
 
+**Scope:** this section applies to the deprecated Django HTML view layer (`apps/*/views.py` + `templates/`), still present and edited opportunistically. The SPA uses its own conventions — semantic HTML, per-component `<style>` blocks, and an **error-overlay / success-overlay** pattern (red / green borders) for user feedback, owned by `frontend/src/lib/api.js`. SPA UI conventions are documented in `frontend/README.md`; the architecture doc covers the cross-cutting view-mode, sidebar, and history-panel patterns.
+
 - **No CSS frameworks, no JavaScript** (except datetime-local inputs)
 - **Semantic HTML only:** `<p>`, `<strong>`, `<fieldset>`, `<table border="1">`
-- **Django messages:** Use `messages.success()`/`error()` in views; NEVER duplicate message display in templates (base.html handles it)
+- **Django messages:** Use `messages.success()`/`error()` in HTML views; NEVER duplicate message display in templates (base.html handles it). The SPA does NOT use Django messages — it uses `lib/api.js` overlays instead
 - **Form pattern:** `<p><label><strong>Label</strong></label><br><input></p>`
 - **Buttons:** Plain `<button>`, simple `<a>` links (no styling)
 - **No inline styles** except for critical readability (e.g., borders on email content)
@@ -225,6 +237,8 @@ DRF-based API serving the Svelte frontend. Session-based authentication (no toke
 
 **Anti-patterns:** Inline styled divs, styled buttons, links styled as buttons, duplicate message handling blocks.
 
+**Table markup:** Always wrap `<tr>` rows in `<tbody>` (or `<thead>`/`<tfoot>`). Svelte 5 strict mode rejects `<tr>` as a direct child of `<table>` and the build will fail.
+
 ## Code Conventions
 
 **Status Constants:** Always use model constants, not string literals:
@@ -244,6 +258,8 @@ for contact in Contact.objects.filter(...):
     contact.delete()
 ```
 
+**Line item deletion:** NEVER call `.delete()` directly on a line item (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`, `BillLineItem`). Always go through `LineItemService.delete_line_item_with_renumber(line_item)` — `BaseLineItem.delete()` does NOT renumber survivors, so a direct call leaves gaps in `line_number` (e.g. lines 2, 3, 5, 7). The only legitimate exception is the implementation of `delete_line_item_with_renumber` itself. Cascade deletes from the parent container (Estimate/Invoice/PO/Bill) are fine because Django uses bulk-delete and skips per-instance `.delete()` entirely. If you need to delete a line item from a new code path, route it through the service.
+
 **Transactions:** Wrap multi-model operations:
 ```python
 with transaction.atomic():
@@ -262,36 +278,26 @@ with transaction.atomic():
 - API function views: `@permission_classes([IsAuthenticated, CanXxx])`
 - HTML views: `@login_required` + `@permission_required('core.can_xxx', raise_exception=True)`
 - Notes (HistoryEntry) and adding tasks to a Job are `IsAuthenticated` only
-- Email viewing requires `CanManageJobs`
+- Email *reads* (`/api/emails/`, detail) are `IsAuthenticated`; email-to-job actions (link, unlink, create-job-from-email) require `CanManageJobs`
 
-See `docs/designs/2026-03-24-permission-atom-redesign.md` for atoms, group mappings, and view-to-permission mapping.
+See `docs/designs/users-and-permissions.md` for the full atom-to-endpoint mapping.
 
 ## Permissions
 
-### Permission Atoms (defined on User model)
+Four custom permission atoms on the `User` model:
 
-| Permission | Covers |
+| Atom | Covers |
 |---|---|
-| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, bundles, contacts, businesses; email-to-job actions (link, unlink, create-job-from-email) |
-| `can_manage_financials` | Full CRUD on invoices, POs, bills, price list items |
-| `can_manage_time` | Edit/delete anyone's time entries (shifts + bleps) |
-| `can_manage_config` | Settings, templates, accounting categories, user admin |
+| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, contacts, businesses; email-to-job actions (link, unlink, create-job-from-email) |
+| `can_manage_financials` | Full CRUD on invoices, POs, bills, price list items, expenses, reimbursements |
+| `can_manage_time` | Edit/delete anyone's bleps (own bleps are `IsAuthenticated` within the 24h rolling window) |
+| `can_manage_config` | Settings, templates, accounting categories, user admin, QBO connection |
 
-**`IsAuthenticated` (no atom):** Read access to jobs, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, bills, emails. Write access to notes on jobs/contacts/businesses and adding tasks to jobs.
+**`IsAuthenticated` (no atom):** Read access to jobs, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, bills, emails. Write access to notes on jobs/contacts/businesses, adding tasks to existing jobs, and submitting/tracking own time and expenses.
 
-**Implicit:** All authenticated users can track own time and submit own expenses.
+**`is_superuser` bypasses every atom check.**
 
-### Default Groups
-
-| Group | Permissions |
-|---|---|
-| Worker | *(none — IsAuthenticated covers read access)* |
-| Admin | `can_manage_jobs` |
-| Bookkeeper | `can_manage_financials` |
-| Manager | `can_manage_jobs`, `can_manage_financials`, `can_manage_time` |
-| Owner | all atoms |
-
-Groups are defined in fixture data, not migrations. Shops customize to suit their needs.
+Django Groups are not used; permissions are assigned per-atom on `user_permissions`. Full endpoint-to-atom table lives in `docs/designs/users-and-permissions.md` §3.
 
 ## Business Workflows
 
@@ -324,38 +330,12 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 
 ## Development Features
 
-- **Dev autologin** — Frontend supports `?autologin` query param to log in as dev_user via the API (requires dev_user with password `dev_password`)
 - **Seed script** — `scripts/seed_data.sh` seeds realistic data through API endpoints (requires dev server on :8000)
 - **Management commands** — `populate_data.py` (base), `populate_contact_data.py`, `populate_job_data.py`
 
-### QuickBooks Online Integration Setup
+### QuickBooks Online Integration
 
-QBO integration requires OAuth credentials and a `.env` file. One-time setup per developer:
-
-1. **Get credentials** — Ask the project owner for the Intuit developer account credentials, or create your own at https://developer.intuit.com/. You need a sandbox app with a client ID and client secret.
-
-2. **Create `.env` file** in the project root (already gitignored):
-   ```
-   QBO_CLIENT_ID=your_client_id_here
-   QBO_CLIENT_SECRET=your_client_secret_here
-   QBO_REDIRECT_URI=http://localhost:8000/api/qbo/callback/
-   QBO_ENVIRONMENT=sandbox
-   SPA_BASE_URL=http://localhost:9000
-   ```
-
-3. **Register the redirect URI** — In the Intuit developer dashboard, go to your app's **Keys & credentials** and add `http://localhost:8000/api/qbo/callback/` as a Redirect URI. Must match exactly.
-
-4. **Install dependencies** — `pip install -r requirements.txt` (adds `python-quickbooks` and `python-dotenv`)
-
-5. **Run migrations** — `python manage.py migrate` (creates `qbo_connection` and `qbo_sync_log` tables, adds QBO fields to `businesses`)
-
-6. **Connect** — Start both servers with `./dev.sh`, navigate to `http://localhost:9000/#/settings`, click "Connect to QuickBooks". Log in with the Intuit sandbox credentials and authorize.
-
-**Notes:**
-- The OAuth connection uses a 100-day rolling refresh token. As long as any QBO API call is made within 100 days, the connection stays alive indefinitely.
-- `SPA_BASE_URL` controls where Django redirects after OAuth. In dev it's `http://localhost:9000` (Vite). In production leave it empty (same origin).
-- The user connecting must have the `can_manage_config` permission.
-- QBO service code lives in `apps/qbo/`. `QBOService` is the mock boundary — all tests mock at this layer.
+See `docs/designs/quickbooks-integration.md` for the full reference, including OAuth credentials, `.env` setup, and the first-connect walkthrough.
 
 ## Common Coding Pitfalls
 
@@ -366,6 +346,7 @@ QBO integration requires OAuth credentials and a `.env` file. One-time setup per
 5. **QuerySet.delete() bypasses Model.delete()** - Iterate and call delete() individually
 6. **Missing transaction wrapping** - Multi-model ops need `transaction.atomic()`
 7. **Type coercion** - Pass correct types to ORM fields
+8. **Direct `.delete()` on a line item** - Leaves `line_number` gaps. Always go through `LineItemService.delete_line_item_with_renumber(line_item)`
 
 ### Code Review Checklist
 - [ ] Status values match model choice definitions
@@ -374,6 +355,7 @@ QBO integration requires OAuth credentials and a `.env` file. One-time setup per
 - [ ] Field names match current model (no old renamed fields)
 - [ ] Integer fields receive integers, not strings
 - [ ] Custom delete() methods are respected (no QuerySet.delete())
+- [ ] Line item deletes go through `LineItemService.delete_line_item_with_renumber`
 - [ ] Multi-model operations are wrapped in transactions
 
 ## Key File Locations
@@ -383,4 +365,5 @@ QBO integration requires OAuth credentials and a `.env` file. One-time setup per
 - Services: `apps/*/services.py` | Settings: `minibini/settings.py`
 - API: `apps/api/*/views.py` (viewsets), `apps/api/*/serializers.py`, `apps/api/mixins.py`, `apps/api/permissions.py`
 - Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
-- Design specs: `docs/designs/` | Implementation plans (temporary): `docs/plans/`
+- Topic reference docs: `docs/designs/` (eight files; see "Topic reference docs" above)
+- Implementation plans (temporary working files): `docs/plans/` (currently empty)

@@ -58,6 +58,18 @@ class Invoice(models.Model):
                         )
             except Invoice.DoesNotExist:
                 pass
+        # Enforce single-draft-per-job at the application layer. The
+        # equivalent partial UniqueConstraint is declared on Meta but
+        # MySQL silently drops conditional constraints (W036), so this
+        # check is the load-bearing one.
+        if self.job_id and self.status == Invoice.STATUS_DRAFT:
+            existing = Invoice.objects.filter(
+                job_id=self.job_id, status=Invoice.STATUS_DRAFT,
+            ).exclude(pk=self.pk)
+            if existing.exists():
+                raise ValidationError(
+                    'A draft invoice already exists for this job.'
+                )
 
     def save(self, *args, **kwargs):
         """Override save to auto-generate invoice_number and check job completion."""
@@ -88,8 +100,13 @@ class Invoice(models.Model):
         """Complete the job if all its invoices are paid (or cancelled)."""
         from apps.core.models import HistoryEntry, User
         from apps.jobs.models import Job
+        from apps.jobs.services import JobService
 
         job = self.job
+        # Decide against current DB state — the cached self.job instance may
+        # be stale (status changes route through JobService.update_job, which
+        # does not mutate this instance in place).
+        job.refresh_from_db()
         # Don't touch completed or cancelled jobs
         if job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
             return
@@ -101,18 +118,40 @@ class Invoice(models.Model):
 
         if not unresolved:
             old_status = job.status
-            # Walk through work_complete when coming from approved
-            # (transition rules route approved → work_complete → completed).
-            if job.status == Job.STATUS_APPROVED:
-                job.status = Job.STATUS_WORK_COMPLETE
-                job.save()
-            job.status = Job.STATUS_COMPLETED
-            job.save()
-
             system_user, _ = User.objects.get_or_create(
                 username='system',
                 defaults={'first_name': 'System', 'is_active': False},
             )
+
+            # Invoice-paid completion is an unattended path (no user to resolve
+            # loose materials), so release them rather than let the
+            # work_complete materials gate strand the job.
+            released = JobService.release_loose_materials(job)
+            if released:
+                HistoryEntry.objects.create(
+                    entry_type='action',
+                    object_type='job',
+                    object_id=job.pk,
+                    user=system_user,
+                    changes={
+                        '_action': (
+                            'Loose materials released on invoice-completion: '
+                            + ', '.join(
+                                f"{m['description']} (qty {m['quantity']})"
+                                for m in released
+                            )
+                        ),
+                    },
+                )
+
+            # Walk through in_progress and work_complete when coming from approved
+            # (transition rules route approved → in_progress → work_complete → completed).
+            if job.status == Job.STATUS_APPROVED:
+                job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
+            if job.status == Job.STATUS_IN_PROGRESS:
+                job = JobService.update_job(job.pk, status=Job.STATUS_WORK_COMPLETE)
+            job = JobService.update_job(job.pk, status=Job.STATUS_COMPLETED)
+
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='job',
@@ -126,6 +165,13 @@ class Invoice(models.Model):
 
     class Meta:
         db_table = 'invoices'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['job'],
+                condition=models.Q(status='draft'),
+                name='unique_draft_invoice_per_job',
+            ),
+        ]
 
     def __str__(self):
         return f"Invoice {self.invoice_number}"
@@ -155,16 +201,16 @@ class InvoiceLineItem(BaseLineItem):
 
 
 class InvoiceLineItemSource(models.Model):
-    """Polymorphic join between an InvoiceLineItem and its source atom (Blep or Material).
+    """Polymorphic join between an InvoiceLineItem and its source atom (Task or Material).
 
     The unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level: an atom can be referenced by at most one line item.
     """
-    SOURCE_BLEP = 'blep'
     SOURCE_MATERIAL = 'material'
+    SOURCE_TASK = 'task'
     SOURCE_TYPE_CHOICES = [
-        (SOURCE_BLEP, 'Blep'),
         (SOURCE_MATERIAL, 'Material'),
+        (SOURCE_TASK, 'Task'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -181,13 +227,13 @@ class InvoiceLineItemSource(models.Model):
         unique_together = [('source_type', 'source_pk')]
 
     def resolve(self):
-        """Return the concrete atom instance (Blep or Material) referenced by this source."""
-        if self.source_type == self.SOURCE_BLEP:
-            from apps.jobs.models import Blep
-            return Blep.objects.get(pk=self.source_pk)
+        """Return the concrete atom instance (Material or Task) referenced by this source."""
         if self.source_type == self.SOURCE_MATERIAL:
             from apps.inventory.models import Material
             return Material.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_TASK:
+            from apps.jobs.models import Task
+            return Task.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):

@@ -7,9 +7,18 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, PlanTask
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem, WorkTemplate, TaskTemplate
-from apps.core.models import User
+from apps.core.models import User, AccountingCategory
+
+
+def _make_scheme(suffix):
+    """Helper: create a minimal RateScheme + AccountingCategory for tests."""
+    ac = AccountingCategory.objects.create(code=f'ESTWS-{suffix}', name=f'estws-{suffix}')
+    return RateScheme.objects.create(
+        name=f'S-estws-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        rate=Decimal('1'), unit_label='ea', accounting_category=ac,
+    )
 
 
 class EstWorksheetModelTest(TestCase):
@@ -35,7 +44,6 @@ class EstWorksheetModelTest(TestCase):
         self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
         self.assertEqual(worksheet.version, 1)
         self.assertIsNone(worksheet.estimate)
-        self.assertIsNone(worksheet.template)
         self.assertIsNone(worksheet.parent)
 
     def test_estworksheet_default_status_is_draft(self):
@@ -57,21 +65,6 @@ class EstWorksheetModelTest(TestCase):
             # Not specifying status to use default
         )
 
-        self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
-        
-    def test_estworksheet_with_template(self):
-        """Test creating EstWorksheet from template."""
-        template = WorkTemplate.objects.create(
-            template_name="Test Template",
-            description="Test description"
-        )
-        
-        worksheet = EstWorksheet.objects.create(
-            job=self.job,
-            template=template
-        )
-        
-        self.assertEqual(worksheet.template, template)
         self.assertEqual(worksheet.status, EstWorksheet.STATUS_DRAFT)
         
     def test_estworksheet_str_method(self):
@@ -216,24 +209,26 @@ class EstWorksheetVersioningTest(TestCase):
         
     def test_create_new_version(self):
         """Test creating a new version of EstWorksheet."""
+        scheme = _make_scheme('cnv')
         # Create original worksheet with tasks
         worksheet_v1 = EstWorksheet.objects.create(
             job=self.job,
             status=Job.STATUS_DRAFT,
             version=1
         )
-        
+
         task1 = PlanTask.objects.create(
             est_worksheet=worksheet_v1,
             name="Task 1",
-            units="hours",
-            rate=Decimal('50.00'),
-            est_qty=Decimal('5.00')
+            rate_scheme=scheme,
+            est_qty=Decimal('1'),
         )
 
         task2 = PlanTask.objects.create(
             est_worksheet=worksheet_v1,
             name="Task 2",
+            rate_scheme=scheme,
+            est_qty=Decimal('1'),
         )
         
         # Create new version
@@ -255,10 +250,6 @@ class EstWorksheetVersioningTest(TestCase):
         self.assertEqual(v2_tasks.count(), 2)
 
         self.assertEqual(v2_tasks[0].name, "Task 1")
-        self.assertEqual(v2_tasks[0].units, "hours")
-        self.assertEqual(v2_tasks[0].rate, Decimal('50.00'))
-        self.assertEqual(v2_tasks[0].est_qty, Decimal('5.00'))
-
         self.assertEqual(v2_tasks[1].name, "Task 2")
         
     def test_version_chain(self):
@@ -304,15 +295,18 @@ class TaskWorkContainerTest(TestCase):
 
     def test_task_with_job(self):
         """Test creating Task directly on a Job (post-WorkOrder-removal)."""
+        scheme = _make_scheme('twj')
         task = Task.objects.create(
             job=self.job,
-            name="Job Task"
+            name="Job Task",
+            rate_scheme=scheme,
         )
 
         self.assertEqual(task.job, self.job)
 
     def test_plan_task_with_estworksheet(self):
         """Test creating PlanTask on an EstWorksheet."""
+        scheme = _make_scheme('ptws')
         worksheet = EstWorksheet.objects.create(
             job=self.job,
             status=Job.STATUS_DRAFT
@@ -320,13 +314,16 @@ class TaskWorkContainerTest(TestCase):
 
         task = PlanTask.objects.create(
             est_worksheet=worksheet,
-            name="Worksheet Task"
+            name="Worksheet Task",
+            rate_scheme=scheme,
+            est_qty=Decimal('1'),
         )
 
         self.assertEqual(task.est_worksheet, worksheet)
 
     def test_worksheet_plan_tasks_accessor(self):
         """Test accessing plan tasks through EstWorksheet.plan_tasks."""
+        scheme = _make_scheme('wpta')
         worksheet = EstWorksheet.objects.create(
             job=self.job,
             status=Job.STATUS_DRAFT
@@ -334,12 +331,16 @@ class TaskWorkContainerTest(TestCase):
 
         task1 = PlanTask.objects.create(
             est_worksheet=worksheet,
-            name="Task 1"
+            name="Task 1",
+            rate_scheme=scheme,
+            est_qty=Decimal('1'),
         )
 
         task2 = PlanTask.objects.create(
             est_worksheet=worksheet,
-            name="Task 2"
+            name="Task 2",
+            rate_scheme=scheme,
+            est_qty=Decimal('1'),
         )
 
         tasks = worksheet.plan_tasks.all()

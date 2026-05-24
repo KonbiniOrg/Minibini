@@ -84,7 +84,7 @@
         {#each expenses as e (e.id)}
           <tr>
             <td>{e.purchased_on}</td>
-            <td>{e.description || '—'}</td>
+            <td class="preserve-breaks">{e.description || '—'}</td>
             <td>
               {#if e.job_id}
                 <a href="/jobs/{e.job_id}" use:link>{e.job_number}{e.job_name ? ' — ' + e.job_name : ''}</a>

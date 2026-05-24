@@ -79,7 +79,7 @@
         <div style="border: 1px solid #dee2e6; border-radius: 4px; padding: 15px; margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
                 <div>
-                    <strong>{{ bill.bill_number }}</strong> &mdash; Status: {{ bill.get_status_display }}
+                    <strong>{{ bill.vendor_invoice_number|default:bill.pk }}</strong> &mdash; Status: {{ bill.get_status_display }}
                     {% if bill.contact %}<br><span style="color: #6c757d; font-size: 0.9em;">Contact: {{ bill.contact }}</span>{% endif %}
                 </div>
                 <div style="margin-top: 8px;">

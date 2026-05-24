@@ -1,10 +1,10 @@
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.test import TestCase
 from decimal import Decimal
-from django.utils import timezone
 
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-from apps.jobs.models import Job, Task, Blep
+from apps.jobs.models import Job, Task, RateScheme
 from apps.inventory.models import Material, PriceListItem
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory
@@ -33,16 +33,14 @@ class InvoiceLineItemSourceTest(TestCase):
             contact=self.contact,
             status=Job.STATUS_APPROVED,
         )
+        self.scheme = RateScheme.objects.create(
+            name='S-ilis', algorithm=RateScheme.FLAT_FEE,
+            rate=1, unit_label='ea', accounting_category=self.category,
+        )
         self.task = Task.objects.create(
             job=self.job,
             name='Labor',
-            rate=Decimal('25.00'),
-            accounting_category=self.category,
-        )
-        self.blep = Blep.objects.create(
-            task=self.task,
-            start_time=timezone.now(),
-            end_time=timezone.now(),
+            rate_scheme=self.scheme,
         )
 
         self.invoice = Invoice.objects.create(job=self.job)
@@ -54,23 +52,23 @@ class InvoiceLineItemSourceTest(TestCase):
             accounting_category=self.category,
         )
 
-    def test_source_links_line_item_to_blep(self):
+    def test_source_links_line_item_to_task(self):
         source = InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
         )
         self.assertEqual(source.invoice_line_item, self.line_item)
-        self.assertEqual(source.source_pk, self.blep.pk)
+        self.assertEqual(source.source_pk, self.task.pk)
 
-    def test_resolve_returns_blep_instance(self):
+    def test_resolve_returns_task_instance(self):
         source = InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
         )
         resolved = source.resolve()
-        self.assertEqual(resolved, self.blep)
+        self.assertEqual(resolved, self.task)
 
     def test_resolve_returns_material_instance(self):
         pli = PriceListItem.objects.create(
@@ -98,8 +96,8 @@ class InvoiceLineItemSourceTest(TestCase):
     def test_unique_atom_constraint_prevents_double_claim(self):
         InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
         )
         other_line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
@@ -111,15 +109,15 @@ class InvoiceLineItemSourceTest(TestCase):
         with self.assertRaises(IntegrityError):
             InvoiceLineItemSource.objects.create(
                 invoice_line_item=other_line_item,
-                source_type=InvoiceLineItemSource.SOURCE_BLEP,
-                source_pk=self.blep.pk,
+                source_type=InvoiceLineItemSource.SOURCE_TASK,
+                source_pk=self.task.pk,
             )
 
     def test_deleting_line_item_cascades_to_sources(self):
         source = InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,
-            source_type=InvoiceLineItemSource.SOURCE_BLEP,
-            source_pk=self.blep.pk,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
         )
         self.line_item.delete()
         self.assertFalse(
@@ -141,7 +139,7 @@ class UniqueDraftInvoicePerJobTest(TestCase):
 
     def test_second_draft_for_same_job_raises(self):
         Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
-        with self.assertRaises(IntegrityError):
+        with self.assertRaises(ValidationError):
             Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
     def test_multiple_non_draft_invoices_allowed(self):

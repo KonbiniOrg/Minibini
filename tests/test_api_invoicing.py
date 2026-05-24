@@ -2,6 +2,7 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, HistoryEntry
 from apps.invoicing.models import Invoice, InvoiceLineItem
+from apps.jobs.models import Job
 
 
 class InvoiceAPITest(BaseTestCase):
@@ -55,3 +56,61 @@ class InvoiceAPITest(BaseTestCase):
             self.assertIsNotNone(entry)
             self.assertEqual(entry.text, 'Billed in error')
             self.assertEqual(entry.user, self.user)
+
+    def test_discard_draft_returns_200_with_message(self):
+        job = Job.objects.first()
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-DISCARD-001', status=Invoice.STATUS_DRAFT,
+        )
+        pk = invoice.pk
+        response = self.client.delete(f'/api/invoices/{pk}/?confirm=true')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('message', response.data)
+        self.assertFalse(Invoice.objects.filter(pk=pk).exists())
+
+    def test_discard_non_draft_returns_400(self):
+        job = Job.objects.first()
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-DISCARD-002', status=Invoice.STATUS_DRAFT,
+        )
+        Invoice.objects.filter(pk=invoice.pk).update(status=Invoice.STATUS_OPEN)
+        response = self.client.delete(f'/api/invoices/{invoice.pk}/?confirm=true')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Invoice.objects.filter(pk=invoice.pk).exists())
+
+    def test_due_date_and_is_late_for_unsent_invoice(self):
+        job = Job.objects.first()
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-DUE-001', status=Invoice.STATUS_DRAFT,
+        )
+        response = self.client.get(f'/api/invoices/{invoice.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data['due_date'])
+        self.assertFalse(response.data['is_late'])
+
+    def test_due_date_30_days_after_sent_and_late_when_unpaid(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        job = Job.objects.first()
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-DUE-002', status=Invoice.STATUS_OPEN,
+        )
+        sent = timezone.now() - timedelta(days=45)
+        Invoice.objects.filter(pk=invoice.pk).update(sent_date=sent)
+        response = self.client.get(f'/api/invoices/{invoice.pk}/')
+        body = response.json()
+        expected_due = (sent + timedelta(days=30)).date().isoformat()
+        self.assertEqual(body['due_date'], expected_due)
+        self.assertTrue(body['is_late'])
+
+    def test_paid_invoice_is_not_late(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        job = Job.objects.first()
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-DUE-003', status=Invoice.STATUS_PAID,
+        )
+        sent = timezone.now() - timedelta(days=45)
+        Invoice.objects.filter(pk=invoice.pk).update(sent_date=sent)
+        response = self.client.get(f'/api/invoices/{invoice.pk}/')
+        self.assertFalse(response.json()['is_late'])

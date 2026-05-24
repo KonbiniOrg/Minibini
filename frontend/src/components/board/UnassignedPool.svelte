@@ -45,6 +45,8 @@
 <div class="unassigned-header">
   Unassigned <span class="ua-count">&middot; {visibleTasks.length} task{visibleTasks.length === 1 ? '' : 's'}{focusedJobIds.length > 0 && visibleTasks.length !== tasks.length ? ` (of ${tasks.length})` : ''}</span>
 </div>
+<!-- drag-and-drop drop zone: HTML5 DnD is mouse-only, no keyboard equivalent -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="unassigned-body"
   ondragover={handleDragOver}
@@ -69,7 +71,6 @@
     padding: 8px; background: #f5f5f5; overflow-y: auto; flex: 1;
     display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 5px; align-content: start;
   }
-  .dimmed { opacity: 0.25; transition: opacity 0.2s; }
   .dragging-source { opacity: 0.15; }
   .empty { font-size: 13px; color: #999; text-align: center; padding: 20px 0; grid-column: 1 / -1; }
 </style>

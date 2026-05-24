@@ -686,9 +686,8 @@ class BillService:
 
     @staticmethod
     def create_bill(**kwargs):
-        """Create a new Bill with auto-generated number."""
-        bill_number = NumberGenerationService.generate_next_number('bill')
-        bill = Bill(bill_number=bill_number, **kwargs)
+        """Create a new Bill."""
+        bill = Bill(**kwargs)
         bill.full_clean()
         bill.save()
         return bill
@@ -702,9 +701,7 @@ class BillService:
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
 
-        bill_number = NumberGenerationService.generate_next_number('bill')
         bill = Bill(
-            bill_number=bill_number,
             purchase_order=po,
             business=po.business,
             contact=po.contact,
@@ -753,7 +750,8 @@ class BillService:
             raise NotFoundError(f'Bill {pk} not found')
         if bill.status != Bill.STATUS_DRAFT:
             raise ValidationError(
-                f'Cannot delete Bill {bill.bill_number}. Only draft bills can be deleted.'
+                f'Cannot delete Bill {bill.vendor_invoice_number or bill.pk}. '
+                'Only draft bills can be deleted.'
             )
         bill.delete()
 

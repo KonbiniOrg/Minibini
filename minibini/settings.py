@@ -34,12 +34,17 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
     'minibini.me',
-    '45.33.56.130'
+    '45.33.56.130',
+    'moose',
+    'moose.local',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     'https://minibini.me',
     'http://localhost:9000',
+    'http://10.1.10.84:9000',
+    'http://moose:9000',
+    'http://moose.local:9000',
 ]
 
 # Application definition
@@ -55,6 +60,7 @@ INSTALLED_APPS = [
     'apps.jobs',
     'apps.estimates',
     'apps.contacts',
+    'apps.deliverables',
     'apps.expenses',
     'apps.invoicing',
     'apps.purchasing',
@@ -200,7 +206,7 @@ FIXTURE_DIRS = [
 # Session settings
 SESSION_COOKIE_AGE = 86400  # 1 day (24 * 60 * 60 seconds) instead of default 14 days
 
-LOGIN_URL = '/admin/login/'  # Interim — Django admin login form until SPA login page exists
+LOGIN_URL = '/'  # SPA root renders LoginPage when unauthenticated
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
