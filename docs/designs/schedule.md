@@ -139,18 +139,23 @@ the SPA refetches after a successful reorder.
 ## 5. Frontend
 
 `frontend/src/routes/schedule/SchedulePage.svelte` plus
-`frontend/src/components/schedule/` (`WorkerLane`, `TaskBar`, `NowLine`,
-`TaskQuickCard`) and the `stores/schedule.js` store (load + 5-minute
+`frontend/src/components/schedule/` (`ScheduleHeader`, `WorkerLane`, `TaskBar`,
+`NowLine`, `TaskQuickCard`) and the `stores/schedule.js` store (load + 5-minute
 auto-refresh + reorder). The Board's `JobChipStrip` is reused at the top.
 
+- **Header bar** (`ScheduleHeader`): a persistent **Today** button sits in the
+  left corner above the lane-name column (disabled when already on today); the
+  ‹ / › day-scroll arrows are paired at the far-right end; day labels are
+  centered in their columns. The top toolbar holds only the title and the
+  working-days control.
 - **Layout math** (client): each working day gets an equal panel; a segment
   maps to an absolutely-positioned div, filled with one solid colour by kind
   (`forecast` bright accent, `actual` darkened). Zigzag edges via `clip-path`
   on segments flagged `continues_left/right`. `actual` bars recede slightly;
   the running session keeps full opacity with a bright ring.
 - **Now line** seeds from the payload `now` and ticks client-side each minute;
-  hidden when "now" is off the scrolled window. ‹/› and "Today" drive
-  `offset`; a day-count control drives `?days=N`.
+  hidden when "now" is off the scrolled window. The header's ‹/› and Today
+  drive `offset`; the working-days control drives `?days=N`.
 - **Drag-to-reorder**: `forecast` bars are draggable (this includes blocked
   tasks, which are now forecast bars); a 3px grey drop indicator snaps to
   buffer midpoints and hides on a no-op move. Reorder writes `worker_queue`
