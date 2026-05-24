@@ -1,7 +1,13 @@
 from rest_framework import serializers
-from apps.contacts.models import Contact, Business, PaymentTerms
+from apps.contacts.models import Contact, Business, PaymentTerms, Tag
 from apps.jobs.models import Job
 from apps.api.jobs.serializers import JobSummarySerializer
+
+
+class TagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tag
+        fields = ['tag_id', 'name']
 
 
 class BusinessSummarySerializer(serializers.ModelSerializer):
@@ -24,6 +30,7 @@ class ContactSerializer(serializers.ModelSerializer):
     business_id = serializers.PrimaryKeyRelatedField(
         queryset=Business.objects.all(), source='business', write_only=True, required=False, allow_null=True,
     )
+    tags = TagSerializer(many=True, read_only=True)
 
     class Meta:
         model = Contact
@@ -31,7 +38,7 @@ class ContactSerializer(serializers.ModelSerializer):
             'contact_id', 'first_name', 'middle_initial', 'last_name', 'name',
             'email', 'mobile_number', 'work_number', 'home_number',
             'addr1', 'addr2', 'addr3', 'city', 'municipality',
-            'postal_code', 'country_code', 'business', 'business_id',
+            'postal_code', 'country_code', 'business', 'business_id', 'tags',
         ]
         read_only_fields = ['contact_id']
 
@@ -41,6 +48,7 @@ class BusinessSerializer(serializers.ModelSerializer):
     default_contact_id = serializers.PrimaryKeyRelatedField(
         queryset=Contact.objects.all(), source='default_contact', write_only=True, required=False,
     )
+    tags = TagSerializer(many=True, read_only=True)
 
     class Meta:
         model = Business
@@ -48,7 +56,7 @@ class BusinessSerializer(serializers.ModelSerializer):
             'business_id', 'our_reference_code', 'business_name',
             'business_address', 'business_phone', 'tax_exemption_number',
             'website', 'terms', 'default_contact', 'default_contact_id', 'tax_multiplier',
-            'qbo_customer_id', 'qbo_vendor_id',
+            'qbo_customer_id', 'qbo_vendor_id', 'tags',
         ]
         read_only_fields = ['business_id', 'our_reference_code', 'qbo_customer_id', 'qbo_vendor_id']
 

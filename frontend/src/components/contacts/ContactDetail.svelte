@@ -1,6 +1,7 @@
 <script>
   import FullOnly from '../FullOnly.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
+  import TagEditor from '../TagEditor.svelte';
   import { viewMode } from '../../stores/viewMode.js';
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
   const {
@@ -121,6 +122,9 @@
     </dl>
   </FullOnly>
 {/if}
+
+<h3>Tags</h3>
+<TagEditor endpoint="/api/contacts/{contact.contact_id}" initialTags={contact.tags || []} />
 
 <h3>Jobs</h3>
 {#if visibleJobs.length > 0}

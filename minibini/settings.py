@@ -42,6 +42,7 @@ ALLOWED_HOSTS = [
 CSRF_TRUSTED_ORIGINS = [
     'https://minibini.me',
     'http://localhost:9000',
+    'http://127.0.0.1:9000',
     'http://10.1.10.84:9000',
     'http://moose:9000',
     'http://moose.local:9000',
