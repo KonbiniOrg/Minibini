@@ -322,7 +322,7 @@
   <table border="1">
     <tbody>
       <tr><td>Status</td><td>{task.status}{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
-      <tr><td>Description</td><td>{task.description || '-'}</td></tr>
+      <tr><td>Description</td><td class="preserve-breaks">{task.description || '-'}</td></tr>
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
       <tr><td>Est. worker time</td><td>{formatDuration(task.est_worker_time)}</td></tr>
@@ -382,7 +382,7 @@
       <tbody>
         {#each materials as mat}
           <tr>
-            <td>{mat.description || '(no description)'}</td>
+            <td class="preserve-breaks">{mat.description || '(no description)'}</td>
             <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
             <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
             <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>

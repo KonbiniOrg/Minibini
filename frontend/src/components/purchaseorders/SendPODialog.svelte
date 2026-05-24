@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { modalKeys } from '../../lib/modalKeys.js';
 
   const {
     poId,
@@ -47,7 +48,8 @@
   loadDefaults();
 </script>
 
-<div class="dialog-overlay">
+<!-- Esc-only: the <form> below already submits on Enter (and its textarea keeps newlines). -->
+<div class="dialog-overlay" use:modalKeys={{ onCancel }}>
   <div class="dialog">
     <h3>Send Purchase Order</h3>
 

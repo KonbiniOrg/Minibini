@@ -165,7 +165,7 @@
         </td>
         {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task)}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
-        {#if showStatus}<td><span class="status-pill status-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason">{task.blocked_reason}</span>{/if}</td>{/if}
+        {#if showStatus}<td><span class="status-pill status-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}</td>{/if}
         <td class="text-right">{task.scheme_unit_label || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">{taskActual(task) ?? '-'}</td>
@@ -235,7 +235,7 @@
           </td>
           {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub)}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
           <td class="text-right">{fmtWorkerTime(sub.est_worker_time)}</td>
-          {#if showStatus}<td><span class="status-pill status-{sub.status}">{sub.status}</span>{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason">{sub.blocked_reason}</span>{/if}</td>{/if}
+          {#if showStatus}<td><span class="status-pill status-{sub.status}">{sub.status}</span>{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason preserve-breaks">{sub.blocked_reason}</span>{/if}</td>{/if}
           <td class="text-right">{sub.scheme_unit_label || '-'}</td>
           <td class="text-right">{sub.est_qty ?? '-'}</td>
           <td class="text-right">{taskActual(sub) ?? '-'}</td>

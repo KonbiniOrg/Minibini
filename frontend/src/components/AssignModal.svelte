@@ -1,6 +1,7 @@
 <script>
   import { api } from '../lib/api.js';
   import { parseDurationToISO } from '../lib/format.js';
+  import { modalKeys } from '../lib/modalKeys.js';
 
   let {
     open = false,
@@ -82,7 +83,7 @@
 </script>
 
 {#if open}
-  <div class="overlay">
+  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy) save(); }, onCancel: onClose }}>
     <div class="modal">
       <h3>Assign Task: {task?.name}</h3>
 

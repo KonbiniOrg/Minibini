@@ -50,7 +50,7 @@
                 <td>{{ item.line_number|default:item.line_item_id }}</td>
                 <td>{{ item.accounting_category.name|default:"—" }}</td>
                 <td>{% if item.accounting_category %}{% if item.accounting_category.taxable %}Yes{% else %}No{% endif %}{% else %}—{% endif %}</td>
-                <td>{{ item.description|default:"No description" }}</td>
+                <td class="preserve-breaks">{{ item.description|default:"No description" }}</td>
                 <td>
                     {% if item.price_list_item %}
                         {{ item.price_list_item.code }} - {{ item.price_list_item.description|truncatewords:5 }}{% if not item.price_list_item.is_active %} <strong>(Archived)</strong>{% endif %}

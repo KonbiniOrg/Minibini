@@ -1,4 +1,6 @@
 <script>
+  import { modalKeys } from '../../lib/modalKeys.js';
+
   // Reusable prompt for the worker-entered quantity an ENTERED_QTY task
   // needs before it can be completed. Pure input collector — the caller
   // owns the API call via onSubmit.
@@ -17,7 +19,7 @@
   }
 </script>
 
-<div class="overlay">
+<div class="overlay" use:modalKeys={{ onSave: submit, onCancel: onClose }}>
   <div class="modal" role="dialog" tabindex="-1">
     <h3>Quantity needed</h3>
     <p>
@@ -27,10 +29,7 @@
     <p>
       <label>
         <strong>Quantity ({unitLabel || 'units'})</strong><br>
-        <input
-          type="number" step="any" min="0" bind:value
-          onkeydown={(e) => { if (e.key === 'Enter') submit(); }}
-        >
+        <input type="number" step="any" min="0" bind:value>
       </label>
     </p>
     {#if error}<p class="error">{error}</p>{/if}

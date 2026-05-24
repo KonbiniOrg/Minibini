@@ -63,7 +63,7 @@
       <tbody>
         {#each deliverables as d}
           <tr>
-            <td>{d.description}</td>
+            <td class="preserve-breaks">{d.description}</td>
             <td class="num">{d.qty_ordered}</td>
             <td>{d.units}</td>
             {#each shipments as sh}

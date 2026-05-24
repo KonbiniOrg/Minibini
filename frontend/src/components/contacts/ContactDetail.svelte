@@ -99,7 +99,7 @@
       <dd>{contact.business.business_phone}</dd>
 
       <dt>Address</dt>
-      <dd>{contact.business.business_address}</dd>
+      <dd class="preserve-breaks">{contact.business.business_address}</dd>
 
       <dt>Website</dt>
       <dd>{contact.business.website || ''}</dd>

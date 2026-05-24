@@ -70,7 +70,7 @@
             <tr>
               <td class="num">{fmtQty(d.qty_ordered)}</td>
               <td class="units">{d.units}</td>
-              <td>{d.description}</td>
+              <td class="preserve-breaks">{d.description}</td>
             </tr>
           {/each}
         </tbody>

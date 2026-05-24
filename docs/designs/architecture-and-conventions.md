@@ -456,6 +456,77 @@ Rule of thumb when working on a new SPA component: if you reuse a
 class name from another component and the styling vanishes, this is
 the cause. Either copy the rule in, or promote it to global.
 
+### 5.6 Preserving line breaks in free-text fields
+
+Large free-text fields (`TextField`s — descriptions, notes, reasons,
+addresses) let users type paragraphs. Default HTML rendering collapses
+their newlines, so paragraph formatting is lost on display.
+
+Convention: wherever such a field is shown **in full**, apply the
+global `.preserve-breaks` utility class. It is `white-space: pre-wrap`,
+defined once per stack so both share the same mechanism:
+
+- `frontend/src/css/app.css` — SPA (global, reaches every component;
+  not subject to the §5.5 scoping gotcha).
+- `templates/base.html` — Django HTML views.
+- `templates/purchasing/purchase_order_pdf.html` — standalone PDF
+  template with its own `<style>`, so it carries its own copy.
+
+`pre-wrap` is preferred over swapping `\n` for `<br>` via `{@html}`:
+the text stays auto-escaped (no XSS), long lines still wrap, and it's
+one class instead of an escape-then-replace helper.
+
+Two rules when applying it:
+
+- `pre-wrap` also preserves whitespace from the **HTML source**. If the
+  field hugs its element on one line (`<td>{x.description}</td>`), tag
+  that element. If the field shares an element with other content (a
+  label, badges, conditional spans on separate source lines), wrap
+  **just the field** in a tight `<span class="preserve-breaks">{x}</span>`
+  so source indentation isn't rendered.
+- Skip it where the field is truncated/sliced or shown as a short
+  inline suffix (pickers, breadcrumbs, `truncatewords`, `{name} —
+  {description}` rows) — there's no paragraph to preserve and multi-line
+  output would break compact layouts.
+
+### 5.7 Modal keyboard shortcuts (Enter / Escape)
+
+Editing and confirmation modals support **Enter = primary action (Save /
+confirm)** and **Escape = cancel**, via the shared action
+`frontend/src/lib/modalKeys.js`. Attach it to the modal's overlay /
+backdrop element so the window-level key listener lives exactly as long
+as the modal is on screen (the element only exists inside `{#if open}`,
+so the listener auto-detaches on close and idle modals don't stomp each
+other):
+
+```svelte
+<div class="overlay" use:modalKeys={{ onSave: save, onCancel: onClose }}>
+```
+
+`onSave` / `onCancel` are the caller's hooks — put any guards there, e.g.
+`onSave: () => { if (!busy) save(); }` so Enter can't double-submit while
+a request is in flight (Enter bypasses the `disabled` Save button).
+
+Enter is intercepted only when focus is **not** in a `<textarea>` or
+contenteditable region (so multi-line fields keep inserting newlines — see
+§5.6), **not** on a `<button>` (so a focused Save/Cancel isn't double-fired),
+and not mid-IME-composition.
+
+Two modes:
+
+- **Enter + Escape** (most modals): pass both `onSave` and `onCancel`.
+- **Escape only**: omit `onSave`. Do this when a native `<form>` already
+  submits on Enter (binding it here too would double-fire — the action
+  won't even `preventDefault` Enter without an `onSave`, so the form's
+  native submit survives), or when the primary action is ambiguous /
+  irreversible (several action buttons, e.g. `StartWorkConflictModal`'s
+  Join vs. Take over). `SendPODialog` is form-driven, so it's Escape-only.
+
+For a confirm sub-step inside a modal (e.g. `MaterialModal`'s "update
+PLI?" prompt), gate the hooks on that state: make `onSave` inert while the
+sub-step shows, and have `onCancel` dismiss the sub-step first, falling
+through to closing the whole modal only once it's gone.
+
 ---
 
 ## 6. View mode (full / lite)

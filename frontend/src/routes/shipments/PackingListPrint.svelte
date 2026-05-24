@@ -90,7 +90,7 @@
       <tbody>
         {#each payload.rows as r}
           <tr>
-            <td>{r.description}</td>
+            <td class="preserve-breaks">{r.description}</td>
             <td>{r.units}</td>
             <td class="num">{r.qty_ordered}</td>
             <td class="num">{r.qty_previously_picked_up}</td>
@@ -102,7 +102,7 @@
     </table>
 
     {#if payload.shipment.notes}
-      <p><strong>Notes:</strong> {payload.shipment.notes}</p>
+      <p class="preserve-breaks"><strong>Notes:</strong> {payload.shipment.notes}</p>
     {/if}
 
     <section class="signatures">

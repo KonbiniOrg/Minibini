@@ -57,7 +57,7 @@
   <dd>{business.business_phone}</dd>
 
   <dt>Address</dt>
-  <dd>{business.business_address}</dd>
+  <dd class="preserve-breaks">{business.business_address}</dd>
 
   <dt>Website</dt>
   <dd>{business.website}</dd>

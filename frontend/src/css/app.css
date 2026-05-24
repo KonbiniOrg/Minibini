@@ -33,6 +33,17 @@ dd {
   margin: 0;
 }
 
+/*
+ * Preserve line breaks/paragraphs that users type into free-text fields
+ * (descriptions, notes, reasons, addresses). pre-wrap keeps newlines and
+ * runs of whitespace while still wrapping long lines and auto-escaping the
+ * text (no injection risk). Apply to any element that shows such a field
+ * in full.
+ */
+.preserve-breaks {
+  white-space: pre-wrap;
+}
+
 .error-overlay,
 .success-overlay {
   position: fixed;

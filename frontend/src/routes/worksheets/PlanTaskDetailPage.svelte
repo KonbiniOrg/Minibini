@@ -177,7 +177,7 @@
 
   <table border="1">
     <tbody>
-      <tr><td>Description</td><td>{task.description || '-'}</td></tr>
+      <tr><td>Description</td><td class="preserve-breaks">{task.description || '-'}</td></tr>
       <tr>
         <td>Est. quantity</td>
         <td>{task.est_qty ?? '-'}{#if task.scheme_unit_label} {task.scheme_unit_label}{/if}</td>

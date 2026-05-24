@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { modalKeys } from '../../lib/modalKeys.js';
 
   let { jobId, onClose } = $props();
 
@@ -109,20 +110,15 @@
     onClose(false);
   }
 
-  function handleKeydown(e) {
-    if (e.key === 'Escape') cancel();
-  }
-
   $effect(() => { if (jobId) load(); });
 
   let visibleRows = $derived(rows.filter(r => !r._deleted));
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
 <div
   class="backdrop"
   role="presentation"
+  use:modalKeys={{ onSave: () => { if (!saving && dirty) save(); }, onCancel: cancel }}
   onclick={(e) => { if (e.target === e.currentTarget) cancel(); }}
 >
   <div class="modal" role="dialog" tabindex="-1">

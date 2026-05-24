@@ -1,6 +1,7 @@
 <script>
   import { api } from '../lib/api.js';
   import UnitsSelect from './UnitsSelect.svelte';
+  import { modalKeys } from '../lib/modalKeys.js';
 
   let {
     open = false,
@@ -74,7 +75,7 @@
 </script>
 
 {#if open}
-  <div class="overlay">
+  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy) save(); }, onCancel: onClose }}>
     <div class="modal">
       <h3>{mode === 'edit' ? 'Edit Line Item' : 'Add Line Item'}</h3>
 

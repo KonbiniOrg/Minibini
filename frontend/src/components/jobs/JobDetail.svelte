@@ -246,7 +246,7 @@
   <div class="panel description-panel">
     <div class="panel-head">Description</div>
     <div class="panel-scroll">
-      <p>{job.description || 'No description.'}</p>
+      <p class="preserve-breaks">{job.description || 'No description.'}</p>
     </div>
   </div>
   <DeliverablesSection jobId={job.job_id} />
@@ -334,7 +334,7 @@
                   </tr>
                   {#each (task.plan_materials || []) as mat}
                     <tr class="material-row">
-                      <td class="indent"><span class="marker">●</span> {mat.description || '(no description)'}</td>
+                      <td class="indent preserve-breaks"><span class="marker">●</span> {mat.description || '(no description)'}</td>
                       <td class="text-right">{mat.quantity ?? '—'}</td>
                       <td>{mat.units || ''}</td>
                       <td class="text-right">{fmt(mat.sell_price)}</td>
@@ -358,7 +358,7 @@
                 <tbody>
                   {#each taskless as mat}
                     <tr>
-                      <td>{mat.description || '(no description)'}</td>
+                      <td class="preserve-breaks">{mat.description || '(no description)'}</td>
                       <td class="text-right">{mat.quantity ?? '—'}</td>
                       <td>{mat.units || ''}</td>
                       <td class="text-right">{fmt(mat.sell_price)}</td>
@@ -532,7 +532,7 @@
                 <tr class:row-active={task.status === 'in_progress'}>
                   <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a></td>
                   <td class="assigned">{task.assignee_name || '—'}</td>
-                  <td class="text-center"><span class="pill pill-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><small>{task.blocked_reason}</small>{/if}</td>
+                  <td class="text-center"><span class="pill pill-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><small class="preserve-breaks">{task.blocked_reason}</small>{/if}</td>
                   <td class="time-cell">
                     {#if task.scheme_algorithm === 'elapsed_time'}
                       {@const actual = Number(task.actual_hours) || 0}
@@ -641,7 +641,7 @@
                 {@const ext = required * (Number(mat.unit_cost) || 0)}
                 <tr class:row-consumed={consumed}>
                   <td>
-                    {mat.description || '(no description)'}
+                    <span class="preserve-breaks">{mat.description || '(no description)'}</span>
                     {#if consumed}<span class="badge-consumed">consumed</span>{/if}
                     {#if needsMore && canManageFinancials}
                       <a class="add-po" href="#/purchase-orders/new?job={job.job_id}&material={mat.material_id}">order</a>
@@ -746,7 +746,7 @@
                 {#each items as li}
                   <tr>
                     <td>{li.line_number}</td>
-                    <td>{li.description}</td>
+                    <td class="preserve-breaks">{li.description}</td>
                     <td class="text-right">{li.qty}</td>
                     <td>{li.units || 'none'}</td>
                     <td class="text-right">{fmtMoney(li.price)}</td>
@@ -884,7 +884,7 @@
                   <tr class:other-job={li.effective_job_id && li.effective_job_id !== job.job_id}>
                     <td>{li.line_number}</td>
                     <td>
-                      {li.description}
+                      <span class="preserve-breaks">{li.description}</span>
                       {#if li.effective_job_id && li.effective_job_id !== job.job_id}
                         <span class="other-job-label">(other job: {li.effective_job_number})</span>
                       {/if}

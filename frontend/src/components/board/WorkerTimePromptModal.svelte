@@ -1,5 +1,6 @@
 <script>
   import { parseDurationToISO } from '../../lib/format.js';
+  import { modalKeys } from '../../lib/modalKeys.js';
 
   // Interrupting prompt shown when a task with no estimated worker time is
   // dragged onto a worker. Assigned work has to be schedulable, which needs
@@ -37,14 +38,13 @@
 </script>
 
 {#if open}
-  <div class="overlay">
+  <div class="overlay" use:modalKeys={{ onSave: submit, onCancel: onCancel }}>
     <div class="modal">
       <p>
         <label><strong>Estimated worker time *</strong><br>
           <input
             type="text" bind:value
-            placeholder="e.g. 1:30 or 1.5"
-            onkeydown={(e) => { if (e.key === 'Enter') submit(); }}>
+            placeholder="e.g. 1:30 or 1.5">
         </label><br>
         <small>HH:MM or decimal hours.</small>
       </p>

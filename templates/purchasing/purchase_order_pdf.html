@@ -13,6 +13,7 @@
         .total-row td { font-weight: bold; border-top: 2px solid #333; }
         .header-info { margin-bottom: 20px; }
         .header-info p { margin: 2px 0; }
+        .preserve-breaks { white-space: pre-wrap; }
     </style>
 </head>
 <body>
@@ -45,7 +46,7 @@
             {% for item in line_items %}
             <tr>
                 <td>{{ item.line_number }}</td>
-                <td>{{ item.description }}</td>
+                <td class="preserve-breaks">{{ item.description }}</td>
                 <td class="amount">{{ item.qty }}</td>
                 <td>{{ item.units }}</td>
                 <td class="amount">${{ item.price|floatformat:2 }}</td>
