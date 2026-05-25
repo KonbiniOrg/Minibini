@@ -34,6 +34,11 @@ def login_view(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
+    # An explicit logout clocks the worker out: close any active blep before the
+    # session is cleared. (Session *expiry* has no server-side hook and is left
+    # alone — bleps stay open until the worker logs out deliberately.)
+    from apps.jobs.services import BlepService
+    BlepService.close_user_open_bleps(request.user)
     logout(request)
     return Response({'detail': 'Logged out.'})
 

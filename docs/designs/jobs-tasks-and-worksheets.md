@@ -317,8 +317,11 @@ active. The FK to Task is `PROTECT` to preserve the audit trail.
 Two Bleps are conceptually distinct:
 
 - **Active Blep**: `end_time IS NULL`. Created by `start_work`; closed
-  by `stop_work` or by the task transitioning to a terminal state
-  (complete, cancelled).
+  by `stop_work`, by the task transitioning to a terminal state
+  (complete, cancelled), or when the worker explicitly logs out (the
+  logout endpoint clocks them out — see §5.3). A session merely *expiring*
+  does not close bleps: Django has no server-side expiry hook, so the
+  blep stays open until a deliberate logout or stop.
 - **Historical Blep**: both timestamps set. Created via the API
   (`POST /api/bleps/`) for retroactive entry, or any Blep that has
   been closed.
@@ -357,7 +360,7 @@ viewset, `ValidationError` to HTTP 400.
 |---|---|
 | `_create(task, user, start_time=None, end_time=None)` | Create a Blep |
 | `_close_open(user=None, task=None, now=None)` | Close all open Bleps matching the filters |
-| `close_user_open_bleps(user)` | Public wrapper around `_close_open(user=...)`; called by `UserAdminService` on deactivation |
+| `close_user_open_bleps(user)` | Public wrapper around `_close_open(user=...)`; called by `UserAdminService` on deactivation and by the logout endpoint (`/api/auth/logout/`) so an explicit logout clocks the worker out. Session expiry does not call it (no server-side hook). |
 
 | Public method | Purpose |
 |---|---|
