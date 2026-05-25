@@ -76,6 +76,12 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             action_desc = f"Estimate {estimate.estimate_number} sent"
         elif new_job_status == Job.STATUS_APPROVED:
             action_desc = f"Estimate {estimate.estimate_number} accepted"
+        elif new_job_status == Job.STATUS_REJECTED:
+            from apps.estimates.models import Estimate
+            if estimate.status == Estimate.STATUS_EXPIRED:
+                action_desc = f"Estimate {estimate.estimate_number} expired"
+            else:
+                action_desc = f"Estimate {estimate.estimate_number} declined"
         else:
             action_desc = f"Estimate {estimate.estimate_number} status changed"
 
