@@ -43,9 +43,11 @@
   import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
   import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
   import EmailAssociatePage from './routes/email/EmailAssociatePage.svelte';
+  import ActivityPage from './routes/ActivityPage.svelte';
 
   const routes = {
     '/': Home,
+    '/activity': ActivityPage,
     '/search': SearchPage,
     '/contacts': ContactListPage,
     '/contacts/new': ContactFormPage,
