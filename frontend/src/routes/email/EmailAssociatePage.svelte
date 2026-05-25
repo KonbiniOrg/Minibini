@@ -64,7 +64,7 @@
   <p>Error: {loadError}</p>
 {:else}
   <h3>Email Summary</h3>
-  <table border="1">
+  <table class="data-table">
     <tbody>
       <tr><th>From:</th><td>{email.temp_email?.from_email || email.content?.from || ''}</td></tr>
       <tr><th>Subject:</th><td><strong>{email.temp_email?.subject || email.content?.subject || ''}</strong></td></tr>

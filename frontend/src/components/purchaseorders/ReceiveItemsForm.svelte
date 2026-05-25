@@ -49,7 +49,7 @@
     <p>All items have been received.</p>
   {:else}
     <form onsubmit={handleSubmit}>
-      <table border="1">
+      <table class="data-table">
         <thead>
           <tr>
             <th>#</th>

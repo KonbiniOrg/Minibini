@@ -333,7 +333,7 @@
     onCancel={handleCancel}
   />
 
-  <table border="1">
+  <table class="data-table">
     <tbody>
       <tr><td>Status</td><td><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
       <tr><td>Description</td><td class="preserve-breaks"><LinkifiedText text={task.description || '-'} /></td></tr>
@@ -347,7 +347,7 @@
   <!-- Charge section -->
   {#if task && task.scheme_name}
     <h3>Charge</h3>
-    <table border="1"><tbody>
+    <table class="data-table"><tbody>
       <tr><td><strong>Scheme</strong></td><td>{task.scheme_name}</td></tr>
       <tr><td><strong>Rate</strong></td><td>${task.effective_rate}/{task.scheme_unit_label}</td></tr>
       {#if Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0}
@@ -383,7 +383,7 @@
   <!-- Materials section -->
   <h3>Materials</h3>
   {#if materials.length > 0}
-    <table border="1" class="materials-table">
+    <table class="materials-table">
       <thead>
         <tr>
           <th>Description</th>

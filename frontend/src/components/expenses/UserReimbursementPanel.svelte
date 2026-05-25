@@ -134,7 +134,7 @@
   {#if outstanding.length === 0}
     <p><em>No outstanding reimbursements.</em></p>
   {:else}
-    <table border="1" style="width: 100%">
+    <table class="data-table" style="width: 100%">
       <thead>
         <tr>
           <th style="width: 24px">
@@ -225,7 +225,7 @@
   {#if history.length === 0}
     <p><em>No past reimbursements.</em></p>
   {:else}
-    <table border="1" style="width: 100%">
+    <table class="data-table" style="width: 100%">
       <thead>
         <tr>
           <th>Paid on</th>
@@ -262,7 +262,7 @@
     </label>
   </h3>
   {#if showRejected && rejected.length > 0}
-    <table border="1" style="width: 100%">
+    <table class="data-table" style="width: 100%">
       <thead>
         <tr>
           <th>Date</th>

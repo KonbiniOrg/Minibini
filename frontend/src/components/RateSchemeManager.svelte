@@ -188,7 +188,7 @@
       Show superseded schemes
     </label>
   </p>
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr>
         <th>Name</th><th>Type</th><th>Rate</th><th>Unit</th>

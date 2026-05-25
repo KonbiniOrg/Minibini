@@ -14,6 +14,23 @@ table, th, td {
   border-collapse: collapse;
 }
 
+/*
+ * Default house style for data/list tables. Opt in with class="data-table"
+ * and override per-component as needed (it's a baseline, not a straitjacket).
+ * The light grey cell border comes from the global `table, th, td` rule above.
+ */
+.data-table { width: 100%; font-size: 14px; }
+.data-table th { text-align: left; font-weight: 600; padding: 8px 16px; background: #f0fdfa; color: #115e59; border-bottom: 2px solid #99f6e4; }
+.data-table td { padding: 8px 16px; }
+/* Subtle zebra striping. `:where()` keeps specificity at zero, so a table's own
+ * row classes (e.g. .subtask-row, .material-row) override it without a fight. */
+:where(.data-table) tbody tr:nth-child(even) { background: #f8f9fa; }
+
+/* Alignment utilities (handy on data-table cells). */
+.text-left { text-align: left; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+
 h1, h2, h3, h4, h5, h6 {
   color: #1a2a6c;
 }

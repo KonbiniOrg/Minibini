@@ -127,7 +127,7 @@
     {#if loading}
       <p>Loading...</p>
     {:else}
-      <table border="1">
+      <table class="data-table">
         <thead>
           <tr><th>Order</th><th>Description</th><th>Qty</th><th>Units</th><th></th></tr>
         </thead>

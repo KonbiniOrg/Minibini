@@ -76,7 +76,7 @@
       <p><strong>Picked up:</strong> {fmtDateTime(payload.shipment.picked_up_date)}</p>
     {/if}
 
-    <table border="1">
+    <table class="data-table">
       <thead>
         <tr>
           <th>Description</th>

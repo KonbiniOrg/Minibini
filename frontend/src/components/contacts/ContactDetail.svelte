@@ -128,7 +128,7 @@
 
 <h3>Jobs</h3>
 {#if visibleJobs.length > 0}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr><th>Job #</th><th>Name</th><th>Status</th></tr>
     </thead>
@@ -148,7 +148,7 @@
 
 <h3>Purchase Orders</h3>
 {#if visiblePOs.length > 0}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr><th>PO #</th><th>Status</th></tr>
     </thead>
@@ -178,7 +178,7 @@
 
 <h3>Bills</h3>
 {#if visibleBills.length > 0}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr><th>Vendor Invoice</th><th>Status</th></tr>
     </thead>

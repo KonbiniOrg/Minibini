@@ -47,7 +47,7 @@
 {:else if users.length === 0}
   <p>No users found.</p>
 {:else}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr>
         <th>Username</th>

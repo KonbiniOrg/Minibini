@@ -310,7 +310,7 @@
     {:else if displayedShipments.length === 0}
       <p>No shipments yet. Click "+ Add shipment" to create one.</p>
     {:else}
-      <table class="matrix" border="1">
+      <table class="matrix">
         <thead>
           <tr>
             <th>Deliverable</th>

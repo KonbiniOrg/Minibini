@@ -73,7 +73,7 @@
 </p>
 
   {#if qboAccounts.length > 0}
-    <table border="1">
+    <table class="data-table">
       <thead>
         <tr><th>Enabled</th><th>Name</th><th>Type</th></tr>
       </thead>

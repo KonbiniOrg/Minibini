@@ -187,7 +187,7 @@
 {#if lineItems.length === 0}
   <p>No line items.</p>
 {:else}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr>
         <th>#</th>

@@ -137,7 +137,7 @@
   }
 </script>
 
-<table border="1" class="task-tree-table">
+<table class="data-table task-tree-table">
   <thead>
     <tr>
       {#if !readonly && !jobLocked}<th>Move Material</th>{/if}
@@ -339,8 +339,8 @@
 </table>
 
 <style>
-  .task-tree-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .task-tree-table th { padding: 8px 10px; text-align: left; background: #f0fdfa; color: #115e59; }
+  /* Base + green header come from the global .data-table class; just tighten padding. */
+  .task-tree-table th { padding: 8px 10px; }
   .task-tree-table td { padding: 6px 10px; vertical-align: top; }
   .text-right { text-align: right; }
   .est-label { color: #888; font-size: 11px; font-weight: normal; }
@@ -352,8 +352,7 @@
   .material-marker { color: #aaa; font-size: 8px; vertical-align: middle; margin-right: 4px; }
   .inv-badge { margin-left: 6px; font-size: 11px; }
 
-  .task-row { background: #fff; }
-  .task-row:nth-child(even) { background: #fafafa; }
+  /* Top-level task rows use the shared .data-table zebra stripe. */
   .subtask-row { background: #f0f9ff; }
   .material-row { background: #fefce8; }
   .material-row.consumed { color: #9ca3af; }

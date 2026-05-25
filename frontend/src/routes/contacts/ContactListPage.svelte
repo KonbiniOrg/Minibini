@@ -152,7 +152,7 @@
 {:else if filteredItems.length === 0}
   <p>No results found.</p>
 {:else}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr>
         <th>Name</th>

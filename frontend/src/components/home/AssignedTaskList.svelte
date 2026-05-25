@@ -79,7 +79,7 @@
   {#if items.length === 0}
     <p>No assigned tasks.</p>
   {:else}
-    <table border="1">
+    <table class="data-table">
       <thead>
         <tr>
           <th>Task</th>

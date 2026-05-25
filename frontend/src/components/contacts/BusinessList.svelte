@@ -5,7 +5,7 @@
 {#if businesses.length === 0}
   <p>No businesses found.</p>
 {:else}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr>
         <th>Reference</th>
