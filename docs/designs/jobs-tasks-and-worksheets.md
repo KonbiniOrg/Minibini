@@ -107,6 +107,11 @@ between `approved` (estimate accepted, awaiting prep) and `work_complete`
 (all work done). Use the model constants (`Job.STATUS_IN_PROGRESS` etc.),
 not string literals, per `CLAUDE.md`.
 
+Estimate-driven transitions: sending an estimate fires `submitted`, and
+accepting one fires `approved`. An **open** estimate going to `rejected`
+(customer decline) or `expired` (the `mark_estimates_expired` sweep) drives
+the Job to `rejected` — see `estimates-and-prices.md` §9.3 and §13 below.
+
 `work_complete → in_progress` and `cancelled → in_progress` are
 *reactivation* transitions — for moving a Job back into work after it was
 marked complete prematurely or cancelled by accident. They are exposed on
@@ -892,7 +897,7 @@ and three receivers:
 | Signal | Sender | Receiver | Effect |
 |---|---|---|---|
 | `estimate_status_changed_for_worksheet` | `Estimate.save()` | `update_estworksheet_status` | Bulk-updates all `EstWorksheet` rows linked to the Estimate to the mapped worksheet status (draft → draft; open/accepted/rejected → final; superseded → superseded) |
-| `estimate_status_changed_for_job` | `Estimate.save()` | `update_job_status` | Walks the Job through the right status (draft → submitted → approved); creates a `HistoryEntry` action row attributed to the `system` user; refuses to downgrade or to touch completed/cancelled jobs |
+| `estimate_status_changed_for_job` | `Estimate.save()` | `update_job_status` | Walks the Job through the right status (draft → submitted → approved on send/accept; **open → rejected** drives the Job to `rejected`); creates a `HistoryEntry` action row attributed to the `system` user; refuses to downgrade or to touch completed/cancelled jobs |
 | `estimate_accepted` | `Estimate.save()` (when transitioning to accepted) | `trigger_atom_carry_over` | Calls `AtomCarryOverService.carry_over_for_estimate(estimate)` to copy plan-side atoms to the Job |
 
 `Estimate.save()` (`apps/estimates/models.py`) is what fires these.

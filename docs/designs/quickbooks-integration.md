@@ -256,25 +256,27 @@ Polling is the *only* mechanism for learning about payments — there are no web
 
 ### Invoice polling — `QBOPaymentPollingService.poll_all()`
 
-Walks every `Invoice` where `qbo_id` is set and `qbo_payment_status != 'Paid'`. For each, fetches the QBO invoice and writes:
+Walks every `Invoice` where `qbo_id` is set and the Minibini status is still `open` or `partly-paid`. For each, fetches the QBO invoice and derives, from QBO's `Balance` / `TotalAmt`, both a **raw cache** value and a target Minibini status:
 
-| Condition | `qbo_payment_status` |
-|---|---|
-| `Balance == 0` | `'Paid'` |
-| `Balance < TotalAmt` | `'Partial'` |
-| `Balance == TotalAmt` | `'Unpaid'` |
+| Condition | `qbo_payment_status` (cache) | `Invoice.status` |
+|---|---|---|
+| `Balance == 0` | `'Paid'` | → `paid` |
+| `0 < amount_paid` | `'Partial'` | → `partly-paid` |
+| `amount_paid == 0` | `'Unpaid'` | (unchanged) |
 
-Also updates `qbo_amount_paid = TotalAmt - Balance` on the `Invoice`.
+`qbo_payment_status` and `qbo_amount_paid` (`= TotalAmt - Balance`) remain the raw cache of what QBO last reported. The service now also **drives `Invoice.status`**: on a status change it does a full `invoice.save()` (which stamps `closed_date` and, on `paid`, fires `_maybe_complete_job` to auto-complete the job once all its invoices are resolved) and writes a `system`-attributed `action` HistoryEntry. If there is no active QBO connection, `poll_all` returns an `error` key and the command records a `skipped` run rather than failing.
 
-The polling service writes payment status to the invoice but does **not** advance the parent `Job` to a terminal status when an invoice is fully paid. That status-promotion gap is tracked in `invoicing-and-expenses.md`.
+**First-run healing:** an invoice left at `open` with a stale cached `qbo_payment_status='Paid'` (from the old cache-only polling) will transition to `paid` — and complete its job — on the first run under the status-driving code. See `invoicing-and-expenses.md` for the full status-machine view.
 
-### Bill polling — `QBOBillPaymentPollingService.poll_all()`
+### Bill polling — `QBOBillPaymentPollingService.poll_all()` (parked)
 
-Same shape, against `Bill` where `qbo_id` is set and `qbo_payment_status != 'Paid'`. Only writes `qbo_payment_status` (`'Paid'` if balance is zero, else `'Unpaid'` — no `'Partial'` because the bill model doesn't currently track partial-paid amounts).
+Same shape, against `Bill` where `qbo_id` is set and `qbo_payment_status != 'Paid'`. Only writes `qbo_payment_status` (`'Paid'` if balance is zero, else `'Unpaid'` — no `'Partial'` because the bill model doesn't currently track partial-paid amounts). **This service is parked** — the `poll_qbo_payments` command no longer calls it. It's retained for a future `poll_qbo_bills` command that would drive bill payment state the same way invoice polling now drives invoices.
 
 ### Management command
 
-`python manage.py poll_qbo_payments` (`apps/invoicing/management/commands/poll_qbo_payments.py`) wraps both polling services with stdout/stderr output. Intended for a scheduled cron-style trigger. **The scheduler is not yet wired** — see Unfinished work and the matching gap noted in `invoicing-and-expenses.md`.
+`python manage.py poll_qbo_payments` (`apps/invoicing/management/commands/poll_qbo_payments.py`) wraps `QBOPaymentPollingService.poll_all()` — **invoice-only**, no bills. It is a `ScheduledProcessCommand` (`architecture-and-conventions.md` §9), so each run records a `ScheduledProcessRun` row (`ok` / `failed` / `skipped`). The scheduler **is** wired: the docker-compose `cron` service runs it every 15 minutes.
+
+**Operational note — credentials and timezone.** The cron service runs in its own container; the committed `docker-compose.yml` mirrors only the `DATABASE_*` env onto it. QBO OAuth credentials and the email/IMAP credentials are injected at deploy time and **must reach the cron container too** — otherwise `poll_qbo_payments` records `skipped` runs (no QBO connection) and the email-related jobs `failed` runs. The cron schedules are evaluated in the **container timezone (UTC by default)**; set `TZ` on the cron service to schedule in local time.
 
 ## UI
 
@@ -316,8 +318,7 @@ There is no `GET /api/qbo/sync-log/` endpoint yet; `QBOSyncLog` is currently ins
 
 ## Unfinished work
 
-- **No scheduler for `poll_qbo_payments`.** The command runs cleanly by hand but is not yet wired into a cron / scheduler in any deployed environment. Tracked in `invoicing-and-expenses.md`.
-- **No `Job` status promotion when its invoices are fully paid.** Polling updates `Invoice.qbo_payment_status` but doesn't roll up to the job. Tracked in `invoicing-and-expenses.md`.
+- **Bill payment polling.** `QBOBillPaymentPollingService` exists but is parked — no command drives it. A future `poll_qbo_bills` would run it on the same cron pattern as `poll_qbo_payments`.
 - **Sync log UI.** No `/api/qbo/sync-log/` endpoint or settings panel showing recent push attempts; failures are visible only via the Django admin.
 - **Employee-as-Vendor sync for personal reimbursements** — tracked in `invoicing-and-expenses.md`.
 - **Job P&L view.** Phase 5 of the original plan — pull QBO-reported actuals back into Minibini for a per-job profit & loss view. Tracked in `invoicing-and-expenses.md`.
