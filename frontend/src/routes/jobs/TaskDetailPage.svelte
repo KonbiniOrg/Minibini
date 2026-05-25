@@ -3,6 +3,8 @@
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import { currentBlep } from '../../stores/currentBlep.js';
+  import { blepActivityVersion } from '../../stores/blepActivity.js';
+  import TaskActivityIndicator from '../../components/tasks/TaskActivityIndicator.svelte';
   import TaskActions from '../../components/tasks/TaskActions.svelte';
   import StartWorkConflictModal from '../../components/tasks/StartWorkConflictModal.svelte';
   import BlepList from '../../components/tasks/BlepList.svelte';
@@ -195,6 +197,17 @@
     }
   });
 
+  // Refetch when any blep changes anywhere (e.g. Stop/Cancel from the global
+  // band), so the finalization shows here without a full page reload.
+  let lastBlepVersion = $state(0);
+  $effect(() => {
+    const v = $blepActivityVersion;
+    if (v !== lastBlepVersion) {
+      lastBlepVersion = v;
+      if (params.taskId) { loadTask(); loadBleps(); }
+    }
+  });
+
   // Material modal handlers
   function openAddMaterial() {
     matModalMaterial = null;
@@ -320,9 +333,9 @@
     onCancel={handleCancel}
   />
 
-  <table border="1">
+  <table class="data-table">
     <tbody>
-      <tr><td>Status</td><td>{task.status}{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
+      <tr><td>Status</td><td><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
       <tr><td>Description</td><td class="preserve-breaks"><LinkifiedText text={task.description || '-'} /></td></tr>
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
@@ -334,7 +347,7 @@
   <!-- Charge section -->
   {#if task && task.scheme_name}
     <h3>Charge</h3>
-    <table border="1"><tbody>
+    <table class="data-table"><tbody>
       <tr><td><strong>Scheme</strong></td><td>{task.scheme_name}</td></tr>
       <tr><td><strong>Rate</strong></td><td>${task.effective_rate}/{task.scheme_unit_label}</td></tr>
       {#if Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0}
@@ -370,7 +383,7 @@
   <!-- Materials section -->
   <h3>Materials</h3>
   {#if materials.length > 0}
-    <table border="1" class="materials-table">
+    <table class="materials-table">
       <thead>
         <tr>
           <th>Description</th>

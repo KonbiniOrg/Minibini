@@ -136,7 +136,7 @@
   <p>Error: {loadError}</p>
 {:else if senderInfo}
   <h3>Sender</h3>
-  <table border="1">
+  <table class="data-table">
     <tbody>
       <tr><th>Name:</th><td>{senderInfo.sender_name || '(unknown)'}</td></tr>
       <tr><th>Email:</th><td>{senderInfo.sender_email || '(unknown)'}</td></tr>

@@ -15,14 +15,3 @@ export async function refreshCurrentBlep() {
     // show whatever it had; a later refresh will heal.
   }
 }
-
-export async function stopCurrentBlep() {
-  let current;
-  currentBlep.subscribe((v) => (current = v))();
-  if (!current || !current.task) return;
-  await api.post(
-    `/api/tasks/${current.task.id}/stop-work/`,
-    {}
-  );
-  await refreshCurrentBlep();
-}

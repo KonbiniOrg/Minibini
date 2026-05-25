@@ -1,6 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { refreshCurrentBlep } from '../../stores/currentBlep.js';
+  import { notifyBlepChanged } from '../../stores/blepActivity.js';
   import { modalKeys } from '../../lib/modalKeys.js';
 
   let {
@@ -21,7 +21,7 @@
       const body = { action };
       if (onBehalfOf) body.on_behalf_of = onBehalfOf;
       await api.post(`/api/tasks/${taskId}/start-work/`, body);
-      await refreshCurrentBlep();
+      await notifyBlepChanged();
       onResolved();
     } catch (e) {
       error = e.message || 'Could not resolve conflict.';

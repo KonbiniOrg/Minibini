@@ -1,6 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { schedule, loadSchedule, startAutoRefresh, stopAutoRefresh, scrollDays, resetToToday } from '../../stores/schedule.js';
+  import { blepActivityVersion } from '../../stores/blepActivity.js';
   import ScheduleHeader from '../../components/schedule/ScheduleHeader.svelte';
   import WorkerLane from '../../components/schedule/WorkerLane.svelte';
   import NowLine from '../../components/schedule/NowLine.svelte';
@@ -40,6 +41,17 @@
 
   const LANE_LABEL_WIDTH = 150;
   const NONWORKING_WIDTH = 22;
+
+  // Refetch the schedule when a blep changes anywhere (Stop/Cancel from the
+  // band, start/stop from a quick card), so actual/forecast bars stay current.
+  let lastBlepVersion = $state(0);
+  $effect(() => {
+    const v = $blepActivityVersion;
+    if (v !== lastBlepVersion) {
+      lastBlepVersion = v;
+      loadSchedule();
+    }
+  });
 
   onMount(() => {
     loadSchedule();

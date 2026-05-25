@@ -15,7 +15,7 @@
 {#if purchaseOrders.length === 0}
   <p>No purchase orders found.</p>
 {:else}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr>
         <th>PO #</th>

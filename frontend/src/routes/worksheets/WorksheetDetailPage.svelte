@@ -297,7 +297,7 @@
     {#if materials.length === 0}
       <p class="empty-msg">No taskless materials.</p>
     {:else}
-      <table border="1" class="mat-table">
+      <table class="mat-table">
         <thead>
           <tr>
             {#if canEdit}<th>Move target</th>{/if}

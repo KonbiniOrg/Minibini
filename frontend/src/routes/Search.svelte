@@ -172,7 +172,7 @@
 
         {#if results.results.jobs?.length}
           <h3>Jobs</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Job #</th><th>Name</th><th>Contact</th><th>Status</th><th>Created</th><th>Started</th><th>Description</th><th>Customer PO</th><th>Matching Tasks</th></tr>
             </thead>
@@ -196,7 +196,7 @@
 
         {#if results.results.contacts?.length}
           <h3>Contacts</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Work</th><th>Home</th><th>City</th></tr>
             </thead>
@@ -217,7 +217,7 @@
 
         {#if results.results.businesses?.length}
           <h3>Businesses</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Name</th><th>Code</th><th>Address</th><th>Phone</th></tr>
             </thead>
@@ -236,7 +236,7 @@
 
         {#if results.results.invoices?.length}
           <h3>Invoices</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Invoice #</th><th>Job #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
@@ -256,7 +256,7 @@
 
         {#if results.results.estimates?.length}
           <h3>Estimates</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Estimate #</th><th>Version</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
@@ -276,7 +276,7 @@
 
         {#if results.results.est_worksheets?.length}
           <h3>Worksheets</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Job #</th><th>Estimate #</th></tr>
             </thead>
@@ -293,7 +293,7 @@
 
         {#if results.results.bills?.length}
           <h3>Bills</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Vendor Invoice #</th><th>Contact</th><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
@@ -315,7 +315,7 @@
 
         {#if results.results.purchase_orders?.length}
           <h3>Purchase Orders</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
@@ -334,7 +334,7 @@
 
         {#if results.results.price_list_items?.length}
           <h3>Price List Items</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Code</th><th>Description</th><th>Units</th><th>Selling Price</th></tr>
             </thead>

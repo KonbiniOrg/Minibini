@@ -72,6 +72,9 @@ class TaskSerializer(serializers.ModelSerializer):
     scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True, default=None)
     effective_rate = serializers.SerializerMethodField()
     computed_charge = serializers.SerializerMethodField()
+    has_active_blep = serializers.SerializerMethodField()
+    active_worker_count = serializers.SerializerMethodField()
+    has_bleps = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -84,6 +87,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
             'effective_rate', 'computed_charge',
             'actual_hours',
+            'has_active_blep', 'active_worker_count', 'has_bleps',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
@@ -110,12 +114,24 @@ class TaskSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
+    # Activity facets — derived, not stored. 'active' = an open blep exists right
+    # now; 'worked' = bleps exist (any). Reuses the prefetched blep_set cache.
+    def get_has_active_blep(self, obj):
+        return any(b.end_time is None for b in obj.blep_set.all())
+
+    def get_active_worker_count(self, obj):
+        return len({b.user_id for b in obj.blep_set.all() if b.end_time is None})
+
+    def get_has_bleps(self, obj):
+        return len(obj.blep_set.all()) > 0
+
 
 class TaskDetailSerializer(TaskSerializer):
     job = serializers.SerializerMethodField()
+    blep_minimum_seconds = serializers.SerializerMethodField()
 
     class Meta(TaskSerializer.Meta):
-        fields = TaskSerializer.Meta.fields + ['job']
+        fields = TaskSerializer.Meta.fields + ['job', 'blep_minimum_seconds']
 
     def get_job(self, obj):
         job = obj.job
@@ -125,3 +141,7 @@ class TaskDetailSerializer(TaskSerializer):
             'name': job.name,
             'status': job.status,
         }
+
+    def get_blep_minimum_seconds(self, obj):
+        from apps.jobs.services import blep_minimum_seconds
+        return blep_minimum_seconds()

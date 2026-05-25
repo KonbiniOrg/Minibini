@@ -220,9 +220,11 @@ Enforcement lives in `apps/inventory/serializer_helpers.py`
 
 ### Consumption state machine
 
-Every Material starts `pending` and transitions to `consumed` exactly
-once. The state machine is uniform across PLI types and attachment
-mode.
+Every Material starts `pending` and transitions to `consumed` when work
+begins. Consumption is one-way for users; the lone reversal is
+`unconsume` (`consumed → pending`), used only by the blep-cancel undo
+(see `jobs-tasks-and-worksheets.md` §4.5). The state machine is uniform
+across PLI types and attachment mode.
 
 | State | Restock | Draw more | Consume | Edit description |
 |---|---|---|---|---|
@@ -235,6 +237,11 @@ Mechanical effects:
 - **Consume** — inventoried: `qty_on_hand -= quantity`,
   `qty_sold += quantity`, earmark `-= quantity`, state → `consumed`.
   Non-inventoried: state flips as a marker; no QOH/earmark side effect.
+- **Unconsume** — the exact inverse of Consume (inventoried:
+  `qty_on_hand += quantity`, `qty_sold -= quantity`, earmark
+  `+= quantity`; state → `pending`). Not a user op — called by
+  `TaskLifecycleService.cancel_work` to undo an oops-Start, so a later
+  re-Start can consume the materials again.
 - **Restock(n)** — `quantity -= n`; if inventoried, earmark `-= n`. If
   `n == quantity` (full restock) and Material is manual-add (not
   expense-bound): the row is deleted server-side. If expense-bound:
@@ -250,7 +257,8 @@ Validation:
 - `restock(n)` requires `0 < n <= quantity`
 - `draw_more(n)` requires `n > 0` and not expense-bound
 - `consume` requires `state == 'pending'` and `quantity > 0`
-- All ops require `state == 'pending'`
+- `unconsume` requires `state == 'consumed'` (the lone consumed-state op)
+- All *user* ops require `state == 'pending'`
 
 ### `is_expense_bound`
 

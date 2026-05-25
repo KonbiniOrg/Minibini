@@ -18,7 +18,7 @@
 {#if emails.length === 0}
   <p>No emails found.</p>
 {:else}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr>
         <th>Date</th>

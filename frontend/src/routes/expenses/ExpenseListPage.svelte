@@ -152,7 +152,7 @@
 {:else if expenses.length === 0}
   <p><em>No expenses match.</em></p>
 {:else}
-  <table border="1" style="width: 100%">
+  <table class="data-table" style="width: 100%">
     <thead>
       <tr>
         <th>Date</th>

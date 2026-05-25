@@ -1,6 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { refreshCurrentBlep } from '../../stores/currentBlep.js';
+  import { notifyBlepChanged } from '../../stores/blepActivity.js';
   import ActualQtyModal from './ActualQtyModal.svelte';
   import BlepEditModal from './BlepEditModal.svelte';
 
@@ -19,6 +19,26 @@
   let blepModal = $state(false); // true while the historical-time prompt is open
 
   const isManager = $derived(userPermissions.includes('can_manage_jobs'));
+
+  // While the user's own active session on this task is under the configured
+  // minimum, Stop becomes Cancel (delete + undo). Tick once a second so the
+  // label flips live as the timer crosses the threshold.
+  let nowMs = $state(Date.now());
+  $effect(() => {
+    if (activeBlepOnThisTask) {
+      const t = setInterval(() => { nowMs = Date.now(); }, 1000);
+      return () => clearInterval(t);
+    }
+  });
+  const underMinimum = $derived.by(() => {
+    const ab = activeBlepOnThisTask;
+    if (!ab || !ab.start_time) return false;
+    const threshold = ab.blep_minimum_seconds ?? task?.blep_minimum_seconds ?? 60;
+    const elapsed = Math.max(
+      0, Math.floor((nowMs - new Date(ab.start_time).getTime()) / 1000)
+    );
+    return elapsed < threshold;
+  });
 
   // Visibility per status (see design doc § Action visibility)
   const show = $derived.by(() => {
@@ -49,7 +69,7 @@
       if (resp && resp.conflict) {
         onConflict(resp);
       } else {
-        await refreshCurrentBlep();
+        await notifyBlepChanged();
         onChanged();
       }
     } catch (e) {
@@ -77,7 +97,7 @@
         blepModal = true;
         return;
       }
-      await refreshCurrentBlep();
+      await notifyBlepChanged();
       onChanged();
     } catch (e) {
       error = e.message || 'Action failed.';
@@ -98,6 +118,7 @@
 
   const startWork = () => call(`/api/tasks/${task.task_id}/start-work/`);
   const stopWork = () => call(`/api/tasks/${task.task_id}/stop-work/`);
+  const cancelWork = () => call(`/api/tasks/${task.task_id}/cancel-work/`);
   const block = () => {
     const reason = prompt('Reason for blocking?');
     if (reason) call(`/api/tasks/${task.task_id}/block/`, { reason });
@@ -110,7 +131,13 @@
 
 <div class="actions">
   {#if show.startWork}<button type="button" onclick={startWork} disabled={busy}>Start Work</button>{/if}
-  {#if show.stopWork}<button type="button" onclick={stopWork} disabled={busy}>Stop Work</button>{/if}
+  {#if show.stopWork}
+    {#if underMinimum}
+      <button type="button" class="cancel-work" onclick={cancelWork} disabled={busy}>Cancel</button>
+    {:else}
+      <button type="button" onclick={stopWork} disabled={busy}>Stop Work</button>
+    {/if}
+  {/if}
   {#if show.complete}<button type="button" onclick={() => completeTask()} disabled={busy}>Complete</button>{/if}
   {#if show.block}<button type="button" onclick={block} disabled={busy}>Block</button>{/if}
   {#if show.unblock}<button type="button" onclick={unblock} disabled={busy}>Unblock</button>{/if}
@@ -140,5 +167,6 @@
 
 <style>
   .actions { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+  .cancel-work { color: #a8071a; }
   .error { color: #a8071a; }
 </style>

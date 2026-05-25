@@ -36,7 +36,7 @@
 </script>
 
 {#if lineItems.length > 0}
-  <table border="1" class="line-items-table">
+  <table class="line-items-table">
     <thead>
       <tr>
         <th>#</th>

@@ -1,6 +1,7 @@
 <script>
   import HistoryPanel from '../HistoryPanel.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
+  import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
   import DeliverablesSection from './DeliverablesSection.svelte';
   import ShipmentsPillar from './ShipmentsPillar.svelte';
   import { link } from 'svelte-spa-router';
@@ -547,7 +548,7 @@
                 <tr class:row-active={task.status === 'in_progress'}>
                   <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a></td>
                   <td class="assigned">{task.assignee_name || '—'}</td>
-                  <td class="text-center"><span class="pill pill-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><small class="preserve-breaks">{task.blocked_reason}</small>{/if}</td>
+                  <td class="text-center"><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><small class="preserve-breaks">{task.blocked_reason}</small>{/if}</td>
                   <td class="time-cell">
                     {#if task.scheme_algorithm === 'elapsed_time'}
                       {@const actual = Number(task.actual_hours) || 0}

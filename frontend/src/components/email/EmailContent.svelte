@@ -16,7 +16,7 @@
 </script>
 
 {#if content}
-  <table border="1">
+  <table class="data-table">
     <tbody>
       <tr><th>From:</th><td>{content.from || ''}</td></tr>
       <tr><th>To:</th><td>{joinList(content.to)}</td></tr>
@@ -52,7 +52,7 @@
   {/if}
 {:else if tempEmail}
   <p><strong>Email metadata available, but full content could not be retrieved from server.</strong></p>
-  <table border="1">
+  <table class="data-table">
     <tbody>
       <tr><th>From:</th><td>{tempEmail.from_email || ''}</td></tr>
       <tr><th>To:</th><td>{tempEmail.to_email || ''}</td></tr>

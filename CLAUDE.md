@@ -93,6 +93,8 @@ Minibini/
 
 `docs/designs/` holds nine consolidated docs. When working in a domain, start at its doc; cross-references link out where needed.
 
+**Keep these current.** These are the durable record of how the system behaves. After every work session that changes behavior, models, endpoints, config keys, or UI conventions in a domain, update the corresponding `docs/designs/` doc(s) in the same session so they don't drift from the code. (Disposable specs/plans live in `docs/plans/`; the durable reference is `docs/designs/`.)
+
 | Doc | Covers |
 |---|---|
 | `architecture-and-conventions.md` | Service layer, mixin catalog, permissions plumbing, line-item pattern, view-mode, history capture, sidebar |

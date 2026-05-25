@@ -149,7 +149,7 @@
 {#if loading}<p>Loading...</p>{/if}
 
 {#if !loading && editingId === null}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr><th>Name</th><th>Rate Scheme</th><th>Default Qty</th><th>Active</th><th></th></tr>
     </thead>

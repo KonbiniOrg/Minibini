@@ -96,7 +96,7 @@
     <p class="success-msg">{success}</p>
   {/if}
 
-  <table border="1" class="metadata-table">
+  <table class="metadata-table">
     <tbody>
       <tr><th>Field</th><th>Value</th></tr>
       <tr><td>Invoice Number</td><td>{invoice.invoice_number}</td></tr>

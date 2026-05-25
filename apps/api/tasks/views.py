@@ -263,6 +263,18 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'ok'})
 
+    @action(detail=True, methods=['post'], url_path='cancel-work')
+    def cancel_work(self, request, pk=None):
+        """Cancel (delete + undo) the requesting user's under-the-minimum blep
+        on this task. Own-blep only — no on_behalf_of."""
+        from apps.jobs.services import TaskLifecycleService
+        task = self._get_task_or_404(pk)
+        try:
+            TaskLifecycleService.cancel_work(task.pk, request.user)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': 'ok'})
+
     @action(detail=True, methods=['patch'], url_path='actual-qty',
             permission_classes=[IsAuthenticated])
     def actual_qty(self, request, pk=None):
