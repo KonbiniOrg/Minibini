@@ -699,11 +699,36 @@ manager-only task **Cancel** above.
 
 ### 10.3 Recent Time list (home page)
 
-`components/home/RecentTimeList.svelte` fetches
-`GET /api/bleps/?user=me&since=<7d ago>`. Each row offers Edit / Delete
-when the blep is within the 24h rolling window; otherwise a "Request
-Edit" button — currently a stub that alerts "Not yet implemented" (see
-Unfinished Work).
+`components/home/RecentTimeList.svelte` (home **Time** tab) fetches
+`GET /api/bleps/?user=me&since=<7d ago>` — the signed-in user's own recent
+sessions. Each row offers **Edit** when the blep is editable (within the 24h
+rolling window, or any blep for a `can_manage_time` manager); otherwise a
+**Request Edit** button — currently a stub that alerts "Not yet implemented"
+(see Unfinished Work).
+
+It renders the shared **`components/time/BlepLogTable.svelte`**, which owns the
+session-row presentation: Task · Job · Start · End · Duration. Times show as a
+weekday abbreviation + 12-hour clock rounded to the minute (`Mon 3:45 PM`);
+Duration is minute-granularity (`1h 25m`); open sessions show a green **active**
+tag and a duration that ticks up every 30s (client clock only — no refetch); the
+job name truncates at 20 chars. `BlepLogTable` props: `bleps`, `showWorker` (adds
+a Worker column), and an optional per-row `actions` snippet (RecentTimeList
+passes the Edit / Request-Edit buttons).
+
+### 10.4 Activity page (all-users work log)
+
+Route `/activity` → `routes/ActivityPage.svelte`, linked in the sidebar for all
+authenticated users (consistent with the Schedule page). A flat, newest-first log
+of **every** worker's sessions over the last 2 days: it fetches
+`GET /api/bleps/?since=<2d ago>&page_size=100` with no `user` filter (the list
+endpoint returns all users for any authenticated user — §5.4). It renders
+`BlepLogTable` with `showWorker=true` and no `actions` (read-only). Open sessions
+sort to the top and carry the **active** tag, so "who's working now" falls out of
+the chronological order.
+
+It refreshes on this client's own blep changes (`blepActivityVersion`) and the
+30s duration tick; it does **not** poll for other workers' clock-ins/outs — a
+general cross-client repolling mechanism is deferred (see Unfinished Work).
 
 ## 11. UI: Worksheet Detail page
 
@@ -985,6 +1010,12 @@ covers this).
 - **Push-notification infrastructure.** The blep-takeover flow has no
   way to notify the worker whose Blep was just closed. No notification
   system exists yet anywhere in the codebase.
+- **Cross-client live refresh (general repolling).** Pages that show other
+  users' state — the Activity log (§10.4), the Job Board, the Schedule, the
+  home lists — only refresh on this client's own blep changes plus local
+  interval ticks; another worker's clock-in/out doesn't appear until reload.
+  A shared repolling mechanism (deciding which pages need it and how to do it
+  once) is deferred.
 - **Multi-instance template generation needs UI.**
   `WorkTemplate.generate_tasks_for_*` and `generate_materials_for_*`
   accept `quantity=N` but every current caller passes 1.
