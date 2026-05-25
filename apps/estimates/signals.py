@@ -57,6 +57,14 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
     if job.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
         return 0
 
+    # An open estimate dying (expired/declined) only rejects a job that is
+    # still awaiting the customer (submitted). If the job already advanced
+    # (e.g. a sibling estimate was accepted → approved), leave it alone:
+    # approved→rejected isn't a valid Job transition, and an abandoned
+    # alternative estimate shouldn't reject a live job.
+    if new_job_status == Job.STATUS_REJECTED and job.status != Job.STATUS_SUBMITTED:
+        return 0
+
     # Don't downgrade a job to a state it has already passed through
     # (e.g., don't move approved → submitted when sending a second estimate)
     JOB_STATUS_ORDER = [

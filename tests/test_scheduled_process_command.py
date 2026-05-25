@@ -24,6 +24,13 @@ class _FailCmd(ScheduledProcessCommand):
         raise ValueError('boom')
 
 
+class _ErrorsCmd(ScheduledProcessCommand):
+    process_name = 'test_errors'
+
+    def run(self):
+        return {'did': 2, 'errors': ['boom on item 5']}
+
+
 class ScheduledProcessCommandTest(TestCase):
     def test_ok_run_records_summary(self):
         _OkCmd().handle()
@@ -45,3 +52,9 @@ class ScheduledProcessCommandTest(TestCase):
         self.assertEqual(run.outcome, ScheduledProcessRun.OUTCOME_FAILED)
         self.assertIn('boom', run.error)
         self.assertIsNotNone(run.finished_at)
+
+    def test_run_with_errors_records_failed_but_keeps_summary(self):
+        _ErrorsCmd().handle()
+        run = ScheduledProcessRun.objects.get(process_name='test_errors')
+        self.assertEqual(run.outcome, ScheduledProcessRun.OUTCOME_FAILED)
+        self.assertEqual(run.summary, {'did': 2, 'errors': ['boom on item 5']})

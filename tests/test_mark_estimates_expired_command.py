@@ -67,3 +67,15 @@ class MarkEstimatesExpiredCommandTest(TestCase):
         self.assertEqual(
             Estimate.objects.filter(status=Estimate.STATUS_EXPIRED).count(), 1
         )
+
+    def test_expiring_sibling_does_not_reject_approved_job(self):
+        JobService.update_job(self.job.pk, status=Job.STATUS_APPROVED)
+        est = self._open('EST-APV', sent_days_ago=40, valid_days=30)
+        call_command('mark_estimates_expired')
+        est.refresh_from_db()
+        self.job.refresh_from_db()
+        self.assertEqual(est.status, Estimate.STATUS_EXPIRED)
+        self.assertEqual(self.job.status, Job.STATUS_APPROVED)
+        run = ScheduledProcessRun.objects.get(process_name='mark_estimates_expired')
+        self.assertEqual(run.outcome, 'ok')           # guard no-ops cleanly → no errors
+        self.assertEqual(run.summary['expired'], 1)

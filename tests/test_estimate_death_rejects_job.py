@@ -50,3 +50,14 @@ class EstimateDeathRejectsJobTest(TestCase):
         EstimateService.update_status(est.pk, Estimate.STATUS_SUPERSEDED)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
+
+    def test_decline_does_not_reject_approved_job(self):
+        # Job advanced to approved (a sibling estimate was accepted); a lingering
+        # open estimate being declined must NOT reject the approved job.
+        JobService.update_job(self.job.pk, status=Job.STATUS_APPROVED)
+        est = self._open_estimate('EST-APV')
+        EstimateService.update_status(est.pk, Estimate.STATUS_REJECTED)
+        est.refresh_from_db()
+        self.job.refresh_from_db()
+        self.assertEqual(est.status, Estimate.STATUS_REJECTED)
+        self.assertEqual(self.job.status, Job.STATUS_APPROVED)

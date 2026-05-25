@@ -48,8 +48,10 @@ class ScheduledProcessCommand(BaseCommand):
             run.save()
             raise
 
-        run.outcome = ScheduledProcessRun.OUTCOME_OK
+        had_errors = isinstance(summary, dict) and summary.get('errors')
+        run.outcome = (ScheduledProcessRun.OUTCOME_FAILED if had_errors
+                       else ScheduledProcessRun.OUTCOME_OK)
         run.summary = summary
         run.finished_at = timezone.now()
         run.save()
-        self.stdout.write(f'{self.process_name}: ok {summary}')
+        self.stdout.write(f'{self.process_name}: {run.outcome} {summary}')
