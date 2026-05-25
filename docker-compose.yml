@@ -18,6 +18,22 @@ services:
       mysql:
         condition: service_healthy
         restart: true
+  cron:
+    container_name: minibini-cron
+    image: ashannonlee/minibini
+    build: .
+    environment:
+      - MYSQL_ROOT_PASSWORD=Ru5UPhae
+      - DATABASE_NAME=minibini_db
+      - DATABASE_USER=minidb_user
+      - DATABASE_PASSWORD=Ru5UPhae
+      - DATABASE_HOST=mysql
+    command: ["/app/deploy/cron/entrypoint.sh"]
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+        restart: true
   mysql:
     container_name: mysql
     image: mariadb:latest
