@@ -97,6 +97,16 @@ Key rules:
 - Global styles live in `frontend/src/css/app.css`, imported via `main.js`.
 - No CSS frameworks. Semantic HTML with minimal global styles.
 - Error overlays (`.error-overlay`) have a red border; success overlays (`.success-overlay`) have a green border. Both share the same layout pattern.
+- **Tables:** don't use the `border="1"` attribute (the light grey cell border
+  comes from the global `table, th, td` rule). For a table full of data, opt into
+  the house style with `class="data-table"` — full-width, padded cells, a teal
+  header band, and a subtle grey zebra stripe. The stripe is defined with
+  `:where(.data-table)` (zero specificity) so a table's own row classes (e.g.
+  `.subtask-row`) override it without a fight; components may add scoped styles to
+  tweak any `.data-table`. Tables that aren't tabular data (layout, key-value
+  one-offs) and intentionally bespoke tables keep their own styling — `.data-table`
+  is opt-in, not a global default. Scope is the Svelte SPA only; Django HTML
+  templates follow their own table conventions (see root `CLAUDE.md`).
 
 ### Routing
 
