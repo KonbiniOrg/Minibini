@@ -217,6 +217,86 @@ class Estimate(models.Model):
         unique_together = ['estimate_number', 'version']
 
 
+@history(exclude=['change_order_id'])
+class ChangeOrder(models.Model):
+    STATUS_DRAFT = 'draft'
+    STATUS_OPEN = 'open'
+    STATUS_ACCEPTED = 'accepted'
+    STATUS_REJECTED = 'rejected'
+    STATUS_EXPIRED = 'expired'
+    STATUS_SUPERSEDED = 'superseded'
+
+    CO_STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'), (STATUS_OPEN, 'Open'), (STATUS_ACCEPTED, 'Accepted'),
+        (STATUS_REJECTED, 'Rejected'), (STATUS_EXPIRED, 'Expired'), (STATUS_SUPERSEDED, 'Superseded'),
+    ]
+
+    change_order_id = models.AutoField(primary_key=True)
+    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='change_orders')
+    estimate = models.ForeignKey(Estimate, on_delete=models.PROTECT, related_name='change_orders')
+    change_order_number = models.CharField(max_length=80, unique=True, blank=True)
+    version = models.IntegerField(default=1)
+    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
+    status = models.CharField(max_length=20, choices=CO_STATUS_CHOICES, default=STATUS_DRAFT)
+    created_date = models.DateTimeField(default=timezone.now)
+    sent_date = models.DateTimeField(null=True, blank=True)
+    closed_date = models.DateTimeField(null=True, blank=True)
+    expiration_date = models.DateTimeField(null=True, blank=True)
+
+    VALID_TRANSITIONS = {
+        STATUS_DRAFT: [STATUS_OPEN, STATUS_REJECTED],
+        STATUS_OPEN: [STATUS_ACCEPTED, STATUS_REJECTED, STATUS_SUPERSEDED, STATUS_EXPIRED],
+        STATUS_ACCEPTED: [], STATUS_REJECTED: [], STATUS_EXPIRED: [], STATUS_SUPERSEDED: [],
+    }
+
+    class Meta:
+        db_table = 'change_orders'
+
+    def clean(self):
+        super().clean()
+        if self.pk:
+            old = ChangeOrder.objects.get(pk=self.pk)
+            for f in ('created_date', 'sent_date', 'closed_date'):
+                if getattr(old, f) and getattr(self, f) != getattr(old, f):
+                    setattr(self, f, getattr(old, f))
+            if old.status != self.status:
+                allowed = self.VALID_TRANSITIONS.get(old.status, [])
+                if self.status not in allowed:
+                    raise ValidationError(
+                        f'Cannot transition ChangeOrder from {old.status} to {self.status}.'
+                    )
+                if old.status == self.STATUS_DRAFT:
+                    if not ChangeOrderLineItem.objects.filter(change_order=self).exists():
+                        raise ValidationError('Cannot send a change order with no line items.')
+
+    def save(self, *args, **kwargs):
+        from apps.core.models import Configuration
+        from datetime import timedelta
+        old_status = None
+        if self.pk:
+            old_status = ChangeOrder.objects.get(pk=self.pk).status
+            if old_status != self.status:
+                if self.status == self.STATUS_OPEN and not self.sent_date:
+                    self.sent_date = timezone.now()
+                    if not self.expiration_date:
+                        try:
+                            days = int(Configuration.objects.get(key='est_expire_days').value)
+                        except (Configuration.DoesNotExist, ValueError):
+                            days = 30
+                        self.expiration_date = timezone.now() + timedelta(days=days)
+                if self.status in (self.STATUS_ACCEPTED, self.STATUS_REJECTED,
+                                   self.STATUS_SUPERSEDED, self.STATUS_EXPIRED) and not self.closed_date:
+                    self.closed_date = timezone.now()
+        if not self.change_order_number:
+            n = ChangeOrder.objects.filter(estimate=self.estimate).count() + 1
+            self.change_order_number = f'{self.estimate.estimate_number}-CO{n}'
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.change_order_number or f'ChangeOrder {self.pk}'
+
+
 @history(exclude=['est_worksheet_id'])
 class EstWorksheet(AbstractWorkContainer):
     STATUS_DRAFT = 'draft'
@@ -623,3 +703,63 @@ class EstimateLineItemSource(models.Model):
 
     def __str__(self):
         return f'Source {self.source_id}: {self.source_type}:{self.source_pk} → EstLineItem {self.estimate_line_item_id}'
+
+
+class ChangeOrderLineItem(BaseLineItem):
+    """Line item for change orders - carries add/remove/replace deltas against EstimateLineItems."""
+
+    ACTION_ADD = 'add'
+    ACTION_REMOVE = 'remove'
+    ACTION_REPLACE = 'replace'
+
+    CO_ACTION_CHOICES = [
+        (ACTION_ADD, 'Add'),
+        (ACTION_REMOVE, 'Remove'),
+        (ACTION_REPLACE, 'Replace'),
+    ]
+
+    change_order = models.ForeignKey(ChangeOrder, on_delete=models.CASCADE)
+    action = models.CharField(max_length=10, choices=CO_ACTION_CHOICES)
+    target_line_item = models.ForeignKey(
+        'estimates.EstimateLineItem',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='co_amendments',
+    )
+    source_template = models.ForeignKey(
+        'estimates.TaskTemplate',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
+    price_list_item = models.ForeignKey(
+        'inventory.PriceListItem',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+    )
+
+    class Meta:
+        db_table = 'co_li'
+
+    @property
+    def task(self):
+        """ChangeOrderLineItem has no task FK. Kept as None for BaseLineItem.source_name compatibility."""
+        return None
+
+    def get_parent_field_name(self):
+        return 'change_order'
+
+    def clean(self):
+        super().clean()
+        if self.action in (self.ACTION_REMOVE, self.ACTION_REPLACE):
+            if not self.target_line_item_id:
+                raise ValidationError(
+                    f'action="{self.action}" requires target_line_item to be set.'
+                )
+        elif self.action == self.ACTION_ADD:
+            if self.target_line_item_id:
+                raise ValidationError(
+                    'action="add" must not have a target_line_item.'
+                )
+
+    def __str__(self):
+        return f'CO Line Item {self.pk}: {self.action} — {self.description[:50]}'
