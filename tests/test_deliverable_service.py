@@ -176,3 +176,57 @@ class ComputeFulfillmentTests(FixtureTestCase):
         self.assertEqual(f['qty_picked_up'], Decimal('7'))
         self.assertEqual(f['qty_prepped'], Decimal('3'))
         self.assertEqual(f['qty_remaining'], Decimal('5'))
+
+
+class AllDeliverablesShippedTests(FixtureTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        Estimate.objects.create(
+            job=self.job, estimate_number='EST-AS-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+        self.d = Deliverable.objects.create(
+            job=self.job, description='Stool', qty_ordered=Decimal('10'), units='ea',
+        )
+
+    def test_false_when_nothing_shipped(self):
+        self.assertFalse(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_false_when_partially_picked_up(self):
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PICKED_UP)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('6'))
+        self.assertFalse(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_false_when_prepared_but_not_picked_up(self):
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PREPARED)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('10'))
+        self.assertFalse(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_true_when_fully_picked_up(self):
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PICKED_UP)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('10'))
+        self.assertTrue(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_true_when_multiple_deliverables_all_picked_up(self):
+        d2 = Deliverable.objects.create(
+            job=self.job, description='Table', qty_ordered=Decimal('2'), units='ea',
+        )
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PICKED_UP)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('10'))
+        ShipmentItem.objects.create(shipment=s, deliverable=d2, qty=Decimal('2'))
+        self.assertTrue(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_false_when_one_of_several_unshipped(self):
+        Deliverable.objects.create(
+            job=self.job, description='Table', qty_ordered=Decimal('2'), units='ea',
+        )
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PICKED_UP)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('10'))
+        self.assertFalse(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_true_when_no_deliverables(self):
+        Deliverable.objects.filter(job=self.job).delete()
+        self.assertTrue(DeliverableService.all_deliverables_shipped(self.job))

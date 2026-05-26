@@ -138,6 +138,20 @@ class DeliverableService:
             'qty_remaining': deliverable.qty_ordered - picked_up - prepped,
         }
 
+    @staticmethod
+    def all_deliverables_shipped(job):
+        """True iff every Deliverable on the job is fully picked up.
+
+        Prepared-but-not-picked-up does not count as delivered. A job with no
+        deliverables returns True (nothing outstanding). Used by the job
+        completion gate.
+        """
+        for d in Deliverable.objects.filter(job=job):
+            fulfillment = DeliverableService.compute_fulfillment(d)
+            if fulfillment['qty_picked_up'] < d.qty_ordered:
+                return False
+        return True
+
 
 def _contact_address_lines(contact):
     """Return the contact's address as a list of non-empty lines."""
