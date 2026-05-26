@@ -431,19 +431,28 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertNotIn(approved_job.job_id, job_ids)
         self.assertNotIn(wc_job.job_id, job_ids)
 
-    def test_get_unpaid_data_only_returns_work_complete_jobs(self):
-        """Unpaid view filters strictly on STATUS_WORK_COMPLETE."""
+    def test_get_unpaid_data_driven_by_outstanding_invoice_not_status(self):
+        """Unpaid lane is driven by outstanding invoices, not job status.
+
+        A work_complete job WITH an outstanding invoice appears.
+        A work_complete job WITHOUT any invoice does NOT appear (no receivable).
+        A completed job WITHOUT an invoice does NOT appear.
+        """
         from apps.jobs.services import BoardService
-        approved_job = self._make_job(status=Job.STATUS_APPROVED)
-        wc_job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
-        completed_job = self._make_job(
+        from apps.invoicing.models import Invoice
+        wc_job_with_invoice = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        wc_job_no_invoice = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        completed_no_invoice = self._make_job(
             status=Job.STATUS_COMPLETED, completed_date=timezone.now(),
+        )
+        Invoice.objects.create(
+            job=wc_job_with_invoice, invoice_number='INV-WC-OUT-001', status='open',
         )
         data = BoardService.get_unpaid_data()
         job_ids = [j['job_id'] for j in data['jobs']]
-        self.assertIn(wc_job.job_id, job_ids)
-        self.assertNotIn(approved_job.job_id, job_ids)
-        self.assertNotIn(completed_job.job_id, job_ids)
+        self.assertIn(wc_job_with_invoice.job_id, job_ids)
+        self.assertNotIn(wc_job_no_invoice.job_id, job_ids)
+        self.assertNotIn(completed_no_invoice.job_id, job_ids)
 
     def test_get_unpaid_data_returns_invoice_sent_jobs(self):
         from apps.jobs.services import BoardService
@@ -456,12 +465,13 @@ class LazyBoardMethodsTest(FixtureTestCase):
         match = next(j for j in data['jobs'] if j['job_id'] == job.job_id)
         self.assertEqual(match['sub_status'], 'invoice-sent')
 
-    def test_get_unpaid_data_returns_needs_invoice_jobs(self):
+    def test_get_unpaid_data_excludes_work_complete_jobs_without_invoice(self):
+        """work_complete job with no invoice has no receivable — excluded from unpaid lane."""
         from apps.jobs.services import BoardService
         job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
         data = BoardService.get_unpaid_data()
-        match = next(j for j in data['jobs'] if j['job_id'] == job.job_id)
-        self.assertEqual(match['sub_status'], 'needs-invoice')
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertNotIn(job.job_id, job_ids)
 
     def test_get_unpaid_data_returns_invoice_prepped_jobs(self):
         from apps.jobs.services import BoardService
@@ -474,6 +484,55 @@ class LazyBoardMethodsTest(FixtureTestCase):
         match = next(j for j in data['jobs'] if j['job_id'] == job.job_id)
         self.assertEqual(match['sub_status'], 'invoice-prepped')
 
+    def test_cancelled_job_with_outstanding_invoice_appears_in_unpaid(self):
+        """A cancelled job with an outstanding (unpaid, non-cancelled) invoice
+        appears in the unpaid lane — a billable cancellation must not be lost."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        cancelled_job = self._make_job(status=Job.STATUS_CANCELLED)
+        Invoice.objects.create(
+            job=cancelled_job, invoice_number='INV-CANC-001', status='open',
+        )
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertIn(cancelled_job.job_id, job_ids)
+        # Serialized card must carry the job's status so the UI can badge it
+        card = next(j for j in data['jobs'] if j['job_id'] == cancelled_job.job_id)
+        self.assertEqual(card['status'], Job.STATUS_CANCELLED)
+
+    def test_cancelled_job_with_no_invoice_excluded_from_unpaid(self):
+        """A cancelled job with no invoice at all does NOT appear in the unpaid lane."""
+        from apps.jobs.services import BoardService
+        cancelled_job = self._make_job(status=Job.STATUS_CANCELLED)
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertNotIn(cancelled_job.job_id, job_ids)
+
+    def test_cancelled_job_with_only_paid_invoice_excluded_from_unpaid(self):
+        """A cancelled job whose only invoice is paid does NOT appear in the unpaid lane."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        cancelled_job = self._make_job(status=Job.STATUS_CANCELLED)
+        Invoice.objects.create(
+            job=cancelled_job, invoice_number='INV-CANC-PAID-001', status='paid',
+        )
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertNotIn(cancelled_job.job_id, job_ids)
+
+    def test_work_complete_job_with_outstanding_invoice_still_appears(self):
+        """Regression: a normal work_complete job with an outstanding invoice
+        still appears in the unpaid lane after the invoice-driven change."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        wc_job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        Invoice.objects.create(
+            job=wc_job, invoice_number='INV-WC-REG-001', status='open',
+        )
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertIn(wc_job.job_id, job_ids)
+
     def test_get_closed_data_returns_terminal_jobs(self):
         from apps.jobs.services import BoardService
         job = self._make_job(status='completed', completed_date=timezone.now())
@@ -483,7 +542,9 @@ class LazyBoardMethodsTest(FixtureTestCase):
 
     def test_get_unpaid_data_returns_dict_with_jobs(self):
         from apps.jobs.services import BoardService
-        self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        from apps.invoicing.models import Invoice
+        job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        Invoice.objects.create(job=job, invoice_number='INV-DICT-001', status='open')
         data = BoardService.get_unpaid_data()
         self.assertIsInstance(data, dict)
         self.assertIn('jobs', data)

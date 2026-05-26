@@ -1196,13 +1196,24 @@ class BoardService:
             'available_workers': available_workers,
         }
 
+    # Invoice statuses that represent a settled/voided receivable — excluded from
+    # the "outstanding" predicate used to populate the Unpaid board lane.
+    INVOICE_SETTLED_STATUSES = ['cancelled', 'superseded', 'paid']
+
     @staticmethod
     def get_unpaid_data():
-        """Return work_complete jobs (work done, invoicing/payment outstanding)."""
+        """Return jobs that have at least one outstanding (unpaid, non-cancelled) invoice.
+
+        Driven by invoice state rather than job status so that a billable-
+        cancelled job's receivable stays visible in the Unpaid lane and is
+        not lost.  A job only appears here if it has an invoice whose status
+        is not in INVOICE_SETTLED_STATUSES (i.e. draft, open, partly-paid,
+        or defaulted).
+        """
         from apps.jobs.models import Job
         unpaid_jobs = Job.objects.filter(
-            status=Job.STATUS_WORK_COMPLETE
-        ).select_related('contact').order_by('due_date')
+            invoice__status__in=['draft', 'open', 'partly-paid', 'defaulted']
+        ).distinct().select_related('contact').order_by('due_date')
 
         unpaid_list = [
             BoardService._serialize_unpaid_job(job) for job in unpaid_jobs
