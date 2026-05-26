@@ -101,6 +101,10 @@
   let shipmentCount = $state(0);
   let hasOutstandingDeliverables = $state(false);
 
+  // Change orders
+  let changeOrders = $state([]);
+  let creatingCo = $state(false);
+
   async function refreshShipmentCount() {
     try {
       const r = await api.get(`/api/shipments/?job=${job.job_id}`);
@@ -120,10 +124,32 @@
     }
   }
 
+  async function refreshChangeOrders() {
+    try {
+      const r = await api.get(`/api/change-orders/?job=${job.job_id}`);
+      changeOrders = r?.results || r || [];
+    } catch {
+      changeOrders = [];
+    }
+  }
+
+  async function createChangeOrder() {
+    creatingCo = true;
+    try {
+      const co = await api.post('/api/change-orders/', { job: job.job_id });
+      window.location.hash = `/change-orders/${co.id}`;
+    } catch (e) {
+      alert(e.message || 'Failed to create change order.');
+    } finally {
+      creatingCo = false;
+    }
+  }
+
   $effect(() => {
     if (job?.job_id) {
       refreshShipmentCount();
       refreshDeliverableFulfillment();
+      refreshChangeOrders();
     }
   });
 
@@ -213,7 +239,7 @@
   let jobMaterials = $derived(job.materials || []);
 
   // Horizontal accordion state — which section is expanded
-  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'shipments', 'pos'];
+  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'shipments', 'pos', 'changeorders'];
   const storageKey = (id) => `jobDetailActiveSection_${id}`;
 
   function getDefaultSection() {
@@ -834,6 +860,61 @@
     </div>
   {/if}
 
+  <!-- Change Orders -->
+  {#if activeSection !== 'changeorders'}
+    <div class="pillar pillar-co"
+         role="button" tabindex="0"
+         onclick={() => openSection('changeorders')}
+         onkeydown={(e) => e.key === 'Enter' && openSection('changeorders')}>
+      <span class="label-v">Change Orders</span>
+      <span class="pillar-count">{changeOrders.length}</span>
+    </div>
+  {:else}
+    <div class="open open-co">
+      <div class="top-bar top-bar-co">
+        <span class="top-bar-title">
+          CHANGE ORDERS{#if changeOrders.length} · {changeOrders.length}{:else} · None{/if}
+        </span>
+        <span class="top-bar-actions">
+          {#if canManageJobs && job.status === 'on_hold'}
+            <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
+              {creatingCo ? 'Creating…' : 'New change order'}
+            </button>
+          {/if}
+        </span>
+      </div>
+      <div class="body">
+        {#if changeOrders.length > 0}
+          <table class="co-table">
+            <colgroup>
+              <col>
+              <col class="col-status">
+              <col class="col-action">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Number</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each changeOrders as co}
+                <tr>
+                  <td><a href="#/change-orders/{co.id}">{co.co_number || `CO #${co.id}`}</a></td>
+                  <td><span class="pill pill-co-{co.status}">{co.status}</span></td>
+                  <td><a href="#/change-orders/{co.id}">View →</a></td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {:else}
+          <p class="empty-msg">No change orders for this job.{#if job.status !== 'on_hold'} Put the job on hold to create one.{/if}</p>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   <!-- Purchase Orders -->
   {#if activeSection !== 'pos'}
     <div class="pillar pillar-po"
@@ -1105,6 +1186,7 @@
   .pillar-mat   { background: #ca8a04; }
   .pillar-inv   { background: #15803d; }
   .pillar-ship  { background: #0369a1; }
+  .pillar-co    { background: #b91c1c; }
   .pillar-po    { background: #475569; }
 
   .open {
@@ -1131,6 +1213,7 @@
   .top-bar-mat   { background: #ca8a04; }
   .top-bar-inv   { background: #15803d; }
   .top-bar-ship  { background: #0369a1; }
+  .top-bar-co    { background: #b91c1c; }
   .top-bar-po    { background: #475569; }
   .top-bar-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .top-bar-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
@@ -1432,4 +1515,20 @@
   /* PO other-job differentiation */
   .other-job { opacity: 0.5; }
   .other-job-label { font-size: 11px; color: #999; font-style: italic; margin-left: 4px; }
+
+  /* Change Orders table */
+  .co-table { table-layout: fixed; }
+  .co-table thead { background: #fee2e2; }
+  .co-table thead th { color: #7f1d1d; }
+  .co-table tbody tr { background: #fff5f5; }
+  .co-table tbody tr:nth-child(even) { background: #fee2e2; }
+  .co-table tbody tr + tr { border-top: 1px solid #fecaca; }
+  .co-table col.col-status { width: 120px; }
+  .co-table col.col-action { width: 80px; }
+
+  /* Change-order status pills */
+  .pill-co-draft { background: #f3f4f6; color: #374151; }
+  .pill-co-open { background: #fef3c7; color: #92400e; }
+  .pill-co-accepted { background: #dcfce7; color: #166534; }
+  .pill-co-rejected { background: #fee2e2; color: #991b1b; }
 </style>

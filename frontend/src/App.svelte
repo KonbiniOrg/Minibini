@@ -44,6 +44,7 @@
   import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
   import EmailAssociatePage from './routes/email/EmailAssociatePage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
+  import ChangeOrderDetailPage from './routes/change-orders/ChangeOrderDetailPage.svelte';
 
   const routes = {
     '/': Home,
@@ -88,6 +89,7 @@
     '/email/:id/associate': EmailAssociatePage,
     '/email/:id': EmailDetailPage,
     '/profile': ProfilePage,
+    '/change-orders/:id': ChangeOrderDetailPage,
   };
 
   checkAuth();
