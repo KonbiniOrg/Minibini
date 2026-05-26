@@ -431,11 +431,13 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertNotIn(approved_job.job_id, job_ids)
         self.assertNotIn(wc_job.job_id, job_ids)
 
-    def test_get_unpaid_data_driven_by_outstanding_invoice_not_status(self):
-        """Unpaid lane is driven by outstanding invoices, not job status.
+    def test_get_unpaid_data_union_of_work_complete_and_outstanding_invoice(self):
+        """Unpaid lane is the UNION of:
+          (a) all work_complete jobs (includes those awaiting first invoice), AND
+          (b) any-status jobs with an outstanding (non-settled) invoice.
 
-        A work_complete job WITH an outstanding invoice appears.
-        A work_complete job WITHOUT any invoice does NOT appear (no receivable).
+        A work_complete job WITH an outstanding invoice appears (satisfies both).
+        A work_complete job WITHOUT any invoice ALSO appears (needs-invoice).
         A completed job WITHOUT an invoice does NOT appear.
         """
         from apps.jobs.services import BoardService
@@ -451,7 +453,8 @@ class LazyBoardMethodsTest(FixtureTestCase):
         data = BoardService.get_unpaid_data()
         job_ids = [j['job_id'] for j in data['jobs']]
         self.assertIn(wc_job_with_invoice.job_id, job_ids)
-        self.assertNotIn(wc_job_no_invoice.job_id, job_ids)
+        # Regression guard: work_complete job with no invoice must appear (needs-invoice)
+        self.assertIn(wc_job_no_invoice.job_id, job_ids)
         self.assertNotIn(completed_no_invoice.job_id, job_ids)
 
     def test_get_unpaid_data_returns_invoice_sent_jobs(self):
@@ -465,13 +468,16 @@ class LazyBoardMethodsTest(FixtureTestCase):
         match = next(j for j in data['jobs'] if j['job_id'] == job.job_id)
         self.assertEqual(match['sub_status'], 'invoice-sent')
 
-    def test_get_unpaid_data_excludes_work_complete_jobs_without_invoice(self):
-        """work_complete job with no invoice has no receivable — excluded from unpaid lane."""
+    def test_get_unpaid_data_includes_work_complete_jobs_without_invoice(self):
+        """Regression guard: a work_complete job with no invoice must appear in the
+        unpaid lane with sub_status 'needs-invoice' — it's work done awaiting billing."""
         from apps.jobs.services import BoardService
         job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
         data = BoardService.get_unpaid_data()
         job_ids = [j['job_id'] for j in data['jobs']]
-        self.assertNotIn(job.job_id, job_ids)
+        self.assertIn(job.job_id, job_ids)
+        card = next(j for j in data['jobs'] if j['job_id'] == job.job_id)
+        self.assertEqual(card['sub_status'], 'needs-invoice')
 
     def test_get_unpaid_data_returns_invoice_prepped_jobs(self):
         from apps.jobs.services import BoardService
@@ -532,6 +538,22 @@ class LazyBoardMethodsTest(FixtureTestCase):
         data = BoardService.get_unpaid_data()
         job_ids = [j['job_id'] for j in data['jobs']]
         self.assertIn(wc_job.job_id, job_ids)
+
+    def test_work_complete_job_with_outstanding_invoice_appears_exactly_once(self):
+        """Union with distinct: a work_complete job that also has an outstanding
+        invoice satisfies BOTH predicates but must appear only once in the lane."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        wc_job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        Invoice.objects.create(
+            job=wc_job, invoice_number='INV-WC-ONCE-001', status='open',
+        )
+        Invoice.objects.create(
+            job=wc_job, invoice_number='INV-WC-ONCE-002', status='draft',
+        )
+        data = BoardService.get_unpaid_data()
+        matching = [j for j in data['jobs'] if j['job_id'] == wc_job.job_id]
+        self.assertEqual(len(matching), 1, 'Job appeared more than once (missing distinct)')
 
     def test_get_closed_data_returns_terminal_jobs(self):
         from apps.jobs.services import BoardService

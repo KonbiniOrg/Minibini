@@ -1202,17 +1202,21 @@ class BoardService:
 
     @staticmethod
     def get_unpaid_data():
-        """Return jobs that have at least one outstanding (unpaid, non-cancelled) invoice.
+        """Return jobs in the Unpaid lane: a UNION of two predicates.
 
-        Driven by invoice state rather than job status so that a billable-
-        cancelled job's receivable stays visible in the Unpaid lane and is
-        not lost.  A job only appears here if it has an invoice whose status
-        is not in INVOICE_SETTLED_STATUSES (i.e. draft, open, partly-paid,
-        or defaulted).
+        (a) All work_complete jobs — these are "work done, awaiting first invoice"
+            (sub_status needs-invoice) as well as those already invoiced.
+        (b) Any-status jobs with at least one outstanding (non-settled) invoice —
+            so that a billable-cancelled job's receivable stays visible and is
+            not lost after cancellation.
+
+        The two predicates overlap for work_complete jobs that also carry an
+        outstanding invoice; .distinct() ensures each job appears only once.
         """
         from apps.jobs.models import Job
         unpaid_jobs = Job.objects.filter(
-            invoice__status__in=['draft', 'open', 'partly-paid', 'defaulted']
+            Q(status=Job.STATUS_WORK_COMPLETE) |
+            Q(invoice__status__in=['draft', 'open', 'partly-paid', 'defaulted'])
         ).distinct().select_related('contact').order_by('due_date')
 
         unpaid_list = [
