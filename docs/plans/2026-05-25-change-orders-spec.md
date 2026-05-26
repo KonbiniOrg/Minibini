@@ -1,21 +1,21 @@
 # Change Orders + the `on_hold` Job state — design spec
 
-**Status:** Draft. Deliverables sections are intentionally stubbed (see §9)
-and will be backfilled after the deliverables redesign is specced.
+**Status:** Draft, ready for review. Deliverables (§9) backfilled from the
+deliverables spec (`docs/plans/2026-05-25-deliverables-spec.md`).
 **Date:** 2026-05-25
 **Scope of this spec:** the middle of three related specs.
 
 This is one of three specs that came out of the change-order brainstorm:
 
-1. **Deliverables redesign** — deliverables section on the Estimate (currently
-   unbuilt) + a history model (snapshot vs supersession). *Prerequisite for §9
-   here; specced next.*
+1. **Deliverables redesign** — deliverables section on the Estimate + write-once
+   snapshot history. *Specced in `docs/plans/2026-05-25-deliverables-spec.md`; §9
+   here is its CO-side summary.*
 2. **Change orders + `on_hold`** — *this doc.*
 3. **`cancelled-with-invoice`** — the terminal "stop the job but bill the work
    done" state. Referenced here only as a transition target (§5.4, §8).
 
-Build order: draft (2) with deliverables gaps → spec (1) → backfill (2)'s gaps →
-spec (3) → only then implementation.
+Build order: draft (2) with deliverables gaps → spec (1) → backfill (2)'s gaps
+[done] → spec (3) → only then implementation.
 
 ---
 
@@ -113,6 +113,7 @@ lossless.**
 | **New bleps** | `BlepService` job-status guard already permits work only when the Job is `approved`/`in_progress` (live) or also `work_complete` (backfill). `on_hold` is absent from both sets → new sessions are rejected. | **None** — falls out for free. |
 | **Job board** | Columns are job-status queries (Pipeline = draft/submitted/approved; In Progress = in_progress; etc.). Worker task columns render only inside In Progress. An `on_hold` job stops matching In Progress → its tasks vanish from the worker columns. | Slot `on_hold` into the **Pipeline** lane (matches the "reverted to planning" framing) with a distinct sub-status ("on hold" / "applying change order"), so the job stays findable while showing no workable task columns. |
 | **Schedule** | `ScheduleService` selects workers/tasks by **task status + assignee**, *not* job status (`apps/schedule/services.py` ~lines 142, 374). So `on_hold` tasks would still show. | Add `.exclude(job__status=Job.STATUS_ON_HOLD)` (or filter to active job statuses) to the worker-selection and lane task queries. Tasks are not mutated. |
+| **Shipment creation** | A CO's proposed deliverables live on the *live* `Deliverable` list while the CO is open (deliverables spec §2, §7), so shipping during a hold could fulfill an un-agreed scope. | `ShipmentService.create` rejects when the job is `on_hold`. (New guard, required by the deliverables design.) |
 
 Explicitly **rejected** approaches (both lose information and are hard to revert,
 the same objection as mass-blocking): blocking every Task; removing every Task
@@ -267,7 +268,8 @@ via the status pill, setting `hold_reason`. Work freezes and tasks hide per §2.
 - **Create CO** (`draft`). **Guarded: the Job must be `on_hold`.** (One-
   directional coupling: a CO requires `on_hold`; `on_hold` does not require a CO.)
 - Author line-item deltas (`add`/`remove`/`replace`) against the accepted
-  Estimate's lines, plus — eventually — a deliverables-delta section (§9).
+  Estimate's lines, plus the deliverable changes, edited in place on the live
+  list (§9).
 - `draft → open` (sent). Negotiation rounds = revisions (§3.2), each a new
   version superseding/threading off the prior.
 
@@ -284,8 +286,10 @@ On `→ accepted`:
   handler writes a `HistoryEntry`, recomputes the derived agreement, and unlocks
   the apply affordances.
 - The trusted user then **applies the changes by hand** (edit/add Tasks and
-  Materials; reconcile live deliverables) while the Job sits in `approved`, then
-  manually releases `approved → in_progress`.
+  Materials to match the agreed CO) while the Job sits in `approved`, then
+  manually releases `approved → in_progress`. Deliverables need no apply step —
+  they were edited in place during the CO draft, so they're already the agreed set
+  (§9).
 
 Verified non-issues with reusing `approved`:
 - Carry-over does **not** re-fire (it's triggered by `estimate_accepted`, not by
@@ -299,13 +303,16 @@ Verified non-issues with reusing `approved`:
 
 ### 5.4 Rejection (ambiguous → no auto-change, human fork)
 
-On `→ rejected`, the **Job status does not change** — it stays `on_hold`.
-Rationale: rejection is a genuine fork with no machine-decidable answer, and the
-choice belongs to the shop, not the customer:
+On `→ rejected`, the live deliverable list (this CO's final proposal) is
+snapshotted onto the rejected CO for history (§9), and the **Job status does not
+change** — it stays `on_hold`. Rationale: rejection is a genuine fork with no
+machine-decidable answer, and the choice belongs to the shop, not the customer:
 
 - **Resume the original contract** — human flips `on_hold →
-  in_progress`/`approved` (default from `status_before_hold`). The agreement is
-  unchanged; work resumes as originally agreed.
+  in_progress`/`approved` (default from `status_before_hold`), and (if the dead CO
+  had edited deliverables) invokes **"restore last agreed deliverables"** to roll
+  the live list back to the prior snapshot (§9). The agreement is unchanged; work
+  resumes as originally agreed.
 - **Stop and bill** — human moves to `cancelled-with-invoice` (spec 3). A
   rejected CO is one of the two doorways into that state (the other being any
   pause that concludes "stop").
@@ -385,34 +392,42 @@ DELETE returns 200 + JSON body (project convention). Claim/transition conflicts
 
 ---
 
-## 9. Deliverables — DEFERRED (gap)
+## 9. Deliverables on a CO
 
-> **This section is intentionally incomplete.** It depends on the
-> *Deliverables redesign* spec (deliverables-on-Estimate + a history model),
-> which does not exist yet. Backfill after that spec lands (task #3).
+Backfilled from the deliverables spec
+(`docs/plans/2026-05-25-deliverables-spec.md`), which is the authority. This
+section is the CO-side summary.
 
-What we know now and must preserve when backfilling:
+A CO amends the deliverable scope as well as the billing lines:
 
-- A CO carries an **updated deliverables section** (the customer signs a changed
-  scope-of-goods, not just changed charges). Today Deliverables are job-level
-  rows, permanently frozen once any estimate is accepted, with change orders
-  named as the only sanctioned modification path (jobs-tasks doc §12.2, §12.9).
-- **Editability keys on CO state, not on `on_hold`.** A non-CO pause (backorder,
-  deposit) must leave the agreed scope frozen. Two editable surfaces:
-  - the **CO's proposed deliverables section** — editable while the CO is
-    `draft`, frozen on send/accept;
-  - the **job's live deliverables** — editable only during *apply* (`approved`
-    window after an accepted CO), when the human reconciles them to what was
-    signed.
-- **History model is open:** snapshot-onto-document (leaning) vs supersession
-  chain. The original Estimate + its deliverables must remain intact for history.
-- **`ShipmentItem → Deliverable` is PROTECT.** A CO can't hard-delete a
-  deliverable that's already (partly) shipped; removal needs a soft "reduced/
-  closed" state. (jobs-tasks doc §12.5.)
+- **One editing surface.** The CO's proposed deliverables *are* the job's live
+  `Deliverable` list, edited in place (the existing `DeliverablesEditModal`) while
+  the CO is `draft`; read-only once the CO is sent. There is no separate CO-owned
+  deliverables table.
+- **Write-once snapshots** record history on two triggers (deliverables spec §5):
+  on *this CO's creation*, the prior agreement's deliverables are snapshotted onto
+  the document being amended (the Estimate or the last accepted CO) — serving as
+  both its permanent agreed record and the rollback target; on a CO's *rejection*,
+  the live list (its final proposal) is snapshotted onto that rejected CO.
+- **Anchoring (Option A):** a deliverable with any shipment is frozen at its
+  ordered qty — not editable, not removable. Changes to delivered items would be
+  new rows (never happens in practice → finalize-and-restart escape hatch).
+- **On acceptance:** the live list already *is* the agreed set — **no reconcile
+  step for deliverables** (they were edited in place during the CO draft). Only
+  Tasks/Materials are hand-applied on accept.
+- **On rejection → resume:** a manual **"restore last agreed deliverables"**
+  action rolls the live list's unanchored rows back to the prior agreement's
+  snapshot. Anchored rows are untouched.
+- **Editability keys on CO state**, never on `on_hold` alone (deliverables spec
+  §5.4) — a non-CO pause leaves the agreed scope frozen.
+- **Shipments freeze during `on_hold`** (§2.3) so nothing ships against an
+  un-agreed proposal.
+- **Customer-facing read:** the full new agreed set with changes highlighted as a
+  delta (`+5 brackets` / `~widget 10→8` / `−powder-coat`), mirroring the billing
+  add/remove/replace deltas.
 
-Until backfilled, the change-order feature is scoped to **billing-line-item
-deltas only** (§3.3, §4) — which is most of the value and ships independent of
-the deliverables work.
+See the deliverables spec for the `DeliverableSnapshot` model, the editability
+table, and the worked example.
 
 ---
 
@@ -423,7 +438,9 @@ the deliverables work.
 - Worksheet/PlanTask/wizard involvement (that's "new job" territory; §1.1).
 - The `cancelled-with-invoice` state itself (spec 3) — referenced only as a
   transition target.
-- Deliverables specifics (§9 / spec 1).
+- Deliverable *model* internals — the `DeliverableSnapshot` table, anchoring
+  mechanics, the on-estimate display — owned by the deliverables spec; §9 is only
+  the CO-side summary.
 - CO-on-CO chained edits of CO-introduced lines (§3.3 note).
 - Estimate "send" (PDF + email) is still a stub project-wide; the CO send path
   will follow whatever pattern that work establishes.
@@ -448,7 +465,8 @@ the deliverables work.
 Per CLAUDE.md "keep these current," when this ships, update:
 
 - `docs/designs/jobs-tasks-and-worksheets.md` — Job status machine (add
-  `on_hold`), §12.9 (change orders no longer "deferred"), §13 (new CO signal).
+  `on_hold`), §12.4 (shipments blocked during `on_hold`), §12.9 (change orders no
+  longer "deferred"), §13 (new CO signal).
 - `docs/designs/estimates-and-prices.md` — the CO model + agreement-of-record
   composition, its relationship to Estimate.
 - `docs/designs/users-and-permissions.md` — CO endpoints in the atom table.
