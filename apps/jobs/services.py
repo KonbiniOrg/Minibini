@@ -318,6 +318,13 @@ class JobService:
             setattr(job, field, value)
         status_changed = job.status != old_status
 
+        if status_changed and job.status in (Job.STATUS_ON_HOLD, Job.STATUS_CANCELLED):
+            if Blep.objects.filter(task__job=job, end_time__isnull=True).exists():
+                raise ValidationError(
+                    'Cannot pause or cancel the job while a worker has an open time entry — '
+                    'have them stop first.'
+                )
+
         if status_changed and job.status == Job.STATUS_WORK_COMPLETE:
             offenders = JobService._loose_pending_materials(job)
             if offenders.exists():
