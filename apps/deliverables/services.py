@@ -32,11 +32,35 @@ def _any_accepted_estimate(job):
     ).exists()
 
 
+def _live_change_order(job):
+    """Return the most-recent draft or open ChangeOrder for the job, or None."""
+    from apps.estimates.models import ChangeOrder
+    return (
+        ChangeOrder.objects.filter(
+            job=job, status__in=[ChangeOrder.STATUS_DRAFT, ChangeOrder.STATUS_OPEN],
+        )
+        .order_by('-change_order_id')
+        .first()
+    )
+
+
 class DeliverableService:
     """Business-logic facade for the Deliverable model."""
 
     @staticmethod
     def is_editable(job):
+        # A live change order takes priority over the estimate-state rule.
+        live_co = _live_change_order(job)
+        if live_co is not None:
+            from apps.estimates.models import ChangeOrder
+            # Draft CO: the proposal is being authored — list is editable.
+            if live_co.status == ChangeOrder.STATUS_DRAFT:
+                return True
+            # Open CO: proposal is out for review — list is locked.
+            if live_co.status == ChangeOrder.STATUS_OPEN:
+                return False
+
+        # No live CO: fall back to estimate-state rule.
         if _any_accepted_estimate(job):
             return False
         latest = _latest_active_estimate(job)
@@ -46,6 +70,15 @@ class DeliverableService:
 
     @staticmethod
     def editability_reason(job):
+        live_co = _live_change_order(job)
+        if live_co is not None:
+            from apps.estimates.models import ChangeOrder
+            if live_co.status == ChangeOrder.STATUS_DRAFT:
+                return None
+            if live_co.status == ChangeOrder.STATUS_OPEN:
+                return 'change_order_sent'
+
+        # No live CO: fall back to estimate-state rule.
         if _any_accepted_estimate(job):
             return 'estimate_accepted'
         latest = _latest_active_estimate(job)
@@ -85,6 +118,10 @@ class DeliverableService:
     @transaction.atomic
     def update(*, deliverable, **fields):
         DeliverableService._assert_editable(deliverable.job)
+        if ShipmentItem.objects.filter(deliverable=deliverable).exists():
+            raise ValidationError(
+                'Delivered items are frozen and cannot be edited or removed.'
+            )
         allowed = {'description', 'qty_ordered', 'units', 'sort_order'}
         for field, value in fields.items():
             if field not in allowed:
@@ -98,6 +135,10 @@ class DeliverableService:
     @transaction.atomic
     def delete(*, deliverable):
         DeliverableService._assert_editable(deliverable.job)
+        if ShipmentItem.objects.filter(deliverable=deliverable).exists():
+            raise ValidationError(
+                'Delivered items are frozen and cannot be edited or removed.'
+            )
         job = deliverable.job
         deliverable.delete()
         remaining = list(
