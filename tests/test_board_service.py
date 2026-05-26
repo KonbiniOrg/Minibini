@@ -712,3 +712,60 @@ class UnpaidDataTest(FixtureTestCase):
             if i['invoice_number'] == 'INV-TEST-003'
         )
         self.assertEqual(partly_inv['amount_paid'], Decimal('200.00'))
+
+
+class OnHoldBoardTest(FixtureTestCase):
+    """Test that on_hold jobs appear in the Pipeline lane with sub_status 'on-hold'."""
+
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days',
+            defaults={'value': '14'}
+        )
+        self.contact = Contact.objects.first()
+
+    def _make_job(self, status='draft', **kwargs):
+        return Job.objects.create(
+            job_number=f'JOB-TEST-{Job.objects.count() + 1:04d}',
+            name='Test Job',
+            status=status,
+            contact=self.contact,
+            **kwargs,
+        )
+
+    def test_on_hold_job_appears_in_pipeline_with_sub_status(self):
+        """on_hold job appears in Pipeline lane with sub_status 'on-hold',
+        and is absent from the In Progress lane."""
+        from apps.jobs.services import BoardService
+
+        # Reach on_hold via a valid transition: approved -> on_hold
+        job = self._make_job(status=Job.STATUS_APPROVED)
+        Job.objects.filter(pk=job.pk).update(status=Job.STATUS_ON_HOLD)
+        job.refresh_from_db()
+
+        # --- sub_status ---
+        self.assertEqual(BoardService.compute_sub_status(job), 'on-hold')
+
+        # --- full board: pipeline contains the job ---
+        board = BoardService.get_board_data()
+        pipeline_ids = [j['job_id'] for j in board['pipeline']]
+        self.assertIn(job.job_id, pipeline_ids)
+
+        # --- full board: pipeline entry has correct sub_status ---
+        pipeline_entry = next(j for j in board['pipeline'] if j['job_id'] == job.job_id)
+        self.assertEqual(pipeline_entry['sub_status'], 'on-hold')
+
+        # --- full board: job is NOT in the In Progress lane ---
+        in_progress_ids = [j['job_id'] for j in board['approved']['jobs']]
+        self.assertNotIn(job.job_id, in_progress_ids)
+
+        # --- per-lane endpoint: get_pipeline_data includes on_hold ---
+        pipeline_data = BoardService.get_pipeline_data()
+        pipeline_lane_ids = [j['job_id'] for j in pipeline_data['jobs']]
+        self.assertIn(job.job_id, pipeline_lane_ids)
+
+        # --- per-lane endpoint: get_approved_data excludes on_hold ---
+        approved_data = BoardService.get_approved_data()
+        approved_lane_ids = [j['job_id'] for j in approved_data['jobs']]
+        self.assertNotIn(job.job_id, approved_lane_ids)

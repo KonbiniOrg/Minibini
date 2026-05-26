@@ -929,8 +929,9 @@ class BoardService:
         cutoff = timezone.now() - timedelta(days=retention_days)
 
         # Pipeline: draft + submitted + approved (estimate accepted, awaiting prep)
+        #           + on_hold (reverted-to-planning / paused)
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted', 'approved']
+            status__in=['draft', 'submitted', 'approved', 'on_hold']
         ).select_related('contact').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
@@ -1004,10 +1005,10 @@ class BoardService:
 
     @staticmethod
     def get_pipeline_data():
-        """Return pipeline jobs (draft + submitted + approved) with worksheet/estimate info."""
+        """Return pipeline jobs (draft + submitted + approved + on_hold) with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted', 'approved']
+            status__in=['draft', 'submitted', 'approved', 'on_hold']
         ).select_related('contact').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
@@ -1301,6 +1302,8 @@ class BoardService:
     @staticmethod
     def compute_sub_status(job):
         """Derive the sub-status of a job based on related object states."""
+        if job.status == Job.STATUS_ON_HOLD:
+            return 'on-hold'
         if job.status in ('draft', 'submitted'):
             return BoardService._pipeline_sub_status(job)
         elif job.status == Job.STATUS_APPROVED:
