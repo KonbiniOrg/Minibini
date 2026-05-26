@@ -208,6 +208,7 @@ class InvoiceWizardService(BaseWizardService):
         Job.STATUS_IN_PROGRESS,  # NEW
         Job.STATUS_WORK_COMPLETE,
         Job.STATUS_COMPLETED,
+        Job.STATUS_CANCELLED,  # stopped early — still billable for work done
     }
 
     @staticmethod

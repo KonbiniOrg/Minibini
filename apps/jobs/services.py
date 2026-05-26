@@ -185,10 +185,12 @@ class BlepService:
                 "Creating a time entry for another user requires can_manage_time."
             )
         # Post-split: task is always a Task (work-order side); no container check needed.
+        # STATUS_CANCELLED is allowed for backfill — forgotten time can still be
+        # logged against a stopped job for billing purposes.
         _assert_job_allows_blep(
             task.job,
             (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
-             Job.STATUS_WORK_COMPLETE),
+             Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED),
             'log time',
         )
         if end_time < start_time:

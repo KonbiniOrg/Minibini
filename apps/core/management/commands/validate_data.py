@@ -822,7 +822,8 @@ class Command(BaseCommand):
     def check_invoice_job_status(self):
         """Invoices should only exist for jobs that have been approved or later.
         A draft/submitted/rejected job shouldn't have invoices.
-        A cancelled job can have invoices, but they must also be cancelled."""
+        A cancelled job may have open/paid invoices (work done before cancellation
+        is billable), so non-cancelled invoices on a cancelled job are permitted."""
         from apps.invoicing.models import Invoice
 
         for inv in Invoice.objects.select_related('job').all():
@@ -830,9 +831,4 @@ class Command(BaseCommand):
                 self.warnings.append(
                     f'Invoice {inv.invoice_number}: job {inv.job.job_number} '
                     f'status is "{inv.job.status}" (expected approved or later)'
-                )
-            elif inv.job.status == Job.STATUS_CANCELLED and inv.status != Invoice.STATUS_CANCELLED:
-                self.errors.append(
-                    f'Invoice {inv.invoice_number}: job {inv.job.job_number} '
-                    f'is cancelled but invoice status is "{inv.status}" (should be cancelled)'
                 )

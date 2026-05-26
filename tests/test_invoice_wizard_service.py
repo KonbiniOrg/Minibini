@@ -78,6 +78,22 @@ class OpenForJobTest(TestCase):
         invoice = InvoiceWizardService.open_for_job(in_progress_job)
         self.assertEqual(invoice.status, Invoice.STATUS_DRAFT)
 
+    def test_allows_cancelled_job(self):
+        # A job stopped early (cancelled) should still be invoiceable for work done.
+        cancelled_job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0098',
+        )
+        cancelled_job.status = Job.STATUS_SUBMITTED
+        cancelled_job.save()
+        cancelled_job.status = Job.STATUS_APPROVED
+        cancelled_job.save()
+        cancelled_job.status = Job.STATUS_CANCELLED
+        cancelled_job.save()
+
+        invoice = InvoiceWizardService.open_for_job(cancelled_job)
+        self.assertEqual(invoice.status, Invoice.STATUS_DRAFT)
+        self.assertEqual(invoice.job, cancelled_job)
+
 
 class GetSourcePoolTest(TestCase):
     def setUp(self):
