@@ -87,16 +87,19 @@ awaiting response), so `draft`/`submitted` jobs are never put on hold.
 Exits:
 - `on_hold → approved` — the **automatic** exit on CO acceptance (§5.3).
 - `on_hold → approved` / `on_hold → in_progress` — **manual** exit (non-CO
-  pause, or a rejected CO), restoring the job to where it was.
+  pause, or a rejected CO); the human picks which active status to resume into.
 - `on_hold → cancelled` (or `cancelled-with-invoice`, spec 3) — the pause
   concludes "we're stopping."
 
-### 2.2 New `Job` fields
+### 2.2 New `Job` field
 
 | Field | Type | Notes |
 |---|---|---|
 | `hold_reason` | TextField, blank | Free text ("CO-2026-0007 in negotiation", "awaiting deposit"). No taxonomy. Surfaced on the board pill and job header. Cleared on exit to an active status. |
-| `status_before_hold` | CharField, nullable | Recorded on entry to `on_hold`. Drives the default target when a human manually resumes (non-CO / rejected-CO exits). The CO-accept auto-advance ignores it (always → `approved`). |
+
+No `status_before_hold` field. On a **manual** exit the human just picks the
+target status on the pill (`approved` or `in_progress`); the **CO-accept**
+auto-advance always lands on `approved` (§5.3). Nothing needs recording/restoring.
 
 No date side effects: `on_hold` is not terminal, so `Job.save()`'s
 `completed_date` logic doesn't fire; `start_date` is already set (and immutable)
@@ -123,15 +126,13 @@ Open consideration: backfilling historical bleps is also blocked during
 `on_hold` (the guard excludes it). If a need arises to log pre-hold time, a
 manager lifts the hold first. Acceptable for now.
 
-### 2.4 Open decision — open bleps at entry
+### 2.4 Open bleps at entry
 
-When a manager moves a job to `on_hold`, a worker may still be clocked in. Two
-options, both mirroring existing patterns:
-
-- **Reject with a "coordinate offline" conflict** (like `block_task` does when
-  open bleps exist). *Recommended* — pausing a job out from under an active
-  worker should be deliberate.
-- **Auto-close the open bleps** (like the logout endpoint does).
+If a worker still has an open Blep when a manager moves the job to `on_hold`, the
+transition is **rejected with a notice** to the manager (like `block_task`'s
+conflict when open bleps exist). The manager finds the worker and has them stop —
+which has to happen anyway before the job pauses. Not auto-closed: pausing a job
+out from under an active worker should be deliberate.
 
 ---
 
@@ -149,29 +150,29 @@ app for proximity to shared code.
 | `change_order_id` | AutoField PK | |
 | `job` | FK Job (CASCADE) | Primary anchor. |
 | `estimate` | FK Estimate (PROTECT) | The accepted Estimate this CO amends (the job's accepted estimate). Explicit anchor for the agreement-of-record composition. |
-| `change_order_number` | CharField, unique-ish | Auto-generated via `NumberGenerationService.generate_next_number('change_order')`. New Configuration keys `change_order_number_sequence` + `change_order_counter` (add to fixtures + test `setUp`). |
-| `version` | IntegerField, default 1 | Revision lineage (negotiation rounds). |
-| `parent` | FK self (SET_NULL, null) | Previous version. |
+| `change_order_number` | CharField | **Open (§11):** the user wants a CO's number to *derive from its estimate's number* rather than be an independent sequence. Scheme TBD before the implementation plan. |
+| `parent` | FK self (SET_NULL, null) | The prior CO this one was **seeded (copied) from**, for lineage. Null for the first CO under an estimate. |
 | `status` | CharField, choices | See §3.2. |
 | `created_date` / `sent_date` / `closed_date` | DateTimeField | Same auto-set + immutability rules as Estimate. |
 
 `@history`-decorated (status changes auto-write `HistoryEntry` rows), like
 Estimate/Invoice.
 
-`unique_together = ['change_order_number', 'version']` (mirrors Estimate).
+Uniqueness and sequencing of `change_order_number` fall out of the deferred
+numbering scheme (§11).
 
 ### 3.2 Status machine
 
-Mirrors Estimate, with one deliberate divergence (rejected is *not* a hard
-dead-end — see §5.4):
+Mirrors Estimate. All terminal states are genuinely terminal — there is no
+in-place revision (see below):
 
 | Status | Meaning |
 |---|---|
 | `draft` | Editable; line items can be added/removed. |
 | `open` | Sent to customer; awaiting response. |
 | `accepted` | Customer accepted. Terminal. Drives the agreement + auto-advances the Job (§5.3). |
-| `rejected` | Customer rejected. Terminal-ish: the live thread ends, but the job is **not** auto-changed, and a rejected CO may be revised into a new version (§5.4). |
-| `superseded` | Replaced by a newer revision. Terminal. |
+| `rejected` | Customer rejected. Terminal. The job is **not** auto-changed — the human forks (§5.4). |
+| `superseded` | A sent (`open`) CO the shop withdrew in favor of a new seeded CO. Terminal. |
 | `expired` | (Optional parallel with Estimate; auto on an expiration date.) |
 
 Transitions:
@@ -179,18 +180,17 @@ Transitions:
 ```
 draft     → open, rejected
 open      → accepted, rejected, superseded, expired
-rejected  → (terminal, but see "revise" below)
-accepted, superseded, expired → (terminal)
+accepted, rejected, superseded, expired → (terminal)
 ```
 
-**Revision / negotiation.** A `revise` action creates v(n+1) as a new `draft`
-with `parent` = the current version and a bumped `version`:
-- Revising an `open` CO sets the parent `superseded` (the open offer is
-  withdrawn in favor of the new one).
-- Revising a `rejected` CO **leaves the parent `rejected`** (preserving the "the
-  customer said no to this exact thing" record) and threads v(n+1) off it. This
-  is the divergence from Estimate, motivated by the real-world fact that
-  customers click Reject to mean "let's negotiate" (§5.4).
+**No in-place revision — "the next round" is a new CO.** There's no version-bump
+mechanic. To keep negotiating after a `rejected` CO, or to replace a sent
+(`open`) one, the human creates a **brand-new CO seeded (copied) from the prior**
+and edits it; the prior keeps its terminal status (`rejected`, or `superseded` if
+it was an open offer being withdrawn), and the new CO carries a `parent` pointer
+for lineage. This is simpler than — and behaviorally identical to — a
+"revise-from-rejected" mechanism: a parent, if present, is always the terminal one
+being amended, and the child is a fresh CO copied from it.
 
 **One live CO per job.** At most one non-terminal (`draft`/`open`) CO exists per
 job at a time — parallels "one draft estimate." Enforced in the service +
@@ -239,7 +239,7 @@ from under a CO that documents a change to it.
 The current effective agreement is **computed**, not stored:
 
 1. Start from the accepted Estimate's line items.
-2. Apply each `accepted` CO in version/date order:
+2. Apply each `accepted` CO in acceptance-date order:
    - `remove` → drop the target line.
    - `replace` → swap the target line for the CO line's content.
    - `add` → append the CO line's content.
@@ -261,7 +261,6 @@ history. "Estimate + accepted COs" is the agreement.
 
 A manager (`can_manage_jobs`) flips the Job `approved`/`in_progress → on_hold`
 via the status pill, setting `hold_reason`. Work freezes and tasks hide per §2.3.
-`status_before_hold` is recorded.
 
 ### 5.2 Authoring + negotiation
 
@@ -270,8 +269,9 @@ via the status pill, setting `hold_reason`. Work freezes and tasks hide per §2.
 - Author line-item deltas (`add`/`remove`/`replace`) against the accepted
   Estimate's lines, plus the deliverable changes, edited in place on the live
   list (§9).
-- `draft → open` (sent). Negotiation rounds = revisions (§3.2), each a new
-  version superseding/threading off the prior.
+- `draft → open` (sent). To continue after a `rejected` (or to replace a sent)
+  CO, create a **new CO seeded (copied) from the prior** one (§3.2); the prior
+  stays terminal.
 
 ### 5.3 Acceptance (deterministic → auto-advance)
 
@@ -309,17 +309,17 @@ change** — it stays `on_hold`. Rationale: rejection is a genuine fork with no
 machine-decidable answer, and the choice belongs to the shop, not the customer:
 
 - **Resume the original contract** — human flips `on_hold →
-  in_progress`/`approved` (default from `status_before_hold`), and (if the dead CO
-  had edited deliverables) invokes **"restore last agreed deliverables"** to roll
-  the live list back to the prior snapshot (§9). The agreement is unchanged; work
-  resumes as originally agreed.
+  in_progress`/`approved` (the human picks which), and (if the dead CO had edited
+  deliverables) invokes **"restore last agreed deliverables"** to roll the live
+  list back to the prior snapshot (§9). The agreement is unchanged; work resumes
+  as originally agreed.
 - **Stop and bill** — human moves to `cancelled-with-invoice` (spec 3). A
   rejected CO is one of the two doorways into that state (the other being any
   pause that concludes "stop").
 - **Keep negotiating** — because a customer's "Reject" often *means* "send me a
-  different version," the human can **revise the rejected CO** into a new version
-  (§3.2), which threads off the rejected parent and keeps the negotiation as one
-  numbered document. The job stays `on_hold` (the new CO is live).
+  different version," the human creates a **new CO seeded from the rejected one**
+  (§3.2); the rejected CO stays rejected, the new one is live, and the job stays
+  `on_hold`.
 
 The job rests in `on_hold` **visibly** (Pipeline lane + `hold_reason`) until a
 human acts — no auto-timeout. On a manual resume, `hold_reason` is cleared.
@@ -359,7 +359,7 @@ Reuse existing atoms (`docs/designs/users-and-permissions.md`):
 
 - Enter/leave `on_hold` (Job status pill): `can_manage_jobs` (the pill already
   PATCHes `/api/jobs/{id}/`, which requires it).
-- Create / send / revise / accept-reject a CO: `can_manage_jobs` (parallel to
+- Create / send / seed-new / accept-reject a CO: `can_manage_jobs` (parallel to
   estimates).
 - Apply changes (edit Tasks/Materials/deliverables during the `approved` window):
   `can_manage_jobs`.
@@ -378,7 +378,7 @@ Parallels `EstimateViewSet`. Final shape at implementation.
 | `POST /api/change-orders/` | Create draft (guard: job `on_hold`) | `CanManageJobs` |
 | `PATCH /api/change-orders/{id}/` | Edit draft / status transition | `CanManageJobs` |
 | `POST /api/change-orders/{id}/mark-open/` | `draft → open` | `CanManageJobs` |
-| `POST /api/change-orders/{id}/revise/` | New version (threads/supersedes per §3.2) | `CanManageJobs` |
+| `POST /api/change-orders/{id}/seed-new/` | Create a new CO seeded (copied) from this one; this one goes/stays terminal (§3.2) | `CanManageJobs` |
 | `DELETE /api/change-orders/{id}/` | Discard draft (200 + JSON per project rule) | `CanManageJobs` |
 | line-item endpoints | via `LineItemMixin` (add/edit/remove/reorder) | `CanManageJobs` |
 | `GET /api/jobs/{id}/agreement/` | Composed agreement-of-record (Estimate ⊕ accepted COs) | `IsAuthenticated` |
@@ -449,14 +449,16 @@ table, and the worked example.
 
 ## 11. Open decisions carried into implementation
 
-1. **Open bleps at `on_hold` entry** — reject-and-coordinate (recommended) vs
-   auto-close. (§2.4)
-2. **Revise-from-rejected** — allowed, threading off the rejected parent
-   (recommended/assumed) vs keeping `rejected` strictly terminal and forcing a
-   brand-new CO. (§3.2, §5.4)
-3. **Resume target** — `status_before_hold` as the pill's default with override
-   (recommended) vs strict auto-restore vs free user pick. (§2.2, §5.4)
-4. **App placement** — extend `apps/estimates/` vs new `apps/changeorders/`. (§3)
+1. **CO numbering** — a CO's `change_order_number` should *derive from its
+   estimate's number* (the user's intent), not an independent sequence. Exact
+   scheme TBD before the implementation plan (e.g. estimate number + a
+   per-estimate CO suffix). (§3.1)
+2. **App placement** — extend `apps/estimates/` vs new `apps/changeorders/`. (§3)
+
+Resolved during review: open-bleps-at-entry → reject-with-notice (§2.4);
+revise-from-rejected → collapsed (`rejected` is terminal; the next round is a new
+seeded CO, §3.2); resume target → no `status_before_hold`, the human picks on the
+pill (§2.2, §5.4).
 
 ---
 
