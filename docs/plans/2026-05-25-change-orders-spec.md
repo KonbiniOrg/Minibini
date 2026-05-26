@@ -150,7 +150,7 @@ app for proximity to shared code.
 | `change_order_id` | AutoField PK | |
 | `job` | FK Job (CASCADE) | Primary anchor. |
 | `estimate` | FK Estimate (PROTECT) | The accepted Estimate this CO amends (the job's accepted estimate). Explicit anchor for the agreement-of-record composition. |
-| `change_order_number` | CharField | **Open (§11):** the user wants a CO's number to *derive from its estimate's number* rather than be an independent sequence. Scheme TBD before the implementation plan. |
+| `change_order_number` | CharField, unique | `{accepted_estimate.estimate_number}-CO{n}` (append-style, e.g. `EST-2026-0042-CO1`); `n` = the per-estimate CO ordinal (count of COs on this estimate + 1, assigned in the create transaction). Pure concatenation — no parsing of the estimate's number pattern — and shown **verbatim** in the UI (no reformatting). Not via `NumberGenerationService` (that's for global sequences); the `unique` constraint on this field is the race backstop. The CO's number reflects the *estimate's* identity, not the CO's date (`created_date` records when it happened). |
 | `parent` | FK self (SET_NULL, null) | The prior CO this one was **seeded (copied) from**, for lineage. Null for the first CO under an estimate. |
 | `status` | CharField, choices | See §3.2. |
 | `created_date` / `sent_date` / `closed_date` | DateTimeField | Same auto-set + immutability rules as Estimate. |
@@ -449,16 +449,17 @@ table, and the worked example.
 
 ## 11. Open decisions carried into implementation
 
-1. **CO numbering** — a CO's `change_order_number` should *derive from its
-   estimate's number* (the user's intent), not an independent sequence. Exact
-   scheme TBD before the implementation plan (e.g. estimate number + a
-   per-estimate CO suffix). (§3.1)
-2. **App placement** — extend `apps/estimates/` vs new `apps/changeorders/`. (§3)
+1. **App placement** — extend `apps/estimates/` vs new `apps/changeorders/`. A
+   coding-time structural call, not a design blocker. (§3)
+2. **CO `expired` status** — whether a sent CO auto-expires like an Estimate
+   (`expired` is listed as optional in §3.2). Lean: yes, parallel to estimates,
+   low cost — but confirm at implementation.
 
-Resolved during review: open-bleps-at-entry → reject-with-notice (§2.4);
-revise-from-rejected → collapsed (`rejected` is terminal; the next round is a new
-seeded CO, §3.2); resume target → no `status_before_hold`, the human picks on the
-pill (§2.2, §5.4).
+Resolved during review: CO numbering → `{estimate_number}-CO{n}`, append-style,
+per-estimate ordinal, shown verbatim (§3.1); open-bleps-at-entry →
+reject-with-notice (§2.4); revise-from-rejected → collapsed (`rejected` is
+terminal; the next round is a new seeded CO, §3.2); resume target → no
+`status_before_hold`, the human picks on the pill (§2.2, §5.4).
 
 ---
 
