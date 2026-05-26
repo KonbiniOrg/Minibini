@@ -187,6 +187,12 @@ class ShipmentService:
             )
 
     @staticmethod
+    def _assert_job_not_on_hold(job):
+        from apps.jobs.models import Job
+        if job.status == Job.STATUS_ON_HOLD:
+            raise ValidationError('Cannot create a shipment while the job is on hold.')
+
+    @staticmethod
     @transaction.atomic
     def create(*, job_id):
         from apps.jobs.models import Job
@@ -194,6 +200,7 @@ class ShipmentService:
             job = Job.objects.select_for_update().get(pk=job_id)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_id} not found')
+        ShipmentService._assert_job_not_on_hold(job)
         ShipmentService._assert_d_list_locked(job)
         last = Shipment.objects.filter(job=job).order_by('-sequence').first()
         next_seq = (last.sequence + 1) if last else 1

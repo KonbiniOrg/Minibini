@@ -63,6 +63,13 @@ class StartWorkJobStatusGuardTest(BaseTestCase):
         result = TaskLifecycleService.start_work(task.pk, self.user)
         self.assertIn('blep', result)
 
+    def test_start_work_rejected_on_on_hold_job(self):
+        job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                      Job.STATUS_ON_HOLD)
+        task = self._task(job)
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.start_work(task.pk, self.user)
+
 
 class CreateHistoricalJobStatusGuardTest(BaseTestCase):
     def setUp(self):
@@ -133,6 +140,14 @@ class CreateHistoricalJobStatusGuardTest(BaseTestCase):
     def test_rejected_on_cancelled_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
                       Job.STATUS_CANCELLED)
+        task = self._task(job)
+        start, end = self._times()
+        with self.assertRaises(ValidationError):
+            BlepService.create_historical(self.user, task, start, end)
+
+    def test_rejected_on_on_hold_job(self):
+        job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                      Job.STATUS_ON_HOLD)
         task = self._task(job)
         start, end = self._times()
         with self.assertRaises(ValidationError):
