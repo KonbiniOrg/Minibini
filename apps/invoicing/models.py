@@ -83,6 +83,11 @@ class Invoice(models.Model):
             except Invoice.DoesNotExist:
                 pass
 
+        # Stamp closed_date the first time the invoice is marked paid (any path).
+        if (old_status and old_status != self.status
+                and self.status == Invoice.STATUS_PAID and not self.closed_date):
+            self.closed_date = timezone.now()
+
         # Auto-generate invoice_number if not provided
         if not self.invoice_number:
             self.invoice_number = NumberGenerationService.generate_next_number('invoice')

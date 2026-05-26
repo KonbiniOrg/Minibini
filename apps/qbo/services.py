@@ -1008,27 +1008,28 @@ class QBOPaymentPollingService:
 
     @staticmethod
     def poll_all():
+        from django.db import transaction
         from apps.invoicing.models import Invoice
+        from apps.core.models import HistoryEntry, User
 
-        stats = {'checked': 0, 'updated': 0, 'errors': []}
+        stats = {'checked': 0, 'transitioned': 0, 'cache_updated': 0, 'errors': []}
 
         client = QBOService.get_client()
         if not client:
             stats['error'] = 'No active QBO connection'
             return stats
 
+        system_user, _ = User.objects.get_or_create(
+            username='system', defaults={'first_name': 'System', 'is_active': False},
+        )
         invoices = Invoice.objects.filter(
             qbo_id__isnull=False,
-        ).exclude(
-            qbo_payment_status='Paid',
+            status__in=[Invoice.STATUS_OPEN, Invoice.STATUS_PARTLY_PAID],
         )
-
         for invoice in invoices:
             stats['checked'] += 1
             try:
-                qbo_inv = QBOPaymentPollingService._fetch_qbo_invoice(
-                    client, invoice.qbo_id
-                )
+                qbo_inv = QBOPaymentPollingService._fetch_qbo_invoice(client, invoice.qbo_id)
                 if qbo_inv is None:
                     stats['errors'].append(f'Invoice {invoice.pk}: not found in QBO')
                     continue
@@ -1038,22 +1039,41 @@ class QBOPaymentPollingService:
                 amount_paid = total - balance
 
                 if balance == 0:
-                    payment_status = 'Paid'
+                    cache_status, target_status = 'Paid', Invoice.STATUS_PAID
                 elif amount_paid > 0:
-                    payment_status = 'Partial'
+                    cache_status, target_status = 'Partial', Invoice.STATUS_PARTLY_PAID
                 else:
-                    payment_status = 'Unpaid'
+                    cache_status, target_status = 'Unpaid', None
 
-                if (invoice.qbo_payment_status != payment_status or
-                        invoice.qbo_amount_paid != amount_paid):
-                    invoice.qbo_payment_status = payment_status
+                cache_changed = (invoice.qbo_payment_status != cache_status
+                                 or invoice.qbo_amount_paid != amount_paid)
+                status_changed = target_status is not None and invoice.status != target_status
+
+                if not (cache_changed or status_changed):
+                    continue
+
+                old_status = invoice.status
+                with transaction.atomic():
+                    invoice.qbo_payment_status = cache_status
                     invoice.qbo_amount_paid = amount_paid
-                    invoice.save(update_fields=[
-                        'qbo_payment_status', 'qbo_amount_paid'
-                    ])
-                    stats['updated'] += 1
+                    if status_changed:
+                        invoice.status = target_status
+                    invoice.save()  # full save → fires _maybe_complete_job + closed_date
+                    if status_changed:
+                        HistoryEntry.objects.create(
+                            entry_type='action', object_type='invoice', object_id=invoice.pk,
+                            user=system_user,
+                            changes={
+                                'status': {'old': old_status, 'new': target_status},
+                                '_action': f'Payment synced from QBO — marked {target_status}',
+                            },
+                        )
 
-            except Exception as e:
+                if cache_changed:
+                    stats['cache_updated'] += 1
+                if status_changed:
+                    stats['transitioned'] += 1
+            except Exception as e:  # noqa: BLE001 - record per-invoice failures, keep polling
                 stats['errors'].append(f'Invoice {invoice.pk}: {str(e)}')
 
         return stats

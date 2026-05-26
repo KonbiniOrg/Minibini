@@ -199,6 +199,16 @@ class Estimate(models.Model):
                 estimate=self,
             )
 
+        # Signal when an open estimate dies (declined or expired): reject the job.
+        if (old_status == Estimate.STATUS_OPEN and
+                self.status in (Estimate.STATUS_REJECTED, Estimate.STATUS_EXPIRED)):
+            from apps.jobs.models import Job
+            estimate_status_changed_for_job.send(
+                sender=self.__class__,
+                estimate=self,
+                new_job_status=Job.STATUS_REJECTED,
+            )
+
     def __str__(self):
         return f"Estimate {self.estimate_number}"
 

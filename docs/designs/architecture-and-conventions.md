@@ -750,7 +750,92 @@ and are unchanged.
 
 ---
 
-## 9. Unfinished work
+## 9. Scheduled processes
+
+Some work has to happen on a clock rather than in response to a request —
+expiring stale estimates, polling QBO for payments, pruning cached email.
+These run as **Django management commands** and nothing else. There is no
+HTTP route, no API endpoint, and no SPA affordance that triggers them; the
+only entry points are a shell (`python manage.py <command>`) and the cron
+daemon. This keeps the system-driven side effects (which attribute their
+history to the `system` user) off the request path entirely.
+
+### 9.1 `ScheduledProcessCommand` base class
+
+`apps/core/management/base.py` defines `ScheduledProcessCommand`
+(a `BaseCommand` subclass). A scheduled command:
+
+- sets `process_name` (a stable string identifying the job), and
+- implements `run()`, returning a JSON-serializable summary dict.
+
+The base class's `handle()` wraps every invocation: it creates a
+`ScheduledProcessRun` row at the start, calls `run()`, and on the way out
+records the outcome and summary. Three outcomes:
+
+- **`ok`** — `run()` returned; its dict is stored in `summary`.
+- **`failed`** — `run()` raised. The traceback is stored in `error`, the
+  run is saved, and the exception **re-raises** (so cron logs it / a human
+  notices).
+- **`skipped`** — `run()` raised `SkipRun(reason)`. The reason is stored in
+  `summary` and no error is recorded. Used for "nothing to do, not a
+  failure" cases — e.g. `poll_qbo_payments` when there's no active QBO
+  connection.
+
+Subclasses do **not** create the run row themselves; they just describe the
+work and let the base class handle observability.
+
+### 9.2 `ScheduledProcessRun` model
+
+`apps/core/models.py` — one row per command invocation
+(`db_table = 'scheduled_process_run'`, ordered newest first):
+
+| Field | Notes |
+|---|---|
+| `process_name` | indexed; the command's `process_name` |
+| `started_at` | set when the run begins |
+| `finished_at` | set when it ends (null while running) |
+| `outcome` | `ok` / `failed` / `skipped` (default `ok`) |
+| `summary` | JSON — the command's return dict, or `{'reason': …}` for a skip |
+| `error` | traceback text on `failed`, else empty |
+
+Registered in the Django admin (`apps/core/admin.py`) **read-only** — add,
+change, and delete are all disabled; every field is read-only. The admin is
+the observability surface (filter by `process_name` / `outcome`); the rows
+are written only by the base class.
+
+### 9.3 The commands and their cadence
+
+Three commands run on a schedule today:
+
+| Command | `process_name` | What it does |
+|---|---|---|
+| `poll_qbo_payments` | `poll_qbo_payments` | Polls QBO for invoice payment and drives `Invoice.status` — see `quickbooks-integration.md` / `invoicing-and-expenses.md`. |
+| `mark_estimates_expired` | `mark_estimates_expired` | Expires `open` estimates past their frozen `expiration_date` — see `estimates-and-prices.md`. |
+| `cleanup_temp_emails` | `cleanup_temp_emails` | Deletes cached `TempEmail` rows older than `email_retention_days` (preserves `EmailRecord`; no per-object history). |
+
+### 9.4 The docker-compose `cron` service
+
+A dedicated `cron` service in `docker-compose.yml` runs the scheduler. It
+reuses the app image (`ashannonlee/minibini`) and runs
+`deploy/cron/entrypoint.sh`, which exports the container environment to a
+file the jobs source (cron strips the environment otherwise), installs
+`deploy/cron/crontab`, and execs the cron daemon. Schedules
+(container timezone, **UTC** by default):
+
+| Cadence | Command |
+|---|---|
+| every 15 min | `poll_qbo_payments` |
+| `01:30` daily | `mark_estimates_expired` |
+| `02:00` daily | `cleanup_temp_emails` |
+
+The cron container needs the same credentials the app does for these to
+succeed (QBO OAuth + email/IMAP); see the operational note in
+`quickbooks-integration.md`. Set `TZ` on the service to schedule in local
+time instead of UTC.
+
+---
+
+## 10. Unfinished work
 
 Concrete items, smallest first:
 

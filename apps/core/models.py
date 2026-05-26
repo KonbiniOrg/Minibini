@@ -357,3 +357,29 @@ class HistoryEntry(models.Model):
 
     def __str__(self):
         return f"{self.entry_type}: {self.object_type} #{self.object_id}"
+
+
+class ScheduledProcessRun(models.Model):
+    """One row per invocation of a scheduled management command (observability)."""
+    OUTCOME_OK = 'ok'
+    OUTCOME_FAILED = 'failed'
+    OUTCOME_SKIPPED = 'skipped'
+    OUTCOME_CHOICES = [
+        (OUTCOME_OK, 'OK'),
+        (OUTCOME_FAILED, 'Failed'),
+        (OUTCOME_SKIPPED, 'Skipped'),
+    ]
+
+    process_name = models.CharField(max_length=100, db_index=True)
+    started_at = models.DateTimeField()
+    finished_at = models.DateTimeField(null=True, blank=True)
+    outcome = models.CharField(max_length=10, choices=OUTCOME_CHOICES, default=OUTCOME_OK)
+    summary = models.JSONField(null=True, blank=True)
+    error = models.TextField(blank=True, default='')
+
+    class Meta:
+        db_table = 'scheduled_process_run'
+        ordering = ['-started_at']
+
+    def __str__(self):
+        return f'{self.process_name} @ {self.started_at:%Y-%m-%d %H:%M} ({self.outcome})'

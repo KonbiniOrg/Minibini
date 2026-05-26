@@ -396,7 +396,7 @@ have multiple Estimates over time (revisions); only one may be
 | `open` | `STATUS_OPEN` | Sent to customer; awaiting response |
 | `accepted` | `STATUS_ACCEPTED` | Terminal. Customer accepted; one per Job |
 | `rejected` | `STATUS_REJECTED` | Terminal |
-| `expired` | `STATUS_EXPIRED` | Terminal; auto on `expiration_date` (manual today) |
+| `expired` | `STATUS_EXPIRED` | Terminal; auto-set by the `mark_estimates_expired` scheduled command once `expiration_date` has passed (also settable manually) |
 | `superseded` | `STATUS_SUPERSEDED` | Terminal; replaced by a new revision |
 
 Valid transitions (`Estimate.clean()`):
@@ -422,6 +422,31 @@ accepted, rejected, expired, superseded → (terminal)
   default 30 days) if unset.
 - On entry to a terminal: sets `closed_date = now()` if unset.
 - `created_date`, `sent_date`, `closed_date` are immutable once set.
+
+`expiration_date` is **frozen** at the moment of send — it's a stamped
+datetime, not derived live from `est_expire_days`. Changing the
+Configuration key later does **not** retroactively re-date already-open
+estimates; it only affects estimates sent after the change.
+
+### 5.2a Automatic expiry — `mark_estimates_expired`
+
+The `mark_estimates_expired` scheduled command
+(`apps/estimates/management/commands/mark_estimates_expired.py`) is the
+mechanism that actually flips estimates to `expired`. Each run:
+
+1. Selects every `open` estimate whose (non-null) `expiration_date` is at
+   or before `now()`.
+2. For each, transitions it to `expired` via
+   `EstimateService.update_status(pk, STATUS_EXPIRED)` (under
+   `select_for_update`, re-checking it's still `open`), and writes a
+   `system`-attributed `action` HistoryEntry ("Auto-expired …").
+3. Counts `open` estimates with a **NULL** `expiration_date` separately and
+   skips them (`skipped_no_expiry` in the run summary) — they never auto-expire.
+
+Because the transition is `open → expired`, it fires the §9.3 invariant:
+the parent Job is driven to `rejected`. The command is part of the
+scheduled-process machinery (`ScheduledProcessCommand` + cron) documented
+in `architecture-and-conventions.md` §9; it runs daily.
 
 ### 5.3 Versioning (revision)
 
@@ -703,9 +728,23 @@ appropriate filter and skips.
 ### 9.3 Job status side effects
 
 Separate from carry-over, `estimate_status_changed_for_job` walks the
-Job through `submitted → approved` when its estimate is accepted, via
-the receiver in `apps/estimates/signals.py`. Pointer:
-`docs/designs/jobs-tasks-and-worksheets.md` §12 for the full
+Job's status when its estimate moves, via the receiver in
+`apps/estimates/signals.py`. Two symmetric invariants:
+
+- **Estimate accepted ⇒ Job approved.** An estimate reaching `accepted`
+  drives its Job to `approved` (after the `submitted` step on send).
+- **Open estimate dies ⇒ Job rejected.** An **open** estimate
+  transitioning to **expired** or **rejected** (a customer decline, or the
+  `mark_estimates_expired` sweep) drives its Job to `rejected`, with a
+  `system`-attributed `action` HistoryEntry ("Estimate … expired" /
+  "Estimate … declined"). `rejected` is terminal. This closed a prior gap
+  where declining an open estimate left the Job stranded at `submitted`.
+
+`draft → rejected` on an estimate is intentionally **not** handled — a
+never-sent draft dying does not reject the Job (out of scope). Only the
+`open → {expired, rejected}` edge fires the rejection.
+
+Pointer: `docs/designs/jobs-tasks-and-worksheets.md` §13 for the full
 receiver-by-receiver behavior.
 
 ---
@@ -839,12 +878,12 @@ The Worksheet detail page (`WorksheetDetailPage.svelte`) has:
 
 Three signals, all defined in `apps/estimates/signals.py` and fired
 by `Estimate.save()`. Brief recap; the receiver-by-receiver
-behavior lives in `docs/designs/jobs-tasks-and-worksheets.md` §12.
+behavior lives in `docs/designs/jobs-tasks-and-worksheets.md` §13.
 
 | Signal | Fires when | Receiver | Effect |
 |---|---|---|---|
 | `estimate_status_changed_for_worksheet` | worksheet-status mapping changes | `update_estworksheet_status` | bulk-updates linked EstWorksheets to draft/final/superseded |
-| `estimate_status_changed_for_job` | draft→open or any→accepted | `update_job_status` | walks the Job through submitted/approved with HistoryEntry rows |
+| `estimate_status_changed_for_job` | draft→open, any→accepted, or open→{rejected, expired} | `update_job_status` | walks the Job through submitted/approved/rejected with HistoryEntry rows (see §9.3) |
 | `estimate_accepted` | any→accepted | `trigger_atom_carry_over` | calls `AtomCarryOverService.carry_over_for_estimate(estimate)` |
 
 The `estimate_accepted` signal is the one this doc owns. The other
