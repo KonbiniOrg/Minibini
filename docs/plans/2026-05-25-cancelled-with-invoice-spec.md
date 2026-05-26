@@ -1,6 +1,6 @@
 # Billable cancellation ("cancelled-with-invoice") — design spec
 
-**Status:** Draft, ready for review.
+**Status:** Updated per review.
 **Date:** 2026-05-25
 **Scope:** the third of three sequenced specs.
 
@@ -72,11 +72,11 @@ and `can_manage_*`-gated, so benign.
 
 To bill accurately you often need to *finish* the actuals after stopping:
 
-- **Close open bleps on entry** to `cancelled` — capture their elapsed time as
-  final actuals. No running timer should survive on a stopped job. (Applies to all
-  cancellation, billed or not; may be a latent gap in today's job-cancel — see
-  §8.) Implemented via a job-scoped `BlepService._close_open(task=…)` sweep over
-  the job's tasks.
+- **Reject cancellation while any open Blep exists** — same modal and rationale as
+  the `on_hold` entry guard (CO spec §2.4): pop the "coordinate offline" notice so
+  the manager finds the worker and has them stop first. We never auto-close a
+  running timer out from under an active worker. (So a clean cancel never has open
+  bleps to reconcile.)
 - **Extend the blep billable/backfill window to include `cancelled`.** The guard
   today allows backfilled `create_historical` in `work_complete`; add `cancelled`
   so forgotten time for pre-stop work can be logged for billing.
@@ -84,14 +84,14 @@ To bill accurately you often need to *finish* the actuals after stopping:
   `entered_qty` task can have its billable quantity set. (Mirrors the work_complete
   billable window.)
 
-### 3.3 Tasks are not individually cancelled
+### 3.3 Tasks are not touched on cancellation
 
-Cancelling the Job does **not** cascade to its Tasks. They keep their state and
-actuals, which is exactly what keeps them in the wizard pool (§3.1). Leaving a task
-`in_progress` on a terminal job is cosmetically odd but harmless — the Job status
-is authoritative and the job is off the active board. (Optional, not required:
-auto-cancel only the *zero-work* tasks for tidiness. Tasks with actuals are never
-cancelled, since that would drop them from the wizard.)
+Cancelling the Job does **not** cascade to its Tasks, and we don't tidy them up
+either — they're left in whatever state they ended. The job stays as it ended:
+**incomplete**. The task states are the honest record of how far the work got, and
+leaving every non-cancelled task in place is exactly what keeps the worked ones in
+the wizard pool (§3.1). The Job status is authoritative; an `in_progress` task on a
+terminal job is harmless (the job is off the active board).
 
 ### 3.4 Earmarks
 
@@ -107,8 +107,9 @@ No new transitions — all the doorways already exist (`approved → cancelled`,
 added by the CO spec §2.1):
 
 1. The user cancels the job (from the active band, or from `on_hold` after a
-   rejected CO, or as the "too big for a CO → finalize and restart" hatch). Entry
-   closes open bleps (§3.2) and releases earmarks (§3.4).
+   rejected CO, or as the "too big for a CO → finalize and restart" hatch).
+   Cancellation is **rejected if any Blep is open** (§3.2) — the worker stops
+   first; once clean, entry releases earmarks (§3.4).
 2. If there's work to bill, the user opens the **invoice wizard** (now permitted,
    §3.1), finalizes actuals as needed (§3.2), builds line items from the actuals,
    and sends to QBO via the existing path.
@@ -124,13 +125,13 @@ billable set, the user can cancel first and bill after, with no sequencing trap.
 
 ## 5. Visibility / board
 
-- The board's **"Unpaid" column filters `work_complete`**, so a cancelled job with
-  an **outstanding invoice won't appear there** — a real risk of losing track of
-  the receivable. Surface these: expand the Unpaid query to also include cancelled
-  jobs that have a non-cancelled, unpaid invoice (recommended), or lean on the
-  not-yet-built standalone invoice list.
+- Change the **"Unpaid" column to query by *invoice*, not job status**: any job
+  with an **open, unpaid (non-cancelled) invoice** appears, whatever its job
+  status. The card indicates the job's state (a `cancelled` / `completed` badge) so
+  these read as non-standard. This also naturally surfaces an open invoice on a
+  completed-track job, not just cancelled ones.
 - `ClosedCard` already shows billed/spent/profit for closed jobs, so a
-  cancelled-and-billed job's recovery is visible on its closed card.
+  cancelled-and-billed job's recovery is also visible on its closed card.
 
 ---
 
@@ -140,20 +141,19 @@ Flagged during the brainstorm: a job shouldn't reach **`completed`** ("finished 
 agreed") while ordered deliverables remain unshipped. This gate doesn't exist
 today and should.
 
-- **Where:** a precondition on entry to `completed`, enforced in **both**
-  `JobService.update_job` (manual completion → `ValidationError`) and
-  `_maybe_complete_job` (the payment-auto-complete path must not complete a
-  not-fully-shipped job — it stays `work_complete`, paid but open).
+- **Where:** `_maybe_complete_job` is the single gate, and it now checks **both**
+  conditions before completing — *all invoices paid* **and** *all deliverables
+  shipped*. It's invoked from **both** triggers: the payment-polling path
+  (existing) and `ShipmentService.mark_picked_up` (new hook), so whichever lands
+  last — the final payment or the final shipment — runs the check and completes the
+  job if both hold. Manual `JobService.update_job → completed` enforces the same
+  precondition (`ValidationError` if not all shipped).
 - **Fulfillment source:** `DeliverableService.compute_fulfillment` /
   the shipment totals (deliverables spec). "All shipped" = every live Deliverable's
   `qty_picked_up == qty_ordered`.
 - **`cancelled` is exempt for free** — it isn't `completed`, so the gate never
   applies. This *is* the "deliverables don't all need to ship when you stop early"
   behavior, with no special-casing.
-- **Open detail (§9):** once the gate holds back a paid-but-unshipped job in
-  `work_complete`, what advances it to `completed` when the last shipment lands?
-  Options: a completion re-check hooked into `ShipmentService.mark_picked_up`
-  (parity with the payment hook — recommended), or leave it to a manual completion.
 
 This is a small, separable change to the *completion* flow; it's bundled here
 because `cancelled`'s exemption is the reason it came up, but it can be split out
@@ -181,23 +181,25 @@ if it complicates review.
 - **Verify `_maybe_complete_job` cleanly no-ops on a cancelled job** (the state
   machine forbids `cancelled → completed`, so it should, but confirm it doesn't
   raise).
-- **Confirm job-cancel doesn't already leave open bleps dangling** (and that the
-  §3.2 close-on-entry sweep covers all the job's tasks, not just one user's).
+- **Implement the open-Blep rejection guard for job cancellation**, scoped to all
+  the job's tasks (not one user's), reusing the `on_hold` entry modal (§3.2).
 
 ---
 
-## 9. Open decisions (recommended defaults in brackets)
+## 9. Decisions resolved in review
 
-1. **All-shipped gate — in this spec or split out?** *[in this spec]*, since it's
-   the mechanism behind cancelled's exemption. (§6)
-2. **What completes a paid-but-unshipped job after its final shipment** — a
-   `mark_picked_up` completion re-check *[recommended, parity with the payment
-   hook]* vs. manual completion. (§6)
-3. **Tidy unfinished tasks on a cancelled job?** — leave them non-terminal
-   *[recommended; keeps actuals billable, job status is authoritative]* vs.
-   auto-cancel only the zero-work ones. (§3.3)
-4. **Surfacing unpaid invoices on cancelled jobs** — expand the board "Unpaid"
-   filter to include them *[recommended]* vs. defer to a future invoice list. (§5)
+1. **All-shipped gate** — kept in this spec (§6).
+2. **Completing a paid-but-unshipped job** — `ShipmentService.mark_picked_up`
+   always calls `_maybe_complete_job`, which checks *both* all-paid and
+   all-shipped (§6).
+3. **Unfinished tasks on a cancelled job** — left untouched; the job stays
+   incomplete as it ended (§3.3).
+4. **Open Blep at cancellation** — reject with the `on_hold`-style modal; never
+   auto-close (§3.2).
+5. **Unpaid surfacing** — the board "Unpaid" column queries by open unpaid invoice
+   regardless of job status; the card badges the job state (§5).
+
+No open decisions remain.
 
 ---
 
@@ -212,8 +214,9 @@ if it complicates review.
 
 ## 11. Durable-doc updates owed on completion
 
-- `docs/designs/jobs-tasks-and-worksheets.md` — `cancelled` is billable; close
-  open bleps on cancel; the all-shipped gate on `completed` (§3.3 lifecycle).
+- `docs/designs/jobs-tasks-and-worksheets.md` — `cancelled` is billable; cancel is
+  rejected while a Blep is open (on_hold-style modal); tasks untouched on cancel;
+  the all-shipped gate on `completed`.
 - `docs/designs/invoicing-and-expenses.md` — `BILLABLE_JOB_STATUSES` += cancelled;
   `_maybe_complete_job` all-shipped gate; the Unpaid-board surfacing of cancelled
   jobs with open invoices.
