@@ -42,7 +42,7 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
     destroy_response_message = 'Job deleted.'
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve', 'history', 'notes')
+        read_actions = ('list', 'retrieve', 'history', 'notes', 'agreement')
         # add-from-template and create_material are IsAuthenticated only (workers can add tasks/materials)
         authenticated_only_actions = ('add_from_template', 'create_material')
         if self.action in read_actions or self.action in authenticated_only_actions:
@@ -288,6 +288,29 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
                 return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
             return Response({'detail': '; '.join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path='agreement', url_name='agreement')
+    def agreement(self, request, pk=None):
+        """Return the effective agreement for the job: accepted estimate lines with
+        each accepted ChangeOrder's deltas applied. Decimals serialized as strings."""
+        from decimal import Decimal
+        from apps.estimates.agreement import compose_agreement
+        job = self.get_object()
+        result = compose_agreement(job)
+
+        def _s(v):
+            if isinstance(v, Decimal):
+                return str(v)
+            return v
+
+        serialized_lines = [
+            {k: _s(val) for k, val in line.items()}
+            for line in result['lines']
+        ]
+        return Response({
+            'lines': serialized_lines,
+            'grand_total': str(result['grand_total']),
+        })
 
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):

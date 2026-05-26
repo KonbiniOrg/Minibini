@@ -178,3 +178,95 @@ class ChangeOrderService:
                 'Only draft change orders can be discarded.'
             )
         co.delete()
+
+    # ------------------------------------------------------------------
+    # Line-item operations (mirror EstimateService pattern)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def add_line_item(co_pk, **kwargs):
+        """Add a manual line item to a draft change order."""
+        try:
+            co = ChangeOrder.objects.get(pk=co_pk)
+        except ChangeOrder.DoesNotExist:
+            raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        if co.status != ChangeOrder.STATUS_DRAFT:
+            raise ValidationError('Can only add line items to draft change orders.')
+        from apps.core.services import LineItemService
+        kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
+        li = ChangeOrderLineItem(change_order=co, **kwargs)
+        li.full_clean()
+        li.save()
+        return li
+
+    @staticmethod
+    def add_line_item_from_pli(co_pk, pli_pk, qty):
+        """Add a line item from a PriceListItem to a draft change order."""
+        from apps.inventory.models import PriceListItem
+        try:
+            co = ChangeOrder.objects.get(pk=co_pk)
+        except ChangeOrder.DoesNotExist:
+            raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        if co.status != ChangeOrder.STATUS_DRAFT:
+            raise ValidationError('Can only add line items to draft change orders.')
+        try:
+            pli = PriceListItem.objects.get(pk=pli_pk)
+        except PriceListItem.DoesNotExist:
+            raise NotFoundError(f'PriceListItem {pli_pk} not found')
+
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co,
+            action=ChangeOrderLineItem.ACTION_ADD,
+            price_list_item=pli,
+            description=pli.description,
+            qty=qty,
+            units=pli.units,
+            price=pli.selling_price,
+            accounting_category=pli.accounting_category,
+        )
+        return li
+
+    @staticmethod
+    def update_line_item(line_item_id, **kwargs):
+        """Update a change order line item — validates draft status."""
+        try:
+            li = ChangeOrderLineItem.objects.get(pk=line_item_id)
+        except ChangeOrderLineItem.DoesNotExist:
+            raise NotFoundError(f'ChangeOrderLineItem {line_item_id} not found')
+        if li.change_order.status != ChangeOrder.STATUS_DRAFT:
+            raise ValidationError('Can only modify line items on draft change orders.')
+        from apps.core.services import LineItemService
+        kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
+        for field, value in kwargs.items():
+            setattr(li, field, value)
+        li.full_clean()
+        li.save()
+        return li
+
+    @staticmethod
+    def reorder_line_items(co_pk, item_ids):
+        """Reorder change order line items by position list — validates draft status."""
+        try:
+            co = ChangeOrder.objects.get(pk=co_pk)
+        except ChangeOrder.DoesNotExist:
+            raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        if co.status != ChangeOrder.STATUS_DRAFT:
+            raise ValidationError('Can only modify line items on draft change orders.')
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            for position, item_id in enumerate(item_ids, start=1):
+                ChangeOrderLineItem.objects.filter(
+                    pk=item_id, change_order=co,
+                ).update(line_number=position)
+
+    @staticmethod
+    def delete_line_item(line_item_id):
+        """Delete a change order line item and renumber — validates draft status."""
+        from apps.core.services import LineItemService
+        try:
+            li = ChangeOrderLineItem.objects.get(pk=line_item_id)
+        except ChangeOrderLineItem.DoesNotExist:
+            raise NotFoundError(f'ChangeOrderLineItem {line_item_id} not found')
+        if li.change_order.status != ChangeOrder.STATUS_DRAFT:
+            raise ValidationError('Cannot modify line items on a non-draft change order.')
+        return LineItemService.delete_line_item_with_renumber(li)
