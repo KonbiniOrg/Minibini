@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
@@ -192,6 +193,79 @@ class DeliverableService:
             if fulfillment['qty_picked_up'] < d.qty_ordered:
                 return False
         return True
+
+    @staticmethod
+    @transaction.atomic
+    def snapshot_document(*, estimate=None, change_order=None):
+        """Write-once: copy the job's current live deliverables into a
+        DeliverableSnapshot set attached to exactly one of estimate / change_order.
+        Idempotent — if a snapshot already exists for that document, returns it
+        unchanged. Version is the next integer for the job (estimate -> 1, then
+        +1 per subsequently-snapshotted document)."""
+        from apps.deliverables.models import DeliverableSnapshot
+        if (estimate is None) == (change_order is None):
+            raise ValidationError('Provide exactly one of estimate / change_order.')
+        job = estimate.job if estimate is not None else change_order.job
+        existing = list(DeliverableSnapshot.objects.filter(estimate=estimate, change_order=change_order))
+        if existing:
+            return existing
+        # next version = 1 + number of distinct documents already snapshotted for this job
+        prior_owners = set(
+            DeliverableSnapshot.objects
+            .filter(Q(estimate__job=job) | Q(change_order__job=job))
+            .values_list('estimate_id', 'change_order_id')
+        )
+        version = len(prior_owners) + 1
+        snaps = []
+        for d in Deliverable.objects.filter(job=job).order_by('sort_order', 'pk'):
+            snaps.append(DeliverableSnapshot.objects.create(
+                estimate=estimate, change_order=change_order, version=version,
+                description=d.description, qty_ordered=d.qty_ordered, units=d.units,
+                sort_order=d.sort_order, source_deliverable=d,
+            ))
+        return snaps
+
+    @staticmethod
+    @transaction.atomic
+    def restore_live_to_snapshot(*, estimate=None, change_order=None):
+        """Reconcile the job's UNANCHORED live deliverables back to the snapshot set
+        attached to the given document. Anchored (shipped) deliverables are left
+        untouched. Re-creates rows that were removed, restores edited rows, and
+        deletes unanchored rows that were added after the snapshot."""
+        from apps.deliverables.models import DeliverableSnapshot
+        if (estimate is None) == (change_order is None):
+            raise ValidationError('Provide exactly one of estimate / change_order.')
+        job = estimate.job if estimate is not None else change_order.job
+        snaps = list(DeliverableSnapshot.objects.filter(estimate=estimate, change_order=change_order))
+        # IDs of live rows that correspond to snapshot rows (restored or anchored)
+        preserved_ids = set()
+        for snap in snaps:
+            live = None
+            if snap.source_deliverable_id:
+                live = Deliverable.objects.filter(pk=snap.source_deliverable_id, job=job).first()
+            if live is not None:
+                preserved_ids.add(live.pk)
+                if ShipmentItem.objects.filter(deliverable=live).exists():
+                    continue  # anchored — never touch
+                live.description = snap.description
+                live.qty_ordered = snap.qty_ordered
+                live.units = snap.units
+                live.sort_order = snap.sort_order
+                live.save()
+            else:
+                # removed during the dead CO -> re-create
+                new_d = Deliverable.objects.create(
+                    job=job, description=snap.description, qty_ordered=snap.qty_ordered,
+                    units=snap.units, sort_order=snap.sort_order,
+                )
+                preserved_ids.add(new_d.pk)
+        # delete unanchored live rows that aren't in the snapshot (added after it)
+        for d in Deliverable.objects.filter(job=job):
+            if d.pk in preserved_ids:
+                continue
+            if ShipmentItem.objects.filter(deliverable=d).exists():
+                continue  # anchored
+            d.delete()
 
 
 def _contact_address_lines(contact):
