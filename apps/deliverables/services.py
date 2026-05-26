@@ -353,7 +353,13 @@ class ShipmentService:
     @staticmethod
     @transaction.atomic
     def mark_picked_up(pk):
-        """Transition prepared -> picked_up."""
+        """Transition prepared -> picked_up.
+
+        After persisting the status change, calls
+        ``JobService.maybe_complete_if_resolved`` so that a job whose
+        invoices are already all paid completes as soon as its final
+        shipment is picked up.
+        """
         try:
             shipment = Shipment.objects.select_for_update().get(pk=pk)
         except Shipment.DoesNotExist:
@@ -363,6 +369,12 @@ class ShipmentService:
         shipment.status = Shipment.STATUS_PICKED_UP
         shipment.picked_up_date = timezone.now()
         shipment.save()
+
+        # Trigger the completion check: if all invoices are also resolved
+        # this shipment may be the last piece needed to complete the job.
+        from apps.jobs.services import JobService
+        JobService.maybe_complete_if_resolved(shipment.job)
+
         return shipment
 
     @staticmethod

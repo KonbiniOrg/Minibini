@@ -326,6 +326,13 @@ class JobService:
                     f'Cannot advance to work_complete: unresolved task-less materials: {names}'
                 )
 
+        if status_changed and job.status == Job.STATUS_COMPLETED:
+            from apps.deliverables.services import DeliverableService
+            if not DeliverableService.all_deliverables_shipped(job):
+                raise ValidationError(
+                    'All deliverables must be shipped before completing the job.'
+                )
+
         job.full_clean()
         job.save()
 
@@ -367,6 +374,88 @@ class JobService:
     def update_status(pk, new_status):
         """Thin wrapper over update_job for a status-only change."""
         return JobService.update_job(pk, status=new_status)
+
+    @staticmethod
+    def maybe_complete_if_resolved(job):
+        """Complete the job if all its invoices are resolved AND all its
+        deliverables are fully picked up.
+
+        This is the canonical completion check.  It is called from two paths:
+          * ``Invoice._maybe_complete_job`` — fires when the last invoice is paid.
+          * ``ShipmentService.mark_picked_up`` — fires when the last shipment is
+            picked up.
+        Whichever arrives last triggers the actual completion.
+
+        Behaviour:
+          - Refreshes the job from the DB (callers may hold a stale instance).
+          - No-ops if the job is already completed or cancelled.
+          - No-ops if any invoice is still unresolved (not paid/cancelled).
+          - No-ops if any deliverable is not yet fully picked up.
+          - Releases loose (task-less, pending) materials, records a system
+            HistoryEntry for the release, then walks the job to ``completed``.
+        """
+        from apps.core.models import HistoryEntry, User
+        from apps.deliverables.services import DeliverableService
+        from apps.invoicing.models import Invoice
+
+        job.refresh_from_db()
+        if job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
+            return
+
+        # All invoices must be resolved (paid or cancelled).
+        unresolved = Invoice.objects.filter(job=job).exclude(
+            status__in=(Invoice.STATUS_PAID, Invoice.STATUS_CANCELLED)
+        ).exists()
+        if unresolved:
+            return
+
+        # All deliverables must be fully picked up.
+        if not DeliverableService.all_deliverables_shipped(job):
+            return
+
+        old_status = job.status
+        system_user, _ = User.objects.get_or_create(
+            username='system',
+            defaults={'first_name': 'System', 'is_active': False},
+        )
+
+        # Invoice-paid / shipment completion is unattended — release loose
+        # materials rather than letting the work_complete gate strand the job.
+        released = JobService.release_loose_materials(job)
+        if released:
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='job',
+                object_id=job.pk,
+                user=system_user,
+                changes={
+                    '_action': (
+                        'Loose materials released on invoice-completion: '
+                        + ', '.join(
+                            f"{m['description']} (qty {m['quantity']})"
+                            for m in released
+                        )
+                    ),
+                },
+            )
+
+        # Walk through intermediate statuses when coming from early states.
+        if job.status == Job.STATUS_APPROVED:
+            job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
+        if job.status == Job.STATUS_IN_PROGRESS:
+            job = JobService.update_job(job.pk, status=Job.STATUS_WORK_COMPLETE)
+        job = JobService.update_job(job.pk, status=Job.STATUS_COMPLETED)
+
+        HistoryEntry.objects.create(
+            entry_type='action',
+            object_type='job',
+            object_id=job.pk,
+            user=system_user,
+            changes={
+                'status': {'old': old_status, 'new': Job.STATUS_COMPLETED},
+                '_action': 'All invoices paid — job completed',
+            },
+        )
 
     @staticmethod
     def mark_work_started(job):

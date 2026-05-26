@@ -102,71 +102,16 @@ class Invoice(models.Model):
             self._maybe_complete_job()
 
     def _maybe_complete_job(self):
-        """Complete the job if all its invoices are paid (or cancelled)."""
-        from apps.core.models import HistoryEntry, User
-        from apps.jobs.models import Job
+        """Delegate to JobService.maybe_complete_if_resolved.
+
+        Completes the job if all its invoices are resolved (paid/cancelled)
+        AND all its deliverables are fully picked up.  If either condition is
+        unmet the job is left in its current status and the check will be
+        re-triggered by the other path (shipment pickup or further invoice
+        payments).
+        """
         from apps.jobs.services import JobService
-
-        job = self.job
-        # Decide against current DB state — the cached self.job instance may
-        # be stale (status changes route through JobService.update_job, which
-        # does not mutate this instance in place).
-        job.refresh_from_db()
-        # Don't touch completed or cancelled jobs
-        if job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
-            return
-
-        # Check if any invoices are still unresolved
-        unresolved = Invoice.objects.filter(job=job).exclude(
-            status__in=(Invoice.STATUS_PAID, Invoice.STATUS_CANCELLED)
-        ).exists()
-
-        if not unresolved:
-            old_status = job.status
-            system_user, _ = User.objects.get_or_create(
-                username='system',
-                defaults={'first_name': 'System', 'is_active': False},
-            )
-
-            # Invoice-paid completion is an unattended path (no user to resolve
-            # loose materials), so release them rather than let the
-            # work_complete materials gate strand the job.
-            released = JobService.release_loose_materials(job)
-            if released:
-                HistoryEntry.objects.create(
-                    entry_type='action',
-                    object_type='job',
-                    object_id=job.pk,
-                    user=system_user,
-                    changes={
-                        '_action': (
-                            'Loose materials released on invoice-completion: '
-                            + ', '.join(
-                                f"{m['description']} (qty {m['quantity']})"
-                                for m in released
-                            )
-                        ),
-                    },
-                )
-
-            # Walk through in_progress and work_complete when coming from approved
-            # (transition rules route approved → in_progress → work_complete → completed).
-            if job.status == Job.STATUS_APPROVED:
-                job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
-            if job.status == Job.STATUS_IN_PROGRESS:
-                job = JobService.update_job(job.pk, status=Job.STATUS_WORK_COMPLETE)
-            job = JobService.update_job(job.pk, status=Job.STATUS_COMPLETED)
-
-            HistoryEntry.objects.create(
-                entry_type='action',
-                object_type='job',
-                object_id=job.pk,
-                user=system_user,
-                changes={
-                    'status': {'old': old_status, 'new': Job.STATUS_COMPLETED},
-                    '_action': 'All invoices paid — job completed',
-                },
-            )
+        JobService.maybe_complete_if_resolved(self.job)
 
     class Meta:
         db_table = 'invoices'
