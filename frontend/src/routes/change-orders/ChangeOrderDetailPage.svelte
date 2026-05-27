@@ -12,8 +12,6 @@
   let job = $state(null);
   let contact = $state(null);
   let estimateLines = $state([]);  // lines from the accepted estimate for target picking
-  let agreementLines = $state([]);
-  let agreementTotal = $state(null);
   let loading = $state(true);
   let error = $state('');
 
@@ -45,6 +43,9 @@
 
   let actionBusy = $state(false);
 
+  // Save button transient state
+  let saveLabel = $state('Save');
+
   const canManageJobs = $derived(
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
@@ -55,6 +56,12 @@
 
   // --------------------------------------------------------------------------
   // Merged diff: derive display rows from estimateLines ⊕ co.line_items
+  //
+  // Ordering is intentional and fixed — no reordering allowed:
+  //   1. Estimate lines in line_number order; each replacement appears directly
+  //      above its struck replacee at the same line_number position.
+  //   2. Added (new) lines appended after all estimate lines, sorted by their
+  //      own line_number.
   // --------------------------------------------------------------------------
 
   /**
@@ -184,15 +191,6 @@
           job = await api.get(`/api/jobs/${co.job}/`);
           if (job?.contact) {
             try { contact = await api.get(`/api/contacts/${job.contact}/`); } catch (_) { contact = null; }
-          }
-          // Load agreement-of-record
-          try {
-            const agr = await api.get(`/api/jobs/${co.job}/agreement/`);
-            agreementLines = agr.lines || [];
-            agreementTotal = agr.grand_total ?? null;
-          } catch (_) {
-            agreementLines = [];
-            agreementTotal = null;
           }
           // Load estimate lines for target picking (from accepted estimates)
           try {
@@ -366,7 +364,6 @@
   }
 
   async function deleteDeliverable(liveId) {
-    if (!confirm('Delete this deliverable?')) return;
     try {
       await api.delete(`/api/jobs/${co.job}/deliverables/${liveId}/`);
       await loadCO();
@@ -377,7 +374,6 @@
 
   /** Undo a changed deliverable: PATCH live back to baseline values */
   async function undoDelivChange(liveId, snap) {
-    if (!confirm('Undo changes to this deliverable? It will revert to the baseline values.')) return;
     try {
       await api.patch(`/api/jobs/${co.job}/deliverables/${liveId}/`, {
         description: snap.description,
@@ -392,7 +388,6 @@
 
   /** Undo a removed deliverable: POST a new live deliverable with baseline values */
   async function undoDelivRemove(snap) {
-    if (!confirm('Restore this deliverable?')) return;
     try {
       await api.post(`/api/jobs/${co.job}/deliverables/`, {
         description: snap.description,
@@ -431,6 +426,17 @@
       alert(e.message || 'Could not add deliverable.');
     } finally {
       delivSaving = false;
+    }
+  }
+
+  // Keyboard handler for deliverable inline-edit rows (Enter = save, Esc = cancel)
+  function delivEditKeydown(event, saveHandler, cancelHandler) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveHandler();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelHandler();
     }
   }
 
@@ -489,6 +495,12 @@
     }
   }
 
+  /** Save button: everything is already persisted per-edit; just show reassurance. */
+  function handleSaveButton() {
+    saveLabel = 'Saved ✓';
+    setTimeout(() => { saveLabel = 'Save'; }, 1500);
+  }
+
   // --------------------------------------------------------------------------
   // Diff-editor actions
   // --------------------------------------------------------------------------
@@ -508,7 +520,6 @@
 
   /** Unchanged estimate line → [Delete]: POST a 'remove' CO line item, no modal */
   async function removeEstimateLine(estLine) {
-    if (!confirm(`Remove line ${estLine.line_number} "${estLine.description}" from this change order?`)) return;
     try {
       await api.post(`/api/change-orders/${co.change_order_id}/line-items/`, {
         action: 'remove',
@@ -535,7 +546,6 @@
 
   /** Changed or removed row → [Undo]: DELETE the CO line item (reverts to unchanged) */
   async function undoCOLine(coItem) {
-    if (!confirm('Undo this change? The line will revert to its original estimate value.')) return;
     try {
       await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${coItem.line_item_id}/`);
       await loadCO();
@@ -546,7 +556,6 @@
 
   /** Added row → [Delete]: DELETE the CO line item */
   async function deleteAddedLine(coItem) {
-    if (!confirm('Delete this added line?')) return;
     try {
       await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${coItem.line_item_id}/`);
       await loadCO();
@@ -582,13 +591,6 @@
     if (v === 0) return '$0.00';
     return (v > 0 ? '+' : '') + `$${Math.abs(v).toFixed(2)}`;
   }
-
-  function originLabel(origin) {
-    if (!origin) return '';
-    if (origin === 'original') return 'Original';
-    if (origin === 'change_order') return 'Change Order';
-    return origin;
-  }
 </script>
 
 {#if loading}
@@ -607,9 +609,13 @@
     <span class="status-badge status-co-{co.status}">{co.status}</span>
     {#if canManageJobs}
       {#if isDraft}
+        <button type="button" onclick={handleSaveButton} disabled={actionBusy}>
+          {saveLabel}
+        </button>
         <button type="button" onclick={markOpen} disabled={actionBusy}>
           {actionBusy ? 'Saving…' : 'Mark as Sent'}
         </button>
+        <span class="toolbar-spacer"></span>
         <button type="button" class="btn-danger" onclick={discard} disabled={actionBusy}>
           Discard
         </button>
@@ -655,16 +661,16 @@
               {#if delivEditId === row.live.id}
                 <!-- Inline edit form for this row -->
                 <tr class="row-editing">
-                  <td class="num">
-                    <input class="qty-input" bind:value={delivEditQty} />
-                    <UnitsSelect bind:value={delivEditUnits} />
-                  </td>
-                  <td>
-                    <input class="desc-input" bind:value={delivEditDescription} />
-                  </td>
-                  <td class="acts">
-                    <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
-                    <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
+                  <td colspan="3">
+                    <div class="edit-row-layout">
+                      <input class="qty-input" bind:value={delivEditQty}
+                        onkeydown={(e) => delivEditKeydown(e, () => saveDelivEdit(row.live.id), cancelDelivEdit)} />
+                      <UnitsSelect bind:value={delivEditUnits} />
+                      <input class="desc-input-inline" bind:value={delivEditDescription}
+                        onkeydown={(e) => delivEditKeydown(e, () => saveDelivEdit(row.live.id), cancelDelivEdit)} />
+                      <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
+                      <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
+                    </div>
                   </td>
                 </tr>
               {:else}
@@ -686,16 +692,16 @@
             {:else if row.kind === 'changed'}
               {#if delivEditId === row.live.id}
                 <tr class="row-editing">
-                  <td class="num">
-                    <input class="qty-input" bind:value={delivEditQty} />
-                    <UnitsSelect bind:value={delivEditUnits} />
-                  </td>
-                  <td>
-                    <input class="desc-input" bind:value={delivEditDescription} />
-                  </td>
-                  <td class="acts">
-                    <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
-                    <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
+                  <td colspan="3">
+                    <div class="edit-row-layout">
+                      <input class="qty-input" bind:value={delivEditQty}
+                        onkeydown={(e) => delivEditKeydown(e, () => saveDelivEdit(row.live.id), cancelDelivEdit)} />
+                      <UnitsSelect bind:value={delivEditUnits} />
+                      <input class="desc-input-inline" bind:value={delivEditDescription}
+                        onkeydown={(e) => delivEditKeydown(e, () => saveDelivEdit(row.live.id), cancelDelivEdit)} />
+                      <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
+                      <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
+                    </div>
                   </td>
                 </tr>
               {:else}
@@ -733,16 +739,16 @@
             {:else if row.kind === 'added'}
               {#if delivEditId === row.live.id}
                 <tr class="row-editing">
-                  <td class="num">
-                    <input class="qty-input" bind:value={delivEditQty} />
-                    <UnitsSelect bind:value={delivEditUnits} />
-                  </td>
-                  <td>
-                    <input class="desc-input" bind:value={delivEditDescription} />
-                  </td>
-                  <td class="acts">
-                    <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
-                    <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
+                  <td colspan="3">
+                    <div class="edit-row-layout">
+                      <input class="qty-input" bind:value={delivEditQty}
+                        onkeydown={(e) => delivEditKeydown(e, () => saveDelivEdit(row.live.id), cancelDelivEdit)} />
+                      <UnitsSelect bind:value={delivEditUnits} />
+                      <input class="desc-input-inline" bind:value={delivEditDescription}
+                        onkeydown={(e) => delivEditKeydown(e, () => saveDelivEdit(row.live.id), cancelDelivEdit)} />
+                      <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
+                      <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
+                    </div>
                   </td>
                 </tr>
               {:else}
@@ -766,16 +772,16 @@
         {/if}
         {#if delivNewOpen}
           <tr class="row-editing">
-            <td class="num">
-              <input class="qty-input" bind:value={delivNewQty} />
-              <UnitsSelect bind:value={delivNewUnits} />
-            </td>
-            <td>
-              <input class="desc-input" bind:value={delivNewDescription} placeholder="Description" />
-            </td>
-            <td class="acts">
-              <button type="button" onclick={saveDelivNew} disabled={delivSaving}>Add</button>
-              <button type="button" onclick={cancelDelivNew} disabled={delivSaving}>Cancel</button>
+            <td colspan="3">
+              <div class="edit-row-layout">
+                <input class="qty-input" bind:value={delivNewQty}
+                  onkeydown={(e) => delivEditKeydown(e, saveDelivNew, cancelDelivNew)} />
+                <UnitsSelect bind:value={delivNewUnits} />
+                <input class="desc-input-inline" bind:value={delivNewDescription} placeholder="Description"
+                  onkeydown={(e) => delivEditKeydown(e, saveDelivNew, cancelDelivNew)} />
+                <button type="button" onclick={saveDelivNew} disabled={delivSaving}>Add</button>
+                <button type="button" onclick={cancelDelivNew} disabled={delivSaving}>Cancel</button>
+              </div>
             </td>
           </tr>
         {/if}
@@ -906,48 +912,6 @@
     </table>
   </section>
 
-  <!-- Agreement of record -->
-  <section class="section">
-    <h3>Agreement of Record</h3>
-    <p class="section-desc">The full scope of work as currently agreed — original estimate lines plus any accepted change orders.</p>
-
-    {#if agreementLines.length > 0}
-      <table class="agreement-table">
-        <thead>
-          <tr>
-            <th>Description</th>
-            <th class="text-right">Qty</th>
-            <th>Units</th>
-            <th class="text-right">Price</th>
-            <th class="text-right">Amount</th>
-            <th>Origin</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each agreementLines as line}
-            <tr class="origin-{line.origin}">
-              <td>{line.description || '—'}</td>
-              <td class="text-right">{line.qty ?? '—'}</td>
-              <td>{line.units || '—'}</td>
-              <td class="text-right">{fmtMoney(line.price)}</td>
-              <td class="text-right">{fmtMoney(line.amount)}</td>
-              <td><span class="origin-badge origin-{line.origin}">{originLabel(line.origin)}</span></td>
-            </tr>
-          {/each}
-        </tbody>
-        <tfoot>
-          <tr class="grand-total-row">
-            <td colspan="4" style="text-align:right"><strong>Grand Total:</strong></td>
-            <td class="text-right"><strong>{fmtMoney(agreementTotal)}</strong></td>
-            <td></td>
-          </tr>
-        </tfoot>
-      </table>
-    {:else}
-      <p class="empty-msg">No agreement data available.</p>
-    {/if}
-  </section>
-
   <COLineItemModal
     open={modalOpen}
     mode={modalMode}
@@ -975,6 +939,9 @@
   .back-link { font-size: 13px; }
   .page-title { font-size: 18px; font-weight: 600; }
 
+  /* Pushes Discard to the far right in the draft toolbar */
+  .toolbar-spacer { flex: 1; }
+
   .status-badge {
     padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; text-transform: capitalize;
   }
@@ -994,7 +961,6 @@
   }
   .section-head h3 { margin: 0; }
   .spacer { flex: 1; }
-  .section-desc { font-size: 13px; color: #666; margin: 0 0 10px; }
 
   /* ---- Merged diff table ---- */
   .diff-table {
@@ -1035,33 +1001,17 @@
   /* The + tag inside the added qty cell */
   .deliv-table .added-tag { color: #166534; font-weight: 600; margin-right: 4px; }
 
-  /* Inline editing row */
+  /* Inline editing row — uses a flex layout spanning all columns */
   .diff-table tr.row-editing { background: #f0f9ff; }
   .diff-table tr.row-editing td { padding: 4px 8px; }
-  .qty-input { width: 3.5em; margin-right: 4px; }
-  .desc-input { width: 100%; box-sizing: border-box; }
+
+  /* Flex row: qty input | units select | description (grows) | action buttons */
+  .edit-row-layout {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .qty-input { width: 3.5em; flex-shrink: 0; }
+  .desc-input-inline { flex: 1; min-width: 0; box-sizing: border-box; }
 
   /* Anchored note */
   .anchored-note { font-size: 11px; color: #9ca3af; font-style: italic; }
-
-  /* Agreement-of-record table */
-  .agreement-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
-  .agreement-table th {
-    padding: 8px 10px; text-align: left; font-weight: 600;
-    background: #e0e7ff; color: #3730a3; border-bottom: 2px solid #c7d2fe;
-  }
-  .agreement-table td { padding: 7px 10px; border-bottom: 1px solid #e0e7ff; vertical-align: top; }
-  .agreement-table .text-right { text-align: right; font-variant-numeric: tabular-nums; }
-  .agreement-table tfoot td { padding: 8px 10px; background: #eef2ff; }
-  .grand-total-row td { font-size: 15px; }
-
-  .agreement-table tr.origin-change_order td { background: #fefce8; }
-  .agreement-table tr.origin-original td { background: #fff; }
-
-  .origin-badge {
-    display: inline-block; padding: 1px 8px; border-radius: 8px;
-    font-size: 11px; font-weight: 500;
-  }
-  .origin-original { background: #f3f4f6; color: #374151; }
-  .origin-change_order { background: #fef3c7; color: #92400e; }
 </style>
