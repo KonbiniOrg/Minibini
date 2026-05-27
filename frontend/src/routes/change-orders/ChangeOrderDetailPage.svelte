@@ -3,6 +3,7 @@
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import COLineItemModal from '../../components/changeorders/COLineItemModal.svelte';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   let { params = {} } = $props();
 
@@ -210,26 +211,16 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if co}
-  <!-- Header / toolbar -->
-  <div class="co-header">
-    <div class="co-header-left">
-      <a href={`/jobs/${co.job}`} use:link class="back-link">&laquo; back to job{job ? ` ${job.job_number}` : ''}</a>
-      <h2 class="co-number">{co.change_order_number || `CO #${co.change_order_id}`}</h2>
-      {#if job}
-        <span class="co-job-ref">
-          for <a href={`/jobs/${co.job}`} use:link>{job.job_number}{job.name ? `: ${job.name}` : ''}</a>
-          {#if contact} · <a href={`/contacts/${contact.contact_id}`} use:link>{contact.name}</a>{/if}
-        </span>
-      {/if}
-    </div>
-    <div class="co-header-right">
-      <span class="status-badge status-co-{co.status}">{co.status}</span>
-    </div>
-  </div>
+  {#if job}
+    <JobHeader {job} {contact} onStatusChange={loadCO} />
+  {/if}
 
-  <!-- Action bar -->
-  {#if canManageJobs}
-    <div class="action-bar">
+  <!-- CO toolbar -->
+  <div class="toolbar">
+    <a href={`/jobs/${co.job}`} use:link class="back-link">&laquo; back to job{job ? ` ${job.job_number}` : ''}</a>
+    <span class="page-title">{co.change_order_number || `CO #${co.change_order_id}`}</span>
+    <span class="status-badge status-co-{co.status}">{co.status}</span>
+    {#if canManageJobs}
       {#if isDraft}
         <button type="button" onclick={markOpen} disabled={actionBusy}>
           {actionBusy ? 'Saving…' : 'Mark as Sent'}
@@ -249,8 +240,8 @@
           {actionBusy ? 'Creating…' : 'Start new change order'}
         </button>
       {/if}
-    </div>
-  {/if}
+    {/if}
+  </div>
 
   <!-- Line items (editable when draft) -->
   <section class="section">
@@ -382,30 +373,21 @@
 <style>
   .error { color: #a8071a; padding: 16px; }
 
-  .co-header {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    padding: 16px 24px; background: #1f2937; color: #fff;
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 24px;
   }
-  .co-header-left { display: flex; flex-direction: column; gap: 4px; }
-  .co-header-right { display: flex; align-items: center; }
-  .back-link { font-size: 13px; color: rgba(255,255,255,0.7); text-decoration: none; }
-  .back-link:hover { color: #fff; text-decoration: underline; }
-  .co-number { margin: 0; font-size: 22px; font-weight: 700; color: #fff; }
-  .co-job-ref { font-size: 13px; color: rgba(255,255,255,0.8); }
-  .co-job-ref a { color: #fff; text-decoration: underline; }
+  .back-link { font-size: 13px; }
+  .page-title { font-size: 18px; font-weight: 600; }
 
   .status-badge {
-    padding: 4px 14px; border-radius: 12px; font-size: 13px; font-weight: 600; text-transform: capitalize;
+    padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; text-transform: capitalize;
   }
   .status-co-draft { background: #f3f4f6; color: #374151; }
   .status-co-open { background: #fef3c7; color: #92400e; }
   .status-co-accepted { background: #dcfce7; color: #166534; }
   .status-co-rejected { background: #fee2e2; color: #991b1b; }
 
-  .action-bar {
-    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-    padding: 10px 24px; background: #f3f4f6; border-bottom: 1px solid #e5e7eb;
-  }
   .btn-danger { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
   .btn-danger:hover { background: #fecaca; }
   .btn-accept { background: #dcfce7; color: #166534; border-color: #86efac; }

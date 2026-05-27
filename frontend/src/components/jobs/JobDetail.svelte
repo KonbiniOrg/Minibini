@@ -104,6 +104,9 @@
   // Change orders
   let changeOrders = $state([]);
   let creatingCo = $state(false);
+  let hasLiveChangeOrder = $derived(
+    (changeOrders || []).some(co => co.status === 'draft' || co.status === 'open')
+  );
 
   async function refreshShipmentCount() {
     try {
@@ -450,7 +453,7 @@
           {#if canManageJobs && !currentEstimate}
             <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
           {/if}
-          {#if canManageJobs && job.status === 'on_hold'}
+          {#if canManageJobs && job.status === 'on_hold' && !hasLiveChangeOrder}
             <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
               {creatingCo ? 'Creating…' : '+ New change order'}
             </button>
