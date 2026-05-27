@@ -325,6 +325,16 @@ class JobService:
                     'have them stop first.'
                 )
 
+        if status_changed and old_status == Job.STATUS_ON_HOLD:
+            from apps.estimates.models import ChangeOrder
+            if ChangeOrder.objects.filter(
+                job=job, status__in=[ChangeOrder.STATUS_DRAFT, ChangeOrder.STATUS_OPEN]
+            ).exists():
+                raise ValidationError(
+                    'Resolve the open change order (accept, reject, or discard it) '
+                    'before taking the job off hold.'
+                )
+
         if status_changed and job.status == Job.STATUS_WORK_COMPLETE:
             offenders = JobService._loose_pending_materials(job)
             if offenders.exists():
