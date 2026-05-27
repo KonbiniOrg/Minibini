@@ -12,11 +12,10 @@ RUN mkdir /app/static
 
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install gunicorn | tee pip-install.out
-RUN cd frontend && npm install
-RUN cd /app/frontend && npm run build
 
 # Run collectstatic (configure in settings)
 # RUN python manage.py collectstatic --noinput
+# EXPOSE 8000
 EXPOSE 8000
 # Use Gunicorn as the production WSGI server, not the Django dev server
 # CMD ["gunicorn", "--bind", ":8000", "--workers", "3", "minibini.wsgi:application"]
