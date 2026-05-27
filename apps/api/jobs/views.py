@@ -90,6 +90,13 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
         job = JobService.create_job(**data)
         serializer.instance = job
 
+    def update(self, request, *args, **kwargs):
+        try:
+            return super().update(request, *args, **kwargs)
+        except ValidationError as e:
+            msg = '; '.join(e.messages) if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+
     def perform_update(self, serializer):
         job = JobService.update_job(self.get_object().pk, **serializer.validated_data)
         serializer.instance = job
