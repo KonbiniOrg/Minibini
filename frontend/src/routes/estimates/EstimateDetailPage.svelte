@@ -5,6 +5,7 @@
   import EstimateLineItemModal from '../../components/EstimateLineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
+  import DeliverablesSection from '../../components/jobs/DeliverablesSection.svelte';
 
   let { params = {} } = $props();
 
@@ -12,7 +13,6 @@
   let job = $state(null);
   let contact = $state(null);
   let categories = $state([]);
-  let deliverables = $state([]);
   let loading = $state(true);
   let error = $state('');
 
@@ -101,11 +101,6 @@
           job = null;
           contact = null;
         }
-        try {
-          deliverables = await api.get(`/api/jobs/${estimate.job}/deliverables/`);
-        } catch (_) {
-          deliverables = [];
-        }
       }
     } catch (e) {
       error = e.message || 'Could not load estimate.';
@@ -189,13 +184,7 @@
     handleReorder(ids);
   }
 
-  // API returns DecimalFields as fixed-precision strings ("10.00"). Trim trailing
-  // zeros for display so whole quantities show as "10" not "10.00".
-  function fmtQty(value) {
-    if (value === null || value === undefined || value === '') return '';
-    const n = Number(value);
-    return Number.isFinite(n) ? n.toString() : String(value);
-  }
+
 </script>
 
 {#if loading}
@@ -300,26 +289,8 @@
     actions={canEdit ? actionsSnippet : null}
   />
 
-  {#if deliverables.length > 0}
-    <h3>Deliverables</h3>
-    <table class="data-table deliverables-table">
-      <thead>
-        <tr>
-          <th>Qty</th>
-          <th>Units</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each deliverables as d}
-          <tr>
-            <td class="num">{fmtQty(d.qty_ordered)}</td>
-            <td class="units">{d.units}</td>
-            <td class="preserve-breaks">{d.description}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+  {#if estimate.job}
+    <DeliverablesSection jobId={estimate.job} allowEdit={true} />
   {/if}
 
   <EstimateLineItemModal
@@ -371,16 +342,5 @@
   .status-expired { background: #fef3c7; color: #92400e; }
   .status-superseded { background: #fed7aa; color: #9a3412; }
 
-  .deliverables-table td.num {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    width: 1%;
-  }
-  .deliverables-table td.units {
-    color: #666;
-    white-space: nowrap;
-    width: 1%;
-  }
-  .preserve-breaks { white-space: pre-wrap; }
+
 </style>
