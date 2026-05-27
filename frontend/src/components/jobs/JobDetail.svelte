@@ -137,7 +137,7 @@
     creatingCo = true;
     try {
       const co = await api.post('/api/change-orders/', { job: job.job_id });
-      window.location.hash = `/change-orders/${co.id}`;
+      window.location.hash = `/change-orders/${co.change_order_id}`;
     } catch (e) {
       alert(e.message || 'Failed to create change order.');
     } finally {
@@ -450,6 +450,11 @@
           {#if canManageJobs && !currentEstimate}
             <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
           {/if}
+          {#if canManageJobs && job.status === 'on_hold'}
+            <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
+              {creatingCo ? 'Creating…' : '+ New change order'}
+            </button>
+          {/if}
         </span>
       </div>
       {#if estimateList.length > 1}
@@ -525,6 +530,53 @@
         {/if}
       </div>
     </div>
+  {/if}
+
+  <!-- Change Orders (only shown when COs exist) -->
+  {#if changeOrders.length > 0}
+    {#if activeSection !== 'changeorders'}
+      <div class="pillar pillar-co"
+           role="button" tabindex="0"
+           onclick={() => openSection('changeorders')}
+           onkeydown={(e) => e.key === 'Enter' && openSection('changeorders')}>
+        <span class="label-v">Change Orders</span>
+        <span class="pillar-count">{changeOrders.length}</span>
+      </div>
+    {:else}
+      <div class="open open-co">
+        <div class="top-bar top-bar-co">
+          <span class="top-bar-title">
+            CHANGE ORDERS · {changeOrders.length}
+          </span>
+          <span class="top-bar-actions"></span>
+        </div>
+        <div class="body">
+          <table class="co-table">
+            <colgroup>
+              <col>
+              <col class="col-status">
+              <col class="col-action">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Number</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each changeOrders as co}
+                <tr>
+                  <td><a href="#/change-orders/{co.change_order_id}">{co.change_order_number || `CO #${co.change_order_id}`}</a></td>
+                  <td><span class="pill pill-co-{co.status}">{co.status}</span></td>
+                  <td><a href="#/change-orders/{co.change_order_id}">View →</a></td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {/if}
   {/if}
 
   <!-- Tasks -->
@@ -856,61 +908,6 @@
       </div>
       <div class="body">
         <ShipmentsPillar jobId={job.job_id} />
-      </div>
-    </div>
-  {/if}
-
-  <!-- Change Orders -->
-  {#if activeSection !== 'changeorders'}
-    <div class="pillar pillar-co"
-         role="button" tabindex="0"
-         onclick={() => openSection('changeorders')}
-         onkeydown={(e) => e.key === 'Enter' && openSection('changeorders')}>
-      <span class="label-v">Change Orders</span>
-      <span class="pillar-count">{changeOrders.length}</span>
-    </div>
-  {:else}
-    <div class="open open-co">
-      <div class="top-bar top-bar-co">
-        <span class="top-bar-title">
-          CHANGE ORDERS{#if changeOrders.length} · {changeOrders.length}{:else} · None{/if}
-        </span>
-        <span class="top-bar-actions">
-          {#if canManageJobs && job.status === 'on_hold'}
-            <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
-              {creatingCo ? 'Creating…' : 'New change order'}
-            </button>
-          {/if}
-        </span>
-      </div>
-      <div class="body">
-        {#if changeOrders.length > 0}
-          <table class="co-table">
-            <colgroup>
-              <col>
-              <col class="col-status">
-              <col class="col-action">
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Number</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each changeOrders as co}
-                <tr>
-                  <td><a href="#/change-orders/{co.id}">{co.co_number || `CO #${co.id}`}</a></td>
-                  <td><span class="pill pill-co-{co.status}">{co.status}</span></td>
-                  <td><a href="#/change-orders/{co.id}">View →</a></td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {:else}
-          <p class="empty-msg">No change orders for this job.{#if job.status !== 'on_hold'} Put the job on hold to create one.{/if}</p>
-        {/if}
       </div>
     </div>
   {/if}

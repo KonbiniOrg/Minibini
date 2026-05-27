@@ -66,7 +66,7 @@
     }
     try {
       if (mode === 'edit' && item) {
-        await api.patch(`/api/change-orders/${coId}/line-items/${item.id}/`, payload);
+        await api.patch(`/api/change-orders/${coId}/line-items/${item.line_item_id}/`, payload);
       } else {
         await api.post(`/api/change-orders/${coId}/line-items/`, payload);
       }

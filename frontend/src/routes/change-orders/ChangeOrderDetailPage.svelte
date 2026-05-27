@@ -87,7 +87,7 @@
     if (!confirm('Mark this change order as sent? This will lock line items.')) return;
     actionBusy = true;
     try {
-      await api.post(`/api/change-orders/${co.id}/mark-open/`);
+      await api.post(`/api/change-orders/${co.change_order_id}/mark-open/`);
       await loadCO();
     } catch (e) {
       alert(e.message || 'Could not mark as sent.');
@@ -102,7 +102,7 @@
     if (!confirm(`${label} this change order?${newStatus === 'accepted' ? ' This will advance the job back to in_progress.' : ''}`)) return;
     actionBusy = true;
     try {
-      await api.patch(`/api/change-orders/${co.id}/`, { status: newStatus });
+      await api.patch(`/api/change-orders/${co.change_order_id}/`, { status: newStatus });
       await loadCO();
     } catch (e) {
       alert(e.message || 'Could not update status.');
@@ -115,7 +115,7 @@
     if (!confirm('Discard this change order? This cannot be undone.')) return;
     actionBusy = true;
     try {
-      await api.delete(`/api/change-orders/${co.id}/`);
+      await api.delete(`/api/change-orders/${co.change_order_id}/`);
       window.location.hash = `/jobs/${co.job}`;
     } catch (e) {
       alert(e.message || 'Could not discard change order.');
@@ -127,8 +127,8 @@
     if (!confirm('Start a new change order for this job? A new draft will be created.')) return;
     actionBusy = true;
     try {
-      const newCo = await api.post(`/api/change-orders/${co.id}/seed-new/`);
-      window.location.hash = `/change-orders/${newCo.id}`;
+      const newCo = await api.post(`/api/change-orders/${co.change_order_id}/seed-new/`);
+      window.location.hash = `/change-orders/${newCo.change_order_id}`;
     } catch (e) {
       alert(e.message || 'Could not create new change order.');
       actionBusy = false;
@@ -157,7 +157,7 @@
   async function handleDeleteItem(li) {
     if (!confirm(`Delete this line item?`)) return;
     try {
-      await api.delete(`/api/change-orders/${co.id}/line-items/${li.id}/`);
+      await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${li.line_item_id}/`);
       await loadCO();
     } catch (e) {
       alert(e.message || 'Could not delete line item.');
@@ -166,7 +166,7 @@
 
   async function handleReorder(itemIds) {
     try {
-      await api.post(`/api/change-orders/${co.id}/line-items/reorder/`, { item_ids: itemIds });
+      await api.post(`/api/change-orders/${co.change_order_id}/line-items/reorder/`, { item_ids: itemIds });
       await loadCO();
     } catch (e) {
       alert(e.message || 'Could not reorder.');
@@ -175,14 +175,14 @@
 
   function moveUp(index) {
     if (index === 0) return;
-    const ids = sortedLineItems.map(li => li.id);
+    const ids = sortedLineItems.map(li => li.line_item_id);
     [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
     handleReorder(ids);
   }
 
   function moveDown(index) {
     if (index >= sortedLineItems.length - 1) return;
-    const ids = sortedLineItems.map(li => li.id);
+    const ids = sortedLineItems.map(li => li.line_item_id);
     [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
     handleReorder(ids);
   }
@@ -214,7 +214,7 @@
   <div class="co-header">
     <div class="co-header-left">
       <a href={`/jobs/${co.job}`} use:link class="back-link">&laquo; back to job{job ? ` ${job.job_number}` : ''}</a>
-      <h2 class="co-number">{co.co_number || `CO #${co.id}`}</h2>
+      <h2 class="co-number">{co.change_order_number || `CO #${co.change_order_id}`}</h2>
       {#if job}
         <span class="co-job-ref">
           for <a href={`/jobs/${co.job}`} use:link>{job.job_number}{job.name ? `: ${job.name}` : ''}</a>
@@ -371,7 +371,7 @@
   <COLineItemModal
     open={modalOpen}
     mode={modalMode}
-    coId={co.id}
+    coId={co.change_order_id}
     item={modalItem}
     {estimateLines}
     onSaved={handleSaved}
