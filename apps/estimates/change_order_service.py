@@ -47,21 +47,40 @@ class ChangeOrderService:
             raise ValidationError('Job has no accepted estimate to amend.')
 
         # Trigger 1: snapshot the prior agreement.
-        # Find the latest accepted CO on this estimate; if none, snapshot the estimate.
-        latest_accepted_co = (
-            ChangeOrder.objects
-            .filter(estimate=accepted_est, status=ChangeOrder.STATUS_ACCEPTED)
-            .order_by('-change_order_id')
-            .first()
-        )
         from apps.deliverables.services import DeliverableService
-        if latest_accepted_co is not None:
-            DeliverableService.snapshot_document(change_order=latest_accepted_co)
+        baseline = ChangeOrderService.baseline_document(co=None, estimate=accepted_est)
+        if isinstance(baseline, ChangeOrder):
+            DeliverableService.snapshot_document(change_order=baseline)
         else:
-            DeliverableService.snapshot_document(estimate=accepted_est)
+            DeliverableService.snapshot_document(estimate=baseline)
 
         co = ChangeOrder.objects.create(job=job, estimate=accepted_est)
         return co
+
+    @staticmethod
+    def baseline_document(*, co, estimate=None):
+        """Return the document whose DeliverableSnapshot rows are the baseline for *co*.
+
+        Resolution rule (mirrors Trigger 1 in create):
+        - The latest accepted ChangeOrder on the estimate with a change_order_id
+          strictly less than co.change_order_id (i.e. created before this CO),
+          if one exists.
+        - Otherwise the accepted Estimate itself.
+
+        ``co`` may be None when called from ``create`` before the new CO is
+        saved; in that case ``estimate`` must be supplied and the filter has no
+        upper-bound (any accepted CO on the estimate qualifies as "prior").
+        """
+        est = estimate if estimate is not None else co.estimate
+        qs = ChangeOrder.objects.filter(
+            estimate=est, status=ChangeOrder.STATUS_ACCEPTED,
+        )
+        if co is not None:
+            qs = qs.filter(change_order_id__lt=co.change_order_id)
+        latest_accepted_co = qs.order_by('-change_order_id').first()
+        if latest_accepted_co is not None:
+            return latest_accepted_co
+        return est
 
     @staticmethod
     @transaction.atomic

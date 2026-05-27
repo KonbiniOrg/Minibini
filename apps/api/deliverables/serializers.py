@@ -1,6 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
-from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
+from apps.deliverables.models import Deliverable, DeliverableSnapshot, Shipment, ShipmentItem
 from apps.deliverables.services import DeliverableService
 
 
@@ -40,6 +40,18 @@ class DeliverableSerializer(serializers.ModelSerializer):
 
     def get_qty_remaining(self, obj):
         return _q(self._fulfillment(obj)['qty_remaining'])
+
+
+class DeliverableSnapshotSerializer(serializers.ModelSerializer):
+    qty_ordered = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeliverableSnapshot
+        fields = ['id', 'description', 'qty_ordered', 'units', 'sort_order', 'source_deliverable']
+        read_only_fields = fields
+
+    def get_qty_ordered(self, obj):
+        return _q(obj.qty_ordered)
 
 
 class ShipmentItemSerializer(serializers.ModelSerializer):

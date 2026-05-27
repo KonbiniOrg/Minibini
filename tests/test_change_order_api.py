@@ -360,3 +360,113 @@ class AgreementAPITest(FixtureTestCase):
         self.client.force_authenticate(user=None)
         resp = self.client.get(f'/api/jobs/{self.job.pk}/agreement/')
         self.assertIn(resp.status_code, [401, 403])
+
+
+# ---------------------------------------------------------------------------
+# deliverables-baseline action
+# ---------------------------------------------------------------------------
+
+class DeliverablesBaselineAPITest(FixtureTestCase):
+    """GET /api/change-orders/{id}/deliverables-baseline/
+
+    Baseline is the snapshot attached to:
+    - the latest accepted CO on the estimate (if one exists, created before this CO), or
+    - the accepted estimate itself.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        from apps.core.models import User
+        self.user = User.objects.create_user(username='co_baseline', password='x')
+        self.manager = User.objects.create_user(username='co_bl_mgr', password='x')
+        self.manager = _add_can_manage_jobs(self.manager)
+
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        self.est = _make_accepted_estimate(self.job, number='EST-BL-1')
+
+        # Two deliverables on the job.
+        self.d1 = _make_deliverable(self.job, description='Widget A', sort_order=10)
+        self.d2 = _make_deliverable(self.job, description='Widget B', sort_order=20)
+
+        # Advance job to on_hold and create a CO (Trigger 1 snapshots the estimate).
+        _advance_job_to_on_hold(self.job)
+        self.client.force_authenticate(user=self.manager)
+        resp = self.client.post('/api/change-orders/', {'job': self.job.pk}, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.co_id = resp.data['change_order_id']
+
+    def test_baseline_returns_estimate_snapshots_when_no_prior_accepted_co(self):
+        """First CO on an estimate: baseline is the estimate's snapshot rows."""
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.get(f'/api/change-orders/{self.co_id}/deliverables-baseline/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertIn('baseline', resp.data)
+        rows = resp.data['baseline']
+        self.assertEqual(len(rows), 2)
+        descriptions = {r['description'] for r in rows}
+        self.assertIn('Widget A', descriptions)
+        self.assertIn('Widget B', descriptions)
+
+    def test_baseline_row_fields(self):
+        """Each baseline row has the expected fields with Decimal-as-string qty."""
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.get(f'/api/change-orders/{self.co_id}/deliverables-baseline/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        row = resp.data['baseline'][0]
+        for field in ('id', 'description', 'qty_ordered', 'units', 'sort_order', 'source_deliverable'):
+            self.assertIn(field, row, f'Missing field: {field}')
+        # qty_ordered must be a string (Decimal-as-string convention).
+        self.assertIsInstance(row['qty_ordered'], str)
+
+    def test_baseline_ordered_by_sort_order(self):
+        """Rows are returned in sort_order ascending."""
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.get(f'/api/change-orders/{self.co_id}/deliverables-baseline/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        sort_orders = [r['sort_order'] for r in resp.data['baseline']]
+        self.assertEqual(sort_orders, sorted(sort_orders))
+
+    def test_baseline_requires_auth(self):
+        self.client.force_authenticate(user=None)
+        resp = self.client.get(f'/api/change-orders/{self.co_id}/deliverables-baseline/')
+        self.assertIn(resp.status_code, [401, 403])
+
+    def test_baseline_uses_latest_accepted_co_when_prior_co_exists(self):
+        """When a prior accepted CO exists on the estimate, the baseline is its snapshot."""
+        from apps.deliverables.models import DeliverableSnapshot
+        from apps.estimates.models import ChangeOrder
+
+        # Accept the first CO (creates snapshot on it via Trigger 2 path - but
+        # here we test Trigger 1 on the NEXT CO).
+        # We manually create an accepted CO and snapshot it to represent a prior agreement.
+        prior_co = ChangeOrder.objects.create(
+            job=self.job,
+            estimate=self.est,
+            status=ChangeOrder.STATUS_ACCEPTED,
+        )
+        # Manually snapshot the prior CO (as Trigger 2 would have).
+        from apps.deliverables.services import DeliverableService
+        DeliverableService.snapshot_document(change_order=prior_co)
+
+        # Now create a new CO — Trigger 1 should snapshot the prior_co (not the estimate).
+        # First put job back on_hold for the service guard.
+        self.job.status = Job.STATUS_ON_HOLD
+        self.job.save()
+
+        self.client.force_authenticate(user=self.manager)
+        resp2 = self.client.post('/api/change-orders/', {'job': self.job.pk}, format='json')
+        self.assertEqual(resp2.status_code, 201, resp2.data)
+        new_co_id = resp2.data['change_order_id']
+
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.get(f'/api/change-orders/{new_co_id}/deliverables-baseline/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        rows = resp.data['baseline']
+        # The baseline should be the snapshots attached to prior_co (not the estimate).
+        baseline_ids = {r['id'] for r in rows}
+        prior_co_snap_ids = set(
+            DeliverableSnapshot.objects.filter(change_order=prior_co).values_list('pk', flat=True)
+        )
+        self.assertEqual(baseline_ids, prior_co_snap_ids)

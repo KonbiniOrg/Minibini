@@ -31,7 +31,7 @@ class ChangeOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelVie
     }
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve')
+        read_actions = ('list', 'retrieve', 'deliverables_baseline')
         if self.action in read_actions:
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
@@ -117,3 +117,35 @@ class ChangeOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelVie
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.get_serializer(new_co)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path='deliverables-baseline',
+        url_name='deliverables-baseline',
+        permission_classes=[IsAuthenticated],
+    )
+    def deliverables_baseline(self, request, pk=None):
+        """Return the DeliverableSnapshot rows for the document this CO amends.
+
+        The baseline is the latest accepted ChangeOrder on the same estimate
+        created before this CO (if one exists), otherwise the accepted Estimate.
+        These are the prior agreed deliverable scope that this CO's live
+        deliverables should be diffed against.
+        """
+        co = self.get_object()
+        from apps.deliverables.models import DeliverableSnapshot
+        from apps.api.deliverables.serializers import DeliverableSnapshotSerializer
+
+        baseline_doc = ChangeOrderService.baseline_document(co=co)
+        if isinstance(baseline_doc, ChangeOrder):
+            snapshots = DeliverableSnapshot.objects.filter(
+                change_order=baseline_doc,
+            ).order_by('sort_order')
+        else:
+            snapshots = DeliverableSnapshot.objects.filter(
+                estimate=baseline_doc,
+            ).order_by('sort_order')
+
+        serializer = DeliverableSnapshotSerializer(snapshots, many=True)
+        return Response({'baseline': serializer.data})
