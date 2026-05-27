@@ -191,6 +191,11 @@
     height: 110px;
     box-sizing: border-box;
     flex: 0 0 auto;
+    /* Establish a stacking context above the page body so the hold-reason
+       form (which overflows the fixed 110px height) paints on top and stays
+       clickable, instead of being covered by the content below. */
+    position: relative;
+    z-index: 30;
   }
   .titleblock { padding-left: 52px; min-width: 0; }
   .titleblock h1 { font-size: 22px; font-weight: 700; margin: 0; color: #fff; }
@@ -237,8 +242,14 @@
   .hold-reason-text { font-style: italic; }
 
   .hold-reason-form {
+    position: relative; z-index: 1;
     margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-    background: rgba(255,255,255,0.1); border-radius: 6px; padding: 8px 12px;
+    /* Solid dark background (not translucent) so the form is legible where it
+       overflows the header onto the light page body below; the shadow reads it
+       as a popover floating over that content. */
+    background: #1f2937; border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+    border-radius: 6px; padding: 8px 12px;
   }
   .hold-reason-form label { font-size: 12px; white-space: nowrap; }
   .hold-reason-form input {
