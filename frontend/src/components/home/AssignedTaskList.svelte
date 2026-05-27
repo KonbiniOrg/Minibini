@@ -1,7 +1,8 @@
 <script>
   import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { refreshCurrentBlep } from '../../stores/currentBlep.js';
+  import { notifyBlepChanged } from '../../stores/blepActivity.js';
+  import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
 
   let { tasks = [] } = $props();
 
@@ -63,7 +64,7 @@
         `/api/tasks/${task.id}/start-work/`,
         {}
       );
-      await refreshCurrentBlep();
+      await notifyBlepChanged();
       push(`/jobs/${task.job.id}/tasks/${task.id}`);
     } catch (e) {
       errorMessage = e.message || 'Could not start work.';
@@ -78,7 +79,7 @@
   {#if items.length === 0}
     <p>No assigned tasks.</p>
   {:else}
-    <table border="1">
+    <table class="data-table">
       <thead>
         <tr>
           <th>Task</th>
@@ -107,7 +108,7 @@
                 </a>
               {/if}
             </td>
-            <td>{task.status}</td>
+            <td><TaskActivityIndicator {task} /></td>
             <td>
               <button type="button" onclick={() => startWork(task)} disabled={busy}>
                 Start Work

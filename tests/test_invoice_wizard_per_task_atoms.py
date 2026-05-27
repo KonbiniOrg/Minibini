@@ -50,9 +50,13 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         atoms = task_entries[0]['atoms']
         self.assertEqual(len(atoms), 1)
         atom = atoms[0]
-        self.assertEqual(atom['atom_type'], 'task')
-        self.assertEqual(atom['atom_id'], self.task.pk)
-        self.assertEqual(atom['computed_amount'], Decimal('30.00'))
+        self.assertEqual(atom['type'], 'task')
+        self.assertEqual(atom['id'], self.task.pk)
+        self.assertEqual(atom['amount'], Decimal('30.00'))
+        # qty x rate = total breakdown (0.5 hours x $60.00 = $30.00)
+        self.assertEqual(atom['qty'], Decimal('0.5'))
+        self.assertEqual(atom['rate'], Decimal('60.00'))
+        self.assertEqual(atom['units'], 'hours')
 
 class WizardTaskAtomHelpersTest(WizardPerTaskAtomsTest):
     def test_resolve_task_atom(self):
@@ -122,9 +126,9 @@ class WizardReadsTaskDirectlyTest(TestCase):
         )
         self.assertEqual(len(task_entry['atoms']), 1)
         atom = task_entry['atoms'][0]
-        self.assertEqual(atom['atom_type'], 'task')
-        self.assertEqual(atom['atom_id'], self.task.pk)
-        self.assertEqual(atom['computed_amount'], Decimal('60.00'))
+        self.assertEqual(atom['type'], 'task')
+        self.assertEqual(atom['id'], self.task.pk)
+        self.assertEqual(atom['amount'], Decimal('60.00'))
         self.assertIn('Polish', atom['description'])
         self.assertIn('Hourly', atom['description'])  # scheme name in label
         self.assertIn('12', atom['sub_info'])  # qty source label

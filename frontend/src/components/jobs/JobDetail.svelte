@@ -1,5 +1,10 @@
 <script>
   import HistoryPanel from '../HistoryPanel.svelte';
+  import LinkifiedText from '../LinkifiedText.svelte';
+  import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
+  import DeliverablesSection from './DeliverablesSection.svelte';
+  import ShipmentsPillar from './ShipmentsPillar.svelte';
+  import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
   import { user } from '../../stores/auth.js';
   import { api } from '../../lib/api.js';
@@ -91,6 +96,37 @@
   let poList = $derived(purchaseOrders?.results || []);
   let draftInvoice = $derived(invList.find(inv => inv.status === 'draft') || null);
 
+  // Shipments are managed on the dedicated Job Shipments page. Only count
+  // is shown here for at-a-glance information on the accordion pillar.
+  let shipmentCount = $state(0);
+  let hasOutstandingDeliverables = $state(false);
+
+  async function refreshShipmentCount() {
+    try {
+      const r = await api.get(`/api/shipments/?job=${job.job_id}`);
+      const list = r?.results || r || [];
+      shipmentCount = list.length;
+    } catch {
+      shipmentCount = 0;
+    }
+  }
+
+  async function refreshDeliverableFulfillment() {
+    try {
+      const items = await api.get(`/api/jobs/${job.job_id}/deliverables/`);
+      hasOutstandingDeliverables = (items || []).some(d => Number(d.qty_remaining) > 0);
+    } catch {
+      hasOutstandingDeliverables = false;
+    }
+  }
+
+  $effect(() => {
+    if (job?.job_id) {
+      refreshShipmentCount();
+      refreshDeliverableFulfillment();
+    }
+  });
+
   // Invoice helpers
   function invoiceTotal(inv) {
     return (inv?.line_items || []).reduce(
@@ -177,13 +213,14 @@
   let jobMaterials = $derived(job.materials || []);
 
   // Horizontal accordion state — which section is expanded
-  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'pos'];
+  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'shipments', 'pos'];
   const storageKey = (id) => `jobDetailActiveSection_${id}`;
 
   function getDefaultSection() {
     if (job.status === 'work_complete' || job.status === 'completed') {
       if (invoices?.results?.length > 0) return 'invoices';
     }
+    if (shipmentCount > 0 && hasOutstandingDeliverables) return 'shipments';
     if (jobTasks.length > 0) return 'tasks';
     if (estimates?.results?.length > 0) return 'estimates';
     if (worksheets?.results?.length > 0) return 'worksheets';
@@ -220,14 +257,15 @@
 
 <JobHeader {job} {contact} {onStatusChange} />
 
-<!-- DESCRIPTION + HISTORY (fixed height) -->
+<!-- DESCRIPTION + DELIVERABLES + HISTORY (fixed height) -->
 <div class="midband">
   <div class="panel description-panel">
     <div class="panel-head">Description</div>
     <div class="panel-scroll">
-      <p>{job.description || 'No description.'}</p>
+      <p class="preserve-breaks"><LinkifiedText text={job.description || 'No description.'} /></p>
     </div>
   </div>
+  <DeliverablesSection jobId={job.job_id} />
   <div class="panel history-panel">
     <div class="panel-scroll history-scroll-host">
       <HistoryPanel {history} {emails} {onAddNote} />
@@ -312,7 +350,7 @@
                   </tr>
                   {#each (task.plan_materials || []) as mat}
                     <tr class="material-row">
-                      <td class="indent"><span class="marker">●</span> {mat.description || '(no description)'}</td>
+                      <td class="indent preserve-breaks"><span class="marker">●</span> {mat.description || '(no description)'}</td>
                       <td class="text-right">{mat.quantity ?? '—'}</td>
                       <td>{mat.units || ''}</td>
                       <td class="text-right">{fmt(mat.sell_price)}</td>
@@ -336,7 +374,7 @@
                 <tbody>
                   {#each taskless as mat}
                     <tr>
-                      <td>{mat.description || '(no description)'}</td>
+                      <td class="preserve-breaks">{mat.description || '(no description)'}</td>
                       <td class="text-right">{mat.quantity ?? '—'}</td>
                       <td>{mat.units || ''}</td>
                       <td class="text-right">{fmt(mat.sell_price)}</td>
@@ -510,7 +548,7 @@
                 <tr class:row-active={task.status === 'in_progress'}>
                   <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a></td>
                   <td class="assigned">{task.assignee_name || '—'}</td>
-                  <td class="text-center"><span class="pill pill-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><small>{task.blocked_reason}</small>{/if}</td>
+                  <td class="text-center"><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><small class="preserve-breaks">{task.blocked_reason}</small>{/if}</td>
                   <td class="time-cell">
                     {#if task.scheme_algorithm === 'elapsed_time'}
                       {@const actual = Number(task.actual_hours) || 0}
@@ -521,14 +559,14 @@
                         <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
                       </div>
                       <div class="time-text {over ? 'over' : ''}">
-                        {actual.toFixed(1)} / {est > 0 ? est.toFixed(1) : '?'} {task.scheme_unit_label || 'h'}
+                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'h'}
                         {#if est > 0}
                           {#if over}
-                            <span class="time-delta">(over by {(actual - est).toFixed(1)})</span>
+                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
                           {:else if actual === 0}
                             <span class="time-dim">(not started)</span>
                           {:else}
-                            <span class="time-dim">({(est - actual).toFixed(1)} left)</span>
+                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
                           {/if}
                         {/if}
                       </div>
@@ -541,21 +579,21 @@
                         <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
                       </div>
                       <div class="time-text {over ? 'over' : ''}">
-                        {actual} / {est > 0 ? est : '?'} {task.scheme_unit_label || 'units'}
+                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'units'}
                         {#if est > 0}
                           {#if over}
-                            <span class="time-delta">(over by {actual - est})</span>
+                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
                           {:else if actual === 0}
                             <span class="time-dim">(not started)</span>
                           {:else}
-                            <span class="time-dim">({est - actual} left)</span>
+                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
                           {/if}
                         {/if}
                       </div>
                     {:else if task.scheme_algorithm === 'flat_fee'}
-                      <div class="time-text time-dim">flat fee · {Number(task.actual_hours || 0).toFixed(1)}h logged</div>
+                      <div class="time-text time-dim">flat fee · {Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</div>
                     {:else}
-                      <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(1)}h logged</div>
+                      <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(2)}h logged</div>
                     {/if}
                   </td>
                 </tr>
@@ -619,7 +657,7 @@
                 {@const ext = required * (Number(mat.unit_cost) || 0)}
                 <tr class:row-consumed={consumed}>
                   <td>
-                    {mat.description || '(no description)'}
+                    <span class="preserve-breaks">{mat.description || '(no description)'}</span>
                     {#if consumed}<span class="badge-consumed">consumed</span>{/if}
                     {#if needsMore && canManageFinancials}
                       <a class="add-po" href="#/purchase-orders/new?job={job.job_id}&material={mat.material_id}">order</a>
@@ -724,7 +762,7 @@
                 {#each items as li}
                   <tr>
                     <td>{li.line_number}</td>
-                    <td>{li.description}</td>
+                    <td class="preserve-breaks"><LinkifiedText text={li.description} /></td>
                     <td class="text-right">{li.qty}</td>
                     <td>{li.units || 'none'}</td>
                     <td class="text-right">{fmtMoney(li.price)}</td>
@@ -767,6 +805,31 @@
         {:else}
           <p class="empty-msg">No invoices created for this job yet.</p>
         {/if}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Shipments -->
+  {#if activeSection !== 'shipments'}
+    <div class="pillar pillar-ship"
+         role="button" tabindex="0"
+         onclick={() => openSection('shipments')}
+         onkeydown={(e) => e.key === 'Enter' && openSection('shipments')}>
+      <span class="label-v">Shipments</span>
+      <span class="pillar-count">{shipmentCount}</span>
+    </div>
+  {:else}
+    <div class="open open-ship">
+      <div class="top-bar top-bar-ship">
+        <span class="top-bar-title">
+          SHIPMENTS{#if shipmentCount} · {shipmentCount}{:else} · None{/if}
+        </span>
+        <span class="top-bar-actions">
+          <a use:link href={`/jobs/${job.job_id}/shipments`}>Manage shipments →</a>
+        </span>
+      </div>
+      <div class="body">
+        <ShipmentsPillar jobId={job.job_id} />
       </div>
     </div>
   {/if}
@@ -837,7 +900,7 @@
                   <tr class:other-job={li.effective_job_id && li.effective_job_id !== job.job_id}>
                     <td>{li.line_number}</td>
                     <td>
-                      {li.description}
+                      <span class="preserve-breaks"><LinkifiedText text={li.description} /></span>
                       {#if li.effective_job_id && li.effective_job_id !== job.job_id}
                         <span class="other-job-label">(other job: {li.effective_job_number})</span>
                       {/if}
@@ -909,11 +972,9 @@
     flex: 0 0 auto;
   }
   .titleblock { padding-left: 52px; min-width: 0; }
-  .titleblock h1 { font-size: 22px; font-weight: 700; margin: 0; color: #fff; }
   .edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
   .edit-link:hover { opacity: 1; text-decoration: underline; }
   .customer-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
-  .customer-line a { color: #fff; text-decoration: underline; }
   .status-row { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 12px; }
   .status-badge {
     padding: 3px 10px; border-radius: 10px; font-size: 12px;
@@ -964,7 +1025,7 @@
   /* MIDBAND */
   .midband {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 1fr 320px;
     gap: 12px;
     padding: 12px 24px;
     background: #f8f9fa;
@@ -973,6 +1034,10 @@
     box-sizing: border-box;
     flex: 0 0 auto;
   }
+  /* Let the 1fr columns shrink below their content's intrinsic width so a long
+     unbreakable token (e.g. a pasted URL) wraps instead of shoving the
+     Deliverables/History columns off-screen. */
+  .midband > :global(*) { min-width: 0; }
   .panel {
     background: #fff;
     border: 1px solid #e5e7eb;
@@ -1039,6 +1104,7 @@
   .pillar-tasks { background: #b45309; }
   .pillar-mat   { background: #ca8a04; }
   .pillar-inv   { background: #15803d; }
+  .pillar-ship  { background: #0369a1; }
   .pillar-po    { background: #475569; }
 
   .open {
@@ -1064,6 +1130,7 @@
   .top-bar-tasks { background: #b45309; }
   .top-bar-mat   { background: #ca8a04; }
   .top-bar-inv   { background: #15803d; }
+  .top-bar-ship  { background: #0369a1; }
   .top-bar-po    { background: #475569; }
   .top-bar-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .top-bar-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
@@ -1192,8 +1259,6 @@
   .est-table tbody tr { background: #eef2ff; }
   .est-table tbody tr:nth-child(even) { background: #e8e5ff; }
   .est-table tbody tr + tr { border-top: 1px solid #ddd6fe; }
-  .est-table tfoot { background: #e0e7ff; border-top: 2px solid #c7d2fe; }
-  .est-table tfoot td { color: #3730a3; }
   .est-table col.col-num { width: 50px; }
   .est-table col.col-qty { width: 70px; }
   .est-table col.col-units { width: 70px; }

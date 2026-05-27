@@ -279,7 +279,8 @@ class EstimateJobStatusSyncTest(TestCase):
 
     def test_multiple_estimates_with_different_statuses(self):
         """Test multiple estimates on same job with different statuses."""
-        # Create first estimate and reject it
+        # Create first estimate and supersede it (superseding an open estimate
+        # does not reject the job, unlike declining/expiring it)
         estimate1 = Estimate.objects.create(
             job=self.job,
             estimate_number='EST-2024-0001',
@@ -289,7 +290,7 @@ class EstimateJobStatusSyncTest(TestCase):
         self._add_line_item(estimate1)
         estimate1.status = Estimate.STATUS_OPEN
         estimate1.save()
-        estimate1.status = Job.STATUS_REJECTED
+        estimate1.status = Estimate.STATUS_SUPERSEDED
         estimate1.save()
 
         # Job should be submitted (sending estimate triggers draft→submitted)
@@ -313,9 +314,9 @@ class EstimateJobStatusSyncTest(TestCase):
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
 
-        # First estimate should still be rejected
+        # First estimate should still be superseded
         estimate1.refresh_from_db()
-        self.assertEqual(estimate1.status, Estimate.STATUS_REJECTED)
+        self.assertEqual(estimate1.status, Estimate.STATUS_SUPERSEDED)
 
 # TODO: an approved job should not have an unapproved estimate though ...
     def test_job_already_approved_remains_approved(self):
@@ -386,12 +387,12 @@ class EstimateJobStatusSyncTest(TestCase):
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
 
-    def test_rejected_estimate_does_not_affect_job(self):
-        """Test that rejecting an estimate doesn't change job status."""
+    def test_declining_open_estimate_rejects_job(self):
+        """Declining an open estimate (open→rejected) rejects the job."""
         # Job starts in draft
         self.assertEqual(self.job.status, Job.STATUS_DRAFT)
 
-        # Create and reject an estimate
+        # Create and send an estimate
         estimate = Estimate.objects.create(
             job=self.job,
             estimate_number='EST-2024-0001',
@@ -408,9 +409,9 @@ class EstimateJobStatusSyncTest(TestCase):
         estimate.status = Estimate.STATUS_REJECTED
         estimate.save()
 
-        # Job should still be submitted (rejecting estimate doesn't affect job)
+        # Declining the open estimate rejects the job (submitted→rejected)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_SUBMITTED)
+        self.assertEqual(self.job.status, Job.STATUS_REJECTED)
 
     def test_estimate_revision_workflow(self):
         """Test the full workflow of estimate revision with job status updates."""

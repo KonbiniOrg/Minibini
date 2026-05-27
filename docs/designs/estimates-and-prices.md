@@ -64,7 +64,7 @@ taxability / QBO income mapping), and its own version lineage. Every
 | `name` | CharField(100), unique | display name; e.g. "CNC Router", "Hourly Labor" |
 | `description` | TextField, blank | longer admin explanation |
 | `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `flat_fee` |
-| `rate` | Decimal(10,2) | per-unit base price |
+| `rate` | Decimal(10,2) | per-unit base price; for `flat_fee` only a fallback — the real price rides on the atom (see §2.2) |
 | `unit_label` | CharField(50) | the customer-facing unit (e.g. `hour`, `minute`, `piece`, `job`); validated against the configured units list (`apps/core/units.py`) |
 | `modifiers` | JSONField | list of `{key, label, percent}` dicts |
 | `accounting_category` | FK → `AccountingCategory` (PROTECT) | required, NOT NULL |
@@ -80,16 +80,32 @@ taxability / QBO income mapping), and its own version lineage. Every
 |---|---|---|---|
 | `elapsed_time` | `RateScheme.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work) |
 | `entered_qty` | `RateScheme.ENTERED_QTY` | `Task.actual_qty` | machine-minutes, piece work; worker enters the count |
-| `flat_fee` | `RateScheme.FLAT_FEE` | implicit `Decimal(1)` | setup fees, delivery |
+| `flat_fee` | `RateScheme.FLAT_FEE` | the atom's `est_qty` (fallback `Decimal(1)`) | one-off setup fees; per-unit priced services (hole tapping, plywood coating) |
 
 `RateScheme.get_actual_qty(task)` resolves the right quantity per
 algorithm:
 
 ```python
-ELAPSED_TIME → Decimal(sum(blep.elapsed.total_seconds()) / 3600)
+ELAPSED_TIME → (Decimal(sum(blep.elapsed.total_seconds())) / 3600).quantize(0.01)
 ENTERED_QTY  → task.actual_qty or Decimal('0')
-FLAT_FEE     → Decimal('1')
+FLAT_FEE     → task.est_qty if task.est_qty is not None else Decimal('1')
 ```
+
+The `ELAPSED_TIME` result is quantized to 2 decimal places: a raw
+seconds/3600 division is non-terminating (~28 digits) and would overflow
+the line item `qty` field (`max_digits=10`) when carried into the invoice
+wizard.
+
+**flat_fee pricing.** `flat_fee` bills a **fixed unit price × estimated
+quantity**. The unit price is *not* `RateScheme.rate` — it rides on the
+atom in `active_modifiers` as a dict `{"flat_fee_price": "<decimal-str>"}`
+(see §2.3); `RateScheme.rate` is only a fallback for atoms that carry no
+price. This lets a single shared "Flat Fee" scheme serve many
+differently-priced items (setup $100, plywood coating $30, hole tapping
+$1.00) — each item is configured as a `TaskTemplate`, not its own scheme.
+`est_qty` supplies the quantity for both `PlanTask` and `Task`: a worksheet
+estimate of 50 holes carries to the Task and stays editable there. It is
+*not* worker-entered at completion like `entered_qty`'s `actual_qty`.
 
 ### 2.3 Modifiers
 
@@ -108,15 +124,32 @@ Active modifiers stack additively: messy (+10%) + doublestick (+5%)
 = +15% on `rate`. Validation that `active_modifiers` keys are a subset
 of the scheme's modifier keys is up to the form/serializer layer.
 
+**Shape note — `active_modifiers` is algorithm-dependent.** For
+`elapsed_time` / `entered_qty` atoms, `active_modifiers` (and
+`TaskTemplate.default_active_modifiers`) is a **list** of modifier keys.
+For `flat_fee` atoms it is instead a **dict** `{"flat_fee_price": "<str>"}`
+holding the per-unit price — a flat fee takes no percentage modifiers. The
+`copy_active_modifiers()` helper (`apps/jobs/models.py`) preserves this
+shape across carry-over, worksheet revision, and template generation; a
+bare `list()` would silently reduce the price dict to a list of its keys.
+
 ### 2.4 Effective rate and compute
 
 ```python
 RateScheme.effective_rate(active_modifiers)
-    → rate * (1 + sum(m.percent for m in modifiers if m.key in active_modifiers) / 100)
+    elapsed_time / entered_qty
+        → rate * (1 + sum(m.percent for m in modifiers if m.key in active_modifiers) / 100)
+    flat_fee
+        → active_modifiers['flat_fee_price'] if present, else rate (fallback)
 
 RateScheme.compute_charge(qty, active_modifiers)
     → qty * effective_rate(active_modifiers)
 ```
+
+For `flat_fee`, the price is extracted by the static helper
+`RateScheme._flat_fee_price(active_modifiers)`, which returns the
+`flat_fee_price` value as a `Decimal`, or `None` when no price is present
+(the caller then falls back to `rate`).
 
 There is no minimum-charge floor on RateScheme — that field was
 removed.
@@ -278,7 +311,7 @@ Recap of the billing fields:
 | Field | On TaskBase / Task / PlanTask | Notes |
 |---|---|---|
 | `rate_scheme` | declared on Task and PlanTask | FK to `RateScheme` (PROTECT). NOT NULL on both. |
-| `active_modifiers` | declared on Task and PlanTask | JSON list of modifier keys |
+| `active_modifiers` | declared on Task and PlanTask | JSON: list of modifier keys for time/qty schemes, or `{"flat_fee_price": str}` for `flat_fee` (see §2.3) |
 | `est_qty` | inherited from `TaskBase` | nullable on Task; `PlanTask.clean()` rejects null |
 | `est_worker_time` | inherited from `TaskBase` | DurationField for scheduling |
 | `actual_qty` | declared on Task only | Decimal nullable; worker-entered for `entered_qty` schemes |
@@ -292,14 +325,21 @@ Both models implement the uniform atom interface
 class Task:
     def compute_amount(self, active_modifiers=None):
         qty = self.rate_scheme.get_actual_qty(self)  # algorithm-aware
-        return self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        return charge.quantize(Decimal('0.01'))
 
 class PlanTask:
     def compute_amount(self, active_modifiers=None):
         if not self.rate_scheme_id or self.est_qty is None:
             return Decimal('0.00')
-        return self.rate_scheme.compute_charge(self.est_qty, self.active_modifiers)
+        charge = self.rate_scheme.compute_charge(self.est_qty, self.active_modifiers)
+        return charge.quantize(Decimal('0.01'))
 ```
+
+Both `compute_amount` results are quantized to 2 decimal places (cents):
+`compute_charge` is `qty * effective_rate`, and a modifier-adjusted rate
+can carry more than 2 decimals, so the unrounded product would surface
+extra digits on the task detail page and in worksheet totals.
 
 The `active_modifiers` parameter is accepted to match the atom
 interface but is ignored — both use `self.active_modifiers`. PlanTask
@@ -310,7 +350,7 @@ to resolve qty:
 |---|---|
 | `elapsed_time` | sum of Blep durations in hours |
 | `entered_qty` | `task.actual_qty or 0` |
-| `flat_fee` | `1` |
+| `flat_fee` | `task.est_qty` (fallback `1` when null) |
 
 `effective_rate()` on both returns
 `rate_scheme.effective_rate(self.active_modifiers)`.
@@ -332,7 +372,7 @@ visible for `entered_qty` schemes.
 |---|---|
 | `elapsed_time` | estimated billable hours (often equals `est_worker_time` but doesn't have to) |
 | `entered_qty` | estimated piece / minute count |
-| `flat_fee` | implicitly 1 if used; usually left null |
+| `flat_fee` | the billable quantity (e.g. number of holes); the charge is `flat_fee_price × est_qty` |
 
 `est_qty` is **never** modified by work activity. It stays as the
 estimate. `actual_qty` and Bleps capture what happened. This
@@ -356,7 +396,7 @@ have multiple Estimates over time (revisions); only one may be
 | `open` | `STATUS_OPEN` | Sent to customer; awaiting response |
 | `accepted` | `STATUS_ACCEPTED` | Terminal. Customer accepted; one per Job |
 | `rejected` | `STATUS_REJECTED` | Terminal |
-| `expired` | `STATUS_EXPIRED` | Terminal; auto on `expiration_date` (manual today) |
+| `expired` | `STATUS_EXPIRED` | Terminal; auto-set by the `mark_estimates_expired` scheduled command once `expiration_date` has passed (also settable manually) |
 | `superseded` | `STATUS_SUPERSEDED` | Terminal; replaced by a new revision |
 
 Valid transitions (`Estimate.clean()`):
@@ -382,6 +422,31 @@ accepted, rejected, expired, superseded → (terminal)
   default 30 days) if unset.
 - On entry to a terminal: sets `closed_date = now()` if unset.
 - `created_date`, `sent_date`, `closed_date` are immutable once set.
+
+`expiration_date` is **frozen** at the moment of send — it's a stamped
+datetime, not derived live from `est_expire_days`. Changing the
+Configuration key later does **not** retroactively re-date already-open
+estimates; it only affects estimates sent after the change.
+
+### 5.2a Automatic expiry — `mark_estimates_expired`
+
+The `mark_estimates_expired` scheduled command
+(`apps/estimates/management/commands/mark_estimates_expired.py`) is the
+mechanism that actually flips estimates to `expired`. Each run:
+
+1. Selects every `open` estimate whose (non-null) `expiration_date` is at
+   or before `now()`.
+2. For each, transitions it to `expired` via
+   `EstimateService.update_status(pk, STATUS_EXPIRED)` (under
+   `select_for_update`, re-checking it's still `open`), and writes a
+   `system`-attributed `action` HistoryEntry ("Auto-expired …").
+3. Counts `open` estimates with a **NULL** `expiration_date` separately and
+   skips them (`skipped_no_expiry` in the run summary) — they never auto-expire.
+
+Because the transition is `open → expired`, it fires the §9.3 invariant:
+the parent Job is driven to `rejected`. The command is part of the
+scheduled-process machinery (`ScheduledProcessCommand` + cron) documented
+in `architecture-and-conventions.md` §9; it runs daily.
 
 ### 5.3 Versioning (revision)
 
@@ -469,8 +534,14 @@ release claims on the plan side.
 | N | Wizard-grouped from multiple atoms |
 
 A single-atom line item copies the atom's description, units, qty,
-and price across; multi-atom line items use blank description,
-`units = 'none'`, `qty = 1`, `price = sum(compute_amount)`.
+and price across. Multi-atom line items: when every atom is a task
+(`PlanTask` / `Task`) sharing one `RateScheme` and identical
+`active_modifiers`, the line is **summarized** — `units` from the
+scheme, `qty` = summed quantities (`est_qty` on the estimate side,
+actuals on the invoice side), `price` = the common effective rate.
+Any other multi-atom bundle (a material atom present, mixed schemes,
+or mixed modifiers) falls back to blank description, `units = 'none'`,
+`qty = 1`, `price = sum(compute_amount)`.
 
 ---
 
@@ -523,19 +594,24 @@ atoms. See §14.
 ## 8. EstimateWizardService
 
 `EstimateWizardService` (`apps/estimates/services.py`) is the
-orchestration layer for the wizard. It mirrors `InvoiceWizardService`
-(invoicing doc) — same source-pool / line-items-from-atoms /
-add-atoms / remove-atoms operations.
+orchestration layer for the wizard. The line-items-from-atoms logic
+(`add_atoms_to_new_line_item`, `add_atoms_to_line_item`,
+`remove_atoms_from_line_item`, the in-sync / bundle-summary helpers) is
+shared with `InvoiceWizardService` via `BaseWizardService`
+(`apps/core/wizard.py`); `EstimateWizardService` subclasses it, supplies
+a small config block plus model hooks, and keeps the estimate-specific
+methods (`open_for_worksheet`, `get_source_pool`,
+`send_all_atoms_to_estimate`).
 
 ### 8.1 Methods
 
 | Method | Purpose |
 |---|---|
 | `open_for_worksheet(worksheet)` | Returns the worksheet's draft Estimate, creating one if none exists. Refuses if the worksheet's estimate is non-draft (the `final` worksheet should have prevented this). |
-| `get_source_pool(worksheet)` | Walks PlanTasks and PlanMaterials on the worksheet, returns a flat pool with claim state per atom: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). |
-| `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Computes price from `sum(atom.compute_amount())`. Single-atom case copies atom's description/units/qty/price; multi-atom case uses blanks. |
-| `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), recomputes price after; otherwise preserves the override. |
-| `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Recompute-if-in-sync rule applies. Deletes the line item if no sources remain. |
+| `get_source_pool(worksheet)` | Walks PlanTasks and PlanMaterials on the worksheet, returns a flat pool of atoms. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), and claim state: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). |
+| `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). |
+| `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), it is re-derived: a uniform same-scheme task bundle is re-summarized (units/qty/price), otherwise qty is kept and the per-unit price recomputed. An overridden line item is left untouched. |
+| `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Same re-derive-if-in-sync rule as `add_atoms_to_line_item`. Deletes the line item if no sources remain. |
 | `send_all_atoms_to_estimate(worksheet)` | Bulk 1:1 conversion of every unclaimed atom on the worksheet to its own line item. Not transactionally wrapped — partial success is acceptable; caller can re-run. |
 
 Conflict handling: `add_atoms_to_*` raise `EstimateClaimConflict` when
@@ -579,7 +655,8 @@ Permissions: read is `IsAuthenticated`; write actions require
 | Component | Path | Role |
 |---|---|---|
 | `EstimateWizardPage.svelte` | `frontend/src/routes/estimates/` | Page shell. Two-column layout (source pool left, line items right). Loads estimate + line-items + source-pool on mount; `reloadAfterAction` refreshes line items and reconciles atom states locally |
-| `WizardSourcePool.svelte` | `frontend/src/components/estimates/` | Renders the flat atom list with checkboxes; binds `selectedAtoms` to the page |
+| `WizardSourcePool.svelte` | `frontend/src/components/estimates/` | Renders the flat atom list; binds `selectedAtoms` to the page. Each atom is a `WizardAtomRow`. The invoice wizard has its own task-grouped `WizardSourcePool.svelte` that reuses the same row. |
+| `WizardAtomRow.svelte` | `frontend/src/components/wizards/` | One source-pool atom row, shared by both wizards: checkbox + `description — qty units × $rate = $total` + claim state |
 | `WizardLineItemCard.svelte` | `frontend/src/components/wizards/` | One line-item card with its source rows; surfaces "Add Here" and per-source remove |
 | `WizardActions.svelte` | `frontend/src/components/wizards/` | Bottom action bar (Discard draft, Return to estimate detail) |
 | `CatalogPicker.svelte` | `frontend/src/components/` | Unified search over `TaskTemplate` + `PriceListItem` + Manual; shared by worksheet/job atom-add and direct-estimate line-item add |
@@ -651,9 +728,23 @@ appropriate filter and skips.
 ### 9.3 Job status side effects
 
 Separate from carry-over, `estimate_status_changed_for_job` walks the
-Job through `submitted → approved` when its estimate is accepted, via
-the receiver in `apps/estimates/signals.py`. Pointer:
-`docs/designs/jobs-tasks-and-worksheets.md` §12 for the full
+Job's status when its estimate moves, via the receiver in
+`apps/estimates/signals.py`. Two symmetric invariants:
+
+- **Estimate accepted ⇒ Job approved.** An estimate reaching `accepted`
+  drives its Job to `approved` (after the `submitted` step on send).
+- **Open estimate dies ⇒ Job rejected.** An **open** estimate
+  transitioning to **expired** or **rejected** (a customer decline, or the
+  `mark_estimates_expired` sweep) drives its Job to `rejected`, with a
+  `system`-attributed `action` HistoryEntry ("Estimate … expired" /
+  "Estimate … declined"). `rejected` is terminal. This closed a prior gap
+  where declining an open estimate left the Job stranded at `submitted`.
+
+`draft → rejected` on an estimate is intentionally **not** handled — a
+never-sent draft dying does not reject the Job (out of scope). Only the
+`open → {expired, rejected}` edge fires the rejection.
+
+Pointer: `docs/designs/jobs-tasks-and-worksheets.md` §13 for the full
 receiver-by-receiver behavior.
 
 ---
@@ -787,12 +878,12 @@ The Worksheet detail page (`WorksheetDetailPage.svelte`) has:
 
 Three signals, all defined in `apps/estimates/signals.py` and fired
 by `Estimate.save()`. Brief recap; the receiver-by-receiver
-behavior lives in `docs/designs/jobs-tasks-and-worksheets.md` §12.
+behavior lives in `docs/designs/jobs-tasks-and-worksheets.md` §13.
 
 | Signal | Fires when | Receiver | Effect |
 |---|---|---|---|
 | `estimate_status_changed_for_worksheet` | worksheet-status mapping changes | `update_estworksheet_status` | bulk-updates linked EstWorksheets to draft/final/superseded |
-| `estimate_status_changed_for_job` | draft→open or any→accepted | `update_job_status` | walks the Job through submitted/approved with HistoryEntry rows |
+| `estimate_status_changed_for_job` | draft→open, any→accepted, or open→{rejected, expired} | `update_job_status` | walks the Job through submitted/approved/rejected with HistoryEntry rows (see §9.3) |
 | `estimate_accepted` | any→accepted | `trigger_atom_carry_over` | calls `AtomCarryOverService.carry_over_for_estimate(estimate)` |
 
 The `estimate_accepted` signal is the one this doc owns. The other

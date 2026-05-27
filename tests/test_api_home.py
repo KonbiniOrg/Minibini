@@ -28,6 +28,7 @@ class CurrentBlepEndpointTest(FixtureTestCase):
         )
         self.task = Task.objects.create(
             name='Task A', job=self.job, assignee=self.user,
+            est_worker_time=timedelta(hours=1),
             status=Task.STATUS_IN_PROGRESS, rate_scheme_id=1,
         )
 
@@ -78,6 +79,7 @@ class CurrentBlepEndpointTest(FixtureTestCase):
         )
         newer_task = Task.objects.create(
             name='Task B', job=self.job, assignee=self.user,
+            est_worker_time=timedelta(hours=1),
             status=Task.STATUS_IN_PROGRESS, rate_scheme_id=1,
         )
         Blep.objects.create(
@@ -115,6 +117,7 @@ class HomeEndpointTest(FixtureTestCase):
         kwargs = {'name': name, 'status': status, 'job': job or self.job, 'rate_scheme_id': 1}
         if assignee is not None:
             kwargs['assignee'] = assignee
+            kwargs['est_worker_time'] = timedelta(hours=1)
         if worker_queue is not None:
             kwargs['worker_queue'] = worker_queue
         return Task.objects.create(**kwargs)

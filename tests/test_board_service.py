@@ -296,6 +296,19 @@ class BoardDataAssemblyTest(FixtureTestCase):
         pipeline_statuses = [j['status'] for j in data['pipeline']]
         self.assertIn('approved', pipeline_statuses)
 
+    def test_closed_includes_recently_rejected_jobs(self):
+        """Bug 3: a job rejected within the retention window shows in Closed."""
+        from apps.jobs.services import BoardService
+        job = Job.objects.create(
+            job_number='JOB-REJ-001', name='Rejected Job',
+            status='draft', contact=self.contact,
+        )
+        job.status = 'rejected'
+        job.save()
+        data = BoardService.get_board_data()
+        names = [j['name'] for j in data['closed']]
+        self.assertIn('Rejected Job', names)
+
     def test_closed_excludes_old_jobs(self):
         from apps.jobs.services import BoardService
         old_job = Job.objects.create(
@@ -325,6 +338,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         Task.objects.create(
             name='Assigned task', job=job,
             assignee=self.worker, worker_queue=1, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
         )
         Task.objects.create(name='Unassigned task', job=job, rate_scheme_id=1)
         data = BoardService.get_board_data()
@@ -346,6 +360,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         Task.objects.create(
             name='Assigned task', job=job,
             assignee=self.worker, worker_queue=1, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
         )
         data = BoardService.get_board_data()
         available_ids = [w['id'] for w in data['approved']['available_workers']]

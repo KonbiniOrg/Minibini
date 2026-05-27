@@ -8,6 +8,8 @@
    *   onSubmit: (decisions) => void   // decisions keyed by line_item_id
    *   onCancel: () => void
    */
+  import { modalKeys } from '../../lib/modalKeys.js';
+
   const { items = [], onSubmit, onCancel } = $props();
   let decisions = $state({});
 
@@ -21,11 +23,11 @@
   }
 </script>
 
-<div class="overlay">
+<div class="overlay" use:modalKeys={{ onSave: submit, onCancel }}>
   <div class="dialog">
     <h3>Linked Materials — still needed?</h3>
     <p>Each of these Materials is currently linked to a PO line you're about to sever. Decide whether the plan on the Job should stay.</p>
-    <table border="1">
+    <table class="data-table">
       <thead>
         <tr><th>Job</th><th>Material</th><th>Qty</th><th>Decision</th></tr>
       </thead>

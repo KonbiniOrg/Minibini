@@ -45,7 +45,7 @@ class AtomCarryOverService:
 
     @staticmethod
     def _carry_over_plan_tasks(worksheet, job):
-        from apps.jobs.models import PlanTask, Task
+        from apps.jobs.models import PlanTask, Task, copy_active_modifiers
         count = 0
         for pt in PlanTask.objects.filter(
             est_worksheet=worksheet,
@@ -58,7 +58,7 @@ class AtomCarryOverService:
                 description=pt.description,
                 source_plan_task=pt,
                 rate_scheme=pt.rate_scheme,
-                active_modifiers=list(pt.active_modifiers or []),
+                active_modifiers=copy_active_modifiers(pt.active_modifiers),
                 est_qty=pt.est_qty,
                 est_worker_time=pt.est_worker_time,
                 actual_qty=None,
@@ -95,7 +95,7 @@ class AtomCarryOverService:
 
     @staticmethod
     def _create_task_from_line_item(line_item, job):
-        from apps.jobs.models import Task
+        from apps.jobs.models import Task, copy_active_modifiers
         template = line_item.source_template
         # Idempotency: skip if a Task on the same job already came from this template
         if Task.objects.filter(job=job, source_template=template).exists():
@@ -106,7 +106,7 @@ class AtomCarryOverService:
             description=template.description or '',
             source_template=template,
             rate_scheme=template.rate_scheme,
-            active_modifiers=list(template.default_active_modifiers or []),
+            active_modifiers=copy_active_modifiers(template.default_active_modifiers),
             est_qty=line_item.qty,
             est_worker_time=None,
             actual_qty=None,

@@ -41,7 +41,7 @@
   {#if bleps.length === 0}
     <p>No work sessions recorded.</p>
   {:else}
-    <table border="1">
+    <table class="data-table">
       <thead>
         <tr>
           <th>Worker</th><th>Start</th><th>End</th><th>Elapsed</th><th></th>

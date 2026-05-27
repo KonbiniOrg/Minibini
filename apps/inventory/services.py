@@ -321,8 +321,9 @@ class InventoryService:
     def release_earmarks_for_job(job):
         """Delete all remaining earmarks for a job.
 
-        Called when a Job enters work_complete — any un-consumed earmark
-        balance is released back to general inventory availability.
+        Called when a Job enters a terminal/closed state (work_complete,
+        cancelled, or rejected) — any un-consumed earmark balance is released
+        back to general inventory availability.
         """
         Earmark.objects.filter(job=job).delete()
 
@@ -412,6 +413,32 @@ class MaterialService:
                 pli.refresh_from_db()
                 InventoryService._mutate_earmark(pli, material.job, -qty)
             material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+            material.save(update_fields=['consumption_state'])
+        return material
+
+    @staticmethod
+    def unconsume(material):
+        """Inverse of consume: return a CONSUMED material to PENDING and restore
+        inventory (qty_on_hand, qty_sold, earmark). Used by the blep-cancel undo
+        path when an oops-Start that consumed materials is reverted. Keeps a
+        later re-Start safe, since consume() requires PENDING state."""
+        from django.db import transaction
+        from django.core.exceptions import ValidationError
+        if material.consumption_state != Material.CONSUMPTION_STATE_CONSUMED:
+            raise ValidationError(
+                f'unconsume requires consumed state; got {material.consumption_state}'
+            )
+        qty = material.quantity
+        with transaction.atomic():
+            pli = material.price_list_item
+            if pli and pli.is_inventoried and qty > Decimal('0.00'):
+                from django.db.models import F
+                pli.qty_on_hand = F('qty_on_hand') + qty
+                pli.qty_sold = F('qty_sold') - qty
+                pli.save(update_fields=['qty_on_hand', 'qty_sold'])
+                pli.refresh_from_db()
+                InventoryService._mutate_earmark(pli, material.job, qty)
+            material.consumption_state = Material.CONSUMPTION_STATE_PENDING
             material.save(update_fields=['consumption_state'])
         return material
 

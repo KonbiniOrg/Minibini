@@ -1,6 +1,8 @@
 <script>
+  import { untrack } from 'svelte';
   import { api } from '../../lib/api.js';
   import { user } from '../../stores/auth.js';
+  import { blepActivityVersion } from '../../stores/blepActivity.js';
   import CollapsedTab from '../../components/board/CollapsedTab.svelte';
   import PipelineColumn from '../../components/board/PipelineColumn.svelte';
   import ApprovedArea from '../../components/board/ApprovedArea.svelte';
@@ -61,6 +63,16 @@
 
   $effect(() => {
     loadColumn(activeCol);
+  });
+
+  // Reload the active column when a blep changes (live/paused markers update).
+  let lastBlepVersion = $state(0);
+  $effect(() => {
+    const v = $blepActivityVersion;
+    if (v !== lastBlepVersion) {
+      lastBlepVersion = v;
+      untrack(() => loadColumn(activeCol));
+    }
   });
 </script>
 

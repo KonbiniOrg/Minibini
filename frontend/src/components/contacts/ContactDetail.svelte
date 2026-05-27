@@ -1,6 +1,7 @@
 <script>
   import FullOnly from '../FullOnly.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
+  import TagEditor from '../TagEditor.svelte';
   import { viewMode } from '../../stores/viewMode.js';
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
   const {
@@ -99,7 +100,7 @@
       <dd>{contact.business.business_phone}</dd>
 
       <dt>Address</dt>
-      <dd>{contact.business.business_address}</dd>
+      <dd class="preserve-breaks">{contact.business.business_address}</dd>
 
       <dt>Website</dt>
       <dd>{contact.business.website || ''}</dd>
@@ -122,9 +123,12 @@
   </FullOnly>
 {/if}
 
+<h3>Tags</h3>
+<TagEditor endpoint="/api/contacts/{contact.contact_id}" initialTags={contact.tags || []} />
+
 <h3>Jobs</h3>
 {#if visibleJobs.length > 0}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr><th>Job #</th><th>Name</th><th>Status</th></tr>
     </thead>
@@ -144,7 +148,7 @@
 
 <h3>Purchase Orders</h3>
 {#if visiblePOs.length > 0}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr><th>PO #</th><th>Status</th></tr>
     </thead>
@@ -161,10 +165,10 @@
     <p>
       {pageRange(purchaseOrders)}
       {#if purchaseOrders.previous}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onPOPageChange(pageFromUrl(purchaseOrders.previous)); }}>Previous</a>
+        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.previous))}>Previous</button>
       {/if}
       {#if purchaseOrders.next}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onPOPageChange(pageFromUrl(purchaseOrders.next)); }}>Next</a>
+        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.next))}>Next</button>
       {/if}
     </p>
   {/if}
@@ -174,7 +178,7 @@
 
 <h3>Bills</h3>
 {#if visibleBills.length > 0}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr><th>Vendor Invoice</th><th>Status</th></tr>
     </thead>
@@ -191,10 +195,10 @@
     <p>
       {pageRange(bills)}
       {#if bills.previous}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onBillPageChange(pageFromUrl(bills.previous)); }}>Previous</a>
+        | <button type="button" onclick={() => onBillPageChange(pageFromUrl(bills.previous))}>Previous</button>
       {/if}
       {#if bills.next}
-        | <a href="#" onclick={(e) => { e.preventDefault(); onBillPageChange(pageFromUrl(bills.next)); }}>Next</a>
+        | <button type="button" onclick={() => onBillPageChange(pageFromUrl(bills.next))}>Next</button>
       {/if}
     </p>
   {/if}
@@ -202,7 +206,6 @@
   <p>No {$viewMode === 'lite' ? 'open ' : ''}bills.</p>
 {/if}
 
-<h3>History</h3>
 <HistoryPanel {history} {onAddNote} />
 
 <p>

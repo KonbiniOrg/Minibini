@@ -114,6 +114,38 @@
   function formatDate(val) {
     return val ? val.slice(0, 10) : '—';
   }
+
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function highlight(text, ...terms) {
+    let result = escapeHtml(text);
+    for (const term of terms.filter(Boolean)) {
+      const safe = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      result = result.replace(new RegExp(safe, 'gi'), m => `<mark>${m}</mark>`);
+    }
+    return result;
+  }
+
+  function trunc(text, max = 200) {
+    if (!text) return text;
+    const s = String(text);
+    return s.length > max ? s.slice(0, max) + '…' : s;
+  }
+
+  function hl(text) {
+    return text ? highlight(text, query, withinQuery) : '—';
+  }
+
+  function hlt(text) {
+    return hl(trunc(text));
+  }
 </script>
 
 <h2>Search{query ? `: "${query}"` : ''}</h2>
@@ -140,22 +172,22 @@
 
         {#if results.results.jobs?.length}
           <h3>Jobs</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Job #</th><th>Name</th><th>Contact</th><th>Status</th><th>Created</th><th>Started</th><th>Description</th><th>Customer PO</th><th>Matching Tasks</th></tr>
             </thead>
             <tbody>
               {#each results.results.jobs as group}
                 <tr>
-                  <td><a href="#/jobs/{group.job.job_id}">{group.job.job_number}</a></td>
-                  <td>{group.job.name || '—'}</td>
-                  <td>{group.job.contact_name || '—'}</td>
+                  <td><a href="#/jobs/{group.job.job_id}">{@html hl(group.job.job_number)}</a></td>
+                  <td>{@html hl(group.job.name)}</td>
+                  <td>{@html hl(group.job.contact_name)}</td>
                   <td>{group.job.status}</td>
                   <td>{formatDate(group.job.created_date)}</td>
                   <td>{formatDate(group.job.start_date)}</td>
-                  <td>{group.job.description || '—'}</td>
-                  <td>{group.job.customer_po_number || '—'}</td>
-                  <td>{group.tasks.map(t => t.name).join(', ') || '—'}</td>
+                  <td>{@html hlt(group.job.description)}</td>
+                  <td>{@html hl(group.job.customer_po_number)}</td>
+                  <td>{@html hlt(group.tasks.map(t => t.name).join(', ') || null)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -164,19 +196,19 @@
 
         {#if results.results.contacts?.length}
           <h3>Contacts</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Work</th><th>Home</th><th>City</th></tr>
             </thead>
             <tbody>
               {#each results.results.contacts as c}
                 <tr>
-                  <td><a href="#/contacts/{c.contact_id}">{c.name}</a></td>
-                  <td>{c.email || '—'}</td>
-                  <td>{c.mobile_number || '—'}</td>
-                  <td>{c.work_number || '—'}</td>
-                  <td>{c.home_number || '—'}</td>
-                  <td>{c.city || '—'}</td>
+                  <td><a href="#/contacts/{c.contact_id}">{@html hl(c.name)}</a></td>
+                  <td>{@html hl(c.email)}</td>
+                  <td>{@html hl(c.mobile_number)}</td>
+                  <td>{@html hl(c.work_number)}</td>
+                  <td>{@html hl(c.home_number)}</td>
+                  <td>{@html hl(c.city)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -185,17 +217,17 @@
 
         {#if results.results.businesses?.length}
           <h3>Businesses</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Name</th><th>Code</th><th>Address</th><th>Phone</th></tr>
             </thead>
             <tbody>
               {#each results.results.businesses as b}
                 <tr>
-                  <td><a href="#/businesses/{b.business_id}">{b.business_name}</a></td>
-                  <td>{b.our_reference_code || '—'}</td>
-                  <td>{b.business_address || '—'}</td>
-                  <td>{b.business_phone || '—'}</td>
+                  <td><a href="#/businesses/{b.business_id}">{@html hl(b.business_name)}</a></td>
+                  <td>{@html hl(b.our_reference_code)}</td>
+                  <td>{@html hl(b.business_address)}</td>
+                  <td>{@html hl(b.business_phone)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -204,18 +236,18 @@
 
         {#if results.results.invoices?.length}
           <h3>Invoices</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Invoice #</th><th>Job #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
             <tbody>
               {#each results.results.invoices as inv}
                 <tr>
-                  <td><a href="/invoicing/{inv.invoice_id}/">{inv.invoice_number}</a></td>
-                  <td>{inv.job_number || '—'}</td>
+                  <td><a href="#/invoices/{inv.invoice_id}">{@html hl(inv.invoice_number)}</a></td>
+                  <td>{@html hl(inv.job_number)}</td>
                   <td>{inv.status}</td>
                   <td>{formatDate(inv.created_date)}</td>
-                  <td>{inv.matching_descriptions?.join(', ') || '—'}</td>
+                  <td>{@html hlt(inv.matching_descriptions?.join(', ') || null)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -224,18 +256,18 @@
 
         {#if results.results.estimates?.length}
           <h3>Estimates</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Estimate #</th><th>Version</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
             <tbody>
               {#each results.results.estimates as est}
                 <tr>
-                  <td><a href="/estimates/{est.estimate_id}/">{est.estimate_number}</a></td>
+                  <td><a href="#/estimates/{est.estimate_id}">{@html hl(est.estimate_number)}</a></td>
                   <td>{est.version}</td>
                   <td>{est.status}</td>
                   <td>{formatDate(est.created_date)}</td>
-                  <td>{est.matching_descriptions?.join(', ') || '—'}</td>
+                  <td>{@html hlt(est.matching_descriptions?.join(', ') || null)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -244,7 +276,7 @@
 
         {#if results.results.est_worksheets?.length}
           <h3>Worksheets</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Job #</th><th>Estimate #</th></tr>
             </thead>
@@ -261,19 +293,20 @@
 
         {#if results.results.bills?.length}
           <h3>Bills</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Vendor Invoice #</th><th>Contact</th><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
             <tbody>
               {#each results.results.bills as bill}
                 <tr>
-                  <td><a href="/purchasing/bills/{bill.bill_id}/">{bill.vendor_invoice_number || `Bill ${bill.bill_id}`}</a></td>
-                  <td>{bill.contact_name || '—'}</td>
-                  <td>{bill.po_number || '—'}</td>
+                  <td>{bill.bill_number}</td>
+                  <td>{@html hl(bill.vendor_invoice_number)}</td>
+                  <td>{@html hl(bill.contact_name)}</td>
+                  <td>{@html hl(bill.po_number)}</td>
                   <td>{bill.status}</td>
                   <td>{formatDate(bill.created_date)}</td>
-                  <td>{bill.matching_descriptions?.join(', ') || '—'}</td>
+                  <td>{@html hlt(bill.matching_descriptions?.join(', ') || null)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -282,17 +315,17 @@
 
         {#if results.results.purchase_orders?.length}
           <h3>Purchase Orders</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>PO #</th><th>Status</th><th>Created</th><th>Matching line items</th></tr>
             </thead>
             <tbody>
               {#each results.results.purchase_orders as po}
                 <tr>
-                  <td><a href="/purchasing/{po.po_id}/">{po.po_number}</a></td>
+                  <td><a href="#/purchase-orders/{po.po_id}">{@html hl(po.po_number)}</a></td>
                   <td>{po.status}</td>
                   <td>{formatDate(po.created_date)}</td>
-                  <td>{po.matching_descriptions?.join(', ') || '—'}</td>
+                  <td>{@html hlt(po.matching_descriptions?.join(', ') || null)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -301,16 +334,16 @@
 
         {#if results.results.price_list_items?.length}
           <h3>Price List Items</h3>
-          <table border="1">
+          <table class="data-table">
             <thead>
               <tr><th>Code</th><th>Description</th><th>Units</th><th>Selling Price</th></tr>
             </thead>
             <tbody>
               {#each results.results.price_list_items as item}
                 <tr>
-                  <td>{item.code}</td>
-                  <td>{item.description}</td>
-                  <td>{item.units || '—'}</td>
+                  <td>{@html hl(item.code)}</td>
+                  <td>{@html hlt(item.description)}</td>
+                  <td>{@html hl(item.units)}</td>
                   <td>{item.selling_price}</td>
                 </tr>
               {/each}
@@ -456,5 +489,11 @@
     padding: 0;
     cursor: pointer;
     text-align: left;
+  }
+
+  :global(mark) {
+    background-color: #ffe066;
+    padding: 0 1px;
+    border-radius: 2px;
   }
 </style>

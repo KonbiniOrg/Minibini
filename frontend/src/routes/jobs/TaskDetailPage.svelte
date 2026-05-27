@@ -3,16 +3,19 @@
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import { currentBlep } from '../../stores/currentBlep.js';
+  import { blepActivityVersion } from '../../stores/blepActivity.js';
+  import TaskActivityIndicator from '../../components/tasks/TaskActivityIndicator.svelte';
   import TaskActions from '../../components/tasks/TaskActions.svelte';
   import StartWorkConflictModal from '../../components/tasks/StartWorkConflictModal.svelte';
   import BlepList from '../../components/tasks/BlepList.svelte';
   import BlepEditModal from '../../components/tasks/BlepEditModal.svelte';
   import TaskTree from '../../components/TaskTree.svelte';
+  import LinkifiedText from '../../components/LinkifiedText.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
-  import { formatQtyUnits } from '../../lib/format.js';
+  import { formatQtyUnits, formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
@@ -194,6 +197,17 @@
     }
   });
 
+  // Refetch when any blep changes anywhere (e.g. Stop/Cancel from the global
+  // band), so the finalization shows here without a full page reload.
+  let lastBlepVersion = $state(0);
+  $effect(() => {
+    const v = $blepActivityVersion;
+    if (v !== lastBlepVersion) {
+      lastBlepVersion = v;
+      if (params.taskId) { loadTask(); loadBleps(); }
+    }
+  });
+
   // Material modal handlers
   function openAddMaterial() {
     matModalMaterial = null;
@@ -319,12 +333,13 @@
     onCancel={handleCancel}
   />
 
-  <table border="1">
+  <table class="data-table">
     <tbody>
-      <tr><td>Status</td><td>{task.status}{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
-      <tr><td>Description</td><td>{task.description || '-'}</td></tr>
+      <tr><td>Status</td><td><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
+      <tr><td>Description</td><td class="preserve-breaks"><LinkifiedText text={task.description || '-'} /></td></tr>
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
+      <tr><td>Est. worker time</td><td>{formatDuration(task.est_worker_time)}</td></tr>
       <tr><td>Rate</td><td>{task.effective_rate ? `$${task.effective_rate}` : '-'}</td></tr>
     </tbody>
   </table>
@@ -332,10 +347,10 @@
   <!-- Charge section -->
   {#if task && task.scheme_name}
     <h3>Charge</h3>
-    <table border="1"><tbody>
+    <table class="data-table"><tbody>
       <tr><td><strong>Scheme</strong></td><td>{task.scheme_name}</td></tr>
       <tr><td><strong>Rate</strong></td><td>${task.effective_rate}/{task.scheme_unit_label}</td></tr>
-      {#if task.active_modifiers && task.active_modifiers.length > 0}
+      {#if Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0}
         <tr><td><strong>Modifiers</strong></td>
           <td>{task.active_modifiers.join(', ')}</td></tr>
       {/if}
@@ -352,6 +367,12 @@
             {#if actualQtySaved}<span class="saved-flash">saved</span>{/if}
             {#if actualQtyError}<span class="field-error">{actualQtyError}</span>{/if}
           </td></tr>
+      {:else if task.scheme_algorithm === 'elapsed_time'}
+        <tr><td><strong>Actual {task.scheme_unit_label || 'hour'}s</strong></td>
+          <td>{Number(task.actual_hours) || 0}</td></tr>
+      {:else if task.scheme_algorithm === 'flat_fee'}
+        <tr><td><strong>Quantity</strong></td>
+          <td>{Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</td></tr>
       {/if}
       {#if task.computed_charge}
         <tr><td><strong>Charge</strong></td><td>${task.computed_charge}</td></tr>
@@ -362,7 +383,7 @@
   <!-- Materials section -->
   <h3>Materials</h3>
   {#if materials.length > 0}
-    <table border="1" class="materials-table">
+    <table class="materials-table">
       <thead>
         <tr>
           <th>Description</th>
@@ -376,7 +397,7 @@
       <tbody>
         {#each materials as mat}
           <tr>
-            <td>{mat.description || '(no description)'}</td>
+            <td class="preserve-breaks">{mat.description || '(no description)'}</td>
             <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
             <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
             <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>

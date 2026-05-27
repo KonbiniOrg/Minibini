@@ -151,10 +151,27 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
-        from apps.jobs.services import TaskLifecycleService
+        from decimal import Decimal, InvalidOperation
+        from apps.jobs.services import (
+            TaskLifecycleService, TaskActualQtyRequired, TaskTimeRequired,
+        )
         task = self._get_task_or_404(pk)
+        raw_qty = request.data.get('actual_qty') if request.data else None
+        actual_qty = None
+        if raw_qty is not None and raw_qty != '':
+            try:
+                actual_qty = Decimal(str(raw_qty))
+            except (InvalidOperation, ValueError):
+                return Response(
+                    {'detail': 'Invalid quantity.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         try:
-            TaskLifecycleService.complete_task(task.pk)
+            TaskLifecycleService.complete_task(task.pk, actual_qty=actual_qty)
+        except TaskActualQtyRequired as e:
+            return Response({'needs_actual_qty': True, 'unit_label': e.unit_label})
+        except TaskTimeRequired:
+            return Response({'needs_time_logged': True})
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': Task.STATUS_COMPLETE})
@@ -195,14 +212,34 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': Task.STATUS_CANCELLED})
 
+    def _resolve_on_behalf_of(self, request):
+        """Return (user_or_None, error_response_or_None) for the optional
+        `on_behalf_of` user id in the request body."""
+        obo_id = request.data.get('on_behalf_of')
+        if not obo_id:
+            return None, None
+        from django.contrib.auth import get_user_model
+        target = get_user_model().objects.filter(pk=obo_id).first()
+        if target is None:
+            return None, Response(
+                {'detail': 'Unknown user.'}, status=status.HTTP_400_BAD_REQUEST,
+            )
+        return target, None
+
     @action(detail=True, methods=['post'], url_path='start-work')
     def start_work(self, request, pk=None):
-        from apps.jobs.services import TaskLifecycleService
+        from apps.jobs.services import TaskLifecycleService, BlepPermissionError
         task = self._get_task_or_404(pk)
+        on_behalf_of, err = self._resolve_on_behalf_of(request)
+        if err:
+            return err
         try:
             result = TaskLifecycleService.start_work(
-                task.pk, request.user, action=request.data.get('action')
+                task.pk, request.user, action=request.data.get('action'),
+                on_behalf_of=on_behalf_of,
             )
+        except BlepPermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         if isinstance(result, dict) and 'conflict' in result:
@@ -211,10 +248,29 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
 
     @action(detail=True, methods=['post'], url_path='stop-work')
     def stop_work(self, request, pk=None):
+        from apps.jobs.services import TaskLifecycleService, BlepPermissionError
+        task = self._get_task_or_404(pk)
+        on_behalf_of, err = self._resolve_on_behalf_of(request)
+        if err:
+            return err
+        try:
+            TaskLifecycleService.stop_work(
+                task.pk, request.user, on_behalf_of=on_behalf_of,
+            )
+        except BlepPermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValidationError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'status': 'ok'})
+
+    @action(detail=True, methods=['post'], url_path='cancel-work')
+    def cancel_work(self, request, pk=None):
+        """Cancel (delete + undo) the requesting user's under-the-minimum blep
+        on this task. Own-blep only — no on_behalf_of."""
         from apps.jobs.services import TaskLifecycleService
         task = self._get_task_or_404(pk)
         try:
-            TaskLifecycleService.stop_work(task.pk, request.user)
+            TaskLifecycleService.cancel_work(task.pk, request.user)
         except ValidationError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'ok'})

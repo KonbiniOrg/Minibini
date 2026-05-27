@@ -47,7 +47,7 @@
   }
 </script>
 
-<table border="1" class="ws-task-table">
+<table class="ws-task-table">
   <thead>
     <tr>
       {#if !readonly}<th>Move target</th>{/if}

@@ -62,7 +62,7 @@
             <p>
               <strong>{entry.data.username || 'Unknown'}</strong>
               ({new Date(entry.data.timestamp).toLocaleString()}):<br>
-              {entry.data.text}
+              <span class="preserve-breaks">{entry.data.text}</span>
               {#if entry.data.changes}
                 {@const fields = Object.entries(entry.data.changes).filter(([k]) => !k.startsWith('_'))}
                 {#if fields.length > 0}

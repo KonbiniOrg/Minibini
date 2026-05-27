@@ -142,21 +142,23 @@
     {:else}
       <div style="border: 1px solid #999; padding: 6px; max-height: 180px; overflow-y: auto">
         {#each materials as m (m.id)}
-          <div
-            style="padding: 4px; border-bottom: 1px solid #ddd; cursor: pointer; background: {materialId === m.id ? '#e8f0fe' : 'transparent'}"
+          <button
+            type="button"
+            style="display: block; width: 100%; text-align: left; border: none; border-bottom: 1px solid #ddd; padding: 4px; font: inherit; cursor: pointer; background: {materialId === m.id ? '#e8f0fe' : 'transparent'}"
             onclick={() => pickMaterial(m)}
           >
             <strong>{m.description}</strong> — Task: <em>{m.task_name}</em>
             {#if m.quantity} — qty {m.quantity}{/if}
-          </div>
+          </button>
         {/each}
         {#if !newMaterial}
-          <div
-            style="padding: 4px; color: #1a66ff; cursor: pointer"
+          <button
+            type="button"
+            style="display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 4px; font: inherit; color: #1a66ff; cursor: pointer"
             onclick={addNewMaterial}
           >
             + Add new material
-          </div>
+          </button>
         {/if}
       </div>
     {/if}

@@ -221,7 +221,7 @@
     {/if}
   </div>
 
-  <table border="1" class:superseded={isSuperseded}>
+  <table class="data-table" class:superseded={isSuperseded}>
     <tbody>
       <tr><th>Field</th><th>Value</th></tr>
       <tr><td>Estimate Number</td><td>{estimate.estimate_number}</td></tr>

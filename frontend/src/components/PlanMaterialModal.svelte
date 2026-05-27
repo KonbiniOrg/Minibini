@@ -2,6 +2,7 @@
   import { api } from '../lib/api.js';
   import PriceListItemPicker from './PriceListItemPicker.svelte';
   import UnitsSelect from './UnitsSelect.svelte';
+  import { modalKeys } from '../lib/modalKeys.js';
 
   let {
     open = false,
@@ -163,7 +164,10 @@
 </script>
 
 {#if open}
-  <div class="overlay">
+  <div class="overlay" use:modalKeys={{
+    onSave: () => { if (!busy && !showPropagatePrompt) save(); },
+    onCancel: () => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); },
+  }}>
     <div class="modal">
       <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
 

@@ -45,11 +45,24 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
     """
     from apps.core.models import HistoryEntry, User
     from apps.jobs.models import Job
+    from apps.jobs.services import JobService
 
     job = estimate.job
+    # Decide against current DB state — the cached estimate.job instance may
+    # be stale (status changes now route through JobService.update_job, which
+    # does not mutate this instance in place).
+    job.refresh_from_db()
 
     # Don't update completed or cancelled jobs
     if job.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED]:
+        return 0
+
+    # An open estimate dying (expired/declined) only rejects a job that is
+    # still awaiting the customer (submitted). If the job already advanced
+    # (e.g. a sibling estimate was accepted → approved), leave it alone:
+    # approved→rejected isn't a valid Job transition, and an abandoned
+    # alternative estimate shouldn't reject a live job.
+    if new_job_status == Job.STATUS_REJECTED and job.status != Job.STATUS_SUBMITTED:
         return 0
 
     # Don't downgrade a job to a state it has already passed through
@@ -71,14 +84,19 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             action_desc = f"Estimate {estimate.estimate_number} sent"
         elif new_job_status == Job.STATUS_APPROVED:
             action_desc = f"Estimate {estimate.estimate_number} accepted"
+        elif new_job_status == Job.STATUS_REJECTED:
+            from apps.estimates.models import Estimate
+            if estimate.status == Estimate.STATUS_EXPIRED:
+                action_desc = f"Estimate {estimate.estimate_number} expired"
+            else:
+                action_desc = f"Estimate {estimate.estimate_number} declined"
         else:
             action_desc = f"Estimate {estimate.estimate_number} status changed"
 
         # If trying to go to 'approved' from 'draft', first go through 'submitted'
         if new_job_status == Job.STATUS_APPROVED and job.status == Job.STATUS_DRAFT:
             old_status = job.status
-            job.status = Job.STATUS_SUBMITTED
-            job.save()
+            JobService.update_job(job.pk, status=Job.STATUS_SUBMITTED)
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='job',
@@ -87,8 +105,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
                 changes={'status': {'old': old_status, 'new': Job.STATUS_SUBMITTED}, '_action': action_desc},
             )
             # Now transition to approved
-            job.status = Job.STATUS_APPROVED
-            job.save()
+            JobService.update_job(job.pk, status=Job.STATUS_APPROVED)
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='job',
@@ -99,8 +116,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             return 2  # Two transitions made
         else:
             old_status = job.status
-            job.status = new_job_status
-            job.save()
+            JobService.update_job(job.pk, status=new_job_status)
             HistoryEntry.objects.create(
                 entry_type='action',
                 object_type='job',

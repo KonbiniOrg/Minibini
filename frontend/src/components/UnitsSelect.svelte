@@ -7,6 +7,7 @@
     name = 'units',
     id = '',
     disabled = false,
+    onchange = undefined,
   } = $props();
 
   let units = $state([]);
@@ -30,6 +31,7 @@
   id={id || name}
   bind:value
   {disabled}
+  {onchange}
 >
   {#each units as unit}
     <option value={unit}>{unit}</option>

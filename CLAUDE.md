@@ -65,13 +65,15 @@ Minibini/
 │   ├── invoicing/  # Invoice, InvoiceLineItem
 │   ├── inventory/  # PriceListItem, Material, Earmark, InventoryAdjustment
 │   ├── purchasing/ # PurchaseOrder, Bill, line items
-│   └── search/     # Cross-entity search service
+│   ├── deliverables/ # Deliverable, Shipment, ShipmentItem
+│   ├── search/     # Cross-entity search service
+│   └── schedule/   # ScheduleService — per-worker time-axis layout (model-less)
 ├── frontend/       # Svelte 5 SPA (Vite, svelte-spa-router)
 ├── templates/      # Django HTML templates (server-rendered views)
 ├── fixtures/       # Test data fixtures (JSON)
 ├── tests/          # Test suite
 ├── scripts/        # Utility scripts (seed_data.sh)
-├── docs/designs/   # Topic reference docs (eight consolidated areas — see below)
+├── docs/designs/   # Topic reference docs (nine consolidated areas — see below)
 ├── docs/plans/     # Working directory for short-lived implementation plans (currently empty)
 ├── minibini/       # Project configuration (settings, urls)
 └── manage.py
@@ -89,18 +91,21 @@ Minibini/
 
 ## Topic reference docs
 
-`docs/designs/` holds eight consolidated docs. When working in a domain, start at its doc; cross-references link out where needed.
+`docs/designs/` holds nine consolidated docs. When working in a domain, start at its doc; cross-references link out where needed.
+
+**Keep these current.** These are the durable record of how the system behaves. After every work session that changes behavior, models, endpoints, config keys, or UI conventions in a domain, update the corresponding `docs/designs/` doc(s) in the same session so they don't drift from the code. (Disposable specs/plans live in `docs/plans/`; the durable reference is `docs/designs/`.)
 
 | Doc | Covers |
 |---|---|
 | `architecture-and-conventions.md` | Service layer, mixin catalog, permissions plumbing, line-item pattern, view-mode, history capture, sidebar |
-| `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service |
+| `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service, Deliverables, Shipments |
 | `estimates-and-prices.md` | RateScheme + supersession, billable atoms, Estimate + wizard, atom carry-over, AC pass-through |
 | `materials-inventory-and-purchasing.md` | PriceListItem, Material, PlanMaterial, Earmarks, units, PurchaseOrder, Bill |
 | `invoicing-and-expenses.md` | Invoice + wizard, send-to-customer flow, Expense + Reimbursement |
 | `quickbooks-integration.md` | QBO models, OAuth, sync services, polling, developer setup appendix |
 | `users-and-permissions.md` | User model, permission atoms, auth, user admin, self-service, login tracking (designed not built) |
 | `data-constraints.md` | Cross-model invariants and field-by-field constraints (validator-consumable reference) |
+| `schedule.md` | ScheduleService, the forecast cascade, bar kinds/layering, schedule Configuration, the `/schedule` page |
 
 ## Key Models
 
@@ -114,7 +119,9 @@ Minibini/
 | `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem | materials-inventory-and-purchasing |
 | `apps.invoicing` | Invoice, InvoiceLineItem, InvoiceLineItemSource | invoicing-and-expenses |
 | `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |
+| `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-tasks-and-worksheets §12 |
 | `apps.qbo` | QBOConnection, QBOSyncLog | quickbooks-integration |
+| `apps.schedule` | _(no models)_ — `ScheduleService` produces the `/schedule` view's per-worker bars from Tasks + Bleps + `Job.accent_color` + Configuration | `docs/designs/schedule.md` |
 
 ## Configuration Model
 
@@ -161,13 +168,14 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 - `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
 - `/api/price-list-items/`, `/api/materials/`, `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
 - `/api/expenses/`, `/api/reimbursements/`
+- `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
 - `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
-- `/api/emails/`, `/api/search/`, `/api/settings/`, `/api/home/`
+- `/api/emails/`, `/api/search/`, `/api/schedule/`, `/api/settings/`, `/api/home/`
 
 Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). The SPA is the primary UI; covers home, jobs (board + detail + task list + task detail), contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. Some legacy Django HTML views still exist for opportunistic decommissioning.
+Hash-based routing (`#/path`). The SPA is the primary UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. Some legacy Django HTML views still exist for opportunistic decommissioning.
 
 ## Frontend (Svelte SPA)
 
@@ -186,6 +194,7 @@ The primary UI is a Svelte 5 SPA at `frontend/`, built with Vite and using hash-
 Conventions to keep the SPA's interaction vocabulary consistent. New code follows these unless there's a specific reason not to.
 
 - **Links navigate; buttons act.** Use `<a href="...">` (or `use:link`) for anything that takes the user to a different view. Use `<button>` for anything that mutates state, opens a modal, or triggers an API call without a navigation. Don't dress a `<button>` as a link to navigate, and don't wrap a `<a>` around an action handler.
+- **Saves are explicit, never blur-only.** `onblur` (or any other implicit focus/navigation event) must never be the only trigger that commits a change to the server. Users move focus accidentally — losing or saving work as a side effect is hostile. Every mutation needs an explicit confirmation: a Save button, an Enter-on-form, an explicit modal "OK". `onblur` is fine as a secondary trigger (validating format, normalizing values into pending state) but the actual API call must wait for a deliberate action.
 
 ## REST API (`apps/api/`)
 
@@ -361,5 +370,5 @@ See `docs/designs/quickbooks-integration.md` for the full reference, including O
 - Services: `apps/*/services.py` | Settings: `minibini/settings.py`
 - API: `apps/api/*/views.py` (viewsets), `apps/api/*/serializers.py`, `apps/api/mixins.py`, `apps/api/permissions.py`
 - Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
-- Topic reference docs: `docs/designs/` (eight files; see "Topic reference docs" above)
+- Topic reference docs: `docs/designs/` (nine files; see "Topic reference docs" above)
 - Implementation plans (temporary working files): `docs/plans/` (currently empty)

@@ -220,9 +220,11 @@ Enforcement lives in `apps/inventory/serializer_helpers.py`
 
 ### Consumption state machine
 
-Every Material starts `pending` and transitions to `consumed` exactly
-once. The state machine is uniform across PLI types and attachment
-mode.
+Every Material starts `pending` and transitions to `consumed` when work
+begins. Consumption is one-way for users; the lone reversal is
+`unconsume` (`consumed → pending`), used only by the blep-cancel undo
+(see `jobs-tasks-and-worksheets.md` §4.5). The state machine is uniform
+across PLI types and attachment mode.
 
 | State | Restock | Draw more | Consume | Edit description |
 |---|---|---|---|---|
@@ -235,6 +237,11 @@ Mechanical effects:
 - **Consume** — inventoried: `qty_on_hand -= quantity`,
   `qty_sold += quantity`, earmark `-= quantity`, state → `consumed`.
   Non-inventoried: state flips as a marker; no QOH/earmark side effect.
+- **Unconsume** — the exact inverse of Consume (inventoried:
+  `qty_on_hand += quantity`, `qty_sold -= quantity`, earmark
+  `+= quantity`; state → `pending`). Not a user op — called by
+  `TaskLifecycleService.cancel_work` to undo an oops-Start, so a later
+  re-Start can consume the materials again.
 - **Restock(n)** — `quantity -= n`; if inventoried, earmark `-= n`. If
   `n == quantity` (full restock) and Material is manual-add (not
   expense-bound): the row is deleted server-side. If expense-bound:
@@ -250,7 +257,8 @@ Validation:
 - `restock(n)` requires `0 < n <= quantity`
 - `draw_more(n)` requires `n > 0` and not expense-bound
 - `consume` requires `state == 'pending'` and `quantity > 0`
-- All ops require `state == 'pending'`
+- `unconsume` requires `state == 'consumed'` (the lone consumed-state op)
+- All *user* ops require `state == 'pending'`
 
 ### `is_expense_bound`
 
@@ -266,8 +274,21 @@ Materials with `quantity > 0`. Any match blocks the
 across inventoried and non-inventoried PLIs — task-less Materials
 always represent an unresolved Consume-or-Restock decision.
 
-`InventoryService.release_earmarks_for_job(job)` runs on successful
-transition and sweeps any remaining `Earmark` rows for the job.
+The one exception is the **invoice-paid auto-completion path**
+(`Invoice._maybe_complete_job`): it is unattended, so instead of being
+blocked it calls `JobService.release_loose_materials(job)` first, which
+restocks (releases) any loose pending Materials and records a
+`HistoryEntry`. By the time the Job reaches `work_complete` there are no
+loose materials, so the gate passes.
+
+### Earmark release on terminal transitions
+
+`InventoryService.release_earmarks_for_job(job)` deletes any remaining
+`Earmark` rows for the job. It runs from `JobService.update_job` on entry
+to `work_complete`, `cancelled`, or `rejected` — a dead or finished Job
+holds no inventory reservation. Because every Job status change routes
+through `update_job`, the release fires regardless of caller (the status
+pill, the status-action endpoints, the estimate/invoice handlers).
 
 ---
 

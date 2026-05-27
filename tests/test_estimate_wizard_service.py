@@ -107,6 +107,16 @@ class GetSourcePoolTest(TestCase):
         self.assertEqual(amounts[('plan_task', self.pt.pk)], Decimal('200.00'))
         self.assertEqual(amounts[('plan_material', self.pm.pk)], Decimal('15.00'))
 
+    def test_atoms_include_qty_and_rate(self):
+        pool = EstimateWizardService.get_source_pool(self.ws)
+        by_id = {(a['type'], a['id']): a for a in pool['atoms']}
+        pt_atom = by_id[('plan_task', self.pt.pk)]
+        self.assertEqual(pt_atom['qty'], Decimal('2'))
+        self.assertEqual(pt_atom['rate'], Decimal('100.00'))
+        pm_atom = by_id[('plan_material', self.pm.pk)]
+        self.assertEqual(pm_atom['qty'], Decimal('3'))
+        self.assertEqual(pm_atom['rate'], Decimal('5.00'))
+
     def test_unclaimed_atom_state(self):
         pool = EstimateWizardService.get_source_pool(self.ws)
         for a in pool['atoms']:
@@ -288,13 +298,16 @@ class AddAtomsToExistingLineItemTest(TestCase):
         )
         self.assertEqual(self.li.sources.count(), 2)
 
-    def test_recomputes_price_when_in_sync(self):
-        # Initial price = $100 (1 atom). After adding 2nd atom, expect $200 (2 × $100 / 1 qty).
+    def test_add_makes_uniform_bundle_resummarized(self):
+        # li starts as a single-atom copy-over (qty=1, price=$100). Adding
+        # pt2 makes {pt1, pt2} a uniform same-scheme bundle, re-summarized:
+        # qty = summed est_qty = 2, price = scheme rate $100.
         EstimateWizardService.add_atoms_to_line_item(
             self.li, [{'type': 'plan_task', 'id': self.pt2.pk}],
         )
         self.li.refresh_from_db()
-        self.assertEqual(self.li.price, Decimal('200.00'))
+        self.assertEqual(self.li.qty, Decimal('2'))
+        self.assertEqual(self.li.price, Decimal('100.00'))
 
     def test_preserves_overridden_price(self):
         # Override the price away from in-sync value
@@ -402,9 +415,9 @@ class RemoveAtomsFromLineItemTest(TestCase):
                 self.li, [src_to_remove.source_id],
             )
 
-    def test_recomputes_per_unit_when_in_sync_with_qty_gt_1(self):
-        """Recompute uses per-unit math: new_price = sum / qty."""
-        # Set qty to 2 and in-sync price to sum/qty = 200/2 = 100
+    def test_remove_from_in_sync_uniform_bundle_resummarizes(self):
+        # Manual qty/price on an in-sync line item is replaced by
+        # re-summarization when removal leaves a uniform same-scheme bundle.
         self.li.qty = Decimal('2')
         self.li.price = Decimal('100.00')
         self.li.save()
@@ -413,8 +426,8 @@ class RemoveAtomsFromLineItemTest(TestCase):
             self.li, [src_to_remove.source_id],
         )
         self.li.refresh_from_db()
-        # After removal: remaining sum = $100, qty=2, expected = 50.00
-        self.assertEqual(self.li.price, Decimal('50.00'))
+        self.assertEqual(self.li.qty, Decimal('1'))
+        self.assertEqual(self.li.price, Decimal('100.00'))
 
     def test_renumbers_siblings_when_auto_delete_fires(self):
         """When all atoms are removed and the line item auto-deletes, the

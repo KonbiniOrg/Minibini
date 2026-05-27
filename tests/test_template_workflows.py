@@ -7,6 +7,7 @@ against a Job. These tests cover the surviving Task/Template workflows.
 
 from django.test import TestCase
 from django.core.exceptions import ValidationError
+from datetime import timedelta
 from decimal import Decimal
 
 from apps.contacts.models import Contact
@@ -74,6 +75,7 @@ class TaskCreationWorkflowTest(TestCase):
             job=self.job,
             name="Test Task",
             assignee=self.user,
+            est_worker_time=timedelta(hours=1),
             rate_scheme_id=self.scheme.pk,
         )
 
@@ -90,11 +92,10 @@ class TaskCreationWorkflowTest(TestCase):
             is_active=True
         )
 
-        task = TaskService.create_from_template(template, self.job, self.user)
+        task = TaskService.create_from_template(template, self.job)
 
         self.assertEqual(task.job, self.job)
         self.assertEqual(task.name, template.template_name)
-        self.assertEqual(task.assignee, self.user)
 
     def test_task_from_inactive_template_rejected(self):
         """Test Task creation from inactive template is rejected."""
@@ -123,7 +124,7 @@ class TaskCreationWorkflowTest(TestCase):
         self.assertEqual(template.rate_scheme, self.scheme)
 
         # Sanity check: can create task from this template
-        TaskService.create_from_template(template, self.job, self.user)
+        TaskService.create_from_template(template, self.job)
 
     def test_task_template_minimal_fields(self):
         """TaskTemplate requires only name, rate_scheme, and default_billable_qty."""

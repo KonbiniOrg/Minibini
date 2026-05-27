@@ -123,7 +123,7 @@
   <fieldset>
     <legend><strong>Accounting Categories</strong></legend>
 
-    <table border="1">
+    <table class="data-table">
       <thead>
         <tr>
           <th>Code</th>
@@ -225,7 +225,3 @@
     </p>
   </fieldset>
 {/if}
-
-<style>
-  .error { color: #a8071a; }
-</style>

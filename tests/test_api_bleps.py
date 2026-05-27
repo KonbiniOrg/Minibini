@@ -98,6 +98,15 @@ class BlepListFiltersTest(BaseTestCase):
         resp = self.client.get('/api/bleps/', {'user': 'me', 'since': cutoff})
         self.assertEqual(self._ids(resp), {self.recent_admin.blep_id})
 
+    def test_unfiltered_list_returns_all_users_for_plain_worker(self):
+        # The Activity page relies on this: any authenticated user (no special
+        # permission) sees everyone's recent bleps when no ?user= filter is set.
+        self.client.force_authenticate(user=self.worker)
+        cutoff = (timezone.now() - timedelta(days=2)).isoformat()
+        ids = self._ids(self.client.get('/api/bleps/', {'since': cutoff}))
+        self.assertIn(self.recent_admin.blep_id, ids)   # sees another user's session
+        self.assertIn(self.recent_worker.blep_id, ids)  # and their own
+
 
 class BlepCreateAPITest(BaseTestCase):
     def setUp(self):
@@ -107,6 +116,9 @@ class BlepCreateAPITest(BaseTestCase):
         self.other = User.objects.create_user(username='worker2', password='x')
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
         self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
 
     def _payload(self, hours_ago=2, duration_hours=1, user=None, task=None):

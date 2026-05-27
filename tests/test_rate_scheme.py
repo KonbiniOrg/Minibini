@@ -157,6 +157,29 @@ class RateSchemeComputeTest(BaseTestCase):
         result = labor_scheme.get_actual_qty(task)
         self.assertEqual(result, Decimal('2'))
 
+    def test_get_actual_qty_elapsed_time_quantizes_to_two_places(self):
+        """Hours derived from bleps are quantized to 2 decimal places. A raw
+        seconds/3600 division produces a non-terminating decimal (~28 digits)
+        that overflows the line item qty field (max_digits=10)."""
+        from datetime import timedelta
+
+        labor_scheme = RateScheme.objects.create(
+            name='Labor Rate Quantized',
+            algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('75.00'),
+            unit_label='hour',
+            accounting_category=self.ac,
+        )
+
+        blep = MagicMock()
+        blep.elapsed = timedelta(seconds=3700)  # 1.0277... hours
+        task = MagicMock()
+        task.blep_set.all.return_value = [blep]
+
+        result = labor_scheme.get_actual_qty(task)
+        self.assertEqual(result, Decimal('1.03'))
+        self.assertEqual(result.as_tuple().exponent, -2)
+
     def test_get_actual_qty_entered_qty(self):
         task = MagicMock()
         task.actual_qty = Decimal('25')
@@ -164,8 +187,17 @@ class RateSchemeComputeTest(BaseTestCase):
         result = self.scheme.get_actual_qty(task)
         self.assertEqual(result, Decimal('25'))
 
-    def test_get_actual_qty_flat_fee(self):
+    def test_get_actual_qty_flat_fee_uses_est_qty(self):
+        # flat_fee now bills a fixed unit price x estimated quantity.
         task = MagicMock()
+        task.est_qty = Decimal('12')
+        result = self.flat_scheme.get_actual_qty(task)
+        self.assertEqual(result, Decimal('12'))
+
+    def test_get_actual_qty_flat_fee_falls_back_to_one(self):
+        # A genuine one-off fee carries no quantity; fall back to 1.
+        task = MagicMock()
+        task.est_qty = None
         result = self.flat_scheme.get_actual_qty(task)
         self.assertEqual(result, Decimal('1'))
 

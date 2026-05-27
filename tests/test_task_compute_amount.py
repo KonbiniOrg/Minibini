@@ -47,6 +47,24 @@ class TaskComputeAmountTest(TestCase):
         )
         self.assertEqual(task.compute_amount(), Decimal('60.00'))
 
+    def test_compute_amount_quantized_to_two_places(self):
+        """compute_amount rounds to cents. qty (2dp) x rate (2dp) yields a
+        4dp product; the raw value would surface on the task detail page."""
+        scheme = RateScheme.objects.create(
+            name='Odd Rate', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.07'), unit_label='piece',
+            accounting_category=self.ac,
+        )
+        task = Task.objects.create(
+            job=self.job, name='Polish',
+            rate_scheme=scheme, active_modifiers=[],
+            actual_qty=Decimal('1.03'),
+        )
+        # 1.03 * 10.07 = 10.3721 -> 10.37
+        result = task.compute_amount()
+        self.assertEqual(result, Decimal('10.37'))
+        self.assertEqual(result.as_tuple().exponent, -2)
+
     def test_effective_accounting_category_reads_from_scheme(self):
         scheme = RateScheme.objects.create(
             name='Setup', algorithm=RateScheme.FLAT_FEE,

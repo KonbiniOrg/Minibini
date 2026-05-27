@@ -7,6 +7,12 @@
             color: #888;
             opacity: 0.7;
         }
+        /* Preserve user-typed line breaks/paragraphs in free-text fields;
+           overflow-wrap also breaks long unbreakable tokens (e.g. URLs). */
+        .preserve-breaks {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
         .messages {
             margin: 10px 0;
         }

@@ -152,7 +152,7 @@
 {:else if expenses.length === 0}
   <p><em>No expenses match.</em></p>
 {:else}
-  <table border="1" style="width: 100%">
+  <table class="data-table" style="width: 100%">
     <thead>
       <tr>
         <th>Date</th>
@@ -178,7 +178,7 @@
               —
             {/if}
           </td>
-          <td>{e.description || '—'}</td>
+          <td class="preserve-breaks">{e.description || '—'}</td>
           <td>
             {#if e.job_id}
               <a href="/jobs/{e.job_id}" use:link>{e.job_number}{e.job_name ? ' — ' + e.job_name : ''}</a>

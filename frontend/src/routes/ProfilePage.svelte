@@ -202,7 +202,7 @@
 <h3>Preferences</h3>
 <p>
   View mode: <strong>{$viewMode}</strong>
-  — <a href="#" onclick={(e) => { e.preventDefault(); toggleViewMode(); }}>
+  — <button type="button" onclick={toggleViewMode}>
     Switch to {$viewMode === 'full' ? 'lite' : 'full'} view
-  </a>
+  </button>
 </p>

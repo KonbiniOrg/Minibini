@@ -1,4 +1,6 @@
 <script>
+  import LinkifiedText from './LinkifiedText.svelte';
+
   let {
     lineItems = [],
     categories = [],
@@ -34,7 +36,7 @@
 </script>
 
 {#if lineItems.length > 0}
-  <table border="1" class="line-items-table">
+  <table class="line-items-table">
     <thead>
       <tr>
         <th>#</th>
@@ -55,7 +57,7 @@
           <td>{li.line_number}</td>
           <td>{categoryName(li.accounting_category)}</td>
           <td>{categoryTaxable(li.accounting_category)}</td>
-          <td>{li.description || 'No description'}</td>
+          <td class="preserve-breaks"><LinkifiedText text={li.description || 'No description'} /></td>
           {#if showSource}<td>{sourceLabel(li)}</td>{/if}
           <td>{li.qty}</td>
           <td>{li.units || '—'}</td>

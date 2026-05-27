@@ -1,18 +1,20 @@
 <script>
+  import WizardAtomRow from '../wizards/WizardAtomRow.svelte';
+
   let { sourcePool = null, selectedAtoms = $bindable([]) } = $props();
 
-  function toggleAtom(atomType, atomId) {
-    const key = `${atomType}:${atomId}`;
+  function toggleAtom(atom) {
+    const key = `${atom.type}:${atom.id}`;
     const existing = selectedAtoms.find(a => `${a.type}:${a.id}` === key);
     if (existing) {
       selectedAtoms = selectedAtoms.filter(a => `${a.type}:${a.id}` !== key);
     } else {
-      selectedAtoms = [...selectedAtoms, {type: atomType, id: atomId}];
+      selectedAtoms = [...selectedAtoms, {type: atom.type, id: atom.id}];
     }
   }
 
-  function isSelected(atomType, atomId) {
-    return selectedAtoms.some(a => a.type === atomType && a.id === atomId);
+  function isSelected(atom) {
+    return selectedAtoms.some(a => a.type === atom.type && a.id === atom.id);
   }
 </script>
 
@@ -22,30 +24,11 @@
   <ul style="list-style: none; padding: 0;">
     {#each sourcePool.atoms as atom (atom.type + ':' + atom.id)}
       <li>
-        {#if atom.state === 'available'}
-          <label>
-            <input
-              type="checkbox"
-              checked={isSelected(atom.type, atom.id)}
-              onchange={() => toggleAtom(atom.type, atom.id)}
-            >
-            <small>[{atom.type === 'plan_task' ? 'task' : 'material'}]</small>
-            {atom.description}
-            &mdash; ${atom.amount}
-          </label>
-        {:else if atom.state === 'claimed_by_current'}
-          <span style="color: #777;">
-            <input type="checkbox" checked disabled>
-            <em>{atom.description} &mdash; ${atom.amount}</em>
-            <small>&rarr; line {atom.claiming_line_number}</small>
-          </span>
-        {:else if atom.state === 'claimed_by_other'}
-          <span style="color: #999;">
-            <input type="checkbox" disabled>
-            <em>{atom.description} &mdash; ${atom.amount}</em>
-            <small>&rarr; estimate {atom.claiming_estimate_number}</small>
-          </span>
-        {/if}
+        <WizardAtomRow
+          {atom}
+          selected={isSelected(atom)}
+          onToggle={() => toggleAtom(atom)}
+        />
       </li>
     {/each}
   </ul>

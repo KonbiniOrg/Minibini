@@ -258,6 +258,13 @@
     },
     {
         "model": "core.configuration",
+        "pk": "blep_minimum_seconds",
+        "fields": {
+            "value": "60"
+        }
+    },
+    {
+        "model": "core.configuration",
         "pk": "units_list",
         "fields": {
             "value": "[\"none\", \"hours\", \"ea\", \"sq ft\", \"ft\", \"yd\", \"m\", \"sheets\", \"pcs\", \"lbs\", \"kg\", \"gal\", \"qt\", \"L\", \"bd ft\", \"ln ft\"]"
@@ -349,7 +356,8 @@
             "status": "draft",
             "contact": 1,
             "customer_po_number": "PO-ABC-12345",
-            "description": "Kitchen renovation project for residential client"
+            "description": "Kitchen renovation project for residential client",
+            "accent_color": "#f97066"
         }
     },
     {
@@ -362,7 +370,8 @@
             "status": "completed",
             "contact": 2,
             "customer_po_number": "",
-            "description": "Office electrical upgrade"
+            "description": "Office electrical upgrade",
+            "accent_color": "#f59e0b"
         }
     },
     {

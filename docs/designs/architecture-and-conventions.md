@@ -54,6 +54,12 @@ model directly.
   `SchemeSupersededError`). Views translate those into HTTP responses
   or Django messages.
 
+The estimate and invoice wizards share their line-items-from-atoms logic
+through `BaseWizardService` (`apps/core/wizard.py`):
+`InvoiceWizardService` and `EstimateWizardService` subclass it, each
+supplying a small config block (line-item/source models, atom types)
+plus model hooks for the few genuine divergences.
+
 **Exception hierarchy** (`apps/core/services.py`):
 
 ```python
@@ -89,6 +95,16 @@ def perform_create(self, serializer):
     serializer.instance = job
 ```
 
+**Job status changes — one chokepoint.** `JobService.update_job(pk, **kwargs)`
+is the base update method: it applies the field changes *and* dispatches
+status-transition side effects (the `work_complete` loose-materials gate,
+earmark release on entry to `work_complete`/`cancelled`/`rejected`).
+`JobService.update_status(pk, new_status)` is a thin wrapper over it. Every
+Job status change is expected to flow through `update_job` — the status
+pill's PATCH, the status-action endpoints, and the estimate- and
+invoice-driven handlers all route through it, so side effects fire
+regardless of caller.
+
 ### 2.3 Signals vs services
 
 The codebase has not committed to a single pattern for cross-model side
@@ -96,10 +112,11 @@ effects. Two different conventions coexist:
 
 - `apps/jobs/signals.py` — **0 lines**. Job status side effects are
   handled inside `apps/jobs/services.py`.
-- `apps/estimates/signals.py` — **123 lines** with three receivers
+- `apps/estimates/signals.py` — three receivers
   (`estimate_status_changed_for_worksheet`, `estimate_status_changed_for_job`,
   `estimate_accepted`) that mutate worksheets and jobs when an estimate
-  status changes.
+  status changes. The job-status receiver routes its changes through
+  `JobService.update_job` rather than mutating the Job directly.
 
 This is undecided convention, not deliberate design. Either approach
 works in isolation; mixing them makes it hard to reason about what
@@ -409,6 +426,148 @@ inside the auth gate. Routes are page components under
 `frontend/src/routes/<domain>/<PageName>.svelte`. Reusable pieces live
 in `frontend/src/components/`.
 
+### 5.5 Style scoping gotcha (and a small footgun)
+
+Svelte scopes component `<style>` blocks per component. Class selectors
+defined in one component's `<style>` are silently invisible to the DOM
+rendered by another component, even when the class name matches.
+
+Concrete example we hit: `JobDetail.svelte` defines `.panel`,
+`.panel-head`, `.panel-scroll` for the Description / History card
+chrome. When `DeliverablesSection.svelte` was added as a sibling card,
+its outer element used `class="panel deliverables-panel"`, but the
+panel chrome did not render — the white card, border, rounded corners,
+and uppercase header treatment all came from JobDetail's scoped
+classes, which don't reach a child component's elements. Result: a
+borderless, unstyled list.
+
+Workaround in place today: copy the relevant rules into the child
+component's own `<style>` block (`DeliverablesSection.svelte` now owns
+its own `.panel` / `.panel-head` / `.panel-scroll` rules). This works
+but duplicates the styling, so the components can drift.
+
+Better long-term fix (deferred): extract shared UI chrome (panel
+shapes, common section heads, etc.) into a global stylesheet, or use
+`:global(.panel) { ... }` once in a "host" component. We have not
+audited which selectors deserve this treatment yet. When the styling
+layer is reorganized, this is the first item on the list.
+
+Rule of thumb when working on a new SPA component: if you reuse a
+class name from another component and the styling vanishes, this is
+the cause. Either copy the rule in, or promote it to global.
+
+### 5.6 Preserving line breaks in free-text fields
+
+Large free-text fields (`TextField`s — descriptions, notes, reasons,
+addresses) let users type paragraphs. Default HTML rendering collapses
+their newlines, so paragraph formatting is lost on display.
+
+Convention: wherever such a field is shown **in full**, apply the
+global `.preserve-breaks` utility class. It is `white-space: pre-wrap`,
+defined once per stack so both share the same mechanism:
+
+- `frontend/src/css/app.css` — SPA (global, reaches every component;
+  not subject to the §5.5 scoping gotcha).
+- `templates/base.html` — Django HTML views.
+- `templates/purchasing/purchase_order_pdf.html` — standalone PDF
+  template with its own `<style>`, so it carries its own copy.
+
+`pre-wrap` is preferred over swapping `\n` for `<br>` via `{@html}`:
+the text stays auto-escaped (no XSS), long lines still wrap, and it's
+one class instead of an escape-then-replace helper.
+
+Two rules when applying it:
+
+- `pre-wrap` also preserves whitespace from the **HTML source**. If the
+  field hugs its element on one line (`<td>{x.description}</td>`), tag
+  that element. If the field shares an element with other content (a
+  label, badges, conditional spans on separate source lines), wrap
+  **just the field** in a tight `<span class="preserve-breaks">{x}</span>`
+  so source indentation isn't rendered.
+- Skip it where the field is truncated/sliced or shown as a short
+  inline suffix (pickers, breadcrumbs, `truncatewords`, `{name} —
+  {description}` rows) — there's no paragraph to preserve and multi-line
+  output would break compact layouts.
+
+### 5.7 Modal keyboard shortcuts (Enter / Escape)
+
+Editing and confirmation modals support **Enter = primary action (Save /
+confirm)** and **Escape = cancel**, via the shared action
+`frontend/src/lib/modalKeys.js`. Attach it to the modal's overlay /
+backdrop element so the window-level key listener lives exactly as long
+as the modal is on screen (the element only exists inside `{#if open}`,
+so the listener auto-detaches on close and idle modals don't stomp each
+other):
+
+```svelte
+<div class="overlay" use:modalKeys={{ onSave: save, onCancel: onClose }}>
+```
+
+`onSave` / `onCancel` are the caller's hooks — put any guards there, e.g.
+`onSave: () => { if (!busy) save(); }` so Enter can't double-submit while
+a request is in flight (Enter bypasses the `disabled` Save button).
+
+Enter is intercepted only when focus is **not** in a `<textarea>` or
+contenteditable region (so multi-line fields keep inserting newlines — see
+§5.6), **not** on a `<button>` (so a focused Save/Cancel isn't double-fired),
+and not mid-IME-composition.
+
+Two modes:
+
+- **Enter + Escape** (most modals): pass both `onSave` and `onCancel`.
+- **Escape only**: omit `onSave`. Do this when a native `<form>` already
+  submits on Enter (binding it here too would double-fire — the action
+  won't even `preventDefault` Enter without an `onSave`, so the form's
+  native submit survives), or when the primary action is ambiguous /
+  irreversible (several action buttons, e.g. `StartWorkConflictModal`'s
+  Join vs. Take over). `SendPODialog` is form-driven, so it's Escape-only.
+
+For a confirm sub-step inside a modal (e.g. `MaterialModal`'s "update
+PLI?" prompt), gate the hooks on that state: make `onSave` inert while the
+sub-step shows, and have `onCancel` dismiss the sub-step first, falling
+through to closing the whole modal only once it's gone.
+
+### 5.8 Linkifying URLs in free-text fields
+
+URLs pasted into descriptions / line items are turned into clickable links
+by `<LinkifiedText>` (`frontend/src/components/LinkifiedText.svelte`), backed
+by the pure tokenizer in `frontend/src/lib/linkify.js`. Drop it *inside* an
+existing `.preserve-breaks` wrapper so it inherits newline preservation and
+the long-token wrap (§5.6):
+
+```svelte
+<p class="preserve-breaks"><LinkifiedText text={job.description} /></p>
+```
+
+**Matching rule** (`linkify(text)` → text/url segments): a token links iff it
+starts with `http://`/`https://` **and** its host contains a dot. So
+`https://example.com/x` and `https://www.example.com` link, while
+`http://intra/wiki` and `http://localhost:8000` stay plain (no dot in host),
+as do scheme-less `example.com` and `drawing.pdf`. The required scheme keeps
+false positives near zero, so there's no TLD allowlist to maintain. Trailing
+sentence punctuation (`.,;:!?)]}'"`) is trimmed back out of the match.
+
+**Display** (`truncateUrl(url)`, the segment's `display`): scheme dropped,
+full host + up to 8 characters of the path/query, then `…` only if there's
+more — e.g. `example.com/files/r…`, `example.com/x`, `example.com`. The full
+URL stays in the anchor's `href` and `title` (hover). Links open in a new tab
+with `rel="noopener noreferrer"`.
+
+**Safety:** segments render as Svelte nodes (auto-escaped text, `<a>` for
+URLs) — never `{@html}` — so it's XSS-safe by construction, same discipline
+as §5.6.
+
+**Applied at:** Job / Task / PlanTask descriptions and billing line-item
+descriptions (`LineItemTable`, `JobDetail` invoice + PO lines,
+`PurchaseOrderDetail`). Other free-text fields (notes, addresses, material
+descriptions) get the §5.6 wrap but are not linkified.
+
+**Layout note:** a long unbreakable token (URL) in a CSS grid/flex column
+won't shrink the track unless the item has `min-width: 0`. The job-overview
+midband sets `.midband > * { min-width: 0 }` for this; pair `overflow-wrap:
+anywhere` (now part of `.preserve-breaks`) with `min-width: 0` anywhere a
+free-text field sits in a grid/flex track.
+
 ---
 
 ## 6. View mode (full / lite)
@@ -563,8 +722,9 @@ content (`entry.data.text`); full mode shows everything.
 `frontend/src/components/Sidebar.svelte` is the nav for every SPA page.
 Always-visible 44x44 hamburger icon pinned top-left, dark
 `#1a3344` background. Hover the hamburger or sidebar to open; ~300 ms
-delay before close on mouseleave. 120 px wide, push behavior (page
-content shifts via `margin-left`). Slides in 0.25 s ease.
+delay before close on mouseleave. 120 px wide, overlay behavior — the
+sidebar is `position: fixed` / `z-index: 999` and slides in on top of the
+page (0.25 s ease) without shifting content.
 
 **Link list** (in order):
 
@@ -590,7 +750,92 @@ and are unchanged.
 
 ---
 
-## 9. Unfinished work
+## 9. Scheduled processes
+
+Some work has to happen on a clock rather than in response to a request —
+expiring stale estimates, polling QBO for payments, pruning cached email.
+These run as **Django management commands** and nothing else. There is no
+HTTP route, no API endpoint, and no SPA affordance that triggers them; the
+only entry points are a shell (`python manage.py <command>`) and the cron
+daemon. This keeps the system-driven side effects (which attribute their
+history to the `system` user) off the request path entirely.
+
+### 9.1 `ScheduledProcessCommand` base class
+
+`apps/core/management/base.py` defines `ScheduledProcessCommand`
+(a `BaseCommand` subclass). A scheduled command:
+
+- sets `process_name` (a stable string identifying the job), and
+- implements `run()`, returning a JSON-serializable summary dict.
+
+The base class's `handle()` wraps every invocation: it creates a
+`ScheduledProcessRun` row at the start, calls `run()`, and on the way out
+records the outcome and summary. Three outcomes:
+
+- **`ok`** — `run()` returned; its dict is stored in `summary`.
+- **`failed`** — `run()` raised. The traceback is stored in `error`, the
+  run is saved, and the exception **re-raises** (so cron logs it / a human
+  notices).
+- **`skipped`** — `run()` raised `SkipRun(reason)`. The reason is stored in
+  `summary` and no error is recorded. Used for "nothing to do, not a
+  failure" cases — e.g. `poll_qbo_payments` when there's no active QBO
+  connection.
+
+Subclasses do **not** create the run row themselves; they just describe the
+work and let the base class handle observability.
+
+### 9.2 `ScheduledProcessRun` model
+
+`apps/core/models.py` — one row per command invocation
+(`db_table = 'scheduled_process_run'`, ordered newest first):
+
+| Field | Notes |
+|---|---|
+| `process_name` | indexed; the command's `process_name` |
+| `started_at` | set when the run begins |
+| `finished_at` | set when it ends (null while running) |
+| `outcome` | `ok` / `failed` / `skipped` (default `ok`) |
+| `summary` | JSON — the command's return dict, or `{'reason': …}` for a skip |
+| `error` | traceback text on `failed`, else empty |
+
+Registered in the Django admin (`apps/core/admin.py`) **read-only** — add,
+change, and delete are all disabled; every field is read-only. The admin is
+the observability surface (filter by `process_name` / `outcome`); the rows
+are written only by the base class.
+
+### 9.3 The commands and their cadence
+
+Three commands run on a schedule today:
+
+| Command | `process_name` | What it does |
+|---|---|---|
+| `poll_qbo_payments` | `poll_qbo_payments` | Polls QBO for invoice payment and drives `Invoice.status` — see `quickbooks-integration.md` / `invoicing-and-expenses.md`. |
+| `mark_estimates_expired` | `mark_estimates_expired` | Expires `open` estimates past their frozen `expiration_date` — see `estimates-and-prices.md`. |
+| `cleanup_temp_emails` | `cleanup_temp_emails` | Deletes cached `TempEmail` rows older than `email_retention_days` (preserves `EmailRecord`; no per-object history). |
+
+### 9.4 The docker-compose `cron` service
+
+A dedicated `cron` service in `docker-compose.yml` runs the scheduler. It
+reuses the app image (`ashannonlee/minibini`) and runs
+`deploy/cron/entrypoint.sh`, which exports the container environment to a
+file the jobs source (cron strips the environment otherwise), installs
+`deploy/cron/crontab`, and execs the cron daemon. Schedules
+(container timezone, **UTC** by default):
+
+| Cadence | Command |
+|---|---|
+| every 15 min | `poll_qbo_payments` |
+| `01:30` daily | `mark_estimates_expired` |
+| `02:00` daily | `cleanup_temp_emails` |
+
+The cron container needs the same credentials the app does for these to
+succeed (QBO OAuth + email/IMAP); see the operational note in
+`quickbooks-integration.md`. Set `TZ` on the service to schedule in local
+time instead of UTC.
+
+---
+
+## 10. Unfinished work
 
 Concrete items, smallest first:
 

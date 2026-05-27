@@ -1,10 +1,11 @@
 # Jobs, Tasks, and Worksheets
 
-Reference for the work-execution side of Minibini: how Jobs, Tasks, Bleps,
-EstWorksheets, PlanTasks, and Templates fit together. For service-layer
-mechanics, mixin catalog, permission atoms, history capture, and DELETE
-conventions, see `docs/designs/architecture-and-conventions.md`. For
-RateScheme / billing identity / estimate wizard / supersession, see
+Reference for the work-execution and fulfillment side of Minibini: how
+Jobs, Tasks, Bleps, EstWorksheets, PlanTasks, Templates, Deliverables,
+and Shipments fit together. For service-layer mechanics, mixin catalog,
+permission atoms, history capture, and DELETE conventions, see
+`docs/designs/architecture-and-conventions.md`. For RateScheme / billing
+identity / estimate wizard / supersession, see
 `docs/designs/estimates-and-prices.md`. For Material, PlanMaterial, and
 TemplateMaterialAssociation, see
 `docs/designs/materials-inventory-and-purchasing.md`.
@@ -96,8 +97,9 @@ draft         → submitted, rejected
 submitted     → approved, rejected
 approved      → in_progress, cancelled
 in_progress   → work_complete, cancelled
-work_complete → completed, cancelled
-rejected, completed, cancelled → (terminal)
+work_complete → completed, cancelled, in_progress
+cancelled     → in_progress
+rejected, completed → (terminal)
 ```
 
 `STATUS_IN_PROGRESS` was added with the billing-atoms work; it sits
@@ -105,20 +107,41 @@ between `approved` (estimate accepted, awaiting prep) and `work_complete`
 (all work done). Use the model constants (`Job.STATUS_IN_PROGRESS` etc.),
 not string literals, per `CLAUDE.md`.
 
+Estimate-driven transitions: sending an estimate fires `submitted`, and
+accepting one fires `approved`. An **open** estimate going to `rejected`
+(customer decline) or `expired` (the `mark_estimates_expired` sweep) drives
+the Job to `rejected` — see `estimates-and-prices.md` §9.3 and §13 below.
+
+`work_complete → in_progress` and `cancelled → in_progress` are
+*reactivation* transitions — for moving a Job back into work after it was
+marked complete prematurely or cancelled by accident. They are exposed on
+the job-view status pill and gated by `can_manage_jobs` (the pill PATCHes
+`/api/jobs/{id}/`, which already requires that atom).
+
 ### 3.2 Auto-set dates
 
 `Job.save()` at `apps/jobs/models.py`:
 
 - On entry to `approved`: sets `start_date = now()` if unset.
-- On entry to a terminal: sets `completed_date = now()` if unset.
+- On entry to `completed`, `cancelled`, or `rejected`: sets
+  `completed_date = now()` if unset.
 - `created_date`, `start_date`, `completed_date` are immutable once set
-  (clean() restores the old value if changed).
+  (clean() restores the old value if changed) — *except* `completed_date`
+  is cleared back to `None` when a Job is reactivated to `in_progress`
+  from `work_complete`/`cancelled` (an active Job carries no completion
+  date).
 
-### 3.3 Auto-advance to work_complete
+### 3.3 Auto-advance on work activity
 
-When a Task transitions to `complete` or `cancelled`,
-`TaskLifecycleService._check_job_work_complete` (`apps/jobs/services.py`)
-fires. If every Task on the Job is terminal:
+**To `in_progress`:** when work starts on an `approved` Job — a Blep is
+opened (`start_work` or `create_historical`) or a Task is completed —
+`JobService.mark_work_started(job)` advances it `approved → in_progress`.
+It is a no-op for any other status (pre-`approved` jobs are left alone;
+the state machine forbids a direct DRAFT/SUBMITTED jump).
+
+**To `work_complete`:** when a Task transitions to `complete` or
+`cancelled`, `TaskLifecycleService._check_job_work_complete`
+(`apps/jobs/services.py`) fires. If every Task on the Job is terminal:
 
 - If the Job is `approved`, it walks through `in_progress` first to
   respect the state machine.
@@ -127,12 +150,13 @@ fires. If every Task on the Job is terminal:
 If `JobService._loose_pending_materials(job)` finds task-less materials
 in pending consumption state, the auto-advance silently fails (the task
 status update itself succeeds; the Job stays one rung lower). The same
-guard is applied when `JobService.update_status` is called explicitly to
-move a Job to `work_complete` — it raises `ValidationError`.
+guard runs inside `JobService.update_job` whenever a Job is moved to
+`work_complete` — it raises `ValidationError`.
 
-Entry to `work_complete` triggers
-`InventoryService.release_earmarks_for_job(job)`. There is no other
-side-effect on this transition.
+Entry to `work_complete`, `cancelled`, or `rejected` triggers
+`InventoryService.release_earmarks_for_job(job)` (see
+`materials-inventory-and-purchasing.md`). There is no other side-effect on
+those transitions.
 
 ### 3.4 Job creation paths
 
@@ -189,6 +213,11 @@ Note `blocked → in_progress` and `blocked → complete` and
 `blocked → cancelled` — a blocked task can resume, finish, or be killed
 without round-tripping through `in_progress`.
 
+`in_progress → pending` is **not** a forward transition (and `clean()`
+rejects it). `TaskLifecycleService.cancel_work` (§4.5) performs it as a
+deliberate *undo* via a bulk `update()` that bypasses `clean()`,
+restoring an oops-started task to its pre-Start state.
+
 `Task.clean()` enforces transitions on save. `Task.save()` auto-assigns
 `sort_order` to the next available slot for the Job if unset.
 
@@ -220,9 +249,9 @@ on `PlanTask` via the `TaskBase` abstract):
 | Field | Description |
 |---|---|
 | `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. |
-| `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`) |
+| `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); for a `flat_fee` scheme, a `{"flat_fee_price": "<amount>"}` dict instead |
 | `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task; required on PlanTask. |
-| `est_worker_time` | DurationField — estimated worker time for scheduling |
+| `est_worker_time` | DurationField — estimated worker time for scheduling. Required (and non-zero) once the Task has an `assignee`: assigned work must be schedulable. Enforced by `Task.clean()` and re-checked by `TaskService.assign`. |
 | `actual_qty` | Worker-entered quantity for `ENTERED_QTY` schemes; null for `ELAPSED_TIME` (derived from bleps) and `FLAT_FEE` |
 
 `Task.compute_amount()` resolves the actual quantity per scheme
@@ -243,8 +272,9 @@ sanctioned path to transition a Task. All methods wrap in
 | `block_task(task_pk, reason='')` | reason | pending/in_progress → blocked; rejects with `{conflict, workers}` dict if open Bleps exist (caller coordinates offline) |
 | `unblock_task(task_pk)` | — | blocked → in_progress; clears `blocked_reason` |
 | `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); fires job-completion check |
-| `start_work(task_pk, user, action=None)` | user, optional action | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. |
-| `stop_work(task_pk, user)` | user | Closes the user's open Blep on this task; raises if none |
+| `start_work(task_pk, user, action=None, on_behalf_of=None)` | user, optional action, optional on_behalf_of | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). |
+| `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). |
+| `cancel_work(task_pk, user)` | user | The under-the-minimum "oops" undo. Deletes the user's open Blep on the task; if it was the first/only activity (the sole reason the task is `in_progress`), reverts the task to `pending` and un-consumes its materials (`MaterialService.unconsume`). Job status and assignee are left alone. Rejects if the session is already ≥ `blep_minimum_seconds` (stop instead) or there is no open Blep. Own-blep only — no `on_behalf_of`. |
 
 Material consumption happens exactly once: when the first worker calls
 `start_work` on a `pending` task, `MaterialService.consume(material)`
@@ -292,8 +322,11 @@ active. The FK to Task is `PROTECT` to preserve the audit trail.
 Two Bleps are conceptually distinct:
 
 - **Active Blep**: `end_time IS NULL`. Created by `start_work`; closed
-  by `stop_work` or by the task transitioning to a terminal state
-  (complete, cancelled).
+  by `stop_work`, by the task transitioning to a terminal state
+  (complete, cancelled), or when the worker explicitly logs out (the
+  logout endpoint clocks them out — see §5.3). A session merely *expiring*
+  does not close bleps: Django has no server-side expiry hook, so the
+  blep stays open until a deliberate logout or stop.
 - **Historical Blep**: both timestamps set. Created via the API
   (`POST /api/bleps/`) for retroactive entry, or any Blep that has
   been closed.
@@ -317,6 +350,8 @@ service-driven activity:
 - Editing or deleting another user's Blep, or any Blep older than 24
   hours, requires the `can_manage_time` permission atom.
 - Reassigning a Blep to a different user also requires `can_manage_time`.
+- Starting or stopping another worker's live timer (`on_behalf_of` on
+  `start_work` / `stop_work`) also requires `can_manage_time`.
 
 These rules live in `BlepService` (`apps/jobs/services.py`), not in
 the serializer — `BlepPermissionError` translates to HTTP 403 in the
@@ -330,7 +365,7 @@ viewset, `ValidationError` to HTTP 400.
 |---|---|
 | `_create(task, user, start_time=None, end_time=None)` | Create a Blep |
 | `_close_open(user=None, task=None, now=None)` | Close all open Bleps matching the filters |
-| `close_user_open_bleps(user)` | Public wrapper around `_close_open(user=...)`; called by `UserAdminService` on deactivation |
+| `close_user_open_bleps(user)` | Public wrapper around `_close_open(user=...)`; called by `UserAdminService` on deactivation and by the logout endpoint (`/api/auth/logout/`) so an explicit logout clocks the worker out. Session expiry does not call it (no server-side hook). |
 
 | Public method | Purpose |
 |---|---|
@@ -345,6 +380,17 @@ Validation rules enforced inside `BlepService`:
    `[start, now)` for the comparison; two different users may overlap
    on the same task)
 3. 24h rolling window for non-managers (create / update / delete)
+4. **Job-status guard:** a Blep may only be created on a Task whose Job
+   is in a status where work belongs. Live `start_work` allows `approved`
+   and `in_progress` only; backfilled `create_historical` also allows
+   `work_complete` (you may log time after work was marked done). Any
+   other status — `draft`, `submitted`, `rejected`, `completed`,
+   `cancelled` — is rejected with `ValidationError`. The UI is expected
+   to prevent this; the guard is defensive.
+5. **No future `end_time`:** a non-null `end_time` more than 30s ahead of
+   `now` (`BlepService._CLOCK_SKEW_BUFFER`, tolerating mismatched device
+   clocks) is rejected on create and update. You cannot have worked ahead
+   of now.
 
 ### 5.4 API
 
@@ -352,6 +398,33 @@ Validation rules enforced inside `BlepService`:
 `?task=<id>`, `?since=<iso>` (combined with AND). Permissions:
 `IsAuthenticated` for all endpoints; the service applies the ownership
 and `can_manage_time` rules.
+
+### 5.5 Minimum session, derived activity, change notification
+
+- **Minimum session (`blep_minimum_seconds`, default 60).** While a
+  worker's own open Blep is under this elapsed duration, the UI's Stop
+  control becomes **Cancel** — `POST /api/tasks/{id}/cancel-work/` →
+  `cancel_work` (§4.5). The premise: a session that short is an "oops, I
+  didn't mean to start that," so it's discarded rather than saved. The
+  threshold rides on the `/api/bleps/current/` and task-detail payloads so
+  the client can choose the label live. Manager on-behalf stop is never a
+  cancel.
+- **Derived activity facets.** `TaskSerializer` and `BoardService` expose
+  `has_active_blep`, `active_worker_count`, and `has_bleps` (computed from
+  `blep_set`, prefetched to avoid N+1). The SPA collapses these + status
+  into one label vocabulary via `lib/taskActivity.js` — **Working** (an
+  open Blep right now) / **Ongoing** (`in_progress`, none open) /
+  **Unstarted** (`pending`) / **Blocked** — surfaced identically on the
+  board card, the job overview Tasks pillar, task detail, task tree, home,
+  and schedule quick card.
+  `pending` vs `in_progress` stays distinct in the model (it gates
+  material consumption) but reads as plain "Unstarted" vs "Ongoing"; the
+  only real-time signal that stands out is "Working."
+- **Change notification (frontend).** Every blep mutation funnels through
+  `notifyBlepChanged()` (`stores/blepActivity.js`), which refreshes the
+  sticky `CurrentBlepBand` (so closing/cancelling a session clears it) and
+  bumps a version that blep-dependent pages subscribe to and refetch — the
+  page updates in place, no reload.
 
 ## 6. EstWorksheet
 
@@ -443,7 +516,7 @@ worksheets (creating PlanTasks) and Jobs directly (creating Tasks).
 | Model | Path | Role |
 |---|---|---|
 | `WorkTemplate` | `apps/estimates/models.py` | Worksheet- or Job-shaped template; carries optional `base_price` |
-| `TaskTemplate` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers`, `default_billable_qty` |
+| `TaskTemplate` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers`, `default_billable_qty`. For a `flat_fee` scheme, `default_active_modifiers` holds the per-item price as `{"flat_fee_price": str}` — `TaskTemplate.clean()` requires it to be positive. See `estimates-and-prices.md` §2.2. |
 | `TemplateTaskAssociation` | `apps/estimates/models.py` | M2M-with-extras between WorkTemplate and TaskTemplate; carries `est_qty` and `sort_order` |
 | `TemplateMaterialAssociation` | `apps/inventory` | Links materials to a WorkTemplate; covered in the Materials doc |
 
@@ -543,7 +616,12 @@ each user who has at least one active task, plus any user manually
 added via the "+" button. Tasks within a column are sorted by
 `worker_queue`. Drag-and-drop assigns / reorders / unassigns:
 
-- `PATCH /api/tasks/{id}/assign/` — set assignee + worker_queue
+- `POST /api/tasks/{id}/assign/` — set assignee + worker_queue, optionally
+  `est_worker_time`. Assigning a Task that has no estimate (and none
+  supplied) returns `{needs_worker_time: true}` instead of assigning, so
+  the UI can prompt: the board drag-and-drop pops an interrupting duration
+  modal (`WorkerTimePromptModal`), and the Assign modal shows a required
+  duration field. Unassigning never requires a duration.
 - `POST /api/tasks/reorder/` — bulk update worker_queue from a list
 
 ### 8.5 Card composition
@@ -552,7 +630,7 @@ added via the "+" button. Tasks within a column are sorted by
 |---|---|---|
 | Job chip (Pipeline / Approved / Unpaid) | `JobCard.svelte`, `UnpaidCard.svelte` | Job number, name, customer, deadline, sub-status pill, accent stripe (8-color palette, recycled by index) |
 | Closed card | `ClosedCard.svelte` | Same plus profitability (billed / spent / profit, computed in `BoardService._compute_profitability`) |
-| Task card | `TaskCard.svelte` | Task name, status dot, assignee, blocked_reason if blocked |
+| Task card | `TaskCard.svelte` | Task name, activity label + dot (Working / Ongoing / Unstarted / Blocked — see §5.5), assignee, blocked_reason if blocked |
 
 ## 9. UI: Job Detail page
 
@@ -601,7 +679,7 @@ mount.
 
 | Component | Role |
 |---|---|
-| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions |
+| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions. While the user's own session is under `blep_minimum_seconds`, **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
 | `BlepList.svelte` | Table of bleps with edit / delete buttons gated by `isBlepEditable(blep, user, perms)` |
 | `BlepEditModal.svelte` | Create or edit a Blep — `start_time` / `end_time` always; `user` dropdown only when actor has `can_manage_time` |
 | `StartWorkConflictModal.svelte` | Shown when `start-work` returns a `conflict` payload; offers Join / Take over / Cancel |
@@ -622,13 +700,43 @@ Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 Worker access to Complete/Block/Unblock is intentional — workers are
 the ones who discover these conditions. Cancel stays manager-only.
 
+While the active session is under `blep_minimum_seconds`, the "Stop Work"
+button instead reads "Cancel" and deletes the just-started Blep (undoing
+the Start) rather than closing it — see §5.5. This is distinct from the
+manager-only task **Cancel** above.
+
 ### 10.3 Recent Time list (home page)
 
-`components/home/RecentTimeList.svelte` fetches
-`GET /api/bleps/?user=me&since=<7d ago>`. Each row offers Edit / Delete
-when the blep is within the 24h rolling window; otherwise a "Request
-Edit" button — currently a stub that alerts "Not yet implemented" (see
-Unfinished Work).
+`components/home/RecentTimeList.svelte` (home **Time** tab) fetches
+`GET /api/bleps/?user=me&since=<7d ago>` — the signed-in user's own recent
+sessions. Each row offers **Edit** when the blep is editable (within the 24h
+rolling window, or any blep for a `can_manage_time` manager); otherwise a
+**Request Edit** button — currently a stub that alerts "Not yet implemented"
+(see Unfinished Work).
+
+It renders the shared **`components/time/BlepLogTable.svelte`**, which owns the
+session-row presentation: Task · Job · Start · End · Duration. Times show as a
+weekday abbreviation + 12-hour clock rounded to the minute (`Mon 3:45 PM`);
+Duration is minute-granularity (`1h 25m`); open sessions show a green **active**
+tag and a duration that ticks up every 30s (client clock only — no refetch); the
+job name truncates at 20 chars. `BlepLogTable` props: `bleps`, `showWorker` (adds
+a Worker column), and an optional per-row `actions` snippet (RecentTimeList
+passes the Edit / Request-Edit buttons).
+
+### 10.4 Activity page (all-users work log)
+
+Route `/activity` → `routes/ActivityPage.svelte`, linked in the sidebar for all
+authenticated users (consistent with the Schedule page). A flat, newest-first log
+of **every** worker's sessions over the last 2 days: it fetches
+`GET /api/bleps/?since=<2d ago>&page_size=100` with no `user` filter (the list
+endpoint returns all users for any authenticated user — §5.4). It renders
+`BlepLogTable` with `showWorker=true` and no `actions` (read-only). Open sessions
+sort to the top and carry the **active** tag, so "who's working now" falls out of
+the chronological order.
+
+It refreshes on this client's own blep changes (`blepActivityVersion`) and the
+30s duration tick; it does **not** poll for other workers' clock-ins/outs — a
+general cross-client repolling mechanism is deferred (see Unfinished Work).
 
 ## 11. UI: Worksheet Detail page
 
@@ -664,7 +772,190 @@ Materials CRUD on the standalone endpoint:
 - `GET/POST /api/plan-tasks/{id}/materials/`
 - `PATCH/DELETE /api/plan-tasks/{id}/materials/{mid}/`
 
-## 12. Signals
+## 12. Deliverables and Shipments
+
+The fulfillment side of a Job. The three models live in
+`apps/deliverables/`. Change orders are designed but not yet implemented;
+see §14 for the deferred work.
+
+### 12.1 Concepts
+
+- **Deliverable**: a single item the customer is buying on a Job —
+  description, qty_ordered, units. No price. Distinct from estimate /
+  invoice line items (which include billable inputs like setup, jigs,
+  consumed materials). One Job has 0+ Deliverables. Listed on the Job
+  detail page (always visible, sub-header column) and on every customer-
+  facing packing list.
+- **Shipment**: a single fulfillment event for a Job. Holds 1+
+  `ShipmentItem` rows that each reference one Deliverable + a qty.
+  Multiple Shipments per Job support phased delivery / backorders.
+- **Packing list**: not a model — it's the printable rendering of one
+  Shipment, with each Deliverable's qty_ordered, this shipment's qty,
+  qty previously picked up in other shipments, and qty remaining after
+  this shipment.
+
+### 12.2 Editability of the Deliverables list
+
+Deliverables editability is computed from the Job's estimate state, not
+stored:
+
+| Estimate state on the Job | D-list state | UI affordance |
+|---|---|---|
+| No estimate | Editable | Edit link |
+| Latest active estimate is `draft` | Editable | Edit link |
+| Latest active estimate is `open` (sent) | Read-only | "(estimate sent)" pill |
+| Any estimate on the Job is `accepted` | Permanently read-only | "(estimate accepted)" pill |
+
+"Latest active" means: most recent estimate not in `superseded` /
+`rejected` / `expired`. There is at most one such row.
+
+Rationale: while the customer is reviewing a `sent` estimate, the
+Deliverables list they were shown must not drift from what the database
+holds; the only way to change it is to revise the estimate (a new draft
+revision unlocks the list). Once the customer has accepted, the agreed
+scope is fixed — change orders (deferred) are the only sanctioned
+modification path.
+
+### 12.3 Estimate-send guard
+
+`EstimateService.mark_open` rejects with `ValidationError` if the Job has
+zero Deliverables. The customer cannot receive an estimate that doesn't
+say what they're buying.
+
+This is the single cross-app modification this feature made; see also
+`data-constraints.md` §2.12.
+
+### 12.4 Shipment lifecycle
+
+```
+                ┌─ "+ Add shipment" (UI only)
+                ▼
+         local draft (never on server)
+                │
+                ▼  Save changes (if ≥1 qty > 0)
+        ┌────────────────┐
+        │   prepared     │  status_picked_up_date is null
+        └────────┬───────┘
+                │  mark_picked_up
+                ▼
+        ┌────────────────┐
+        │   picked_up    │  picked_up_date set; terminal
+        └────────────────┘
+```
+
+- A Shipment can only be created server-side once the Job has an accepted
+  estimate. Enforced in `ShipmentService.create`; raises before any
+  database write.
+- The SPA's Job Shipments page creates Shipments **locally first** (draft
+  column with prefilled qtys). The server-side `POST /api/jobs/{id}/shipments/`
+  fires only on Save, and only if the draft has at least one non-zero qty.
+  Drafts with no qty are silently discarded — this is how the UI keeps
+  the "every shipment has at least one line" invariant without a database
+  constraint.
+- An existing prepared Shipment whose final item count would be zero
+  after Save also gets deleted — same invariant maintained.
+- A `picked_up` Shipment is read-only: no edits, no item changes, no
+  deletion. There is no reverse transition.
+
+### 12.5 ShipmentItem invariants
+
+- `qty > 0` (validated by service; not a DB constraint).
+- For each Deliverable, the sum of qty across all ShipmentItem rows
+  pointing at it must not exceed `Deliverable.qty_ordered`. Validated in
+  `ShipmentService.add_item` and `update_item` via
+  `_validate_qty_bounds(deliverable, …)`. The bound counts items across
+  every Shipment regardless of status.
+- `unique_together = [('shipment', 'deliverable')]` — one row per
+  (Shipment, Deliverable) pair. Shipping the same Deliverable a second
+  time means creating a new Shipment.
+- `deliverable` FK is PROTECT, defense-in-depth against a future change
+  order that tries to remove a still-referenced Deliverable. The
+  Deliverable editability rule already prevents this in normal flows.
+
+### 12.6 Services
+
+`apps/deliverables/services.py`:
+
+| Class | Public methods |
+|---|---|
+| `DeliverableService` | `create`, `update`, `delete` (with sibling renumber), `reorder`, `is_editable`, `editability_reason`, `compute_fulfillment` |
+| `ShipmentService` | `create`, `update` (notes only), `delete` (only if prepared + empty), `mark_picked_up`, `add_item`, `update_item`, `remove_item`, `packing_list_payload` |
+
+All write paths run inside `transaction.atomic()`. Quantity-bound checks
+use `select_for_update()` on the parent Deliverable to keep concurrent
+edits from each passing the bound check independently.
+
+`compute_fulfillment(deliverable) -> dict` returns the running totals
+(`qty_ordered`, `qty_picked_up`, `qty_prepped`, `qty_remaining`) used by
+the API serializer.
+
+`packing_list_payload(shipment) -> dict` returns the JSON shape the
+printable view consumes — see §12.8.
+
+### 12.7 API surface
+
+| Method + path | Permission | Purpose |
+|---|---|---|
+| `GET /api/jobs/{id}/deliverables/` | `IsAuthenticated` | List |
+| `POST /api/jobs/{id}/deliverables/` | `CanManageJobs` | Create |
+| `PATCH /api/jobs/{id}/deliverables/{did}/` | `CanManageJobs` | Update |
+| `DELETE /api/jobs/{id}/deliverables/{did}/` | `CanManageJobs` | 200 + JSON |
+| `POST /api/jobs/{id}/deliverables/reorder/` | `CanManageJobs` | Bulk reorder |
+| `GET /api/jobs/{id}/deliverables/editability/` | `IsAuthenticated` | `{editable, reason}` |
+| `GET /api/shipments/?job={id}` | `IsAuthenticated` | List, filterable |
+| `POST /api/jobs/{id}/shipments/` | `IsAuthenticated` | Create |
+| `PATCH /api/shipments/{sid}/` | `IsAuthenticated` | Notes only (status uses pick-up) |
+| `DELETE /api/shipments/{sid}/` | `IsAuthenticated` | 200 + JSON. Allowed when `prepared` + no items. |
+| `POST /api/shipments/{sid}/pick-up/` | `IsAuthenticated` | `prepared → picked_up` |
+| `GET/POST /api/shipments/{sid}/items/` | `IsAuthenticated` | List / add |
+| `PATCH/DELETE /api/shipments/{sid}/items/{iid}/` | `IsAuthenticated` | Update / remove |
+| `GET /api/shipments/{sid}/packing-list/` | `IsAuthenticated` | Rendering payload |
+
+Deliverables are read-open / write-managed (consistent with planning
+artifacts). Shipments are read-write open to any authenticated user
+(consistent with `Blep` and other operational work — any employee can
+pick, pack, and mark goods picked up without elevated permissions).
+
+### 12.8 UI
+
+**Job detail page**: a third column appears in the existing Description
+| ... | History flex row. Renders as a `<DeliverablesSection>` panel
+matching the chrome of its neighbors. The list shows simple
+`qty units description` lines (no headers, no computed columns). An
+"Edit" link in the panel head opens `<DeliverablesEditModal>` when the
+list is editable.
+
+A read-only **Shipments pillar** sits between the Invoices and Purchase
+Orders pillars in the accordion. It renders the same matrix table as
+the editor page (one row per Deliverable, one column per Shipment with
+status + date in the header) and a "Manage shipments →" link to the
+editor.
+
+**Job Shipments page** at `#/jobs/:jobId/shipments`: the editable
+matrix. Adds + Discard (local for drafts, server for persisted),
+in-place cell editing with explicit Save (per the CLAUDE.md
+no-blur-only rule), per-shipment Mark picked up / Print / Discard
+actions, and a column total footer that includes pending edits.
+
+**Printable packing list** at `#/shipments/:sid/print`: From / To
+header (From is currently placeholder text pending a company-info
+Configuration source; To draws from the job's contact / business),
+shipment + job header, line item table with previous / this-shipment /
+remaining columns, a signature row (Pickup by + Pickup date). Print
+via the browser; no server-side PDF generator yet.
+
+### 12.9 Change orders (deferred)
+
+Out of scope for the current implementation. The envisioned design is a
+`ChangeOrder` model — an estimate-shaped post-acceptance amendment with
+both billing line items and a deliverables delta. Until
+that ships, a Job's accepted Deliverables list has **no escape hatch**:
+mistakes require revising the estimate before acceptance, or developer
+intervention.
+
+---
+
+## 13. Signals
 
 `apps/jobs/signals.py` is **empty (0 lines)**. All Job-side state
 changes flow through services. This is the same inconsistency the
@@ -676,7 +967,7 @@ and three receivers:
 | Signal | Sender | Receiver | Effect |
 |---|---|---|---|
 | `estimate_status_changed_for_worksheet` | `Estimate.save()` | `update_estworksheet_status` | Bulk-updates all `EstWorksheet` rows linked to the Estimate to the mapped worksheet status (draft → draft; open/accepted/rejected → final; superseded → superseded) |
-| `estimate_status_changed_for_job` | `Estimate.save()` | `update_job_status` | Walks the Job through the right status (draft → submitted → approved); creates a `HistoryEntry` action row attributed to the `system` user; refuses to downgrade or to touch completed/cancelled jobs |
+| `estimate_status_changed_for_job` | `Estimate.save()` | `update_job_status` | Walks the Job through the right status (draft → submitted → approved on send/accept; **open → rejected** drives the Job to `rejected`); creates a `HistoryEntry` action row attributed to the `system` user; refuses to downgrade or to touch completed/cancelled jobs |
 | `estimate_accepted` | `Estimate.save()` (when transitioning to accepted) | `trigger_atom_carry_over` | Calls `AtomCarryOverService.carry_over_for_estimate(estimate)` to copy plan-side atoms to the Job |
 
 `Estimate.save()` (`apps/estimates/models.py`) is what fires these.
@@ -687,7 +978,7 @@ terminal; an accepted estimate cannot be superseded
 (`Estimate.clean()` rejects it; `tests/test_estimate_job_status_sync.py`
 covers this).
 
-## 13. Unfinished work
+## 14. Unfinished work
 
 - **Auto-advance Job from `approved` → `in_progress` when a task moves
   out of `pending`.** Job → `in_progress` is normally a manual user
@@ -727,6 +1018,12 @@ covers this).
 - **Push-notification infrastructure.** The blep-takeover flow has no
   way to notify the worker whose Blep was just closed. No notification
   system exists yet anywhere in the codebase.
+- **Cross-client live refresh (general repolling).** Pages that show other
+  users' state — the Activity log (§10.4), the Job Board, the Schedule, the
+  home lists — only refresh on this client's own blep changes plus local
+  interval ticks; another worker's clock-in/out doesn't appear until reload.
+  A shared repolling mechanism (deciding which pages need it and how to do it
+  once) is deferred.
 - **Multi-instance template generation needs UI.**
   `WorkTemplate.generate_tasks_for_*` and `generate_materials_for_*`
   accept `quantity=N` but every current caller passes 1.

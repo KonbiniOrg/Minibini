@@ -5,7 +5,7 @@
 {#if contacts.length === 0}
   <p>No contacts found.</p>
 {:else}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr>
         <th>Name</th>

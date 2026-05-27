@@ -1,5 +1,6 @@
 <script>
   import { formatQtyUnits } from '../lib/format.js';
+  import TaskActivityIndicator from './tasks/TaskActivityIndicator.svelte';
 
   let {
     tasks = [],
@@ -26,7 +27,7 @@
 
   function taskTotalInfo(task) {
     // Prefer the live computed_charge (driven by actuals: bleps for elapsed_time,
-    // actual_qty for entered_qty, fixed for flat_fee). When actuals are absent
+    // actual_qty for entered_qty, est_qty x price for flat_fee). When actuals are absent
     // the computed charge is 0 — fall back to est_qty * effective_rate as the
     // estimated total, marked so the UI can render it in grey.
     const actual = Number(task.computed_charge) || 0;
@@ -42,13 +43,17 @@
 
   function taskActual(task) {
     // ELAPSED_TIME → hours from bleps. ENTERED_QTY → worker-entered qty.
-    // FLAT_FEE and unset → no actual to display.
+    // FLAT_FEE → estimated quantity (flat fee bills price x est_qty).
+    // Unset/other → no actual to display.
     if (task.scheme_algorithm === 'elapsed_time') {
       const h = Number(task.actual_hours) || 0;
       return h > 0 ? h : null;
     }
     if (task.scheme_algorithm === 'entered_qty') {
       return task.actual_qty != null && task.actual_qty !== '' ? task.actual_qty : null;
+    }
+    if (task.scheme_algorithm === 'flat_fee') {
+      return task.est_qty != null && task.est_qty !== '' ? task.est_qty : 1;
     }
     return null;
   }
@@ -132,7 +137,7 @@
   }
 </script>
 
-<table border="1" class="task-tree-table">
+<table class="data-table task-tree-table">
   <thead>
     <tr>
       {#if !readonly && !jobLocked}<th>Move Material</th>{/if}
@@ -161,7 +166,7 @@
         </td>
         {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task)}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
-        {#if showStatus}<td><span class="status-pill status-{task.status}">{task.status}</span>{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason">{task.blocked_reason}</span>{/if}</td>{/if}
+        {#if showStatus}<td><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}</td>{/if}
         <td class="text-right">{task.scheme_unit_label || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">{taskActual(task) ?? '-'}</td>
@@ -231,7 +236,7 @@
           </td>
           {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub)}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
           <td class="text-right">{fmtWorkerTime(sub.est_worker_time)}</td>
-          {#if showStatus}<td><span class="status-pill status-{sub.status}">{sub.status}</span>{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason">{sub.blocked_reason}</span>{/if}</td>{/if}
+          {#if showStatus}<td><TaskActivityIndicator task={sub} />{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason preserve-breaks">{sub.blocked_reason}</span>{/if}</td>{/if}
           <td class="text-right">{sub.scheme_unit_label || '-'}</td>
           <td class="text-right">{sub.est_qty ?? '-'}</td>
           <td class="text-right">{taskActual(sub) ?? '-'}</td>
@@ -334,8 +339,8 @@
 </table>
 
 <style>
-  .task-tree-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .task-tree-table th { padding: 8px 10px; text-align: left; background: #f0fdfa; color: #115e59; }
+  /* Base + green header come from the global .data-table class; just tighten padding. */
+  .task-tree-table th { padding: 8px 10px; }
   .task-tree-table td { padding: 6px 10px; vertical-align: top; }
   .text-right { text-align: right; }
   .est-label { color: #888; font-size: 11px; font-weight: normal; }
@@ -347,23 +352,13 @@
   .material-marker { color: #aaa; font-size: 8px; vertical-align: middle; margin-right: 4px; }
   .inv-badge { margin-left: 6px; font-size: 11px; }
 
-  .task-row { background: #fff; }
-  .task-row:nth-child(even) { background: #fafafa; }
+  /* Top-level task rows use the shared .data-table zebra stripe. */
   .subtask-row { background: #f0f9ff; }
   .material-row { background: #fefce8; }
   .material-row.consumed { color: #9ca3af; }
   .grand-total-row { background: #ecfdf5; border-top: 2px solid #99f6e4; }
   .job-materials-header td { background: #fef9c3; padding-top: 8px; }
 
-  .status-pill {
-    padding: 2px 8px; border-radius: 10px; font-size: 12px;
-    font-weight: 600; text-transform: capitalize;
-  }
-  .status-pending { background: #f3f4f6; color: #374151; }
-  .status-in_progress { background: #dbeafe; color: #1e40af; }
-  .status-complete { background: #d1fae5; color: #065f46; }
-  .status-blocked { background: #fee2e2; color: #991b1b; }
-  .status-cancelled { background: #f3f4f6; color: #9ca3af; }
   .blocked-reason { font-size: 11px; color: #991b1b; }
 
   .actions-cell {

@@ -5,7 +5,7 @@
 {#if jobs.length === 0}
   <p>No jobs found.</p>
 {:else}
-  <table border="1">
+  <table class="data-table">
     <thead>
       <tr>
         <th>Job #</th>

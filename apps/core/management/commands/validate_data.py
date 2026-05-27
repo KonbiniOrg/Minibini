@@ -18,8 +18,13 @@ Per-model field checks:
                    E  default_contact must belong to this business
                    W  empty reference code
   Job              E  valid status value
-                   W  approved/completed/cancelled: missing start_date
-                   W  completed/cancelled: missing completed_date
+                   W  approved+ : missing start_date
+                   W  draft/submitted/rejected: stray start_date
+                   W  completed/cancelled/rejected: missing completed_date
+                   W  non-terminal: stray completed_date
+  RateScheme       E  valid algorithm value
+                   E  missing accounting_category
+                   E  replaced_by/replaced_at must be set together
   Estimate         E  valid status value
                    E  max one accepted estimate per job
                    E  max one draft estimate per job
@@ -28,7 +33,8 @@ Per-model field checks:
                    W  accepted/rejected/superseded/expired: missing closed_date
   EstWorksheet     E  valid status value
   Task             E  must belong to a Job
-                   E  must belong to an EstWorksheet
+                   E  valid status value
+  PlanTask         E  must belong to an EstWorksheet
   Material         E  must have description or price_list_item
                    E  negative quantity
                    W  has PLI but empty description (--fix: auto-fill)
@@ -44,6 +50,13 @@ Per-model field checks:
                    E  cannot link to draft PO
                    E  non-draft must have at least one line item
   Invoice          E  valid status value
+  Deliverable      E  must belong to a Job; qty_ordered must be positive
+                   W  missing units
+  Shipment         E  valid status value
+                   E  picked_up missing picked_up_date / prepared has one
+                   W  job has no accepted estimate
+  ShipmentItem     E  qty must be positive
+                   E  shipped qty per deliverable exceeds qty_ordered
   PriceListItem    E  missing accounting_category (causes silent tax-exemption)
                    E  negative purchase_price, selling_price, qty_on_hand, qty_sold, qty_wasted
                    E  duplicate code
@@ -106,6 +119,7 @@ class Command(BaseCommand):
         self.check_contacts()
         self.check_businesses()
         self.check_jobs()
+        self.check_rate_schemes()
         self.check_estimates()
         self.check_worksheets()
         self.check_tasks()
@@ -114,6 +128,9 @@ class Command(BaseCommand):
         self.check_purchase_orders()
         self.check_bills()
         self.check_invoices()
+        self.check_deliverables()
+        self.check_shipments()
+        self.check_shipment_items()
         self.check_price_list_items()
         self.check_earmarks()
         self.check_inventory_adjustments()
@@ -183,11 +200,23 @@ class Command(BaseCommand):
             if j.status not in valid_statuses:
                 self.errors.append(f'Job {j.job_number}: invalid status "{j.status}"')
             # Approved and beyond should have start_date (set on approval)
-            if j.status in (Job.STATUS_APPROVED, Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED) and not j.start_date:
+            if j.status in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+                            Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED,
+                            Job.STATUS_CANCELLED) and not j.start_date:
                 self.warnings.append(f'Job {j.job_number}: status is {j.status} but no start_date')
+            # Pre-approval states should not carry a start_date
+            if j.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                            Job.STATUS_REJECTED) and j.start_date:
+                self.warnings.append(f'Job {j.job_number}: status is {j.status} but start_date is set')
             # Terminal states should have completed_date
-            if j.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED) and not j.completed_date:
+            if j.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
+                            Job.STATUS_REJECTED) and not j.completed_date:
                 self.warnings.append(f'Job {j.job_number}: status is {j.status} but no completed_date')
+            # Non-terminal states should not carry a completed_date
+            if j.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                            Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+                            Job.STATUS_WORK_COMPLETE) and j.completed_date:
+                self.warnings.append(f'Job {j.job_number}: status is {j.status} but completed_date is set')
 
     # ── Estimates ─────────────────────────────────────────────
 
@@ -249,10 +278,13 @@ class Command(BaseCommand):
 
     def check_tasks(self):
         from apps.jobs.models import Task, PlanTask
+        valid_task_statuses = {s[0] for s in Task.TASK_STATUS_CHOICES}
         # Tasks now belong directly to a Job (post-WorkOrder-removal).
         for t in Task.objects.select_related('job').all():
             if not t.job_id:
                 self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
+            if t.status not in valid_task_statuses:
+                self.errors.append(f'Task {t.pk} ({t.name}): invalid status "{t.status}"')
         # Plan tasks: PlanTask is worksheet-only
         for t in PlanTask.objects.select_related('est_worksheet').all():
             if not t.est_worksheet_id:
@@ -390,6 +422,84 @@ class Command(BaseCommand):
         for inv in Invoice.objects.all():
             if inv.status not in valid_statuses:
                 self.errors.append(f'Invoice {inv.invoice_number}: invalid status "{inv.status}"')
+
+    # ── Rate Schemes ──────────────────────────────────────────
+
+    def check_rate_schemes(self):
+        from apps.jobs.models import RateScheme
+        valid_algorithms = {a[0] for a in RateScheme.ALGORITHM_CHOICES}
+        for rs in RateScheme.objects.select_related('accounting_category').all():
+            if rs.algorithm not in valid_algorithms:
+                self.errors.append(
+                    f'RateScheme {rs.pk} ({rs.name}): invalid algorithm "{rs.algorithm}"'
+                )
+            if not rs.accounting_category_id:
+                self.errors.append(
+                    f'RateScheme {rs.pk} ({rs.name}): missing accounting_category'
+                )
+            # replaced_by and replaced_at are set together by supersede()
+            if bool(rs.replaced_by_id) != bool(rs.replaced_at):
+                self.errors.append(
+                    f'RateScheme {rs.pk} ({rs.name}): replaced_by and replaced_at '
+                    f'must both be set or both be null'
+                )
+
+    # ── Deliverables ──────────────────────────────────────────
+
+    def check_deliverables(self):
+        from apps.deliverables.models import Deliverable
+        for d in Deliverable.objects.select_related('job').all():
+            if not d.job_id:
+                self.errors.append(f'Deliverable {d.pk}: not attached to a Job')
+            if d.qty_ordered is None or d.qty_ordered <= 0:
+                self.errors.append(
+                    f'Deliverable {d.pk}: qty_ordered must be positive (got {d.qty_ordered})'
+                )
+            if not d.units or not d.units.strip():
+                self.warnings.append(f'Deliverable {d.pk}: missing units')
+
+    # ── Shipments ─────────────────────────────────────────────
+
+    def check_shipments(self):
+        from apps.deliverables.models import Shipment
+        from apps.estimates.models import Estimate
+        valid_statuses = {s[0] for s in Shipment.STATUS_CHOICES}
+        for s in Shipment.objects.select_related('job').all():
+            if s.status not in valid_statuses:
+                self.errors.append(f'Shipment {s.pk}: invalid status "{s.status}"')
+            # picked_up requires a picked_up_date; prepared must not have one
+            if s.status == Shipment.STATUS_PICKED_UP and not s.picked_up_date:
+                self.errors.append(f'Shipment {s.pk}: picked_up but no picked_up_date')
+            if s.status == Shipment.STATUS_PREPARED and s.picked_up_date:
+                self.errors.append(f'Shipment {s.pk}: prepared but picked_up_date is set')
+            # A shipment should only exist once the job has an accepted estimate
+            if s.job_id and not Estimate.objects.filter(
+                    job_id=s.job_id, status=Estimate.STATUS_ACCEPTED).exists():
+                self.warnings.append(
+                    f'Shipment {s.pk}: job {s.job_id} has no accepted estimate'
+                )
+
+    # ── Shipment Items ────────────────────────────────────────
+
+    def check_shipment_items(self):
+        from collections import defaultdict
+        from apps.deliverables.models import ShipmentItem, Deliverable
+        shipped = defaultdict(Decimal)
+        for si in ShipmentItem.objects.select_related('deliverable').all():
+            if si.qty is None or si.qty <= 0:
+                self.errors.append(
+                    f'ShipmentItem {si.pk}: qty must be positive (got {si.qty})'
+                )
+            if si.deliverable_id:
+                shipped[si.deliverable_id] += si.qty or Decimal('0')
+        # Total shipped per deliverable must not exceed its ordered quantity
+        for deliverable_id, total in shipped.items():
+            d = Deliverable.objects.filter(pk=deliverable_id).first()
+            if d and total > d.qty_ordered:
+                self.errors.append(
+                    f'Deliverable {deliverable_id}: shipped qty {total} exceeds '
+                    f'qty_ordered {d.qty_ordered}'
+                )
 
     # ── Price List Items ──────────────────────────────────────
 

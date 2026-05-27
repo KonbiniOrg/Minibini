@@ -4,6 +4,7 @@
   import UnitsManager from '../components/UnitsManager.svelte';
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
   import TaskTemplateManager from '../components/TaskTemplateManager.svelte';
+  import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
   let tab = $state('accounting');
@@ -55,6 +56,7 @@
   <button class:active={tab === 'accounting'} onclick={() => tab = 'accounting'}>Accounting</button>
   <button class:active={tab === 'setup'} onclick={() => tab = 'setup'}>Setup</button>
   <button class:active={tab === 'catalog'} onclick={() => tab = 'catalog'}>Catalog</button>
+  <button class:active={tab === 'schedule'} onclick={() => tab = 'schedule'}>Schedule</button>
 </nav>
 
 {#if tab === 'accounting'}
@@ -62,11 +64,7 @@
 
   <AccountingCategories />
 
-<RateSchemeManager />
-
-<TaskTemplateManager />
-
-<h3>Payment accounts</h3>
+  <h3>Payment accounts</h3>
 <p>
   <button type="button" onclick={refreshFromQBO} disabled={loadingQBO}>
     {loadingQBO ? 'Loading...' : 'Refresh from QBO'}
@@ -75,7 +73,7 @@
 </p>
 
   {#if qboAccounts.length > 0}
-    <table border="1">
+    <table class="data-table">
       <thead>
         <tr><th>Enabled</th><th>Name</th><th>Type</th></tr>
       </thead>
@@ -106,15 +104,19 @@
 {:else if tab === 'setup'}
   <UnitsManager />
 
+  <RateSchemeManager />
+
+{:else if tab === 'catalog'}
+  <TaskTemplateManager />
+
   <h3>Work templates</h3>
   <p><em>Not yet implemented in Svelte. <a href="/estimates/templates/">Work templates (legacy)</a></em></p>
 
-  <h3>Task templates</h3>
-  <p><em>Not yet implemented in Svelte. <a href="/estimates/task-templates/">Task templates (legacy)</a></em></p>
-
-{:else if tab === 'catalog'}
   <h3>Price list items</h3>
   <p><em>Not yet implemented in Svelte. <a href="/inventory/price-list-items/">Price list items (legacy)</a></em></p>
+
+{:else if tab === 'schedule'}
+  <ScheduleSettings />
 {/if}
 
 <style>

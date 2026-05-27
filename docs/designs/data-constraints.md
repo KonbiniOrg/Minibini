@@ -45,6 +45,13 @@ Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 Additional keys: `email_retention_days`, `latest_email_date`,
 `email_display_limit`, `est_expire_days`.
 
+Schedule view: `schedule_workday_start` (`08:00`), `schedule_workday_end`
+(`17:00`), `schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
+
+Time tracking: `blep_minimum_seconds` (`60`) — below this elapsed duration
+a worker's Stop becomes Cancel (delete + undo); see
+`jobs-tasks-and-worksheets.md` §4.5/§5.5.
+
 ---
 
 ### 1.2 User
@@ -159,6 +166,11 @@ See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
   raises if missing
 - **replaced_by** (optional FK → self) / **replaced_at**: set by `supersede()`
 
+For `flat_fee` schemes, `rate` is only a fallback — the real per-unit price
+lives on each atom / `TaskTemplate` in `active_modifiers` as
+`{"flat_fee_price": str}`, and the billable quantity comes from `est_qty`.
+See `estimates-and-prices.md` §2.2.
+
 #### Frozen fields
 
 Once any PlanTask, Task, or TaskTemplate references a scheme, the fields
@@ -189,8 +201,13 @@ Valid transitions:
 - `submitted` → `approved`, `rejected`
 - `approved` → `in_progress`, `cancelled`
 - `in_progress` → `work_complete`, `cancelled`
-- `work_complete` → `completed`, `cancelled`
-- `rejected`, `completed`, `cancelled` → (terminal)
+- `work_complete` → `completed`, `cancelled`, `in_progress`
+- `cancelled` → `in_progress`
+- `rejected`, `completed` → (terminal)
+
+`work_complete → in_progress` and `cancelled → in_progress` are
+*reactivation* transitions (undo a premature completion / accidental
+cancel), gated by `can_manage_jobs` at the API layer.
 
 `STATUS_IN_PROGRESS` sits between `approved` and `work_complete` (added when
 WorkOrder was removed). `work_complete` = all tasks terminal and earmarks
@@ -210,8 +227,10 @@ released. `completed` = fully closed (typically: all invoices paid).
 - **start_date**: auto-set to `now()` on transition to `approved`. Immutable
   once set. Should be null for `draft`/`submitted`/`rejected`.
 - **due_date**: optional, user-set
-- **completed_date**: auto-set to `now()` on transition to `completed` or
-  `cancelled`. Immutable once set. Must be null for
+- **completed_date**: auto-set to `now()` on transition to `completed`,
+  `cancelled`, or `rejected`. Immutable once set — *except* it is cleared
+  back to null when a Job is reactivated to `in_progress` from
+  `work_complete`/`cancelled`. Must be null for
   `draft`/`submitted`/`approved`/`in_progress`/`work_complete`.
 
 #### Implied state from other models
@@ -283,8 +302,9 @@ worksheet is a self-contained pricing artefact.
 
 - **est_worksheet** (required FK → EstWorksheet, CASCADE)
 - **rate_scheme** (required FK → RateScheme, PROTECT)
-- **active_modifiers**: JSON list of modifier keys (default `[]`); each key
-  should be present in `rate_scheme.modifiers`
+- **active_modifiers**: for `elapsed_time` / `entered_qty`, a JSON list of
+  modifier keys (default `[]`), each present in `rate_scheme.modifiers`; for
+  `flat_fee`, a dict `{"flat_fee_price": str}` holding the per-unit price
 - **est_qty** (required at the application layer — `clean()` raises if null):
   decimal in the scheme's units. DB column is nullable, but every PlanTask
   must have a value.
@@ -326,15 +346,19 @@ Valid transitions:
 
 - **job** (required FK → Job, CASCADE)
 - **rate_scheme** (required FK → RateScheme, PROTECT): NOT NULL at DB level
-- **active_modifiers**: JSON list (default `[]`)
-- **est_qty** (inherited from `TaskBase`): optional
-- **est_worker_time**: optional Duration
+- **active_modifiers**: JSON — list of modifier keys, or
+  `{"flat_fee_price": str}` for `flat_fee` schemes (see RateScheme §1.7)
+- **est_qty** (inherited from `TaskBase`): optional — for `flat_fee` it is
+  the billable quantity (charge is `flat_fee_price × est_qty`)
+- **est_worker_time**: optional Duration — but **required (and must be > 0)
+  once `assignee` is set**; assigned work has to be schedulable
 - **actual_qty**: optional decimal — worker-entered qty for `entered_qty`
   schemes. Null for `elapsed_time` (derived from Bleps) and `flat_fee`.
 - **status**: default `pending`
 - **blocked_reason**: text, default '' — set by `block_task(reason=...)`, cleared by `unblock_task`/`complete_task`/`cancel_task`. The previous reason is overwritten and not preserved anywhere; once `@history` is added to Task (see `jobs-tasks-and-worksheets.md` §13), each block/unblock will surface in the HistoryPanel
 - **worker_queue**: optional integer — position in assignee's queue
-- **assignee** (optional FK → User, SET_NULL)
+- **assignee** (optional FK → User, SET_NULL): setting it requires a
+  non-zero `est_worker_time` (see that field)
 - **parent_task** (optional FK → self, CASCADE)
 - **source_template** (optional FK → TaskTemplate, SET_NULL)
 - **source_plan_task** (optional OneToOne → PlanTask, SET_NULL): set by
@@ -344,6 +368,13 @@ Valid transitions:
 
 #### Implied state from other models
 
+- An assigned Task (`assignee` set) must carry a non-zero `est_worker_time`
+  — assigned work has to be schedulable. Enforced by `Task.clean()` on
+  every save. `TaskService.assign` additionally pre-checks before saving
+  and raises `TaskWorkerTimeRequired`, so the assign endpoint can answer
+  `{needs_worker_time: true}` and have the UI prompt for an estimate
+  instead of surfacing a generic validation error. Unassigning has no
+  such requirement.
 - A Task with any Bleps must not be in `pending`. Validator-enforced.
 - Task → terminal auto-closes any open Bleps (end_time := now).
 - All Tasks on a Job terminal → `TaskLifecycleService._check_job_work_complete`
@@ -365,6 +396,11 @@ Depends on: Task, User.
     precondition. Supports backdating bleps onto tasks that have
     since transitioned to `blocked`, `complete`, or `cancelled` (e.g.
     a worker forgot to clock in for work they did earlier today).
+  - **Job-status precondition (both paths)**: the task's Job must be in
+    a status where work belongs. `start_work` requires `approved` or
+    `in_progress`; `create_historical` also permits `work_complete`.
+    Any other Job status (`draft`, `submitted`, `rejected`, `completed`,
+    `cancelled`) is rejected with `ValidationError`.
 - Steady-state invariant: a Blep's task is in `in_progress`, `blocked`,
   `complete`, or `cancelled` — never `pending`, because `start_work`
   promotes before creating and `create_historical` is only sensibly
@@ -372,7 +408,10 @@ Depends on: Task, User.
   on fixtures.
 - **user** (optional FK → User, PROTECT)
 - **start_time**: datetime, nullable
-- **end_time**: datetime, nullable. If set, must be after start_time.
+- **end_time**: datetime, nullable. If set, must be ≥ start_time and not
+  in the future — a non-null `end_time` more than 30s ahead of `now`
+  (clock-skew buffer) is rejected on create and update. Setting `end_time`
+  on an open Blep (e.g. via the edit modal) closes the session.
 - An "open" Blep has `start_time` set and `end_time` null (work in progress)
 - **No overlapping Bleps per user**: for any given User, no two Bleps (across
   all Tasks) may have overlapping time ranges. The app enforces this by
@@ -492,7 +531,9 @@ task/material structures.
 - **rate_scheme** (required FK → RateScheme, PROTECT): default for generated
   PlanTasks / Tasks. Superseded schemes raise `SchemeSupersededError` from
   `generate_task()`.
-- **default_active_modifiers**: JSON list (default `[]`)
+- **default_active_modifiers**: JSON — list of modifier keys, or
+  `{"flat_fee_price": str}` for `flat_fee` schemes. `TaskTemplate.clean()`
+  requires a positive `flat_fee_price` when the rate scheme is `flat_fee`.
 - **default_billable_qty** (required, decimal): used as `est_qty` when
   generating
 - **work_templates**: M2M via `TemplateTaskAssociation`
@@ -868,7 +909,112 @@ Personal Expenses point at a Reimbursement via `Expense.reimbursement`.
 
 ---
 
-### 1.23 QBOConnection
+### 1.23 Deliverable
+
+Depends on: Job.
+
+A finished item the customer is buying on a Job. No price; only quantity,
+units, and a free-text description. The Deliverables list is the
+customer-facing manifest distinct from billing line items.
+
+- **job** (required FK → Job, CASCADE)
+- **description** (required, text)
+- **qty_ordered** (required, decimal(10,2)): customer-agreed quantity. Only
+  changes via change order (deferred — not yet implemented).
+- **units** (required, max 50 chars): drawn from `Configuration['units_list']`
+- **sort_order** (PositiveInteger): auto-assigned to next slot on save when
+  unset (10, 20, 30, …). Renumbered to a contiguous sequence after a
+  service-driven delete.
+- **created_at** / **updated_at**: timestamps.
+- `db_table = 'deliverables'`. Default ordering: `sort_order`.
+
+**Editability** — computed from the Job's estimate state, not stored:
+
+- **Editable** when no estimate exists OR the latest non-terminal estimate is
+  in `draft` (terminal here means `superseded`, `rejected`, or `expired`).
+- **Read-only otherwise**, with the UI surfacing a reason
+  (`estimate_sent` when latest active is `open`; `estimate_accepted` when any
+  estimate on the Job is `accepted`).
+- Enforced by `DeliverableService._assert_editable(job)`; create / update /
+  delete / reorder all raise `ValidationError` outside the editable state.
+
+**Constraint**: `qty_ordered > 0` (validated by service when supplied via
+API; not a DB constraint).
+
+See `docs/designs/jobs-tasks-and-worksheets.md` for the workflow and §2.12
+below for the estimate-send guard.
+
+---
+
+### 1.24 Shipment (+ ShipmentItem)
+
+Depends on: Job (Shipment); Shipment + Deliverable (ShipmentItem).
+
+A fulfillment event for a Job. Multiple Shipments per Job support phased
+delivery / backorders. A Shipment is identified by a per-Job `sequence`
+counter (no global document number).
+
+#### Shipment
+
+- **job** (required FK → Job, CASCADE)
+- **sequence** (required PositiveInteger): per-Job counter assigned by
+  `ShipmentService.create` as `max(existing.sequence) + 1` or 1.
+- **status**: `prepared` (default) → `picked_up`. Terminal at `picked_up`;
+  no reverse transition.
+- **prepared_date** (default `now()`): set on create
+- **picked_up_date** (nullable): set by `ShipmentService.mark_picked_up`
+  when status flips
+- **notes** (blank text)
+- **created_at** / **updated_at**: timestamps.
+- `db_table = 'shipments'`. `unique_together = [('job', 'sequence')]`.
+  Default ordering: `sequence`.
+
+**Constraints:**
+
+- A Shipment can only be created when the Job has at least one estimate in
+  `accepted` status. Enforced in `ShipmentService.create`; the model has no
+  guard.
+- A Shipment in `picked_up` status is read-only: no edits, no item changes,
+  no deletion.
+- A `prepared` Shipment can only be deleted if `shipment.items` is empty.
+  The UI's "Discard shipment" flow removes items first, then deletes the
+  shipment.
+- If `status == 'picked_up'`, `picked_up_date` must be set. If
+  `status == 'prepared'`, `picked_up_date` must be null.
+
+#### ShipmentItem
+
+- **shipment** (required FK → Shipment, CASCADE)
+- **deliverable** (required FK → Deliverable, PROTECT)
+- **qty** (required, decimal(10,2)): contribution this shipment makes
+  toward the parent Deliverable.
+- `db_table = 'shipment_items'`.
+  `unique_together = [('shipment', 'deliverable')]` — one row per
+  (Shipment, Deliverable) pair.
+  Default ordering: by parent Deliverable's `sort_order`.
+
+**Constraints:**
+
+- `qty > 0` (validated by service).
+- For each Deliverable, the sum of `qty` across all `ShipmentItem` rows
+  that point at it must not exceed `Deliverable.qty_ordered`. Validated in
+  `ShipmentService.add_item` / `update_item` via
+  `_validate_qty_bounds(deliverable, …)`. The bound check counts items
+  across all Shipments regardless of shipment status — committed inventory
+  cannot exceed ordered quantity.
+- Items may not be created, updated, or deleted on a `picked_up` Shipment.
+
+**Defense-in-depth**: `Deliverable` PROTECT on `ShipmentItem.deliverable`
+makes it impossible to remove a Deliverable that any Shipment references.
+Reachable only via change orders (deferred); the Deliverable editability
+rules already prevent deletion once shipments could exist.
+
+See `docs/designs/jobs-tasks-and-worksheets.md` for the full
+fulfillment workflow.
+
+---
+
+### 1.25 QBOConnection
 
 Standalone. One active row at a time (singleton-ish — uniqueness enforced
 in the application, not the schema). See
@@ -885,7 +1031,7 @@ in the application, not the schema). See
 
 ---
 
-### 1.24 QBOSyncLog
+### 1.26 QBOSyncLog
 
 Append-only audit trail of sync operations. No invariants beyond schema.
 
@@ -996,7 +1142,11 @@ Implemented by the `estimate_status_changed_for_worksheet` signal in
 - If ALL Invoices for the Job are now `paid` (or `cancelled`), the Job
   transitions to `completed`. The handler walks the state machine through
   `in_progress` → `work_complete` → `completed` if the Job is still
-  `approved` at the moment of payment.
+  `approved` at the moment of payment (each step via `JobService.update_job`).
+- Before the walk, any loose pending Materials on the Job are released
+  (restocked) so the `work_complete` materials gate cannot strand the Job —
+  this is an unattended path with no user to resolve them. A `HistoryEntry`
+  records the release if anything was released.
 - Job's `completed_date` is set to `now()` (or should match the last
   Invoice's `closed_date` in a backdated translation).
 - A `HistoryEntry` of `entry_type='action'` is created on the Job, attributed
@@ -1026,25 +1176,31 @@ creation, expense submission).
 a Job, the Earmark for `(pli, job)` reflects the sum of outstanding
 quantities. Earmarks are released by `MaterialService.consume`
 (decrements by Material.quantity, flips state to `consumed`),
-`MaterialService.restock` (decrements by restocked qty), and
-`JobService.update_status(..., work_complete)` →
-`InventoryService.release_earmarks_for_job(job)` (deletes all remaining
-earmarks for the Job).
+`MaterialService.restock` (decrements by restocked qty), and by
+`JobService.update_job` on entry to `work_complete`, `cancelled`, or
+`rejected` → `InventoryService.release_earmarks_for_job(job)` (deletes all
+remaining earmarks for the Job).
 
 See `docs/designs/materials-inventory-and-purchasing.md`.
 
 ---
 
-### 2.7 All Tasks terminal → Job auto-advance to work_complete
+### 2.7 Work starts → Job auto-advance to in_progress / work_complete
 
-**Trigger:** A Task on a Job transitions to `complete` or `cancelled`.
+**Trigger:** A Task on a Job transitions to `complete` or `cancelled`; or
+work starts (a Blep is opened via `start_work` / `create_historical`).
 
-**Effects:** `TaskLifecycleService._check_job_work_complete` checks whether
-ALL Tasks on the Job are terminal (`complete` or `cancelled`). If yes and
-the Job is `approved` or `in_progress`, walk it through
-`approved → in_progress → work_complete` (skipping `approved → in_progress`
-if already past). Entering `work_complete` releases all remaining earmarks
-(via §2.6).
+**Effects:**
+- `JobService.mark_work_started(job)` advances an `approved` Job to
+  `in_progress` whenever work starts on it (a Blep is created, or a Task is
+  completed). No-op for any other status. So completing one Task of several
+  moves an `approved` Job to `in_progress`.
+- `TaskLifecycleService._check_job_work_complete` then checks whether ALL
+  Tasks on the Job are terminal (`complete` or `cancelled`). If yes and the
+  Job is `approved` or `in_progress`, it walks through
+  `approved → in_progress → work_complete` (skipping `approved → in_progress`
+  if already past). Entering `work_complete` releases all remaining earmarks
+  (via §2.6).
 
 **Silent-fail guard:** if `JobService._loose_pending_materials(job)` finds
 task-less, `pending`, positive-quantity Materials on the Job, the
@@ -1069,6 +1225,7 @@ Implemented in `apps/jobs/services.py`.
 - A Blep is created on the Task with `start_time` set to `now()`.
 - Any other open Blep the user has (on any task) is closed.
 - Pending Materials on the Task may be auto-consumed (see jobs-tasks doc).
+- If the Job is `approved`, it advances to `in_progress` (see §2.7).
 
 **Data constraint:** A Task's first Blep `start_time` should coincide with or
 follow the Task's transition out of `pending`. If a Task is `in_progress`,
@@ -1122,7 +1279,41 @@ parent's.
 
 ---
 
-### 2.12 RateScheme supersession
+### 2.12 Estimate mark_open → Deliverables non-empty guard
+
+**Trigger:** `EstimateService.mark_open(estimate_pk)` is called to transition
+an Estimate from `draft` to `open`.
+
+**Effects:**
+- If the Job has zero `Deliverable` rows, `ValidationError` is raised and
+  no state changes.
+- Otherwise the transition proceeds normally (Estimate goes `open`, signal
+  walks the Job through `draft → submitted` if needed, the worksheet — if
+  draft — moves to `final`).
+
+**Data constraint:** Every `open` (or `accepted` / `superseded` / `rejected`
+that was previously `open`) Estimate must have a Job with at least one
+Deliverable. A `draft` Estimate may exist without Deliverables.
+
+---
+
+### 2.13 Shipment pick-up → picked_up_date set
+
+**Trigger:** `ShipmentService.mark_picked_up(pk)` is called on a `prepared`
+Shipment.
+
+**Effects:**
+- `Shipment.status` transitions `prepared → picked_up`.
+- `Shipment.picked_up_date` is set to `now()`.
+- The Shipment and its `ShipmentItem` rows become read-only.
+
+**Data constraint:** A Shipment in `picked_up` status must have
+`picked_up_date` set. A Shipment in `prepared` status must have
+`picked_up_date` null.
+
+---
+
+### 2.14 RateScheme supersession
 
 **Trigger:** `RateScheme.supersede(**overrides)` is called.
 

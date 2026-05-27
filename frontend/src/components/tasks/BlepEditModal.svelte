@@ -1,5 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { notifyBlepChanged } from '../../stores/blepActivity.js';
+  import { modalKeys } from '../../lib/modalKeys.js';
 
   let {
     open = false,
@@ -78,6 +80,7 @@
         if (canManageTime && targetUserId) payload.user = Number(targetUserId);
         await api.post('/api/bleps/', payload);
       }
+      await notifyBlepChanged();
       onSaved();
     } catch (e) {
       error = e.message || 'Could not save.';
@@ -93,6 +96,7 @@
     error = '';
     try {
       await api.delete(`/api/bleps/${blep.blep_id}/`);
+      await notifyBlepChanged();
       onSaved();
     } catch (e) {
       error = e.message || 'Could not delete.';
@@ -103,7 +107,7 @@
 </script>
 
 {#if open}
-  <div class="overlay">
+  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy) save(); }, onCancel: onClose }}>
     <div class="modal">
       <h3>{mode === 'edit' ? 'Edit time entry' : 'Add time entry'}</h3>
       <p>
@@ -143,7 +147,7 @@
 <style>
   .overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: 200;
+    display: flex; align-items: center; justify-content: center; z-index: 1100;
   }
   .modal { background: white; padding: 16px; max-width: 440px; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }

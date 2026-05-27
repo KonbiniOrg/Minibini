@@ -1,5 +1,5 @@
 <script>
-  import { link } from 'svelte-spa-router';
+  import { link, push } from 'svelte-spa-router';
   import { user, logout } from '../stores/auth.js';
   import { viewMode, toggleViewMode } from '../stores/viewMode.js';
 
@@ -12,8 +12,9 @@
   }
 
   function scheduleClose() {
+    if (searchFocused) return;
     closeTimeout = setTimeout(() => {
-      open = false;
+      if (!searchFocused) open = false;
     }, 300);
   }
 
@@ -27,6 +28,19 @@
 
   let showFinancials = $derived(hasPerm('can_manage_financials'));
   let showAdminLabel = $derived(showFinancials || hasPerm('can_manage_config'));
+
+  let searchQuery = $state('');
+  let searchFocused = $state(false);
+
+  function handleSearch(e) {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    searchQuery = '';
+    searchFocused = false;
+    open = false;
+    push(`/search?q=${encodeURIComponent(q)}`);
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -47,6 +61,8 @@
   <nav>
     <a href="/" use:link>Home</a>
     <a href="/jobs/board" use:link>Jobs</a>
+    <a href="/schedule" use:link>Schedule</a>
+    <a href="/activity" use:link>Activity</a>
     <a href="/contacts" use:link>Contacts</a>
     <a href="/email" use:link>Email</a>
     <a href="/purchase-orders" use:link>Purchasing</a>
@@ -62,20 +78,30 @@
     {#if hasPerm('can_manage_config')}
       <a href="/settings" use:link>Settings</a>
     {/if}
+    <form class="sidebar-search" onsubmit={handleSearch}>
+      <input
+        type="search"
+        placeholder="Search..."
+        bind:value={searchQuery}
+        aria-label="Search"
+        onfocus={() => searchFocused = true}
+        onblur={() => { searchFocused = false; scheduleClose(); }}
+      />
+    </form>
     <div class="spacer"></div>
     <div class="view-mode-toggle">
       {#if $viewMode === 'full'}
         <span class="active">FULL</span>
-        <a href="#" class="inactive" onclick={(e) => { e.preventDefault(); toggleViewMode(); }}>LITE</a>
+        <button class="inactive" onclick={toggleViewMode}>LITE</button>
       {:else}
-        <a href="#" class="inactive" onclick={(e) => { e.preventDefault(); toggleViewMode(); }}>FULL</a>
+        <button class="inactive" onclick={toggleViewMode}>FULL</button>
         <span class="active">LITE</span>
       {/if}
     </div>
     <div class="bottom-area">
       {#if $user}
         <a href="/profile" use:link>{$user.username}</a>
-        <a href="#" class="nav-link" onclick={(e) => { e.preventDefault(); handleLogout(); }}>Logout</a>
+        <button class="nav-link" onclick={handleLogout}>Logout</button>
       {/if}
     </div>
   </nav>
@@ -164,6 +190,29 @@
     letter-spacing: 0.5px;
   }
 
+  .sidebar-search {
+    padding: 8px 12px;
+    margin: 0;
+  }
+  .sidebar-search input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #264a5e;
+    border: 1px solid #3d6a7e;
+    color: #eee;
+    padding: 5px 7px;
+    font-size: 13px;
+    border-radius: 3px;
+    font-family: inherit;
+  }
+  .sidebar-search input::placeholder {
+    color: #6a9aab;
+  }
+  .sidebar-search input:focus {
+    outline: none;
+    border-color: #6a9aab;
+  }
+
   .spacer { flex: 1; }
 
   .view-mode-toggle {
@@ -175,7 +224,7 @@
     letter-spacing: 0.5px;
   }
   .view-mode-toggle .active,
-  nav .view-mode-toggle a.inactive {
+  nav .view-mode-toggle button.inactive {
     display: inline;
     padding: 0;
     width: auto;
@@ -185,14 +234,17 @@
     line-height: 1;
     text-decoration: none;
     background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
   }
   .view-mode-toggle .active {
     color: #fff;
   }
-  nav .view-mode-toggle a.inactive {
+  nav .view-mode-toggle button.inactive {
     color: #6a9aab;
   }
-  nav .view-mode-toggle a.inactive:hover {
+  nav .view-mode-toggle button.inactive:hover {
     color: #aac7d6;
     background: none;
     box-shadow: none;

@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.routers import DefaultRouter
 from apps.api.jobs.views import JobViewSet
-from apps.api.contacts.views import ContactViewSet, BusinessViewSet, PaymentTermsViewSet
+from apps.api.contacts.views import ContactViewSet, BusinessViewSet, PaymentTermsViewSet, TagViewSet
 from apps.api.estimates.views import EstimateViewSet
 from apps.api.worksheets.views import EstWorksheetViewSet
 from apps.api.invoicing.views import InvoiceViewSet
@@ -14,6 +14,7 @@ from apps.api.tasks.views import TaskViewSet
 from apps.api.plan_tasks.views import PlanTaskViewSet
 from apps.api.bleps.views import BlepViewSet
 from apps.api.search.views import search_view
+from apps.api.schedule.views import schedule_view
 from apps.api.jobs.board_views import (
     board_view, pipeline_view, approved_view, unpaid_view, closed_view,
     task_reorder_view, task_assign_view,
@@ -45,6 +46,7 @@ def api_root(request):
         'price-list-items': '/api/price-list-items/',
         'inventory-items': '/api/inventory-items/',
         'search': '/api/search/',
+        'schedule': '/api/schedule/',
         'plan-tasks': '/api/plan-tasks/',
         'emails': '/api/emails/',
         'work-templates': '/api/work-templates/',
@@ -62,6 +64,7 @@ router.register(r'jobs', JobViewSet, basename='job')
 router.register(r'contacts', ContactViewSet, basename='contact')
 router.register(r'businesses', BusinessViewSet, basename='business')
 router.register(r'payment-terms', PaymentTermsViewSet, basename='payment-terms')
+router.register(r'tags', TagViewSet, basename='tag')
 router.register(r'estimates', EstimateViewSet, basename='estimate')
 router.register(r'est-worksheets', EstWorksheetViewSet, basename='est-worksheet')
 router.register(r'invoices', InvoiceViewSet, basename='invoice')
@@ -82,6 +85,7 @@ urlpatterns = [
     path('auth/', include('apps.api.auth.urls')),
     path('emails/', include('apps.api.email.urls')),
     path('search/', search_view, name='api-search'),
+    path('schedule/', schedule_view, name='api-schedule'),
     path('settings/units/', units_view, name='api-settings-units'),
     path('settings/', settings_view, name='api-settings'),
     path('shifts/', include('apps.api.time_tracking.urls')),
@@ -89,6 +93,7 @@ urlpatterns = [
     path('reimbursements/', include('apps.api.reimbursements.urls')),
     path('qbo/', include('apps.qbo.urls')),
     path('users/', include('apps.api.users.urls')),
+    path('', include('apps.api.deliverables.urls')),
     path('jobs/board/pipeline/', pipeline_view, name='board-pipeline'),
     path('jobs/board/approved/', approved_view, name='board-approved'),
     path('jobs/board/unpaid/', unpaid_view, name='board-unpaid'),

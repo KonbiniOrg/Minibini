@@ -3,7 +3,7 @@ WORKDIR /app
 
 # Install system dependencies needed for Python packages (e.g., psycopg2)
 RUN apt update 
-RUN apt install -y mariadb-client build-essential pkg-config python3-dev default-libmysqlclient-dev build-essential nodejs npm
+RUN apt install -y mariadb-client build-essential pkg-config python3-dev default-libmysqlclient-dev build-essential nodejs npm cron
 COPY requirements.txt .
 
 # ENV PYTHONUNBUFFERED=1

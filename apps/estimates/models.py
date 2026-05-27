@@ -199,6 +199,16 @@ class Estimate(models.Model):
                 estimate=self,
             )
 
+        # Signal when an open estimate dies (declined or expired): reject the job.
+        if (old_status == Estimate.STATUS_OPEN and
+                self.status in (Estimate.STATUS_REJECTED, Estimate.STATUS_EXPIRED)):
+            from apps.jobs.models import Job
+            estimate_status_changed_for_job.send(
+                sender=self.__class__,
+                estimate=self,
+                new_job_status=Job.STATUS_REJECTED,
+            )
+
     def __str__(self):
         return f"Estimate {self.estimate_number}"
 
@@ -258,13 +268,14 @@ class EstWorksheet(AbstractWorkContainer):
         )
 
         # Copy all plan tasks to the new worksheet
+        from apps.jobs.models import copy_active_modifiers
         for plan_task in self.plan_tasks.all():
             new_plan_task = PlanTask.objects.create(
                 est_worksheet=new_worksheet,
                 name=plan_task.name,
                 description=plan_task.description,
                 rate_scheme=plan_task.rate_scheme,
-                active_modifiers=list(plan_task.active_modifiers or []),
+                active_modifiers=copy_active_modifiers(plan_task.active_modifiers),
                 est_qty=plan_task.est_qty,
             )
 
@@ -469,6 +480,21 @@ class TaskTemplate(models.Model):
     def __str__(self):
         return self.template_name
 
+    def clean(self):
+        super().clean()
+        from apps.jobs.models import RateScheme
+        # A flat-fee template carries its own unit price in
+        # default_active_modifiers ({'flat_fee_price': str}). Without one, a
+        # generated task would silently fall back to the shared scheme rate.
+        if self.rate_scheme_id and self.rate_scheme.algorithm == RateScheme.FLAT_FEE:
+            price = RateScheme._flat_fee_price(self.default_active_modifiers)
+            if price is None or price <= 0:
+                raise ValidationError({
+                    'default_active_modifiers':
+                        'A flat-fee task template must carry a positive '
+                        'flat_fee_price.',
+                })
+
     @property
     def effective_accounting_category(self):
         return self.rate_scheme.accounting_category
@@ -487,7 +513,7 @@ class TaskTemplate(models.Model):
           active_modifiers – list of modifier keys; falls back to template defaults when None.
           est_worker_time – ISO 8601 duration string or None.
         """
-        from apps.jobs.models import Job, Task, PlanTask
+        from apps.jobs.models import Job, Task, PlanTask, copy_active_modifiers
         from apps.core.services import SchemeSupersededError
         from django.db import transaction
 
@@ -499,7 +525,10 @@ class TaskTemplate(models.Model):
 
         resolved_name = name if name else self.template_name
         resolved_description = description if description is not None else self.description
-        resolved_modifiers = list(active_modifiers if active_modifiers is not None else (self.default_active_modifiers or []))
+        resolved_modifiers = copy_active_modifiers(
+            active_modifiers if active_modifiers is not None
+            else self.default_active_modifiers
+        )
 
         if isinstance(container, Job):
             with transaction.atomic():
