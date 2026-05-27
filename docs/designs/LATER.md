@@ -32,3 +32,25 @@ proper issue.
   layers they represent, and either confirmed they're conflict-free or defined a small
   documented scale (e.g. content < sticky < dropdown < popover < modal < toast) and
   migrated the existing values onto it.
+
+- **Job header is cramped for the on-hold reason capture; revisit the fixed 110px height.** — _added 2026-05-26_
+  The on-hold reason form now pops over the page (commit `270c79d`), but the job header
+  is a fixed `height: 110px` grid with vertically-centered content, so the form has to
+  *overflow* the header rather than the header accommodating it. It works, but a
+  transient form escaping its container is a layout smell.
+  _Done when:_ either the header accommodates the reason capture cleanly (a proper
+  modal/popover, or a header that can grow), or we've decided the overflow-popover is
+  fine and noted why.
+
+- **Revisit the Change Orders board-pillar color.** — _added 2026-05-26_
+  Phase G picked dark red (`#b91c1c`) for the CO pillar; it sits visually between the
+  `rejected` red and task orange and may read ambiguously against the accent palette.
+  _Done when:_ the CO pillar color is confirmed or changed to read clearly alongside the
+  existing pillars/board palette.
+
+- **CO detail "target line" should show the estimate line's description, not "Line #id".** — _added 2026-05-26_
+  The CO detail page reads the referenced estimate line for remove/replace rows; if the
+  `ChangeOrderLineItem` serializer doesn't surface the target `EstimateLineItem`'s
+  description/number, the UI falls back to an opaque "Line #id".
+  _Done when:_ the CO line-item serializer exposes the target line's description (+ line
+  number) and the CO detail renders it.
