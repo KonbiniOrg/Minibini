@@ -69,3 +69,12 @@ proper issue.
   migration, lets shared frontend code rely on `.id`; (c) full rename to `id` — large,
   risky, and leaves parent docs inconsistent unless they're renamed too.
   _Done when:_ we've picked one and either applied it or recorded the decision.
+
+- **Should an Estimate with a change order on it stay `accepted`, or become `superseded`?** — _added 2026-05-26_
+  The CO display paradigm treats estimate ⊕ CO as the current agreement and pushes the
+  prior estimate into a superseded-like history slot — but the backend keeps the estimate
+  `accepted`. Decide whether the *model* should actually supersede the estimate when a CO
+  is accepted (cleaner model↔display match) or keep it `accepted` and let the display
+  relabel (current). Interacts with the "one accepted estimate per job" rule and the
+  `ChangeOrder.estimate` FK.
+  _Done when:_ we've decided and either changed the model or written down why `accepted` stays.
