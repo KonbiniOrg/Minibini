@@ -54,3 +54,18 @@ proper issue.
   description/number, the UI falls back to an opaque "Line #id".
   _Done when:_ the CO line-item serializer exposes the target line's description (+ line
   number) and the CO detail renders it.
+
+- **Decide a consistent primary-key naming convention for line items (and documents).** — _added 2026-05-26_
+  The codebase uses explicit PK names (`line_item_id`, `estimate_id`, `change_order_id`)
+  instead of Django's default `id`. This bit us in the CO UI — the frontend assumed
+  `.id`, producing the `/change-orders/undefined` redirect + empty links (fixed in
+  `a1c4ff2`). Note: all line-item types **already share `line_item_id`** (via
+  `BaseLineItem`), so DRY-ing the repeated line-item code (a shared base serializer,
+  `LineItemMixin`, the shared `LineItemTable`/`WizardLineItemCard`) is *already* possible
+  on that common name — switching to `id` wouldn't unlock new consolidation; it would
+  match Django/DRF defaults and stop the recurring "I assumed `.id`" bug.
+  _Options:_ (a) keep the explicit names and document the convention loudly;
+  (b) expose a read-only `id` alias in the line-item serializers — cheap, no DB
+  migration, lets shared frontend code rely on `.id`; (c) full rename to `id` — large,
+  risky, and leaves parent docs inconsistent unless they're renamed too.
+  _Done when:_ we've picked one and either applied it or recorded the decision.
