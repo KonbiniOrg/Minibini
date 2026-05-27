@@ -43,10 +43,115 @@
     estimateList.filter(e => e.status === 'superseded').length
   );
 
-  // Active estimate shown in panel (user can click a tab to switch)
-  let selectedEstimateId = $state(null);
+  // Unified version timeline: estimate versions (oldest→newest) then COs by number/id
+  // selectedVersionKey is 'est-<id>' or 'co-<id>'
+  let selectedVersionKey = $state(null);
+
+  let sortedChangeOrders = $derived(
+    [...(changeOrders || [])].sort((a, b) => {
+      // Sort by change_order_number string if present; fall back to id
+      if (a.change_order_number && b.change_order_number) {
+        return a.change_order_number.localeCompare(b.change_order_number);
+      }
+      return (a.change_order_id ?? 0) - (b.change_order_id ?? 0);
+    })
+  );
+
+  // Version timeline: estimate entries then CO entries
+  let versionTimeline = $derived([
+    ...estimateList.map(est => ({ kind: /** @type {'estimate'} */ ('estimate'), key: `est-${est.estimate_id}`, est })),
+    ...sortedChangeOrders.map(co => ({ kind: /** @type {'co'} */ ('co'), key: `co-${co.change_order_id}`, co })),
+  ]);
+
+  // Default to latest CO if any exist, otherwise the current estimate
+  let defaultVersionKey = $derived(
+    sortedChangeOrders.length > 0
+      ? `co-${sortedChangeOrders[sortedChangeOrders.length - 1].change_order_id}`
+      : (currentEstimate ? `est-${currentEstimate.estimate_id}` : null)
+  );
+
+  let displayedVersion = $derived(
+    versionTimeline.find(v => v.key === selectedVersionKey)
+    || versionTimeline.find(v => v.key === defaultVersionKey)
+    || versionTimeline[versionTimeline.length - 1]
+    || null
+  );
+
+  // Convenience aliases to keep downstream template logic readable
   let displayedEstimate = $derived(
-    estimateList.find(e => e.estimate_id === selectedEstimateId) || currentEstimate
+    displayedVersion?.kind === 'estimate' ? displayedVersion.est : null
+  );
+  let displayedCO = $derived(
+    displayedVersion?.kind === 'co' ? displayedVersion.co : null
+  );
+
+  // Effective lines when a CO is displayed (Option A: apply CO deltas to the base estimate).
+  // NOTE: The base is always co.estimate's line items. Layering a second CO on a
+  // prior *accepted* CO (chained COs) is not yet handled — that's a separate concern.
+  let coEffectiveLines = $derived.by(() => {
+    if (!displayedCO) return [];
+    const co = displayedCO;
+    const baseEst = estimateList.find(e => e.estimate_id === co.estimate);
+    const baseLines = (baseEst?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number);
+    const coItems = co.line_items || [];
+
+    // Build lookup maps
+    const replaceByTarget = new Map(); // target_line_item id → CO replace item
+    const removeByTarget  = new Map(); // target_line_item id → CO remove item
+    const addItems = [];
+    for (const ci of coItems) {
+      if (ci.action === 'replace' && ci.target_line_item) {
+        replaceByTarget.set(ci.target_line_item, ci);
+      } else if (ci.action === 'remove' && ci.target_line_item) {
+        removeByTarget.set(ci.target_line_item, ci);
+      } else if (ci.action === 'add') {
+        addItems.push(ci);
+      }
+    }
+
+    const result = [];
+    for (const el of baseLines) {
+      const replaceCI = replaceByTarget.get(el.line_item_id);
+      const removeCI  = removeByTarget.get(el.line_item_id);
+      if (removeCI) {
+        // Omit removed lines entirely
+      } else if (replaceCI) {
+        result.push({
+          line_number: el.line_number,
+          description: replaceCI.description,
+          qty: replaceCI.qty,
+          units: replaceCI.units,
+          price: replaceCI.price,
+          coTouched: 'changed',
+        });
+      } else {
+        result.push({
+          line_number: el.line_number,
+          description: el.description,
+          qty: el.qty,
+          units: el.units,
+          price: el.price,
+          coTouched: null,
+        });
+      }
+    }
+    // Append added lines
+    for (const ci of addItems) {
+      result.push({
+        line_number: ci.line_number,
+        description: ci.description,
+        qty: ci.qty,
+        units: ci.units,
+        price: ci.price,
+        coTouched: 'added',
+      });
+    }
+    return result;
+  });
+
+  // Footer total for the effective CO view
+  let coEffectiveTotal = $derived(
+    coEffectiveLines.reduce((s, li) => s + Number(li.qty || 0) * Number(li.price || 0), 0)
   );
 
   // Worksheet versions, sorted newest first
@@ -242,7 +347,7 @@
   let jobMaterials = $derived(job.materials || []);
 
   // Horizontal accordion state — which section is expanded
-  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'shipments', 'pos', 'changeorders'];
+  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'shipments', 'pos'];
   const storageKey = (id) => `jobDetailActiveSection_${id}`;
 
   function getDefaultSection() {
@@ -271,7 +376,7 @@
     void job.job_id;
     userSection = null;
     selectedWorksheetId = null;
-    selectedEstimateId = null;
+    selectedVersionKey = null;
     selectedInvoiceId = null;
     selectedPoId = null;
   });
@@ -426,29 +531,35 @@
     </div>
   {/if}
 
-  <!-- Estimates -->
+  <!-- Estimates + Change Orders (unified version timeline) -->
   {#if activeSection !== 'estimates'}
     <div class="pillar pillar-est"
          role="button" tabindex="0"
          onclick={() => openSection('estimates')}
          onkeydown={(e) => e.key === 'Enter' && openSection('estimates')}>
       <span class="label-v">Estimates</span>
-      <span class="pillar-count">{estimates?.results?.length || 0}</span>
+      <span class="pillar-count">{versionTimeline.length}</span>
     </div>
   {:else}
     <div class="open open-est">
       <div class="top-bar top-bar-est">
         <span class="top-bar-title">
-          ESTIMATE
-          {#if displayedEstimate} · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {displayedEstimate.status}{:else} · None{/if}
-          {#if estimateList.length > 1} · {estimateList.length} versions{/if}
+          {#if displayedVersion?.kind === 'co'}
+            CHANGE ORDER · {displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`} · {displayedVersion.co.status}
+          {:else if displayedEstimate}
+            ESTIMATE · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {displayedEstimate.status}
+          {:else}
+            ESTIMATE · None
+          {/if}
         </span>
         <span class="top-bar-actions">
-          {#if displayedEstimate}
+          {#if displayedVersion?.kind === 'co'}
+            <a href="#/change-orders/{displayedVersion.co.change_order_id}">View Change Order</a>
+          {:else if displayedEstimate}
             <a href="#/estimates/{displayedEstimate.estimate_id}">View Full Estimate</a>
-          {/if}
-          {#if canManageJobs && displayedEstimate && (displayedEstimate.status === 'open' || displayedEstimate.status === 'accepted')}
-            <a href="#/estimates/{displayedEstimate.estimate_id}/revise">Revise Estimate</a>
+            {#if canManageJobs && (displayedEstimate.status === 'open' || displayedEstimate.status === 'accepted')}
+              <a href="#/estimates/{displayedEstimate.estimate_id}/revise">Revise Estimate</a>
+            {/if}
           {/if}
           {#if canManageJobs && !currentEstimate}
             <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
@@ -460,22 +571,75 @@
           {/if}
         </span>
       </div>
-      {#if estimateList.length > 1}
+      {#if versionTimeline.length > 1}
         <div class="est-tabs">
-          {#each estimateList as est}
+          {#each versionTimeline as ver}
             <button
               type="button"
               class="est-tab"
-              class:active={est.estimate_id === displayedEstimate?.estimate_id}
-              onclick={() => { selectedEstimateId = est.estimate_id; }}
+              class:active={ver.key === (displayedVersion?.key)}
+              class:est-tab-co={ver.kind === 'co'}
+              onclick={() => { selectedVersionKey = ver.key; }}
             >
-              {est.estimate_number} v{est.version} <span class="est-tab-status">({est.status})</span>
+              {#if ver.kind === 'estimate'}
+                {ver.est.estimate_number} v{ver.est.version} <span class="est-tab-status">({ver.est.status})</span>
+              {:else}
+                {ver.co.change_order_number || `CO #${ver.co.change_order_id}`} <span class="est-tab-status">({ver.co.status})</span>
+              {/if}
             </button>
           {/each}
         </div>
       {/if}
       <div class="body">
-        {#if displayedEstimate?.line_items?.length > 0}
+        {#if displayedVersion?.kind === 'co'}
+          <!-- CO effective agreement view (Option A): base estimate lines with CO deltas applied -->
+          {#if coEffectiveLines.length > 0}
+            <table class="est-table">
+              <colgroup>
+                <col class="col-num">
+                <col>
+                <col class="col-qty">
+                <col class="col-units">
+                <col class="col-money">
+                <col class="col-money">
+              </colgroup>
+              <thead><tr>
+                <th>#</th><th>Description</th>
+                <th class="text-right">Qty</th><th>Units</th><th class="text-right">Price</th><th class="text-right">Total</th>
+              </tr></thead>
+              <tbody>
+                {#each coEffectiveLines as li}
+                  <tr class:co-line-changed={li.coTouched === 'changed'} class:co-line-added={li.coTouched === 'added'}>
+                    <td>{li.line_number}</td>
+                    <td>
+                      {li.description}
+                      {#if li.coTouched}<span class="co-tag">CO</span>{/if}
+                    </td>
+                    <td class="text-right">{li.qty}</td>
+                    <td>{li.units || 'none'}</td>
+                    <td class="text-right">${Number(li.price).toFixed(2)}</td>
+                    <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+            <div class="est-footer">
+              <div class="est-meta">
+                <span class="meta-bit">
+                  <span class="meta-label">Change Order</span>
+                  <span class="meta-value">{displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`}</span>
+                </span>
+                <span class="pill pill-co-{displayedVersion.co.status}">{displayedVersion.co.status}</span>
+              </div>
+              <div class="est-totals">
+                <div class="t-label">Total</div>
+                <div class="t-value grand">${coEffectiveTotal.toFixed(2)}</div>
+              </div>
+            </div>
+          {:else}
+            <p class="empty-msg">No effective lines (CO has no base estimate or all lines removed).</p>
+          {/if}
+        {:else if displayedEstimate?.line_items?.length > 0}
           <table class="est-table">
             <colgroup>
               <col class="col-num">
@@ -533,53 +697,6 @@
         {/if}
       </div>
     </div>
-  {/if}
-
-  <!-- Change Orders (only shown when COs exist) -->
-  {#if changeOrders.length > 0}
-    {#if activeSection !== 'changeorders'}
-      <div class="pillar pillar-co"
-           role="button" tabindex="0"
-           onclick={() => openSection('changeorders')}
-           onkeydown={(e) => e.key === 'Enter' && openSection('changeorders')}>
-        <span class="label-v">Change Orders</span>
-        <span class="pillar-count">{changeOrders.length}</span>
-      </div>
-    {:else}
-      <div class="open open-co">
-        <div class="top-bar top-bar-co">
-          <span class="top-bar-title">
-            CHANGE ORDERS · {changeOrders.length}
-          </span>
-          <span class="top-bar-actions"></span>
-        </div>
-        <div class="body">
-          <table class="co-table">
-            <colgroup>
-              <col>
-              <col class="col-status">
-              <col class="col-action">
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Number</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each changeOrders as co}
-                <tr>
-                  <td><a href="#/change-orders/{co.change_order_id}">{co.change_order_number || `CO #${co.change_order_id}`}</a></td>
-                  <td><span class="pill pill-co-{co.status}">{co.status}</span></td>
-                  <td><a href="#/change-orders/{co.change_order_id}">View →</a></td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    {/if}
   {/if}
 
   <!-- Tasks -->
@@ -1186,7 +1303,6 @@
   .pillar-mat   { background: #ca8a04; }
   .pillar-inv   { background: #15803d; }
   .pillar-ship  { background: #0369a1; }
-  .pillar-co    { background: #b91c1c; }
   .pillar-po    { background: #475569; }
 
   .open {
@@ -1213,7 +1329,6 @@
   .top-bar-mat   { background: #ca8a04; }
   .top-bar-inv   { background: #15803d; }
   .top-bar-ship  { background: #0369a1; }
-  .top-bar-co    { background: #b91c1c; }
   .top-bar-po    { background: #475569; }
   .top-bar-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .top-bar-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
@@ -1516,19 +1631,28 @@
   .other-job { opacity: 0.5; }
   .other-job-label { font-size: 11px; color: #999; font-style: italic; margin-left: 4px; }
 
-  /* Change Orders table */
-  .co-table { table-layout: fixed; }
-  .co-table thead { background: #fee2e2; }
-  .co-table thead th { color: #7f1d1d; }
-  .co-table tbody tr { background: #fff5f5; }
-  .co-table tbody tr:nth-child(even) { background: #fee2e2; }
-  .co-table tbody tr + tr { border-top: 1px solid #fecaca; }
-  .co-table col.col-status { width: 120px; }
-  .co-table col.col-action { width: 80px; }
-
-  /* Change-order status pills */
+  /* Change-order status pills (used in CO tab footer and inline) */
   .pill-co-draft { background: #f3f4f6; color: #374151; }
   .pill-co-open { background: #fef3c7; color: #92400e; }
   .pill-co-accepted { background: #dcfce7; color: #166534; }
   .pill-co-rejected { background: #fee2e2; color: #991b1b; }
+
+  /* CO tabs inside the est-tabs strip — slightly warmer tint to distinguish from est tabs */
+  .est-tab.est-tab-co { color: #7c2d12; }
+  .est-tab.est-tab-co.active { background: #fed7aa; }
+
+  /* CO effective-lines: lightly mark CO-touched rows */
+  .est-table tbody tr.co-line-changed { background: #fff7ed; border-left: 3px solid #f97316; }
+  .est-table tbody tr.co-line-added   { background: #f0fdf4; border-left: 3px solid #22c55e; }
+  .co-tag {
+    display: inline-block;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
+    padding: 1px 4px; border-radius: 3px;
+    background: #ffedd5; color: #9a3412;
+    margin-left: 5px; vertical-align: middle;
+    text-transform: uppercase;
+  }
+  .est-table tbody tr.co-line-added .co-tag {
+    background: #dcfce7; color: #166534;
+  }
 </style>
