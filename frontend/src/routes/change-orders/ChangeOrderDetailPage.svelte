@@ -4,6 +4,7 @@
   import { user as userStore } from '../../stores/auth.js';
   import COLineItemModal from '../../components/changeorders/COLineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import UnitsSelect from '../../components/UnitsSelect.svelte';
 
   let { params = {} } = $props();
 
@@ -15,6 +16,21 @@
   let agreementTotal = $state(null);
   let loading = $state(true);
   let error = $state('');
+
+  // Deliverables diff state
+  let liveDeliverables = $state([]);
+  let delivBaseline = $state([]);
+  // Inline edit form state: deliverable id currently being edited, or null
+  let delivEditId = $state(null);
+  let delivEditDescription = $state('');
+  let delivEditQty = $state('');
+  let delivEditUnits = $state('ea');
+  // New deliverable form
+  let delivNewOpen = $state(false);
+  let delivNewDescription = $state('');
+  let delivNewQty = $state('1');
+  let delivNewUnits = $state('ea');
+  let delivSaving = $state(false);
 
   let modalOpen = $state(false);
   let modalMode = $state('create');
@@ -192,6 +208,18 @@
           } catch (_) {
             estimateLines = [];
           }
+          // Load live deliverables + baseline snapshot
+          try {
+            const [liveDel, baselineResp] = await Promise.all([
+              api.get(`/api/jobs/${co.job}/deliverables/`),
+              api.get(`/api/change-orders/${params.id}/deliverables-baseline/`),
+            ]);
+            liveDeliverables = liveDel || [];
+            delivBaseline = baselineResp?.baseline || [];
+          } catch (_) {
+            liveDeliverables = [];
+            delivBaseline = [];
+          }
         } catch (_) {
           job = null;
         }
@@ -206,6 +234,207 @@
   $effect(() => {
     if (params.id) loadCO();
   });
+
+  // --------------------------------------------------------------------------
+  // Deliverables diff
+  // --------------------------------------------------------------------------
+
+  /**
+   * Each deliverable merged row has:
+   *   kind:        'unchanged' | 'changed' | 'changed-orig' | 'removed' | 'added'
+   *   live:        the live Deliverable object (null for removed/changed-orig)
+   *   baseline:    the DeliverableSnapshot baseline row (null for added)
+   *   anchored:    boolean — live deliverable has qty_picked_up > 0 or qty_prepped > 0
+   *   description, qty, units: display values
+   */
+  let delivMergedRows = $derived.by(() => {
+    const live = (liveDeliverables || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    const base = (delivBaseline || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+    // Map: live deliverable id → live deliverable object
+    const liveById = new Map(live.map(d => [d.id, d]));
+    // Set of live ids that are referenced by any baseline row
+    const baselinedLiveIds = new Set(base.map(b => b.source_deliverable).filter(Boolean));
+
+    const rows = [];
+
+    for (const snap of base) {
+      const liveRow = snap.source_deliverable ? liveById.get(snap.source_deliverable) : null;
+      if (!liveRow) {
+        // source was deleted → removed
+        rows.push({
+          kind: 'removed',
+          live: null,
+          baseline: snap,
+          anchored: false,
+          description: snap.description,
+          qty: snap.qty_ordered,
+          units: snap.units,
+        });
+      } else {
+        const anchored = Number(liveRow.qty_picked_up ?? 0) > 0 || Number(liveRow.qty_prepped ?? 0) > 0;
+        const changed =
+          liveRow.description !== snap.description ||
+          String(Number(liveRow.qty_ordered)) !== String(Number(snap.qty_ordered)) ||
+          liveRow.units !== snap.units;
+        if (changed) {
+          // changed: new-value row (amber) + struck original row beneath
+          rows.push({
+            kind: 'changed',
+            live: liveRow,
+            baseline: snap,
+            anchored,
+            description: liveRow.description,
+            qty: liveRow.qty_ordered,
+            units: liveRow.units,
+          });
+          rows.push({
+            kind: 'changed-orig',
+            live: null,
+            baseline: snap,
+            anchored: false,
+            description: snap.description,
+            qty: snap.qty_ordered,
+            units: snap.units,
+          });
+        } else {
+          rows.push({
+            kind: 'unchanged',
+            live: liveRow,
+            baseline: snap,
+            anchored,
+            description: liveRow.description,
+            qty: liveRow.qty_ordered,
+            units: liveRow.units,
+          });
+        }
+      }
+    }
+
+    // Added: live deliverables not referenced by any baseline row
+    for (const d of live) {
+      if (!baselinedLiveIds.has(d.id)) {
+        const anchored = Number(d.qty_picked_up ?? 0) > 0 || Number(d.qty_prepped ?? 0) > 0;
+        rows.push({
+          kind: 'added',
+          live: d,
+          baseline: null,
+          anchored,
+          description: d.description,
+          qty: d.qty_ordered,
+          units: d.units,
+        });
+      }
+    }
+
+    return rows;
+  });
+
+  function fmtQty(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toString() : String(v);
+  }
+
+  // Open inline edit for a live deliverable
+  function openDelivEdit(liveRow) {
+    delivEditId = liveRow.id;
+    delivEditDescription = liveRow.description;
+    delivEditQty = String(Number(liveRow.qty_ordered));
+    delivEditUnits = liveRow.units;
+  }
+
+  function cancelDelivEdit() {
+    delivEditId = null;
+  }
+
+  async function saveDelivEdit(liveId) {
+    delivSaving = true;
+    try {
+      await api.patch(`/api/jobs/${co.job}/deliverables/${liveId}/`, {
+        description: delivEditDescription,
+        qty_ordered: delivEditQty,
+        units: delivEditUnits,
+      });
+      delivEditId = null;
+      await loadCO();
+    } catch (e) {
+      alert(e.message || 'Could not save deliverable.');
+    } finally {
+      delivSaving = false;
+    }
+  }
+
+  async function deleteDeliverable(liveId) {
+    if (!confirm('Delete this deliverable?')) return;
+    try {
+      await api.delete(`/api/jobs/${co.job}/deliverables/${liveId}/`);
+      await loadCO();
+    } catch (e) {
+      alert(e.message || 'Could not delete deliverable.');
+    }
+  }
+
+  /** Undo a changed deliverable: PATCH live back to baseline values */
+  async function undoDelivChange(liveId, snap) {
+    if (!confirm('Undo changes to this deliverable? It will revert to the baseline values.')) return;
+    try {
+      await api.patch(`/api/jobs/${co.job}/deliverables/${liveId}/`, {
+        description: snap.description,
+        qty_ordered: snap.qty_ordered,
+        units: snap.units,
+      });
+      await loadCO();
+    } catch (e) {
+      alert(e.message || 'Could not undo change.');
+    }
+  }
+
+  /** Undo a removed deliverable: POST a new live deliverable with baseline values */
+  async function undoDelivRemove(snap) {
+    if (!confirm('Restore this deliverable?')) return;
+    try {
+      await api.post(`/api/jobs/${co.job}/deliverables/`, {
+        description: snap.description,
+        qty_ordered: snap.qty_ordered,
+        units: snap.units,
+      });
+      await loadCO();
+    } catch (e) {
+      alert(e.message || 'Could not restore deliverable.');
+    }
+  }
+
+  function openDelivNew() {
+    delivNewDescription = '';
+    delivNewQty = '1';
+    delivNewUnits = 'ea';
+    delivNewOpen = true;
+  }
+
+  function cancelDelivNew() {
+    delivNewOpen = false;
+  }
+
+  async function saveDelivNew() {
+    if (!delivNewDescription.trim()) { alert('Description is required.'); return; }
+    delivSaving = true;
+    try {
+      await api.post(`/api/jobs/${co.job}/deliverables/`, {
+        description: delivNewDescription,
+        qty_ordered: delivNewQty,
+        units: delivNewUnits,
+      });
+      delivNewOpen = false;
+      await loadCO();
+    } catch (e) {
+      alert(e.message || 'Could not add deliverable.');
+    } finally {
+      delivSaving = false;
+    }
+  }
+
+  // --------------------------------------------------------------------------
 
   // Status actions
   async function markOpen() {
@@ -398,6 +627,161 @@
       {/if}
     {/if}
   </div>
+
+  <!-- Deliverables: diff editor -->
+  <section class="section">
+    <div class="section-head">
+      <h3>Deliverables</h3>
+      <span class="spacer"></span>
+      {#if canManageJobs && isDraft && !delivNewOpen}
+        <button type="button" onclick={openDelivNew}>+ New deliverable</button>
+      {/if}
+    </div>
+
+    <table class="diff-table deliv-table">
+      <colgroup>
+        <col style="width:90px">
+        <col>
+        <col style="width:160px">
+      </colgroup>
+      <tbody>
+        {#if delivMergedRows.length === 0 && !delivNewOpen}
+          <tr>
+            <td colspan="3" class="empty-msg">No deliverables yet.</td>
+          </tr>
+        {:else}
+          {#each delivMergedRows as row}
+            {#if row.kind === 'unchanged'}
+              {#if delivEditId === row.live.id}
+                <!-- Inline edit form for this row -->
+                <tr class="row-editing">
+                  <td class="num">
+                    <input class="qty-input" bind:value={delivEditQty} />
+                    <UnitsSelect bind:value={delivEditUnits} />
+                  </td>
+                  <td>
+                    <input class="desc-input" bind:value={delivEditDescription} />
+                  </td>
+                  <td class="acts">
+                    <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
+                    <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
+                  </td>
+                </tr>
+              {:else}
+                <tr>
+                  <td class="num">{fmtQty(row.qty)} {row.units}</td>
+                  <td>{row.description || '—'}</td>
+                  <td class="acts">
+                    {#if canManageJobs && isDraft}
+                      {#if row.anchored}
+                        <span class="anchored-note">shipped</span>
+                      {:else}
+                        <button type="button" onclick={() => openDelivEdit(row.live)}>Change</button>
+                        <button type="button" onclick={() => deleteDeliverable(row.live.id)}>Delete</button>
+                      {/if}
+                    {/if}
+                  </td>
+                </tr>
+              {/if}
+            {:else if row.kind === 'changed'}
+              {#if delivEditId === row.live.id}
+                <tr class="row-editing">
+                  <td class="num">
+                    <input class="qty-input" bind:value={delivEditQty} />
+                    <UnitsSelect bind:value={delivEditUnits} />
+                  </td>
+                  <td>
+                    <input class="desc-input" bind:value={delivEditDescription} />
+                  </td>
+                  <td class="acts">
+                    <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
+                    <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
+                  </td>
+                </tr>
+              {:else}
+                <tr class="row-changed">
+                  <td class="num">{fmtQty(row.qty)} {row.units}</td>
+                  <td>{row.description || '—'}</td>
+                  <td class="acts">
+                    {#if canManageJobs && isDraft}
+                      {#if row.anchored}
+                        <span class="anchored-note">shipped</span>
+                      {:else}
+                        <button type="button" onclick={() => openDelivEdit(row.live)}>Edit</button>
+                        <button type="button" onclick={() => undoDelivChange(row.live.id, row.baseline)}>Undo</button>
+                      {/if}
+                    {/if}
+                  </td>
+                </tr>
+              {/if}
+            {:else if row.kind === 'changed-orig'}
+              <tr class="row-gone">
+                <td class="num keep">{fmtQty(row.qty)} {row.units}</td>
+                <td>{row.description || '—'}</td>
+                <td></td>
+              </tr>
+            {:else if row.kind === 'removed'}
+              <tr class="row-gone">
+                <td class="num keep">{fmtQty(row.qty)} {row.units}</td>
+                <td>{row.description || '—'}</td>
+                <td class="acts keep">
+                  {#if canManageJobs && isDraft}
+                    <button type="button" onclick={() => undoDelivRemove(row.baseline)}>Undo</button>
+                  {/if}
+                </td>
+              </tr>
+            {:else if row.kind === 'added'}
+              {#if delivEditId === row.live.id}
+                <tr class="row-editing">
+                  <td class="num">
+                    <input class="qty-input" bind:value={delivEditQty} />
+                    <UnitsSelect bind:value={delivEditUnits} />
+                  </td>
+                  <td>
+                    <input class="desc-input" bind:value={delivEditDescription} />
+                  </td>
+                  <td class="acts">
+                    <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
+                    <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
+                  </td>
+                </tr>
+              {:else}
+                <tr class="row-added">
+                  <td class="num"><span class="added-tag">+</span>{fmtQty(row.qty)} {row.units}</td>
+                  <td>{row.description || '—'}</td>
+                  <td class="acts">
+                    {#if canManageJobs && isDraft}
+                      {#if row.anchored}
+                        <span class="anchored-note">shipped</span>
+                      {:else}
+                        <button type="button" onclick={() => openDelivEdit(row.live)}>Edit</button>
+                        <button type="button" onclick={() => deleteDeliverable(row.live.id)}>Delete</button>
+                      {/if}
+                    {/if}
+                  </td>
+                </tr>
+              {/if}
+            {/if}
+          {/each}
+        {/if}
+        {#if delivNewOpen}
+          <tr class="row-editing">
+            <td class="num">
+              <input class="qty-input" bind:value={delivNewQty} />
+              <UnitsSelect bind:value={delivNewUnits} />
+            </td>
+            <td>
+              <input class="desc-input" bind:value={delivNewDescription} placeholder="Description" />
+            </td>
+            <td class="acts">
+              <button type="button" onclick={saveDelivNew} disabled={delivSaving}>Add</button>
+              <button type="button" onclick={cancelDelivNew} disabled={delivSaving}>Cancel</button>
+            </td>
+          </tr>
+        {/if}
+      </tbody>
+    </table>
+  </section>
 
   <!-- Line items: merged diff editor -->
   <section class="section">
@@ -645,6 +1029,20 @@
   .footer-diff { font-weight: 700; }
 
   .empty-msg { color: #888; font-size: 13px; padding: 8px 0; }
+
+  /* Deliverables table — no line-number column; qty+units in first col */
+  .deliv-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* The + tag inside the added qty cell */
+  .deliv-table .added-tag { color: #166534; font-weight: 600; margin-right: 4px; }
+
+  /* Inline editing row */
+  .diff-table tr.row-editing { background: #f0f9ff; }
+  .diff-table tr.row-editing td { padding: 4px 8px; }
+  .qty-input { width: 3.5em; margin-right: 4px; }
+  .desc-input { width: 100%; box-sizing: border-box; }
+
+  /* Anchored note */
+  .anchored-note { font-size: 11px; color: #9ca3af; font-style: italic; }
 
   /* Agreement-of-record table */
   .agreement-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
