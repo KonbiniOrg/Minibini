@@ -86,3 +86,16 @@ proper issue.
   only where the action is irreversible or extremely arduous to undo (deleting a persisted
   record, sending to a customer). Convention recorded in CLAUDE.md "UI Decisions".
   _Done when:_ confirmations across the SPA match the rule.
+
+- **Validate the multi-change-order display (2+ COs).** — _added 2026-05-27_
+  We spec'd `ch-1`/`ch-2` per-line tags but haven't built/validated how the CO view reads
+  with two or more COs on a job: how the 1st CO's lines/deliverables show once a 2nd
+  exists, and how the 2nd (and further) indicate they're later versions layered on the
+  prior agreement. Look at this before closing the branch.
+  _Done when:_ the CO view is legible with ≥2 COs (version layering + ch-N tags read clearly).
+
+- **Distinguish on-hold job varieties on the pipeline panel?** — _added 2026-05-27_
+  An on-hold job shows a single "on-hold" sub-status. Consider surfacing whether it has a
+  CO and the CO's state (none / draft / open / accepted-awaiting-release). May only matter
+  while testing — decide if it's worth the extra signal.
+  _Done when:_ decided (implemented or dropped).
