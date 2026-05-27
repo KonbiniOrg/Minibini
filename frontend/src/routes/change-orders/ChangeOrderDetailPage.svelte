@@ -19,6 +19,13 @@
   let modalOpen = $state(false);
   let modalMode = $state('create');
   let modalItem = $state(null);
+  // Pre-seed props for the modal
+  let modalInitialAction = $state(null);
+  let modalInitialTarget = $state(null);
+  let modalInitialDescription = $state(null);
+  let modalInitialQty = $state(null);
+  let modalInitialUnits = $state(null);
+  let modalInitialPrice = $state(null);
 
   let actionBusy = $state(false);
 
@@ -30,9 +37,126 @@
   let isOpen = $derived(co?.status === 'open');
   let isTerminal = $derived(['accepted', 'rejected'].includes(co?.status));
 
-  let sortedLineItems = $derived(
-    (co?.line_items || []).slice().sort((a, b) => (a.line_number ?? 0) - (b.line_number ?? 0))
+  // --------------------------------------------------------------------------
+  // Merged diff: derive display rows from estimateLines ⊕ co.line_items
+  // --------------------------------------------------------------------------
+
+  /**
+   * Each merged row has:
+   *   kind:        'unchanged' | 'changed' | 'removed' | 'added' | 'changed-orig'
+   *   lineNumber:  display line number
+   *   description, qty, units, price, total: display values
+   *   coItem:      the backing CO line item (for edit/delete/undo) — null for unchanged/changed-orig
+   *   estLine:     the backing estimate line (null for 'added')
+   */
+  let mergedRows = $derived.by(() => {
+    const coItems = (co?.line_items || []).slice().sort((a, b) => (a.line_number ?? 0) - (b.line_number ?? 0));
+    const estLines = estimateLines.slice().sort((a, b) => a.line_number - b.line_number);
+
+    // Build lookup: estimate line_item_id → CO item targeting it
+    const replaceByCOTarget = new Map(); // target_line_item id → CO 'replace' item
+    const removeByCOTarget  = new Map(); // target_line_item id → CO 'remove' item
+    const addItems = [];
+
+    for (const ci of coItems) {
+      if (ci.action === 'replace' && ci.target_line_item) {
+        replaceByCOTarget.set(ci.target_line_item, ci);
+      } else if (ci.action === 'remove' && ci.target_line_item) {
+        removeByCOTarget.set(ci.target_line_item, ci);
+      } else if (ci.action === 'add') {
+        addItems.push(ci);
+      }
+    }
+
+    const rows = [];
+
+    for (const el of estLines) {
+      const replaceCI = replaceByCOTarget.get(el.line_item_id);
+      const removeCI  = removeByCOTarget.get(el.line_item_id);
+
+      if (replaceCI) {
+        // changed: new value row (amber) + struck original row
+        rows.push({
+          kind: 'changed',
+          lineNumber: el.line_number,
+          description: replaceCI.description,
+          qty: replaceCI.qty,
+          units: replaceCI.units,
+          price: replaceCI.price,
+          total: Number(replaceCI.qty || 0) * Number(replaceCI.price || 0),
+          coItem: replaceCI,
+          estLine: el,
+        });
+        rows.push({
+          kind: 'changed-orig',
+          lineNumber: el.line_number,
+          description: el.description,
+          qty: el.qty,
+          units: el.units,
+          price: el.price,
+          total: Number(el.qty || 0) * Number(el.price || 0),
+          coItem: null,
+          estLine: el,
+        });
+      } else if (removeCI) {
+        // removed: struck alone, with Undo
+        rows.push({
+          kind: 'removed',
+          lineNumber: el.line_number,
+          description: el.description,
+          qty: el.qty,
+          units: el.units,
+          price: el.price,
+          total: Number(el.qty || 0) * Number(el.price || 0),
+          coItem: removeCI,
+          estLine: el,
+        });
+      } else {
+        // unchanged
+        rows.push({
+          kind: 'unchanged',
+          lineNumber: el.line_number,
+          description: el.description,
+          qty: el.qty,
+          units: el.units,
+          price: el.price,
+          total: Number(el.qty || 0) * Number(el.price || 0),
+          coItem: null,
+          estLine: el,
+        });
+      }
+    }
+
+    // Appended added rows (sorted by their line_number)
+    for (const ci of addItems) {
+      rows.push({
+        kind: 'added',
+        lineNumber: ci.line_number,
+        description: ci.description,
+        qty: ci.qty,
+        units: ci.units,
+        price: ci.price,
+        total: Number(ci.qty || 0) * Number(ci.price || 0),
+        coItem: ci,
+        estLine: null,
+      });
+    }
+
+    return rows;
+  });
+
+  // Footer totals
+  let estimateTotal = $derived(
+    estimateLines.reduce((s, el) => s + Number(el.qty || 0) * Number(el.price || 0), 0)
   );
+  let proposedTotal = $derived(
+    mergedRows
+      .filter(r => r.kind === 'unchanged' || r.kind === 'changed' || r.kind === 'added')
+      .reduce((s, r) => s + r.total, 0)
+  );
+  let diffTotal = $derived(proposedTotal - estimateTotal);
+
+  // --------------------------------------------------------------------------
 
   async function loadCO() {
     loading = true;
@@ -136,16 +260,82 @@
     }
   }
 
-  // Line item editing
-  function openAddItem() {
-    modalItem = null;
+  // --------------------------------------------------------------------------
+  // Diff-editor actions
+  // --------------------------------------------------------------------------
+
+  /** Unchanged estimate line → [Change]: open modal pre-set to 'replace' with prefill */
+  function openChangeEstimateLine(estLine) {
     modalMode = 'create';
+    modalItem = null;
+    modalInitialAction = 'replace';
+    modalInitialTarget = estLine.line_item_id;
+    modalInitialDescription = estLine.description;
+    modalInitialQty = estLine.qty ?? '';
+    modalInitialUnits = estLine.units ?? 'none';
+    modalInitialPrice = estLine.price ?? '';
     modalOpen = true;
   }
 
-  function openEditItem(li) {
-    modalItem = li;
+  /** Unchanged estimate line → [Delete]: POST a 'remove' CO line item, no modal */
+  async function removeEstimateLine(estLine) {
+    if (!confirm(`Remove line ${estLine.line_number} "${estLine.description}" from this change order?`)) return;
+    try {
+      await api.post(`/api/change-orders/${co.change_order_id}/line-items/`, {
+        action: 'remove',
+        target_line_item: estLine.line_item_id,
+      });
+      await loadCO();
+    } catch (e) {
+      alert(e.message || 'Could not remove estimate line.');
+    }
+  }
+
+  /** Changed row (replace CO line) → [Edit]: open modal to PATCH the existing CO line */
+  function openEditCOLine(coItem) {
     modalMode = 'edit';
+    modalItem = coItem;
+    modalInitialAction = null;
+    modalInitialTarget = null;
+    modalInitialDescription = null;
+    modalInitialQty = null;
+    modalInitialUnits = null;
+    modalInitialPrice = null;
+    modalOpen = true;
+  }
+
+  /** Changed or removed row → [Undo]: DELETE the CO line item (reverts to unchanged) */
+  async function undoCOLine(coItem) {
+    if (!confirm('Undo this change? The line will revert to its original estimate value.')) return;
+    try {
+      await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${coItem.line_item_id}/`);
+      await loadCO();
+    } catch (e) {
+      alert(e.message || 'Could not undo change.');
+    }
+  }
+
+  /** Added row → [Delete]: DELETE the CO line item */
+  async function deleteAddedLine(coItem) {
+    if (!confirm('Delete this added line?')) return;
+    try {
+      await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${coItem.line_item_id}/`);
+      await loadCO();
+    } catch (e) {
+      alert(e.message || 'Could not delete line item.');
+    }
+  }
+
+  /** [+ New line] button → add mode */
+  function openAddItem() {
+    modalMode = 'create';
+    modalItem = null;
+    modalInitialAction = 'add';
+    modalInitialTarget = null;
+    modalInitialDescription = null;
+    modalInitialQty = null;
+    modalInitialUnits = null;
+    modalInitialPrice = null;
     modalOpen = true;
   }
 
@@ -155,47 +345,13 @@
     loadCO();
   }
 
-  async function handleDeleteItem(li) {
-    if (!confirm(`Delete this line item?`)) return;
-    try {
-      await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${li.line_item_id}/`);
-      await loadCO();
-    } catch (e) {
-      alert(e.message || 'Could not delete line item.');
-    }
-  }
-
-  async function handleReorder(itemIds) {
-    try {
-      await api.post(`/api/change-orders/${co.change_order_id}/line-items/reorder/`, { item_ids: itemIds });
-      await loadCO();
-    } catch (e) {
-      alert(e.message || 'Could not reorder.');
-    }
-  }
-
-  function moveUp(index) {
-    if (index === 0) return;
-    const ids = sortedLineItems.map(li => li.line_item_id);
-    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
-    handleReorder(ids);
-  }
-
-  function moveDown(index) {
-    if (index >= sortedLineItems.length - 1) return;
-    const ids = sortedLineItems.map(li => li.line_item_id);
-    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
-    handleReorder(ids);
-  }
+  // --------------------------------------------------------------------------
 
   function fmtMoney(n) { return `$${Number(n ?? 0).toFixed(2)}`; }
-  function lineTotal(li) { return Number(li.qty || 0) * Number(li.price || 0); }
-
-  function actionBadgeClass(action) {
-    if (action === 'add') return 'action-add';
-    if (action === 'remove') return 'action-remove';
-    if (action === 'replace') return 'action-replace';
-    return '';
+  function fmtDiff(n) {
+    const v = Number(n ?? 0);
+    if (v === 0) return '$0.00';
+    return (v > 0 ? '+' : '') + `$${Math.abs(v).toFixed(2)}`;
   }
 
   function originLabel(origin) {
@@ -243,78 +399,128 @@
     {/if}
   </div>
 
-  <!-- Line items (editable when draft) -->
+  <!-- Line items: merged diff editor -->
   <section class="section">
     <div class="section-head">
-      <h3>Line Items</h3>
+      <h3>Line items</h3>
+      <span class="spacer"></span>
       {#if canManageJobs && isDraft}
-        <button type="button" onclick={openAddItem}>Add Line Item</button>
+        <button type="button" onclick={openAddItem}>+ New line</button>
       {/if}
     </div>
 
-    {#if sortedLineItems.length > 0}
-      <table class="co-lines-table">
-        <thead>
+    <table class="diff-table">
+      <colgroup>
+        <col style="width:30px">
+        <col>
+        <col style="width:50px">
+        <col style="width:50px">
+        <col style="width:75px">
+        <col style="width:80px">
+        <col style="width:150px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Description</th>
+          <th class="num">Qty</th>
+          <th>Units</th>
+          <th class="num">Price</th>
+          <th class="num">Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {#if mergedRows.length === 0 && estimateLines.length === 0}
           <tr>
-            <th>#</th>
-            <th>Action</th>
-            <th>Target line</th>
-            <th>Description</th>
-            <th class="text-right">Qty</th>
-            <th>Units</th>
-            <th class="text-right">Price</th>
-            <th class="text-right">Total</th>
-            {#if canManageJobs && isDraft}<th>Actions</th>{/if}
+            <td colspan="7" class="empty-msg">No estimate lines or CO lines yet.</td>
           </tr>
-        </thead>
-        <tbody>
-          {#each sortedLineItems as li, i}
-            <tr>
-              <td>{li.line_number}</td>
-              <td><span class="action-badge {actionBadgeClass(li.action)}">{li.action}</span></td>
-              <td class="target-col">
-                {#if li.target_line_item}
-                  {#if li.target_description}
-                    <span class="target-desc">#{li.target_line_number ?? li.target_line_item}: {li.target_description}</span>
-                  {:else}
-                    <span class="target-desc">Line #{li.target_line_item}</span>
+        {:else}
+          {#each mergedRows as row}
+            {#if row.kind === 'unchanged'}
+              <tr>
+                <td>{row.lineNumber}</td>
+                <td>{row.description || '—'}</td>
+                <td class="num">{row.qty ?? '—'}</td>
+                <td>{row.units || '—'}</td>
+                <td class="num">{fmtMoney(row.price)}</td>
+                <td class="num">{fmtMoney(row.total)}</td>
+                <td class="acts">
+                  {#if canManageJobs && isDraft}
+                    <button type="button" onclick={() => openChangeEstimateLine(row.estLine)}>Change</button>
+                    <button type="button" onclick={() => removeEstimateLine(row.estLine)}>Delete</button>
                   {/if}
-                {:else}
-                  <span class="dim">—</span>
-                {/if}
-              </td>
-              <td>{li.description || '—'}</td>
-              <td class="text-right">{li.action !== 'remove' ? (li.qty ?? '—') : '—'}</td>
-              <td>{li.action !== 'remove' ? (li.units || '—') : '—'}</td>
-              <td class="text-right">{li.action !== 'remove' ? fmtMoney(li.price) : '—'}</td>
-              <td class="text-right">{li.action !== 'remove' ? fmtMoney(lineTotal(li)) : '—'}</td>
-              {#if canManageJobs && isDraft}
-                <td class="actions-cell">
-                  <button type="button" onclick={() => openEditItem(li)}>Edit</button>
-                  <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
-                  <button type="button" onclick={() => moveDown(i)} disabled={i >= sortedLineItems.length - 1}>&#9660;</button>
-                  <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
                 </td>
-              {/if}
-            </tr>
+              </tr>
+            {:else if row.kind === 'changed'}
+              <tr class="row-changed">
+                <td>{row.lineNumber}</td>
+                <td>{row.description || '—'}</td>
+                <td class="num">{row.qty ?? '—'}</td>
+                <td>{row.units || '—'}</td>
+                <td class="num">{fmtMoney(row.price)}</td>
+                <td class="num">{fmtMoney(row.total)}</td>
+                <td class="acts">
+                  {#if canManageJobs && isDraft}
+                    <button type="button" onclick={() => openEditCOLine(row.coItem)}>Edit</button>
+                    <button type="button" onclick={() => undoCOLine(row.coItem)}>Undo</button>
+                  {/if}
+                </td>
+              </tr>
+            {:else if row.kind === 'changed-orig'}
+              <tr class="row-gone">
+                <td class="keep">{row.lineNumber}</td>
+                <td>{row.description || '—'}</td>
+                <td class="num">{row.qty ?? '—'}</td>
+                <td>{row.units || '—'}</td>
+                <td class="num">{fmtMoney(row.price)}</td>
+                <td class="num">{fmtMoney(row.total)}</td>
+                <td></td>
+              </tr>
+            {:else if row.kind === 'removed'}
+              <tr class="row-gone">
+                <td class="keep">{row.lineNumber}</td>
+                <td>{row.description || '—'}</td>
+                <td class="num">{row.qty ?? '—'}</td>
+                <td>{row.units || '—'}</td>
+                <td class="num">{fmtMoney(row.price)}</td>
+                <td class="num">{fmtMoney(row.total)}</td>
+                <td class="acts keep">
+                  {#if canManageJobs && isDraft}
+                    <button type="button" onclick={() => undoCOLine(row.coItem)}>Undo</button>
+                  {/if}
+                </td>
+              </tr>
+            {:else if row.kind === 'added'}
+              <tr class="row-added">
+                <td>{row.lineNumber}</td>
+                <td><span class="added-tag">+</span>{row.description || '—'}</td>
+                <td class="num">{row.qty ?? '—'}</td>
+                <td>{row.units || '—'}</td>
+                <td class="num">{fmtMoney(row.price)}</td>
+                <td class="num">{fmtMoney(row.total)}</td>
+                <td class="acts">
+                  {#if canManageJobs && isDraft}
+                    <button type="button" onclick={() => openEditCOLine(row.coItem)}>Edit</button>
+                    <button type="button" onclick={() => deleteAddedLine(row.coItem)}>Delete</button>
+                  {/if}
+                </td>
+              </tr>
+            {/if}
           {/each}
-        </tbody>
-        {#if sortedLineItems.filter(li => li.action !== 'remove').length > 0}
-          {@const addTotal = sortedLineItems
-            .filter(li => li.action !== 'remove')
-            .reduce((s, li) => s + lineTotal(li), 0)}
-          <tfoot>
-            <tr>
-              <td colspan={canManageJobs && isDraft ? 7 : 7} style="text-align:right"><strong>Subtotal (additions/replacements):</strong></td>
-              <td class="text-right"><strong>{fmtMoney(addTotal)}</strong></td>
-              {#if canManageJobs && isDraft}<td></td>{/if}
-            </tr>
-          </tfoot>
         {/if}
-      </table>
-    {:else}
-      <p class="empty-msg">No line items on this change order yet.</p>
-    {/if}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="5" class="num footer-left">
+            Estimate <span class="est-struck">{fmtMoney(estimateTotal)}</span>
+            &rarr; <strong>proposed {fmtMoney(proposedTotal)}</strong>
+          </td>
+          <td class="num footer-diff">{fmtDiff(diffTotal)}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
   </section>
 
   <!-- Agreement of record -->
@@ -365,6 +571,12 @@
     coId={co.change_order_id}
     item={modalItem}
     {estimateLines}
+    initialAction={modalInitialAction}
+    initialTarget={modalInitialTarget}
+    initialDescription={modalInitialDescription}
+    initialQty={modalInitialQty}
+    initialUnits={modalInitialUnits}
+    initialPrice={modalInitialPrice}
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
   />
@@ -394,30 +606,46 @@
   .btn-accept:hover { background: #bbf7d0; }
 
   .section { padding: 16px 24px; }
-  .section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .section-head {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+  }
   .section-head h3 { margin: 0; }
+  .spacer { flex: 1; }
   .section-desc { font-size: 13px; color: #666; margin: 0 0 10px; }
 
-  .co-lines-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
-  .co-lines-table th { padding: 8px 10px; text-align: left; background: #fee2e2; color: #7f1d1d; font-weight: 600; border-bottom: 2px solid #fca5a5; }
-  .co-lines-table td { padding: 7px 10px; border-bottom: 1px solid #fee2e2; vertical-align: top; }
-  .co-lines-table .text-right { text-align: right; font-variant-numeric: tabular-nums; }
-  .co-lines-table tfoot td { padding: 8px 10px; background: #f9fafb; }
-  .actions-cell { white-space: nowrap; }
-  .actions-cell button { margin-right: 3px; }
-  .target-col { font-size: 13px; }
-  .target-desc { color: #555; }
-  .dim { color: #aaa; }
-
-  .action-badge {
-    display: inline-block; padding: 1px 8px; border-radius: 8px;
-    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+  /* ---- Merged diff table ---- */
+  .diff-table {
+    width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px;
   }
-  .action-add { background: #dcfce7; color: #166534; }
-  .action-remove { background: #fee2e2; color: #991b1b; }
-  .action-replace { background: #fef3c7; color: #92400e; }
+  .diff-table th {
+    text-align: left; color: #6b7280; font-size: 12px; font-weight: 600;
+    padding: 5px 8px; border-bottom: 1px solid #e5e7eb;
+  }
+  .diff-table td { padding: 6px 8px; vertical-align: middle; }
+  .diff-table tbody tr { border-bottom: 1px solid #f3f4f6; }
 
-  .empty-msg { color: #888; font-size: 14px; padding: 8px 0; }
+  .diff-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .diff-table .acts { text-align: right; white-space: nowrap; }
+  .diff-table .acts button { margin-left: 4px; }
+
+  /* Row tints */
+  .diff-table tr.row-changed { background: #fff7ed; }
+  .diff-table tr.row-added   { background: #dcfce7; }
+  .diff-table tr.row-gone td { color: #9ca3af; text-decoration: line-through; }
+  /* line-number cell in gone rows: no strikethrough, keep muted colour */
+  .diff-table tr.row-gone td.keep { text-decoration: none; color: #9ca3af; }
+  /* acts cell in gone rows: no strikethrough */
+  .diff-table tr.row-gone td.acts.keep { text-decoration: none; }
+
+  .added-tag { color: #166534; font-weight: 600; margin-right: 5px; }
+
+  /* Footer */
+  .diff-table tfoot td { padding: 8px; border-top: 2px solid #e5e7eb; font-size: 13px; }
+  .footer-left { color: #6b7280; }
+  .est-struck { text-decoration: line-through; }
+  .footer-diff { font-weight: 700; }
+
+  .empty-msg { color: #888; font-size: 13px; padding: 8px 0; }
 
   /* Agreement-of-record table */
   .agreement-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }

@@ -1,6 +1,8 @@
 <!-- Modal for adding/editing a Change Order line item.
      action: 'add' | 'remove' | 'replace'
-     For remove/replace, the user picks a target estimate line item. -->
+     For remove/replace, the user picks a target estimate line item.
+     initialAction/initialTarget/initialDescription/initialQty/initialUnits/initialPrice
+     allow callers to pre-seed the form (e.g. opening "Change" on an estimate line). -->
 <script>
   import { api } from '../../lib/api.js';
   import UnitsSelect from '../UnitsSelect.svelte';
@@ -12,6 +14,13 @@
     coId = null,
     item = null,       // existing CO line item when editing
     estimateLines = [],  // EstimateLineItem list for target picking
+    // Pre-seed props (used when opening from an estimate row)
+    initialAction = null,        // 'add' | 'replace' | 'remove' — overrides default
+    initialTarget = null,        // target_line_item id (number) to pre-select
+    initialDescription = null,
+    initialQty = null,
+    initialUnits = null,
+    initialPrice = null,
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -38,12 +47,13 @@
         units = item.units || 'none';
         price = item.price ?? '';
       } else {
-        action = 'add';
-        targetLineItem = '';
-        description = '';
-        qty = '';
-        units = 'none';
-        price = '';
+        // Apply initial props if provided, otherwise use defaults
+        action = initialAction ?? 'add';
+        targetLineItem = initialTarget != null ? String(initialTarget) : '';
+        description = initialDescription ?? '';
+        qty = initialQty ?? '';
+        units = initialUnits ?? 'none';
+        price = initialPrice ?? '';
       }
       error = '';
     }
