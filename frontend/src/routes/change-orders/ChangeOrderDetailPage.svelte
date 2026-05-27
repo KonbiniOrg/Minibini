@@ -513,11 +513,10 @@
       <tfoot>
         <tr>
           <td colspan="5" class="num footer-left">
-            Estimate <span class="est-struck">{fmtMoney(estimateTotal)}</span>
-            &rarr; <strong>proposed {fmtMoney(proposedTotal)}</strong>
+            Estimate <span class="est-struck">{fmtMoney(estimateTotal)}</span> &rarr; proposed
           </td>
+          <td class="num"><strong>{fmtMoney(proposedTotal)}</strong></td>
           <td class="num footer-diff">{fmtDiff(diffTotal)}</td>
-          <td></td>
         </tr>
       </tfoot>
     </table>
