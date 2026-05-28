@@ -85,19 +85,32 @@
     displayedVersion?.kind === 'co' ? displayedVersion.co : null
   );
 
-  // Effective lines when a CO is displayed (Option A: apply CO deltas to the base estimate).
-  // NOTE: The base is always co.estimate's line items. Layering a second CO on a
-  // prior *accepted* CO (chained COs) is not yet handled — that's a separate concern.
-  let coEffectiveLines = $derived.by(() => {
-    if (!displayedCO) return [];
-    const co = displayedCO;
-    const baseEst = estimateList.find(e => e.estimate_id === co.estimate);
-    const baseLines = (baseEst?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number);
-    const coItems = co.line_items || [];
+  // Effective lines when a CO is displayed — multi-CO layering.
+  //
+  // How it works:
+  //   1. Start from the base estimate's line items (the estimate the displayed CO
+  //      belongs to, sorted by line_number).
+  //   2. Collect every *accepted* CO on that same estimate, sorted by
+  //      change_order_id ascending (agreement order). Layer each one's deltas onto
+  //      the running set in order — remove drops a line, replace swaps content
+  //      (tagging it with that CO's ordinal), add appends (tagged with its ordinal).
+  //   3. Then layer the displayedCO on top, depending on its status:
+  //        - 'accepted'  → already applied in step 2; nothing extra.
+  //        - 'draft'/'open' → apply its deltas as a proposed view, tagging with its ordinal.
+  //        - 'rejected'/'expired'/'superseded' → do NOT apply; effective view is
+  //          the accepted agreement only (displayedCO's badge still shows its real status).
+  //   4. Each output row carries:
+  //        coTouched: 'changed' | 'added' | null  (drives row styling — unchanged)
+  //        coOrdinal: number | null  (ordinal of the CO that most recently touched it;
+  //                                   null for lines unchanged from the base estimate)
+  //
+  // Ordinal = 1-based position in the list of all COs on this estimate sorted by
+  // change_order_id (not parsed from the CO number string).
 
-    // Build lookup maps
-    const replaceByTarget = new Map(); // target_line_item id → CO replace item
-    const removeByTarget  = new Map(); // target_line_item id → CO remove item
+  /** Apply one CO's deltas to a running line set, tagging touched lines with the given ordinal. */
+  function applyCoDeltas(lines, coItems, ordinal) {
+    const replaceByTarget = new Map();
+    const removeByTarget  = new Map();
     const addItems = [];
     for (const ci of coItems) {
       if (ci.action === 'replace' && ci.target_line_item) {
@@ -108,50 +121,95 @@
         addItems.push(ci);
       }
     }
-
     const result = [];
-    for (const el of baseLines) {
-      const replaceCI = replaceByTarget.get(el.line_item_id);
-      const removeCI  = removeByTarget.get(el.line_item_id);
-      if (removeCI) {
-        // Omit removed lines entirely
-      } else if (replaceCI) {
+    for (const el of lines) {
+      if (removeByTarget.has(el.line_item_id)) {
+        // Drop removed lines entirely
+      } else if (replaceByTarget.has(el.line_item_id)) {
+        const ci = replaceByTarget.get(el.line_item_id);
         result.push({
+          line_item_id: el.line_item_id,
           line_number: el.line_number,
-          description: replaceCI.description,
-          qty: replaceCI.qty,
-          units: replaceCI.units,
-          price: replaceCI.price,
+          description: ci.description,
+          qty: ci.qty,
+          units: ci.units,
+          price: ci.price,
           coTouched: 'changed',
+          coOrdinal: ordinal,
         });
       } else {
-        result.push({
-          line_number: el.line_number,
-          description: el.description,
-          qty: el.qty,
-          units: el.units,
-          price: el.price,
-          coTouched: null,
-        });
+        result.push({ ...el });
       }
     }
-    // Append added lines
     for (const ci of addItems) {
       result.push({
+        line_item_id: null,
         line_number: ci.line_number,
         description: ci.description,
         qty: ci.qty,
         units: ci.units,
         price: ci.price,
         coTouched: 'added',
+        coOrdinal: ordinal,
       });
     }
     return result;
+  }
+
+  let coEffectiveLines = $derived.by(() => {
+    if (!displayedCO) return [];
+    const co = displayedCO;
+    const baseEst = estimateList.find(e => e.estimate_id === co.estimate);
+
+    // Base lines from the estimate this CO targets
+    let lines = (baseEst?.line_items || []).slice()
+      .sort((a, b) => a.line_number - b.line_number)
+      .map(el => ({
+        line_item_id: el.line_item_id,
+        line_number: el.line_number,
+        description: el.description,
+        qty: el.qty,
+        units: el.units,
+        price: el.price,
+        coTouched: /** @type {null} */ (null),
+        coOrdinal: /** @type {number|null} */ (null),
+      }));
+
+    // All COs on this estimate sorted by id (agreement order)
+    const cosOnEst = (changeOrders || [])
+      .filter(c => c.estimate === co.estimate)
+      .slice()
+      .sort((a, b) => a.change_order_id - b.change_order_id);
+
+    // Ordinal map: change_order_id → 1-based position among all COs on this estimate
+    const ordinalOf = new Map(cosOnEst.map((c, i) => [c.change_order_id, i + 1]));
+
+    // Step 2: layer every accepted CO in agreement order
+    for (const acceptedCo of cosOnEst) {
+      if (acceptedCo.status !== 'accepted') continue;
+      lines = applyCoDeltas(lines, acceptedCo.line_items || [], ordinalOf.get(acceptedCo.change_order_id));
+    }
+
+    // Step 3: layer displayedCO if it is in a proposed (not-yet-decided) state
+    const PROPOSED = new Set(['draft', 'open']);
+    if (PROPOSED.has(co.status)) {
+      lines = applyCoDeltas(lines, co.line_items || [], ordinalOf.get(co.change_order_id));
+    }
+    // 'accepted' → already applied above; 'rejected'/'expired'/'superseded' → skip
+
+    return lines;
   });
 
   // Footer total for the effective CO view
   let coEffectiveTotal = $derived(
     coEffectiveLines.reduce((s, li) => s + Number(li.qty || 0) * Number(li.price || 0), 0)
+  );
+
+  // Number of COs on the displayed CO's estimate — drives single vs. numbered badge
+  let coCountOnEstimate = $derived(
+    displayedCO
+      ? (changeOrders || []).filter(c => c.estimate === displayedCO.estimate).length
+      : 0
   );
 
   // Worksheet versions, sorted newest first
@@ -640,7 +698,9 @@
                     <td>{li.line_number}</td>
                     <td>
                       {li.description}
-                      {#if li.coTouched}<span class="co-tag">CO</span>{/if}
+                      {#if li.coTouched}
+                        <span class="co-tag">{coCountOnEstimate > 1 ? `CO-${li.coOrdinal}` : 'CO'}</span>
+                      {/if}
                     </td>
                     <td class="text-right">{li.qty}</td>
                     <td>{li.units || 'none'}</td>
