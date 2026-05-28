@@ -30,6 +30,8 @@ This doc owns:
   `RateScheme` and the `active_modifiers` / `est_qty` / `actual_qty`
   semantics).
 - `Estimate`, `EstimateLineItem`, `EstimateLineItemSource`.
+- `ChangeOrder`, `ChangeOrderLineItem`, the agreement-of-record
+  composition over (Estimate + accepted COs).
 - The atom abstraction (atoms are Tasks and Materials; whole-task
   billing).
 - `EstimateWizardService`, the wizard endpoints, and the wizard UI.

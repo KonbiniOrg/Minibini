@@ -85,18 +85,20 @@ attached to a Job). Job has no parent.
 | `submitted` | Estimate has been sent (auto-fired by `estimate_status_changed_for_job`) |
 | `approved` | Estimate accepted; not yet released to the floor |
 | `in_progress` | Released to the floor; tasks may be in flight |
+| `on_hold` | General pause during active work (CO negotiation, awaiting deposit, backordered material, customer gone quiet). Reachable only from `approved` / `in_progress`. |
 | `work_complete` | All tasks terminal; invoicing/payment may still be open |
-| `completed` | Fully closed (terminal) |
+| `completed` | Fully closed (terminal). Gated on all deliverables shipped — see §3.3. |
 | `rejected` | Terminal |
-| `cancelled` | Terminal |
+| `cancelled` | Terminal, but billable — `BILLABLE_JOB_STATUSES` includes it so a job stopped early can still be invoiced for work done (see `invoicing-and-expenses.md`) |
 
 Valid transitions (`Job.clean()` at `apps/jobs/models.py`):
 
 ```
 draft         → submitted, rejected
 submitted     → approved, rejected
-approved      → in_progress, cancelled
-in_progress   → work_complete, cancelled
+approved      → in_progress, on_hold, cancelled
+in_progress   → work_complete, on_hold, cancelled
+on_hold       → approved, in_progress, cancelled
 work_complete → completed, cancelled, in_progress
 cancelled     → in_progress
 rejected, completed → (terminal)
@@ -117,6 +119,38 @@ the Job to `rejected` — see `estimates-and-prices.md` §9.3 and §13 below.
 marked complete prematurely or cancelled by accident. They are exposed on
 the job-view status pill and gated by `can_manage_jobs` (the pill PATCHes
 `/api/jobs/{id}/`, which already requires that atom).
+
+#### `on_hold` semantics
+
+`on_hold` is a general pause primitive — change orders are one consumer
+of it, but not the only one. The Job carries a `hold_reason` text field
+(free-form: "CO-2026-0007 in negotiation", "awaiting deposit") that the
+board pill and job header surface; `Job.save()` clears it on exit to an
+active status.
+
+`on_hold` freezes and hides work **as a status query-filter** rather
+than by mutating Tasks — no task is touched, so resume is instant and
+lossless:
+
+- **New bleps** are rejected (`BlepService`'s job-status guard permits
+  work only on `approved` / `in_progress` / `work_complete`).
+- **Task and material mutations** are blocked by `_assert_job_not_on_hold`
+  in `JobService` (create/edit/delete tasks, change assignment,
+  complete/block/unblock/cancel, edit materials).
+- **The schedule** excludes on-hold jobs (`apps/schedule/services.py`
+  filters both worker selection and the per-worker lane queries — see
+  `docs/designs/schedule.md`).
+- **Shipment creation** is rejected (`ShipmentService._assert_job_not_on_hold`).
+- **The board** slots on-hold jobs into the Pipeline lane with an
+  `on-hold` sub-status, so they stay findable but show no worker task
+  columns.
+- **Transition into `on_hold` is rejected while any open Blep exists**
+  on the job's tasks (parallel to the cancel guard) — a manager finds
+  the worker and has them stop first.
+- **Exit guard**: a Job leaves `on_hold` only when no ChangeOrder on it
+  is live (`draft`/`open`). The CO-accept auto-advance (`on_hold → approved`)
+  is what normally clears the hold; a discarded draft CO also clears
+  the guard.
 
 ### 3.2 Auto-set dates
 
@@ -157,6 +191,25 @@ Entry to `work_complete`, `cancelled`, or `rejected` triggers
 `InventoryService.release_earmarks_for_job(job)` (see
 `materials-inventory-and-purchasing.md`). There is no other side-effect on
 those transitions.
+
+**To `completed`:** `JobService.maybe_complete_if_resolved(job)` is the
+single completion gate, called from both the invoice-paid path
+(`Invoice._maybe_complete_job` delegates to it) and
+`ShipmentService.mark_picked_up` — whichever lands last completes the
+job. It requires **both** all invoices resolved (`paid` or `cancelled`)
+**and** all deliverables shipped
+(`DeliverableService.all_deliverables_shipped(job)` returns True only
+when every Deliverable's `qty_picked_up == qty_ordered`; prepared-but-
+not-picked-up does not count; zero deliverables is vacuously shipped).
+Manual `JobService.update_job(status=completed)` enforces the same
+all-shipped precondition and raises `ValidationError` otherwise.
+`cancelled` is exempt because the state machine forbids
+`cancelled → completed`.
+
+**Open-Blep entry guard.** Transitions into `on_hold` or `cancelled`
+are rejected by `JobService.update_job` if any Blep on the job's tasks
+is open (`end_time__isnull=True`) — same "coordinate offline" rationale
+as the `block_task` conflict.
 
 ### 3.4 Job creation paths
 
@@ -774,9 +827,10 @@ Materials CRUD on the standalone endpoint:
 
 ## 12. Deliverables and Shipments
 
-The fulfillment side of a Job. The three models live in
-`apps/deliverables/`. Change orders are designed but not yet implemented;
-see §14 for the deferred work.
+The fulfillment side of a Job. Four models live in `apps/deliverables/`:
+`Deliverable`, `Shipment`, `ShipmentItem`, and `DeliverableSnapshot`
+(the write-once per-document scope record introduced with change orders;
+see §12.2 and §12.9).
 
 ### 12.1 Concepts
 
@@ -796,25 +850,38 @@ see §14 for the deferred work.
 
 ### 12.2 Editability of the Deliverables list
 
-Deliverables editability is computed from the Job's estimate state, not
-stored:
+Deliverables editability is computed from the Job's estimate / change-
+order state, not stored. The live `Deliverable` list is the single
+editing surface throughout — pre-send, mid-CO, and post-acceptance:
 
-| Estimate state on the Job | D-list state | UI affordance |
+| Situation | D-list state | UI affordance |
 |---|---|---|
-| No estimate | Editable | Edit link |
-| Latest active estimate is `draft` | Editable | Edit link |
+| No estimate, or latest active estimate is `draft` | Editable | Edit link |
 | Latest active estimate is `open` (sent) | Read-only | "(estimate sent)" pill |
-| Any estimate on the Job is `accepted` | Permanently read-only | "(estimate accepted)" pill |
+| Estimate `accepted`, no live ChangeOrder | Read-only | "(estimate accepted)" pill |
+| A ChangeOrder on the Job is `draft` | Editable (unanchored rows only) | Edit link, while CO is draft |
+| A ChangeOrder on the Job is `open` (sent) | Read-only | "(change order sent)" pill |
+| Any time | **Anchored** rows (have ≥ 1 `ShipmentItem`) are never editable | Locked indicator |
 
 "Latest active" means: most recent estimate not in `superseded` /
 `rejected` / `expired`. There is at most one such row.
 
-Rationale: while the customer is reviewing a `sent` estimate, the
-Deliverables list they were shown must not drift from what the database
-holds; the only way to change it is to revise the estimate (a new draft
-revision unlocks the list). Once the customer has accepted, the agreed
-scope is fixed — change orders (deferred) are the only sanctioned
-modification path.
+**Anchoring** (`DeliverableService.update`/`delete` reject when
+`shipment_items.exists()` is true): once any of a Deliverable's quantity
+has been picked up, the row is frozen at its `qty_ordered` for the life
+of the job. A CO can't edit or remove an anchored row — if a change to
+an already-delivered item is genuinely needed, the escape hatch is to
+finalize the job (`cancelled` + invoice for work done — see
+`invoicing-and-expenses.md`) and start a new one.
+
+Editability keys on **CO state**, not on `on_hold` alone — a non-CO
+pause (deposit, backorder) leaves the agreed scope frozen.
+
+Rationale: while the customer is reviewing a `sent` estimate or CO, the
+Deliverables they were shown must not drift from what the database
+holds. While a CO is `draft`, the live list holds the *proposal* (the
+prior agreed scope is preserved on a `DeliverableSnapshot` — see §12.9
+and the per-document snapshot model in `data-constraints.md`).
 
 ### 12.3 Estimate-send guard
 
@@ -846,6 +913,10 @@ This is the single cross-app modification this feature made; see also
 - A Shipment can only be created server-side once the Job has an accepted
   estimate. Enforced in `ShipmentService.create`; raises before any
   database write.
+- **Shipments are frozen while the Job is `on_hold`.**
+  `ShipmentService._assert_job_not_on_hold` rejects creation — otherwise
+  someone could ship against a proposed-but-unagreed deliverable scope
+  during CO negotiation, and the resulting row would anchor mid-flight.
 - The SPA's Job Shipments page creates Shipments **locally first** (draft
   column with prefilled qtys). The server-side `POST /api/jobs/{id}/shipments/`
   fires only on Save, and only if the draft has at least one non-zero qty.
@@ -878,8 +949,8 @@ This is the single cross-app modification this feature made; see also
 
 | Class | Public methods |
 |---|---|
-| `DeliverableService` | `create`, `update`, `delete` (with sibling renumber), `reorder`, `is_editable`, `editability_reason`, `compute_fulfillment` |
-| `ShipmentService` | `create`, `update` (notes only), `delete` (only if prepared + empty), `mark_picked_up`, `add_item`, `update_item`, `remove_item`, `packing_list_payload` |
+| `DeliverableService` | `create`, `update`, `delete` (with sibling renumber), `reorder`, `is_editable`, `editability_reason`, `compute_fulfillment`, `all_deliverables_shipped`, `snapshot_document`, `restore_live_to_snapshot` |
+| `ShipmentService` | `create`, `update` (notes only), `delete` (only if prepared + empty), `mark_picked_up` (calls `JobService.maybe_complete_if_resolved` so the last shipment can complete a fully-paid job), `add_item`, `update_item`, `remove_item`, `packing_list_payload` |
 
 All write paths run inside `transaction.atomic()`. Quantity-bound checks
 use `select_for_update()` on the parent Deliverable to keep concurrent
@@ -944,14 +1015,48 @@ shipment + job header, line item table with previous / this-shipment /
 remaining columns, a signature row (Pickup by + Pickup date). Print
 via the browser; no server-side PDF generator yet.
 
-### 12.9 Change orders (deferred)
+### 12.9 Change orders and deliverable versioning
 
-Out of scope for the current implementation. The envisioned design is a
-`ChangeOrder` model — an estimate-shaped post-acceptance amendment with
-both billing line items and a deliverables delta. Until
-that ships, a Job's accepted Deliverables list has **no escape hatch**:
-mistakes require revising the estimate before acceptance, or developer
-intervention.
+A **ChangeOrder** is the sanctioned amendment instrument after the
+Estimate is accepted: an estimate-shaped, customer-approved (or
+-rejected) document that alters the agreement. The model and lifecycle
+live in `apps/estimates/` (alongside `Estimate`); see
+`docs/designs/estimates-and-prices.md` for the full reference. The
+deliverable-side mechanics are owned by this doc:
+
+- **One editing surface.** The CO's proposed deliverables *are* the
+  job's live `Deliverable` list, edited in place via the same
+  `DeliverablesEditModal` while the CO is `draft`. There is no separate
+  CO-owned deliverables table — see §12.2.
+- **`DeliverableSnapshot`** (`apps/deliverables/models.py`) is the
+  immutable, write-once per-document scope record. Each row attaches
+  to *either* an Estimate or a ChangeOrder (enforced by `clean()`) and
+  copies the live Deliverable's `description` / `qty_ordered` / `units`
+  / `sort_order` plus a `source_deliverable` FK (SET_NULL) for
+  traceability. A document has at most one snapshot set.
+- **Two write triggers** (`DeliverableService.snapshot_document`):
+  1. **On CO creation** (`ChangeOrderService.create`) — snapshot the
+     prior agreement onto the document being amended (the accepted
+     Estimate, or the latest accepted CO on the same estimate). That
+     snapshot is both the amended document's permanent agreed record
+     **and** the rollback target if this CO dies.
+  2. **On CO `→ rejected` / `→ expired`** — snapshot the live list
+     (this CO's final proposal) onto the rejected CO, preserving the
+     proposal.
+- **Anchoring (Option A):** an unshipped row is freely editable in the
+  live list; once any `ShipmentItem` references it, the row is frozen
+  at `qty_ordered` — never editable or removable. Fulfillment never
+  fragments because shipments stay attached to the live row across
+  versions. See §12.2.
+- **Reject → resume.** `DeliverableService.restore_live_to_snapshot`
+  reconciles the live list's *unanchored* rows back to a prior
+  snapshot — re-adds removed rows, restores edited qty, deletes added
+  rows; anchored rows are untouched. Exposed as the "Restore last
+  agreed deliverables" action on a rejected CO.
+- **On CO acceptance.** No reconcile step: the live list already *is*
+  the new agreed set (it was edited in place during the CO draft).
+  Only Tasks/Materials are hand-applied by the user — the CO never
+  mutates them automatically.
 
 ---
 
@@ -977,6 +1082,14 @@ which set the parent's status to superseded directly. `accepted` is
 terminal; an accepted estimate cannot be superseded
 (`Estimate.clean()` rejects it; `tests/test_estimate_job_status_sync.py`
 covers this).
+
+**ChangeOrder uses no signals.** `ChangeOrderService.update_status`
+handles acceptance/rejection side-effects directly: on `→ accepted` it
+advances the Job `on_hold → approved` via `JobService.update_job` and
+writes a `HistoryEntry`; on `→ rejected`/`→ expired` it calls
+`DeliverableService.snapshot_document(change_order=co)` (Trigger 2). No
+Task or Material is mutated by either path — the human applies the
+agreed changes by hand while the job sits in `approved`.
 
 ## 14. Unfinished work
 

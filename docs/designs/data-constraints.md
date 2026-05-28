@@ -193,14 +193,16 @@ Depends on: Contact.
 ```
 draft → submitted → approved → in_progress → work_complete → completed
                   ↘ rejected   ↘ cancelled    ↘ cancelled    ↘ cancelled
+                                 ↘ on_hold     ↘ on_hold
 draft → rejected
 ```
 
 Valid transitions:
 - `draft` → `submitted`, `rejected`
 - `submitted` → `approved`, `rejected`
-- `approved` → `in_progress`, `cancelled`
-- `in_progress` → `work_complete`, `cancelled`
+- `approved` → `in_progress`, `on_hold`, `cancelled`
+- `in_progress` → `work_complete`, `on_hold`, `cancelled`
+- `on_hold` → `approved`, `in_progress`, `cancelled`
 - `work_complete` → `completed`, `cancelled`, `in_progress`
 - `cancelled` → `in_progress`
 - `rejected`, `completed` → (terminal)
@@ -211,7 +213,14 @@ cancel), gated by `can_manage_jobs` at the API layer.
 
 `STATUS_IN_PROGRESS` sits between `approved` and `work_complete` (added when
 WorkOrder was removed). `work_complete` = all tasks terminal and earmarks
-released. `completed` = fully closed (typically: all invoices paid).
+released. `completed` = fully closed; gated on **both** all invoices
+resolved **and** all deliverables shipped (see "Implied state" below and
+§2.5).
+
+`on_hold` is a general pause primitive (CO negotiation, awaiting
+deposit, backordered material). Reachable only from the active work
+band. The CO-accept path auto-advances `on_hold → approved`; non-CO
+holds resume manually.
 
 #### Fields
 
@@ -219,6 +228,7 @@ released. `completed` = fully closed (typically: all invoices paid).
   (pattern from Configuration). Only generated for new instances.
 - **contact** (required FK → Contact, PROTECT)
 - **status**: must be one of the choices above, default `draft`
+- **hold_reason**: TextField, blank-allowed. Free-form pause reason ("CO-2026-0007 in negotiation", "awaiting deposit"). Cleared automatically by `Job.save()` on exit to `approved` / `in_progress`.
 - **name** / **description** / **customer_po_number**: optional text
 
 #### Date rules
@@ -231,7 +241,7 @@ released. `completed` = fully closed (typically: all invoices paid).
   `cancelled`, or `rejected`. Immutable once set — *except* it is cleared
   back to null when a Job is reactivated to `in_progress` from
   `work_complete`/`cancelled`. Must be null for
-  `draft`/`submitted`/`approved`/`in_progress`/`work_complete`.
+  `draft`/`submitted`/`approved`/`in_progress`/`on_hold`/`work_complete`.
 
 #### Implied state from other models
 
@@ -243,9 +253,18 @@ released. `completed` = fully closed (typically: all invoices paid).
 - Job `completed`/`cancelled` → no unresolved Estimates (none in `draft` or
   `open`).
 - Job `work_complete` (or later) → all Tasks on the Job terminal.
-- All Invoices for a Job `paid`/`cancelled` → Job must be `completed`
-  (`Invoice._maybe_complete_job()`).
-- Job `cancelled` → all Invoices for the Job must be `cancelled`.
+- Job `completed` → all Deliverables on the Job have `qty_picked_up == qty_ordered` (the all-shipped gate; §2.5).
+- All Invoices for a Job `paid`/`cancelled` AND all deliverables shipped → Job must be `completed` (`JobService.maybe_complete_if_resolved`).
+- Job `cancelled` → all Invoices for the Job must be `cancelled` *or* outstanding under the stop-and-bill flow (see `invoicing-and-expenses.md` — `CANCELLED` is in `BILLABLE_JOB_STATUSES`; the Unpaid lane keeps a cancelled-with-open-invoice job visible until its invoices clear).
+- Job `on_hold` → no exit to an active status while any `ChangeOrder` on the job is `draft` or `open`. The CO-accept handler auto-advances `on_hold → approved`; a discarded draft CO also clears the guard.
+
+Transitions **into** `on_hold` or `cancelled` are rejected by `JobService.update_job` if any `Blep` on the job's tasks is open (`end_time__isnull=True`).
+
+While `on_hold`, the following are blocked (purely by status filter — no Task is touched):
+- New bleps (`BlepService` job-status guard).
+- Task and material mutations (`_assert_job_not_on_hold` in `JobService`).
+- Schedule rendering (`ScheduleService` excludes on-hold jobs).
+- Shipment creation (`ShipmentService._assert_job_not_on_hold`).
 
 See `docs/designs/jobs-tasks-and-worksheets.md` for the loose-pending-material
 guard on `in_progress → work_complete`.
@@ -398,9 +417,11 @@ Depends on: Task, User.
     a worker forgot to clock in for work they did earlier today).
   - **Job-status precondition (both paths)**: the task's Job must be in
     a status where work belongs. `start_work` requires `approved` or
-    `in_progress`; `create_historical` also permits `work_complete`.
+    `in_progress`; `create_historical` also permits `work_complete` and
+    `cancelled` (the latter so forgotten time can be logged for billing
+    under the stop-and-bill flow — see `invoicing-and-expenses.md`).
     Any other Job status (`draft`, `submitted`, `rejected`, `completed`,
-    `cancelled`) is rejected with `ValidationError`.
+    `on_hold`) is rejected with `ValidationError`.
 - Steady-state invariant: a Blep's task is in `in_progress`, `blocked`,
   `complete`, or `cancelled` — never `pending`, because `start_work`
   promotes before creating and `create_historical` is only sensibly
@@ -505,6 +526,56 @@ Polymorphic row joining a line item to a plan-side atom.
   atoms, so this never fires across revisions in practice.)
 - The atom's worksheet's `job` must match the line item's estimate's `job`
   (validator-enforced).
+
+See `docs/designs/estimates-and-prices.md`.
+
+---
+
+### 1.13a ChangeOrder (+ ChangeOrderLineItem)
+
+Depends on: Job, Estimate.
+
+A customer-approved post-acceptance amendment to the agreed Estimate. `db_table = 'change_orders'`.
+
+#### Status machine
+
+Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
+- `draft` → `open`, `rejected`
+- `open` → `accepted`, `rejected`, `superseded`, `expired`
+- `accepted`, `rejected`, `expired`, `superseded` → (terminal)
+
+#### Fields
+
+- **job** (required FK → Job, CASCADE)
+- **estimate** (required FK → Estimate, PROTECT): the accepted Estimate this CO amends
+- **change_order_number**: unique, max 80. Assigned in `save()` as `{estimate.estimate_number}-CO{n}` where `n` = count of COs on this estimate + 1. The `unique` constraint is the race backstop.
+- **version**: integer, default 1
+- **parent** (optional FK → self, SET_NULL): the prior CO this one was seeded from
+
+#### Date rules
+
+- **created_date**: set on creation, immutable thereafter
+- **sent_date**: auto-set to `now()` on transition to `open`. Immutable once set. Must be null for `draft`.
+- **expiration_date**: auto-set to `now() + est_expire_days` on transition to `open` (shared with Estimate). Should be null for `draft`.
+- **closed_date**: auto-set to `now()` on transition to `accepted`, `rejected`, `superseded`, or `expired`. Immutable once set. Must be null for `draft`.
+
+#### Invariants
+
+- **One live CO per job**: at most one ChangeOrder per Job in `draft` or `open`.
+- **Create requires `on_hold`**: `ChangeOrderService.create` raises `ValidationError` unless `Job.status == on_hold` and the job has an `accepted` Estimate.
+- **Line item requirement**: cannot transition out of `draft` without at least one ChangeOrderLineItem. Enforced in `ChangeOrder.clean()`.
+- **Job exit guard**: a Job cannot leave `on_hold` while any of its COs is `draft` or `open`.
+
+#### ChangeOrderLineItem
+
+Inherits `BaseLineItem`. `db_table = 'co_li'`.
+
+- **change_order** (required FK → ChangeOrder, CASCADE)
+- **action** (CharField, required): one of `add`, `remove`, `replace`
+- **target_line_item** (optional FK → EstimateLineItem, PROTECT): required for `remove` / `replace`; must be null for `add` (enforced by `clean()`)
+- **source_template** (optional FK → TaskTemplate, SET_NULL): catalog provenance
+- **price_list_item** (optional FK → PriceListItem, SET_NULL)
+- No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
 
 See `docs/designs/estimates-and-prices.md`.
 
@@ -628,7 +699,8 @@ Statuses: `draft`, `open`, `cancelled`, `superseded`, `partly-paid`, `paid`,
 No explicit transition validation in `clean()`. The validator checks:
 - Status must be a valid choice
 - Invoice should not exist for `draft`/`submitted`/`rejected` jobs
-- If Job is `cancelled`, Invoice must also be `cancelled`
+
+A `cancelled` Job may carry `open` / `partly-paid` / `paid` Invoices: `CANCELLED` is in `BILLABLE_JOB_STATUSES`, so a job stopped early can still be billed for work done. The Unpaid board lane queries by outstanding-invoice rather than job status, keeping such jobs visible until their invoices clear (see `invoicing-and-expenses.md`).
 
 #### Fields
 
@@ -919,8 +991,9 @@ customer-facing manifest distinct from billing line items.
 
 - **job** (required FK → Job, CASCADE)
 - **description** (required, text)
-- **qty_ordered** (required, decimal(10,2)): customer-agreed quantity. Only
-  changes via change order (deferred — not yet implemented).
+- **qty_ordered** (required, decimal(10,2)): customer-agreed quantity.
+  Changes via direct edit of the live list (pre-send) or via the
+  draft-CO edit-in-place flow. Anchored once shipped (see below).
 - **units** (required, max 50 chars): drawn from `Configuration['units_list']`
 - **sort_order** (PositiveInteger): auto-assigned to next slot on save when
   unset (10, 20, 30, …). Renumbered to a contiguous sequence after a
@@ -928,15 +1001,13 @@ customer-facing manifest distinct from billing line items.
 - **created_at** / **updated_at**: timestamps.
 - `db_table = 'deliverables'`. Default ordering: `sort_order`.
 
-**Editability** — computed from the Job's estimate state, not stored:
+**Editability** — computed from the Job's estimate / change-order state, not stored:
 
-- **Editable** when no estimate exists OR the latest non-terminal estimate is
-  in `draft` (terminal here means `superseded`, `rejected`, or `expired`).
-- **Read-only otherwise**, with the UI surfacing a reason
-  (`estimate_sent` when latest active is `open`; `estimate_accepted` when any
-  estimate on the Job is `accepted`).
-- Enforced by `DeliverableService._assert_editable(job)`; create / update /
-  delete / reorder all raise `ValidationError` outside the editable state.
+- **Editable** when no estimate exists, the latest non-terminal estimate is
+  `draft`, OR a ChangeOrder on the job is `draft` (the CO edit-in-place window).
+- **Read-only** when the latest active estimate is `open`, an accepted estimate is the agreement of record with no live CO, or a CO is `open`.
+- **Anchored** rows — Deliverables with any `ShipmentItem` — are **never** editable or removable, regardless of the surrounding state. `DeliverableService.update` / `delete` reject the operation. Once any of the deliverable's quantity ships, the row is frozen at `qty_ordered` for the life of the job.
+- Enforced by `DeliverableService._assert_editable(job)` for state checks; create / update / delete / reorder all raise `ValidationError` outside the editable state.
 
 **Constraint**: `qty_ordered > 0` (validated by service when supplied via
 API; not a DB constraint).
@@ -1006,11 +1077,34 @@ counter (no global document number).
 
 **Defense-in-depth**: `Deliverable` PROTECT on `ShipmentItem.deliverable`
 makes it impossible to remove a Deliverable that any Shipment references.
-Reachable only via change orders (deferred); the Deliverable editability
-rules already prevent deletion once shipments could exist.
+This is the anchoring invariant from the database side — see §1.23.
 
 See `docs/designs/jobs-tasks-and-worksheets.md` for the full
 fulfillment workflow.
+
+---
+
+### 1.24a DeliverableSnapshot
+
+Depends on: Estimate **or** ChangeOrder (exactly one), Deliverable.
+
+Immutable, write-once frozen copy of a Deliverable's agreed scope at the moment a document was finalized.
+
+- **estimate** (optional FK → Estimate, CASCADE)
+- **change_order** (optional FK → ChangeOrder, CASCADE)
+- **version** (PositiveInteger): display ordinal (1 = Estimate; 2.. = successive COs on that estimate)
+- **description** / **qty_ordered** / **units** / **sort_order**: mirror `Deliverable` at snapshot time
+- **source_deliverable** (optional FK → Deliverable, SET_NULL): traceability to the live row copied from
+- **created_at**: auto-set
+- `db_table = 'deliverable_snapshots'`. Default ordering: `sort_order`.
+
+**Constraints:**
+
+- Exactly one of `estimate` / `change_order` set. Enforced by `DeliverableSnapshot.clean()`.
+- A document has at most one snapshot set. `DeliverableService.snapshot_document` short-circuits if any snapshot already exists for that document.
+- Snapshots are never edited or deleted by application code.
+
+See `docs/designs/jobs-tasks-and-worksheets.md` §12.9.
 
 ---
 
@@ -1134,29 +1228,26 @@ Implemented by the `estimate_status_changed_for_worksheet` signal in
 
 ---
 
-### 2.5 Last Invoice paid → Job completed
+### 2.5 Job auto-completion gate (all invoices resolved + all deliverables shipped)
 
-**Trigger:** An Invoice transitions to `paid`.
+**Triggers:**
+- An Invoice transitions to `paid` — `Invoice._maybe_complete_job` runs, delegating to `JobService.maybe_complete_if_resolved`.
+- A Shipment transitions to `picked_up` — `ShipmentService.mark_picked_up` calls `JobService.maybe_complete_if_resolved`.
 
-**Effects:**
-- If ALL Invoices for the Job are now `paid` (or `cancelled`), the Job
-  transitions to `completed`. The handler walks the state machine through
-  `in_progress` → `work_complete` → `completed` if the Job is still
-  `approved` at the moment of payment (each step via `JobService.update_job`).
-- Before the walk, any loose pending Materials on the Job are released
-  (restocked) so the `work_complete` materials gate cannot strand the Job —
-  this is an unattended path with no user to resolve them. A `HistoryEntry`
-  records the release if anything was released.
-- Job's `completed_date` is set to `now()` (or should match the last
-  Invoice's `closed_date` in a backdated translation).
-- A `HistoryEntry` of `entry_type='action'` is created on the Job, attributed
-  to the `system` user, recording the auto-complete.
+**Effects** (gate runs only when **both** conditions hold):
 
-**Data constraint:** If all Invoices for a Job are `paid`/`cancelled`, the
-Job must be `completed` with a `completed_date` no earlier than the last
-Invoice's `closed_date`.
+1. **All invoices resolved** — every `Invoice` for the Job is `paid` or `cancelled`.
+2. **All deliverables shipped** — `DeliverableService.all_deliverables_shipped(job)` returns True, i.e. every `Deliverable`'s `qty_picked_up == qty_ordered`. Prepared-but-not-picked-up does not count. A job with zero deliverables is vacuously shipped.
 
-Implemented in `Invoice.save()` → `_maybe_complete_job()`.
+When both hold, the handler walks the state machine through `in_progress` → `work_complete` → `completed` if the Job is still `approved` at the moment of resolution (each step via `JobService.update_job`). Before the walk, any loose pending Materials on the Job are released (restocked) so the `work_complete` materials gate cannot strand the Job — this is an unattended path with no user to resolve them. A `HistoryEntry` records the release if anything was released. Job's `completed_date` is set to `now()`. A `HistoryEntry` of `entry_type='action'` attributed to `system` records the auto-complete.
+
+Manual `JobService.update_job(status=completed)` enforces the all-shipped precondition independently and raises `ValidationError('All deliverables must be shipped before completing the job.')` otherwise.
+
+`cancelled` jobs are exempt — the state machine forbids `cancelled → completed`, so neither trigger advances them.
+
+**Data constraint:** Whenever a Job is `completed`, all of its Invoices must be `paid`/`cancelled` AND all of its Deliverables must be fully picked up. Whenever a Job has all invoices resolved AND all deliverables picked up, it must be `completed` (or `cancelled`) with `completed_date` set.
+
+Implemented in `JobService.maybe_complete_if_resolved` (`apps/jobs/services.py`), reached from `Invoice.save()._maybe_complete_job` and `ShipmentService.mark_picked_up`.
 
 ---
 
