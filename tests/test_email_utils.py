@@ -1,7 +1,13 @@
 """Tests for email parsing utilities"""
 
 from django.test import TestCase
-from apps.core.email_utils import parse_email_address, extract_company_from_signature, extract_email_body
+from apps.core.email_utils import (
+    parse_email_address,
+    extract_company_from_signature,
+    extract_email_body,
+    trim_body_at_signoff,
+    clean_subject_for_job_name,
+)
 
 
 class ParseEmailAddressTest(TestCase):
@@ -275,3 +281,156 @@ Acme Corp''',
 
         body = extract_email_body({'text': '', 'html': ''})
         self.assertEqual(body, '')
+
+
+class TrimBodyAtSignoffTest(TestCase):
+    """Tests for the precise sign-off trimmer used to derive a job description."""
+
+    def test_trims_at_thanks_with_name(self):
+        body = "Can you quote this part?\nNeeds 50 of them.\n\nThanks,\nJohn"
+        self.assertEqual(
+            trim_body_at_signoff(body),
+            "Can you quote this part?\nNeeds 50 of them.",
+        )
+
+    def test_trims_at_best_with_name(self):
+        body = "See attached drawing.\n\nBest,\nJane Smith"
+        self.assertEqual(trim_body_at_signoff(body), "See attached drawing.")
+
+    def test_trims_at_cheers_with_name(self):
+        body = "Let me know the lead time.\n\nCheers,\nAlex"
+        self.assertEqual(trim_body_at_signoff(body), "Let me know the lead time.")
+
+    def test_trims_at_multiword_best_regards(self):
+        body = "Quote needed by Friday.\n\nBest regards,\nPat"
+        self.assertEqual(trim_body_at_signoff(body), "Quote needed by Friday.")
+
+    def test_trims_at_multiword_thank_you(self):
+        body = "Please confirm receipt.\n\nThank you,\nSam"
+        self.assertEqual(trim_body_at_signoff(body), "Please confirm receipt.")
+
+    def test_case_insensitive(self):
+        body = "Order details below.\n\nTHANKS,\nMorgan"
+        self.assertEqual(trim_body_at_signoff(body), "Order details below.")
+
+    def test_prefers_longer_multiword_over_shorter(self):
+        # If both "Best regards," and "Best," would match, longer wins so we
+        # don't strand "regards,\nName" in the output.
+        body = "Details here.\n\nBest regards,\nChris"
+        self.assertEqual(trim_body_at_signoff(body), "Details here.")
+
+    def test_no_trim_without_comma(self):
+        # "Thanks for the info" is body content, not a sign-off.
+        body = "Thanks for the info you sent over.\nMore details."
+        self.assertEqual(
+            trim_body_at_signoff(body),
+            "Thanks for the info you sent over.\nMore details.",
+        )
+
+    def test_no_trim_without_following_name(self):
+        # "Thanks," with nothing after is ambiguous — leave it alone.
+        body = "Quote needed.\n\nThanks,\n"
+        self.assertEqual(trim_body_at_signoff(body), body)
+
+    def test_no_trim_when_signoff_absent(self):
+        body = "Just a quick question — do you stock 1/4\" plate?"
+        self.assertEqual(trim_body_at_signoff(body), body)
+
+    def test_empty_body(self):
+        self.assertEqual(trim_body_at_signoff(''), '')
+
+    def test_signoff_at_start_of_body(self):
+        body = "Thanks,\nJordan"
+        self.assertEqual(trim_body_at_signoff(body), '')
+
+    def test_word_boundary_not_partial_match(self):
+        # "Bestest" shouldn't trigger the "Best," signoff.
+        body = "Bestest quote you've seen.\nMore details."
+        self.assertEqual(trim_body_at_signoff(body), body)
+
+    def test_trims_at_triple_hyphen_separator(self):
+        body = "Quote needed.\n\n---\nJohn Doe\nAcme Corp"
+        self.assertEqual(trim_body_at_signoff(body), "Quote needed.")
+
+    def test_trims_at_longer_hyphen_separator(self):
+        body = "Quote needed.\n\n----------\nJohn Doe"
+        self.assertEqual(trim_body_at_signoff(body), "Quote needed.")
+
+    def test_no_trim_on_double_hyphen(self):
+        # "--" is the standard sigdash separator and is already handled by
+        # extract_email_body for the deprecated path. The signoff trim requires
+        # 3+ hyphens to avoid clashing with em-dash-ish content like "a--b".
+        body = "Quote -- needed.\n--\nJohn"
+        self.assertEqual(trim_body_at_signoff(body), body)
+
+    def test_no_trim_on_hyphen_without_following_content(self):
+        body = "Quote needed.\n\n---\n"
+        self.assertEqual(trim_body_at_signoff(body), body)
+
+    def test_handles_crlf_line_endings(self):
+        # Real IMAP bodies arrive with CRLF — make sure the trim still fires.
+        body = "scale model of 3 floors of the museum\r\n\r\n\r\n\r\n----\r\nNeal's CNC\r\n510-783-3156"
+        self.assertEqual(
+            trim_body_at_signoff(body),
+            "scale model of 3 floors of the museum",
+        )
+
+    def test_handles_crlf_with_word_signoff(self):
+        body = "Need 50 of these.\r\n\r\nThanks,\r\nJane"
+        self.assertEqual(trim_body_at_signoff(body), "Need 50 of these.")
+
+
+class CleanSubjectForJobNameTest(TestCase):
+    """Tests for cleaning an email subject into a job name."""
+
+    def test_passes_through_short_subject(self):
+        self.assertEqual(
+            clean_subject_for_job_name('Quote for bracket'),
+            'Quote for bracket',
+        )
+
+    def test_strips_re_prefix(self):
+        self.assertEqual(
+            clean_subject_for_job_name('Re: Quote for bracket'),
+            'Quote for bracket',
+        )
+
+    def test_strips_fwd_prefix(self):
+        self.assertEqual(
+            clean_subject_for_job_name('Fwd: Quote for bracket'),
+            'Quote for bracket',
+        )
+
+    def test_strips_repeated_prefixes(self):
+        self.assertEqual(
+            clean_subject_for_job_name('Re: Fwd: RE: Quote for bracket'),
+            'Quote for bracket',
+        )
+
+    def test_strips_fw_and_uppercase(self):
+        self.assertEqual(
+            clean_subject_for_job_name('FW: RE: Quote'),
+            'Quote',
+        )
+
+    def test_truncates_long_subject_with_ellipsis(self):
+        subject = 'A' * 60
+        result = clean_subject_for_job_name(subject)
+        self.assertEqual(len(result), 50)
+        self.assertTrue(result.endswith('...'))
+        self.assertEqual(result, 'A' * 47 + '...')
+
+    def test_truncates_after_prefix_strip(self):
+        # 60 'A's after stripping Re:, so the truncation should kick in.
+        subject = 'Re: ' + 'A' * 60
+        result = clean_subject_for_job_name(subject)
+        self.assertEqual(len(result), 50)
+        self.assertTrue(result.endswith('...'))
+
+    def test_no_ellipsis_when_exactly_50(self):
+        subject = 'A' * 50
+        self.assertEqual(clean_subject_for_job_name(subject), 'A' * 50)
+
+    def test_empty_subject(self):
+        self.assertEqual(clean_subject_for_job_name(''), '')
+        self.assertEqual(clean_subject_for_job_name(None), '')

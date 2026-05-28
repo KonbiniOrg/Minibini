@@ -7,6 +7,6 @@ export const emailApi = {
   senderInfo: (id) => api.get(`/api/emails/${id}/sender-info/`),
   linkToJob: (id, jobId) => api.post(`/api/emails/${id}/link-to-job/`, { job_id: jobId }),
   unlinkFromJob: (id) => api.post(`/api/emails/${id}/unlink-from-job/`, {}),
-  createJob: (id, { contact, name }) =>
-    api.post(`/api/emails/${id}/create-job/`, { contact, name }),
+  createJob: (id, { contact, name, description }) =>
+    api.post(`/api/emails/${id}/create-job/`, { contact, name, description }),
 };

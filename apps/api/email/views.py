@@ -8,6 +8,8 @@ from apps.core.email_utils import (
     parse_email_address,
     extract_company_from_signature,
     extract_email_body,
+    trim_body_at_signoff,
+    clean_subject_for_job_name,
 )
 from apps.contacts.models import Contact, Business
 from apps.api.permissions import CanManageJobs
@@ -102,6 +104,7 @@ def create_job_from_email(request, pk):
 
     contact_id = request.data.get('contact')
     name = request.data.get('name', '')
+    description = request.data.get('description', '')
     if not contact_id:
         return Response(
             {'contact': ['This field is required.']},
@@ -109,7 +112,9 @@ def create_job_from_email(request, pk):
         )
 
     try:
-        job = JobService.create_job(name=name, contact_id=contact_id)
+        job = JobService.create_job(
+            name=name, description=description, contact_id=contact_id,
+        )
     except DjangoValidationError as e:
         return Response(
             e.message_dict if hasattr(e, 'message_dict') else {'detail': e.messages},
@@ -127,7 +132,7 @@ def create_job_from_email(request, pk):
 def sender_info(request, pk):
     """Parse an email's sender + body and suggest matching contacts/businesses."""
     try:
-        EmailRecord.objects.get(pk=pk)
+        email_record = EmailRecord.objects.select_related('temp_data').get(pk=pk)
     except EmailRecord.DoesNotExist:
         return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -140,8 +145,13 @@ def sender_info(request, pk):
         )
 
     sender_name, sender_email = parse_email_address(content.get('from', ''))
-    body = extract_email_body(content)
+    # Full body without the broad signature trim, then apply the precise
+    # sign-off trim so the SPA can offer the trimmed body as the description.
+    body = trim_body_at_signoff(extract_email_body(content, trim_signature=False))
     company = extract_company_from_signature(content.get('text', ''))
+    temp = getattr(email_record, 'temp_data', None)
+    raw_subject = (temp.subject if temp else '') or content.get('subject', '') or ''
+    subject = clean_subject_for_job_name(raw_subject)
 
     matching_contacts = []
     if sender_email:
@@ -167,7 +177,8 @@ def sender_info(request, pk):
     return Response({
         'sender_name': sender_name,
         'sender_email': sender_email,
-        'suggested_body': body[:200],
+        'subject': subject,
+        'suggested_body': body,
         'matching_contacts': matching_contacts,
         'extracted_company': company,
         'matching_businesses': matching_businesses,

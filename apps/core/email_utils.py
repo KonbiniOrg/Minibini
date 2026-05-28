@@ -158,14 +158,19 @@ def extract_company_from_signature(email_text):
     return ''
 
 
-def extract_email_body(email_content):
+def extract_email_body(email_content, trim_signature=True):
     """
     Extract the most relevant body content from email.
 
-    Prefers plain text, removes signatures and quoted replies.
+    Prefers plain text, removes quoted replies. When `trim_signature` is True
+    (default, for backwards compatibility), also strips any text following a
+    broad set of signature markers — useful when the caller just wants a short
+    excerpt. Callers that want the full body and intend to apply their own
+    sign-off trim (e.g. `trim_body_at_signoff`) should pass `trim_signature=False`.
 
     Args:
         email_content (dict): Dict with 'text' and 'html' keys
+        trim_signature (bool): If True, also cut at the first signature marker
 
     Returns:
         str: Cleaned email body
@@ -192,20 +197,83 @@ def extract_email_body(email_content):
 
     body = '\n'.join(cleaned_lines)
 
-    # Truncate signature (common patterns)
-    signature_patterns = [
-        r'\n--\s*\n',
-        r'\n\s*Best regards',
-        r'\n\s*Sincerely',
-        r'\n\s*Regards',
-        r'\n\s*Thank you',
-        r'\n\s*Thanks',
-    ]
+    if trim_signature:
+        # Broad signature trim — kept for the deprecated HTML view path.
+        signature_patterns = [
+            r'\n--\s*\n',
+            r'\n\s*Best regards',
+            r'\n\s*Sincerely',
+            r'\n\s*Regards',
+            r'\n\s*Thank you',
+            r'\n\s*Thanks',
+        ]
 
-    for pattern in signature_patterns:
-        match = re.search(pattern, body, re.IGNORECASE)
-        if match:
-            body = body[:match.start()]
-            break
+        for pattern in signature_patterns:
+            match = re.search(pattern, body, re.IGNORECASE)
+            if match:
+                body = body[:match.start()]
+                break
 
     return body.strip()
+
+
+# Longest first so alternation prefers "Best regards," over "Best,".
+_SIGNOFF_PHRASES = (
+    'Best regards',
+    'Kind regards',
+    'Many thanks',
+    'Thank you',
+    'Thanks',
+    'Thx',
+    'Cheers',
+    'Regards',
+    'Sincerely',
+    'Cordially',
+    'Best',
+)
+
+_SIGNOFF_RE = re.compile(
+    r'(?:^|\n)[ \t]*(?:'
+    r'(?:' + '|'.join(_SIGNOFF_PHRASES) + r'),'      # signoff word + comma, OR
+    r'|-{3,}'                                         # a separator line of 3+ hyphens
+    r')[ \t]*\n[ \t]*\S',
+    re.IGNORECASE,
+)
+
+
+def trim_body_at_signoff(body):
+    """Trim an email body just before a single sign-off line + signer name.
+
+    Only trims when we can identify the pattern:
+
+        <signoff phrase>,
+        <name on the next line>
+
+    where the signoff is one of `_SIGNOFF_PHRASES`. Without the comma or the
+    following name, the body is returned unchanged — we'd rather keep too much
+    than throw real content away.
+    """
+    if not body:
+        return ''
+    # IMAP bodies routinely arrive with CRLF — normalize so the regex's
+    # `\n[ \t]*` boundary works regardless of source line endings.
+    normalized = body.replace('\r\n', '\n').replace('\r', '\n')
+    match = _SIGNOFF_RE.search(normalized)
+    if not match:
+        return body
+    return normalized[:match.start()].rstrip()
+
+
+_SUBJECT_PREFIX_RE = re.compile(r'^\s*(?:(?:Re|Fwd?|FW)\s*:\s*)+', re.IGNORECASE)
+_JOB_NAME_MAX = 50
+
+
+def clean_subject_for_job_name(subject):
+    """Strip leading Re:/Fwd: prefixes from an email subject and clamp to the
+    50-char Job.name limit (with an ellipsis if it had to be truncated)."""
+    if not subject:
+        return ''
+    cleaned = _SUBJECT_PREFIX_RE.sub('', subject).strip()
+    if len(cleaned) > _JOB_NAME_MAX:
+        cleaned = cleaned[:_JOB_NAME_MAX - 3] + '...'
+    return cleaned

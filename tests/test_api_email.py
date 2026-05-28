@@ -225,6 +225,56 @@ class EmailAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('name', str(response.data).lower())
 
+    def test_sender_info_returns_cleaned_subject(self):
+        with patch('apps.api.email.views.EmailService') as mock_service_class:
+            mock_service = MagicMock()
+            mock_service.get_email_content.return_value = self._mock_email_content()
+            mock_service_class.return_value = mock_service
+            # Force the subject we care about via the EmailRecord row, which is
+            # what the view actually reads.
+            self.temp_email.subject = 'Re: Fwd: Quote for bracket'
+            self.temp_email.save()
+
+            response = self.client.get(f'/api/emails/{self.email.pk}/sender-info/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['subject'], 'Quote for bracket')
+
+    def test_sender_info_suggested_body_trimmed_at_signoff_not_at_200(self):
+        long_body = ('Line ' + 'x' * 50 + '\n') * 10  # well over 200 chars
+        text = long_body + '\nThanks,\nJane Doe\n'
+        with patch('apps.api.email.views.EmailService') as mock_service_class:
+            mock_service = MagicMock()
+            mock_service.get_email_content.return_value = self._mock_email_content(text=text)
+            mock_service_class.return_value = mock_service
+
+            response = self.client.get(f'/api/emails/{self.email.pk}/sender-info/')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.data['suggested_body']
+        self.assertGreater(len(body), 200)  # no longer hard-truncated to 200
+        self.assertNotIn('Thanks,', body)   # signoff was stripped
+        self.assertNotIn('Jane Doe', body)  # signer was stripped
+
+    def test_create_job_stores_description(self):
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(
+            first_name='X', last_name='Y', email='x@y.com', mobile_number='555',
+        )
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-job/',
+            {
+                'contact': contact.contact_id,
+                'name': 'Quote bracket',
+                'description': 'Need 50 of these by Friday.',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        job = Job.objects.get(pk=response.data['job_id'])
+        self.assertEqual(job.name, 'Quote bracket')
+        self.assertEqual(job.description, 'Need 50 of these by Friday.')
+
     def test_filter_emails_by_job(self):
         """Emails can be filtered by job."""
         from apps.core.models import EmailRecord

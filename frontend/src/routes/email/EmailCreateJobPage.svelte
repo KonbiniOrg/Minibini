@@ -13,6 +13,7 @@
   let mode = $state('existing');
   let selectedContactId = $state('');   // when mode=existing
   let jobName = $state('');
+  let jobDescription = $state('');
 
   // New-contact form fields (mode=new)
   let contactForm = $state({
@@ -61,9 +62,8 @@
         selectedContactId = String(matches[0].id);
       }
 
-      jobName = senderInfo.suggested_body
-        ? senderInfo.suggested_body.split('\n')[0].slice(0, 50)
-        : '';
+      jobName = senderInfo.subject || '';
+      jobDescription = senderInfo.suggested_body || '';
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -112,6 +112,7 @@
       const job = await emailApi.createJob(params.id, {
         contact: contactId,
         name: jobName.trim(),
+        description: jobDescription.trim(),
       });
       push(`/jobs/${job.job_id}`);
     } catch (err) {
@@ -161,16 +162,23 @@
         </label>
       </p>
       {#if mode === 'existing'}
-        <p>
-          <select bind:value={selectedContactId} required={mode === 'existing'}>
-            <option value="">-- Select a contact --</option>
-            {#each senderInfo.matching_contacts as c}
-              <option value={c.id}>
-                {c.name} ({c.email}){c.business ? ` — ${c.business.business_name}` : ''}
-              </option>
-            {/each}
-          </select>
-        </p>
+        {#if senderInfo.matching_contacts.length === 1}
+          {@const c = senderInfo.matching_contacts[0]}
+          <p>
+            {c.name} ({c.email}){c.business ? ` — ${c.business.business_name}` : ''}
+          </p>
+        {:else}
+          <p>
+            <select bind:value={selectedContactId} required={mode === 'existing'}>
+              <option value="">-- Select a contact --</option>
+              {#each senderInfo.matching_contacts as c}
+                <option value={c.id}>
+                  {c.name} ({c.email}){c.business ? ` — ${c.business.business_name}` : ''}
+                </option>
+              {/each}
+            </select>
+          </p>
+        {/if}
       {/if}
       <p>
         <label>
@@ -249,6 +257,10 @@
     <p>
       <label for="job_name"><strong>Job Name *</strong> (max 50 chars)</label><br>
       <input type="text" id="job_name" bind:value={jobName} maxlength="50" required>
+    </p>
+    <p>
+      <label for="job_description"><strong>Description</strong></label><br>
+      <textarea id="job_description" bind:value={jobDescription} rows="8" cols="60"></textarea>
     </p>
 
     <p>
