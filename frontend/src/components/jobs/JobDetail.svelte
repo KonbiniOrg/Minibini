@@ -270,6 +270,19 @@
     return est?.status;
   }
 
+  // Display status for change orders: show "altered" instead of "accepted" when
+  // a later accepted CO exists on the same job (ordered by change_order_id).
+  // Only an accepted later CO triggers the relabel — draft/open/rejected/etc. do not.
+  function changeOrderDisplayStatus(co, allCosForJob) {
+    if (co?.status === 'accepted' && (allCosForJob || []).some(
+      other => other.change_order_id > co.change_order_id
+               && other.status === 'accepted'
+    )) {
+      return 'altered';
+    }
+    return co?.status;
+  }
+
   // Invoice helpers
   function invoiceTotal(inv) {
     return (inv?.line_items || []).reduce(
@@ -554,7 +567,7 @@
       <div class="top-bar top-bar-est">
         <span class="top-bar-title">
           {#if displayedVersion?.kind === 'co'}
-            CHANGE ORDER · {displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`} · {displayedVersion.co.status}
+            CHANGE ORDER · {displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`} · {changeOrderDisplayStatus(displayedVersion.co, changeOrders)}
           {:else if displayedEstimate}
             ESTIMATE · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {estimateDisplayStatus(displayedEstimate, changeOrders)}
           {:else}
@@ -598,7 +611,7 @@
                 href={`/change-orders/${ver.co.change_order_id}`}
                 use:link
               >
-                {ver.co.change_order_number || `CO #${ver.co.change_order_id}`} <span class="est-tab-status">({ver.co.status})</span>
+                {ver.co.change_order_number || `CO #${ver.co.change_order_id}`} <span class="est-tab-status">({changeOrderDisplayStatus(ver.co, changeOrders)})</span>
               </a>
             {/if}
           {/each}

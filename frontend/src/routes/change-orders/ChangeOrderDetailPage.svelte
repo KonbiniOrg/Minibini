@@ -12,6 +12,7 @@
   let job = $state(null);
   let contact = $state(null);
   let estimateLines = $state([]);  // lines from the accepted estimate for target picking
+  let siblingCOs = $state([]);     // all COs for this job (used for display-status relabelling)
   let loading = $state(true);
   let error = $state('');
 
@@ -205,6 +206,13 @@
             }
           } catch (_) {
             estimateLines = [];
+          }
+          // Load all COs for the job (for display-status relabelling)
+          try {
+            const cosResp = await api.get(`/api/change-orders/?job=${co.job}`);
+            siblingCOs = cosResp?.results || cosResp || [];
+          } catch (_) {
+            siblingCOs = [];
           }
           // Load live deliverables + baseline snapshot
           try {
@@ -585,6 +593,19 @@
 
   // --------------------------------------------------------------------------
 
+  // Display status for change orders: show "altered" instead of "accepted" when
+  // a later accepted CO exists on the same job (ordered by change_order_id).
+  // Only an accepted later CO triggers the relabel — draft/open/rejected/etc. do not.
+  function changeOrderDisplayStatus(co, allCosForJob) {
+    if (co?.status === 'accepted' && (allCosForJob || []).some(
+      other => other.change_order_id > co.change_order_id
+               && other.status === 'accepted'
+    )) {
+      return 'altered';
+    }
+    return co?.status;
+  }
+
   function fmtMoney(n) { return `$${Number(n ?? 0).toFixed(2)}`; }
   function fmtDiff(n) {
     const v = Number(n ?? 0);
@@ -606,7 +627,7 @@
   <div class="toolbar">
     <a href={`/jobs/${co.job}`} use:link class="back-link">&laquo; back to job{job ? ` ${job.job_number}` : ''}</a>
     <span class="page-title">{co.change_order_number || `CO #${co.change_order_id}`}</span>
-    <span class="status-badge status-co-{co.status}">{co.status}</span>
+    <span class="status-badge status-co-{co.status}">{changeOrderDisplayStatus(co, siblingCOs)}</span>
     {#if canManageJobs}
       {#if isDraft}
         <button type="button" onclick={handleSaveButton} disabled={actionBusy}>
