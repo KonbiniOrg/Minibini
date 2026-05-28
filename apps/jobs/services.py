@@ -114,6 +114,19 @@ def _assert_job_allows_blep(job, allowed_statuses, action):
         )
 
 
+def _assert_job_not_on_hold(job, action):
+    """Reject task/material mutations while the job is paused on_hold.
+
+    Resolve the open change order (accept/reject/discard) or take the job
+    off hold before making changes.
+    """
+    if job.status == Job.STATUS_ON_HOLD:
+        raise ValidationError(
+            f"Cannot {action} while the job is on hold. Resolve the open "
+            f"change order (or take the job off hold) first."
+        )
+
+
 class BlepService:
     """All Blep (time entry) writes flow through this service.
 
@@ -562,6 +575,7 @@ class TaskService:
         """
         from apps.core.services import SchemeSupersededError
 
+        _assert_job_not_on_hold(job, 'add a task to this job')
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
         if template.rate_scheme_id and template.rate_scheme.replaced_by_id is not None:
@@ -588,6 +602,7 @@ class TaskService:
                       est_qty=None, est_worker_time=None, actual_qty=None,
                       **task_fields):
         """Create Task directly. Requires rate_scheme_id."""
+        _assert_job_not_on_hold(job, 'add a task to this job')
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
         scheme = RateScheme.objects.get(pk=rate_scheme_id)
@@ -614,6 +629,7 @@ class TaskService:
             task = Task.objects.get(pk=pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {pk} not found')
+        _assert_job_not_on_hold(task.job, 'edit this task')
         for field, value in kwargs.items():
             setattr(task, field, value)
         task.full_clean()
@@ -632,6 +648,7 @@ class TaskService:
             task = Task.objects.get(pk=task_pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_pk} not found')
+        _assert_job_not_on_hold(task.job, 'delete this task')
 
         non_deletable = (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE)
         if task.status in non_deletable:
@@ -654,6 +671,7 @@ class TaskService:
             task = Task.objects.get(pk=task_id)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_id} not found')
+        _assert_job_not_on_hold(task.job, 'reorder tasks on this job')
 
         items_qs = Task.objects.filter(job=task.job)
 
@@ -675,6 +693,7 @@ class TaskService:
         is the actual enforcer of the invariant. Unassigning (`assignee_id`
         falsy) has no such requirement.
         """
+        _assert_job_not_on_hold(task.job, "change this task's assignment")
         if assignee_id and est_worker_time is None and not task.est_worker_time:
             raise TaskWorkerTimeRequired()
         task.assignee_id = assignee_id or None
@@ -720,6 +739,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_on_hold(task.job, 'complete this task')
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED):
                 raise ValidationError(
                     f"Cannot complete task: status is '{task.status}', "
@@ -775,6 +795,7 @@ class TaskLifecycleService:
         Returns conflict dict if open Bleps exist."""
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_on_hold(task.job, 'block this task')
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
                 raise ValidationError(
                     f"Cannot block task: status is '{task.status}', "
@@ -803,6 +824,7 @@ class TaskLifecycleService:
         """Transition task from blocked -> in_progress."""
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_on_hold(task.job, 'unblock this task')
             if task.status != Task.STATUS_BLOCKED:
                 raise ValidationError(
                     f"Cannot unblock task: status is '{task.status}', must be 'blocked'."
@@ -819,6 +841,7 @@ class TaskLifecycleService:
         """Transition task from pending/in_progress/blocked -> cancelled."""
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_on_hold(task.job, 'cancel this task')
             allowed = (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED)
             if task.status not in allowed:
                 raise ValidationError(

@@ -341,6 +341,8 @@ class MaterialService:
         No permission check: open to any authenticated user (deliberate carve-out
         from can_manage_financials per design).
         """
+        from apps.jobs.services import _assert_job_not_on_hold
+        _assert_job_not_on_hold(material.job, 'edit this material')
         from django.db import transaction
         with transaction.atomic():
             update_fields = []
@@ -374,6 +376,8 @@ class MaterialService:
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
                       unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
                       price_list_item=None, accounting_category=None, units='none'):
+        from apps.jobs.services import _assert_job_not_on_hold
+        _assert_job_not_on_hold(job, 'add a material to this job')
         from django.db import transaction
         with transaction.atomic():
             m = Material(
