@@ -261,6 +261,15 @@
     }
   });
 
+  // Display status for estimates: show "altered" instead of "accepted" when
+  // at least one change order (any state) exists on that estimate.
+  function estimateDisplayStatus(est, cosForJob) {
+    if (est?.status === 'accepted' && cosForJob?.some(co => co.estimate === est.estimate_id)) {
+      return 'altered';
+    }
+    return est?.status;
+  }
+
   // Invoice helpers
   function invoiceTotal(inv) {
     return (inv?.line_items || []).reduce(
@@ -547,7 +556,7 @@
           {#if displayedVersion?.kind === 'co'}
             CHANGE ORDER · {displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`} · {displayedVersion.co.status}
           {:else if displayedEstimate}
-            ESTIMATE · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {displayedEstimate.status}
+            ESTIMATE · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {estimateDisplayStatus(displayedEstimate, changeOrders)}
           {:else}
             ESTIMATE · None
           {/if}
@@ -574,19 +583,24 @@
       {#if versionTimeline.length > 1}
         <div class="est-tabs">
           {#each versionTimeline as ver}
-            <button
-              type="button"
-              class="est-tab"
-              class:active={ver.key === (displayedVersion?.key)}
-              class:est-tab-co={ver.kind === 'co'}
-              onclick={() => { selectedVersionKey = ver.key; }}
-            >
-              {#if ver.kind === 'estimate'}
-                {ver.est.estimate_number} v{ver.est.version} <span class="est-tab-status">({ver.est.status})</span>
-              {:else}
+            {#if ver.kind === 'estimate'}
+              <button
+                type="button"
+                class="est-tab"
+                class:active={ver.key === (displayedVersion?.key)}
+                onclick={() => { selectedVersionKey = ver.key; }}
+              >
+                {ver.est.estimate_number} v{ver.est.version} <span class="est-tab-status">({estimateDisplayStatus(ver.est, changeOrders)})</span>
+              </button>
+            {:else}
+              <a
+                class="est-tab est-tab-co"
+                href={`/change-orders/${ver.co.change_order_id}`}
+                use:link
+              >
                 {ver.co.change_order_number || `CO #${ver.co.change_order_id}`} <span class="est-tab-status">({ver.co.status})</span>
-              {/if}
-            </button>
+              </a>
+            {/if}
           {/each}
         </div>
       {/if}
@@ -1637,9 +1651,9 @@
   .pill-co-accepted { background: #dcfce7; color: #166534; }
   .pill-co-rejected { background: #fee2e2; color: #991b1b; }
 
-  /* CO tabs inside the est-tabs strip — slightly warmer tint to distinguish from est tabs */
-  .est-tab.est-tab-co { color: #7c2d12; }
-  .est-tab.est-tab-co.active { background: #fed7aa; }
+  /* CO tabs inside the est-tabs strip — anchor links with warmer tint to distinguish from est tabs */
+  .est-tab.est-tab-co { color: #7c2d12; text-decoration: none; }
+  .est-tab.est-tab-co:hover { background: #fed7aa; }
 
   /* CO effective-lines: lightly mark CO-touched rows */
   .est-table tbody tr.co-line-changed { background: #fff7ed; border-left: 3px solid #f97316; }

@@ -209,6 +209,11 @@
         </select>
       </span>
     {:else}
+      <!-- TODO: show "altered" instead of "accepted" when the job has any change orders,
+           matching the JobDetail pillar label. Requires fetching COs via
+           api.get(`/api/change-orders/?job=${estimate.job}`) and applying the same
+           estimateDisplayStatus() helper used in JobDetail.svelte. Deferred until
+           the load flow here can accommodate the extra fetch without complexity. -->
       <span class="status-badge status-{estimate.status}">{estimate.status}</span>
     {/if}
     {#if canManageJobs && estimate.status === 'draft'}
