@@ -459,7 +459,7 @@
   async function handleStatusChange(newStatus) {
     const labels = { accepted: 'Accept', rejected: 'Reject' };
     const label = labels[newStatus] || newStatus;
-    if (!confirm(`${label} this change order?${newStatus === 'accepted' ? ' This will advance the job back to in_progress.' : ''}`)) return;
+    if (!confirm(`${label} this change order?${newStatus === 'accepted' ? ' This will move the job to approved so you can verify the details before releasing it to the floor.' : ''}`)) return;
     actionBusy = true;
     try {
       await api.patch(`/api/change-orders/${co.change_order_id}/`, { status: newStatus });
