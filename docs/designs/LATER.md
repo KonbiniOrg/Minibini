@@ -99,3 +99,16 @@ proper issue.
   CO and the CO's state (none / draft / open / accepted-awaiting-release). May only matter
   while testing — decide if it's worth the extra signal.
   _Done when:_ decided (implemented or dropped).
+
+- **Sweep `apps/api/` for `serializer.save()` bypasses — every mutation must go through a Service.** — _added 2026-05-27_
+  We just found four API paths that called DRF `serializer.save()` (or `.update()`) directly
+  instead of routing through the service-layer method that holds the guards: the task PATCH,
+  the task-materials create + update, and the materials PATCH. Each one silently bypassed the
+  on_hold freeze and would similarly bypass any future service-layer guard, side-effect, or
+  invariant. The convention is **every mutating endpoint goes through a Service** — that's
+  where validation, guards, and side-effects live, with `ValidationError` translated to 400.
+  Direct DRF saves in views should be effectively zero in this codebase. Grep `apps/api/` for
+  `is_valid` + `serializer.save()` / `.update()` and route any remaining bypasses through the
+  appropriate service.
+  _Done when:_ no mutating API view writes via the DRF serializer directly; all go through a
+  Service.
