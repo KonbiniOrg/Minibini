@@ -65,9 +65,15 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         create_data = {k: v for k, v in serializer.validated_data.items()
                        if k != 'propagate_to_pli'}
-        mat = MaterialService.create_on_job(
-            job=task.job, task=task, **create_data
-        )
+        try:
+            mat = MaterialService.create_on_job(
+                job=task.job, task=task, **create_data
+            )
+        except ValidationError as e:
+            detail = e.message_dict if hasattr(e, 'message_dict') else (
+                e.message if hasattr(e, 'message') else str(e)
+            )
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             MaterialSerializer(mat).data,
             status=status.HTTP_201_CREATED,
@@ -119,14 +125,30 @@ class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
             'unit_cost' in serializer.validated_data
             or 'sell_price' in serializer.validated_data
         ):
-            MaterialService.update_pricing(
-                material,
-                unit_cost=serializer.validated_data.get('unit_cost'),
-                sell_price=serializer.validated_data.get('sell_price'),
-                propagate_to_pli=propagate,
-            )
+            try:
+                MaterialService.update_pricing(
+                    material,
+                    unit_cost=serializer.validated_data.get('unit_cost'),
+                    sell_price=serializer.validated_data.get('sell_price'),
+                    propagate_to_pli=propagate,
+                )
+            except ValidationError as e:
+                detail = e.message_dict if hasattr(e, 'message_dict') else (
+                    e.message if hasattr(e, 'message') else str(e)
+                )
+                return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
             material.refresh_from_db()
             return Response(MaterialSerializer(material).data)
+        # Non-pricing path: route through update_pricing with no pricing changes
+        # to ensure the on_hold guard fires even for metadata-only edits.
+        from apps.jobs.services import _assert_job_not_on_hold
+        try:
+            _assert_job_not_on_hold(material.job, 'edit this material')
+        except ValidationError as e:
+            detail = e.message_dict if hasattr(e, 'message_dict') else (
+                e.message if hasattr(e, 'message') else str(e)
+            )
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
         serializer.save()
         return Response(MaterialSerializer(material).data)
 
