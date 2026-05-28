@@ -66,16 +66,32 @@ class MaterialViewSet(viewsets.ModelViewSet):
             or 'sell_price' in serializer.validated_data
         ):
             # Pricing-only path on a PLI-linked instance: route through the service
-            # for the optional PLI propagation.
-            MaterialService.update_pricing(
-                instance,
-                unit_cost=serializer.validated_data.get('unit_cost'),
-                sell_price=serializer.validated_data.get('sell_price'),
-                propagate_to_pli=propagate,
-            )
+            # for the optional PLI propagation.  update_pricing raises ValidationError
+            # on on_hold — catch it here so the caller gets 400, not 500.
+            try:
+                MaterialService.update_pricing(
+                    instance,
+                    unit_cost=serializer.validated_data.get('unit_cost'),
+                    sell_price=serializer.validated_data.get('sell_price'),
+                    propagate_to_pli=propagate,
+                )
+            except DjangoValidationError as e:
+                detail = e.message_dict if hasattr(e, 'message_dict') else (
+                    e.message if hasattr(e, 'message') else str(e)
+                )
+                return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
             instance.refresh_from_db()
             return Response(MaterialSerializer(instance).data)
-        # Freeform path or non-pricing fields: fall through to default save.
+        # Freeform path or non-pricing fields: assert not on_hold before saving,
+        # then fall through to the default serializer save.
+        from apps.jobs.services import _assert_job_not_on_hold
+        try:
+            _assert_job_not_on_hold(instance.job, 'edit this material')
+        except DjangoValidationError as e:
+            detail = e.message_dict if hasattr(e, 'message_dict') else (
+                e.message if hasattr(e, 'message') else str(e)
+            )
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
         serializer.save()
         return Response(MaterialSerializer(instance).data)
 

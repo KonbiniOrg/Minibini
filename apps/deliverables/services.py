@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
@@ -32,11 +33,35 @@ def _any_accepted_estimate(job):
     ).exists()
 
 
+def _live_change_order(job):
+    """Return the most-recent draft or open ChangeOrder for the job, or None."""
+    from apps.estimates.models import ChangeOrder
+    return (
+        ChangeOrder.objects.filter(
+            job=job, status__in=[ChangeOrder.STATUS_DRAFT, ChangeOrder.STATUS_OPEN],
+        )
+        .order_by('-change_order_id')
+        .first()
+    )
+
+
 class DeliverableService:
     """Business-logic facade for the Deliverable model."""
 
     @staticmethod
     def is_editable(job):
+        # A live change order takes priority over the estimate-state rule.
+        live_co = _live_change_order(job)
+        if live_co is not None:
+            from apps.estimates.models import ChangeOrder
+            # Draft CO: the proposal is being authored — list is editable.
+            if live_co.status == ChangeOrder.STATUS_DRAFT:
+                return True
+            # Open CO: proposal is out for review — list is locked.
+            if live_co.status == ChangeOrder.STATUS_OPEN:
+                return False
+
+        # No live CO: fall back to estimate-state rule.
         if _any_accepted_estimate(job):
             return False
         latest = _latest_active_estimate(job)
@@ -46,6 +71,15 @@ class DeliverableService:
 
     @staticmethod
     def editability_reason(job):
+        live_co = _live_change_order(job)
+        if live_co is not None:
+            from apps.estimates.models import ChangeOrder
+            if live_co.status == ChangeOrder.STATUS_DRAFT:
+                return None
+            if live_co.status == ChangeOrder.STATUS_OPEN:
+                return 'change_order_sent'
+
+        # No live CO: fall back to estimate-state rule.
         if _any_accepted_estimate(job):
             return 'estimate_accepted'
         latest = _latest_active_estimate(job)
@@ -85,6 +119,10 @@ class DeliverableService:
     @transaction.atomic
     def update(*, deliverable, **fields):
         DeliverableService._assert_editable(deliverable.job)
+        if ShipmentItem.objects.filter(deliverable=deliverable).exists():
+            raise ValidationError(
+                'Delivered items are frozen and cannot be edited or removed.'
+            )
         allowed = {'description', 'qty_ordered', 'units', 'sort_order'}
         for field, value in fields.items():
             if field not in allowed:
@@ -98,6 +136,10 @@ class DeliverableService:
     @transaction.atomic
     def delete(*, deliverable):
         DeliverableService._assert_editable(deliverable.job)
+        if ShipmentItem.objects.filter(deliverable=deliverable).exists():
+            raise ValidationError(
+                'Delivered items are frozen and cannot be edited or removed.'
+            )
         job = deliverable.job
         deliverable.delete()
         remaining = list(
@@ -138,6 +180,93 @@ class DeliverableService:
             'qty_remaining': deliverable.qty_ordered - picked_up - prepped,
         }
 
+    @staticmethod
+    def all_deliverables_shipped(job):
+        """True iff every Deliverable on the job is fully picked up.
+
+        Prepared-but-not-picked-up does not count as delivered. A job with no
+        deliverables returns True (nothing outstanding). Used by the job
+        completion gate.
+        """
+        for d in Deliverable.objects.filter(job=job):
+            fulfillment = DeliverableService.compute_fulfillment(d)
+            if fulfillment['qty_picked_up'] < d.qty_ordered:
+                return False
+        return True
+
+    @staticmethod
+    @transaction.atomic
+    def snapshot_document(*, estimate=None, change_order=None):
+        """Write-once: copy the job's current live deliverables into a
+        DeliverableSnapshot set attached to exactly one of estimate / change_order.
+        Idempotent — if a snapshot already exists for that document, returns it
+        unchanged. Version is the next integer for the job (estimate -> 1, then
+        +1 per subsequently-snapshotted document)."""
+        from apps.deliverables.models import DeliverableSnapshot
+        if (estimate is None) == (change_order is None):
+            raise ValidationError('Provide exactly one of estimate / change_order.')
+        job = estimate.job if estimate is not None else change_order.job
+        existing = list(DeliverableSnapshot.objects.filter(estimate=estimate, change_order=change_order))
+        if existing:
+            return existing
+        # next version = 1 + number of distinct documents already snapshotted for this job
+        prior_owners = set(
+            DeliverableSnapshot.objects
+            .filter(Q(estimate__job=job) | Q(change_order__job=job))
+            .values_list('estimate_id', 'change_order_id')
+        )
+        version = len(prior_owners) + 1
+        snaps = []
+        for d in Deliverable.objects.filter(job=job).order_by('sort_order', 'pk'):
+            snaps.append(DeliverableSnapshot.objects.create(
+                estimate=estimate, change_order=change_order, version=version,
+                description=d.description, qty_ordered=d.qty_ordered, units=d.units,
+                sort_order=d.sort_order, source_deliverable=d,
+            ))
+        return snaps
+
+    @staticmethod
+    @transaction.atomic
+    def restore_live_to_snapshot(*, estimate=None, change_order=None):
+        """Reconcile the job's UNANCHORED live deliverables back to the snapshot set
+        attached to the given document. Anchored (shipped) deliverables are left
+        untouched. Re-creates rows that were removed, restores edited rows, and
+        deletes unanchored rows that were added after the snapshot."""
+        from apps.deliverables.models import DeliverableSnapshot
+        if (estimate is None) == (change_order is None):
+            raise ValidationError('Provide exactly one of estimate / change_order.')
+        job = estimate.job if estimate is not None else change_order.job
+        snaps = list(DeliverableSnapshot.objects.filter(estimate=estimate, change_order=change_order))
+        # IDs of live rows that correspond to snapshot rows (restored or anchored)
+        preserved_ids = set()
+        for snap in snaps:
+            live = None
+            if snap.source_deliverable_id:
+                live = Deliverable.objects.filter(pk=snap.source_deliverable_id, job=job).first()
+            if live is not None:
+                preserved_ids.add(live.pk)
+                if ShipmentItem.objects.filter(deliverable=live).exists():
+                    continue  # anchored — never touch
+                live.description = snap.description
+                live.qty_ordered = snap.qty_ordered
+                live.units = snap.units
+                live.sort_order = snap.sort_order
+                live.save()
+            else:
+                # removed during the dead CO -> re-create
+                new_d = Deliverable.objects.create(
+                    job=job, description=snap.description, qty_ordered=snap.qty_ordered,
+                    units=snap.units, sort_order=snap.sort_order,
+                )
+                preserved_ids.add(new_d.pk)
+        # delete unanchored live rows that aren't in the snapshot (added after it)
+        for d in Deliverable.objects.filter(job=job):
+            if d.pk in preserved_ids:
+                continue
+            if ShipmentItem.objects.filter(deliverable=d).exists():
+                continue  # anchored
+            d.delete()
+
 
 def _contact_address_lines(contact):
     """Return the contact's address as a list of non-empty lines."""
@@ -173,6 +302,12 @@ class ShipmentService:
             )
 
     @staticmethod
+    def _assert_job_not_on_hold(job):
+        from apps.jobs.models import Job
+        if job.status == Job.STATUS_ON_HOLD:
+            raise ValidationError('Cannot create a shipment while the job is on hold.')
+
+    @staticmethod
     @transaction.atomic
     def create(*, job_id):
         from apps.jobs.models import Job
@@ -180,6 +315,7 @@ class ShipmentService:
             job = Job.objects.select_for_update().get(pk=job_id)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_id} not found')
+        ShipmentService._assert_job_not_on_hold(job)
         ShipmentService._assert_d_list_locked(job)
         last = Shipment.objects.filter(job=job).order_by('-sequence').first()
         next_seq = (last.sequence + 1) if last else 1
@@ -217,7 +353,13 @@ class ShipmentService:
     @staticmethod
     @transaction.atomic
     def mark_picked_up(pk):
-        """Transition prepared -> picked_up."""
+        """Transition prepared -> picked_up.
+
+        After persisting the status change, calls
+        ``JobService.maybe_complete_if_resolved`` so that a job whose
+        invoices are already all paid completes as soon as its final
+        shipment is picked up.
+        """
         try:
             shipment = Shipment.objects.select_for_update().get(pk=pk)
         except Shipment.DoesNotExist:
@@ -227,6 +369,12 @@ class ShipmentService:
         shipment.status = Shipment.STATUS_PICKED_UP
         shipment.picked_up_date = timezone.now()
         shipment.save()
+
+        # Trigger the completion check: if all invoices are also resolved
+        # this shipment may be the last piece needed to complete the job.
+        from apps.jobs.services import JobService
+        JobService.maybe_complete_if_resolved(shipment.job)
+
         return shipment
 
     @staticmethod

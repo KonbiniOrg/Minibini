@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 
 class Deliverable(models.Model):
@@ -89,3 +90,45 @@ class ShipmentItem(models.Model):
 
     def __str__(self):
         return f'{self.qty} {self.deliverable.units} of {self.deliverable.description}'
+
+
+class DeliverableSnapshot(models.Model):
+    """Immutable, write-once copy of a deliverable's agreed scope, attached to the
+    document (Estimate or ChangeOrder) it records. No fulfillment data. Exactly one
+    of estimate/change_order is set."""
+
+    estimate = models.ForeignKey(
+        'estimates.Estimate', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='deliverable_snapshots',
+    )
+    change_order = models.ForeignKey(
+        'estimates.ChangeOrder', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='deliverable_snapshots',
+    )
+    version = models.PositiveIntegerField()
+    description = models.TextField()
+    qty_ordered = models.DecimalField(max_digits=10, decimal_places=2)
+    units = models.CharField(max_length=50)
+    sort_order = models.PositiveIntegerField(default=0)
+    source_deliverable = models.ForeignKey(
+        Deliverable, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='snapshots',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'deliverable_snapshots'
+        ordering = ['sort_order']
+
+    def clean(self):
+        super().clean()
+        has_est = self.estimate_id is not None
+        has_co = self.change_order_id is not None
+        if has_est == has_co:
+            raise ValidationError(
+                'A DeliverableSnapshot must reference exactly one of estimate / change_order.'
+            )
+
+    def __str__(self):
+        owner = f'est {self.estimate_id}' if self.estimate_id else f'co {self.change_order_id}'
+        return f'Snapshot v{self.version} ({owner}): {self.description}'

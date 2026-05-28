@@ -52,6 +52,7 @@ class Job(AbstractWorkContainer):
     STATUS_SUBMITTED = 'submitted'
     STATUS_APPROVED = 'approved'
     STATUS_IN_PROGRESS = 'in_progress'
+    STATUS_ON_HOLD = 'on_hold'
     STATUS_WORK_COMPLETE = 'work_complete'
     STATUS_REJECTED = 'rejected'
     STATUS_COMPLETED = 'completed'
@@ -62,6 +63,7 @@ class Job(AbstractWorkContainer):
         (STATUS_SUBMITTED, 'Submitted'),
         (STATUS_APPROVED, 'Approved'),
         (STATUS_IN_PROGRESS, 'In Progress'),  # NEW — between approved and work_complete
+        (STATUS_ON_HOLD, 'On Hold'),
         (STATUS_WORK_COMPLETE, 'Work Complete'),
         (STATUS_REJECTED, 'Rejected'),
         (STATUS_COMPLETED, 'Completed'),
@@ -76,6 +78,7 @@ class Job(AbstractWorkContainer):
     due_date = models.DateTimeField(null=True, blank=True)
     completed_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=JOB_STATUS_CHOICES, default=STATUS_DRAFT)
+    hold_reason = models.TextField(blank=True, default='')
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT)
     customer_po_number = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
@@ -95,8 +98,9 @@ class Job(AbstractWorkContainer):
         VALID_TRANSITIONS = {
             Job.STATUS_DRAFT: [Job.STATUS_SUBMITTED, Job.STATUS_REJECTED],
             Job.STATUS_SUBMITTED: [Job.STATUS_APPROVED, Job.STATUS_REJECTED],
-            Job.STATUS_APPROVED: [Job.STATUS_IN_PROGRESS, Job.STATUS_CANCELLED],
-            Job.STATUS_IN_PROGRESS: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],  # NEW
+            Job.STATUS_APPROVED: [Job.STATUS_IN_PROGRESS, Job.STATUS_ON_HOLD, Job.STATUS_CANCELLED],
+            Job.STATUS_IN_PROGRESS: [Job.STATUS_WORK_COMPLETE, Job.STATUS_ON_HOLD, Job.STATUS_CANCELLED],  # NEW
+            Job.STATUS_ON_HOLD: [Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS, Job.STATUS_CANCELLED],
             Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_IN_PROGRESS],
             Job.STATUS_REJECTED: [],  # Terminal state
             Job.STATUS_COMPLETED: [],  # Terminal state
@@ -165,6 +169,12 @@ class Job(AbstractWorkContainer):
                     if self.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
                                        Job.STATUS_REJECTED] and not self.completed_date:
                         self.completed_date = timezone.now()
+
+                    # Leaving on_hold into an active status — clear the hold reason
+                    if old_status == Job.STATUS_ON_HOLD and self.status in (
+                        Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS
+                    ):
+                        self.hold_reason = ''
 
             except Job.DoesNotExist:
                 pass

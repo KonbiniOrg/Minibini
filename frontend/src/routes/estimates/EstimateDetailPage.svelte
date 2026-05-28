@@ -5,6 +5,7 @@
   import EstimateLineItemModal from '../../components/EstimateLineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
+  import DeliverablesSection from '../../components/jobs/DeliverablesSection.svelte';
 
   let { params = {} } = $props();
 
@@ -182,6 +183,8 @@
     [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
     handleReorder(ids);
   }
+
+
 </script>
 
 {#if loading}
@@ -206,6 +209,11 @@
         </select>
       </span>
     {:else}
+      <!-- TODO: show "altered" instead of "accepted" when the job has any change orders,
+           matching the JobDetail pillar label. Requires fetching COs via
+           api.get(`/api/change-orders/?job=${estimate.job}`) and applying the same
+           estimateDisplayStatus() helper used in JobDetail.svelte. Deferred until
+           the load flow here can accommodate the extra fetch without complexity. -->
       <span class="status-badge status-{estimate.status}">{estimate.status}</span>
     {/if}
     {#if canManageJobs && estimate.status === 'draft'}
@@ -286,6 +294,10 @@
     actions={canEdit ? actionsSnippet : null}
   />
 
+  {#if estimate.job}
+    <DeliverablesSection jobId={estimate.job} allowEdit={true} />
+  {/if}
+
   <EstimateLineItemModal
     open={modalOpen}
     mode={modalMode}
@@ -334,4 +346,6 @@
   .status-rejected { background: #fee2e2; color: #991b1b; }
   .status-expired { background: #fef3c7; color: #92400e; }
   .status-superseded { background: #fed7aa; color: #9a3412; }
+
+
 </style>

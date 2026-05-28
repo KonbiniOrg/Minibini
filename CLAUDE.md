@@ -195,6 +195,7 @@ Conventions to keep the SPA's interaction vocabulary consistent. New code follow
 
 - **Links navigate; buttons act.** Use `<a href="...">` (or `use:link`) for anything that takes the user to a different view. Use `<button>` for anything that mutates state, opens a modal, or triggers an API call without a navigation. Don't dress a `<button>` as a link to navigate, and don't wrap a `<a>` around an action handler.
 - **Saves are explicit, never blur-only.** `onblur` (or any other implicit focus/navigation event) must never be the only trigger that commits a change to the server. Users move focus accidentally — losing or saving work as a side effect is hostile. Every mutation needs an explicit confirmation: a Save button, an Enter-on-form, an explicit modal "OK". `onblur` is fine as a secondary trigger (validating format, normalizing values into pending state) but the actual API call must wait for a deliberate action.
+- **Confirmations are for the irreversible, not the reversible.** Only prompt (`confirm()` / a modal) when an action is irreversible or extremely arduous to undo — deleting a persisted record, sending a document to a customer. **Never** confirm an action that's exactly undoable by another local action (editing a field, toggling, reordering, adding/removing a draft line that can be re-added or removed). A reversible action just does the thing.
 
 ## REST API (`apps/api/`)
 

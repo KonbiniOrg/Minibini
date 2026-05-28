@@ -528,6 +528,62 @@ class JobReorderTasksTest(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+class JobPatchValidationErrorTest(TestCase):
+    """PATCH /api/jobs/{id}/ with a service-layer ValidationError returns 400, not 500."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = _make_admin('patchval_admin')
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='T', last_name='C')
+        ac = AccountingCategory.objects.create(code='PV-AC', name='pv-ac')
+        from apps.jobs.models import RateScheme
+        self.scheme = RateScheme.objects.create(
+            name='S-pv', algorithm='flat_fee',
+            rate=Decimal('25.00'), unit_label='ea', accounting_category=ac,
+        )
+
+    def _in_progress_job(self):
+        job = Job.objects.create(
+            job_number='PV-001', name='PV Job', contact=self.contact,
+        )
+        job.status = Job.STATUS_SUBMITTED
+        job.save()
+        job.status = Job.STATUS_APPROVED
+        job.save()
+        job.status = Job.STATUS_IN_PROGRESS
+        job.save()
+        return job
+
+    def test_patch_with_open_blep_returns_400(self):
+        """PATCH to on_hold while a worker has an open blep must return 400, not 500."""
+        from apps.jobs.models import Blep
+        from django.utils import timezone
+
+        job = self._in_progress_job()
+        task = Task.objects.create(job=job, name='Active task', rate_scheme=self.scheme)
+        # Create an open blep (no end_time)
+        Blep.objects.create(task=task, user=self.user, start_time=timezone.now())
+
+        response = self.client.patch(f'/api/jobs/{job.pk}/', {'status': 'on_hold'}, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        # api.js reads json.detail || json.error — message must be in one of those keys
+        body = response.data
+        message = body.get('detail') or body.get('error') or ''
+        self.assertIn('open time entry', message)
+
+    def test_patch_without_open_blep_returns_200(self):
+        """PATCH to on_hold with no open bleps must succeed (happy path not broken)."""
+        job = self._in_progress_job()
+
+        response = self.client.patch(f'/api/jobs/{job.pk}/', {'status': 'on_hold'}, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_ON_HOLD)
+
+
 class JobAddFromTemplateTest(TestCase):
     """Phase C2: POST /api/jobs/{id}/add-from-template/."""
 

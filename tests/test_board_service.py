@@ -431,19 +431,31 @@ class LazyBoardMethodsTest(FixtureTestCase):
         self.assertNotIn(approved_job.job_id, job_ids)
         self.assertNotIn(wc_job.job_id, job_ids)
 
-    def test_get_unpaid_data_only_returns_work_complete_jobs(self):
-        """Unpaid view filters strictly on STATUS_WORK_COMPLETE."""
+    def test_get_unpaid_data_union_of_work_complete_and_outstanding_invoice(self):
+        """Unpaid lane is the UNION of:
+          (a) all work_complete jobs (includes those awaiting first invoice), AND
+          (b) any-status jobs with an outstanding (non-settled) invoice.
+
+        A work_complete job WITH an outstanding invoice appears (satisfies both).
+        A work_complete job WITHOUT any invoice ALSO appears (needs-invoice).
+        A completed job WITHOUT an invoice does NOT appear.
+        """
         from apps.jobs.services import BoardService
-        approved_job = self._make_job(status=Job.STATUS_APPROVED)
-        wc_job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
-        completed_job = self._make_job(
+        from apps.invoicing.models import Invoice
+        wc_job_with_invoice = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        wc_job_no_invoice = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        completed_no_invoice = self._make_job(
             status=Job.STATUS_COMPLETED, completed_date=timezone.now(),
+        )
+        Invoice.objects.create(
+            job=wc_job_with_invoice, invoice_number='INV-WC-OUT-001', status='open',
         )
         data = BoardService.get_unpaid_data()
         job_ids = [j['job_id'] for j in data['jobs']]
-        self.assertIn(wc_job.job_id, job_ids)
-        self.assertNotIn(approved_job.job_id, job_ids)
-        self.assertNotIn(completed_job.job_id, job_ids)
+        self.assertIn(wc_job_with_invoice.job_id, job_ids)
+        # Regression guard: work_complete job with no invoice must appear (needs-invoice)
+        self.assertIn(wc_job_no_invoice.job_id, job_ids)
+        self.assertNotIn(completed_no_invoice.job_id, job_ids)
 
     def test_get_unpaid_data_returns_invoice_sent_jobs(self):
         from apps.jobs.services import BoardService
@@ -456,12 +468,16 @@ class LazyBoardMethodsTest(FixtureTestCase):
         match = next(j for j in data['jobs'] if j['job_id'] == job.job_id)
         self.assertEqual(match['sub_status'], 'invoice-sent')
 
-    def test_get_unpaid_data_returns_needs_invoice_jobs(self):
+    def test_get_unpaid_data_includes_work_complete_jobs_without_invoice(self):
+        """Regression guard: a work_complete job with no invoice must appear in the
+        unpaid lane with sub_status 'needs-invoice' — it's work done awaiting billing."""
         from apps.jobs.services import BoardService
         job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
         data = BoardService.get_unpaid_data()
-        match = next(j for j in data['jobs'] if j['job_id'] == job.job_id)
-        self.assertEqual(match['sub_status'], 'needs-invoice')
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertIn(job.job_id, job_ids)
+        card = next(j for j in data['jobs'] if j['job_id'] == job.job_id)
+        self.assertEqual(card['sub_status'], 'needs-invoice')
 
     def test_get_unpaid_data_returns_invoice_prepped_jobs(self):
         from apps.jobs.services import BoardService
@@ -474,6 +490,71 @@ class LazyBoardMethodsTest(FixtureTestCase):
         match = next(j for j in data['jobs'] if j['job_id'] == job.job_id)
         self.assertEqual(match['sub_status'], 'invoice-prepped')
 
+    def test_cancelled_job_with_outstanding_invoice_appears_in_unpaid(self):
+        """A cancelled job with an outstanding (unpaid, non-cancelled) invoice
+        appears in the unpaid lane — a billable cancellation must not be lost."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        cancelled_job = self._make_job(status=Job.STATUS_CANCELLED)
+        Invoice.objects.create(
+            job=cancelled_job, invoice_number='INV-CANC-001', status='open',
+        )
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertIn(cancelled_job.job_id, job_ids)
+        # Serialized card must carry the job's status so the UI can badge it
+        card = next(j for j in data['jobs'] if j['job_id'] == cancelled_job.job_id)
+        self.assertEqual(card['status'], Job.STATUS_CANCELLED)
+
+    def test_cancelled_job_with_no_invoice_excluded_from_unpaid(self):
+        """A cancelled job with no invoice at all does NOT appear in the unpaid lane."""
+        from apps.jobs.services import BoardService
+        cancelled_job = self._make_job(status=Job.STATUS_CANCELLED)
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertNotIn(cancelled_job.job_id, job_ids)
+
+    def test_cancelled_job_with_only_paid_invoice_excluded_from_unpaid(self):
+        """A cancelled job whose only invoice is paid does NOT appear in the unpaid lane."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        cancelled_job = self._make_job(status=Job.STATUS_CANCELLED)
+        Invoice.objects.create(
+            job=cancelled_job, invoice_number='INV-CANC-PAID-001', status='paid',
+        )
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertNotIn(cancelled_job.job_id, job_ids)
+
+    def test_work_complete_job_with_outstanding_invoice_still_appears(self):
+        """Regression: a normal work_complete job with an outstanding invoice
+        still appears in the unpaid lane after the invoice-driven change."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        wc_job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        Invoice.objects.create(
+            job=wc_job, invoice_number='INV-WC-REG-001', status='open',
+        )
+        data = BoardService.get_unpaid_data()
+        job_ids = [j['job_id'] for j in data['jobs']]
+        self.assertIn(wc_job.job_id, job_ids)
+
+    def test_work_complete_job_with_outstanding_invoice_appears_exactly_once(self):
+        """Union with distinct: a work_complete job that also has an outstanding
+        invoice satisfies BOTH predicates but must appear only once in the lane."""
+        from apps.jobs.services import BoardService
+        from apps.invoicing.models import Invoice
+        wc_job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        Invoice.objects.create(
+            job=wc_job, invoice_number='INV-WC-ONCE-001', status='open',
+        )
+        Invoice.objects.create(
+            job=wc_job, invoice_number='INV-WC-ONCE-002', status='draft',
+        )
+        data = BoardService.get_unpaid_data()
+        matching = [j for j in data['jobs'] if j['job_id'] == wc_job.job_id]
+        self.assertEqual(len(matching), 1, 'Job appeared more than once (missing distinct)')
+
     def test_get_closed_data_returns_terminal_jobs(self):
         from apps.jobs.services import BoardService
         job = self._make_job(status='completed', completed_date=timezone.now())
@@ -483,7 +564,9 @@ class LazyBoardMethodsTest(FixtureTestCase):
 
     def test_get_unpaid_data_returns_dict_with_jobs(self):
         from apps.jobs.services import BoardService
-        self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        from apps.invoicing.models import Invoice
+        job = self._make_job(status=Job.STATUS_WORK_COMPLETE)
+        Invoice.objects.create(job=job, invoice_number='INV-DICT-001', status='open')
         data = BoardService.get_unpaid_data()
         self.assertIsInstance(data, dict)
         self.assertIn('jobs', data)
@@ -712,3 +795,60 @@ class UnpaidDataTest(FixtureTestCase):
             if i['invoice_number'] == 'INV-TEST-003'
         )
         self.assertEqual(partly_inv['amount_paid'], Decimal('200.00'))
+
+
+class OnHoldBoardTest(FixtureTestCase):
+    """Test that on_hold jobs appear in the Pipeline lane with sub_status 'on-hold'."""
+
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days',
+            defaults={'value': '14'}
+        )
+        self.contact = Contact.objects.first()
+
+    def _make_job(self, status='draft', **kwargs):
+        return Job.objects.create(
+            job_number=f'JOB-TEST-{Job.objects.count() + 1:04d}',
+            name='Test Job',
+            status=status,
+            contact=self.contact,
+            **kwargs,
+        )
+
+    def test_on_hold_job_appears_in_pipeline_with_sub_status(self):
+        """on_hold job appears in Pipeline lane with sub_status 'on-hold',
+        and is absent from the In Progress lane."""
+        from apps.jobs.services import BoardService
+
+        # Reach on_hold via a valid transition: approved -> on_hold
+        job = self._make_job(status=Job.STATUS_APPROVED)
+        Job.objects.filter(pk=job.pk).update(status=Job.STATUS_ON_HOLD)
+        job.refresh_from_db()
+
+        # --- sub_status ---
+        self.assertEqual(BoardService.compute_sub_status(job), 'on-hold')
+
+        # --- full board: pipeline contains the job ---
+        board = BoardService.get_board_data()
+        pipeline_ids = [j['job_id'] for j in board['pipeline']]
+        self.assertIn(job.job_id, pipeline_ids)
+
+        # --- full board: pipeline entry has correct sub_status ---
+        pipeline_entry = next(j for j in board['pipeline'] if j['job_id'] == job.job_id)
+        self.assertEqual(pipeline_entry['sub_status'], 'on-hold')
+
+        # --- full board: job is NOT in the In Progress lane ---
+        in_progress_ids = [j['job_id'] for j in board['approved']['jobs']]
+        self.assertNotIn(job.job_id, in_progress_ids)
+
+        # --- per-lane endpoint: get_pipeline_data includes on_hold ---
+        pipeline_data = BoardService.get_pipeline_data()
+        pipeline_lane_ids = [j['job_id'] for j in pipeline_data['jobs']]
+        self.assertIn(job.job_id, pipeline_lane_ids)
+
+        # --- per-lane endpoint: get_approved_data excludes on_hold ---
+        approved_data = BoardService.get_approved_data()
+        approved_lane_ids = [j['job_id'] for j in approved_data['jobs']]
+        self.assertNotIn(job.job_id, approved_lane_ids)

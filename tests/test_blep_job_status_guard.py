@@ -63,6 +63,20 @@ class StartWorkJobStatusGuardTest(BaseTestCase):
         result = TaskLifecycleService.start_work(task.pk, self.user)
         self.assertIn('blep', result)
 
+    def test_start_work_rejected_on_on_hold_job(self):
+        job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                      Job.STATUS_ON_HOLD)
+        task = self._task(job)
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.start_work(task.pk, self.user)
+
+    def test_start_work_rejected_on_cancelled_job(self):
+        job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                      Job.STATUS_CANCELLED)
+        task = self._task(job)
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.start_work(task.pk, self.user)
+
 
 class CreateHistoricalJobStatusGuardTest(BaseTestCase):
     def setUp(self):
@@ -130,10 +144,45 @@ class CreateHistoricalJobStatusGuardTest(BaseTestCase):
         with self.assertRaises(ValidationError):
             BlepService.create_historical(self.user, task, start, end)
 
-    def test_rejected_on_cancelled_job(self):
+    def test_allowed_on_cancelled_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
                       Job.STATUS_CANCELLED)
         task = self._task(job)
         start, end = self._times()
+        self.assertIsNotNone(
+            BlepService.create_historical(self.user, task, start, end)
+        )
+
+    def test_rejected_on_on_hold_job(self):
+        job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                      Job.STATUS_ON_HOLD)
+        task = self._task(job)
+        start, end = self._times()
         with self.assertRaises(ValidationError):
             BlepService.create_historical(self.user, task, start, end)
+
+
+class ActualQtyCancelledJobTest(BaseTestCase):
+    """1c: actual_qty can be set on a task whose job is cancelled.
+
+    update_task has no job-status gate, so no code change is needed — this
+    test just confirms the invariant stays true."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Job.objects.first().contact
+
+    def _task(self, job):
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.first()
+        return Task.objects.create(name='T', job=job, rate_scheme=scheme)
+
+    def test_actual_qty_settable_on_cancelled_job(self):
+        from decimal import Decimal
+        from apps.jobs.services import TaskService
+
+        job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                      Job.STATUS_CANCELLED)
+        task = self._task(job)
+        updated = TaskService.update_task(task.pk, actual_qty=Decimal('3.5'))
+        self.assertEqual(updated.actual_qty, Decimal('3.5'))

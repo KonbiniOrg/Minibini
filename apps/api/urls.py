@@ -26,6 +26,7 @@ from apps.api.templates_config.views import (
     AccountingCategoryViewSet, settings_view, units_view,
 )
 from apps.api.rate_schemes.views import RateSchemeViewSet
+from apps.api.change_orders.views import ChangeOrderViewSet
 
 
 @api_view(['GET'])
@@ -79,6 +80,7 @@ router.register(r'work-templates', WorkTemplateViewSet, basename='work-template'
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
 router.register(r'rate-schemes', RateSchemeViewSet, basename='rate-scheme')
+router.register(r'change-orders', ChangeOrderViewSet, basename='change-order')
 
 urlpatterns = [
     path('', api_root, name='api-root'),

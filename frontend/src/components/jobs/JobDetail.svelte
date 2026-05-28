@@ -43,10 +43,173 @@
     estimateList.filter(e => e.status === 'superseded').length
   );
 
-  // Active estimate shown in panel (user can click a tab to switch)
-  let selectedEstimateId = $state(null);
+  // Unified version timeline: estimate versions (oldest→newest) then COs by number/id
+  // selectedVersionKey is 'est-<id>' or 'co-<id>'
+  let selectedVersionKey = $state(null);
+
+  let sortedChangeOrders = $derived(
+    [...(changeOrders || [])].sort((a, b) => {
+      // Sort by change_order_number string if present; fall back to id
+      if (a.change_order_number && b.change_order_number) {
+        return a.change_order_number.localeCompare(b.change_order_number);
+      }
+      return (a.change_order_id ?? 0) - (b.change_order_id ?? 0);
+    })
+  );
+
+  // Version timeline: estimate entries then CO entries
+  let versionTimeline = $derived([
+    ...estimateList.map(est => ({ kind: /** @type {'estimate'} */ ('estimate'), key: `est-${est.estimate_id}`, est })),
+    ...sortedChangeOrders.map(co => ({ kind: /** @type {'co'} */ ('co'), key: `co-${co.change_order_id}`, co })),
+  ]);
+
+  // Default to latest CO if any exist, otherwise the current estimate
+  let defaultVersionKey = $derived(
+    sortedChangeOrders.length > 0
+      ? `co-${sortedChangeOrders[sortedChangeOrders.length - 1].change_order_id}`
+      : (currentEstimate ? `est-${currentEstimate.estimate_id}` : null)
+  );
+
+  let displayedVersion = $derived(
+    versionTimeline.find(v => v.key === selectedVersionKey)
+    || versionTimeline.find(v => v.key === defaultVersionKey)
+    || versionTimeline[versionTimeline.length - 1]
+    || null
+  );
+
+  // Convenience aliases to keep downstream template logic readable
   let displayedEstimate = $derived(
-    estimateList.find(e => e.estimate_id === selectedEstimateId) || currentEstimate
+    displayedVersion?.kind === 'estimate' ? displayedVersion.est : null
+  );
+  let displayedCO = $derived(
+    displayedVersion?.kind === 'co' ? displayedVersion.co : null
+  );
+
+  // Effective lines when a CO is displayed — multi-CO layering.
+  //
+  // How it works:
+  //   1. Start from the base estimate's line items (the estimate the displayed CO
+  //      belongs to, sorted by line_number).
+  //   2. Collect every *accepted* CO on that same estimate, sorted by
+  //      change_order_id ascending (agreement order). Layer each one's deltas onto
+  //      the running set in order — remove drops a line, replace swaps content
+  //      (tagging it with that CO's ordinal), add appends (tagged with its ordinal).
+  //   3. Then layer the displayedCO on top, depending on its status:
+  //        - 'accepted'  → already applied in step 2; nothing extra.
+  //        - 'draft'/'open' → apply its deltas as a proposed view, tagging with its ordinal.
+  //        - 'rejected'/'expired'/'superseded' → do NOT apply; effective view is
+  //          the accepted agreement only (displayedCO's badge still shows its real status).
+  //   4. Each output row carries:
+  //        coTouched: 'changed' | 'added' | null  (drives row styling — unchanged)
+  //        coOrdinal: number | null  (ordinal of the CO that most recently touched it;
+  //                                   null for lines unchanged from the base estimate)
+  //
+  // Ordinal = 1-based position in the list of all COs on this estimate sorted by
+  // change_order_id (not parsed from the CO number string).
+
+  /** Apply one CO's deltas to a running line set, tagging touched lines with the given ordinal. */
+  function applyCoDeltas(lines, coItems, ordinal) {
+    const replaceByTarget = new Map();
+    const removeByTarget  = new Map();
+    const addItems = [];
+    for (const ci of coItems) {
+      if (ci.action === 'replace' && ci.target_line_item) {
+        replaceByTarget.set(ci.target_line_item, ci);
+      } else if (ci.action === 'remove' && ci.target_line_item) {
+        removeByTarget.set(ci.target_line_item, ci);
+      } else if (ci.action === 'add') {
+        addItems.push(ci);
+      }
+    }
+    const result = [];
+    for (const el of lines) {
+      if (removeByTarget.has(el.line_item_id)) {
+        // Drop removed lines entirely
+      } else if (replaceByTarget.has(el.line_item_id)) {
+        const ci = replaceByTarget.get(el.line_item_id);
+        result.push({
+          line_item_id: el.line_item_id,
+          line_number: el.line_number,
+          description: ci.description,
+          qty: ci.qty,
+          units: ci.units,
+          price: ci.price,
+          coTouched: 'changed',
+          coOrdinal: ordinal,
+        });
+      } else {
+        result.push({ ...el });
+      }
+    }
+    for (const ci of addItems) {
+      result.push({
+        line_item_id: null,
+        line_number: ci.line_number,
+        description: ci.description,
+        qty: ci.qty,
+        units: ci.units,
+        price: ci.price,
+        coTouched: 'added',
+        coOrdinal: ordinal,
+      });
+    }
+    return result;
+  }
+
+  let coEffectiveLines = $derived.by(() => {
+    if (!displayedCO) return [];
+    const co = displayedCO;
+    const baseEst = estimateList.find(e => e.estimate_id === co.estimate);
+
+    // Base lines from the estimate this CO targets
+    let lines = (baseEst?.line_items || []).slice()
+      .sort((a, b) => a.line_number - b.line_number)
+      .map(el => ({
+        line_item_id: el.line_item_id,
+        line_number: el.line_number,
+        description: el.description,
+        qty: el.qty,
+        units: el.units,
+        price: el.price,
+        coTouched: /** @type {null} */ (null),
+        coOrdinal: /** @type {number|null} */ (null),
+      }));
+
+    // All COs on this estimate sorted by id (agreement order)
+    const cosOnEst = (changeOrders || [])
+      .filter(c => c.estimate === co.estimate)
+      .slice()
+      .sort((a, b) => a.change_order_id - b.change_order_id);
+
+    // Ordinal map: change_order_id → 1-based position among all COs on this estimate
+    const ordinalOf = new Map(cosOnEst.map((c, i) => [c.change_order_id, i + 1]));
+
+    // Step 2: layer every accepted CO in agreement order
+    for (const acceptedCo of cosOnEst) {
+      if (acceptedCo.status !== 'accepted') continue;
+      lines = applyCoDeltas(lines, acceptedCo.line_items || [], ordinalOf.get(acceptedCo.change_order_id));
+    }
+
+    // Step 3: layer displayedCO if it is in a proposed (not-yet-decided) state
+    const PROPOSED = new Set(['draft', 'open']);
+    if (PROPOSED.has(co.status)) {
+      lines = applyCoDeltas(lines, co.line_items || [], ordinalOf.get(co.change_order_id));
+    }
+    // 'accepted' → already applied above; 'rejected'/'expired'/'superseded' → skip
+
+    return lines;
+  });
+
+  // Footer total for the effective CO view
+  let coEffectiveTotal = $derived(
+    coEffectiveLines.reduce((s, li) => s + Number(li.qty || 0) * Number(li.price || 0), 0)
+  );
+
+  // Number of COs on the displayed CO's estimate — drives single vs. numbered badge
+  let coCountOnEstimate = $derived(
+    displayedCO
+      ? (changeOrders || []).filter(c => c.estimate === displayedCO.estimate).length
+      : 0
   );
 
   // Worksheet versions, sorted newest first
@@ -101,6 +264,13 @@
   let shipmentCount = $state(0);
   let hasOutstandingDeliverables = $state(false);
 
+  // Change orders
+  let changeOrders = $state([]);
+  let creatingCo = $state(false);
+  let hasLiveChangeOrder = $derived(
+    (changeOrders || []).some(co => co.status === 'draft' || co.status === 'open')
+  );
+
   async function refreshShipmentCount() {
     try {
       const r = await api.get(`/api/shipments/?job=${job.job_id}`);
@@ -120,12 +290,56 @@
     }
   }
 
+  async function refreshChangeOrders() {
+    try {
+      const r = await api.get(`/api/change-orders/?job=${job.job_id}`);
+      changeOrders = r?.results || r || [];
+    } catch {
+      changeOrders = [];
+    }
+  }
+
+  async function createChangeOrder() {
+    creatingCo = true;
+    try {
+      const co = await api.post('/api/change-orders/', { job: job.job_id });
+      window.location.hash = `/change-orders/${co.change_order_id}`;
+    } catch (e) {
+      alert(e.message || 'Failed to create change order.');
+    } finally {
+      creatingCo = false;
+    }
+  }
+
   $effect(() => {
     if (job?.job_id) {
       refreshShipmentCount();
       refreshDeliverableFulfillment();
+      refreshChangeOrders();
     }
   });
+
+  // Display status for estimates: show "altered" instead of "accepted" when
+  // at least one change order (any state) exists on that estimate.
+  function estimateDisplayStatus(est, cosForJob) {
+    if (est?.status === 'accepted' && cosForJob?.some(co => co.estimate === est.estimate_id)) {
+      return 'altered';
+    }
+    return est?.status;
+  }
+
+  // Display status for change orders: show "altered" instead of "accepted" when
+  // a later accepted CO exists on the same job (ordered by change_order_id).
+  // Only an accepted later CO triggers the relabel — draft/open/rejected/etc. do not.
+  function changeOrderDisplayStatus(co, allCosForJob) {
+    if (co?.status === 'accepted' && (allCosForJob || []).some(
+      other => other.change_order_id > co.change_order_id
+               && other.status === 'accepted'
+    )) {
+      return 'altered';
+    }
+    return co?.status;
+  }
 
   // Invoice helpers
   function invoiceTotal(inv) {
@@ -242,7 +456,7 @@
     void job.job_id;
     userSection = null;
     selectedWorksheetId = null;
-    selectedEstimateId = null;
+    selectedVersionKey = null;
     selectedInvoiceId = null;
     selectedPoId = null;
   });
@@ -397,51 +611,122 @@
     </div>
   {/if}
 
-  <!-- Estimates -->
+  <!-- Estimates + Change Orders (unified version timeline) -->
   {#if activeSection !== 'estimates'}
     <div class="pillar pillar-est"
          role="button" tabindex="0"
          onclick={() => openSection('estimates')}
          onkeydown={(e) => e.key === 'Enter' && openSection('estimates')}>
       <span class="label-v">Estimates</span>
-      <span class="pillar-count">{estimates?.results?.length || 0}</span>
+      <span class="pillar-count">{versionTimeline.length}</span>
     </div>
   {:else}
     <div class="open open-est">
       <div class="top-bar top-bar-est">
         <span class="top-bar-title">
-          ESTIMATE
-          {#if displayedEstimate} · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {displayedEstimate.status}{:else} · None{/if}
-          {#if estimateList.length > 1} · {estimateList.length} versions{/if}
+          {#if displayedVersion?.kind === 'co'}
+            CHANGE ORDER · {displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`} · {changeOrderDisplayStatus(displayedVersion.co, changeOrders)}
+          {:else if displayedEstimate}
+            ESTIMATE · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {estimateDisplayStatus(displayedEstimate, changeOrders)}
+          {:else}
+            ESTIMATE · None
+          {/if}
         </span>
         <span class="top-bar-actions">
-          {#if displayedEstimate}
+          {#if displayedVersion?.kind === 'co'}
+            <a href="#/change-orders/{displayedVersion.co.change_order_id}">View Change Order</a>
+          {:else if displayedEstimate}
             <a href="#/estimates/{displayedEstimate.estimate_id}">View Full Estimate</a>
-          {/if}
-          {#if canManageJobs && displayedEstimate && (displayedEstimate.status === 'open' || displayedEstimate.status === 'accepted')}
-            <a href="#/estimates/{displayedEstimate.estimate_id}/revise">Revise Estimate</a>
+            {#if canManageJobs && (displayedEstimate.status === 'open' || displayedEstimate.status === 'accepted')}
+              <a href="#/estimates/{displayedEstimate.estimate_id}/revise">Revise Estimate</a>
+            {/if}
           {/if}
           {#if canManageJobs && !currentEstimate}
             <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
           {/if}
+          {#if canManageJobs && job.status === 'on_hold' && !hasLiveChangeOrder}
+            <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
+              {creatingCo ? 'Creating…' : '+ New change order'}
+            </button>
+          {/if}
         </span>
       </div>
-      {#if estimateList.length > 1}
+      {#if versionTimeline.length > 1}
         <div class="est-tabs">
-          {#each estimateList as est}
-            <button
-              type="button"
-              class="est-tab"
-              class:active={est.estimate_id === displayedEstimate?.estimate_id}
-              onclick={() => { selectedEstimateId = est.estimate_id; }}
-            >
-              {est.estimate_number} v{est.version} <span class="est-tab-status">({est.status})</span>
-            </button>
+          {#each versionTimeline as ver}
+            {#if ver.kind === 'estimate'}
+              <button
+                type="button"
+                class="est-tab"
+                class:active={ver.key === (displayedVersion?.key)}
+                onclick={() => { selectedVersionKey = ver.key; }}
+              >
+                {ver.est.estimate_number} v{ver.est.version} <span class="est-tab-status">({estimateDisplayStatus(ver.est, changeOrders)})</span>
+              </button>
+            {:else}
+              <a
+                class="est-tab est-tab-co"
+                href={`/change-orders/${ver.co.change_order_id}`}
+                use:link
+              >
+                {ver.co.change_order_number || `CO #${ver.co.change_order_id}`} <span class="est-tab-status">({changeOrderDisplayStatus(ver.co, changeOrders)})</span>
+              </a>
+            {/if}
           {/each}
         </div>
       {/if}
       <div class="body">
-        {#if displayedEstimate?.line_items?.length > 0}
+        {#if displayedVersion?.kind === 'co'}
+          <!-- CO effective agreement view (Option A): base estimate lines with CO deltas applied -->
+          {#if coEffectiveLines.length > 0}
+            <table class="est-table">
+              <colgroup>
+                <col class="col-num">
+                <col>
+                <col class="col-qty">
+                <col class="col-units">
+                <col class="col-money">
+                <col class="col-money">
+              </colgroup>
+              <thead><tr>
+                <th>#</th><th>Description</th>
+                <th class="text-right">Qty</th><th>Units</th><th class="text-right">Price</th><th class="text-right">Total</th>
+              </tr></thead>
+              <tbody>
+                {#each coEffectiveLines as li}
+                  <tr class:co-line-changed={li.coTouched === 'changed'} class:co-line-added={li.coTouched === 'added'}>
+                    <td>{li.line_number}</td>
+                    <td>
+                      {li.description}
+                      {#if li.coTouched}
+                        <span class="co-tag">{coCountOnEstimate > 1 ? `CO-${li.coOrdinal}` : 'CO'}</span>
+                      {/if}
+                    </td>
+                    <td class="text-right">{li.qty}</td>
+                    <td>{li.units || 'none'}</td>
+                    <td class="text-right">${Number(li.price).toFixed(2)}</td>
+                    <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+            <div class="est-footer">
+              <div class="est-meta">
+                <span class="meta-bit">
+                  <span class="meta-label">Change Order</span>
+                  <span class="meta-value">{displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`}</span>
+                </span>
+                <span class="pill pill-co-{displayedVersion.co.status}">{displayedVersion.co.status}</span>
+              </div>
+              <div class="est-totals">
+                <div class="t-label">Total</div>
+                <div class="t-value grand">${coEffectiveTotal.toFixed(2)}</div>
+              </div>
+            </div>
+          {:else}
+            <p class="empty-msg">No effective lines (CO has no base estimate or all lines removed).</p>
+          {/if}
+        {:else if displayedEstimate?.line_items?.length > 0}
           <table class="est-table">
             <colgroup>
               <col class="col-num">
@@ -1432,4 +1717,29 @@
   /* PO other-job differentiation */
   .other-job { opacity: 0.5; }
   .other-job-label { font-size: 11px; color: #999; font-style: italic; margin-left: 4px; }
+
+  /* Change-order status pills (used in CO tab footer and inline) */
+  .pill-co-draft { background: #f3f4f6; color: #374151; }
+  .pill-co-open { background: #fef3c7; color: #92400e; }
+  .pill-co-accepted { background: #dcfce7; color: #166534; }
+  .pill-co-rejected { background: #fee2e2; color: #991b1b; }
+
+  /* CO tabs inside the est-tabs strip — anchor links with warmer tint to distinguish from est tabs */
+  .est-tab.est-tab-co { color: #7c2d12; text-decoration: none; }
+  .est-tab.est-tab-co:hover { background: #fed7aa; }
+
+  /* CO effective-lines: lightly mark CO-touched rows */
+  .est-table tbody tr.co-line-changed { background: #fff7ed; border-left: 3px solid #f97316; }
+  .est-table tbody tr.co-line-added   { background: #f0fdf4; border-left: 3px solid #22c55e; }
+  .co-tag {
+    display: inline-block;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
+    padding: 1px 4px; border-radius: 3px;
+    background: #ffedd5; color: #9a3412;
+    margin-left: 5px; vertical-align: middle;
+    text-transform: uppercase;
+  }
+  .est-table tbody tr.co-line-added .co-tag {
+    background: #dcfce7; color: #166534;
+  }
 </style>

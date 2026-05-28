@@ -114,6 +114,19 @@ def _assert_job_allows_blep(job, allowed_statuses, action):
         )
 
 
+def _assert_job_not_on_hold(job, action):
+    """Reject task/material mutations while the job is paused on_hold.
+
+    Resolve the open change order (accept/reject/discard) or take the job
+    off hold before making changes.
+    """
+    if job.status == Job.STATUS_ON_HOLD:
+        raise ValidationError(
+            f"Cannot {action} while the job is on hold. Resolve the open "
+            f"change order (or take the job off hold) first."
+        )
+
+
 class BlepService:
     """All Blep (time entry) writes flow through this service.
 
@@ -185,10 +198,12 @@ class BlepService:
                 "Creating a time entry for another user requires can_manage_time."
             )
         # Post-split: task is always a Task (work-order side); no container check needed.
+        # STATUS_CANCELLED is allowed for backfill — forgotten time can still be
+        # logged against a stopped job for billing purposes.
         _assert_job_allows_blep(
             task.job,
             (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
-             Job.STATUS_WORK_COMPLETE),
+             Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED),
             'log time',
         )
         if end_time < start_time:
@@ -316,12 +331,36 @@ class JobService:
             setattr(job, field, value)
         status_changed = job.status != old_status
 
+        if status_changed and job.status in (Job.STATUS_ON_HOLD, Job.STATUS_CANCELLED):
+            if Blep.objects.filter(task__job=job, end_time__isnull=True).exists():
+                raise ValidationError(
+                    'Cannot pause or cancel the job while a worker has an open time entry — '
+                    'have them stop first.'
+                )
+
+        if status_changed and old_status == Job.STATUS_ON_HOLD:
+            from apps.estimates.models import ChangeOrder
+            if ChangeOrder.objects.filter(
+                job=job, status__in=[ChangeOrder.STATUS_DRAFT, ChangeOrder.STATUS_OPEN]
+            ).exists():
+                raise ValidationError(
+                    'Resolve the open change order (accept, reject, or discard it) '
+                    'before taking the job off hold.'
+                )
+
         if status_changed and job.status == Job.STATUS_WORK_COMPLETE:
             offenders = JobService._loose_pending_materials(job)
             if offenders.exists():
                 names = ', '.join(m.description or str(m.pk) for m in offenders)
                 raise ValidationError(
                     f'Cannot advance to work_complete: unresolved task-less materials: {names}'
+                )
+
+        if status_changed and job.status == Job.STATUS_COMPLETED:
+            from apps.deliverables.services import DeliverableService
+            if not DeliverableService.all_deliverables_shipped(job):
+                raise ValidationError(
+                    'All deliverables must be shipped before completing the job.'
                 )
 
         job.full_clean()
@@ -365,6 +404,88 @@ class JobService:
     def update_status(pk, new_status):
         """Thin wrapper over update_job for a status-only change."""
         return JobService.update_job(pk, status=new_status)
+
+    @staticmethod
+    def maybe_complete_if_resolved(job):
+        """Complete the job if all its invoices are resolved AND all its
+        deliverables are fully picked up.
+
+        This is the canonical completion check.  It is called from two paths:
+          * ``Invoice._maybe_complete_job`` — fires when the last invoice is paid.
+          * ``ShipmentService.mark_picked_up`` — fires when the last shipment is
+            picked up.
+        Whichever arrives last triggers the actual completion.
+
+        Behaviour:
+          - Refreshes the job from the DB (callers may hold a stale instance).
+          - No-ops if the job is already completed or cancelled.
+          - No-ops if any invoice is still unresolved (not paid/cancelled).
+          - No-ops if any deliverable is not yet fully picked up.
+          - Releases loose (task-less, pending) materials, records a system
+            HistoryEntry for the release, then walks the job to ``completed``.
+        """
+        from apps.core.models import HistoryEntry, User
+        from apps.deliverables.services import DeliverableService
+        from apps.invoicing.models import Invoice
+
+        job.refresh_from_db()
+        if job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
+            return
+
+        # All invoices must be resolved (paid or cancelled).
+        unresolved = Invoice.objects.filter(job=job).exclude(
+            status__in=(Invoice.STATUS_PAID, Invoice.STATUS_CANCELLED)
+        ).exists()
+        if unresolved:
+            return
+
+        # All deliverables must be fully picked up.
+        if not DeliverableService.all_deliverables_shipped(job):
+            return
+
+        old_status = job.status
+        system_user, _ = User.objects.get_or_create(
+            username='system',
+            defaults={'first_name': 'System', 'is_active': False},
+        )
+
+        # Invoice-paid / shipment completion is unattended — release loose
+        # materials rather than letting the work_complete gate strand the job.
+        released = JobService.release_loose_materials(job)
+        if released:
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='job',
+                object_id=job.pk,
+                user=system_user,
+                changes={
+                    '_action': (
+                        'Loose materials released on invoice-completion: '
+                        + ', '.join(
+                            f"{m['description']} (qty {m['quantity']})"
+                            for m in released
+                        )
+                    ),
+                },
+            )
+
+        # Walk through intermediate statuses when coming from early states.
+        if job.status == Job.STATUS_APPROVED:
+            job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
+        if job.status == Job.STATUS_IN_PROGRESS:
+            job = JobService.update_job(job.pk, status=Job.STATUS_WORK_COMPLETE)
+        job = JobService.update_job(job.pk, status=Job.STATUS_COMPLETED)
+
+        HistoryEntry.objects.create(
+            entry_type='action',
+            object_type='job',
+            object_id=job.pk,
+            user=system_user,
+            changes={
+                'status': {'old': old_status, 'new': Job.STATUS_COMPLETED},
+                '_action': 'All invoices paid — job completed',
+            },
+        )
 
     @staticmethod
     def mark_work_started(job):
@@ -454,6 +575,7 @@ class TaskService:
         """
         from apps.core.services import SchemeSupersededError
 
+        _assert_job_not_on_hold(job, 'add a task to this job')
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
         if template.rate_scheme_id and template.rate_scheme.replaced_by_id is not None:
@@ -480,6 +602,7 @@ class TaskService:
                       est_qty=None, est_worker_time=None, actual_qty=None,
                       **task_fields):
         """Create Task directly. Requires rate_scheme_id."""
+        _assert_job_not_on_hold(job, 'add a task to this job')
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
         scheme = RateScheme.objects.get(pk=rate_scheme_id)
@@ -506,6 +629,7 @@ class TaskService:
             task = Task.objects.get(pk=pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {pk} not found')
+        _assert_job_not_on_hold(task.job, 'edit this task')
         for field, value in kwargs.items():
             setattr(task, field, value)
         task.full_clean()
@@ -524,6 +648,7 @@ class TaskService:
             task = Task.objects.get(pk=task_pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_pk} not found')
+        _assert_job_not_on_hold(task.job, 'delete this task')
 
         non_deletable = (Task.STATUS_IN_PROGRESS, Task.STATUS_COMPLETE)
         if task.status in non_deletable:
@@ -546,6 +671,7 @@ class TaskService:
             task = Task.objects.get(pk=task_id)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_id} not found')
+        _assert_job_not_on_hold(task.job, 'reorder tasks on this job')
 
         items_qs = Task.objects.filter(job=task.job)
 
@@ -567,6 +693,7 @@ class TaskService:
         is the actual enforcer of the invariant. Unassigning (`assignee_id`
         falsy) has no such requirement.
         """
+        _assert_job_not_on_hold(task.job, "change this task's assignment")
         if assignee_id and est_worker_time is None and not task.est_worker_time:
             raise TaskWorkerTimeRequired()
         task.assignee_id = assignee_id or None
@@ -612,6 +739,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_on_hold(task.job, 'complete this task')
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED):
                 raise ValidationError(
                     f"Cannot complete task: status is '{task.status}', "
@@ -667,6 +795,7 @@ class TaskLifecycleService:
         Returns conflict dict if open Bleps exist."""
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_on_hold(task.job, 'block this task')
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
                 raise ValidationError(
                     f"Cannot block task: status is '{task.status}', "
@@ -695,6 +824,7 @@ class TaskLifecycleService:
         """Transition task from blocked -> in_progress."""
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_on_hold(task.job, 'unblock this task')
             if task.status != Task.STATUS_BLOCKED:
                 raise ValidationError(
                     f"Cannot unblock task: status is '{task.status}', must be 'blocked'."
@@ -711,6 +841,7 @@ class TaskLifecycleService:
         """Transition task from pending/in_progress/blocked -> cancelled."""
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_on_hold(task.job, 'cancel this task')
             allowed = (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED)
             if task.status not in allowed:
                 raise ValidationError(
@@ -929,8 +1060,9 @@ class BoardService:
         cutoff = timezone.now() - timedelta(days=retention_days)
 
         # Pipeline: draft + submitted + approved (estimate accepted, awaiting prep)
+        #           + on_hold (reverted-to-planning / paused)
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted', 'approved']
+            status__in=['draft', 'submitted', 'approved', 'on_hold']
         ).select_related('contact').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
@@ -1004,10 +1136,10 @@ class BoardService:
 
     @staticmethod
     def get_pipeline_data():
-        """Return pipeline jobs (draft + submitted + approved) with worksheet/estimate info."""
+        """Return pipeline jobs (draft + submitted + approved + on_hold) with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted', 'approved']
+            status__in=['draft', 'submitted', 'approved', 'on_hold']
         ).select_related('contact').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
@@ -1097,13 +1229,28 @@ class BoardService:
             'available_workers': available_workers,
         }
 
+    # Invoice statuses that represent a settled/voided receivable — excluded from
+    # the "outstanding" predicate used to populate the Unpaid board lane.
+    INVOICE_SETTLED_STATUSES = ['cancelled', 'superseded', 'paid']
+
     @staticmethod
     def get_unpaid_data():
-        """Return work_complete jobs (work done, invoicing/payment outstanding)."""
+        """Return jobs in the Unpaid lane: a UNION of two predicates.
+
+        (a) All work_complete jobs — these are "work done, awaiting first invoice"
+            (sub_status needs-invoice) as well as those already invoiced.
+        (b) Any-status jobs with at least one outstanding (non-settled) invoice —
+            so that a billable-cancelled job's receivable stays visible and is
+            not lost after cancellation.
+
+        The two predicates overlap for work_complete jobs that also carry an
+        outstanding invoice; .distinct() ensures each job appears only once.
+        """
         from apps.jobs.models import Job
         unpaid_jobs = Job.objects.filter(
-            status=Job.STATUS_WORK_COMPLETE
-        ).select_related('contact').order_by('due_date')
+            Q(status=Job.STATUS_WORK_COMPLETE) |
+            Q(invoice__status__in=['draft', 'open', 'partly-paid', 'defaulted'])
+        ).distinct().select_related('contact').order_by('due_date')
 
         unpaid_list = [
             BoardService._serialize_unpaid_job(job) for job in unpaid_jobs
@@ -1301,6 +1448,8 @@ class BoardService:
     @staticmethod
     def compute_sub_status(job):
         """Derive the sub-status of a job based on related object states."""
+        if job.status == Job.STATUS_ON_HOLD:
+            return 'on-hold'
         if job.status in ('draft', 'submitted'):
             return BoardService._pipeline_sub_status(job)
         elif job.status == Job.STATUS_APPROVED:

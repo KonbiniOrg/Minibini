@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from tests.base import FixtureTestCase
 from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
 from apps.deliverables.services import DeliverableService
-from apps.estimates.models import Estimate
+from apps.estimates.models import Estimate, ChangeOrder, ChangeOrderLineItem
 from apps.jobs.models import Job
 
 
@@ -176,3 +176,150 @@ class ComputeFulfillmentTests(FixtureTestCase):
         self.assertEqual(f['qty_picked_up'], Decimal('7'))
         self.assertEqual(f['qty_prepped'], Decimal('3'))
         self.assertEqual(f['qty_remaining'], Decimal('5'))
+
+
+class AllDeliverablesShippedTests(FixtureTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        Estimate.objects.create(
+            job=self.job, estimate_number='EST-AS-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+        self.d = Deliverable.objects.create(
+            job=self.job, description='Stool', qty_ordered=Decimal('10'), units='ea',
+        )
+
+    def test_false_when_nothing_shipped(self):
+        self.assertFalse(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_false_when_partially_picked_up(self):
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PICKED_UP)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('6'))
+        self.assertFalse(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_false_when_prepared_but_not_picked_up(self):
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PREPARED)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('10'))
+        self.assertFalse(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_true_when_fully_picked_up(self):
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PICKED_UP)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('10'))
+        self.assertTrue(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_true_when_multiple_deliverables_all_picked_up(self):
+        d2 = Deliverable.objects.create(
+            job=self.job, description='Table', qty_ordered=Decimal('2'), units='ea',
+        )
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PICKED_UP)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('10'))
+        ShipmentItem.objects.create(shipment=s, deliverable=d2, qty=Decimal('2'))
+        self.assertTrue(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_false_when_one_of_several_unshipped(self):
+        Deliverable.objects.create(
+            job=self.job, description='Table', qty_ordered=Decimal('2'), units='ea',
+        )
+        s = Shipment.objects.create(job=self.job, sequence=1, status=Shipment.STATUS_PICKED_UP)
+        ShipmentItem.objects.create(shipment=s, deliverable=self.d, qty=Decimal('10'))
+        self.assertFalse(DeliverableService.all_deliverables_shipped(self.job))
+
+    def test_true_when_no_deliverables(self):
+        Deliverable.objects.filter(job=self.job).delete()
+        self.assertTrue(DeliverableService.all_deliverables_shipped(self.job))
+
+
+class AnchoredDeliverableTests(FixtureTestCase):
+    """A deliverable that has been shipped (has a ShipmentItem) is immutable.
+
+    We use a draft ChangeOrder to keep the job's deliverables list editable
+    (overriding the accepted-estimate lock), so the anchoring guard — not the
+    editability guard — is the one being exercised.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        # Accepted estimate is required to create a ChangeOrder and to have
+        # ever created a Shipment legitimately.
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-ANC-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+        self.d = Deliverable.objects.create(
+            job=self.job, description='Chair', qty_ordered=Decimal('4'), units='ea',
+        )
+        # Draft CO: overrides the accepted-estimate lock, making the list editable.
+        self.co = ChangeOrder.objects.create(job=self.job, estimate=self.est)
+
+    def _attach_shipment_item(self):
+        """Add a ShipmentItem to self.d to anchor it."""
+        shipment = Shipment.objects.create(
+            job=self.job, sequence=1, status=Shipment.STATUS_PREPARED,
+        )
+        return ShipmentItem.objects.create(
+            shipment=shipment, deliverable=self.d, qty=Decimal('2'),
+        )
+
+    def test_update_on_shipped_deliverable_raises(self):
+        self._attach_shipment_item()
+        with self.assertRaises(ValidationError) as cm:
+            DeliverableService.update(deliverable=self.d, description='Updated Chair')
+        self.assertIn('frozen', str(cm.exception))
+
+    def test_delete_on_shipped_deliverable_raises(self):
+        self._attach_shipment_item()
+        with self.assertRaises(ValidationError) as cm:
+            DeliverableService.delete(deliverable=self.d)
+        self.assertIn('frozen', str(cm.exception))
+
+    def test_update_on_unshipped_deliverable_succeeds(self):
+        """Regression: unshipped deliverables on a draft-CO job still update normally."""
+        updated = DeliverableService.update(deliverable=self.d, description='Updated Chair')
+        self.assertEqual(updated.description, 'Updated Chair')
+
+
+class ChangeOrderEditabilityTests(FixtureTestCase):
+    """is_editable / editability_reason when a ChangeOrder is live on the job."""
+
+    def setUp(self):
+        super().setUp()
+        self.job = Job.objects.first()
+        Estimate.objects.filter(job=self.job).delete()
+        # Base state: accepted estimate → normally locked.
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-COE-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+
+    def _make_draft_co(self):
+        return ChangeOrder.objects.create(job=self.job, estimate=self.est)
+
+    def _make_open_co(self):
+        co = ChangeOrder.objects.create(job=self.job, estimate=self.est)
+        ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            description='Added scope', qty=1, price=100, line_number=1,
+        )
+        co.status = ChangeOrder.STATUS_OPEN
+        co.save()
+        return co
+
+    def test_no_co_accepted_estimate_is_locked(self):
+        """Baseline: accepted estimate with no CO → not editable (unchanged behaviour)."""
+        self.assertFalse(DeliverableService.is_editable(self.job))
+        self.assertEqual(DeliverableService.editability_reason(self.job), 'estimate_accepted')
+
+    def test_draft_co_makes_editable(self):
+        self._make_draft_co()
+        self.assertTrue(DeliverableService.is_editable(self.job))
+        self.assertIsNone(DeliverableService.editability_reason(self.job))
+
+    def test_open_co_locks_list(self):
+        self._make_open_co()
+        self.assertFalse(DeliverableService.is_editable(self.job))
+        self.assertEqual(DeliverableService.editability_reason(self.job), 'change_order_sent')

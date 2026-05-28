@@ -373,10 +373,9 @@ class JobTaskMixin:
             return Response(serializer.data)
 
         if request.method == 'DELETE':
-            from django.core.exceptions import ValidationError
-            from apps.jobs.services import TaskService
+            from apps.jobs.services import TaskService as _TaskService
             try:
-                TaskService.delete_task(task.pk)
+                _TaskService.delete_task(task.pk)
             except ValidationError as e:
                 return Response(
                     {'detail': e.message if hasattr(e, 'message') else str(e)},
@@ -384,9 +383,19 @@ class JobTaskMixin:
                 )
             return Response({'message': 'Task deleted.'})
 
+        # Validate request data via the serializer, then delegate the actual
+        # write to TaskService.update_task so the on_hold guard fires.
         serializer = self.task_serializer_class(task, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        from apps.jobs.services import TaskService
+        try:
+            task = TaskService.update_task(task.pk, **serializer.validated_data)
+        except ValidationError as e:
+            detail = e.message_dict if hasattr(e, 'message_dict') else (
+                e.message if hasattr(e, 'message') else str(e)
+            )
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.task_serializer_class(task)
         return Response(serializer.data)
 
     def _get_task_or_404(self, job, task_pk):
