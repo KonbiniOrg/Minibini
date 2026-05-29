@@ -237,14 +237,38 @@ Re-clicking Send on a document whose previous attempt failed:
 
 - Finds the most recent `direction='outbound'`, `sent_at=null`
   EmailRecord tied to the document (via the appropriate FK).
-- Reuses it (does not create a new row) — the same `message_id` and
-  body get retried. Updates the row's `text_body` / `subject` / `to_email`
-  if the user edited them between attempts.
+- Reuses it (does not create a new row).
+- Preserves `message_id` from the failed row — so if attempt 1
+  partial-delivered somehow, the `In-Reply-To` chain stays coherent.
+- Updates `text_body` / `subject` / `to_email` / `cc_email` / `bcc_email`
+  from the current form POST — the user may have edited any of them
+  between attempts.
+- **Regenerates the document PDF from current state.** PDFs are not
+  cached — every send attempt rebuilds them from the document. If the
+  document was edited between attempt 1 (failed) and attempt 2, the
+  retry sends the current content. SMTP failures don't actually
+  deliver, so this is correct behavior, not a content-mismatch
+  hazard. User-uploaded attachments come from the multipart POST the
+  SPA sends each time.
+- For Invoice: if `qbo_id` is set, skip the QBO push and reuse it
+  (the §4.4 short-circuit). Always re-fetch the QBO PDF and
+  regenerate the statement PDF — same regenerate-from-current-state
+  principle.
 - Attempts SMTP again. Success / failure handling as in §4.2.
 
-Reusing the row keeps the message_id stable across retries — so if
-the customer happens to receive a partial first-attempt and a
-successful second-attempt, the `In-Reply-To` chain remains coherent.
+If the user navigates away from the send page after a failure, the
+form's composed body and attachments are lost (no drafts; §2). The
+document detail page surfaces a "Last send failed: <error>"
+indicator with a Send Email button that takes the user back to a
+freshly-template-loaded send page. The server still finds the stale
+EmailRecord by FK on the next send, so `message_id` is preserved
+even across navigations.
+
+PDF byte preservation (archival — "show me what I sent the customer
+three months ago") is a separate concern from retry, not in scope
+here. The document data model freezes once the doc is accepted /
+issued / paid, so the bones are recoverable; the exact rendered
+bytes are not.
 
 ### 4.4 Invoice-specific Send shim
 
