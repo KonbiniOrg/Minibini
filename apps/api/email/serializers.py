@@ -59,9 +59,7 @@ class EmailRecordSerializer(serializers.ModelSerializer):
         ]
 
     def get_direction(self, obj):
-        # Every EmailRecord today is IMAP-fetched (inbound). The field exists
-        # so outbound tracking, when added, slots in without an API change.
-        return 'inbound'
+        return obj.direction
 
     def get_display_address(self, obj):
         temp = getattr(obj, 'temp_data', None)

@@ -72,6 +72,13 @@ class EmailRecord(models.Model):
     Contains only the minimum data needed to link and retrieve the email.
     This record is never automatically deleted.
     """
+    INBOUND = 'inbound'
+    OUTBOUND = 'outbound'
+    DIRECTION_CHOICES = [
+        (INBOUND, 'Inbound'),
+        (OUTBOUND, 'Outbound'),
+    ]
+
     email_record_id = models.AutoField(primary_key=True)
 
     # IMAP identifier - required for fetching from server
@@ -81,6 +88,21 @@ class EmailRecord(models.Model):
         db_index=True,
         help_text='RFC 2822 Message-ID header'
     )
+
+    # Direction: 'inbound' (IMAP-fetched) or 'outbound' (we sent it).
+    # Outbound rows are created at send time by OutboundEmailService.send_tracked.
+    direction = models.CharField(
+        max_length=10,
+        choices=DIRECTION_CHOICES,
+        default=INBOUND,
+    )
+
+    # For outbound EmailRecords: when SMTP succeeded. Null = pending or failed.
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    # For outbound EmailRecords: the most recent SMTP failure message.
+    # Empty when the send succeeded or is in flight.
+    last_send_error = models.TextField(blank=True, default='')
 
     # Job association
     job = models.ForeignKey(
@@ -152,7 +174,15 @@ class TempEmail(models.Model):
     from_email = models.EmailField()
     to_email = models.TextField(help_text='Comma-separated email addresses')
     cc_email = models.TextField(blank=True, help_text='Comma-separated email addresses')
+    # BCC: populated only on outbound rows (inbound IMAP fetches can't see BCC).
+    bcc_email = models.TextField(blank=True, default='', help_text='Comma-separated email addresses')
     date_sent = models.DateTimeField()
+
+    # RFC 5322 threading headers — captured at IMAP fetch time for inbound,
+    # used by the reply-correlation pass in EmailService to auto-link replies
+    # to the right Job / PO / Bill.
+    in_reply_to = models.CharField(max_length=255, blank=True, default='')
+    references = models.TextField(blank=True, default='')
 
     # Cached body content (populated at IMAP fetch time so list-style
     # consumers can render snippets without re-hitting IMAP).

@@ -300,7 +300,7 @@ class EmailAPITest(BaseTestCase):
 
         response = self.client.get(f'/api/emails/{self.email.pk}/')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['direction'], 'inbound')
+        self.assertEqual(response.data['direction'], EmailRecord.INBOUND)
         self.assertEqual(response.data['display_address'], 'sender@example.com')
         # Snippet comes from text_body, with sign-off + signature line stripped
         # by extract_email_body via strip_quoted_reply downstream callers; for
@@ -309,6 +309,16 @@ class EmailAPITest(BaseTestCase):
         # Verify we got the body content (not the raw cached_body with newlines).
         self.assertIn("Sounds good", response.data['snippet'])
         self.assertNotIn('\n', response.data['snippet'])
+
+    def test_outbound_email_reports_outbound_direction(self):
+        """An outbound EmailRecord reflects 'outbound' in the serializer."""
+        outbound = EmailRecord.objects.create(
+            message_id='<outbound-direction@example.com>',
+            direction=EmailRecord.OUTBOUND,
+        )
+        response = self.client.get(f'/api/emails/{outbound.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['direction'], EmailRecord.OUTBOUND)
 
     def test_snippet_strips_quoted_reply(self):
         self.temp_email.text_body = (

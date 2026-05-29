@@ -159,6 +159,34 @@ class EmailRecordModelTest(TestCase):
         email_record.refresh_from_db()
         self.assertIsNone(email_record.bill)
 
+    def test_email_record_direction_defaults_inbound(self):
+        email_record = EmailRecord.objects.create(message_id="<dir-default@example.com>")
+        self.assertEqual(email_record.direction, EmailRecord.INBOUND)
+        self.assertIsNone(email_record.sent_at)
+        self.assertEqual(email_record.last_send_error, '')
+
+    def test_email_record_outbound_round_trip(self):
+        email_record = EmailRecord.objects.create(
+            message_id="<outbound-rt@example.com>",
+            direction=EmailRecord.OUTBOUND,
+            sent_at=timezone.now(),
+            last_send_error='',
+        )
+        email_record.refresh_from_db()
+        self.assertEqual(email_record.direction, EmailRecord.OUTBOUND)
+        self.assertIsNotNone(email_record.sent_at)
+
+    def test_email_record_outbound_failed_send(self):
+        email_record = EmailRecord.objects.create(
+            message_id="<outbound-fail@example.com>",
+            direction=EmailRecord.OUTBOUND,
+            sent_at=None,
+            last_send_error='SMTP connection refused',
+        )
+        email_record.refresh_from_db()
+        self.assertIsNone(email_record.sent_at)
+        self.assertEqual(email_record.last_send_error, 'SMTP connection refused')
+
     def test_purchase_order_reverse_relation_to_email_records(self):
         from apps.purchasing.models import PurchaseOrder
         po = PurchaseOrder.objects.create(po_number="PO-0004", business=self.business)
@@ -262,6 +290,36 @@ class TempEmailModelTest(TestCase):
         )
         temp_email.refresh_from_db()
         self.assertEqual(temp_email.attachments_metadata, [])
+
+    def test_temp_email_new_fields_default_empty(self):
+        """bcc_email, in_reply_to, references default to empty strings."""
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="new-fields-default",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            date_sent=timezone.now(),
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.bcc_email, '')
+        self.assertEqual(temp_email.in_reply_to, '')
+        self.assertEqual(temp_email.references, '')
+
+    def test_temp_email_new_fields_round_trip(self):
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="new-fields-rt",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            bcc_email="bcc1@example.com,bcc2@example.com",
+            date_sent=timezone.now(),
+            in_reply_to="<parent-id@example.com>",
+            references="<root@example.com> <middle@example.com> <parent-id@example.com>",
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.bcc_email, "bcc1@example.com,bcc2@example.com")
+        self.assertEqual(temp_email.in_reply_to, "<parent-id@example.com>")
+        self.assertIn("<root@example.com>", temp_email.references)
 
     def test_temp_email_one_to_one_relationship(self):
         """Test that each EmailRecord can have only one TempEmail."""
