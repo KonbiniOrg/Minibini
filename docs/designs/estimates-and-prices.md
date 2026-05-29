@@ -894,7 +894,235 @@ estimate-acceptance picture; their full behavior is in jobs-tasks.
 
 ---
 
-## 14. Unfinished work
+## 14. Change Orders
+
+`ChangeOrder` (`apps/estimates/models.py`, `db_table = 'change_orders'`,
+decorated with `@history`) is the amendment instrument that lets the
+agreement change after an Estimate has been `accepted`. Once an
+Estimate is accepted it is terminal — its line items are the frozen
+record of what was sold. A change order is the **only** sanctioned way
+to alter that record. The agreement-of-record for a job is therefore
+not a single document; it's the accepted Estimate combined with each
+accepted ChangeOrder's line-item deltas, composed by §14.6 below.
+
+### 14.1 What a CO is (and isn't)
+
+A CO carries **less than a job's worth of change**. Significant
+restructurings (new worksheet, fresh PlanTasks, a re-run of the
+wizard) are not COs — they're "cancel and start a new job" territory
+(`cancelled-with-invoice` for closing the current job early; see
+`invoicing-and-expenses.md`). Consequences baked into the model:
+
+- A CO never touches the planning side. No worksheet, no PlanTasks, no
+  wizard. The CO authoring path is direct line-item composition only
+  (manual entry, or pulls from `TaskTemplate` / `PriceListItem`),
+  mirroring the *direct-estimate* line-item path rather than the
+  worksheet path.
+- **No automated Task/Material changes.** Accepting a CO does not
+  spawn, mutate, or cancel any Task or Material. Accepting it advances
+  the parent Job and updates the agreement-of-record, full stop. The
+  living Job is then edited by hand — Tasks are mutable records of
+  what actually happened, and editing them is the normal motion.
+
+### 14.2 Model
+
+| Field | Type / FK | Notes |
+|---|---|---|
+| `change_order_id` | AutoField PK | |
+| `job` | FK → Job (CASCADE) | Parent job |
+| `estimate` | FK → Estimate (PROTECT) | The accepted Estimate the CO amends |
+| `change_order_number` | CharField (max 80, unique) | Auto-generated `{estimate_number}-CO{N}` where N is the count of COs against this Estimate at creation time |
+| `version`, `parent` | int, self-FK | Reserved for future CO revisions; not currently exercised |
+| `status` | CharField (choices) | See §14.3 |
+| `created_date`, `sent_date`, `closed_date` | DateTimes | Auto-set on entry to `open` / terminal states; immutable once set |
+| `expiration_date` | DateTime | Frozen at the moment of send; see §14.7 |
+
+A CO can only be created while `job.status == on_hold` —
+`ChangeOrderService.create` enforces this (see §14.5). The CO's
+`estimate` FK pins it to the accepted Estimate that was in force when
+the CO was opened; this is what `compose_agreement` walks.
+
+### 14.3 Status machine
+
+| Status | Constant | Meaning |
+|---|---|---|
+| `draft` | `STATUS_DRAFT` | Editable; line items can be added/removed; not yet sent |
+| `open` | `STATUS_OPEN` | Sent to customer; awaiting response |
+| `accepted` | `STATUS_ACCEPTED` | Terminal. Customer accepted; deltas are now part of the agreement-of-record |
+| `rejected` | `STATUS_REJECTED` | Terminal |
+| `expired` | `STATUS_EXPIRED` | Terminal; auto-set by `mark_change_orders_expired` once `expiration_date` has passed |
+| `superseded` | `STATUS_SUPERSEDED` | Terminal; replaced by a CO revision |
+
+Valid transitions (`ChangeOrder.clean()`, identical shape to
+`Estimate.clean()`):
+
+```
+draft       → open, rejected
+open        → accepted, rejected, superseded, expired
+accepted, rejected, expired, superseded → (terminal)
+```
+
+`clean()` also blocks `draft → open` if the CO has no
+`ChangeOrderLineItem` rows. `save()` auto-sets `sent_date` and
+`expiration_date` on entry to `open` (using the same `est_expire_days`
+Configuration key Estimates use), and `closed_date` on entry to a
+terminal.
+
+### 14.4 ChangeOrderLineItem — delta semantics
+
+`ChangeOrderLineItem` (`db_table = 'co_li'`) inherits from
+`BaseLineItem` and adds:
+
+| Field | Notes |
+|---|---|
+| `change_order` | FK → ChangeOrder (CASCADE) |
+| `action` | One of `add`, `remove`, `replace` |
+| `target_line_item` | FK → EstimateLineItem (PROTECT). Required for `remove` / `replace`; must be null for `add`. Enforced in `clean()`. |
+| `source_template`, `price_list_item` | Optional pointers, parallel to `EstimateLineItem` provenance |
+
+The `action` field is the heart of CO semantics:
+
+- **`add`** — a brand-new line. The line's qty/price/description live
+  on the CO row; there's no `target_line_item`. Composed at the **end**
+  of the agreement (after all estimate lines), in line-number order
+  within the CO.
+- **`remove`** — strikes the `target_line_item` from the agreement.
+  The CO row's own qty/price/description are display-only (what the
+  customer agreed to remove). The line vanishes from the composed
+  output.
+- **`replace`** — overrides the `target_line_item`'s qty / price /
+  description with the CO row's values, in place. The original line
+  number is preserved in the composed output.
+
+The estimate's line items are never mutated. The agreement is always
+the composition (Estimate + accepted COs); the underlying
+`EstimateLineItem` rows stay frozen as the historical record of what
+was first sold.
+
+### 14.5 Job on_hold gate
+
+COs are authored only while the parent Job is `on_hold` — a
+work-paused state (see `jobs-tasks-and-worksheets.md`). The flow:
+
+1. User pauses the Job (`active → on_hold`). The pause requires a
+   `hold_reason`; no open Bleps may exist.
+2. While on_hold, the user can `ChangeOrderService.create(job_id=…)`.
+   `create` raises if `job.status != on_hold`.
+3. The user edits the CO (line items), sends it (`draft → open`),
+   and waits for customer response.
+4. **Accept:** `ChangeOrderService.update_status(pk, accepted)`
+   advances the Job `on_hold → approved` and writes a system-attributed
+   HistoryEntry. The CO's deltas are now part of the agreement.
+5. **Reject / Expire:** the Job stays `on_hold`. The CO snapshots its
+   proposal (so the rejected/expired version is preserved verbatim
+   even if the Estimate or its line items later change).
+6. Taking the Job off-hold to `approved` requires that no `draft` or
+   `open` CO exists — `JobService.update_job` enforces this. Resolve
+   open COs (accept / reject / discard) first.
+
+The on_hold gate is the entire point of the state — it's the room
+where CO work happens, isolated from the live work side of the Job.
+The Schedule excludes `on_hold` jobs from forecasts since their
+agreement is in flux (`apps/schedule/services.py`).
+
+### 14.6 `compose_agreement` — the agreement-of-record
+
+`compose_agreement(job)` in `apps/estimates/agreement.py` is the
+function that produces the agreement-of-record:
+
+```python
+{
+  'lines': [
+    {'description', 'qty', 'units', 'price', 'amount', 'origin'},
+    …
+  ],
+  'grand_total': Decimal,
+}
+```
+
+where `origin` is `'estimate'` or `'change_order'`. Empty dict (lines
+`[]`, total `0`) when the Job has no accepted Estimate.
+
+The composition rules:
+
+1. Start with the accepted Estimate's `EstimateLineItem` rows in
+   `line_number` order, each turned into a line dict.
+2. Walk the Job's `accepted` ChangeOrders in **acceptance order**:
+   `closed_date` asc, with `change_order_id` asc as a deterministic
+   tie-break.
+3. For each CO, apply its line items in `line_number` order:
+   - `replace` → overwrite the matching line dict in place.
+   - `remove` → null out the matching line dict (it drops out of the
+     output).
+   - `add` → append to a deferred "added lines" list.
+4. Final output is the surviving estimate-keyed lines (still in their
+   original line-number order) followed by the appended `add` lines
+   in the order they were accepted.
+
+`amount = qty * price` on each line, matching `BaseLineItem.total_amount`.
+The grand total is the sum of all surviving line amounts.
+
+This function is the single source of truth for what the customer owes.
+The Invoice wizard reads it; PDF rendering of the agreement reads it;
+the Estimate-detail page surfaces the composed view alongside the
+underlying Estimate.
+
+### 14.7 Auto-expiry — `mark_change_orders_expired`
+
+`mark_change_orders_expired`
+(`apps/estimates/management/commands/mark_change_orders_expired.py`)
+is the sibling of `mark_estimates_expired` (§5.2a). Each run:
+
+1. Selects every `open` CO whose (non-null) `expiration_date` is at or
+   before `now()`.
+2. For each, transitions it to `expired` via
+   `ChangeOrderService.update_status(pk, STATUS_EXPIRED)` (under
+   `select_for_update`, re-checking it's still `open`), and writes a
+   `system`-attributed `action` HistoryEntry.
+3. Counts `open` COs with a **NULL** `expiration_date` separately and
+   skips them — they never auto-expire.
+
+Like estimates, the parent Job stays `on_hold` after expiry (the
+expiry doesn't release the Job; the user has to take it off-hold once
+all open COs are resolved).
+
+### 14.8 API endpoints
+
+- `GET /api/jobs/{id}/change-orders/` — list of the job's COs
+- `POST /api/change-orders/` — create (body: `{job_id}`)
+- `GET / PATCH / DELETE /api/change-orders/{id}/`
+- `POST /api/change-orders/{id}/mark-open/` — `draft → open`
+- `POST /api/change-orders/{id}/update-status/` — accept / reject /
+  discard transitions; routes through `ChangeOrderService.update_status`
+- `POST /api/change-orders/{id}/line-items/` — add line item
+- `POST /api/change-orders/{id}/line-items/from-pli/` — add from
+  PriceListItem
+- `PATCH /api/change-orders/{id}/line-items/{liid}/` — update
+- `POST /api/change-orders/{id}/line-items/reorder/`
+- `DELETE /api/change-orders/{id}/line-items/{liid}/`
+- `GET /api/change-orders/{id}/deliverables-baseline/` — the snapshot
+  of deliverables-at-CO-creation used to render the CO-edit view's
+  baseline (see `jobs-tasks-and-worksheets.md` §12 for snapshot
+  mechanics)
+- `GET /api/jobs/{id}/agreement/` — the `compose_agreement` result for
+  a job
+
+All write endpoints require `can_manage_jobs`. The endpoint→atom table
+in `users-and-permissions.md` is authoritative.
+
+### 14.9 SPA
+
+`frontend/src/routes/change-orders/ChangeOrderDetailPage.svelte` is the
+CO edit view. It renders a merged baseline-vs-proposal diff using the
+CO's line items and the `deliverables-baseline` endpoint;
+`COLineItemModal.svelte` is the line-item editor. The Estimate detail
+page shows accepted COs as pills/badges in the deliverables and
+line-items sections (status indicator: an Estimate displays as
+"altered" once any later CO has been accepted against it).
+
+---
+
+## 15. Unfinished work
 
 - **Default rate scheme for worker quick-add** — the worker-side
   `WorkItemForm` flow currently still requires the worker to pick a
