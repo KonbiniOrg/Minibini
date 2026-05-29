@@ -130,8 +130,11 @@ backfill to `inbound` / `sent_at=null` / `last_send_error=''`.
 `message_id` already exists with `unique=True, db_index=True`. We set
 it explicitly on outbound rows to a self-generated value:
 `<minibini-<uuid4-hex>@<our-domain>>`. The `<our-domain>` comes from
-the configured `EMAIL_HOST_USER` domain (or a `Configuration` key —
-see §6).
+the `our_domain` Configuration key (see §3.3); `EMAIL_HOST_USER` is
+deliberately *not* used as a source — it's the IMAP/SMTP provider
+credential (gmail.com or similar), not the tenant's identity. When
+tenancy lands, `our_domain` becomes per-tenant; until then it's a
+single global Config value.
 
 ### 3.2 `TempEmail` for outbound
 
@@ -170,7 +173,7 @@ Mirroring the existing `po_email_subject_template` /
 | `po_email_body_template` | (existing, unchanged) |
 | `invoice_email_subject_template` | `Invoice {invoice_number} for {job_number}` |
 | `invoice_email_body_template` | `Hi {contact_fname},\n\nPlease find attached your invoice {invoice_number} for {job_name}. The invoice includes a Pay Now link.\n\nThanks,\n{our_user_name}` |
-| `outgoing_email_domain` | The domain portion of our generated `Message-ID`. Defaults to whatever's after the `@` in `EMAIL_HOST_USER` if unset; user can override. |
+| `our_domain` | Identifies *us* as the tenant for `Message-ID` generation. Default: `example.com`. The current single-tenant default is the placeholder until a real tenancy system lands and this becomes per-tenant. Not derived from `EMAIL_HOST_USER` — that's an IMAP credential, unrelated to our identity. |
 | `our_business_name` | Used in subject templates and (later) outbound signatures. Defaults to `''`. |
 
 All settable from the Settings page; defaults shown above are used
@@ -621,3 +624,13 @@ unchanged. (Standard recipe; no library needed.)
 6. **Error-message-display audit across the SPA** — captured
    separately in LATER.md. Will pick up the new send pages' error
    surfaces once that work runs.
+
+7. **Tenancy and the `our_domain` / `our_business_name` Config keys.**
+   Both keys are single-global values today (default `example.com`
+   and `''` respectively) — placeholders until a real tenancy system
+   lands. At that point they become per-tenant attributes pulled from
+   the tenant's own setup configuration. The Message-ID generation
+   and template rendering will both read from whatever the tenancy
+   layer exposes instead of `Configuration.objects.get(...)`. No
+   schema change in this spec anticipates that — the swap is
+   internal to whoever resolves the keys.
