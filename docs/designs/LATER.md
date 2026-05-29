@@ -21,6 +21,19 @@ proper issue.
 
 ## Open
 
+- **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
+  Inconsistencies noticed in passing: some pages surface API errors via the global
+  `lib/api.js` overlay, some via inline `<p><strong>Error:</strong> {message}</p>` rows
+  under the form, some via field-level errors derived from DRF's `e.data`, and the
+  Invoice send dialog uses `e.data?.error || e.message`. The set of envelope shapes the
+  backend returns is also a bit mixed — some endpoints return `{'detail': '…'}`, some
+  `{'<field>': ['…']}`, some `{'error': '…'}`. The user-visible result is that the same
+  kind of failure can look quite different depending on where it happens. _Done when:_ a
+  quick pass has catalogued the variants, agreed on a small set of envelope shapes the
+  backend uses consistently, and the SPA's error display has been normalized to match
+  (probably: lean on `lib/api.js` overlays for unexpected errors, inline rows for
+  field-validation responses).
+
 - **Email attachments aren't downloadable.** — _added 2026-05-28_
   `EmailContent.svelte` and the deprecated `email_detail.html` template both render
   attachments as `<strong>{filename}</strong> ({content_type}, {size} bytes)` — no
