@@ -289,7 +289,12 @@ bytes are not.
 5. **On full success**, transition `invoice.status` if it was `draft`.
 
 QBO step failures and SMTP failures surface as distinct error
-messages on the document page so the user knows which one to retry.
+messages on the document page so the user understands what went
+wrong, but the user-facing retry is unchanged either way — one
+Send button, clicked again. The backend decides where to resume:
+if `qbo_id` is already set from a previous attempt, skip the QBO
+push; PDF regeneration runs on every attempt either way; SMTP
+runs last. The user doesn't pick which step to retry from.
 
 ## 5. Inbound reply correlation
 
