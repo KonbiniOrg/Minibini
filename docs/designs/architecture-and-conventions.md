@@ -740,18 +740,29 @@ fields specifically for this view (`apps/api/email/serializers.py`):
   `strip_quoted_reply` and whitespace-collapsed. Empty string when
   `temp_data` has been purged.
 
-### 7.7 IMAP body cache on `TempEmail`
+### 7.7 IMAP cache on `TempEmail`
 
-`TempEmail.text_body` and `TempEmail.html_body` cache the message body
-at fetch time so list-style consumers (the Email panel, `sender_info`)
-can read snippets without re-hitting IMAP.
-`EmailService.fetch_emails_by_date_range` / `fetch_new_emails` populate
-the fields on creation; `EmailService.get_email_content` prefers the
-cache and falls back to IMAP when (a) `temp_data` is missing entirely
-or (b) `has_attachments=True`, since attachment payloads aren't cached
-and the detail view needs them. Cached bodies are purged alongside the
-rest of `TempEmail` per the existing retention policy
-(`email_retention_days`).
+`TempEmail` caches the parts of an email that list and detail views
+need so the SPA can render without re-hitting IMAP:
+
+- `text_body` / `html_body` — message body (used by the Email panel
+  snippet, `sender_info`, and the detail page).
+- `attachments_metadata` — JSON list of
+  `{filename, content_type, size}` per attachment (used by the detail
+  page's attachment list).
+
+`EmailService.fetch_emails_by_date_range` / `fetch_new_emails`
+populate all three fields when they create the `TempEmail` row (helper
+`_attachments_metadata` builds the list).
+`EmailService.get_email_content` returns a cache-only dict when both
+the body and the attachment list are available; it falls back to IMAP
+when (a) `temp_data` is missing entirely or (b) the cache is
+incomplete — either no body cached, or `has_attachments=True` with an
+empty `attachments_metadata` (pre-backfill rows). Attachment payload
+bytes are never cached and are not part of the JSON response; the
+future per-attachment download endpoint re-fetches them by UID. Cached
+bodies/metadata are purged alongside the rest of `TempEmail` per the
+existing retention policy (`email_retention_days`).
 
 ---
 

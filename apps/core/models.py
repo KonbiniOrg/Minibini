@@ -139,6 +139,12 @@ class TempEmail(models.Model):
     text_body = models.TextField(blank=True, default='')
     html_body = models.TextField(blank=True, default='')
 
+    # Per-attachment metadata cache (filename, content_type, size).
+    # Lets the email-detail view render the attachment list from the cache;
+    # attachment payloads themselves are not cached (re-fetched by the
+    # download endpoint, when that lands).
+    attachments_metadata = models.JSONField(blank=True, default=list)
+
     # Flags
     is_read = models.BooleanField(default=False)
     is_starred = models.BooleanField(default=False)

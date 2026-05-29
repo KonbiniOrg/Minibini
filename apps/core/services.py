@@ -13,6 +13,20 @@ from imap_tools import MailBox, AND
 from .models import Configuration, EmailRecord, TempEmail, AccountingCategory
 
 
+def _attachments_metadata(msg):
+    """Build the [{filename, content_type, size}, …] list cached on TempEmail
+    from an imap_tools message. Skips payloads — those are re-fetched by the
+    download endpoint when needed."""
+    return [
+        {
+            'filename': att.filename,
+            'content_type': att.content_type,
+            'size': len(att.payload),
+        }
+        for att in (msg.attachments or [])
+    ]
+
+
 class ServiceError(Exception):
     """Base exception for service-layer errors."""
     pass
@@ -263,6 +277,7 @@ class EmailService:
                             has_attachments=bool(msg.attachments),
                             text_body=getattr(msg, 'text', '') or '',
                             html_body=getattr(msg, 'html', '') or '',
+                            attachments_metadata=_attachments_metadata(msg),
                         )
 
                         stats['new'] += 1
@@ -304,10 +319,16 @@ class EmailService:
 
         temp = email_record.temp_data
 
-        # Prefer cached body when available and no attachments are involved.
-        # Attachments aren't cached, so emails with attachments still need
-        # the IMAP fetch for the detail view's attachment list.
-        if (temp.text_body or temp.html_body) and not temp.has_attachments:
+        # Prefer cached body + attachment metadata when both are available.
+        # Pre-backfill rows with has_attachments=True but an empty
+        # attachments_metadata still fall back to IMAP so the detail view
+        # can show what's attached. Payloads are never cached — those come
+        # from the future per-attachment download endpoint.
+        body_cached = bool(temp.text_body or temp.html_body)
+        attachments_cached = (
+            not temp.has_attachments or bool(temp.attachments_metadata)
+        )
+        if body_cached and attachments_cached:
             return {
                 'subject': temp.subject,
                 'from': temp.from_email,
@@ -316,7 +337,7 @@ class EmailService:
                 'date': temp.date_sent,
                 'text': temp.text_body,
                 'html': temp.html_body,
-                'attachments': [],
+                'attachments': list(temp.attachments_metadata or []),
             }
 
         uid = temp.uid
@@ -470,6 +491,7 @@ class EmailService:
                             has_attachments=bool(msg.attachments),
                             text_body=getattr(msg, 'text', '') or '',
                             html_body=getattr(msg, 'html', '') or '',
+                            attachments_metadata=_attachments_metadata(msg),
                         )
 
                         stats['new'] += 1

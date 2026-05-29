@@ -161,6 +161,34 @@ class TempEmailModelTest(TestCase):
         self.assertEqual(temp_email.text_body, text)
         self.assertEqual(temp_email.html_body, html)
 
+    def test_temp_email_attachments_metadata_round_trip(self):
+        """Per-attachment metadata round-trips as JSON; default is []."""
+        metadata = [
+            {'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size': 12345},
+            {'filename': 'photo.jpg', 'content_type': 'image/jpeg', 'size': 6789},
+        ]
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="att-meta-rt",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            date_sent=timezone.now(),
+            attachments_metadata=metadata,
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.attachments_metadata, metadata)
+
+    def test_temp_email_attachments_metadata_default_is_empty_list(self):
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="default-test",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            date_sent=timezone.now(),
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.attachments_metadata, [])
+
     def test_temp_email_one_to_one_relationship(self):
         """Test that each EmailRecord can have only one TempEmail."""
         TempEmail.objects.create(
@@ -500,7 +528,11 @@ class EmailServiceTest(TestCase):
         mock_msg.to = ['recipient@example.com']
         mock_msg.cc = []
         mock_msg.date = timezone.now()
-        mock_msg.attachments = []
+        att = Mock()
+        att.filename = 'spec.pdf'
+        att.content_type = 'application/pdf'
+        att.payload = b'%PDF-binary'
+        mock_msg.attachments = [att]
 
         # Mock the mailbox
         mock_mailbox = MagicMock()
@@ -523,13 +555,17 @@ class EmailServiceTest(TestCase):
         self.assertIsNotNone(email_record)
         self.assertIsNone(email_record.job)  # No automatic job linking
 
-        # Verify TempEmail created with cached bodies
+        # Verify TempEmail created with cached bodies + attachment metadata
         temp_email = TempEmail.objects.get(email_record=email_record)
         self.assertEqual(temp_email.uid, '12345')
         self.assertEqual(temp_email.subject, 'New Email')
         self.assertEqual(temp_email.from_email, 'sender@example.com')
         self.assertEqual(temp_email.text_body, 'plain body')
         self.assertEqual(temp_email.html_body, '<p>html body</p>')
+        self.assertTrue(temp_email.has_attachments)
+        self.assertEqual(temp_email.attachments_metadata, [
+            {'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size': len(b'%PDF-binary')},
+        ])
 
     @override_settings(
         EMAIL_IMAP_SERVER='imap.example.com',
@@ -706,9 +742,9 @@ class EmailServiceTest(TestCase):
         EMAIL_HOST_PASSWORD='password123'
     )
     @patch('apps.core.services.MailBox')
-    def test_get_email_content_skips_cache_when_attachments(self, mock_mailbox_class):
-        """Attachments aren't cached, so emails with attachments hit IMAP
-        even when text_body is populated."""
+    def test_get_email_content_uses_cache_when_attachments_metadata_cached(self, mock_mailbox_class):
+        """Emails with cached attachments_metadata serve the detail view
+        entirely from cache — IMAP is reserved for the future download path."""
         email_record = EmailRecord.objects.create(message_id='<att@example.com>')
         TempEmail.objects.create(
             email_record=email_record,
@@ -719,6 +755,41 @@ class EmailServiceTest(TestCase):
             text_body='cached body',
             html_body='',
             has_attachments=True,
+            attachments_metadata=[
+                {'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size': 12345},
+            ],
+        )
+
+        service = EmailService()
+        content = service.get_email_content(email_record.email_record_id)
+
+        self.assertEqual(content['text'], 'cached body')
+        self.assertEqual(content['attachments'], [
+            {'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size': 12345},
+        ])
+        mock_mailbox_class.assert_not_called()
+
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
+    def test_get_email_content_falls_back_when_attachments_metadata_missing(self, mock_mailbox_class):
+        """Old rows that pre-date the attachments_metadata column have
+        has_attachments=True but attachments_metadata=[]. We can't render
+        a useful attachment list from cache, so fall back to IMAP."""
+        email_record = EmailRecord.objects.create(message_id='<old-att@example.com>')
+        TempEmail.objects.create(
+            email_record=email_record,
+            uid='88888',
+            from_email='sender@example.com',
+            to_email='r@example.com',
+            date_sent=timezone.now(),
+            text_body='cached body',
+            html_body='',
+            has_attachments=True,
+            attachments_metadata=[],  # not yet backfilled
         )
 
         mock_msg = Mock()
@@ -743,7 +814,6 @@ class EmailServiceTest(TestCase):
         service = EmailService()
         content = service.get_email_content(email_record.email_record_id)
 
-        # IMAP was hit (fresh body) and attachments came through.
         self.assertEqual(content['text'], 'fresh body')
         self.assertEqual(len(content['attachments']), 1)
         mock_mailbox_class.assert_called_once()
