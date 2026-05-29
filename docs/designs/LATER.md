@@ -33,13 +33,20 @@ proper issue.
   filename in an `<a href>` to it. Decide at that time whether to cache attachment
   bytes on `TempEmail` (avoids IMAP-per-click) or keep the streaming-from-IMAP shape.
 
-- **Associate-email-with-job page caps the dropdown at 100 jobs.** — _added 2026-05-28_
-  `EmailAssociatePage.svelte` requests `/api/jobs/?page_size=500` to populate the job
-  picker, but `StandardPagination.max_page_size = 100` silently caps it. Fine while we
-  have <100 jobs total; once we cross that threshold, recent jobs will be the only ones
-  reachable from the dropdown. _Done when:_ the picker either paginates / searches
-  server-side (typeahead against `/api/jobs/?search=`) or filters to "active" statuses
-  only, whichever is cheaper than scrolling a long `<select>`.
+- **Email-association pickers cap the dropdown at 100 entries and sort poorly.** — _added 2026-05-28_
+  `EmailAssociatePage.svelte` (jobs) and, once they land, the equivalent PO and Bill
+  pickers all request `?page_size=500` to populate a `<select>`, but
+  `StandardPagination.max_page_size = 100` silently caps it. Fine while each table is
+  under 100 rows; once any of them crosses that, only the most recently-created entries
+  are reachable. The pickers also lean on each list endpoint's default ordering, which
+  isn't always what a human would call "most recent" — `Job` sorts by `-created_date`
+  (fine), but PO/Bill defaults need a deliberate decision (a job's `start_date` or last
+  status change is arguably more relevant than its creation; a PO's issue/sent date
+  beats its created_at; a Bill's bill_date or due_date may matter more than its
+  created_at). _Done when:_ each picker either paginates / searches server-side
+  (typeahead against `?search=`) or filters to "active" statuses only AND sorts by a
+  human-meaningful lifecycle date per entity (decide which per entity at that time),
+  whichever is cheaper than scrolling a long `<select>`.
 
 - **Review site-wide `z-index` usage; decide whether to impose a scale.** — _added 2026-05-26_
   We added an ad-hoc `z-index: 30` to `.job-header` (plus `z-index: 1` on
