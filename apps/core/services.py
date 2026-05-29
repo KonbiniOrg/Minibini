@@ -261,6 +261,8 @@ class EmailService:
                             cc_email=', '.join(msg.cc) if msg.cc else '',
                             date_sent=msg.date,
                             has_attachments=bool(msg.attachments),
+                            text_body=getattr(msg, 'text', '') or '',
+                            html_body=getattr(msg, 'html', '') or '',
                         )
 
                         stats['new'] += 1
@@ -300,7 +302,24 @@ class EmailService:
             # No temp data - try to fetch by message_id
             return self._fetch_by_message_id(email_record.message_id)
 
-        uid = email_record.temp_data.uid
+        temp = email_record.temp_data
+
+        # Prefer cached body when available and no attachments are involved.
+        # Attachments aren't cached, so emails with attachments still need
+        # the IMAP fetch for the detail view's attachment list.
+        if (temp.text_body or temp.html_body) and not temp.has_attachments:
+            return {
+                'subject': temp.subject,
+                'from': temp.from_email,
+                'to': [a.strip() for a in temp.to_email.split(',') if a.strip()],
+                'cc': [a.strip() for a in temp.cc_email.split(',') if a.strip()],
+                'date': temp.date_sent,
+                'text': temp.text_body,
+                'html': temp.html_body,
+                'attachments': [],
+            }
+
+        uid = temp.uid
 
         try:
             with MailBox(self.imap_server).login(self.email, self.password) as mailbox:
@@ -451,6 +470,8 @@ class EmailService:
                             cc_email=', '.join(msg.cc) if msg.cc else '',
                             date_sent=msg.date,
                             has_attachments=bool(msg.attachments),
+                            text_body=getattr(msg, 'text', '') or '',
+                            html_body=getattr(msg, 'html', '') or '',
                         )
 
                         stats['new'] += 1

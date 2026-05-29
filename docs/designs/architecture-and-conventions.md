@@ -619,7 +619,7 @@ Adoption is sparse — currently only two consumers
 (`components/contacts/BusinessDetail.svelte`,
 `components/contacts/ContactDetail.svelte`). Other components either
 predate the convention or check `$viewMode` directly (e.g.,
-`HistoryPanel.svelte` filters its timeline based on `$viewMode === 'lite'`).
+`HistoryPanel.svelte` filters history entries based on `$viewMode === 'lite'`).
 
 ### 6.3 Toggle location
 
@@ -710,10 +710,48 @@ one if needed.
 
 ### 7.5 Frontend
 
-`frontend/src/components/HistoryPanel.svelte` renders a merged timeline
-of `HistoryEntry` rows and `EmailRecord` rows for the same object. In
-lite mode it filters to emails plus history entries that have free-text
-content (`entry.data.text`); full mode shows everything.
+`frontend/src/components/HistoryPanel.svelte` renders a history-only
+timeline of `HistoryEntry` rows for an object. In lite mode it filters
+to entries with free-text content (`entry.data.text`); full mode shows
+everything. The component is currently unmounted from the Job overview
+pending a redesign — `EmailPanel.svelte` occupies that slot today (see
+§7.6) — but the component itself is still wired and works for any
+caller that passes it `{ history, onAddNote }`.
+
+### 7.6 Email panel on the Job overview
+
+`frontend/src/components/EmailPanel.svelte` renders the email list in
+the bottom-right pane of the Job overview, mounted by `JobDetail.svelte`
+where `HistoryPanel.svelte` used to live. Two-line cards: row 1 is
+`<date> <direction-glyph> <display_address> <subject>`, row 2 is the
+`snippet`. Outbound rows get a tinted background. The whole card is an
+`<a>` to `#/email/<email_record_id>`.
+
+The component consumes the same paginated `/api/emails/?job=<id>`
+response the rest of the SPA uses. The serializer now exposes three
+fields specifically for this view (`apps/api/email/serializers.py`):
+
+- `direction` — `'inbound' | 'outbound'`. Hard-coded `'inbound'` today;
+  outbound tracking is a deferred follow-up but the data shape is in
+  place.
+- `display_address` — sender for inbound, first recipient for outbound.
+- `snippet` — 80-char preview derived from the cached body
+  (`text_body`, or `html_body` with HTML tags stripped), passed through
+  `strip_quoted_reply` and whitespace-collapsed. Empty string when
+  `temp_data` has been purged.
+
+### 7.7 IMAP body cache on `TempEmail`
+
+`TempEmail.text_body` and `TempEmail.html_body` cache the message body
+at fetch time so list-style consumers (the Email panel, `sender_info`)
+can read snippets without re-hitting IMAP.
+`EmailService.fetch_emails_by_date_range` / `fetch_new_emails` populate
+the fields on creation; `EmailService.get_email_content` prefers the
+cache and falls back to IMAP when (a) `temp_data` is missing entirely
+or (b) `has_attachments=True`, since attachment payloads aren't cached
+and the detail view needs them. Cached bodies are purged alongside the
+rest of `TempEmail` per the existing retention policy
+(`email_retention_days`).
 
 ---
 

@@ -134,6 +134,11 @@ class TempEmail(models.Model):
     cc_email = models.TextField(blank=True, help_text='Comma-separated email addresses')
     date_sent = models.DateTimeField()
 
+    # Cached body content (populated at IMAP fetch time so list-style
+    # consumers can render snippets without re-hitting IMAP).
+    text_body = models.TextField(blank=True, default='')
+    html_body = models.TextField(blank=True, default='')
+
     # Flags
     is_read = models.BooleanField(default=False)
     is_starred = models.BooleanField(default=False)

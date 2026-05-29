@@ -158,15 +158,53 @@ def extract_company_from_signature(email_text):
     return ''
 
 
+_REPLY_MARKER_PATTERNS = (
+    # A line that starts with '>' (Gmail and most clients quote this way).
+    r'(?:^|\n)[ \t]*>',
+    # "On <date>, <person> wrote:" — Gmail/Apple Mail reply prelude.
+    r'(?:^|\n)[ \t]*On .{1,200}\bwrote:[ \t]*(?:\n|$)',
+    # Outlook classic divider.
+    r'(?:^|\n)-{5,}[ \t]*Original Message[ \t]*-{5,}',
+    # Outlook forward header — three header lines in a row.
+    r'(?:^|\n)From:[ \t].+\nSent:[ \t].+\nTo:[ \t].+',
+    # Apple Mail forward marker.
+    r'(?:^|\n)Begin forwarded message:',
+)
+
+_REPLY_MARKER_RE = re.compile('|'.join(_REPLY_MARKER_PATTERNS), re.IGNORECASE)
+
+
+def strip_quoted_reply(text):
+    """Trim a plain-text email body at the first reply or forward marker.
+
+    Recognizes Gmail-style ">" quote lines, "On <date>, <person> wrote:"
+    preludes, Outlook's "-----Original Message-----" divider, Outlook
+    forward header blocks (From:/Sent:/To: in three consecutive lines), and
+    Apple Mail's "Begin forwarded message:" marker.
+
+    Normalizes CRLF -> LF before matching. Returns the body up to (not
+    including) the earliest marker, rstrip'd. If no marker matches, returns
+    the input unchanged.
+    """
+    if not text:
+        return ''
+    normalized = text.replace('\r\n', '\n').replace('\r', '\n')
+    match = _REPLY_MARKER_RE.search(normalized)
+    if not match:
+        return text
+    return normalized[:match.start()].rstrip()
+
+
 def extract_email_body(email_content, trim_signature=True):
     """
     Extract the most relevant body content from email.
 
-    Prefers plain text, removes quoted replies. When `trim_signature` is True
-    (default, for backwards compatibility), also strips any text following a
-    broad set of signature markers — useful when the caller just wants a short
-    excerpt. Callers that want the full body and intend to apply their own
-    sign-off trim (e.g. `trim_body_at_signoff`) should pass `trim_signature=False`.
+    Prefers plain text, removes quoted replies via `strip_quoted_reply`.
+    When `trim_signature` is True (default, for backwards compatibility),
+    also strips any text following a broad set of signature markers —
+    useful when the caller just wants a short excerpt. Callers that want
+    the full body and intend to apply their own sign-off trim (e.g.
+    `trim_body_at_signoff`) should pass `trim_signature=False`.
 
     Args:
         email_content (dict): Dict with 'text' and 'html' keys
@@ -187,15 +225,7 @@ def extract_email_body(email_content, trim_signature=True):
     if not body:
         return ''
 
-    # Remove quoted replies (lines starting with >)
-    lines = body.split('\n')
-    cleaned_lines = []
-    for line in lines:
-        if line.strip().startswith('>'):
-            break  # Stop at quoted content
-        cleaned_lines.append(line)
-
-    body = '\n'.join(cleaned_lines)
+    body = strip_quoted_reply(body)
 
     if trim_signature:
         # Broad signature trim — kept for the deprecated HTML view path.

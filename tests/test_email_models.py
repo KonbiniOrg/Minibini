@@ -138,9 +138,28 @@ class TempEmailModelTest(TestCase):
 
         self.assertEqual(temp_email.subject, "")
         self.assertEqual(temp_email.cc_email, "")
+        self.assertEqual(temp_email.text_body, "")
+        self.assertEqual(temp_email.html_body, "")
         self.assertFalse(temp_email.is_read)
         self.assertFalse(temp_email.is_starred)
         self.assertFalse(temp_email.has_attachments)
+
+    def test_temp_email_body_fields_round_trip(self):
+        """Cached IMAP bodies round-trip through text_body/html_body."""
+        text = "Hi,\n\nNeed 50 brackets.\n\nThanks,\nJane"
+        html = "<p>Hi,</p><p>Need 50 brackets.</p>"
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="body-rt",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            date_sent=timezone.now(),
+            text_body=text,
+            html_body=html,
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.text_body, text)
+        self.assertEqual(temp_email.html_body, html)
 
     def test_temp_email_one_to_one_relationship(self):
         """Test that each EmailRecord can have only one TempEmail."""
@@ -489,6 +508,9 @@ class EmailServiceTest(TestCase):
         mock_mailbox.__enter__.return_value = mock_mailbox
         mock_mailbox_class.return_value.login.return_value = mock_mailbox
 
+        mock_msg.text = 'plain body'
+        mock_msg.html = '<p>html body</p>'
+
         service = EmailService()
         stats = service.fetch_new_emails()
 
@@ -501,11 +523,13 @@ class EmailServiceTest(TestCase):
         self.assertIsNotNone(email_record)
         self.assertIsNone(email_record.job)  # No automatic job linking
 
-        # Verify TempEmail created
+        # Verify TempEmail created with cached bodies
         temp_email = TempEmail.objects.get(email_record=email_record)
         self.assertEqual(temp_email.uid, '12345')
         self.assertEqual(temp_email.subject, 'New Email')
         self.assertEqual(temp_email.from_email, 'sender@example.com')
+        self.assertEqual(temp_email.text_body, 'plain body')
+        self.assertEqual(temp_email.html_body, '<p>html body</p>')
 
     @override_settings(
         EMAIL_IMAP_SERVER='imap.example.com',
@@ -611,6 +635,125 @@ class EmailServiceTest(TestCase):
         EMAIL_HOST_PASSWORD='password123'
     )
     @patch('apps.core.services.MailBox')
+    def test_get_email_content_prefers_cache(self, mock_mailbox_class):
+        """When TempEmail has cached body, no IMAP fetch occurs."""
+        email_record = EmailRecord.objects.create(message_id='<cached@example.com>')
+        TempEmail.objects.create(
+            email_record=email_record,
+            uid='cached-uid',
+            subject='Cached Subject',
+            from_email='sender@example.com',
+            to_email='r@example.com',
+            cc_email='',
+            date_sent=timezone.now(),
+            text_body='cached text body',
+            html_body='<p>cached html</p>',
+        )
+
+        service = EmailService()
+        content = service.get_email_content(email_record.email_record_id)
+
+        self.assertIsNotNone(content)
+        self.assertEqual(content['text'], 'cached text body')
+        self.assertEqual(content['html'], '<p>cached html</p>')
+        self.assertEqual(content['subject'], 'Cached Subject')
+        # Crucially: no IMAP login was attempted.
+        mock_mailbox_class.assert_not_called()
+
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
+    def test_get_email_content_falls_back_to_imap_when_cache_empty(self, mock_mailbox_class):
+        """When TempEmail exists but bodies are blank, fall back to IMAP."""
+        email_record = EmailRecord.objects.create(message_id='<empty@example.com>')
+        TempEmail.objects.create(
+            email_record=email_record,
+            uid='55555',
+            from_email='sender@example.com',
+            to_email='r@example.com',
+            date_sent=timezone.now(),
+            text_body='',
+            html_body='',
+        )
+
+        mock_msg = Mock()
+        mock_msg.subject = 'From IMAP'
+        mock_msg.from_ = 'sender@example.com'
+        mock_msg.to = ['r@example.com']
+        mock_msg.cc = []
+        mock_msg.date = timezone.now()
+        mock_msg.text = 'fetched text'
+        mock_msg.html = ''
+        mock_msg.attachments = []
+
+        mock_mailbox = MagicMock()
+        mock_mailbox.fetch.return_value = [mock_msg]
+        mock_mailbox.__enter__.return_value = mock_mailbox
+        mock_mailbox_class.return_value.login.return_value = mock_mailbox
+
+        service = EmailService()
+        content = service.get_email_content(email_record.email_record_id)
+
+        self.assertEqual(content['text'], 'fetched text')
+        mock_mailbox_class.assert_called_once()
+
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
+    def test_get_email_content_skips_cache_when_attachments(self, mock_mailbox_class):
+        """Attachments aren't cached, so emails with attachments hit IMAP
+        even when text_body is populated."""
+        email_record = EmailRecord.objects.create(message_id='<att@example.com>')
+        TempEmail.objects.create(
+            email_record=email_record,
+            uid='77777',
+            from_email='sender@example.com',
+            to_email='r@example.com',
+            date_sent=timezone.now(),
+            text_body='cached body',
+            html_body='',
+            has_attachments=True,
+        )
+
+        mock_msg = Mock()
+        mock_msg.subject = 'With Attachments'
+        mock_msg.from_ = 'sender@example.com'
+        mock_msg.to = ['r@example.com']
+        mock_msg.cc = []
+        mock_msg.date = timezone.now()
+        mock_msg.text = 'fresh body'
+        mock_msg.html = ''
+        att = Mock()
+        att.filename = 'spec.pdf'
+        att.content_type = 'application/pdf'
+        att.payload = b'%PDF...'
+        mock_msg.attachments = [att]
+
+        mock_mailbox = MagicMock()
+        mock_mailbox.fetch.return_value = [mock_msg]
+        mock_mailbox.__enter__.return_value = mock_mailbox
+        mock_mailbox_class.return_value.login.return_value = mock_mailbox
+
+        service = EmailService()
+        content = service.get_email_content(email_record.email_record_id)
+
+        # IMAP was hit (fresh body) and attachments came through.
+        self.assertEqual(content['text'], 'fresh body')
+        self.assertEqual(len(content['attachments']), 1)
+        mock_mailbox_class.assert_called_once()
+
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
     def test_fetch_emails_by_date_range_creates_configuration(self, mock_mailbox_class):
         """Test that fetch_emails_by_date_range creates Configuration if not exists."""
         # Mock empty mailbox
@@ -666,6 +809,8 @@ class EmailServiceTest(TestCase):
         mock_msg.cc = []
         mock_msg.date = new_date
         mock_msg.attachments = []
+        mock_msg.text = ''
+        mock_msg.html = ''
 
         mock_mailbox = MagicMock()
         mock_mailbox.fetch.return_value = [mock_msg]

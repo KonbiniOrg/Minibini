@@ -288,3 +288,69 @@ class EmailAPITest(BaseTestCase):
         email_ids = [r['email_record_id'] for r in response.data['results']]
         self.assertIn(email1.email_record_id, email_ids)
         self.assertNotIn(email2.email_record_id, email_ids)
+
+    def test_email_list_includes_direction_display_address_snippet(self):
+        """Serializer exposes the panel-ready fields."""
+        # Replace the default temp_email with one that has a real cached body.
+        self.temp_email.text_body = (
+            "Sounds good — let's go with 50 units.\n\n"
+            "Thanks,\nJane"
+        )
+        self.temp_email.save()
+
+        response = self.client.get(f'/api/emails/{self.email.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['direction'], 'inbound')
+        self.assertEqual(response.data['display_address'], 'sender@example.com')
+        # Snippet comes from text_body, with sign-off + signature line stripped
+        # by extract_email_body via strip_quoted_reply downstream callers; for
+        # the snippet path we just strip the quoted-reply markers, so the
+        # "Thanks,\nJane" tail survives until the regex truncation kicks in.
+        # Verify we got the body content (not the raw cached_body with newlines).
+        self.assertIn("Sounds good", response.data['snippet'])
+        self.assertNotIn('\n', response.data['snippet'])
+
+    def test_snippet_strips_quoted_reply(self):
+        self.temp_email.text_body = (
+            "Confirmed for next Friday.\n\n"
+            "On Jan 1, John wrote:\n"
+            "> Are we still on for Friday?\n"
+        )
+        self.temp_email.save()
+
+        response = self.client.get(f'/api/emails/{self.email.pk}/')
+        self.assertEqual(response.status_code, 200)
+        snippet = response.data['snippet']
+        self.assertIn('Confirmed', snippet)
+        self.assertNotIn('John wrote', snippet)
+        self.assertNotIn('still on for Friday', snippet)
+
+    def test_snippet_truncates_with_ellipsis(self):
+        self.temp_email.text_body = 'A' * 200
+        self.temp_email.save()
+
+        response = self.client.get(f'/api/emails/{self.email.pk}/')
+        self.assertEqual(response.status_code, 200)
+        snippet = response.data['snippet']
+        self.assertEqual(len(snippet), 80)
+        self.assertTrue(snippet.endswith('…'))
+
+    def test_snippet_empty_when_temp_data_missing(self):
+        record = EmailRecord.objects.create(message_id='<no-temp@example.com>')
+        response = self.client.get(f'/api/emails/{record.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['snippet'], '')
+        self.assertEqual(response.data['display_address'], '')
+
+    def test_snippet_from_html_when_text_missing(self):
+        self.temp_email.text_body = ''
+        self.temp_email.html_body = '<p>Quick note: <strong>50 units</strong>.</p>'
+        self.temp_email.save()
+
+        response = self.client.get(f'/api/emails/{self.email.pk}/')
+        self.assertEqual(response.status_code, 200)
+        snippet = response.data['snippet']
+        self.assertIn('Quick note', snippet)
+        self.assertIn('50 units', snippet)
+        self.assertNotIn('<', snippet)
+        self.assertNotIn('>', snippet)

@@ -7,6 +7,7 @@ from apps.core.email_utils import (
     extract_email_body,
     trim_body_at_signoff,
     clean_subject_for_job_name,
+    strip_quoted_reply,
 )
 
 
@@ -434,3 +435,83 @@ class CleanSubjectForJobNameTest(TestCase):
     def test_empty_subject(self):
         self.assertEqual(clean_subject_for_job_name(''), '')
         self.assertEqual(clean_subject_for_job_name(None), '')
+
+
+class StripQuotedReplyTest(TestCase):
+    """Tests for the reusable reply/forward stripper."""
+
+    def test_strips_gmail_quoted_lines(self):
+        body = (
+            "Sounds good — let's go with 50.\n\n"
+            "> On Jan 1, John wrote:\n"
+            "> Are you up for the bracket job?\n"
+            "> Lead time 2 weeks?\n"
+        )
+        self.assertEqual(
+            strip_quoted_reply(body),
+            "Sounds good — let's go with 50.",
+        )
+
+    def test_strips_on_x_wrote_marker(self):
+        body = (
+            "Sounds good.\n\n"
+            "On Mon, Jan 1, 2024 at 9:00 AM, John <john@example.com> wrote:\n"
+            "Previous message body that should be removed.\n"
+        )
+        self.assertEqual(strip_quoted_reply(body), "Sounds good.")
+
+    def test_strips_outlook_original_message_marker(self):
+        body = (
+            "Thanks for getting back to me.\n\n"
+            "-----Original Message-----\n"
+            "From: someone@example.com\n"
+            "Subject: prior thread\n"
+        )
+        self.assertEqual(
+            strip_quoted_reply(body),
+            "Thanks for getting back to me.",
+        )
+
+    def test_strips_outlook_forward_header_block(self):
+        # Outlook-style forward header — three consecutive header lines.
+        body = (
+            "FYI below.\n\n"
+            "From: alice@example.com\n"
+            "Sent: Monday, Jan 1, 2024 9:00 AM\n"
+            "To: bob@example.com\n"
+            "Subject: heads up\n"
+            "\n"
+            "original message body…\n"
+        )
+        self.assertEqual(strip_quoted_reply(body), "FYI below.")
+
+    def test_strips_apple_mail_forward_marker(self):
+        body = (
+            "FYI.\n\n"
+            "Begin forwarded message:\n"
+            "From: a@example.com\n"
+        )
+        self.assertEqual(strip_quoted_reply(body), "FYI.")
+
+    def test_handles_crlf_line_endings(self):
+        body = "Sounds good.\r\n\r\n> Previous email here.\r\n> More quoted.\r\n"
+        self.assertEqual(strip_quoted_reply(body), "Sounds good.")
+
+    def test_no_marker_passthrough(self):
+        body = "Just a simple message with no reply markers."
+        self.assertEqual(strip_quoted_reply(body), body)
+
+    def test_empty_input(self):
+        self.assertEqual(strip_quoted_reply(''), '')
+        self.assertEqual(strip_quoted_reply(None), '')
+
+    def test_uses_earliest_marker(self):
+        # Both a ">" line and an "On X wrote:" line exist; whichever appears
+        # first wins. Here the "On X wrote:" comes first.
+        body = (
+            "Reply text.\n\n"
+            "On Jan 1, John wrote:\n"
+            "> nested quote\n"
+            "> more\n"
+        )
+        self.assertEqual(strip_quoted_reply(body), "Reply text.")

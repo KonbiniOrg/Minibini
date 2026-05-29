@@ -10,7 +10,6 @@
   let estimates = $state(null);
   let worksheets = $state(null);
   let invoices = $state(null);
-  let history = $state(null);
   let purchaseOrders = $state(null);
   let emails = $state(null);
   let loading = $state(true);
@@ -22,12 +21,11 @@
     loadError = null;
     try {
       job = await api.get(`/api/jobs/${params.id}/`);
-      const [contactData, estimatesData, worksheetsData, invoicesData, historyData, poData, emailData] = await Promise.all([
+      const [contactData, estimatesData, worksheetsData, invoicesData, poData, emailData] = await Promise.all([
         api.get(`/api/contacts/${job.contact}/`),
         api.get(`/api/estimates/?job=${params.id}`),
         api.get(`/api/est-worksheets/?job=${params.id}`),
         api.get(`/api/invoices/?job=${params.id}`),
-        api.get(`/api/jobs/${params.id}/history/`),
         api.get(`/api/purchase-orders/?job=${params.id}`),
         api.get(`/api/emails/?job=${params.id}`),
       ]);
@@ -35,7 +33,6 @@
       estimates = estimatesData;
       worksheets = worksheetsData;
       invoices = invoicesData;
-      history = historyData;
       purchaseOrders = poData;
       emails = emailData;
     } catch (e) {
@@ -51,15 +48,6 @@
       push(`/invoices/${invoice_id}/wizard`);
     } catch (e) {
       error = e.message || 'Failed to start wizard';
-    }
-  }
-
-  async function handleAddNote(text) {
-    try {
-      await api.post(`/api/jobs/${params.id}/notes/`, { text });
-      history = await api.get(`/api/jobs/${params.id}/history/`);
-    } catch (e) {
-      error = e.message;
     }
   }
 
@@ -89,10 +77,8 @@
     {estimates}
     {worksheets}
     {invoices}
-    {history}
     {purchaseOrders}
     {emails}
-    onAddNote={handleAddNote}
     onStatusChange={loadJob}
     onStartWizard={startWizard}
   />
