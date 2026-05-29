@@ -342,6 +342,57 @@ class EmailAPITest(BaseTestCase):
         self.assertEqual(response.data['snippet'], '')
         self.assertEqual(response.data['display_address'], '')
 
+    def test_email_detail_with_binary_attachment_serializes(self):
+        """Email detail for a message with a binary attachment must not
+        500. The IMAP service strips raw payload bytes from the dict it
+        returns so the JSON encoder doesn't choke on them."""
+        from django.test.utils import override_settings
+        # Force the cache-miss path so the IMAP code in get_email_content
+        # actually runs against the mocked MailBox.
+        self.temp_email.has_attachments = True
+        self.temp_email.uid = '12345'
+        self.temp_email.text_body = ''
+        self.temp_email.html_body = ''
+        self.temp_email.save()
+
+        binary_payload = b'\xff\xd8\xff\xe0\x00\x10JFIF binary garbage'
+        att = MagicMock()
+        att.filename = 'photo.jpg'
+        att.content_type = 'image/jpeg'
+        att.payload = binary_payload
+
+        mock_msg = MagicMock()
+        mock_msg.subject = 'with attachment'
+        mock_msg.from_ = 'sender@example.com'
+        mock_msg.to = ['us@example.com']
+        mock_msg.cc = []
+        from django.utils import timezone as tz
+        mock_msg.date = tz.now()
+        mock_msg.text = 'see attached'
+        mock_msg.html = ''
+        mock_msg.attachments = [att]
+
+        with override_settings(
+            EMAIL_IMAP_SERVER='imap.example.com',
+            EMAIL_HOST_USER='t@e.com',
+            EMAIL_HOST_PASSWORD='pw',
+        ), patch('apps.core.services.MailBox') as mock_mailbox_class:
+            mock_mailbox = MagicMock()
+            mock_mailbox.fetch.return_value = [mock_msg]
+            mock_mailbox.__enter__.return_value = mock_mailbox
+            mock_mailbox_class.return_value.login.return_value = mock_mailbox
+
+            response = self.client.get(f'/api/emails/{self.email.pk}/')
+
+        self.assertEqual(response.status_code, 200)
+        attachments = response.data['content']['attachments']
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]['filename'], 'photo.jpg')
+        self.assertEqual(attachments[0]['content_type'], 'image/jpeg')
+        self.assertEqual(attachments[0]['size'], len(binary_payload))
+        # Raw bytes must NOT be in the API response.
+        self.assertNotIn('payload', attachments[0])
+
     def test_snippet_from_html_when_text_missing(self):
         self.temp_email.text_body = ''
         self.temp_email.html_body = '<p>Quick note: <strong>50 units</strong>.</p>'

@@ -21,6 +21,18 @@ proper issue.
 
 ## Open
 
+- **Email attachments aren't downloadable.** — _added 2026-05-28_
+  `EmailContent.svelte` and the deprecated `email_detail.html` template both render
+  attachments as `<strong>{filename}</strong> ({content_type}, {size} bytes)` — no
+  download link. The IMAP service used to ship the raw `payload` bytes inside the JSON
+  response, which 500'd for any non-UTF-8 attachment (commit `<this-one>` strips
+  `payload` from the service contract); the SPA never used the bytes anyway. _Done
+  when:_ a streaming endpoint exists (e.g. `GET /api/emails/{id}/attachments/{index}/`)
+  that re-fetches by UID, returns the bytes with correct `Content-Type` and
+  `Content-Disposition: attachment; filename=…`, and the email detail page wraps the
+  filename in an `<a href>` to it. Decide at that time whether to cache attachment
+  bytes on `TempEmail` (avoids IMAP-per-click) or keep the streaming-from-IMAP shape.
+
 - **Associate-email-with-job page caps the dropdown at 100 jobs.** — _added 2026-05-28_
   `EmailAssociatePage.svelte` requests `/api/jobs/?page_size=500` to populate the job
   picker, but `StandardPagination.max_page_size = 100` silently caps it. Fine while we

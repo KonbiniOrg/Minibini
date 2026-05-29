@@ -340,7 +340,6 @@ class EmailService:
                                 'filename': att.filename,
                                 'content_type': att.content_type,
                                 'size': len(att.payload),
-                                'payload': att.payload,
                             }
                             for att in msg.attachments
                         ],
@@ -379,7 +378,6 @@ class EmailService:
                                 'filename': att.filename,
                                 'content_type': att.content_type,
                                 'size': len(att.payload),
-                                'payload': att.payload,
                             }
                             for att in msg.attachments
                         ],
