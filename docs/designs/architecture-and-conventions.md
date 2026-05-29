@@ -764,6 +764,67 @@ future per-attachment download endpoint re-fetches them by UID. Cached
 bodies/metadata are purged alongside the rest of `TempEmail` per the
 existing retention policy (`email_retention_days`).
 
+### 7.8 Email detail action panel
+
+`EmailRecord` has three independent association FKs — `job`,
+`purchase_order`, and `bill`, all `on_delete=SET_NULL`. Any
+combination is valid; the user chooses which apply per email.
+
+`frontend/src/components/email/EmailActionPanel.svelte` is the
+right-rail side panel on the email detail page (`EmailDetailPage.svelte`
+lays out content + rail in a two-column flexbox). One section per
+target (Job, Purchase Order, Bill). When the email is linked to that
+target the section shows the linked entity as a navigation link plus a
+Disassociate `<button>`; when unlinked it shows two `<a>`s styled like
+buttons — *Create new* and *Link existing* — that route to the
+respective Create-from-Email and Associate-with-Existing pages. Each
+section is hidden when the viewer lacks the relevant permission atom
+(`can_manage_jobs` for the Job section; `can_manage_financials` for
+PO and Bill).
+
+The Create-from-Email pages share `SenderResolutionForm.svelte`
+(`frontend/src/components/email/`), the sender-info + contact-picker /
+new-contact-form + business-mode sub-flow. The form owns the visual
+block and the resolution state (bound via `$bindable`); the
+`resolveSenderToContact(state)` helper in `lib/email.js` turns that
+state into `{contactId, businessId}` by making the necessary
+`/api/contacts/` and `/api/businesses/` POSTs on submit. The constraint
+that drove this shape: `Business.default_contact` is a required FK, so
+every Create flow that produces a vendor Business naturally produces
+a Contact alongside it. The placeholder name "PO receiver" (or
+similar) is acceptable when no real sales rep is involved.
+
+SPA routes registered in `App.svelte`:
+
+- `/email/:id/create-job` → `EmailCreateJobPage.svelte`
+- `/email/:id/create-po` → `EmailCreatePOPage.svelte`
+- `/email/:id/create-bill` → `EmailCreateBillPage.svelte` (resolves the
+  Contact+Business, then navigates to `#/bills/new?email=&vendor=` —
+  the actual Bill creation page is future work)
+- `/email/:id/associate` → `EmailAssociatePage.svelte` (Job picker)
+- `/email/:id/associate-po` → `EmailAssociatePOPage.svelte`
+- `/email/:id/associate-bill` → `EmailAssociateBillPage.svelte`
+
+`EmailRecordSerializer` exposes `job` + `job_number`,
+`purchase_order` + `po_number`, and `bill` + `vendor_invoice_number`
+read-only so the panel can render linked-entity labels without extra
+fetches.
+
+### 7.9 `EmailService` association helpers
+
+`EmailService.associate_with(email_pk, target_field, target_pk)` and
+`disassociate_from(email_pk, target_field)` are parameterized over the
+three target fields (`'job'`, `'purchase_order'`, `'bill'`), validated
+against an allowlist. The five Email-action API endpoints
+(`link-to-job` / `unlink-from-job` / `link-to-po` / `unlink-from-po` /
+`link-to-bill` / `unlink-from-bill`) route through these via a
+`_link_email_to(target_field, body_key, …)` / `_unlink_email_from`
+helper pair in `apps/api/email/views.py` so the six views are
+one-liners. `EmailService.associate_with_job` and
+`disassociate_from_job` remain as backwards-compatible shims that
+delegate to the parameterized pair; callers that already used the
+job-specific names keep working unchanged.
+
 ---
 
 ## 8. Sidebar nav
@@ -854,12 +915,13 @@ are written only by the base class.
 
 ### 9.3 The commands and their cadence
 
-Three commands run on a schedule today:
+Four commands run on a schedule today:
 
 | Command | `process_name` | What it does |
 |---|---|---|
 | `poll_qbo_payments` | `poll_qbo_payments` | Polls QBO for invoice payment and drives `Invoice.status` — see `quickbooks-integration.md` / `invoicing-and-expenses.md`. |
 | `mark_estimates_expired` | `mark_estimates_expired` | Expires `open` estimates past their frozen `expiration_date` — see `estimates-and-prices.md`. |
+| `mark_change_orders_expired` | `mark_change_orders_expired` | Expires `open` change orders past their frozen `expiration_date` — see `estimates-and-prices.md` (CO section). |
 | `cleanup_temp_emails` | `cleanup_temp_emails` | Deletes cached `TempEmail` rows older than `email_retention_days` (preserves `EmailRecord`; no per-object history). |
 
 ### 9.4 The docker-compose `cron` service
