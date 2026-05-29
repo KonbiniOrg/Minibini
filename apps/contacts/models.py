@@ -22,7 +22,7 @@ class Contact(models.Model):
     first_name = models.CharField(max_length=100)
     middle_initial = models.CharField(max_length=10, blank=True)
     last_name = models.CharField(max_length=100)
-    email = models.EmailField(validators=[EmailValidator()])
+    email = models.EmailField(validators=[EmailValidator()], db_index=True)
     addr1 = models.CharField(max_length=255, blank=True)
     addr2 = models.CharField(max_length=255, blank=True)
     addr3 = models.CharField(max_length=255, blank=True)

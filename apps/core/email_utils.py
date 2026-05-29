@@ -307,3 +307,44 @@ def clean_subject_for_job_name(subject):
     if len(cleaned) > _JOB_NAME_MAX:
         cleaned = cleaned[:_JOB_NAME_MAX - 3] + '...'
     return cleaned
+
+
+def resolve_contact_links(addresses):
+    """Look up Contact rows by email for any address that matches one we know.
+
+    Args:
+        addresses: iterable of raw address strings (each may be a bare email or
+            a ``Name <email@host>`` form). ``None`` / empty strings ignored.
+
+    Returns:
+        dict mapping the lowercased email address to
+        ``{'contact_id': int, 'name': str}`` for any address that resolves to
+        an existing Contact. Addresses without a Contact match are omitted.
+
+    The lookup is one query regardless of the number of addresses passed in.
+    """
+    if not addresses:
+        return {}
+    emails = set()
+    for raw in addresses:
+        if not raw or not raw.strip():
+            continue
+        _, parsed = parse_email_address(raw)
+        if parsed:
+            emails.add(parsed.lower())
+    if not emails:
+        return {}
+    # Late import: this module is also used by code paths that load before
+    # the contacts app is ready (e.g. management commands at import time).
+    from apps.contacts.models import Contact
+    # Group matches by email so we can detect ambiguity. Contact.email isn't
+    # unique — when two contacts share an address, the SPA should render
+    # plain text rather than silently link to one of them.
+    grouped = {}
+    for c in Contact.objects.filter(email__in=emails):
+        grouped.setdefault(c.email.lower(), []).append(c)
+    return {
+        email: {'contact_id': matches[0].contact_id, 'name': matches[0].name}
+        for email, matches in grouped.items()
+        if len(matches) == 1
+    }

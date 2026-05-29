@@ -10,6 +10,7 @@ from apps.core.email_utils import (
     extract_email_body,
     trim_body_at_signoff,
     clean_subject_for_job_name,
+    resolve_contact_links,
 )
 from apps.contacts.models import Contact, Business
 from apps.api.permissions import CanManageJobs
@@ -48,6 +49,22 @@ def email_detail(request, pk):
         data['content'] = content
     except Exception:
         data['content'] = None
+
+    # Map known email addresses to Contact rows so the SPA can render
+    # From/To/CC entries as links when we already know the person.
+    addresses = []
+    if data.get('content'):
+        c = data['content']
+        if c.get('from'):
+            addresses.append(c['from'])
+        addresses.extend(c.get('to') or [])
+        addresses.extend(c.get('cc') or [])
+    temp = getattr(email, 'temp_data', None)
+    if temp:
+        addresses.append(temp.from_email or '')
+        addresses.extend(a.strip() for a in (temp.to_email or '').split(',') if a.strip())
+        addresses.extend(a.strip() for a in (temp.cc_email or '').split(',') if a.strip())
+    data['contact_links'] = resolve_contact_links(addresses)
 
     return Response(data)
 

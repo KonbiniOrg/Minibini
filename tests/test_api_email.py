@@ -342,6 +342,63 @@ class EmailAPITest(BaseTestCase):
         self.assertEqual(response.data['snippet'], '')
         self.assertEqual(response.data['display_address'], '')
 
+    def test_email_detail_includes_contact_links_for_known_addresses(self):
+        """From/To/CC addresses that match a known Contact come through as
+        contact_links so the SPA can render them as links."""
+        from apps.contacts.models import Contact
+        jane = Contact.objects.create(
+            first_name='Jane', last_name='Doe', email='jane@example.com',
+            mobile_number='555-1',
+        )
+        bob = Contact.objects.create(
+            first_name='Bob', last_name='Smith', email='bob@example.com',
+            mobile_number='555-2',
+        )
+        content = self._mock_email_content(
+            from_header='Jane Doe <jane@example.com>',
+        )
+        content['to'] = ['us@example.com']
+        content['cc'] = ['Bob Smith <bob@example.com>', 'stranger@nowhere.com']
+        with patch('apps.api.email.views.EmailService') as mock_service_class:
+            mock_service = MagicMock()
+            mock_service.get_email_content.return_value = content
+            mock_service_class.return_value = mock_service
+
+            response = self.client.get(f'/api/emails/{self.email.pk}/')
+
+        self.assertEqual(response.status_code, 200)
+        links = response.data['contact_links']
+        self.assertIn('jane@example.com', links)
+        self.assertEqual(links['jane@example.com']['contact_id'], jane.contact_id)
+        self.assertEqual(links['jane@example.com']['name'], 'Jane Doe')
+        self.assertIn('bob@example.com', links)
+        self.assertEqual(links['bob@example.com']['contact_id'], bob.contact_id)
+        # Stranger has no Contact row → not in the map.
+        self.assertNotIn('stranger@nowhere.com', links)
+        # Our own address — no Contact → not in the map either.
+        self.assertNotIn('us@example.com', links)
+
+    def test_email_detail_contact_links_when_imap_unavailable(self):
+        """Even when IMAP content can't be fetched, the response should still
+        resolve contact_links from the TempEmail metadata."""
+        from apps.contacts.models import Contact
+        jane = Contact.objects.create(
+            first_name='Jane', last_name='Doe', email='sender@example.com',
+            mobile_number='555-3',
+        )
+        with patch('apps.api.email.views.EmailService') as mock_service_class:
+            mock_service = MagicMock()
+            mock_service.get_email_content.return_value = None
+            mock_service_class.return_value = mock_service
+
+            response = self.client.get(f'/api/emails/{self.email.pk}/')
+
+        self.assertEqual(response.status_code, 200)
+        # temp_email.from_email is 'sender@example.com' from setUp.
+        links = response.data['contact_links']
+        self.assertIn('sender@example.com', links)
+        self.assertEqual(links['sender@example.com']['contact_id'], jane.contact_id)
+
     def test_email_detail_with_binary_attachment_serializes(self):
         """Email detail for a message with a binary attachment must not
         500. The IMAP service strips raw payload bytes from the dict it

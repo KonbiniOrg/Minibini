@@ -8,7 +8,9 @@ from apps.core.email_utils import (
     trim_body_at_signoff,
     clean_subject_for_job_name,
     strip_quoted_reply,
+    resolve_contact_links,
 )
+from apps.contacts.models import Contact
 
 
 class ParseEmailAddressTest(TestCase):
@@ -515,3 +517,89 @@ class StripQuotedReplyTest(TestCase):
             "> more\n"
         )
         self.assertEqual(strip_quoted_reply(body), "Reply text.")
+
+
+class ResolveContactLinksTest(TestCase):
+    """Map raw email addresses (as they appear in From/To/CC headers) to
+    Contact rows so the email-detail view can render addresses as links."""
+
+    def setUp(self):
+        self.jane = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@example.com', mobile_number='555-1',
+        )
+        self.bob = Contact.objects.create(
+            first_name='Bob', last_name='Smith',
+            email='bob@example.com', mobile_number='555-2',
+        )
+
+    def test_resolves_bare_email(self):
+        links = resolve_contact_links(['jane@example.com'])
+        self.assertIn('jane@example.com', links)
+        self.assertEqual(links['jane@example.com']['contact_id'], self.jane.contact_id)
+        self.assertEqual(links['jane@example.com']['name'], 'Jane Doe')
+
+    def test_resolves_name_bracket_format(self):
+        links = resolve_contact_links(['Jane Doe <jane@example.com>'])
+        self.assertIn('jane@example.com', links)
+        self.assertEqual(links['jane@example.com']['contact_id'], self.jane.contact_id)
+
+    def test_case_insensitive_email_match(self):
+        links = resolve_contact_links(['JANE@Example.COM', 'Bob <BOB@example.com>'])
+        self.assertIn('jane@example.com', links)
+        self.assertIn('bob@example.com', links)
+
+    def test_unknown_addresses_omitted(self):
+        links = resolve_contact_links(['stranger@example.com', 'jane@example.com'])
+        self.assertIn('jane@example.com', links)
+        self.assertNotIn('stranger@example.com', links)
+
+    def test_mixed_list(self):
+        links = resolve_contact_links([
+            'Jane <jane@example.com>',
+            'Bob <bob@example.com>',
+            'unknown@nowhere.com',
+        ])
+        self.assertEqual(set(links.keys()), {'jane@example.com', 'bob@example.com'})
+
+    def test_empty_input(self):
+        self.assertEqual(resolve_contact_links([]), {})
+        self.assertEqual(resolve_contact_links(None), {})
+
+    def test_empty_and_whitespace_strings_ignored(self):
+        links = resolve_contact_links(['', '   ', None])
+        self.assertEqual(links, {})
+
+    def test_ambiguous_email_omitted(self):
+        # Two Contacts share the same email — don't silently pick one. Omit
+        # the entry so the SPA renders plain text.
+        Contact.objects.create(
+            first_name='Jane', last_name='Twin',
+            email='shared@example.com', mobile_number='555-3',
+        )
+        Contact.objects.create(
+            first_name='John', last_name='Twin',
+            email='shared@example.com', mobile_number='555-4',
+        )
+        links = resolve_contact_links([
+            'shared@example.com',
+            'jane@example.com',  # unambiguous
+        ])
+        self.assertNotIn('shared@example.com', links)
+        self.assertIn('jane@example.com', links)
+
+    def test_no_duplicate_queries_for_repeated_addresses(self):
+        # Multiple references to the same address should collapse to a single
+        # contact row in the result (and one DB query under the hood).
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+        with CaptureQueriesContext(connection) as ctx:
+            links = resolve_contact_links([
+                'jane@example.com',
+                'Jane Doe <jane@example.com>',
+                'JANE@EXAMPLE.COM',
+            ])
+        self.assertEqual(len(links), 1)
+        # One Contact SELECT — not one per address.
+        select_queries = [q for q in ctx.captured_queries if q['sql'].lstrip().lower().startswith('select')]
+        self.assertEqual(len(select_queries), 1, select_queries)

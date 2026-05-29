@@ -70,5 +70,6 @@
     content={email.content}
     tempEmail={email.temp_email}
     emailRecord={email}
+    contactLinks={email.contact_links}
   />
 {/if}
