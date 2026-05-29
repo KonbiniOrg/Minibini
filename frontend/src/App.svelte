@@ -42,7 +42,11 @@
   import EmailInboxPage from './routes/email/EmailInboxPage.svelte';
   import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
   import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
+  import EmailCreatePOPage from './routes/email/EmailCreatePOPage.svelte';
+  import EmailCreateBillPage from './routes/email/EmailCreateBillPage.svelte';
   import EmailAssociatePage from './routes/email/EmailAssociatePage.svelte';
+  import EmailAssociatePOPage from './routes/email/EmailAssociatePOPage.svelte';
+  import EmailAssociateBillPage from './routes/email/EmailAssociateBillPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
   import ChangeOrderDetailPage from './routes/change-orders/ChangeOrderDetailPage.svelte';
 
@@ -86,7 +90,11 @@
     '/reimbursements/:id': ReimbursementDetailPage,
     '/email': EmailInboxPage,
     '/email/:id/create-job': EmailCreateJobPage,
+    '/email/:id/create-po': EmailCreatePOPage,
+    '/email/:id/create-bill': EmailCreateBillPage,
     '/email/:id/associate': EmailAssociatePage,
+    '/email/:id/associate-po': EmailAssociatePOPage,
+    '/email/:id/associate-bill': EmailAssociateBillPage,
     '/email/:id': EmailDetailPage,
     '/profile': ProfilePage,
     '/change-orders/:id': ChangeOrderDetailPage,

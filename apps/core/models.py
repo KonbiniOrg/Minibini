@@ -92,6 +92,26 @@ class EmailRecord(models.Model):
         help_text='Associated job for this email'
     )
 
+    # Purchase Order association — independent of job/bill.
+    purchase_order = models.ForeignKey(
+        'purchasing.PurchaseOrder',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_records',
+        help_text='Associated purchase order for this email'
+    )
+
+    # Bill association — independent of job/purchase_order.
+    bill = models.ForeignKey(
+        'purchasing.Bill',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_records',
+        help_text='Associated bill for this email'
+    )
+
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
 

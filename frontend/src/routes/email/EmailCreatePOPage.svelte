@@ -1,4 +1,5 @@
 <script>
+  import { api } from '../../lib/api.js';
   import { emailApi, resolveSenderToContact } from '../../lib/email.js';
   import SenderResolutionForm from '../../components/email/SenderResolutionForm.svelte';
   import { push } from 'svelte-spa-router';
@@ -10,9 +11,6 @@
   let senderInfo = $state(null);
   let resolutionState = $state(null);
 
-  let jobName = $state('');
-  let jobDescription = $state('');
-
   let submitting = $state(false);
   let submitError = $state(null);
 
@@ -21,8 +19,6 @@
     loadError = null;
     try {
       senderInfo = await emailApi.senderInfo(params.id);
-      jobName = senderInfo.subject || '';
-      jobDescription = senderInfo.suggested_body || '';
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -35,13 +31,21 @@
     submitError = null;
     submitting = true;
     try {
-      const { contactId } = await resolveSenderToContact(resolutionState);
-      const job = await emailApi.createJob(params.id, {
-        contact: contactId,
-        name: jobName.trim(),
-        description: jobDescription.trim(),
-      });
-      push(`/jobs/${job.job_id}`);
+      const { contactId, businessId } = await resolveSenderToContact(resolutionState);
+      // PO requires a Business as vendor. The resolution always produces a
+      // Business (either pre-existing on the contact or newly created), so if
+      // we have none, surface the gap rather than 500 the API.
+      let vendorBusinessId = businessId;
+      if (!vendorBusinessId) {
+        // Fetch the contact to pick up its business.
+        const contact = await api.get(`/api/contacts/${contactId}/`);
+        vendorBusinessId = contact.business || contact.business_id;
+      }
+      if (!vendorBusinessId) {
+        throw new Error('A vendor Business is required to create a PO. Pick or create one for this contact.');
+      }
+      const result = await emailApi.createPo(params.id, { vendor_business_id: vendorBusinessId });
+      push(`/purchase-orders/${result.po_id}`);
     } catch (err) {
       submitError = err.message;
       submitting = false;
@@ -54,7 +58,7 @@
   });
 </script>
 
-<h2>Create Job from Email</h2>
+<h2>Create Purchase Order from Email</h2>
 
 <p><a href="#/email/{params.id}">&larr; Back to Email</a></p>
 
@@ -70,21 +74,12 @@
   <form onsubmit={handleSubmit}>
     <SenderResolutionForm {senderInfo} bind:state={resolutionState} />
 
-    <h3>Job</h3>
-    <p>
-      <label for="job_name"><strong>Job Name *</strong> (max 50 chars)</label><br>
-      <input type="text" id="job_name" bind:value={jobName} maxlength="50" required>
-    </p>
-    <p>
-      <label for="job_description"><strong>Description</strong></label><br>
-      <textarea id="job_description" bind:value={jobDescription} rows="8" cols="60"></textarea>
-    </p>
-
     <p>
       <button type="submit" disabled={submitting}>
-        {submitting ? 'Creating…' : 'Create Job'}
+        {submitting ? 'Creating…' : 'Create Purchase Order'}
       </button>
       <a href="#/email/{params.id}">Cancel</a>
     </p>
+    <p><small>Line items can be added on the PO detail page after creation.</small></p>
   </form>
 {/if}

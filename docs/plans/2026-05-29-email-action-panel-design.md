@@ -52,7 +52,7 @@ One migration, both fields. The three associations (`job`,
 `purchase_order`, `bill`) are independent — any combination is valid, the
 user decides which apply. `EmailRecordSerializer` exposes
 `purchase_order` + `po_number` (read-only via FK traversal) and `bill` +
-`bill_number` alongside the existing `job` / `job_number`.
+`vendor_invoice_number` alongside the existing `job` / `job_number`.
 
 ## 3. Service layer
 
@@ -215,7 +215,7 @@ authority.
   - `create-po` happy path: PO row exists after, email is linked,
     response has `{po_id, po_number}`.
   - `EmailRecordSerializer` list response includes `purchase_order` +
-    `po_number` and `bill` + `bill_number`.
+    `po_number` and `bill` + `vendor_invoice_number`.
 - **SPA** — no JS test runner; manual verification per target on the
   email detail page:
   - Panel shows Create + Link when unlinked, Linked + Disassociate when
@@ -233,7 +233,7 @@ authority.
 | `apps/core/services.py` | `EmailService.associate_with` / `disassociate_from`; existing job methods become shims |
 | `apps/api/email/views.py` | Five new endpoints; `_link_email_to` helper |
 | `apps/api/email/urls.py` | Register the five new paths |
-| `apps/api/email/serializers.py` | Add `purchase_order`, `po_number`, `bill`, `bill_number` |
+| `apps/api/email/serializers.py` | Add `purchase_order`, `po_number`, `bill`, `vendor_invoice_number` |
 | `frontend/src/components/email/SenderResolutionForm.svelte` | **new** |
 | `frontend/src/components/email/EmailActionPanel.svelte` | **new** |
 | `frontend/src/routes/email/EmailDetailPage.svelte` | Mount `EmailActionPanel`; drop inline action links |

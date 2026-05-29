@@ -1136,6 +1136,26 @@ Append-only audit trail of sync operations. No invariants beyond schema.
 - **error_message**: text, blank
 - **synced_at**: auto-set on creation
 
+### 1.27 EmailRecord
+
+Permanent record of an inbound IMAP email and which entities (if any) it
+is associated with. Three optional FKs that the user manages
+independently — any combination is valid (no mutual exclusivity).
+
+- **message_id**: unique, max 255 chars (RFC 2822 Message-ID)
+- **job** (optional FK → Job, `on_delete=SET_NULL`)
+- **purchase_order** (optional FK → PurchaseOrder, `on_delete=SET_NULL`)
+- **bill** (optional FK → Bill, `on_delete=SET_NULL`)
+- **created_at**: auto-set on creation
+
+The associations are not exclusive: a single email can simultaneously
+link to a Job (e.g. the customer thread it relates to), a PO (the
+vendor quote it spawned), and a Bill (the vendor invoice it carried).
+Deleting any of the target entities clears that FK; the EmailRecord
+itself persists. Body and metadata caches live on the related
+`TempEmail` row (see `architecture-and-conventions.md` §7.7); they are
+not part of the EmailRecord invariants.
+
 ---
 
 ## Section 2: State Reconciliation (Side Effects)

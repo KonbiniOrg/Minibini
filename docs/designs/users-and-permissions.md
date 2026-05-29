@@ -53,7 +53,7 @@ The project defines four custom permission atoms on `User.Meta.permissions`:
 | Atom | Scope |
 |---|---|
 | `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, contacts, businesses. Status transitions on each. Email-to-job actions: link, unlink, create-job-from-email. |
-| `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. |
+| `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO / email-to-bill actions: link, unlink, create-po-from-email. |
 | `can_manage_time` | Edit or delete any user's bleps, and start/stop another worker's live timer on-behalf. (Tracking or editing one's own time is `IsAuthenticated`.) |
 | `can_manage_config` | Settings endpoint, work and task templates, accounting categories, user admin viewset, QBO connection management. |
 
@@ -111,7 +111,9 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/users/` (admin) | `can_manage_config` | `can_manage_config` | DELETE returns 405 — use deactivate |
 | `/api/auth/users/` (assignee dropdown) | `IsAuthenticated` | — | distinct from `/api/users/` |
 | `/api/emails/` | `IsAuthenticated` | (no writes from this viewset) | reads only |
-| `/api/emails/{id}/link-to-job/` etc. | — | `can_manage_jobs` | link, unlink, create-job-from-email |
+| `/api/emails/{id}/link-to-job/` etc. | — | `can_manage_jobs` | link-to-job, unlink-from-job, create-job |
+| `/api/emails/{id}/link-to-po/` etc. | — | `can_manage_financials` | link-to-po, unlink-from-po, create-po |
+| `/api/emails/{id}/link-to-bill/` etc. | — | `can_manage_financials` | link-to-bill, unlink-from-bill |
 | `/api/search/` | `IsAuthenticated` | — | |
 | `/api/jobs/board/*` | `IsAuthenticated` | — | one bulk reorder endpoint requires `can_manage_jobs` |
 | `/api/home/` | `IsAuthenticated` | — | |

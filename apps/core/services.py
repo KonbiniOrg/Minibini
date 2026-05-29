@@ -546,53 +546,93 @@ class EmailService:
         """Check if required IMAP configuration is present."""
         return all([self.imap_server, self.email, self.password])
 
+    # Allowlist of EmailRecord fields that the association helpers will
+    # touch, plus the lazy-imported model the FK points at. New target?
+    # Add it here.
+    _ASSOC_TARGETS = {
+        'job': ('apps.jobs.models', 'Job'),
+        'purchase_order': ('apps.purchasing.models', 'PurchaseOrder'),
+        'bill': ('apps.purchasing.models', 'Bill'),
+    }
+
     @staticmethod
-    def associate_with_job(email_record_id, job_id):
-        """Associate an EmailRecord with a Job.
+    def _resolve_target_model(target_field):
+        try:
+            module_path, class_name = EmailService._ASSOC_TARGETS[target_field]
+        except KeyError:
+            raise ValueError(
+                f'Unknown EmailRecord association field: {target_field!r}. '
+                f'Expected one of {sorted(EmailService._ASSOC_TARGETS)}.'
+            )
+        import importlib
+        return getattr(importlib.import_module(module_path), class_name)
+
+    @staticmethod
+    def associate_with(email_record_id, target_field, target_pk):
+        """Set ``EmailRecord.<target_field>`` to the row identified by
+        ``target_pk``.
 
         Args:
             email_record_id: PK of EmailRecord
-            job_id: PK of Job
+            target_field: one of 'job', 'purchase_order', 'bill'
+            target_pk: PK of the target row
 
         Returns:
-            EmailRecord with job set
+            EmailRecord with the target FK set
 
         Raises:
-            NotFoundError: if email_record or job not found
+            ValueError: target_field not in the allowlist
+            NotFoundError: email_record or target row missing
         """
-        from apps.jobs.models import Job
+        target_model = EmailService._resolve_target_model(target_field)
         try:
             email_record = EmailRecord.objects.get(pk=email_record_id)
         except EmailRecord.DoesNotExist:
             raise NotFoundError(f'EmailRecord {email_record_id} not found')
         try:
-            job = Job.objects.get(pk=job_id)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {job_id} not found')
-        email_record.job = job
+            target = target_model.objects.get(pk=target_pk)
+        except target_model.DoesNotExist:
+            raise NotFoundError(
+                f'{target_model.__name__} {target_pk} not found'
+            )
+        setattr(email_record, target_field, target)
         email_record.save()
         return email_record
+
+    @staticmethod
+    def disassociate_from(email_record_id, target_field):
+        """Clear ``EmailRecord.<target_field>``.
+
+        Args:
+            email_record_id: PK of EmailRecord
+            target_field: one of 'job', 'purchase_order', 'bill'
+
+        Returns:
+            EmailRecord with the target FK cleared
+
+        Raises:
+            ValueError: target_field not in the allowlist
+            NotFoundError: email_record missing
+        """
+        # Validate field name early.
+        EmailService._resolve_target_model(target_field)
+        try:
+            email_record = EmailRecord.objects.get(pk=email_record_id)
+        except EmailRecord.DoesNotExist:
+            raise NotFoundError(f'EmailRecord {email_record_id} not found')
+        setattr(email_record, target_field, None)
+        email_record.save()
+        return email_record
+
+    @staticmethod
+    def associate_with_job(email_record_id, job_id):
+        """Backwards-compatible shim — delegates to associate_with."""
+        return EmailService.associate_with(email_record_id, 'job', job_id)
 
     @staticmethod
     def disassociate_from_job(email_record_id):
-        """Remove job association from an EmailRecord.
-
-        Args:
-            email_record_id: PK of EmailRecord
-
-        Returns:
-            EmailRecord with job cleared
-
-        Raises:
-            NotFoundError: if email_record not found
-        """
-        try:
-            email_record = EmailRecord.objects.get(pk=email_record_id)
-        except EmailRecord.DoesNotExist:
-            raise NotFoundError(f'EmailRecord {email_record_id} not found')
-        email_record.job = None
-        email_record.save()
-        return email_record
+        """Backwards-compatible shim — delegates to disassociate_from."""
+        return EmailService.disassociate_from(email_record_id, 'job')
 
 
 class ReorderService:

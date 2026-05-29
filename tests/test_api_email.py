@@ -462,3 +462,171 @@ class EmailAPITest(BaseTestCase):
         self.assertIn('50 units', snippet)
         self.assertNotIn('<', snippet)
         self.assertNotIn('>', snippet)
+
+
+class EmailPoBillAPITest(BaseTestCase):
+    """Coverage for the new PO/Bill link-unlink + create-po endpoints."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.contacts.models import Contact, Business
+        from apps.purchasing.models import PurchaseOrder, Bill
+        self.client = APIClient()
+        self.admin = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.admin)
+        self.email = EmailRecord.objects.create(message_id='<po-bill@example.com>')
+        self.contact = Contact.objects.create(
+            first_name='Vendor', last_name='Sales',
+            email='sales@vendor.com', mobile_number='555-9',
+        )
+        self.business = Business.objects.create(
+            business_name='Vendor Inc.', default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
+        self.po = PurchaseOrder.objects.create(
+            po_number='PO-API-1', business=self.business,
+        )
+        self.bill = Bill.objects.create(
+            vendor_invoice_number='BIL-API-1', business=self.business,
+        )
+
+    # --- link/unlink PO ----------------------------------------------------
+
+    def test_link_to_po(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-po/',
+            {'po_id': self.po.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.email.refresh_from_db()
+        self.assertEqual(self.email.purchase_order_id, self.po.pk)
+
+    def test_link_to_po_missing_po_id(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-po/', {}, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_link_to_po_rejects_non_integer(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-po/',
+            {'po_id': 'not-a-number'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_link_to_po_target_not_found(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-po/',
+            {'po_id': 99999}, format='json',
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_unlink_from_po(self):
+        self.email.purchase_order = self.po
+        self.email.save()
+        response = self.client.post(f'/api/emails/{self.email.pk}/unlink-from-po/')
+        self.assertEqual(response.status_code, 200)
+        self.email.refresh_from_db()
+        self.assertIsNone(self.email.purchase_order)
+
+    def test_link_to_po_requires_can_manage_financials(self):
+        worker = User.objects.create_user(username='worker_po', password='pw')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-po/',
+            {'po_id': self.po.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    # --- link/unlink Bill --------------------------------------------------
+
+    def test_link_to_bill(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-bill/',
+            {'bill_id': self.bill.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.email.refresh_from_db()
+        self.assertEqual(self.email.bill_id, self.bill.pk)
+
+    def test_link_to_bill_missing_bill_id(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-bill/', {}, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_link_to_bill_target_not_found(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-bill/',
+            {'bill_id': 99999}, format='json',
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_unlink_from_bill(self):
+        self.email.bill = self.bill
+        self.email.save()
+        response = self.client.post(f'/api/emails/{self.email.pk}/unlink-from-bill/')
+        self.assertEqual(response.status_code, 200)
+        self.email.refresh_from_db()
+        self.assertIsNone(self.email.bill)
+
+    def test_link_to_bill_requires_can_manage_financials(self):
+        worker = User.objects.create_user(username='worker_bill', password='pw')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/link-to-bill/',
+            {'bill_id': self.bill.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    # --- create PO from email ---------------------------------------------
+
+    def test_create_po_from_email(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-po/',
+            {'vendor_business_id': self.business.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.get(pk=response.data['po_id'])
+        self.assertEqual(po.business, self.business)
+        self.email.refresh_from_db()
+        self.assertEqual(self.email.purchase_order, po)
+        self.assertEqual(response.data['po_number'], po.po_number)
+
+    def test_create_po_missing_vendor(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-po/', {}, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_po_vendor_not_found(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-po/',
+            {'vendor_business_id': 99999}, format='json',
+        )
+        # 400 from validation OR 404 — depending on service shape. Accept either.
+        self.assertIn(response.status_code, (400, 404))
+
+    def test_create_po_requires_can_manage_financials(self):
+        worker = User.objects.create_user(username='worker_create_po', password='pw')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-po/',
+            {'vendor_business_id': self.business.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    # --- serializer surface -----------------------------------------------
+
+    def test_email_list_exposes_po_and_bill(self):
+        self.email.purchase_order = self.po
+        self.email.bill = self.bill
+        self.email.save()
+        response = self.client.get(f'/api/emails/{self.email.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['purchase_order'], self.po.pk)
+        self.assertEqual(response.data['po_number'], self.po.po_number)
+        self.assertEqual(response.data['bill'], self.bill.pk)
+        self.assertEqual(response.data['vendor_invoice_number'], self.bill.vendor_invoice_number)

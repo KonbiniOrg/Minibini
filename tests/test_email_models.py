@@ -95,6 +95,80 @@ class EmailRecordModelTest(TestCase):
         self.assertIn(email1, job_emails)
         self.assertIn(email2, job_emails)
 
+    def test_email_record_with_purchase_order(self):
+        """EmailRecord can link to a PurchaseOrder independently of job/bill."""
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(
+            po_number="PO-0001",
+            business=self.business,
+        )
+        email_record = EmailRecord.objects.create(
+            message_id="<po-link@example.com>",
+            purchase_order=po,
+        )
+        self.assertEqual(email_record.purchase_order, po)
+        self.assertIsNone(email_record.job)
+        self.assertIsNone(email_record.bill)
+
+    def test_email_record_with_bill(self):
+        from apps.purchasing.models import Bill
+        bill = Bill.objects.create(
+            vendor_invoice_number="BIL-0001",
+            business=self.business,
+        )
+        email_record = EmailRecord.objects.create(
+            message_id="<bill-link@example.com>",
+            bill=bill,
+        )
+        self.assertEqual(email_record.bill, bill)
+
+    def test_email_record_with_all_three_targets(self):
+        """A single email can be linked to job, PO, and bill simultaneously."""
+        from apps.purchasing.models import PurchaseOrder, Bill
+        po = PurchaseOrder.objects.create(po_number="PO-0002", business=self.business)
+        bill = Bill.objects.create(vendor_invoice_number="BIL-0002", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<all-three@example.com>",
+            job=self.job,
+            purchase_order=po,
+            bill=bill,
+        )
+        self.assertEqual(email_record.job, self.job)
+        self.assertEqual(email_record.purchase_order, po)
+        self.assertEqual(email_record.bill, bill)
+
+    def test_email_record_purchase_order_set_null_on_delete(self):
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(po_number="PO-0003", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<po-setnull@example.com>",
+            purchase_order=po,
+        )
+        po.delete()
+        email_record.refresh_from_db()
+        self.assertIsNone(email_record.purchase_order)
+
+    def test_email_record_bill_set_null_on_delete(self):
+        from apps.purchasing.models import Bill
+        bill = Bill.objects.create(vendor_invoice_number="BIL-0003", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<bill-setnull@example.com>",
+            bill=bill,
+        )
+        bill.delete()
+        email_record.refresh_from_db()
+        self.assertIsNone(email_record.bill)
+
+    def test_purchase_order_reverse_relation_to_email_records(self):
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(po_number="PO-0004", business=self.business)
+        email1 = EmailRecord.objects.create(message_id="<po-rev1@example.com>", purchase_order=po)
+        email2 = EmailRecord.objects.create(message_id="<po-rev2@example.com>", purchase_order=po)
+        emails = po.email_records.all()
+        self.assertEqual(emails.count(), 2)
+        self.assertIn(email1, emails)
+        self.assertIn(email2, emails)
+
 
 class TempEmailModelTest(TestCase):
     """Test TempEmail model - temporary cache of email metadata."""
@@ -438,6 +512,88 @@ class EmailServiceTest(TestCase):
         email_record = EmailRecord.objects.create(message_id="<link2@example.com>")
         with self.assertRaises(NotFoundError):
             EmailService.associate_with_job(email_record.email_record_id, 99999)
+
+    def test_associate_with_parameterized_job(self):
+        """The parameterized associate_with handles the job field path."""
+        email_record = EmailRecord.objects.create(message_id="<gen-job@example.com>")
+        result = EmailService.associate_with(
+            email_record.email_record_id, 'job', self.job.job_id,
+        )
+        self.assertEqual(result.job, self.job)
+
+    def test_associate_with_purchase_order(self):
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(po_number="PO-LINK-1", business=self.business)
+        email_record = EmailRecord.objects.create(message_id="<gen-po@example.com>")
+        result = EmailService.associate_with(
+            email_record.email_record_id, 'purchase_order', po.po_id,
+        )
+        self.assertEqual(result.purchase_order, po)
+
+    def test_associate_with_bill(self):
+        from apps.purchasing.models import Bill
+        bill = Bill.objects.create(
+            vendor_invoice_number="BIL-LINK-1", business=self.business,
+        )
+        email_record = EmailRecord.objects.create(message_id="<gen-bill@example.com>")
+        result = EmailService.associate_with(
+            email_record.email_record_id, 'bill', bill.bill_id,
+        )
+        self.assertEqual(result.bill, bill)
+
+    def test_associate_with_rejects_unknown_field(self):
+        email_record = EmailRecord.objects.create(message_id="<gen-bad@example.com>")
+        with self.assertRaises(ValueError):
+            EmailService.associate_with(
+                email_record.email_record_id, 'estimate', 1,
+            )
+
+    def test_associate_with_target_not_found(self):
+        from apps.core.services import NotFoundError
+        email_record = EmailRecord.objects.create(message_id="<gen-po-404@example.com>")
+        with self.assertRaises(NotFoundError):
+            EmailService.associate_with(
+                email_record.email_record_id, 'purchase_order', 99999,
+            )
+
+    def test_disassociate_from_purchase_order(self):
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(po_number="PO-UNLINK-1", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<gen-po-unlink@example.com>", purchase_order=po,
+        )
+        result = EmailService.disassociate_from(
+            email_record.email_record_id, 'purchase_order',
+        )
+        self.assertIsNone(result.purchase_order)
+
+    def test_disassociate_from_bill(self):
+        from apps.purchasing.models import Bill
+        bill = Bill.objects.create(
+            vendor_invoice_number="BIL-UNLINK-1", business=self.business,
+        )
+        email_record = EmailRecord.objects.create(
+            message_id="<gen-bill-unlink@example.com>", bill=bill,
+        )
+        result = EmailService.disassociate_from(
+            email_record.email_record_id, 'bill',
+        )
+        self.assertIsNone(result.bill)
+
+    def test_disassociate_from_only_clears_named_field(self):
+        """Disassociating one target leaves the other two alone."""
+        from apps.purchasing.models import PurchaseOrder, Bill
+        po = PurchaseOrder.objects.create(po_number="PO-MULTI-1", business=self.business)
+        bill = Bill.objects.create(vendor_invoice_number="BIL-MULTI-1", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<multi@example.com>",
+            job=self.job, purchase_order=po, bill=bill,
+        )
+        EmailService.disassociate_from(email_record.email_record_id, 'purchase_order')
+        email_record.refresh_from_db()
+        self.assertEqual(email_record.job, self.job)
+        self.assertIsNone(email_record.purchase_order)
+        self.assertEqual(email_record.bill, bill)
 
     def test_cleanup_old_temp_emails(self):
         """Test cleanup of old TempEmail records."""

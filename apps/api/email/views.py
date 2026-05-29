@@ -13,7 +13,7 @@ from apps.core.email_utils import (
     resolve_contact_links,
 )
 from apps.contacts.models import Contact, Business
-from apps.api.permissions import CanManageJobs
+from apps.api.permissions import CanManageJobs, CanManageFinancials
 from .serializers import EmailRecordSerializer
 
 
@@ -69,43 +69,128 @@ def email_detail(request, pk):
     return Response(data)
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, CanManageJobs])
-def link_to_job(request, pk):
-    job_id = request.data.get('job_id')
-    if not job_id:
+def _link_email_to(request, pk, target_field, body_key):
+    """Shared body for link-to-<target> endpoints. Validates the body, calls
+    EmailService.associate_with, and returns the updated serializer payload."""
+    target_pk = request.data.get(body_key)
+    if not target_pk:
         return Response(
-            {'job_id': ['This field is required.']},
+            {body_key: ['This field is required.']},
             status=status.HTTP_400_BAD_REQUEST,
         )
     try:
-        job_id = int(job_id)
+        target_pk = int(target_pk)
     except (TypeError, ValueError):
         return Response(
-            {'job_id': ['Must be an integer.']},
+            {body_key: ['Must be an integer.']},
             status=status.HTTP_400_BAD_REQUEST,
         )
     try:
-        EmailService.associate_with_job(pk, job_id)
+        EmailService.associate_with(pk, target_field, target_pk)
     except NotFoundError as e:
         return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
     except ServiceError as e:
         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     email = EmailRecord.objects.get(pk=pk)
     return Response(EmailRecordSerializer(email).data)
+
+
+def _unlink_email_from(pk, target_field):
+    try:
+        EmailService.disassociate_from(pk, target_field)
+    except NotFoundError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+    except ServiceError as e:
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    email = EmailRecord.objects.get(pk=pk)
+    return Response(EmailRecordSerializer(email).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanManageJobs])
+def link_to_job(request, pk):
+    return _link_email_to(request, pk, 'job', 'job_id')
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, CanManageJobs])
 def unlink_from_job(request, pk):
+    return _unlink_email_from(pk, 'job')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanManageFinancials])
+def link_to_po(request, pk):
+    return _link_email_to(request, pk, 'purchase_order', 'po_id')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanManageFinancials])
+def unlink_from_po(request, pk):
+    return _unlink_email_from(pk, 'purchase_order')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanManageFinancials])
+def link_to_bill(request, pk):
+    return _link_email_to(request, pk, 'bill', 'bill_id')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanManageFinancials])
+def unlink_from_bill(request, pk):
+    return _unlink_email_from(pk, 'bill')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanManageFinancials])
+def create_po_from_email(request, pk):
+    """Create a Purchase Order from an email and link the email to it.
+
+    Body: ``{vendor_business_id}``. Only the vendor (Business) is required;
+    line items are added on the PO detail page after creation. Mirrors
+    create_job_from_email.
+    """
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    from apps.purchasing.services import PurchaseOrderService
+    from apps.contacts.models import Business
     try:
-        EmailService.disassociate_from_job(pk)
-    except NotFoundError as e:
-        return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
-    except ServiceError as e:
-        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    email = EmailRecord.objects.get(pk=pk)
-    return Response(EmailRecordSerializer(email).data)
+        EmailRecord.objects.get(pk=pk)
+    except EmailRecord.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    vendor_id = request.data.get('vendor_business_id')
+    if not vendor_id:
+        return Response(
+            {'vendor_business_id': ['This field is required.']},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        vendor_id = int(vendor_id)
+    except (TypeError, ValueError):
+        return Response(
+            {'vendor_business_id': ['Must be an integer.']},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        business = Business.objects.get(pk=vendor_id)
+    except Business.DoesNotExist:
+        return Response(
+            {'vendor_business_id': [f'Business {vendor_id} not found.']},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    try:
+        po = PurchaseOrderService.create_po(business=business)
+    except DjangoValidationError as e:
+        return Response(
+            e.message_dict if hasattr(e, 'message_dict') else {'detail': e.messages},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    EmailService.associate_with(pk, 'purchase_order', po.pk)
+    return Response(
+        {'po_id': po.pk, 'po_number': po.po_number},
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(['POST'])
