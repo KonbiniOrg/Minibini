@@ -21,6 +21,14 @@ proper issue.
 
 ## Open
 
+- **Associate-email-with-job page caps the dropdown at 100 jobs.** — _added 2026-05-28_
+  `EmailAssociatePage.svelte` requests `/api/jobs/?page_size=500` to populate the job
+  picker, but `StandardPagination.max_page_size = 100` silently caps it. Fine while we
+  have <100 jobs total; once we cross that threshold, recent jobs will be the only ones
+  reachable from the dropdown. _Done when:_ the picker either paginates / searches
+  server-side (typeahead against `/api/jobs/?search=`) or filters to "active" statuses
+  only, whichever is cheaper than scrolling a long `<select>`.
+
 - **Review site-wide `z-index` usage; decide whether to impose a scale.** — _added 2026-05-26_
   We added an ad-hoc `z-index: 30` to `.job-header` (plus `z-index: 1` on
   `.hold-reason-form`) in commit `270c79d` to lift the on-hold reason popover above the
