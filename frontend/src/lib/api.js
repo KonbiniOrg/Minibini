@@ -39,10 +39,32 @@ async function request(method, url, data = null) {
   return json;
 }
 
+async function postMultipart(url, formData) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCsrfToken() },
+    credentials: 'same-origin',
+    body: formData,
+  });
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`Server error (${response.status})`);
+  }
+  const json = await response.json();
+  if (!response.ok) {
+    const error = new Error(json.detail || json.error || 'Request failed');
+    error.status = response.status;
+    error.data = json;
+    throw error;
+  }
+  return json;
+}
+
 export const api = {
   get: (url) => request('GET', url),
   post: (url, data) => request('POST', url, data),
   patch: (url, data) => request('PATCH', url, data),
   put: (url, data) => request('PUT', url, data),
   delete: (url, data = null) => request('DELETE', url, data),
+  postMultipart,
 };
