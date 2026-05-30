@@ -538,32 +538,132 @@ class EmailService:
         return stats
 
     def cleanup_old_temp_emails(self, retention_days=None):
-        """
-        Delete TempEmail records older than the configured retention period.
-        EmailRecord entries are preserved permanently.
+        """Delete TempEmail rows whose retention clock has elapsed.
 
-        Args:
-            retention_days (int): Override default retention period from configuration
+        Retention clock semantics (the "tweak"):
 
-        Returns:
-            int: Number of TempEmail records deleted
+        - An unlinked TempEmail (its EmailRecord has no ``job`` /
+          ``purchase_order`` / ``bill``) uses ``TempEmail.created_at`` as the
+          clock start — original behavior.
+        - A linked TempEmail uses the *finality date* of its linked objects
+          instead: the most recent ``HistoryEntry`` recording a transition into
+          a final status, per linked object. The TempEmail is eligible only if
+          **every** linked object is currently in a final status AND every
+          object's finality timestamp is older than the cutoff. A still-active
+          link keeps the email indefinitely.
+        - If a linked object is in a final status but no qualifying
+          HistoryEntry exists (pre-history-tracking data, or created directly
+          in a final state), fall back to ``TempEmail.created_at`` so emails
+          aren't stuck unpurgeable.
+
+        EmailRecord rows are preserved permanently regardless.
         """
+        from django.db.models import Max
+        from apps.core.models import HistoryEntry
+        from apps.jobs.models import Job
+        from apps.purchasing.models import PurchaseOrder, Bill
+
         if retention_days is None:
-            # Get retention period from Configuration model
             try:
                 config = Configuration.objects.get(key='email_retention_days')
                 retention_days = int(config.value)
             except (Configuration.DoesNotExist, ValueError):
                 retention_days = 90
 
-        cutoff_date = timezone.now() - timedelta(days=retention_days)
+        cutoff = timezone.now() - timedelta(days=retention_days)
 
-        # Delete TempEmail records older than cutoff
-        # EmailRecord entries remain intact
+        FINAL_STATUSES = {
+            'job': (
+                Job,
+                'job_id',
+                {Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED},
+            ),
+            'purchaseorder': (
+                PurchaseOrder,
+                'purchase_order_id',
+                {PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED},
+            ),
+            'bill': (
+                Bill,
+                'bill_id',
+                {Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED, Bill.STATUS_REFUNDED},
+            ),
+        }
+
+        # Per-type lookup: {linked_pk: finality_timestamp_or_None}.
+        # None means "currently final but no qualifying HistoryEntry" → caller
+        # falls back to TempEmail.created_at for that link.
+        finality_by_type = {}
+        for object_type, (model, _fk, final_set) in FINAL_STATUSES.items():
+            final_ids = list(
+                model.objects.filter(status__in=final_set).values_list('pk', flat=True)
+            )
+            finality_map = dict.fromkeys(final_ids, None)
+            if final_ids:
+                rows = (
+                    HistoryEntry.objects
+                    .filter(
+                        object_type=object_type,
+                        object_id__in=final_ids,
+                        changes__status__new__in=list(final_set),
+                    )
+                    .values('object_id')
+                    .annotate(last_final=Max('timestamp'))
+                )
+                for row in rows:
+                    finality_map[row['object_id']] = row['last_final']
+            finality_by_type[object_type] = finality_map
+
+        # Walk every TempEmail. The table is small in this app's lifetime;
+        # if it grows we can switch to batched queries later.
+        eligible_ids = []
+        candidates = TempEmail.objects.select_related('email_record').only(
+            'temp_email_id', 'created_at',
+            'email_record__job_id',
+            'email_record__purchase_order_id',
+            'email_record__bill_id',
+        )
+        for temp in candidates:
+            er = temp.email_record
+            links = []
+            if er.job_id:
+                links.append(('job', er.job_id))
+            if er.purchase_order_id:
+                links.append(('purchaseorder', er.purchase_order_id))
+            if er.bill_id:
+                links.append(('bill', er.bill_id))
+
+            if not links:
+                if temp.created_at < cutoff:
+                    eligible_ids.append(temp.temp_email_id)
+                continue
+
+            # Linked. Strictest rule: every link must be purgeable.
+            all_purgeable = True
+            for object_type, linked_pk in links:
+                finality_map = finality_by_type[object_type]
+                if linked_pk not in finality_map:
+                    # Linked object is NOT currently in a final status.
+                    all_purgeable = False
+                    break
+                last_final = finality_map[linked_pk]
+                if last_final is None:
+                    # Final but no HistoryEntry — fall back to email date.
+                    if temp.created_at >= cutoff:
+                        all_purgeable = False
+                        break
+                elif last_final >= cutoff:
+                    all_purgeable = False
+                    break
+
+            if all_purgeable:
+                eligible_ids.append(temp.temp_email_id)
+
+        if not eligible_ids:
+            return 0
         deleted_count, _ = TempEmail.objects.filter(
-            created_at__lt=cutoff_date
+            temp_email_id__in=eligible_ids
         ).delete()
-
         return deleted_count
 
     def _validate_config(self):

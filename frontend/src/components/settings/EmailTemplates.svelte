@@ -67,6 +67,9 @@
     ['{object_url}', 'Customer-facing URL for the document (stub today; see LATER.md)'],
   ];
 
+  const RETENTION_KEY = 'email_retention_days';
+  const RETENTION_DEFAULT = '90';
+
   let values = $state({});      // {key: stored value}
   let saving = $state({});      // {key: bool}
   let savedFlash = $state({});  // {key: timestamp ms of last successful save}
@@ -85,6 +88,7 @@
         next[t.subject.key] = all[t.subject.key] ?? t.subject.default;
         next[t.body.key] = all[t.body.key] ?? t.body.default;
       }
+      next[RETENTION_KEY] = all[RETENTION_KEY] ?? RETENTION_DEFAULT;
       values = next;
     } catch (e) {
       loadError = e.message;
@@ -115,6 +119,40 @@
 </script>
 
 <section>
+  {#if !loading && !loadError}
+    <fieldset class="template-block">
+      <legend><strong>Retention</strong></legend>
+      <p>
+        <label for={RETENTION_KEY}><strong>Purge emails older than</strong></label>
+        <input
+          type="number"
+          id={RETENTION_KEY}
+          min="1"
+          class="retention-input"
+          bind:value={values[RETENTION_KEY]}
+        >
+        days
+      </p>
+      <p>
+        <small>
+          For emails linked to a Job, Purchase Order, or Bill, the clock
+          starts when that record reaches a final status (e.g. completed,
+          cancelled, paid in full) — not when the email itself was received.
+          Linked records that are still active hold their emails
+          indefinitely.
+        </small>
+      </p>
+      <p>
+        <button type="button"
+                onclick={() => save(RETENTION_KEY)}
+                disabled={saving[RETENTION_KEY]}>
+          {saving[RETENTION_KEY] ? 'Saving…' : 'Save retention'}
+        </button>
+        {#if flashVisible(RETENTION_KEY)}<em class="ok">saved</em>{/if}
+      </p>
+    </fieldset>
+  {/if}
+
   <h3>Email Templates</h3>
   <p>
     Boilerplate subject and body used when sending an Estimate, Purchase Order, or
@@ -209,6 +247,13 @@
   }
   .template-textarea {
     font-family: monospace;
+  }
+  .retention-input {
+    width: 5em;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 2px 4px;
+    margin: 0 4px;
   }
   .ok { color: #047857; margin-left: 8px; }
   .error { color: #b91c1c; }

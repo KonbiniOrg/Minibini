@@ -762,7 +762,45 @@ empty `attachments_metadata` (pre-backfill rows). Attachment payload
 bytes are never cached and are not part of the JSON response; the
 future per-attachment download endpoint re-fetches them by UID. Cached
 bodies/metadata are purged alongside the rest of `TempEmail` per the
-existing retention policy (`email_retention_days`).
+retention policy described in §7.7a.
+
+### 7.7a Retention clock: finality-based purge
+
+`EmailService.cleanup_old_temp_emails` (invoked by the
+`cleanup_temp_emails` scheduled command) decides eligibility per
+`TempEmail` row:
+
+- **Unlinked** (the `EmailRecord` has no `job` / `purchase_order` /
+  `bill`): clock starts at `TempEmail.created_at`. Purged once
+  `email_retention_days` have elapsed. This is the original behavior.
+- **Linked to one or more of Job / PurchaseOrder / Bill**: the clock
+  is the *finality date* of those records, not the email's own date.
+  Each linked record contributes its own clock; the strictest one wins
+  (the email is purged only when **every** linked record is past its
+  retention window).
+- A linked record's finality date is the timestamp of the most recent
+  `HistoryEntry` recording a transition into a final status, scoped to
+  that record. If no qualifying `HistoryEntry` exists for a final
+  record (pre-history-tracking data, or created directly in a final
+  state), we fall back to `TempEmail.created_at` for that link so
+  emails aren't stuck unpurgeable.
+- A linked record that is **not** currently in a final status keeps
+  its emails indefinitely. The clock has not yet started.
+
+Final-status sets ("practically done"):
+
+| Model | Final statuses |
+|---|---|
+| `Job` | `completed`, `rejected`, `cancelled` |
+| `PurchaseOrder` | `received_in_full`, `cancelled` |
+| `Bill` | `paid_in_full`, `cancelled`, `refunded` |
+
+`EmailRecord` rows are preserved permanently regardless of `TempEmail`
+purge — the auditable record of an email having existed survives even
+once its cached body and metadata are gone.
+
+`email_retention_days` is editable in the Settings → Email tab
+(gated on `can_manage_config`).
 
 ### 7.8 Email detail action panel
 
@@ -1115,7 +1153,7 @@ Four commands run on a schedule today:
 | `poll_qbo_payments` | `poll_qbo_payments` | Polls QBO for invoice payment and drives `Invoice.status` — see `quickbooks-integration.md` / `invoicing-and-expenses.md`. |
 | `mark_estimates_expired` | `mark_estimates_expired` | Expires `open` estimates past their frozen `expiration_date` — see `estimates-and-prices.md`. |
 | `mark_change_orders_expired` | `mark_change_orders_expired` | Expires `open` change orders past their frozen `expiration_date` — see `estimates-and-prices.md` (CO section). |
-| `cleanup_temp_emails` | `cleanup_temp_emails` | Deletes cached `TempEmail` rows older than `email_retention_days` (preserves `EmailRecord`; no per-object history). |
+| `cleanup_temp_emails` | `cleanup_temp_emails` | Deletes cached `TempEmail` rows whose retention clock has elapsed (preserves `EmailRecord`; no per-object history). See §7.7a for the finality-based clock rule. |
 
 ### 9.4 The docker-compose `cron` service
 
