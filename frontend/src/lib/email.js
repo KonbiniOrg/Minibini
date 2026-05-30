@@ -15,6 +15,8 @@ export const emailApi = {
   unlinkFromBill: (id) => api.post(`/api/emails/${id}/unlink-from-bill/`, {}),
   createPo: (id, { vendor_business_id }) =>
     api.post(`/api/emails/${id}/create-po/`, { vendor_business_id }),
+  replyDefaults: (id) => api.get(`/api/emails/${id}/reply-defaults/`),
+  reply: (id, formData) => api.postMultipart(`/api/emails/${id}/reply/`, formData),
 };
 
 /** Resolve a SenderResolutionForm state into {contactId, businessId} by

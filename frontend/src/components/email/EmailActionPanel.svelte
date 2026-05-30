@@ -40,6 +40,16 @@
     <p class="error"><strong>Error:</strong> {actionError}</p>
   {/if}
 
+  <section>
+    <h4>Reply</h4>
+    <p>
+      <a class="action-button" href="#/email/{emailRecord.email_record_id}/reply">Reply</a>
+    </p>
+    <p>
+      <a class="action-button" href="#/email/{emailRecord.email_record_id}/reply?mode=all">Reply All</a>
+    </p>
+  </section>
+
   {#if canManageJobs}
     <section>
       <h4>Job</h4>
