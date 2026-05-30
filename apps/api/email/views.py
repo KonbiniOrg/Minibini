@@ -4,6 +4,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.core.models import EmailRecord
 from apps.core.services import EmailService, ServiceError, NotFoundError
+from django.conf import settings as django_settings
+from apps.core.services import OutboundEmailService
+from apps.core.email_utils import (
+    build_reply_subject,
+    build_reply_body,
+)
 from apps.core.email_utils import (
     parse_email_address,
     extract_company_from_signature,
@@ -303,6 +309,169 @@ def refresh(request):
         'errors': stats.get('errors', []),
         'email_address': getattr(django_settings, 'EMAIL_HOST_USER', '') or '',
     })
+
+
+def _compute_reply_all_cc(parent_temp):
+    """Original to + cc, minus our own EMAIL_HOST_USER, de-duplicated,
+    in original order (to-first then cc). Comma-separated string."""
+    our_address = (getattr(django_settings, 'EMAIL_HOST_USER', '') or '').strip().lower()
+    seen = set()
+    if our_address:
+        seen.add(our_address)
+    out = []
+
+    def add_addresses(raw):
+        for piece in (raw or '').split(','):
+            addr = piece.strip()
+            if not addr:
+                continue
+            key = addr.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(addr)
+
+    add_addresses(parent_temp.to_email)
+    add_addresses(parent_temp.cc_email)
+    return ', '.join(out)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def reply_defaults(request, pk):
+    """Pre-populated form payload for a Reply or Reply All to email <pk>.
+
+    Returns to/cc/bcc/reply_all_cc/subject/body, threading headers
+    (in_reply_to, references) the SPA echoes back on submit, and the
+    parent's association FKs the reply should inherit on send.
+    """
+    try:
+        parent = EmailRecord.objects.select_related('temp_data').get(pk=pk)
+    except EmailRecord.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    temp = getattr(parent, 'temp_data', None)
+
+    to = ''
+    reply_all_cc = ''
+    subject_source = ''
+    if temp:
+        # 'From' may be 'Name <email>' — parse out just the email.
+        _, sender_email = parse_email_address(temp.from_email or '')
+        to = sender_email or temp.from_email or ''
+        reply_all_cc = _compute_reply_all_cc(temp)
+        subject_source = temp.subject or ''
+
+    subject = build_reply_subject(subject_source)
+    body = build_reply_body(parent)
+
+    references_chain = (temp.references if temp else '') or ''
+    # Append the parent's message_id to the References chain.
+    if parent.message_id:
+        if references_chain:
+            references_chain = f'{references_chain} {parent.message_id}'
+        else:
+            references_chain = parent.message_id
+
+    return Response({
+        'to': to,
+        'cc': '',
+        'bcc': '',
+        'reply_all_cc': reply_all_cc,
+        'subject': subject,
+        'body': body,
+        'in_reply_to': parent.message_id or '',
+        'references': references_chain,
+        'inherit_associations': {
+            'job': parent.job_id,
+            'purchase_order': parent.purchase_order_id,
+            'bill': parent.bill_id,
+        },
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def reply(request, pk):
+    """Send a reply to email <pk>. Multipart body fields:
+
+    - to, cc, bcc, subject, body (text)
+    - in_reply_to, references (text — the SPA echoes them from
+      /reply-defaults/)
+    - inherit_job, inherit_purchase_order, inherit_bill — PK strings,
+      any combination. The first non-blank in priority order
+      Job > PO > Bill becomes the outbound's associate_with target.
+    - attachments — zero or more uploaded files
+
+    Returns {email_record_id} on success; 400 on missing to; 502 on
+    SMTP failure with the outbound row's last_send_error populated.
+    """
+    try:
+        EmailRecord.objects.get(pk=pk)
+    except EmailRecord.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    to = (request.data.get('to') or '').strip()
+    if not to:
+        return Response(
+            {'to': ['Recipient email address is required.']},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    subject = request.data.get('subject') or ''
+    body = request.data.get('body') or ''
+    cc = [c.strip() for c in (request.data.get('cc') or '').split(',') if c.strip()]
+    bcc = [b.strip() for b in (request.data.get('bcc') or '').split(',') if b.strip()]
+    in_reply_to = (request.data.get('in_reply_to') or '').strip()
+    references = (request.data.get('references') or '').strip()
+
+    associate_with = None
+    inherit_job = (request.data.get('inherit_job') or '').strip()
+    inherit_po = (request.data.get('inherit_purchase_order') or '').strip()
+    inherit_bill = (request.data.get('inherit_bill') or '').strip()
+    if inherit_job:
+        from apps.jobs.models import Job
+        try:
+            job = Job.objects.get(pk=int(inherit_job))
+        except (Job.DoesNotExist, ValueError):
+            return Response({'inherit_job': ['Not found.']}, status=status.HTTP_400_BAD_REQUEST)
+        associate_with = {'job': job}
+    elif inherit_po:
+        from apps.purchasing.models import PurchaseOrder
+        try:
+            po = PurchaseOrder.objects.get(pk=int(inherit_po))
+        except (PurchaseOrder.DoesNotExist, ValueError):
+            return Response({'inherit_purchase_order': ['Not found.']}, status=status.HTTP_400_BAD_REQUEST)
+        associate_with = {'purchase_order': po}
+    elif inherit_bill:
+        from apps.purchasing.models import Bill
+        try:
+            bill = Bill.objects.get(pk=int(inherit_bill))
+        except (Bill.DoesNotExist, ValueError):
+            return Response({'inherit_bill': ['Not found.']}, status=status.HTTP_400_BAD_REQUEST)
+        associate_with = {'bill': bill}
+
+    attachments = []
+    for uploaded in request.FILES.getlist('attachments'):
+        attachments.append((
+            uploaded.name, uploaded.read(),
+            uploaded.content_type or 'application/octet-stream',
+        ))
+
+    try:
+        record = OutboundEmailService.send_tracked(
+            to=to, subject=subject, body=body,
+            cc=cc, bcc=bcc, attachments=attachments,
+            associate_with=associate_with,
+            in_reply_to=in_reply_to or None,
+            references=references or None,
+        )
+    except Exception as e:
+        return Response(
+            {'detail': str(e)},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response({'email_record_id': record.email_record_id})
 
 
 def _stub_501(endpoint):

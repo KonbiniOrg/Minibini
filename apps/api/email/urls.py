@@ -14,5 +14,7 @@ urlpatterns = [
     path('<int:pk>/link-to-bill/', views.link_to_bill, name='email-link-to-bill'),
     path('<int:pk>/unlink-from-bill/', views.unlink_from_bill, name='email-unlink-from-bill'),
     path('<int:pk>/create-po/', views.create_po_from_email, name='email-create-po'),
+    path('<int:pk>/reply-defaults/', views.reply_defaults, name='email-reply-defaults'),
+    path('<int:pk>/reply/', views.reply, name='email-reply'),
     path('send/', views._stub_501('POST /api/emails/send/'), name='email-send'),
 ]

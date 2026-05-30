@@ -640,3 +640,247 @@ class EmailPoBillAPITest(BaseTestCase):
         self.assertEqual(response.data['po_number'], self.po.po_number)
         self.assertEqual(response.data['bill'], self.bill.pk)
         self.assertEqual(response.data['vendor_invoice_number'], self.bill.vendor_invoice_number)
+
+
+class EmailReplyAPITest(BaseTestCase):
+    """Coverage for /api/emails/{id}/reply-defaults/ and /reply/ endpoints."""
+
+    def setUp(self):
+        super().setUp()
+        from django.utils import timezone as tz
+        from datetime import datetime
+        from django.utils.timezone import make_aware
+        from apps.contacts.models import Contact, Business
+        from apps.jobs.models import Job
+        self.client = APIClient()
+        self.admin = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.admin)
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@customer.com', mobile_number='555',
+        )
+        self.business = Business.objects.create(
+            business_name='Customer Co', default_contact=self.contact,
+        )
+        self.job = Job.objects.create(
+            job_number='JOB-REPLY-1', contact=self.contact, description='X',
+        )
+        # Parent inbound email, linked to a Job, with a populated body.
+        self.parent = EmailRecord.objects.create(
+            message_id='<parent-msg@example.com>',
+            job=self.job,
+        )
+        self.parent_temp = TempEmail.objects.create(
+            email_record=self.parent,
+            uid='1',
+            subject='Re: Quote for bracket',
+            from_email='Jane Doe <jane@customer.com>',
+            to_email='us@example.com',
+            cc_email='proc@customer.com, ops@customer.com',
+            date_sent=make_aware(datetime(2026, 5, 28, 9, 32)),
+            text_body='Hi,\n\nCould you quote 50 brackets?\n',
+            in_reply_to='',
+            references='<thread-root@example.com>',
+        )
+
+    # --- reply-defaults ---------------------------------------------------
+
+    def test_reply_defaults_shape(self):
+        response = self.client.get(f'/api/emails/{self.parent.pk}/reply-defaults/')
+        self.assertEqual(response.status_code, 200, response.data)
+        for key in ('to', 'cc', 'bcc', 'reply_all_cc', 'subject', 'body',
+                    'in_reply_to', 'references', 'inherit_associations'):
+            self.assertIn(key, response.data)
+
+    def test_reply_defaults_to_and_subject(self):
+        response = self.client.get(f'/api/emails/{self.parent.pk}/reply-defaults/')
+        self.assertEqual(response.data['to'], 'jane@customer.com')
+        # Subject is Re-prefixed exactly once (the parent was already 'Re: ...').
+        self.assertEqual(response.data['subject'], 'Re: Quote for bracket')
+
+    def test_reply_defaults_body_contains_quoted_original(self):
+        response = self.client.get(f'/api/emails/{self.parent.pk}/reply-defaults/')
+        body = response.data['body']
+        self.assertTrue(body.startswith('\n\n'))
+        self.assertIn('wrote:', body)
+        self.assertIn('> Could you quote 50 brackets?', body)
+
+    def test_reply_defaults_threading_headers(self):
+        response = self.client.get(f'/api/emails/{self.parent.pk}/reply-defaults/')
+        self.assertEqual(response.data['in_reply_to'], '<parent-msg@example.com>')
+        # References extends parent's references with parent's message_id.
+        self.assertIn('<thread-root@example.com>', response.data['references'])
+        self.assertIn('<parent-msg@example.com>', response.data['references'])
+
+    def test_reply_defaults_inherit_associations(self):
+        response = self.client.get(f'/api/emails/{self.parent.pk}/reply-defaults/')
+        ia = response.data['inherit_associations']
+        self.assertEqual(ia['job'], self.job.job_id)
+        self.assertIsNone(ia['purchase_order'])
+        self.assertIsNone(ia['bill'])
+
+    def test_reply_defaults_reply_all_cc_strips_our_address(self):
+        from django.test.utils import override_settings
+        with override_settings(EMAIL_HOST_USER='us@example.com'):
+            response = self.client.get(f'/api/emails/{self.parent.pk}/reply-defaults/')
+        # parent's to was 'us@example.com' (ours, stripped); cc was two
+        # addresses (preserved). Result: just the two CC addresses.
+        rac = response.data['reply_all_cc']
+        self.assertIn('proc@customer.com', rac)
+        self.assertIn('ops@customer.com', rac)
+        self.assertNotIn('us@example.com', rac)
+
+    def test_reply_defaults_reply_all_cc_dedupes(self):
+        from django.test.utils import override_settings
+        self.parent_temp.to_email = 'jane@customer.com, us@example.com'
+        self.parent_temp.cc_email = 'jane@customer.com, ops@customer.com'
+        self.parent_temp.save()
+        with override_settings(EMAIL_HOST_USER='us@example.com'):
+            response = self.client.get(f'/api/emails/{self.parent.pk}/reply-defaults/')
+        rac = response.data['reply_all_cc']
+        # jane appears twice in source; only once in result.
+        self.assertEqual(rac.count('jane@customer.com'), 1)
+        self.assertNotIn('us@example.com', rac)
+        self.assertIn('ops@customer.com', rac)
+
+    def test_reply_defaults_no_text_body_falls_back_to_placeholder(self):
+        self.parent_temp.text_body = ''
+        self.parent_temp.save()
+        response = self.client.get(f'/api/emails/{self.parent.pk}/reply-defaults/')
+        self.assertIn('> (original message unavailable)', response.data['body'])
+
+    def test_reply_defaults_404_for_unknown_email(self):
+        response = self.client.get('/api/emails/99999/reply-defaults/')
+        self.assertEqual(response.status_code, 404)
+
+    # --- reply (send) -----------------------------------------------------
+
+    @patch('django.core.mail.EmailMessage')
+    def test_reply_happy_path(self, MockEmailMessage):
+        MockEmailMessage.return_value = MagicMock()
+
+        response = self.client.post(
+            f'/api/emails/{self.parent.pk}/reply/',
+            {
+                'to': 'jane@customer.com',
+                'cc': '',
+                'bcc': '',
+                'subject': 'Re: Quote for bracket',
+                'body': 'Yes please, send invoice.',
+                'in_reply_to': '<parent-msg@example.com>',
+                'references': '<thread-root@example.com> <parent-msg@example.com>',
+                'inherit_job': str(self.job.job_id),
+            },
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        outbound = EmailRecord.objects.get(
+            direction=EmailRecord.OUTBOUND, job=self.job,
+        )
+        self.assertIsNotNone(outbound.sent_at)
+        temp = outbound.temp_data
+        self.assertEqual(temp.in_reply_to, '<parent-msg@example.com>')
+        self.assertIn('<parent-msg@example.com>', temp.references)
+
+    @patch('django.core.mail.EmailMessage')
+    def test_reply_with_cc_persists_addresses(self, MockEmailMessage):
+        """Covers the Reply-All path — same endpoint, just CC populated."""
+        MockEmailMessage.return_value = MagicMock()
+        response = self.client.post(
+            f'/api/emails/{self.parent.pk}/reply/',
+            {
+                'to': 'jane@customer.com',
+                'cc': 'proc@customer.com, ops@customer.com',
+                'bcc': '',
+                'subject': 'Re: Quote',
+                'body': 'Body',
+                'inherit_job': str(self.job.job_id),
+            },
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        outbound = EmailRecord.objects.get(
+            direction=EmailRecord.OUTBOUND, job=self.job,
+        )
+        self.assertIn('proc@customer.com', outbound.temp_data.cc_email)
+        self.assertIn('ops@customer.com', outbound.temp_data.cc_email)
+
+    @patch('django.core.mail.EmailMessage')
+    def test_reply_with_attachment(self, MockEmailMessage):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        MockEmailMessage.return_value = MagicMock()
+        upload = SimpleUploadedFile(
+            'drawing.png', b'\x89PNG-fake', content_type='image/png',
+        )
+        response = self.client.post(
+            f'/api/emails/{self.parent.pk}/reply/',
+            {
+                'to': 'jane@customer.com',
+                'subject': 'Re: Quote',
+                'body': 'See attached.',
+                'attachments': upload,
+                'inherit_job': str(self.job.job_id),
+            },
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        outbound = EmailRecord.objects.get(
+            direction=EmailRecord.OUTBOUND, job=self.job,
+        )
+        self.assertTrue(outbound.temp_data.has_attachments)
+        names = [a['filename'] for a in outbound.temp_data.attachments_metadata]
+        self.assertIn('drawing.png', names)
+
+    @patch('django.core.mail.EmailMessage')
+    def test_reply_inherits_no_association_when_parent_unlinked(self, MockEmailMessage):
+        # Replace the parent with one that's not linked to anything.
+        unlinked = EmailRecord.objects.create(message_id='<unlinked@example.com>')
+        TempEmail.objects.create(
+            email_record=unlinked, uid='2',
+            from_email='someone@example.com', to_email='us@example.com',
+            date_sent=self.parent_temp.date_sent,
+        )
+        MockEmailMessage.return_value = MagicMock()
+        response = self.client.post(
+            f'/api/emails/{unlinked.pk}/reply/',
+            {'to': 'someone@example.com', 'subject': 'Re:', 'body': '.'},
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        outbound = EmailRecord.objects.filter(
+            direction=EmailRecord.OUTBOUND, message_id__startswith='<minibini-',
+        ).order_by('-created_at').first()
+        self.assertIsNone(outbound.job)
+        self.assertIsNone(outbound.purchase_order)
+        self.assertIsNone(outbound.bill)
+
+    def test_reply_missing_to_returns_400(self):
+        response = self.client.post(
+            f'/api/emails/{self.parent.pk}/reply/',
+            {'subject': 'Re:', 'body': 'X'},
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    @patch('django.core.mail.EmailMessage')
+    def test_reply_smtp_failure_returns_502_and_persists_error(self, MockEmailMessage):
+        fail_msg = MagicMock()
+        fail_msg.send.side_effect = RuntimeError('connection refused')
+        MockEmailMessage.return_value = fail_msg
+
+        response = self.client.post(
+            f'/api/emails/{self.parent.pk}/reply/',
+            {
+                'to': 'jane@customer.com',
+                'subject': 'Re:', 'body': 'X',
+                'inherit_job': str(self.job.job_id),
+            },
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 502)
+        outbound = EmailRecord.objects.get(
+            direction=EmailRecord.OUTBOUND, job=self.job,
+        )
+        self.assertIsNone(outbound.sent_at)
+        self.assertIn('connection refused', outbound.last_send_error)
