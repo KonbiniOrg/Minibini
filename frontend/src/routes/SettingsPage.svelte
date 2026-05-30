@@ -5,6 +5,7 @@
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
   import TaskTemplateManager from '../components/TaskTemplateManager.svelte';
   import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
+  import EmailTemplates from '../components/settings/EmailTemplates.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
   let tab = $state('accounting');
@@ -57,6 +58,7 @@
   <button class:active={tab === 'setup'} onclick={() => tab = 'setup'}>Setup</button>
   <button class:active={tab === 'catalog'} onclick={() => tab = 'catalog'}>Catalog</button>
   <button class:active={tab === 'schedule'} onclick={() => tab = 'schedule'}>Schedule</button>
+  <button class:active={tab === 'email'} onclick={() => tab = 'email'}>Email</button>
 </nav>
 
 {#if tab === 'accounting'}
@@ -117,6 +119,9 @@
 
 {:else if tab === 'schedule'}
   <ScheduleSettings />
+
+{:else if tab === 'email'}
+  <EmailTemplates />
 {/if}
 
 <style>
