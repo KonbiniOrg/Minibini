@@ -1,6 +1,7 @@
+from unittest.mock import patch, MagicMock
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, EmailRecord
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.jobs.models import Job
 
@@ -79,3 +80,109 @@ class EstimateAPITest(BaseTestCase):
         response = self.client.delete(f'/api/estimates/{estimate.pk}/?confirm=true')
         self.assertEqual(response.status_code, 400)
         self.assertTrue(Estimate.objects.filter(pk=estimate.pk).exists())
+
+
+class EstimateSendTest(BaseTestCase):
+    """The new /api/estimates/{id}/send-defaults/ + /send/ endpoints."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+        self.job = Job.objects.first()
+        self.estimate = Estimate.objects.create(
+            job=self.job,
+            estimate_number='EST-SEND-001',
+            status=Estimate.STATUS_DRAFT,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.estimate,
+            line_number=1,
+            qty='1.00', units='ea',
+            description='Bracket assembly',
+            price='100.00',
+        )
+
+    def test_send_defaults_returns_to_subject_body_and_attachment_preview(self):
+        response = self.client.get(f'/api/estimates/{self.estimate.pk}/send-defaults/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('to', response.data)
+        self.assertIn('subject', response.data)
+        self.assertIn('body', response.data)
+        self.assertIn('attachments_preview', response.data)
+        # Default contact email should be in the To field
+        self.assertEqual(response.data['to'], self.job.contact.email)
+        # Subject template default mentions the estimate number
+        self.assertIn(self.estimate.estimate_number, response.data['subject'])
+        # Attachment preview names the auto-attached PDF
+        self.assertEqual(len(response.data['attachments_preview']), 1)
+        self.assertEqual(
+            response.data['attachments_preview'][0]['filename'],
+            f'Estimate-{self.estimate.estimate_number}.pdf',
+        )
+
+    @patch('apps.estimates.pdf.generate_estimate_pdf')
+    @patch('django.core.mail.EmailMessage')
+    def test_send_happy_path_persists_outbound_and_transitions_status(
+        self, MockEmailMessage, mock_pdf,
+    ):
+        MockEmailMessage.return_value = MagicMock()
+        mock_pdf.return_value = b'%PDF-estimate'
+
+        response = self.client.post(
+            f'/api/estimates/{self.estimate.pk}/send/',
+            {
+                'to': 'jane@example.com',
+                'subject': 'Estimate ' + self.estimate.estimate_number,
+                'body': 'Hi Jane, please review.',
+                'cc': '',
+                'bcc': '',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.estimate.refresh_from_db()
+        self.assertEqual(self.estimate.status, Estimate.STATUS_OPEN)
+
+        # An outbound EmailRecord exists, linked to this Estimate's job.
+        outbound = EmailRecord.objects.get(
+            direction=EmailRecord.OUTBOUND, job=self.job,
+        )
+        self.assertIsNotNone(outbound.sent_at)
+        self.assertEqual(outbound.last_send_error, '')
+
+    @patch('apps.estimates.pdf.generate_estimate_pdf')
+    @patch('django.core.mail.EmailMessage')
+    def test_send_smtp_failure_returns_error_and_keeps_status(
+        self, MockEmailMessage, mock_pdf,
+    ):
+        fail_msg = MagicMock()
+        fail_msg.send.side_effect = RuntimeError('SMTP unreachable')
+        MockEmailMessage.return_value = fail_msg
+        mock_pdf.return_value = b'%PDF-estimate'
+
+        response = self.client.post(
+            f'/api/estimates/{self.estimate.pk}/send/',
+            {'to': 'jane@example.com', 'subject': 'Test', 'body': 'Test'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 502)
+        self.estimate.refresh_from_db()
+        # Status NOT advanced because SMTP failed.
+        self.assertEqual(self.estimate.status, Estimate.STATUS_DRAFT)
+        # Failure persisted on the EmailRecord.
+        outbound = EmailRecord.objects.get(
+            direction=EmailRecord.OUTBOUND, job=self.job,
+        )
+        self.assertIsNone(outbound.sent_at)
+        self.assertIn('SMTP unreachable', outbound.last_send_error)
+
+    def test_send_missing_to_returns_400(self):
+        response = self.client.post(
+            f'/api/estimates/{self.estimate.pk}/send/',
+            {'subject': 'X', 'body': 'X'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)

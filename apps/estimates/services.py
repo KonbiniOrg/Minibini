@@ -240,6 +240,139 @@ class EstimateService:
         return li
 
 
+class EstimateEmailService:
+    """Sends an Estimate as a PDF attachment via email. Transitions the
+    Estimate to STATUS_OPEN on send success."""
+
+    DEFAULT_SUBJECT = 'Estimate {document_number} from {our_business_name}'
+    DEFAULT_BODY = (
+        'Hi {contact_fname},\n\n'
+        'Please find attached our estimate {document_number} for {job_name}. '
+        'Let us know if you have any questions.\n\n'
+        'Thanks,\n{our_user_name}'
+    )
+
+    @staticmethod
+    def get_email_defaults(estimate):
+        """Pre-populated send-form fields for an Estimate: to, subject,
+        body, attachments_preview."""
+        from apps.core.models import Configuration
+        from apps.core.email_templates import render_email_template
+
+        subject_template = EstimateEmailService.DEFAULT_SUBJECT
+        body_template = EstimateEmailService.DEFAULT_BODY
+        try:
+            subject_template = Configuration.objects.get(
+                key='estimate_email_subject_template'
+            ).value
+        except Configuration.DoesNotExist:
+            pass
+        try:
+            body_template = Configuration.objects.get(
+                key='estimate_email_body_template'
+            ).value
+        except Configuration.DoesNotExist:
+            pass
+        try:
+            our_business_name = Configuration.objects.get(key='our_business_name').value
+        except Configuration.DoesNotExist:
+            our_business_name = ''
+
+        job = estimate.job
+        contact = job.contact if job else None
+        contact_business = ''
+        if contact and contact.business:
+            contact_business = contact.business.business_name
+
+        values = {
+            'contact_fname': contact.first_name if contact else '',
+            'contact_lname': contact.last_name if contact else '',
+            'contact_business': contact_business,
+            'our_user_name': '',
+            'our_business_name': our_business_name,
+            'job_number': job.job_number if job else '',
+            'job_name': job.name if job else '',
+            'document_number': estimate.estimate_number,
+            'estimate_number': estimate.estimate_number,
+        }
+
+        subject = render_email_template(subject_template, **values)
+        body = render_email_template(body_template, **values)
+
+        to = ''
+        if contact and contact.email:
+            to = contact.email
+
+        pdf_filename = f'Estimate-{estimate.estimate_number}.pdf'
+        # We don't run the PDF render here — just preview metadata. The send
+        # path renders the actual bytes.
+        attachments_preview = [
+            {'filename': pdf_filename, 'content_type': 'application/pdf', 'size': 0},
+        ]
+
+        return {
+            'to': to, 'subject': subject, 'body': body,
+            'attachments_preview': attachments_preview,
+        }
+
+    @staticmethod
+    def send_estimate(estimate, *, to, subject, body, cc=None, bcc=None,
+                      extra_attachments=None, user=None):
+        """Send an Estimate. Generates the PDF, persists an outbound
+        EmailRecord via send_tracked, transitions draft → open on success.
+
+        Args:
+            estimate: Estimate instance
+            to: list or comma-separated str
+            subject / body: composed strings
+            cc / bcc: list or None
+            extra_attachments: list of (filename, bytes, mime) tuples beyond
+                the auto-attached document PDF
+            user: User performing the send (for HistoryEntry; optional)
+
+        Returns:
+            The outbound EmailRecord.
+
+        Raises:
+            ValidationError: missing to, no line items.
+            Whatever SMTP raises (after persistence — the outbound row will
+            still exist with last_send_error populated).
+        """
+        from apps.core.services import OutboundEmailService
+        from apps.estimates.pdf import generate_estimate_pdf
+
+        if not to:
+            raise ValidationError('Recipient email address is required.')
+
+        if not estimate.estimatelineitem_set.exists():
+            raise ValidationError(
+                'Cannot send an estimate with no line items.'
+            )
+
+        pdf_bytes = generate_estimate_pdf(estimate)
+        pdf_filename = f'Estimate-{estimate.estimate_number}.pdf'
+
+        attachments = [(pdf_filename, pdf_bytes, 'application/pdf')]
+        if extra_attachments:
+            attachments.extend(extra_attachments)
+
+        # send_tracked persists the outbound EmailRecord before SMTP; on
+        # SMTP failure the error is recorded and the exception re-raised
+        # so the caller can return a useful error to the user.
+        record = OutboundEmailService.send_tracked(
+            to=to, subject=subject, body=body,
+            cc=cc, bcc=bcc, attachments=attachments,
+            associate_with={'job': estimate.job},
+        )
+
+        # Send succeeded — transition draft → open.
+        if estimate.status == Estimate.STATUS_DRAFT:
+            estimate.status = Estimate.STATUS_OPEN
+            estimate.save()
+
+        return record
+
+
 class WorkTemplateService:
     """Service for WorkTemplate and TaskTemplate CRUD."""
 
