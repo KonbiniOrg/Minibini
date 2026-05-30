@@ -21,6 +21,72 @@ proper issue.
 
 ## Open
 
+- **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
+  Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
+  intentionally have no draft state. SMTP failure with a page reload loses whatever the
+  user typed. Acceptable until real complaints surface — at which point the natural shape
+  is a `direction='outbound', sent_at=null, last_send_error=''` EmailRecord (the "in
+  flight" state currently never persists) plus a SPA list of "Drafts" on the inbox page.
+  Reply drafts probably want the most attention since freeform replies can be long.
+  _Done when:_ user can leave a send page mid-compose, come back later, and the form
+  pre-fills with what was there.
+
+- **Send outbound documents as a reply to the customer's most recent inbound thread.** — _added 2026-05-30_
+  When sending an Estimate / PO / Invoice, look up the latest `direction='inbound'`
+  EmailRecord linked to the document's Job (or PO / Bill), and set the outbound's
+  `In-Reply-To` + `References` headers so the customer sees the doc in the same Gmail
+  thread as their inquiry. Today we always send a fresh standalone email — works fine
+  but means customers see two separate threads. Probably a per-document Configuration
+  toggle ("thread document emails into recent customer threads by default") when this
+  lands. _Done when:_ outbound document emails optionally thread into the parent
+  conversation and customer mail clients see proper threading.
+
+- **Sent-folder upload via IMAP APPEND.** — _added 2026-05-30_
+  Outbound emails sent by Minibini don't appear in the user's Gmail web "Sent" folder
+  — they go out through SMTP and we keep our own EmailRecord, but the user's mail
+  client doesn't know about them. Append each successful outbound to the configured
+  Sent folder via IMAP so the user sees a consistent picture across our app and Gmail.
+  Off the critical path; nice-to-have. _Done when:_ sent emails from Minibini appear
+  in the user's Gmail Sent folder alongside emails they sent through Gmail directly.
+
+- **Forward action in the reply composer.** — _added 2026-05-30_
+  Standard mail-client Forward — different prefill from Reply (no recipient, `Fwd:`
+  subject, body becomes the quoted original, original attachments included). Not in
+  the inline composer today. _Done when:_ the action panel has a Forward button
+  alongside Reply / Reply All and the composer handles the Forward prefill shape.
+
+- **Subject-line parsing fallback for forwarded-rather-than-replied correlation.** — _added 2026-05-30_
+  Reply correlation uses In-Reply-To / References, which most replies preserve.
+  Forwards typically drop the threading headers, so a forwarded reply lands
+  unassociated. Could grep the subject for our outbound document numbers
+  (`EST-2026-0001`, `PO-…`, `INV-…`) as a fallback. Only worth doing if forwards
+  turn out to be a noticeable miss rate. _Done when:_ a measurable rate of
+  forwarded-replies-to-documents auto-associate to the right object.
+
+- **Multiple "our own" addresses for Reply-All filtering.** — _added 2026-05-30_
+  The Reply-All CC computation strips only the single `EMAIL_HOST_USER` address from
+  the list of original recipients. If the shop ever polls multiple accounts or
+  accepts mail at aliases, the user could see their own alias end up in CC. _Done
+  when:_ Reply-All strips any of the configured "our own" addresses (probably a
+  small list pulled from a new Configuration key).
+
+- **Thread view in the SPA.** — _added 2026-05-30_
+  Show all emails in a thread together (with their shared and individual
+  associations) instead of inbox rows that hide the structure. The
+  thread-association propagation feature ensures the data is now correctly
+  per-thread, so a thread view would just render what's already coherent. Real UX
+  improvement; out of scope when the propagation feature shipped. _Done when:_ the
+  email inbox has a thread-grouped view; clicking a thread shows the conversation
+  with the shared FK associations at the top and per-email details below.
+
+- **Bulk operations across a thread.** — _added 2026-05-30_
+  "Mark whole thread as read," "delete whole thread," "disassociate the whole
+  thread from Job X." Different from per-email actions (already present) — these
+  would operate over the thread membership set computed by
+  `collect_thread_member_ids`. Pair with the thread-view follow-up since the UI
+  surface for invoking these is the natural place. _Done when:_ the SPA has at
+  least one thread-level bulk action wired up.
+
 - **Customer-facing public URLs for documents (`{object_url}` real resolution).** — _added 2026-05-29_
   The Estimate / PO / Invoice send templates support an `{object_url}` placeholder today,
   resolved against the `our_public_url` Configuration key as
