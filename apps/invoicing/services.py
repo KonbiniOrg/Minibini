@@ -142,7 +142,7 @@ class InvoiceEmailService:
         'Hi {contact_fname},\n\n'
         'Please find attached your invoice {document_number} for {job_name}. '
         'The invoice includes a Pay Now link.\n\n'
-        'Thanks,\n{our_user_name}'
+        'Thanks,\n{my_user_name}'
     )
 
     @staticmethod
@@ -165,11 +165,6 @@ class InvoiceEmailService:
             ).value
         except Configuration.DoesNotExist:
             pass
-        try:
-            our_business_name = Configuration.objects.get(key='our_business_name').value
-        except Configuration.DoesNotExist:
-            our_business_name = ''
-
         job = invoice.job
         contact = job.contact if job else None
         contact_business = ''
@@ -181,8 +176,7 @@ class InvoiceEmailService:
             'contact_fname': contact.first_name if contact else '',
             'contact_lname': contact.last_name if contact else '',
             'contact_business': contact_business,
-            'our_user_name': '',
-            'our_business_name': our_business_name,
+            'my_user_name': '',
             'job_number': job.job_number if job else '',
             'job_name': job.name if job else '',
             'document_number': invoice.invoice_number,

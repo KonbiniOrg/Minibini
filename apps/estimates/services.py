@@ -244,12 +244,12 @@ class EstimateEmailService:
     """Sends an Estimate as a PDF attachment via email. Transitions the
     Estimate to STATUS_OPEN on send success."""
 
-    DEFAULT_SUBJECT = 'Estimate {document_number} from {our_business_name}'
+    DEFAULT_SUBJECT = 'Estimate {document_number}'
     DEFAULT_BODY = (
         'Hi {contact_fname},\n\n'
         'Please find attached our estimate {document_number} for {job_name}. '
         'Let us know if you have any questions.\n\n'
-        'Thanks,\n{our_user_name}'
+        'Thanks,\n{my_user_name}'
     )
 
     @staticmethod
@@ -273,11 +273,6 @@ class EstimateEmailService:
             ).value
         except Configuration.DoesNotExist:
             pass
-        try:
-            our_business_name = Configuration.objects.get(key='our_business_name').value
-        except Configuration.DoesNotExist:
-            our_business_name = ''
-
         job = estimate.job
         contact = job.contact if job else None
         contact_business = ''
@@ -289,8 +284,7 @@ class EstimateEmailService:
             'contact_fname': contact.first_name if contact else '',
             'contact_lname': contact.last_name if contact else '',
             'contact_business': contact_business,
-            'our_user_name': '',
-            'our_business_name': our_business_name,
+            'my_user_name': '',
             'job_number': job.job_number if job else '',
             'job_name': job.name if job else '',
             'document_number': estimate.estimate_number,

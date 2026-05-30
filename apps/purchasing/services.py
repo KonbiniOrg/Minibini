@@ -623,17 +623,12 @@ class PurchaseOrderEmailService:
         contact_business = ''
         if contact and contact.business:
             contact_business = contact.business.business_name
-        try:
-            our_business_name = Configuration.objects.get(key='our_business_name').value
-        except Configuration.DoesNotExist:
-            our_business_name = ''
         from apps.core.email_templates import build_object_url
         common = {
             'contact_fname': contact_fname,
             'contact_lname': contact_lname,
             'contact_business': contact_business,
-            'our_user_name': '',
-            'our_business_name': our_business_name,
+            'my_user_name': '',
             'document_number': po.po_number,
             'object_url': build_object_url('purchase_order', po.po_id),
         }

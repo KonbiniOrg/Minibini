@@ -3,15 +3,15 @@
 
   // The 6 boilerplate Configuration keys. The backend service for each
   // document type falls back to a built-in default when the Configuration
-  // row is absent — those defaults are shown as placeholder hints below
-  // each field so the user knows what to expect if they leave it blank.
+  // row is absent. We pre-fill the field with that default text so the
+  // user can edit in place.
 
   const TEMPLATES = [
     {
       label: 'Estimate',
       subject: {
         key: 'estimate_email_subject_template',
-        default: 'Estimate {document_number} from {our_business_name}',
+        default: 'Estimate {document_number}',
       },
       body: {
         key: 'estimate_email_body_template',
@@ -19,7 +19,7 @@
           'Hi {contact_fname},\n\n' +
           'Please find attached our estimate {document_number} for {job_name}. ' +
           'Let us know if you have any questions.\n\n' +
-          'Thanks,\n{our_user_name}',
+          'Thanks,\n{my_user_name}',
       },
     },
     {
@@ -48,20 +48,19 @@
           'Hi {contact_fname},\n\n' +
           'Please find attached your invoice {document_number} for {job_name}. ' +
           'The invoice includes a Pay Now link.\n\n' +
-          'Thanks,\n{our_user_name}',
+          'Thanks,\n{my_user_name}',
       },
     },
   ];
 
-  // Variables list for the helper section below. Per-document-type aliases
-  // (estimate_number / po_number / invoice_number / vendor_name) are
-  // captured in a note so the table stays compact.
+  // Variables documentation, shown at the top so it's visible while editing.
+  // Per-document-type aliases (estimate_number / po_number / vendor_name /
+  // invoice_number) also work — noted in a small footer below the table.
   const COMMON_VARS = [
     ['{contact_fname}', 'Recipient first name'],
     ['{contact_lname}', 'Recipient last name'],
     ['{contact_business}', 'Recipient business name (blank if none)'],
-    ['{our_business_name}', 'Our business name (from Configuration)'],
-    ['{our_user_name}', 'Sending user’s first name'],
+    ['{my_user_name}', 'Sending user’s first name'],
     ['{job_number}', 'Job number (Estimate / Invoice only)'],
     ['{job_name}', 'Job name (Estimate / Invoice only)'],
     ['{document_number}', 'The document’s own number (EST-…, PO-…, INV-…)'],
@@ -123,6 +122,27 @@
     fully editable. Each field has its own Save button.
   </p>
 
+  <fieldset class="template-block">
+    <legend><strong>Available variables</strong></legend>
+    <table class="vars">
+      <tbody>
+        {#each COMMON_VARS as [name, desc]}
+          <tr><th><code>{name}</code></th><td>{desc}</td></tr>
+        {/each}
+      </tbody>
+    </table>
+    <p>
+      <small>
+        Per-document aliases also work: <code>{'{estimate_number}'}</code> on the
+        Estimate template, <code>{'{po_number}'}</code> /
+        <code>{'{vendor_name}'}</code> on the Purchase Order template, and
+        <code>{'{invoice_number}'}</code> on the Invoice template. Unknown
+        placeholders render literally (no crashes), so it is safe to try one
+        and check the result on a Send page.
+      </small>
+    </p>
+  </fieldset>
+
   {#if loading}
     <p>Loading templates&hellip;</p>
   {:else if loadError}
@@ -169,27 +189,6 @@
         </p>
       </fieldset>
     {/each}
-
-    <fieldset class="template-block">
-      <legend><strong>Available variables</strong></legend>
-      <table class="vars">
-        <tbody>
-          {#each COMMON_VARS as [name, desc]}
-            <tr><th><code>{name}</code></th><td>{desc}</td></tr>
-          {/each}
-        </tbody>
-      </table>
-      <p>
-        <small>
-          Per-document aliases also work: <code>{'{estimate_number}'}</code> on the
-          Estimate template, <code>{'{po_number}'}</code> /
-          <code>{'{vendor_name}'}</code> on the Purchase Order template, and
-          <code>{'{invoice_number}'}</code> on the Invoice template. Unknown
-          placeholders render literally (no crashes), so it is safe to try one
-          and check the result on a Send page.
-        </small>
-      </p>
-    </fieldset>
   {/if}
 </section>
 

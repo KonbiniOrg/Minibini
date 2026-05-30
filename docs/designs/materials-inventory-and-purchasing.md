@@ -800,8 +800,7 @@ bcc=None, extra_attachments=None, user=None)`:
 of unknown placeholders. The legacy `{po_number}` / `{vendor_name}`
 keep working; the common set
 (`{contact_fname}`, `{contact_lname}`, `{contact_business}`,
-`{our_user_name}`, `{our_business_name}`, `{document_number}`) is
-also available. Defaults also include an `attachments_preview` list
+`{my_user_name}`, `{document_number}`) is also available. Defaults also include an `attachments_preview` list
 so the send page can render the auto-attached PDF in the form.
 
 API:

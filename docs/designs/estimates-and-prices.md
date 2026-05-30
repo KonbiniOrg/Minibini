@@ -1150,9 +1150,9 @@ What happens on send (the cross-doc framing is in
 Configuration keys:
 
 - `estimate_email_subject_template` — default
-  `Estimate {document_number} from {our_business_name}`.
+  `Estimate {document_number}`.
 - `estimate_email_body_template` — default starts with
-  `Hi {contact_fname},…`.
+  `Hi {contact_fname},…` and ends with `Thanks,\n{my_user_name}`.
 
 The common template variable set is in
 `architecture-and-conventions.md` §7.10. `{estimate_number}` is

@@ -870,10 +870,11 @@ Body / subject templates live as `Configuration` keys
 `str.format_map` wrapper that leaves unknown `{placeholders}`
 literal so user-edited templates can't crash a send. Variables shared
 across all three document types: `{contact_fname}`, `{contact_lname}`,
-`{contact_business}`, `{our_user_name}`, `{our_business_name}`,
-`{job_number}`, `{job_name}`, `{document_number}`. Per-document
-aliases (`{estimate_number}`, `{po_number}`, `{invoice_number}`,
-`{vendor_name}`) also work.
+`{contact_business}`, `{my_user_name}`, `{job_number}`, `{job_name}`,
+`{document_number}`. Per-document aliases (`{estimate_number}`,
+`{po_number}`, `{invoice_number}`, `{vendor_name}`) also work. The
+shop's own business name isn't a variable — users hard-code it into
+the boilerplate where they want it.
 
 ### 7.11 Reply correlation
 
