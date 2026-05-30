@@ -1122,7 +1122,52 @@ line-items sections (status indicator: an Estimate displays as
 
 ---
 
-## 15. Unfinished work
+## 15. Sending an Estimate
+
+`EstimateEmailService.send_estimate` (`apps/estimates/services.py`)
+is the entry point. The SPA route `/estimates/:id/send` mounts
+`DocumentSendForm.svelte` over a server-rendered template via
+`GET /api/estimates/{id}/send-defaults/`; submit POSTs
+multipart to `/api/estimates/{id}/send/`.
+
+What happens on send (the cross-doc framing is in
+`architecture-and-conventions.md` §7.10):
+
+1. Generate the Estimate PDF via `apps/estimates/pdf.py:generate_estimate_pdf`
+   (weasyprint over `templates/estimates/estimate_pdf.html`).
+2. Call `OutboundEmailService.send_tracked` with
+   `associate_with={'job': estimate.job}` — that persists an outbound
+   `EmailRecord` linked to the parent Job (so the new email appears in
+   the Job overview Email panel and participates in reply correlation).
+3. On send success, transition `draft → open` (using `Estimate.save()`,
+   so all the normal side effects from §5.1 still fire — `sent_date`
+   gets stamped, `expiration_date` gets computed, the worksheet status
+   maps, the Job goes to `submitted`).
+4. On SMTP failure, the exception re-raises so the API view returns
+   502; the outbound EmailRecord persists with `last_send_error`
+   populated, the Estimate stays `draft`.
+
+Configuration keys:
+
+- `estimate_email_subject_template` — default
+  `Estimate {document_number} from {our_business_name}`.
+- `estimate_email_body_template` — default starts with
+  `Hi {contact_fname},…`.
+
+The common template variable set is in
+`architecture-and-conventions.md` §7.10. `{estimate_number}` is
+available as an alias of `{document_number}`.
+
+**Removed UI:** the previous Estimate detail page's "Mark as Sent"
+button and the disabled "Send Estimate" placeholder are gone. The
+underlying `POST /api/estimates/{id}/mark-open/` endpoint still
+exists (workers triggering the status change without sending is
+preserved as a back-door), but the normal flow is now Send Email,
+which transitions status as part of the send-success path.
+
+---
+
+## 16. Unfinished work
 
 - **Default rate scheme for worker quick-add** — the worker-side
   `WorkItemForm` flow currently still requires the worker to pick a

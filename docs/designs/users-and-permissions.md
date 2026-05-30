@@ -92,7 +92,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/contacts/` | `IsAuthenticated` | `can_manage_jobs` | |
 | `/api/businesses/` | `IsAuthenticated` | `can_manage_jobs` | |
 | `/api/payment-terms/` | `IsAuthenticated` | (read-only) | |
-| `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` | |
+| `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` | also `send-defaults` (GET, IsAuth), `send` (POST, can_manage_jobs) |
 | `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` | |
 | `/api/tasks/` (job-side) | `IsAuthenticated` | `IsAuthenticated` | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
 | `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` | retrieve open to all |
@@ -101,7 +101,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/work-templates/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/task-templates/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/accounting-categories/` | `IsAuthenticated` | `can_manage_config` | |
-| `/api/invoices/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
+| `/api/invoices/` | `IsAuthenticated` | `can_manage_financials` | `send-defaults` (GET) IsAuth; `send` (POST) `can_manage_financials`. The legacy `send-to-qbo` was removed when the new send flow shipped. |
 | `/api/purchase-orders/` | `IsAuthenticated` | `can_manage_financials` | |
 | `/api/bills/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
 | `/api/price-list-items/` | `IsAuthenticated` | `can_manage_financials` | |

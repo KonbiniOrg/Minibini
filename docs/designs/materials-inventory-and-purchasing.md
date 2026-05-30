@@ -776,26 +776,44 @@ Job.objects.filter(materials__po_line_item__purchase_order=po).distinct()
 PDF contains PO number, vendor info, requested date, line items table
 (description, qty, units, price, line total), grand total.
 
-`PurchaseOrderEmailService.send_po(po, to, subject, body, user=None)`:
+`PurchaseOrderEmailService.send_po(po, to, subject, body, cc=None,
+bcc=None, extra_attachments=None, user=None)`:
 
 - If PO is `draft`, validates at least one line item and transitions to
   `issued` (sets `issued_date`).
-- Generates PDF and sends via `OutboundEmailService.send_email` with
-  `{po_number}.pdf` attached.
+- Generates PDF and sends via `OutboundEmailService.send_tracked` with
+  `associate_with={'purchase_order': po}` and `{po_number}.pdf`
+  auto-attached. The persisted outbound `EmailRecord` is what makes
+  the sent PO show up alongside the PO on the Email panel and
+  participate in reply correlation when the vendor replies. (Inbound
+  replies with `In-Reply-To` matching this outbound's Message-ID
+  auto-link to the same PO — see `architecture-and-conventions.md`
+  §7.11.) SMTP failures re-raise after the outbound EmailRecord has
+  captured `last_send_error`.
 - Writes a `HistoryEntry` recording the send.
 
 `PurchaseOrderEmailService.get_email_defaults(po)` reads
 `Configuration['po_email_subject_template']` and
 `Configuration['po_email_body_template']` (falls back to
-`DEFAULT_SUBJECT` / `DEFAULT_BODY`). Placeholders `{po_number}`,
-`{vendor_name}` are substituted.
+`DEFAULT_SUBJECT` / `DEFAULT_BODY`). Rendering goes through
+`apps.core.email_templates.render_email_template` for safe handling
+of unknown placeholders. The legacy `{po_number}` / `{vendor_name}`
+keep working; the common set
+(`{contact_fname}`, `{contact_lname}`, `{contact_business}`,
+`{our_user_name}`, `{our_business_name}`, `{document_number}`) is
+also available. Defaults also include an `attachments_preview` list
+so the send page can render the auto-attached PDF in the form.
 
 API:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/purchase-orders/{id}/send-defaults/` | Pre-populated email fields |
-| `POST` | `/api/purchase-orders/{id}/send/` | Issue (if draft) and send |
+| `GET` | `/api/purchase-orders/{id}/send-defaults/` | Pre-populated email fields + attachments_preview |
+| `POST` | `/api/purchase-orders/{id}/send/` | Issue (if draft) and send. Accepts multipart `attachments` files in addition to `to`/`subject`/`body`/`cc`/`bcc`. Returns 400 on validation, 502 on SMTP failure (the outbound EmailRecord persists either way). |
+
+SPA route: `/purchase-orders/:id/send` (`PurchaseOrderSendPage.svelte`).
+The previous `SendPODialog` inline modal has been removed; the detail
+page's Send button navigates to this route instead.
 
 ---
 

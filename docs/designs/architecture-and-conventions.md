@@ -825,6 +825,88 @@ one-liners. `EmailService.associate_with_job` and
 delegate to the parameterized pair; callers that already used the
 job-specific names keep working unchanged.
 
+### 7.10 Outbound email tracking
+
+Outbound documents (Estimate / PO / Invoice send) persist an
+`EmailRecord` with `direction='outbound'` at send time. The flow is
+owned by `OutboundEmailService.send_tracked` in `apps/core/services.py`:
+
+1. Generate a Message-ID we control —
+   `<minibini-<uuid4-hex>@<our_domain>>` — where `our_domain` is the
+   eponymous Configuration key (default `example.com` until tenancy
+   lands). Set as the outgoing message's `Message-ID` header so
+   customer replies' `In-Reply-To` round-trips back to a row we own.
+2. Persist the `EmailRecord` (direction=outbound, message_id, the
+   association FK passed in `associate_with={'job'|'purchase_order'|
+   'bill': obj}`) + a `TempEmail` row holding the composed
+   subject/from/to/cc/bcc/body and the attachments_metadata. Both
+   committed in a single transaction *before* SMTP runs.
+3. Call `EmailMessage.send()`. On success, set `sent_at=now()`. On
+   failure, save the exception's message into `last_send_error` and
+   re-raise — the row persists for the user to retry.
+4. Retry semantics: `send_tracked` finds the most recent
+   `direction='outbound', sent_at=null` row for the same target and
+   reuses it (same `message_id`, updated body/subject/etc from the
+   current call). PDFs are regenerated on every attempt; user
+   uploads come from the multipart POST. No drafts.
+
+The per-document send services that wrap this:
+- `EstimateEmailService` (`apps/estimates/services.py`) — generates
+  the PDF, calls `send_tracked` with `associate_with={'job': …}`,
+  transitions `draft → open` on send success.
+- `PurchaseOrderEmailService.send_po` (`apps/purchasing/services.py`)
+  — same shape but `associate_with={'purchase_order': …}` and
+  `draft → issued`.
+- `InvoiceEmailService.send_invoice` (`apps/invoicing/services.py`)
+  — adds the QBO push step before SMTP (skipped if `invoice.qbo_id`
+  is already set — fixes the duplicate-push-on-retry bug),
+  auto-attaches both the QBO-rendered invoice PDF and the local Job
+  Statement PDF, transitions `draft → open`.
+
+Body / subject templates live as `Configuration` keys
+(`estimate_email_subject_template`, `estimate_email_body_template`,
+`po_email_*`, `invoice_email_*`). Rendering goes through
+`apps.core.email_templates.render_email_template` — a safe
+`str.format_map` wrapper that leaves unknown `{placeholders}`
+literal so user-edited templates can't crash a send. Variables shared
+across all three document types: `{contact_fname}`, `{contact_lname}`,
+`{contact_business}`, `{our_user_name}`, `{our_business_name}`,
+`{job_number}`, `{job_name}`, `{document_number}`. Per-document
+aliases (`{estimate_number}`, `{po_number}`, `{invoice_number}`,
+`{vendor_name}`) also work.
+
+### 7.11 Reply correlation
+
+`EmailService.correlate_reply(email_record)` runs at the tail of
+`fetch_new_emails` and `fetch_emails_by_date_range`, after the
+inbound `EmailRecord` + `TempEmail` are created. It walks
+`TempEmail.in_reply_to` first, then the `references` chain
+right-to-left, looking up each token against existing
+`EmailRecord.message_id`. The first parent found wins; its non-null
+`job` / `purchase_order` / `bill` FKs are copied onto the new reply
+EmailRecord. Behavior is silent — no "auto-linked via reply" badge;
+the action panel's existing Disassociate handles any mis-correlated
+auto-links.
+
+The `TempEmail` rows that drive this gain three columns:
+`in_reply_to` (CharField, captures the immediate parent's
+Message-ID), `references` (TextField, captures the full thread
+chain), and `bcc_email` (TextField, populated only on outbound rows
+since IMAP-fetched inbound can't see BCC).
+
+### 7.12 SPA send pages
+
+The send compose surface is a per-document route
+(`/estimates/:id/send`, `/purchase-orders/:id/send`,
+`/invoices/:id/send`). Each wraps the shared
+`frontend/src/components/email/DocumentSendForm.svelte` (To / CC /
+BCC / Subject / Body / Attachments-with-remove-checkboxes /
+Add-attachment / Send button with native `confirm()`), fetches its
+own `send-defaults` for prefill, and renders a focused read-only
+document summary below the form. Submit POSTs as
+`multipart/form-data` via `api.postMultipart()` in `lib/api.js` —
+the new sibling of the JSON `api.post()`.
+
 ---
 
 ## 8. Sidebar nav
