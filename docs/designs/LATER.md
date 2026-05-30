@@ -21,6 +21,20 @@ proper issue.
 
 ## Open
 
+- **Customer-facing public URLs for documents (`{object_url}` real resolution).** — _added 2026-05-29_
+  The Estimate / PO / Invoice send templates support an `{object_url}` placeholder today,
+  resolved against the `our_public_url` Configuration key as
+  `<our_public_url>/<entity-path>/<id>`. The URL is a stub — internal IDs aren't customer-
+  reachable, no public view exists, no auth model is in place. The real feature needs:
+  (1) signed tokens or per-document `public_token` columns so URLs aren't guessable;
+  (2) public read views per document type (Estimate / PO / Invoice / Bill), styled for
+  the customer; (3) for Estimates, a public accept/reject API surface. Once the real
+  resolution is in place, `build_object_url` in `apps.core.email_templates` swaps from
+  the stub URL to the signed-token URL and existing user-authored boilerplate keeps
+  working unchanged. _Done when:_ the feature has shipped end-to-end and a customer
+  can click a Send-Email URL and view-then-accept an Estimate without a Minibini
+  account.
+
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global
   `lib/api.js` overlay, some via inline `<p><strong>Error:</strong> {message}</p>` rows

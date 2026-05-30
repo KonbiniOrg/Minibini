@@ -907,6 +907,65 @@ document summary below the form. Submit POSTs as
 `multipart/form-data` via `api.postMultipart()` in `lib/api.js` —
 the new sibling of the JSON `api.post()`.
 
+### 7.13 Reply composer
+
+`frontend/src/routes/email/EmailReplyPage.svelte` is the SPA route
+for replying to an inbound email. Single route at `/email/:id/reply`
+that reads `?mode=all` from the query string to switch between Reply
+and Reply All. Both modes reuse the same `DocumentSendForm.svelte`
+with no auto-attached PDFs; the only mode-dependent prefill is the
+CC value (blank for Reply, the precomputed `reply_all_cc` for Reply
+All).
+
+Backend endpoints:
+
+- `GET /api/emails/{id}/reply-defaults/` — returns the prefilled
+  form payload: `to` (parent's parsed from-email), `cc` (blank),
+  `bcc` (blank), `reply_all_cc` (parent's to + cc minus
+  `EMAIL_HOST_USER`, deduped, original order), `subject`
+  (single-`Re: ` prefix via `build_reply_subject`), `body`
+  (quoted-original block via `build_reply_body`), `in_reply_to`
+  (parent's `message_id`), `references` (parent's references chain
+  extended with the parent's own message_id), and
+  `inherit_associations` (the parent's `job_id` /
+  `purchase_order_id` / `bill_id`).
+- `POST /api/emails/{id}/reply/` — accepts multipart form data,
+  echoes the threading headers + first non-null inherited
+  association FK back as `associate_with`, delegates to
+  `OutboundEmailService.send_tracked`. Returns
+  `{email_record_id}` on success, 400 on missing To, 502 on SMTP
+  failure (the outbound row's `last_send_error` captures the
+  reason).
+
+Both endpoints are `IsAuthenticated` — no atom required (replying
+is the email reader's own words; not a permission decision).
+
+The reply correlation pass (§7.11) runs unchanged on the inbound
+side: customer's reply to our outbound auto-links to the same Job
+/ PO / Bill the outbound was associated with.
+
+### 7.14 Outbound email — single entry point
+
+`OutboundEmailService.send_tracked` is the sole way to send email
+from this codebase. The earlier `send_email` SMTP-wrapper sibling
+has been removed; its `EmailMessage` construction is inlined into
+`send_tracked` where it's the only thing that did anything anyway.
+
+Every outbound flow — document sends (Estimate / PO / Invoice) and
+replies — routes through `send_tracked`, which guarantees an
+`EmailRecord` row exists before SMTP fires, a Message-ID is
+generated and persisted, and SMTP failures leave a "needs retry"
+row that the user can re-submit from.
+
+The `{object_url}` placeholder in document-send templates resolves
+through `apps.core.email_templates.build_object_url(kind, obj_id)`
+to `<our_public_url>/<entity-path>/<id>`, where `our_public_url` is
+a Configuration key (default `https://example.com`). These URLs
+don't currently serve unauthenticated customers — they're stub-
+shaped so user-authored boilerplate has a sensible placeholder. The
+real customer-facing public URL feature is a deferred follow-up;
+the stub resolution flips to signed tokens when that work lands.
+
 ---
 
 ## 8. Sidebar nav

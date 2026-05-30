@@ -114,6 +114,8 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/emails/{id}/link-to-job/` etc. | — | `can_manage_jobs` | link-to-job, unlink-from-job, create-job |
 | `/api/emails/{id}/link-to-po/` etc. | — | `can_manage_financials` | link-to-po, unlink-from-po, create-po |
 | `/api/emails/{id}/link-to-bill/` etc. | — | `can_manage_financials` | link-to-bill, unlink-from-bill |
+| `/api/emails/{id}/reply-defaults/` | `IsAuthenticated` | — | Pre-populated form payload for Reply / Reply All |
+| `/api/emails/{id}/reply/` | — | `IsAuthenticated` | POST a reply (multipart); delegates to `send_tracked` |
 | `/api/search/` | `IsAuthenticated` | — | |
 | `/api/jobs/board/*` | `IsAuthenticated` | — | one bulk reorder endpoint requires `can_manage_jobs` |
 | `/api/home/` | `IsAuthenticated` | — | |
