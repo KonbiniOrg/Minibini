@@ -80,9 +80,11 @@
     try {
       const all = await api.get('/api/settings/');
       const next = {};
+      // Pre-fill with the built-in default when no Configuration row
+      // exists; the user edits in place instead of starting from blank.
       for (const t of TEMPLATES) {
-        next[t.subject.key] = all[t.subject.key] ?? '';
-        next[t.body.key] = all[t.body.key] ?? '';
+        next[t.subject.key] = all[t.subject.key] ?? t.subject.default;
+        next[t.body.key] = all[t.body.key] ?? t.body.default;
       }
       values = next;
     } catch (e) {
@@ -117,8 +119,8 @@
   <h3>Email Templates</h3>
   <p>
     Boilerplate subject and body used when sending an Estimate, Purchase Order, or
-    Invoice via email. Leave a field blank to use the built-in default shown as
-    the placeholder. Each field has its own Save button.
+    Invoice via email. Each field starts with the built-in default text and is
+    fully editable. Each field has its own Save button.
   </p>
 
   {#if loading}
@@ -137,7 +139,6 @@
             id={t.subject.key}
             class="template-input"
             bind:value={values[t.subject.key]}
-            placeholder={t.subject.default}
           >
         </p>
         <p>
@@ -156,7 +157,6 @@
             class="template-textarea"
             rows="8"
             bind:value={values[t.body.key]}
-            placeholder={t.body.default}
           ></textarea>
         </p>
         <p>
