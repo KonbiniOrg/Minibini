@@ -186,3 +186,32 @@ class EstimateSendTest(BaseTestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_send_defaults_resolves_object_url_placeholder(self):
+        """Body templates can include {object_url} — it resolves to the
+        configured customer-facing URL for this estimate."""
+        from apps.core.models import Configuration
+        Configuration.objects.update_or_create(
+            key='our_public_url',
+            defaults={'value': 'https://customer.nealscnc.com'},
+        )
+        Configuration.objects.update_or_create(
+            key='estimate_email_body_template',
+            defaults={'value': 'Hi {contact_fname}, see {object_url}'},
+        )
+        response = self.client.get(f'/api/estimates/{self.estimate.pk}/send-defaults/')
+        self.assertEqual(response.status_code, 200)
+        expected_url = f'https://customer.nealscnc.com/estimates/{self.estimate.estimate_id}'
+        self.assertIn(expected_url, response.data['body'])
+
+    def test_send_defaults_object_url_defaults_to_example_com(self):
+        """Without an our_public_url Config row, fall back to example.com."""
+        from apps.core.models import Configuration
+        Configuration.objects.filter(key='our_public_url').delete()
+        Configuration.objects.update_or_create(
+            key='estimate_email_body_template',
+            defaults={'value': '{object_url}'},
+        )
+        response = self.client.get(f'/api/estimates/{self.estimate.pk}/send-defaults/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('https://example.com/estimates/', response.data['body'])

@@ -284,6 +284,7 @@ class EstimateEmailService:
         if contact and contact.business:
             contact_business = contact.business.business_name
 
+        from apps.core.email_templates import build_object_url
         values = {
             'contact_fname': contact.first_name if contact else '',
             'contact_lname': contact.last_name if contact else '',
@@ -294,6 +295,7 @@ class EstimateEmailService:
             'job_name': job.name if job else '',
             'document_number': estimate.estimate_number,
             'estimate_number': estimate.estimate_number,
+            'object_url': build_object_url('estimate', estimate.estimate_id),
         }
 
         subject = render_email_template(subject_template, **values)

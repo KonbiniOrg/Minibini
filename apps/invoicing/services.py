@@ -176,6 +176,7 @@ class InvoiceEmailService:
         if contact and contact.business:
             contact_business = contact.business.business_name
 
+        from apps.core.email_templates import build_object_url
         values = {
             'contact_fname': contact.first_name if contact else '',
             'contact_lname': contact.last_name if contact else '',
@@ -186,6 +187,7 @@ class InvoiceEmailService:
             'job_name': job.name if job else '',
             'document_number': invoice.invoice_number,
             'invoice_number': invoice.invoice_number,
+            'object_url': build_object_url('invoice', invoice.invoice_id),
         }
         subject = render_email_template(subject_template, **values)
         body = render_email_template(body_template, **values)

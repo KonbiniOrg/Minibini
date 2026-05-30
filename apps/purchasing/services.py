@@ -627,6 +627,7 @@ class PurchaseOrderEmailService:
             our_business_name = Configuration.objects.get(key='our_business_name').value
         except Configuration.DoesNotExist:
             our_business_name = ''
+        from apps.core.email_templates import build_object_url
         common = {
             'contact_fname': contact_fname,
             'contact_lname': contact_lname,
@@ -634,6 +635,7 @@ class PurchaseOrderEmailService:
             'our_user_name': '',
             'our_business_name': our_business_name,
             'document_number': po.po_number,
+            'object_url': build_object_url('purchase_order', po.po_id),
         }
         all_values = {**common, **replacements}
         subject = render_email_template(subject_template, **all_values)
