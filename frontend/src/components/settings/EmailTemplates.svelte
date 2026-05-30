@@ -118,8 +118,7 @@
   <h3>Email Templates</h3>
   <p>
     Boilerplate subject and body used when sending an Estimate, Purchase Order, or
-    Invoice via email. Each field starts with the built-in default text and is
-    fully editable. Each field has its own Save button.
+    Invoice via email.
   </p>
 
   <fieldset class="template-block">
