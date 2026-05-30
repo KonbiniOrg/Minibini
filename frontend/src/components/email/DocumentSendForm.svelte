@@ -14,8 +14,8 @@
   } = $props();
 
   let to = $state(sendDefaults?.to || '');
-  let cc = $state('');
-  let bcc = $state('');
+  let cc = $state(sendDefaults?.cc || '');
+  let bcc = $state(sendDefaults?.bcc || '');
   let subject = $state(sendDefaults?.subject || '');
   let body = $state(sendDefaults?.body || '');
 
