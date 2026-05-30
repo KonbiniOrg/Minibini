@@ -1,6 +1,7 @@
+from unittest.mock import patch, MagicMock
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User, HistoryEntry
+from apps.core.models import User, HistoryEntry, EmailRecord
 from apps.purchasing.models import PurchaseOrder, Bill
 
 
@@ -293,6 +294,64 @@ class PurchaseOrderAPITest(BaseTestCase):
             f'/api/purchase-orders/{po.po_id}/issue/', format='json'
         )
         self.assertEqual(response.status_code, 403)
+
+
+class PurchaseOrderSendRetrofitTest(BaseTestCase):
+    """Retrofitted PO send: routes through OutboundEmailService.send_tracked,
+    so an outbound EmailRecord is persisted and linked to the PO."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.purchasing.models import PurchaseOrderLineItem
+        from apps.contacts.models import Business, Contact
+        self.client = APIClient()
+        self.admin = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.admin)
+        vendor_contact = Contact.objects.create(
+            first_name='Vendor', last_name='Rep',
+            email='vendor-rep@example.com', mobile_number='555',
+        )
+        vendor = Business.objects.create(
+            business_name='Vendor Inc.', default_contact=vendor_contact,
+        )
+        vendor_contact.business = vendor
+        vendor_contact.save()
+        self.po = PurchaseOrder.objects.create(
+            po_number='PO-SEND-RT-1', business=vendor, contact=vendor_contact,
+            status=PurchaseOrder.STATUS_DRAFT,
+        )
+        PurchaseOrderLineItem.objects.create(
+            purchase_order=self.po,
+            line_number=1, qty='1.00', units='ea',
+            description='Test', price='10.00',
+        )
+
+    @patch('apps.purchasing.pdf.generate_purchase_order_pdf')
+    @patch('django.core.mail.EmailMessage')
+    def test_send_persists_outbound_email_record(self, MockEmailMessage, mock_pdf):
+        MockEmailMessage.return_value = MagicMock()
+        mock_pdf.return_value = b'%PDF-fake'
+
+        response = self.client.post(
+            f'/api/purchase-orders/{self.po.po_id}/send/',
+            {
+                'to': 'vendor@example.com',
+                'subject': 'PO Send Test',
+                'body': 'See attached.',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        # PO transitioned draft -> issued (existing behavior preserved).
+        self.po.refresh_from_db()
+        self.assertEqual(self.po.status, PurchaseOrder.STATUS_ISSUED)
+
+        # Outbound EmailRecord exists, linked to this PO.
+        outbound = EmailRecord.objects.get(
+            direction=EmailRecord.OUTBOUND, purchase_order=self.po,
+        )
+        self.assertIsNotNone(outbound.sent_at)
 
 
 class BillAPITest(BaseTestCase):

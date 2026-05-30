@@ -613,22 +613,60 @@ class PurchaseOrderEmailService:
             'vendor_name': vendor_name,
         }
 
-        subject = subject_template.format(**replacements)
-        body = body_template.format(**replacements)
+        # Extend the legacy {po_number} / {vendor_name} variables with the
+        # common set used by Estimate and Invoice templates, via the safe
+        # render helper (unknown placeholders pass through unchanged).
+        from apps.core.email_templates import render_email_template
+        contact = po.contact
+        contact_fname = contact.first_name if contact else ''
+        contact_lname = contact.last_name if contact else ''
+        contact_business = ''
+        if contact and contact.business:
+            contact_business = contact.business.business_name
+        try:
+            our_business_name = Configuration.objects.get(key='our_business_name').value
+        except Configuration.DoesNotExist:
+            our_business_name = ''
+        common = {
+            'contact_fname': contact_fname,
+            'contact_lname': contact_lname,
+            'contact_business': contact_business,
+            'our_user_name': '',
+            'our_business_name': our_business_name,
+            'document_number': po.po_number,
+        }
+        all_values = {**common, **replacements}
+        subject = render_email_template(subject_template, **all_values)
+        body = render_email_template(body_template, **all_values)
 
         to = ''
         if po.contact and po.contact.email:
             to = po.contact.email
 
-        return {'to': to, 'subject': subject, 'body': body}
+        attachments_preview = [
+            {'filename': f'{po.po_number}.pdf',
+             'content_type': 'application/pdf', 'size': 0},
+        ]
+        return {
+            'to': to, 'subject': subject, 'body': body,
+            'attachments_preview': attachments_preview,
+        }
 
     @staticmethod
-    def send_po(po, to, subject, body, user=None):
+    def send_po(po, to, subject, body, cc=None, bcc=None,
+                extra_attachments=None, user=None):
         """
-        Send a PO as a PDF attachment via email.
+        Send a PO as a PDF attachment via email through the tracked
+        outbound flow (an outbound EmailRecord is persisted, linked to
+        this PO; the email_records relation makes it show up in the Job
+        overview Email panel and reply-correlation chain).
+
         If the PO is in draft status, it is issued first.
-        Creates a HistoryEntry recording the send.
         Returns the updated PO.
+
+        Raises ValidationError for missing recipient / no line items /
+        invalid status. SMTP failures re-raise after the outbound
+        EmailRecord has captured last_send_error.
         """
         from apps.core.models import HistoryEntry
         from apps.core.services import OutboundEmailService
@@ -660,14 +698,14 @@ class PurchaseOrderEmailService:
 
         pdf_bytes = generate_purchase_order_pdf(po)
         filename = f'{po.po_number}.pdf'
+        attachments = [(filename, pdf_bytes, 'application/pdf')]
+        if extra_attachments:
+            attachments.extend(extra_attachments)
 
-        to_list = to if isinstance(to, list) else [to]
-
-        OutboundEmailService.send_email(
-            to=to_list,
-            subject=subject,
-            body=body,
-            attachments=[(filename, pdf_bytes, 'application/pdf')],
+        OutboundEmailService.send_tracked(
+            to=to, subject=subject, body=body,
+            cc=cc, bcc=bcc, attachments=attachments,
+            associate_with={'purchase_order': po},
         )
 
         HistoryEntry.objects.create(
@@ -675,7 +713,7 @@ class PurchaseOrderEmailService:
             object_type='purchaseorder',
             object_id=po.pk,
             user=user,
-            changes={'_action': f'PO emailed to {", ".join(to_list)}'},
+            changes={'_action': f'PO emailed to {", ".join(to)}'},
         )
 
         return po
