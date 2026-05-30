@@ -44,25 +44,38 @@ public URL feature lands.
 ### 2.1 Entry point
 
 `EmailActionPanel.svelte` gains a new section at the top of the rail,
-above the existing Job / Purchase Order / Bill grouping. Single styled
-`<a>` element labelled "Reply" that routes to `#/email/:id/reply`.
+above the existing Job / Purchase Order / Bill grouping. Two styled
+`<a>` elements:
+
+- **Reply** → `#/email/:id/reply`
+- **Reply All** → `#/email/:id/reply?mode=all`
+
 Visible to any authenticated user (no permission atom required —
 anyone reading the email can reply; the body is their own words).
+Reply All is shown unconditionally; when the parent has no other
+recipients, clicking it prefills CC with an empty list, same as
+Reply.
 
 ### 2.2 Route + page
 
 New SPA route `/email/:id/reply` mounting
-`frontend/src/routes/email/EmailReplyPage.svelte`. The page:
+`frontend/src/routes/email/EmailReplyPage.svelte`. The page reads
+`?mode=all` from the query string to decide between Reply and Reply
+All. Then:
 
 1. Fetches `/api/emails/:id/` (the parent email record + its temp body
    and content) and `/api/emails/:id/reply-defaults/` (the prefilled
    form payload — see §2.4) in parallel.
-2. Mounts the existing `DocumentSendForm.svelte` with no
+2. Builds the form prefill from the response: in Reply mode the
+   page uses `cc=''`; in Reply All mode it uses `cc=reply_all_cc`.
+   The rest of the prefill is identical (To, Subject, body,
+   threading headers, association FKs).
+3. Mounts the existing `DocumentSendForm.svelte` with no
    auto-attached PDFs (`sendDefaults.attachments_preview = []`),
-   prefilled with the reply-defaults response.
-3. Submit POSTs `multipart/form-data` to
+   prefilled with the chosen values.
+4. Submit POSTs `multipart/form-data` to
    `/api/emails/:id/reply/` via `api.postMultipart`.
-4. On success, navigates back to the parent email detail page
+5. On success, navigates back to the parent email detail page
    (`#/email/:id`). On failure, the form-page surface stays open with
    the error visible (`DocumentSendForm`'s existing pattern).
 
@@ -92,6 +105,7 @@ multipart `attachments` files in addition to the JSON body fields
   "to": "jane@customer.com",
   "cc": "",
   "bcc": "",
+  "reply_all_cc": "proc@customer.com, ops@customer.com",
   "subject": "Re: Quote for bracket",
   "body": "\n\nOn Wed, May 28, 2026 at 9:32 AM, Jane Doe <jane@customer.com> wrote:\n> Hi,\n> \n> Could you quote 50 brackets…\n",
   "in_reply_to": "<parent-message-id@gmail.com>",
@@ -101,8 +115,15 @@ multipart `attachments` files in addition to the JSON body fields
 ```
 
 - **`to`** — parent `temp_email.from_email`.
-- **`cc`** / **`bcc`** — blank by default. (Reply-All is out of scope;
-  the user types CCs themselves if needed.)
+- **`cc`** / **`bcc`** — blank. Reply uses these as-is.
+- **`reply_all_cc`** — comma-separated string. Reply All uses this
+  as the CC value. Computed from the parent's `temp_email.to_email`
+  plus `temp_email.cc_email`, minus our own address (the configured
+  `EMAIL_HOST_USER`), de-duplicated, preserving order from the
+  original headers (To first, then CC). Empty string when there are
+  no other recipients. (Robust handling of multiple "our own"
+  addresses / aliases is deferred — single-address stripping is the
+  common case.)
 - **`subject`** — see §2.5.
 - **`body`** — quoted-original block; see §2.6.
 - **`in_reply_to`** — parent's `message_id` (the value we'll set on
@@ -320,15 +341,24 @@ document-send pages in the prior spec) is the durable replacement.
   cover `in_reply_to` / `references` flowing through to both the
   outgoing message headers and the persisted `TempEmail`.
 - **`tests/test_api_email.py`** — new endpoint tests:
-  - `reply-defaults` returns the expected shape (to/cc/bcc, subject
-    Re-prefixed, body with quoted original, in_reply_to /
-    references / inherit_associations).
+  - `reply-defaults` returns the expected shape (to/cc/bcc,
+    `reply_all_cc`, subject Re-prefixed, body with quoted original,
+    in_reply_to / references / inherit_associations).
+  - `reply-defaults` `reply_all_cc` computation: dedupes addresses
+    that appear in both To and CC; strips the configured
+    `EMAIL_HOST_USER` from the list; preserves original order
+    (To-then-CC) for the remainder.
+  - `reply-defaults` `reply_all_cc` is empty when the parent had no
+    other recipients besides us.
   - `reply-defaults` for a parent with no `text_body` returns the
     placeholder body.
   - `reply-defaults` 404 for unknown email.
   - `reply` happy path: creates an outbound EmailRecord linked to
     the parent's Job (or PO/Bill); sets in_reply_to / references
     headers on the outbound TempEmail; navigates back.
+  - `reply` with a populated CC field persists those addresses on
+    the outbound TempEmail (covers the Reply-All path — the
+    endpoint is the same).
   - `reply` accepts uploaded attachments.
   - `reply` for a parent with no associations leaves the outbound
     unassociated.
@@ -398,21 +428,23 @@ document-send pages in the prior spec) is the durable replacement.
    spec when it's time. The `our_public_url` Configuration key here
    is the stub.
 
-2. **Reply-All.** Replying to the original sender plus all original
-   CCs. The reply composer's `CC` field is editable, so the user can
-   paste them manually; auto-fill is the YAGNI.
-
-3. **Forward.** Different prefill (no recipient, `Fwd:` subject,
+2. **Forward.** Different prefill (no recipient, `Fwd:` subject,
    body becomes the quoted original, original attachments included).
    Worth doing eventually; not needed for reply-correlation parity
    with mail clients.
 
-4. **Drafts.** Saved-but-unsent state for reply composition. Same
+3. **Drafts.** Saved-but-unsent state for reply composition. Same
    answer as the document-send spec: no for v1, re-evaluate if
    actual complaints surface about SMTP failure + page reload
    losing composed content.
 
-5. **Free-form new email composer.** Composing an outbound without
+4. **Free-form new email composer.** Composing an outbound without
    an inbound parent. Explicitly dropped during brainstorming; the
    document-send paths and reply path cover what the user actually
    needs.
+
+5. **Multiple "our own" addresses for Reply-All filtering.** The
+   spec strips only the single `EMAIL_HOST_USER` from the
+   Reply-All CC list. If we ever poll multiple accounts or
+   accept multiple aliases, the user might see their own alias
+   end up in the CC — fix when it surfaces.
