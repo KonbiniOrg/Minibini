@@ -244,6 +244,51 @@ class SendTrackedTest(TestCase):
             {'filename': 'drawing.png', 'content_type': 'image/png', 'size': len(b'\x89PNG-1')},
         ])
 
+    @patch('django.core.mail.EmailMessage')
+    def test_send_tracked_threading_headers_flow_through(self, MockEmailMessage):
+        mock_msg = MagicMock()
+        mock_msg.extra_headers = {}
+        MockEmailMessage.return_value = mock_msg
+
+        record = OutboundEmailService.send_tracked(
+            to=['jane@example.com'],
+            subject='Re: Quote', body='Yes please.',
+            associate_with={'job': self.job},
+            in_reply_to='<parent-msg@example.com>',
+            references='<root@example.com> <parent-msg@example.com>',
+        )
+
+        # Headers set on the outgoing message.
+        self.assertEqual(mock_msg.extra_headers.get('In-Reply-To'),
+                         '<parent-msg@example.com>')
+        self.assertEqual(mock_msg.extra_headers.get('References'),
+                         '<root@example.com> <parent-msg@example.com>')
+
+        # Persisted on the outbound TempEmail.
+        temp = TempEmail.objects.get(email_record=record)
+        self.assertEqual(temp.in_reply_to, '<parent-msg@example.com>')
+        self.assertEqual(temp.references,
+                         '<root@example.com> <parent-msg@example.com>')
+
+    @patch('django.core.mail.EmailMessage')
+    def test_send_tracked_threading_kwargs_default_to_empty(self, MockEmailMessage):
+        """Existing document-send callers pass neither kwarg; nothing changes."""
+        mock_msg = MagicMock()
+        mock_msg.extra_headers = {}
+        MockEmailMessage.return_value = mock_msg
+
+        record = OutboundEmailService.send_tracked(
+            to=['jane@example.com'],
+            subject='Sub', body='Body',
+            associate_with={'job': self.job},
+        )
+
+        self.assertNotIn('In-Reply-To', mock_msg.extra_headers)
+        self.assertNotIn('References', mock_msg.extra_headers)
+        temp = TempEmail.objects.get(email_record=record)
+        self.assertEqual(temp.in_reply_to, '')
+        self.assertEqual(temp.references, '')
+
 
 class CorrelateReplyTest(TestCase):
     """EmailService.correlate_reply walks In-Reply-To / References against

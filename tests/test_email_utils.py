@@ -9,6 +9,8 @@ from apps.core.email_utils import (
     clean_subject_for_job_name,
     strip_quoted_reply,
     resolve_contact_links,
+    build_reply_subject,
+    build_reply_body,
 )
 from apps.contacts.models import Contact
 
@@ -603,3 +605,105 @@ class ResolveContactLinksTest(TestCase):
         # One Contact SELECT — not one per address.
         select_queries = [q for q in ctx.captured_queries if q['sql'].lstrip().lower().startswith('select')]
         self.assertEqual(len(select_queries), 1, select_queries)
+
+
+class BuildReplySubjectTest(TestCase):
+    """Strip existing Re:/Fwd: prefixes, prefix exactly one Re:."""
+
+    def test_bare_subject_gets_re_prefix(self):
+        self.assertEqual(build_reply_subject('Quote for bracket'), 'Re: Quote for bracket')
+
+    def test_already_re_prefixed_stays_single_re(self):
+        self.assertEqual(build_reply_subject('Re: Quote'), 'Re: Quote')
+
+    def test_repeated_re_collapses(self):
+        self.assertEqual(build_reply_subject('Re: Re: Re: Quote'), 'Re: Quote')
+
+    def test_fwd_prefix_replaced_by_re(self):
+        self.assertEqual(build_reply_subject('Fwd: Quote'), 'Re: Quote')
+
+    def test_mixed_re_and_fwd_collapses(self):
+        self.assertEqual(build_reply_subject('Re: Fwd: RE: Quote'), 'Re: Quote')
+
+    def test_case_insensitive(self):
+        self.assertEqual(build_reply_subject('RE: Quote'), 'Re: Quote')
+
+    def test_empty_subject_gets_no_subject_placeholder(self):
+        self.assertEqual(build_reply_subject(''), 'Re: (no subject)')
+        self.assertEqual(build_reply_subject(None), 'Re: (no subject)')
+
+    def test_whitespace_only_subject_becomes_no_subject(self):
+        self.assertEqual(build_reply_subject('   '), 'Re: (no subject)')
+
+
+class BuildReplyBodyTest(TestCase):
+    """Quoted-original block: blank lines for the user's reply, then
+    attribution line, then > -prefixed parent body."""
+
+    def _make_parent(self, *, from_email='Jane Doe <jane@example.com>',
+                     text_body='Hi,\n\nCould you quote 50 brackets?\n',
+                     date=None):
+        from apps.core.models import EmailRecord, TempEmail
+        from django.utils import timezone as tz
+        record = EmailRecord.objects.create(message_id='<parent@example.com>')
+        TempEmail.objects.create(
+            email_record=record,
+            uid='1',
+            subject='Quote',
+            from_email=from_email,
+            to_email='us@example.com',
+            date_sent=date or tz.now(),
+            text_body=text_body,
+        )
+        return record
+
+    def test_standard_quoted_original(self):
+        from datetime import datetime
+        from django.utils.timezone import make_aware
+        parent = self._make_parent(
+            date=make_aware(datetime(2026, 5, 28, 9, 32)),
+        )
+        body = build_reply_body(parent)
+        self.assertTrue(body.startswith('\n\n'), 'leading blank lines for reply space')
+        self.assertIn('On ', body)
+        self.assertIn('Jane Doe', body)
+        self.assertIn('jane@example.com', body)
+        self.assertIn('wrote:', body)
+        # Each line of the parent body gets > -prefixed.
+        self.assertIn('> Hi,', body)
+        self.assertIn('> Could you quote 50 brackets?', body)
+
+    def test_empty_text_body_falls_back_to_placeholder(self):
+        parent = self._make_parent(text_body='')
+        body = build_reply_body(parent)
+        self.assertIn('wrote:', body)
+        self.assertIn('> (original message unavailable)', body)
+
+    def test_already_quoted_parent_gets_re_prefixed(self):
+        """Nested quote lines become >> ... so the thread depth grows visibly."""
+        parent = self._make_parent(text_body='My reply.\n\n> Original line.\n')
+        body = build_reply_body(parent)
+        self.assertIn('> My reply.', body)
+        self.assertIn('> > Original line.', body)
+
+    def test_blank_lines_in_parent_become_bare_gt(self):
+        """Blank lines get > -prefixed too, preserving the visual gap."""
+        parent = self._make_parent(text_body='Line one\n\nLine three\n')
+        body = build_reply_body(parent)
+        # The empty middle line should appear as a bare '>' line.
+        self.assertRegex(body, r'> Line one\n>\n> Line three')
+
+    def test_no_display_name_uses_email_only_in_attribution(self):
+        parent = self._make_parent(from_email='jane@example.com')
+        body = build_reply_body(parent)
+        # Attribution still readable; the spec allows fewer angle brackets
+        # when there's no name to wrap.
+        self.assertIn('jane@example.com', body)
+        self.assertIn('wrote:', body)
+
+    def test_no_temp_data_returns_just_blank_lines(self):
+        from apps.core.models import EmailRecord
+        parent = EmailRecord.objects.create(message_id='<no-temp@example.com>')
+        body = build_reply_body(parent)
+        # No attribution we can build; just the reply-space blank lines.
+        self.assertEqual(body, '\n\n')

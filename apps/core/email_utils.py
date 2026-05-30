@@ -348,3 +348,75 @@ def resolve_contact_links(addresses):
         for email, matches in grouped.items()
         if len(matches) == 1
     }
+
+
+def build_reply_subject(parent_subject):
+    """Strip existing Re:/Fwd: prefixes and prefix exactly one ``Re: ``.
+
+    Reuses _SUBJECT_PREFIX_RE (already used by clean_subject_for_job_name).
+    Empty / whitespace-only input becomes ``Re: (no subject)``.
+    """
+    cleaned = (_SUBJECT_PREFIX_RE.sub('', parent_subject) if parent_subject else '').strip()
+    if not cleaned:
+        return 'Re: (no subject)'
+    return f'Re: {cleaned}'
+
+
+def build_reply_body(parent_email_record):
+    """Build the quoted-original body for a reply to ``parent_email_record``.
+
+    Output shape (standard mail-client convention, top-posted):
+
+        \\n
+        \\n
+        On <localized date>, <name> <<email>> wrote:
+        > <parent body line 1>
+        > <parent body line 2>
+        ...
+
+    Each line of ``parent.temp_data.text_body`` is prefixed with ``> ``,
+    including blank lines (which become a bare ``>``). When the parent
+    has no cached text body, the attribution still renders and the body
+    is a single ``> (original message unavailable)`` line. When the
+    parent has no ``temp_data`` at all (older email scrubbed from
+    cache), no attribution can be built — return just the two leading
+    blank lines so the user can still type a reply.
+    """
+    temp = getattr(parent_email_record, 'temp_data', None)
+    if not temp:
+        return '\n\n'
+
+    name, email = parse_email_address(temp.from_email or '')
+    if name:
+        sender = f'{name} <{email}>'
+    else:
+        sender = email or '(unknown)'
+
+    date = temp.date_sent
+    if date is not None:
+        # Mon, May 28, 2026 at 9:32 AM. %-d / %-I are GNU/BSD extensions
+        # (Mac and Linux); we don't run on Windows.
+        try:
+            date_str = date.strftime('%a, %b %-d, %Y at %-I:%M %p')
+        except ValueError:
+            # Defensive fallback if strftime rejects the format on some
+            # platform; ISO is at least readable.
+            date_str = date.isoformat()
+    else:
+        date_str = '(unknown date)'
+
+    attribution = f'On {date_str}, {sender} wrote:'
+
+    text_body = temp.text_body or ''
+    if text_body:
+        quoted_lines = []
+        for line in text_body.splitlines():
+            if line:
+                quoted_lines.append(f'> {line}')
+            else:
+                quoted_lines.append('>')
+        quoted_body = '\n'.join(quoted_lines)
+    else:
+        quoted_body = '> (original message unavailable)'
+
+    return f'\n\n{attribution}\n{quoted_body}'

@@ -1120,7 +1120,8 @@ class OutboundEmailService:
 
     @staticmethod
     def send_email(to, subject, body, cc=None, bcc=None, attachments=None,
-                   from_email=None, message_id=None):
+                   from_email=None, message_id=None,
+                   in_reply_to=None, references=None):
         """
         Send an email with optional CC, BCC, and file attachments.
 
@@ -1134,6 +1135,10 @@ class OutboundEmailService:
             from_email: sender address (optional, defaults to DEFAULT_FROM_EMAIL)
             message_id: explicit RFC 5322 Message-ID to set in the outgoing
                 headers (optional). When omitted, the SMTP relay assigns one.
+            in_reply_to: parent Message-ID for replies (optional). Sets the
+                ``In-Reply-To`` header.
+            references: thread chain (optional). Sets the ``References``
+                header.
         """
         from django.core.mail import EmailMessage
 
@@ -1148,6 +1153,10 @@ class OutboundEmailService:
 
         if message_id:
             msg.extra_headers['Message-ID'] = message_id
+        if in_reply_to:
+            msg.extra_headers['In-Reply-To'] = in_reply_to
+        if references:
+            msg.extra_headers['References'] = references
 
         for filename, content, mime_type in (attachments or []):
             msg.attach(filename, content, mime_type)
@@ -1183,7 +1192,8 @@ class OutboundEmailService:
 
     @staticmethod
     def send_tracked(*, to, subject, body, cc=None, bcc=None,
-                     attachments=None, associate_with=None):
+                     attachments=None, associate_with=None,
+                     in_reply_to=None, references=None):
         """Persist an outbound EmailRecord + TempEmail, attempt SMTP,
         record outcome. Returns the EmailRecord regardless of send success;
         on SMTP failure the exception is re-raised after persistence.
@@ -1197,6 +1207,10 @@ class OutboundEmailService:
             associate_with: dict of at most one of {'job': obj, 'purchase_order': obj,
                 'bill': obj}, used to set the EmailRecord's FK and to find any
                 pending retry row.
+            in_reply_to: parent Message-ID when this is a reply (optional).
+                Flows to the outgoing ``In-Reply-To`` header and the
+                outbound ``TempEmail.in_reply_to`` column.
+            references: thread References chain (optional). Same dual-use.
 
         Returns:
             EmailRecord (refreshed from DB).
@@ -1258,6 +1272,8 @@ class OutboundEmailService:
                 html_body='',
                 attachments_metadata=attachments_meta,
                 has_attachments=bool(attachments_meta),
+                in_reply_to=in_reply_to or '',
+                references=references or '',
             )
 
         # Step 2: SMTP attempt. On failure we update the row in a fresh
@@ -1267,6 +1283,7 @@ class OutboundEmailService:
                 to=to_list, subject=subject, body=body,
                 cc=cc_list, bcc=bcc_list, attachments=attachments,
                 message_id=email_record.message_id,
+                in_reply_to=in_reply_to, references=references,
             )
         except Exception as e:
             EmailRecord.objects.filter(pk=email_record.pk).update(
