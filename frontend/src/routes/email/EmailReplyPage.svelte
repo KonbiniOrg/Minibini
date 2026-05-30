@@ -2,6 +2,7 @@
   import { querystring, push } from 'svelte-spa-router';
   import { emailApi } from '../../lib/email.js';
   import DocumentSendForm from '../../components/email/DocumentSendForm.svelte';
+  import EmailContent from '../../components/email/EmailContent.svelte';
 
   const { params = {} } = $props();
 
@@ -99,37 +100,15 @@
 
   <section class="parent-ref">
     <h3>Original message</h3>
-    {#if parentEmail?.temp_email}
-      <table border="1">
-        <tbody>
-          <tr><th>From:</th><td>{parentEmail.temp_email.from_email}</td></tr>
-          <tr><th>To:</th><td>{parentEmail.temp_email.to_email}</td></tr>
-          {#if parentEmail.temp_email.cc_email}
-            <tr><th>CC:</th><td>{parentEmail.temp_email.cc_email}</td></tr>
-          {/if}
-          <tr><th>Subject:</th><td><strong>{parentEmail.temp_email.subject}</strong></td></tr>
-          <tr><th>Date:</th><td>{new Date(parentEmail.temp_email.date_sent).toLocaleString()}</td></tr>
-        </tbody>
-      </table>
-      {#if parentEmail.temp_email.text_body}
-        <pre class="original-body">{parentEmail.temp_email.text_body}</pre>
-      {/if}
-    {:else}
-      <p><em>(Original email metadata unavailable.)</em></p>
-    {/if}
+    <EmailContent
+      content={parentEmail?.content}
+      tempEmail={parentEmail?.temp_email}
+      emailRecord={parentEmail}
+      contactLinks={parentEmail?.contact_links}
+    />
   </section>
 {/if}
 
 <style>
   .parent-ref { color: #555; }
-  .parent-ref table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  .parent-ref th, .parent-ref td { padding: 4px 8px; }
-  .original-body {
-    white-space: pre-wrap;
-    margin-top: 8px;
-    padding: 8px;
-    background: #f5f5f5;
-    font-family: inherit;
-    font-size: 13px;
-  }
 </style>
