@@ -27,6 +27,16 @@ def _attachments_metadata(msg):
     ]
 
 
+def _header_value(msg, name):
+    """Pull a single header value from an imap_tools message; '' if missing.
+    Headers are stored as list-of-strings per name; we take the first item."""
+    raw = msg.headers.get(name, ())
+    if not raw:
+        return ''
+    value = raw[0] if isinstance(raw, (list, tuple)) else raw
+    return (value or '').strip()
+
+
 class ServiceError(Exception):
     """Base exception for service-layer errors."""
     pass
@@ -278,7 +288,14 @@ class EmailService:
                             text_body=getattr(msg, 'text', '') or '',
                             html_body=getattr(msg, 'html', '') or '',
                             attachments_metadata=_attachments_metadata(msg),
+                            in_reply_to=_header_value(msg, 'in-reply-to'),
+                            references=_header_value(msg, 'references'),
                         )
+
+                        # Auto-link to a parent's associations if In-Reply-To
+                        # or References points at one of our outbound rows.
+                        email_record.refresh_from_db()
+                        EmailService.correlate_reply(email_record)
 
                         stats['new'] += 1
 
@@ -492,7 +509,14 @@ class EmailService:
                             text_body=getattr(msg, 'text', '') or '',
                             html_body=getattr(msg, 'html', '') or '',
                             attachments_metadata=_attachments_metadata(msg),
+                            in_reply_to=_header_value(msg, 'in-reply-to'),
+                            references=_header_value(msg, 'references'),
                         )
+
+                        # Auto-link to a parent's associations if In-Reply-To
+                        # or References points at one of our outbound rows.
+                        email_record.refresh_from_db()
+                        EmailService.correlate_reply(email_record)
 
                         stats['new'] += 1
 
@@ -633,6 +657,58 @@ class EmailService:
     def disassociate_from_job(email_record_id):
         """Backwards-compatible shim — delegates to disassociate_from."""
         return EmailService.disassociate_from(email_record_id, 'job')
+
+    @staticmethod
+    def correlate_reply(email_record):
+        """Auto-link an inbound EmailRecord to its parent's associations,
+        when In-Reply-To or References points at one of our existing
+        EmailRecord.message_id values.
+
+        Walks In-Reply-To first (the immediate parent — wins on conflict),
+        then the References chain right-to-left (most recent first). The
+        first match's job / purchase_order / bill FKs are copied onto
+        `email_record` (any that are non-null on the parent).
+
+        Args:
+            email_record: the newly-fetched inbound EmailRecord. Must have a
+                ``temp_data`` row whose `in_reply_to` / `references` headers
+                were populated at fetch time.
+
+        No-op if no parent is found, or if the email_record has no temp_data.
+        """
+        temp = getattr(email_record, 'temp_data', None)
+        if not temp:
+            return
+
+        candidates = []
+        if temp.in_reply_to:
+            candidates.append(temp.in_reply_to.strip())
+        if temp.references:
+            # References is a space-separated chain; walk right-to-left so the
+            # most recent parent wins among References-only matches.
+            tokens = [t.strip() for t in temp.references.split() if t.strip()]
+            candidates.extend(reversed(tokens))
+
+        for token in candidates:
+            # Some clients add stray whitespace inside the brackets.
+            parent_id = token.strip()
+            try:
+                parent = EmailRecord.objects.get(message_id=parent_id)
+            except EmailRecord.DoesNotExist:
+                continue
+            # Copy non-null associations from the parent. Don't overwrite
+            # whatever might already be set on the reply (rare, but possible
+            # if someone manually pre-associated before the correlation pass).
+            updates = {}
+            for field in ('job_id', 'purchase_order_id', 'bill_id'):
+                parent_value = getattr(parent, field)
+                if parent_value and not getattr(email_record, field):
+                    updates[field] = parent_value
+            if updates:
+                EmailRecord.objects.filter(pk=email_record.pk).update(**updates)
+                for field, value in updates.items():
+                    setattr(email_record, field, value)
+            return  # Stop at the first parent found.
 
 
 class ReorderService:
@@ -1036,9 +1112,15 @@ class ConfigurationService:
 class OutboundEmailService:
     """Sends emails via SMTP with optional attachments."""
 
+    # Allowlist of association target fields for send_tracked.
+    _ASSOC_FIELDS = ('job', 'purchase_order', 'bill')
+
+    # Fallback Message-ID domain when no `our_domain` Configuration row exists.
+    DEFAULT_OUR_DOMAIN = 'example.com'
+
     @staticmethod
     def send_email(to, subject, body, cc=None, bcc=None, attachments=None,
-                   from_email=None):
+                   from_email=None, message_id=None):
         """
         Send an email with optional CC, BCC, and file attachments.
 
@@ -1050,6 +1132,8 @@ class OutboundEmailService:
             bcc: list of BCC addresses (optional)
             attachments: list of (filename, content_bytes, mime_type) tuples (optional)
             from_email: sender address (optional, defaults to DEFAULT_FROM_EMAIL)
+            message_id: explicit RFC 5322 Message-ID to set in the outgoing
+                headers (optional). When omitted, the SMTP relay assigns one.
         """
         from django.core.mail import EmailMessage
 
@@ -1062,7 +1146,136 @@ class OutboundEmailService:
             bcc=bcc or [],
         )
 
+        if message_id:
+            msg.extra_headers['Message-ID'] = message_id
+
         for filename, content, mime_type in (attachments or []):
             msg.attach(filename, content, mime_type)
 
         msg.send()
+
+    @staticmethod
+    def _resolve_our_domain():
+        try:
+            return Configuration.objects.get(key='our_domain').value
+        except Configuration.DoesNotExist:
+            return OutboundEmailService.DEFAULT_OUR_DOMAIN
+
+    @staticmethod
+    def _generate_message_id():
+        import uuid
+        domain = OutboundEmailService._resolve_our_domain()
+        return f'<minibini-{uuid.uuid4().hex}@{domain}>'
+
+    @staticmethod
+    def _find_pending_outbound(associate_with):
+        """Return the most recent outbound EmailRecord that's tied to the
+        same target and has sent_at=null (a previous failed attempt)."""
+        if not associate_with:
+            return None
+        field, target = next(iter(associate_with.items()))
+        qs = EmailRecord.objects.filter(
+            direction=EmailRecord.OUTBOUND,
+            sent_at__isnull=True,
+            **{f'{field}': target},
+        ).order_by('-created_at')
+        return qs.first()
+
+    @staticmethod
+    def send_tracked(*, to, subject, body, cc=None, bcc=None,
+                     attachments=None, associate_with=None):
+        """Persist an outbound EmailRecord + TempEmail, attempt SMTP,
+        record outcome. Returns the EmailRecord regardless of send success;
+        on SMTP failure the exception is re-raised after persistence.
+
+        Args:
+            to: list of recipient email addresses (or comma-separated str)
+            subject: email subject line
+            body: plain text email body
+            cc / bcc: list[str] or None
+            attachments: list of (filename, content_bytes, mime_type) tuples
+            associate_with: dict of at most one of {'job': obj, 'purchase_order': obj,
+                'bill': obj}, used to set the EmailRecord's FK and to find any
+                pending retry row.
+
+        Returns:
+            EmailRecord (refreshed from DB).
+
+        Raises:
+            ValueError: associate_with has an unknown field name.
+            Any exception SMTP raises (re-raised after persisting last_send_error).
+        """
+        if associate_with:
+            field = next(iter(associate_with.keys()))
+            if field not in OutboundEmailService._ASSOC_FIELDS:
+                raise ValueError(
+                    f'Unknown association field: {field!r}. '
+                    f'Expected one of {OutboundEmailService._ASSOC_FIELDS}.'
+                )
+
+        to_list = to if isinstance(to, (list, tuple)) else [
+            a.strip() for a in str(to).split(',') if a.strip()
+        ]
+        cc_list = list(cc or [])
+        bcc_list = list(bcc or [])
+
+        attachments_meta = [
+            {'filename': fn, 'content_type': ct, 'size': len(payload)}
+            for fn, payload, ct in (attachments or [])
+        ]
+
+        # Step 1: persistence — committed before SMTP so a failure leaves
+        # the row in place for the user to see and retry.
+        with transaction.atomic():
+            existing = OutboundEmailService._find_pending_outbound(associate_with)
+            if existing:
+                email_record = existing
+                email_record.last_send_error = ''
+                email_record.save(update_fields=['last_send_error'])
+                # Replace TempEmail with current form state.
+                TempEmail.objects.filter(email_record=email_record).delete()
+            else:
+                message_id = OutboundEmailService._generate_message_id()
+                assoc_kwargs = associate_with or {}
+                email_record = EmailRecord.objects.create(
+                    message_id=message_id,
+                    direction=EmailRecord.OUTBOUND,
+                    sent_at=None,
+                    last_send_error='',
+                    **assoc_kwargs,
+                )
+
+            TempEmail.objects.create(
+                email_record=email_record,
+                uid='',  # No IMAP UID for outbound
+                subject=subject,
+                from_email=getattr(settings, 'EMAIL_HOST_USER', '') or 'unknown@example.com',
+                to_email=', '.join(to_list),
+                cc_email=', '.join(cc_list),
+                bcc_email=', '.join(bcc_list),
+                date_sent=timezone.now(),
+                text_body=body or '',
+                html_body='',
+                attachments_metadata=attachments_meta,
+                has_attachments=bool(attachments_meta),
+            )
+
+        # Step 2: SMTP attempt. On failure we update the row in a fresh
+        # transaction so the error persists even though we re-raise.
+        try:
+            OutboundEmailService.send_email(
+                to=to_list, subject=subject, body=body,
+                cc=cc_list, bcc=bcc_list, attachments=attachments,
+                message_id=email_record.message_id,
+            )
+        except Exception as e:
+            EmailRecord.objects.filter(pk=email_record.pk).update(
+                last_send_error=str(e),
+            )
+            raise
+
+        EmailRecord.objects.filter(pk=email_record.pk).update(
+            sent_at=timezone.now(), last_send_error='',
+        )
+        email_record.refresh_from_db()
+        return email_record
