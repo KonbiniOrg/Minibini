@@ -1168,6 +1168,15 @@ that wrap it (EstimateEmailService, PurchaseOrderEmailService,
 InvoiceEmailService). Retry reuses the most recent failed outbound
 row for the same target, preserving its `message_id`.
 
+The three association FKs propagate within a thread when set: any
+link / create / correlate-reply path that sets a non-null FK on an
+EmailRecord also copies that FK to every other EmailRecord in the
+same RFC 5322 thread whose value for the same field is currently
+null. Pre-existing differing values are not overwritten. The
+association FKs are therefore not strictly per-email invariants —
+they're effectively per-thread, set per-email and propagated. See
+`architecture-and-conventions.md` §7.11a for the mechanism.
+
 Body, metadata, and threading headers live on the related `TempEmail`
 row (see `architecture-and-conventions.md` §7.7 / §7.10 / §7.11);
 they are not part of the EmailRecord invariants.

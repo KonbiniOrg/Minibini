@@ -351,3 +351,57 @@ class IMAPFetchPopulatesHeadersAndCorrelatesTest(TestCase):
         self.assertEqual(reply.temp_data.in_reply_to, '<outbound-by-us@example.com>')
         # Correlated to the same Job as the outbound parent
         self.assertEqual(reply.job, self.job)
+
+    @patch('apps.core.services.MailBox')
+    def test_correlation_propagates_to_orphaned_sibling(self, mock_mailbox_class):
+        """When correlate_reply links a new inbound, the propagation step
+        sweeps up any thread sibling that's still orphaned — closes the
+        gap that existed when only the new arrival was linked."""
+        from django.test.utils import override_settings
+
+        # An earlier inbound, somehow unlinked (the bug we're closing).
+        orphan = EmailRecord.objects.create(message_id='<orphan@example.com>')
+        TempEmail.objects.create(
+            email_record=orphan,
+            uid='orph',
+            from_email='bob@example.com', to_email='us@example.com',
+            date_sent=timezone.now(),
+            in_reply_to='<outbound-by-us@example.com>',
+            references='<outbound-by-us@example.com>',
+        )
+
+        # New inbound arrives, replying to the same outbound.
+        mock_msg = MagicMock()
+        mock_msg.uid = '99998'
+        mock_msg.headers = {
+            'message-id': ['<new-reply@example.com>'],
+            'in-reply-to': ['<orphan@example.com>'],
+            'references': ['<outbound-by-us@example.com> <orphan@example.com>'],
+        }
+        mock_msg.subject = 'Re: Quote'
+        mock_msg.from_ = 'bob@example.com'
+        mock_msg.to = ['us@example.com']
+        mock_msg.cc = []
+        mock_msg.date = timezone.now()
+        mock_msg.text = ''
+        mock_msg.html = ''
+        mock_msg.attachments = []
+
+        mock_mailbox = MagicMock()
+        mock_mailbox.fetch.return_value = [mock_msg]
+        mock_mailbox.__enter__.return_value = mock_mailbox
+        mock_mailbox_class.return_value.login.return_value = mock_mailbox
+
+        with override_settings(
+            EMAIL_IMAP_SERVER='imap.example.com',
+            EMAIL_HOST_USER='us@example.com',
+            EMAIL_HOST_PASSWORD='pw',
+        ):
+            from apps.core.services import EmailService
+            EmailService().fetch_new_emails()
+
+        new_reply = EmailRecord.objects.get(message_id='<new-reply@example.com>')
+        self.assertEqual(new_reply.job, self.job, 'new arrival gets Job')
+
+        orphan.refresh_from_db()
+        self.assertEqual(orphan.job, self.job, 'orphaned sibling swept up too')

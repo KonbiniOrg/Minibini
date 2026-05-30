@@ -621,7 +621,36 @@ class EmailService:
             )
         setattr(email_record, target_field, target)
         email_record.save()
+        EmailService.propagate_thread_association(email_record, target_field)
         return email_record
+
+    @staticmethod
+    def propagate_thread_association(email_record, target_field):
+        """Copy ``email_record.<target_field>`` to other EmailRecords in the
+        same RFC 5322 thread that have a NULL value for the same field.
+
+        No-op when email_record's own value is null (nothing to propagate)
+        or when target_field isn't in the allowlist. Does NOT overwrite a
+        non-null value on a sibling — that's a deliberate human choice the
+        propagation respects.
+
+        Uses bulk ``.update()`` — no per-row history entries. The user-
+        initiated event on the source email IS the audited action; the
+        propagated set is the implicit consequence the design promises.
+        """
+        if target_field not in EmailService._ASSOC_TARGETS:
+            return
+        source_value = getattr(email_record, f'{target_field}_id', None)
+        if source_value is None:
+            return
+        from apps.core.email_utils import collect_thread_member_ids
+        thread_pks = collect_thread_member_ids(email_record)
+        if not thread_pks:
+            return
+        EmailRecord.objects.filter(
+            pk__in=thread_pks,
+            **{f'{target_field}_id__isnull': True},
+        ).update(**{f'{target_field}_id': source_value})
 
     @staticmethod
     def disassociate_from(email_record_id, target_field):
@@ -708,7 +737,17 @@ class EmailService:
                 EmailRecord.objects.filter(pk=email_record.pk).update(**updates)
                 for field, value in updates.items():
                     setattr(email_record, field, value)
-            return  # Stop at the first parent found.
+                # Propagate each just-set FK to the rest of the thread —
+                # closes the gap where an earlier sibling was orphaned
+                # before this inbound's correlation linked the new arrival.
+                for field in updates:
+                    target_field = field.removesuffix('_id')
+                    EmailService.propagate_thread_association(email_record, target_field)
+                return  # Stop at the first parent that contributed something.
+            # Otherwise keep walking: the immediate parent had no FKs to
+            # copy; try the next candidate up the References chain. This
+            # is what lets a new reply inherit context from a grandparent
+            # when the immediate parent is itself orphaned.
 
 
 class ReorderService:

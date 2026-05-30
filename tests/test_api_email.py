@@ -884,3 +884,133 @@ class EmailReplyAPITest(BaseTestCase):
         )
         self.assertIsNone(outbound.sent_at)
         self.assertIn('connection refused', outbound.last_send_error)
+
+
+class ThreadPropagationAPITest(BaseTestCase):
+    """End-to-end: linking or creating-from-email any one email in a
+    thread cascades the new association to the rest of the thread."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.contacts.models import Contact, Business
+        self.client = APIClient()
+        self.admin = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.admin)
+        self.contact = Contact.objects.create(
+            first_name='Jane', last_name='Doe',
+            email='jane@customer.com', mobile_number='555',
+        )
+        self.business = Business.objects.create(
+            business_name='Customer Co', default_contact=self.contact,
+        )
+        self.contact.business = self.business
+        self.contact.save()
+
+    def _thread(self, n=3):
+        """Create a linear thread of n emails."""
+        from django.utils import timezone as tz
+        emails = []
+        for i in range(n):
+            mid = f'<prop-{i}@example.com>'
+            irt = f'<prop-{i-1}@example.com>' if i > 0 else ''
+            refs = ' '.join(f'<prop-{j}@example.com>' for j in range(i)) if i > 0 else ''
+            er = EmailRecord.objects.create(message_id=mid)
+            TempEmail.objects.create(
+                email_record=er,
+                uid=f'p{i}',
+                from_email='jane@customer.com', to_email='us@example.com',
+                date_sent=tz.now(),
+                in_reply_to=irt, references=refs,
+            )
+            emails.append(er)
+        return emails
+
+    def test_link_to_job_propagates_to_thread_siblings(self):
+        e1, e2, e3 = self._thread(3)
+        job = Job.objects.first()
+
+        response = self.client.post(
+            f'/api/emails/{e3.pk}/link-to-job/',
+            {'job_id': job.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.job, job)
+        self.assertEqual(e2.job, job)
+        self.assertEqual(e3.job, job)
+
+    def test_link_to_po_propagates(self):
+        from apps.purchasing.models import PurchaseOrder
+        e1, e2, e3 = self._thread(3)
+        po = PurchaseOrder.objects.create(
+            po_number='PO-PROP-API-1', business=self.business,
+        )
+
+        response = self.client.post(
+            f'/api/emails/{e2.pk}/link-to-po/',
+            {'po_id': po.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.purchase_order, po)
+        self.assertEqual(e2.purchase_order, po)
+        self.assertEqual(e3.purchase_order, po)
+
+    def test_link_to_bill_propagates(self):
+        from apps.purchasing.models import Bill
+        e1, e2, e3 = self._thread(3)
+        bill = Bill.objects.create(
+            vendor_invoice_number='B-PROP-API-1', business=self.business,
+        )
+
+        response = self.client.post(
+            f'/api/emails/{e1.pk}/link-to-bill/',
+            {'bill_id': bill.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.bill, bill)
+        self.assertEqual(e2.bill, bill)
+        self.assertEqual(e3.bill, bill)
+
+    def test_create_po_from_email_propagates(self):
+        e1, e2, e3 = self._thread(3)
+
+        response = self.client.post(
+            f'/api/emails/{e3.pk}/create-po/',
+            {'vendor_business_id': self.business.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        new_po_id = response.data['po_id']
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.purchase_order_id, new_po_id)
+        self.assertEqual(e2.purchase_order_id, new_po_id)
+        self.assertEqual(e3.purchase_order_id, new_po_id)
+
+    def test_pre_existing_link_to_different_job_is_preserved(self):
+        """If a sibling is already linked to Job A, linking another email
+        in the same thread to Job B leaves the sibling alone."""
+        e1, e2, e3 = self._thread(3)
+        job_a = Job.objects.first()
+        job_b = Job.objects.exclude(pk=job_a.pk).first()
+        self.assertIsNotNone(job_b, 'fixture must provide at least 2 jobs')
+
+        # E1 already linked to job_a.
+        e1.job = job_a
+        e1.save()
+
+        # User now links e3 to job_b.
+        response = self.client.post(
+            f'/api/emails/{e3.pk}/link-to-job/',
+            {'job_id': job_b.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.job, job_a, 'pre-existing link must stay')
+        self.assertEqual(e2.job, job_b)
+        self.assertEqual(e3.job, job_b)

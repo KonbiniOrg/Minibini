@@ -420,3 +420,72 @@ def build_reply_body(parent_email_record):
         quoted_body = '> (original message unavailable)'
 
     return f'\n\n{attribution}\n{quoted_body}'
+
+
+# Defensive cap on BFS iterations in collect_thread_member_ids. A real
+# thread converges in 1-2 rounds because each email's References field
+# encodes the full chain back to the root; this cap exists to prevent
+# any pathological loop, not to handle deep threads.
+_THREAD_BFS_MAX_ITERATIONS = 8
+
+
+def collect_thread_member_ids(email_record):
+    """Return the set of EmailRecord PKs in the same RFC 5322 thread.
+
+    A "thread" is the transitive closure over the Message-ID /
+    In-Reply-To / References graph. Two emails are in the same thread
+    if their key sets intersect, where an email's key set is its own
+    ``message_id`` plus its TempEmail's ``in_reply_to`` plus every
+    space-separated token in TempEmail's ``references``.
+
+    Walks via BFS, one DB round per expansion, capped at
+    _THREAD_BFS_MAX_ITERATIONS rounds defensively. The cap is almost
+    never reached because real threads converge in 1-2 rounds.
+
+    Emails whose TempEmail row has been purged from the cache still
+    participate — they're included via Message-ID match when a
+    sibling's references chain mentions them, but they don't expand
+    the search set (no headers to read from).
+    """
+    from django.db.models import Q
+    from apps.core.models import EmailRecord, TempEmail
+
+    # Bootstrap the known-IDs set from the source email's headers.
+    known = set()
+    if email_record.message_id:
+        known.add(email_record.message_id)
+    temp = getattr(email_record, 'temp_data', None)
+    if temp:
+        if temp.in_reply_to:
+            known.add(temp.in_reply_to.strip())
+        if temp.references:
+            known.update(t.strip() for t in temp.references.split() if t.strip())
+
+    if not known:
+        return {email_record.pk}
+
+    for _ in range(_THREAD_BFS_MAX_ITERATIONS):
+        # Find TempEmail rows whose EmailRecord's Message-ID, or whose own
+        # In-Reply-To, or whose References field mentions any of our known
+        # IDs. References tokens always include angle brackets per RFC 5322,
+        # so `__contains` is unambiguous.
+        q = Q(email_record__message_id__in=known) | Q(in_reply_to__in=known)
+        for token in known:
+            q |= Q(references__contains=token)
+
+        next_tokens = set()
+        for row in TempEmail.objects.filter(q).select_related('email_record'):
+            if row.email_record.message_id:
+                next_tokens.add(row.email_record.message_id)
+            if row.in_reply_to:
+                next_tokens.add(row.in_reply_to.strip())
+            if row.references:
+                next_tokens.update(t.strip() for t in row.references.split() if t.strip())
+
+        if next_tokens <= known:
+            break
+        known |= next_tokens
+
+    return set(
+        EmailRecord.objects.filter(message_id__in=known).values_list('pk', flat=True)
+    )

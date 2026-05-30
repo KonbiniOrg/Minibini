@@ -882,17 +882,53 @@ aliases (`{estimate_number}`, `{po_number}`, `{invoice_number}`,
 inbound `EmailRecord` + `TempEmail` are created. It walks
 `TempEmail.in_reply_to` first, then the `references` chain
 right-to-left, looking up each token against existing
-`EmailRecord.message_id`. The first parent found wins; its non-null
-`job` / `purchase_order` / `bill` FKs are copied onto the new reply
-EmailRecord. Behavior is silent — no "auto-linked via reply" badge;
-the action panel's existing Disassociate handles any mis-correlated
-auto-links.
+`EmailRecord.message_id`. **The walk continues past parents that
+exist but have no FKs to copy** — that lets a new reply inherit
+context from a grandparent when the immediate parent happens to be
+orphaned itself. The first parent that contributes at least one
+non-null FK wins; its `job` / `purchase_order` / `bill` values are
+copied onto the new reply EmailRecord. Behavior is silent — no
+"auto-linked via reply" badge; the action panel's existing
+Disassociate handles any mis-correlated auto-links.
 
 The `TempEmail` rows that drive this gain three columns:
 `in_reply_to` (CharField, captures the immediate parent's
 Message-ID), `references` (TextField, captures the full thread
 chain), and `bcc_email` (TextField, populated only on outbound rows
 since IMAP-fetched inbound can't see BCC).
+
+### 7.11a Thread-wide association propagation
+
+Every place that sets a `job` / `purchase_order` / `bill` FK on an
+EmailRecord — `EmailService.associate_with` (called by the
+link-to-X endpoints and the create-X-from-email paths) and
+`correlate_reply` (called at IMAP fetch time) — invokes
+`EmailService.propagate_thread_association(email_record,
+target_field)` afterwards. The propagation:
+
+1. Reads the source EmailRecord's value for that field. No-op when
+   it's null (nothing to propagate).
+2. Calls `collect_thread_member_ids(email_record)` in
+   `apps.core.email_utils` — a BFS over the RFC 5322 thread graph
+   (Message-ID + In-Reply-To + References intersection) that
+   returns every EmailRecord PK in the same thread. The BFS uses
+   one DB round per expansion, capped at 8 rounds defensively;
+   real threads converge in 1-2 rounds because each email's
+   References field already encodes its full chain back to the
+   root.
+3. Bulk-updates every thread member where the target field is null
+   to the source's value. **Doesn't overwrite a sibling already
+   linked to a different target** — that's a deliberate human
+   choice the propagation respects.
+
+Bulk `.update()` skips `Model.save()` and the `@history` capture —
+that's intentional. The user-initiated event on the source
+EmailRecord IS the audited action; the propagated set is the
+implicit consequence the design promises, and writing a per-row
+history entry for each sibling would flood the activity feed.
+
+Disassociate doesn't propagate. Per-email is the surgical tool the
+user reaches for when a sibling really doesn't belong.
 
 ### 7.12 SPA send pages
 

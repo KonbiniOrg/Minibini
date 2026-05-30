@@ -1141,3 +1141,164 @@ class EmailServiceTest(TestCase):
         mock_mailbox.fetch.assert_called_once()
         call_args = mock_mailbox.fetch.call_args
         # The actual date used should be from config, not 30 days back
+
+
+class PropagateThreadAssociationTest(TestCase):
+    """EmailService.propagate_thread_association copies a single FK to
+    every thread sibling that has a null value for the same field. Doesn't
+    overwrite differing existing links."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D',
+            email='j@example.com', mobile_number='555',
+        )
+        self.business = Business.objects.create(
+            business_name='Acme', default_contact=self.contact,
+        )
+        self.job_a = Job.objects.create(
+            job_number='JOB-PROP-A', contact=self.contact, description='A',
+        )
+        self.job_b = Job.objects.create(
+            job_number='JOB-PROP-B', contact=self.contact, description='B',
+        )
+
+    def _make(self, mid, *, in_reply_to='', references='', job=None,
+              po=None, bill=None, direction=None):
+        from apps.core.models import EmailRecord, TempEmail
+        kwargs = {'message_id': mid}
+        if direction is not None:
+            kwargs['direction'] = direction
+        if job:
+            kwargs['job'] = job
+        if po:
+            kwargs['purchase_order'] = po
+        if bill:
+            kwargs['bill'] = bill
+        record = EmailRecord.objects.create(**kwargs)
+        TempEmail.objects.create(
+            email_record=record,
+            uid=mid.replace('<', '').replace('>', '')[:10],
+            from_email='x@x.com', to_email='us@example.com',
+            date_sent=timezone.now(),
+            in_reply_to=in_reply_to, references=references,
+        )
+        return record
+
+    def test_linear_chain_propagates_job_to_unlinked_siblings(self):
+        from apps.core.services import EmailService
+        e1 = self._make('<m1@example.com>')
+        e2 = self._make(
+            '<m2@example.com>',
+            in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+        )
+        e3 = self._make(
+            '<m3@example.com>',
+            in_reply_to='<m2@example.com>',
+            references='<m1@example.com> <m2@example.com>',
+        )
+
+        # User links e3 to job_a.
+        EmailService.associate_with(e3.email_record_id, 'job', self.job_a.pk)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.job, self.job_a)
+        self.assertEqual(e2.job, self.job_a)
+        self.assertEqual(e3.job, self.job_a)
+
+    def test_sibling_already_linked_to_different_job_is_not_overwritten(self):
+        """E1 pre-linked to job_a; user now links E3 to job_b. Propagation
+        leaves E1 alone, sets E2 (null) to job_b, E3 stays job_b."""
+        from apps.core.services import EmailService
+        e1 = self._make('<m1@example.com>', job=self.job_a)
+        e2 = self._make(
+            '<m2@example.com>',
+            in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+        )
+        e3 = self._make(
+            '<m3@example.com>',
+            in_reply_to='<m2@example.com>',
+            references='<m1@example.com> <m2@example.com>',
+        )
+
+        EmailService.associate_with(e3.email_record_id, 'job', self.job_b.pk)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.job, self.job_a, 'pre-existing link must stay')
+        self.assertEqual(e2.job, self.job_b)
+        self.assertEqual(e3.job, self.job_b)
+
+    def test_mixed_fk_types_propagate_independently(self):
+        """E1 has PO=p. Linking E3 to a Job propagates only Job, leaves PO
+        untouched on E1; E2 gains Job too."""
+        from apps.core.services import EmailService
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(
+            po_number='PO-PROP-1', business=self.business,
+        )
+        e1 = self._make('<m1@example.com>', po=po)
+        e2 = self._make(
+            '<m2@example.com>', in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+        )
+        e3 = self._make(
+            '<m3@example.com>', in_reply_to='<m2@example.com>',
+            references='<m1@example.com> <m2@example.com>',
+        )
+
+        EmailService.associate_with(e3.email_record_id, 'job', self.job_a.pk)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.purchase_order, po, 'unrelated FK untouched')
+        self.assertEqual(e1.job, self.job_a, 'job propagated even though PO was set')
+        self.assertEqual(e2.job, self.job_a)
+        self.assertEqual(e3.job, self.job_a)
+
+    def test_outbound_in_thread_picks_up_association(self):
+        from apps.core.services import EmailService
+        from apps.core.models import EmailRecord
+        inbound = self._make('<customer@example.com>')
+        outbound = self._make(
+            '<minibini-out@example.com>',
+            in_reply_to='<customer@example.com>',
+            references='<customer@example.com>',
+            direction=EmailRecord.OUTBOUND,
+        )
+
+        EmailService.associate_with(inbound.email_record_id, 'job', self.job_a.pk)
+
+        outbound.refresh_from_db()
+        self.assertEqual(outbound.job, self.job_a)
+
+    def test_no_op_when_source_field_is_null(self):
+        """propagate_thread_association is a no-op when the source has no
+        value for the target field — there's nothing to propagate."""
+        from apps.core.services import EmailService
+        e1 = self._make('<m1@example.com>')
+        e2 = self._make(
+            '<m2@example.com>', in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+        )
+        # e1.job is null. Calling propagate directly should do nothing.
+        EmailService.propagate_thread_association(e1, 'job')
+        e1.refresh_from_db(); e2.refresh_from_db()
+        self.assertIsNone(e1.job)
+        self.assertIsNone(e2.job)
+
+    def test_disassociate_does_not_propagate(self):
+        """Disassociate is a per-email surgical tool, not a thread-level
+        one (per spec §4.3)."""
+        from apps.core.services import EmailService
+        e1 = self._make('<m1@example.com>', job=self.job_a)
+        e2 = self._make(
+            '<m2@example.com>', in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+            job=self.job_a,
+        )
+        EmailService.disassociate_from(e1.email_record_id, 'job')
+        e1.refresh_from_db(); e2.refresh_from_db()
+        self.assertIsNone(e1.job)
+        # e2 still has its job — we don't strip siblings.
+        self.assertEqual(e2.job, self.job_a)

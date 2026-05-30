@@ -11,6 +11,7 @@ from apps.core.email_utils import (
     resolve_contact_links,
     build_reply_subject,
     build_reply_body,
+    collect_thread_member_ids,
 )
 from apps.contacts.models import Contact
 
@@ -707,3 +708,181 @@ class BuildReplyBodyTest(TestCase):
         body = build_reply_body(parent)
         # No attribution we can build; just the reply-space blank lines.
         self.assertEqual(body, '\n\n')
+
+
+class CollectThreadMemberIdsTest(TestCase):
+    """BFS over the RFC 5322 thread graph: Message-ID + In-Reply-To +
+    References intersection."""
+
+    def _make_email(self, message_id, *, in_reply_to='', references='',
+                    direction=None):
+        from apps.core.models import EmailRecord, TempEmail
+        from django.utils import timezone as tz
+        from apps.core.models import EmailRecord
+        kwargs = {'message_id': message_id}
+        if direction is not None:
+            kwargs['direction'] = direction
+        record = EmailRecord.objects.create(**kwargs)
+        TempEmail.objects.create(
+            email_record=record,
+            uid=message_id.replace('<', '').replace('>', '')[:10],
+            from_email='someone@example.com',
+            to_email='us@example.com',
+            date_sent=tz.now(),
+            in_reply_to=in_reply_to,
+            references=references,
+        )
+        return record
+
+    def test_lone_email_returns_just_itself(self):
+        e1 = self._make_email('<solo@example.com>')
+        self.assertEqual(collect_thread_member_ids(e1), {e1.pk})
+
+    def test_linear_chain_via_references(self):
+        e1 = self._make_email('<m1@example.com>')
+        e2 = self._make_email(
+            '<m2@example.com>',
+            in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+        )
+        e3 = self._make_email(
+            '<m3@example.com>',
+            in_reply_to='<m2@example.com>',
+            references='<m1@example.com> <m2@example.com>',
+        )
+        e4 = self._make_email(
+            '<m4@example.com>',
+            in_reply_to='<m3@example.com>',
+            references='<m1@example.com> <m2@example.com> <m3@example.com>',
+        )
+
+        # Linking from anywhere in the chain finds the whole chain.
+        for source in (e1, e2, e3, e4):
+            self.assertEqual(
+                collect_thread_member_ids(source),
+                {e1.pk, e2.pk, e3.pk, e4.pk},
+                f'starting from {source.message_id}',
+            )
+
+    def test_reply_by_in_reply_to_only_no_references(self):
+        e1 = self._make_email('<root@example.com>')
+        e2 = self._make_email(
+            '<child@example.com>',
+            in_reply_to='<root@example.com>',
+            # references intentionally blank — older mail clients sometimes
+            # set In-Reply-To without populating References.
+            references='',
+        )
+        self.assertEqual(
+            collect_thread_member_ids(e1),
+            {e1.pk, e2.pk},
+        )
+
+    def test_branching_thread(self):
+        """Two replies to the same root, then a reply to one of them."""
+        root = self._make_email('<root@example.com>')
+        a = self._make_email(
+            '<a@example.com>',
+            in_reply_to='<root@example.com>',
+            references='<root@example.com>',
+        )
+        b = self._make_email(
+            '<b@example.com>',
+            in_reply_to='<root@example.com>',
+            references='<root@example.com>',
+        )
+        a_reply = self._make_email(
+            '<a-reply@example.com>',
+            in_reply_to='<a@example.com>',
+            references='<root@example.com> <a@example.com>',
+        )
+
+        # Starting from any branch reaches the whole tree.
+        for source in (root, a, b, a_reply):
+            self.assertEqual(
+                collect_thread_member_ids(source),
+                {root.pk, a.pk, b.pk, a_reply.pk},
+                f'starting from {source.message_id}',
+            )
+
+    def test_unrelated_threads_dont_mix(self):
+        # Thread 1
+        t1_root = self._make_email('<t1@example.com>')
+        t1_reply = self._make_email(
+            '<t1-r@example.com>',
+            in_reply_to='<t1@example.com>',
+            references='<t1@example.com>',
+        )
+        # Thread 2 — completely separate
+        t2_root = self._make_email('<t2@example.com>')
+        t2_reply = self._make_email(
+            '<t2-r@example.com>',
+            in_reply_to='<t2@example.com>',
+            references='<t2@example.com>',
+        )
+
+        self.assertEqual(
+            collect_thread_member_ids(t1_root),
+            {t1_root.pk, t1_reply.pk},
+        )
+        self.assertEqual(
+            collect_thread_member_ids(t2_root),
+            {t2_root.pk, t2_reply.pk},
+        )
+
+    def test_outbound_emails_participate(self):
+        """An outbound reply we sent is a member of the same thread."""
+        from apps.core.models import EmailRecord
+        inbound = self._make_email('<customer@example.com>')
+        outbound = self._make_email(
+            '<minibini-out@example.com>',
+            in_reply_to='<customer@example.com>',
+            references='<customer@example.com>',
+            direction=EmailRecord.OUTBOUND,
+        )
+        self.assertEqual(
+            collect_thread_member_ids(inbound),
+            {inbound.pk, outbound.pk},
+        )
+
+    def test_email_without_temp_data_is_included_as_target(self):
+        """An EmailRecord whose TempEmail was purged is still a thread
+        member when its Message-ID appears in a sibling's references."""
+        from apps.core.models import EmailRecord
+        # Source has temp_data referencing a purged email.
+        ancient = EmailRecord.objects.create(message_id='<ancient@example.com>')
+        source = self._make_email(
+            '<source@example.com>',
+            references='<ancient@example.com>',
+        )
+        result = collect_thread_member_ids(source)
+        self.assertIn(ancient.pk, result)
+        self.assertIn(source.pk, result)
+
+    def test_no_message_id_no_temp_data_returns_just_self(self):
+        from apps.core.models import EmailRecord
+        # Pathological: an EmailRecord that somehow has no message_id and
+        # no temp_data. Defensive — should not crash.
+        bare = EmailRecord.objects.create(message_id='<bare@example.com>')
+        # No TempEmail created.
+        self.assertEqual(collect_thread_member_ids(bare), {bare.pk})
+
+    def test_bfs_converges_on_deep_chain(self):
+        """A 10-deep chain — within the defensive iteration cap of 8 we
+        still converge because each email's references encodes the full
+        chain back to the root."""
+        emails = []
+        for i in range(10):
+            mid = f'<m{i}@example.com>'
+            irt = f'<m{i-1}@example.com>' if i > 0 else ''
+            refs = ' '.join(f'<m{j}@example.com>' for j in range(i)) if i > 0 else ''
+            emails.append(self._make_email(mid, in_reply_to=irt, references=refs))
+
+        # Starting from the deepest gets the whole chain in one expansion
+        # (its references field already enumerates them).
+        result = collect_thread_member_ids(emails[-1])
+        self.assertEqual(result, {e.pk for e in emails})
+
+        # Starting from the root also reaches everyone.
+        result = collect_thread_member_ids(emails[0])
+        self.assertEqual(result, {e.pk for e in emails})
