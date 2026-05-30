@@ -4,7 +4,6 @@
   import { push, querystring } from 'svelte-spa-router';
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
-  import SendPODialog from '../../components/purchaseorders/SendPODialog.svelte';
   import ReceiveItemsForm from '../../components/purchaseorders/ReceiveItemsForm.svelte';
   import MaterialSeverDialog from '../../components/purchaseorders/MaterialSeverDialog.svelte';
   import HistoryPanel from '../../components/HistoryPanel.svelte';
@@ -19,7 +18,6 @@
   let error = $state(null);
   let success = $state(null);
   let showAddLineItem = $state(false);
-  let showSendDialog = $state(false);
   let showReceiveForm = $state(false);
   let busy = $state(false);
   let severPrompt = $state(null); // { items, onSubmit } when showing
@@ -400,21 +398,13 @@
     onDeleteLineItem={handleDeleteLineItem}
     onEditLineItem={handleEditLineItem}
     onReorder={handleReorder}
-    onSend={() => { showSendDialog = true; }}
+    onSend={() => { push(`/purchase-orders/${po.po_id}/send`); }}
     onReceiveAll={handleReceiveAll}
     onReceiveItems={() => { showReceiveForm = true; }}
     onCancelLineItem={handleCancelLineItem}
     onReverseReceipt={handleReverseReceipt}
     onChangeLineJob={handleChangeLineJob}
   />
-
-  {#if showSendDialog}
-    <SendPODialog
-      poId={po.po_id}
-      onSuccess={() => { showSendDialog = false; success = 'Purchase order sent.'; reload(); }}
-      onCancel={() => { showSendDialog = false; }}
-    />
-  {/if}
 
   {#if showReceiveForm}
     <ReceiveItemsForm

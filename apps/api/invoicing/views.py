@@ -145,36 +145,6 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             'line_item': InvoiceLineItemSerializer(line_item).data,
         })
 
-    @action(detail=True, methods=['post'], url_path='send-to-qbo')
-    def send_to_qbo(self, request, pk=None):
-        """Legacy endpoint, kept temporarily for the SendToQBODialog SPA
-        fragment until it's removed in the SPA migration. Prefer
-        /api/invoices/{id}/send/."""
-        invoice = self.get_object()
-        send_to = request.data.get('send_to')
-        if not send_to:
-            return Response(
-                {'error': 'send_to email address is required'},
-                status=400,
-            )
-
-        cc = request.data.get('cc', None)
-        bcc = request.data.get('bcc', None)
-
-        try:
-            from apps.qbo.services import QBOInvoiceSyncService
-            qbo_id = QBOInvoiceSyncService.push_invoice(
-                invoice, send_to=send_to, cc=cc, bcc=bcc,
-            )
-            return Response({
-                'qbo_id': qbo_id,
-                'status': 'sent',
-            })
-        except ValueError as e:
-            return Response({'error': str(e)}, status=400)
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
-
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):
         """Pre-populated values for the Send Email page."""
