@@ -1,31 +1,32 @@
 <script>
-  // Shared compose form for sending Estimate / PO / Invoice documents.
-  // The parent fetches sendDefaults, renders this form, owns the submit
-  // handler that builds the FormData and POSTs to the document's send
-  // endpoint. The auto-generated PDF preview comes from sendDefaults and
-  // can be removed (it'll just not be re-attached at submit).
+  // Shared compose form for outbound email — sending Estimate / PO / Invoice
+  // documents AND the inline Reply / Reply All composer.
+  //
+  // The form's text fields are $bindable so the parent can own the state.
+  // Document-send pages don't bind; they let each field default from
+  // sendDefaults and receive the values back through onSubmit's payload.
+  // The reply composer DOES bind them — that's how mode switching
+  // (Reply <-> Reply All) updates the CC field without remounting the form
+  // or losing what the user has typed elsewhere.
 
   let {
-    sendDefaults,         // { to, subject, body, attachments_preview: [{filename, content_type, size}, ...] }
+    sendDefaults,         // { to, cc, bcc, subject, body, attachments_preview: [{filename, content_type, size}, ...] }
+    to = $bindable(sendDefaults?.to || ''),
+    cc = $bindable(sendDefaults?.cc || ''),
+    bcc = $bindable(sendDefaults?.bcc || ''),
+    subject = $bindable(sendDefaults?.subject || ''),
+    body = $bindable(sendDefaults?.body || ''),
+    extraFiles = $bindable([]),
     submitLabel = 'Send Email',
     onSubmit,             // function({ to, subject, body, cc, bcc, includeAutoAttachments: [bool...], extraFiles: [File...] })
     submitError = null,
     submitting = false,
   } = $props();
 
-  let to = $state(sendDefaults?.to || '');
-  let cc = $state(sendDefaults?.cc || '');
-  let bcc = $state(sendDefaults?.bcc || '');
-  let subject = $state(sendDefaults?.subject || '');
-  let body = $state(sendDefaults?.body || '');
-
   // Which auto-attached PDFs to include (default all checked).
   let includeAutoAttachments = $state(
     (sendDefaults?.attachments_preview || []).map(() => true),
   );
-
-  // User-uploaded files (held in form state until submit).
-  let extraFiles = $state([]);
 
   function onFileChange(event) {
     const files = Array.from(event.target.files || []);
@@ -72,23 +73,23 @@
 
   <p>
     <label for="to"><strong>To *</strong></label><br>
-    <input type="email" id="to" bind:value={to} required>
+    <input type="email" id="to" class="form-input" bind:value={to} required>
   </p>
   <p>
     <label for="cc"><strong>CC</strong></label><br>
-    <input type="text" id="cc" bind:value={cc} placeholder="Comma-separated emails">
+    <input type="text" id="cc" class="form-input" bind:value={cc} placeholder="Comma-separated emails">
   </p>
   <p>
     <label for="bcc"><strong>BCC</strong></label><br>
-    <input type="text" id="bcc" bind:value={bcc} placeholder="Comma-separated emails">
+    <input type="text" id="bcc" class="form-input" bind:value={bcc} placeholder="Comma-separated emails">
   </p>
   <p>
     <label for="subject"><strong>Subject</strong></label><br>
-    <input type="text" id="subject" bind:value={subject}>
+    <input type="text" id="subject" class="form-input" bind:value={subject}>
   </p>
   <p>
     <label for="body"><strong>Body</strong></label><br>
-    <textarea id="body" bind:value={body} rows="12" cols="70"></textarea>
+    <textarea id="body" class="form-input" bind:value={body} rows="12"></textarea>
   </p>
 
   {#if (sendDefaults?.attachments_preview || []).length > 0 || extraFiles.length > 0}
@@ -125,4 +126,15 @@
 
 <style>
   .send-error { color: #b91c1c; }
+  .form-input {
+    width: 100%;
+    max-width: 720px;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 4px 6px;
+  }
+  textarea.form-input {
+    font-family: monospace;
+  }
 </style>

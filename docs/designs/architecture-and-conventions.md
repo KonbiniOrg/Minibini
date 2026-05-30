@@ -909,13 +909,28 @@ the new sibling of the JSON `api.post()`.
 
 ### 7.13 Reply composer
 
-`frontend/src/routes/email/EmailReplyPage.svelte` is the SPA route
-for replying to an inbound email. Single route at `/email/:id/reply`
-that reads `?mode=all` from the query string to switch between Reply
-and Reply All. Both modes reuse the same `DocumentSendForm.svelte`
-with no auto-attached PDFs; the only mode-dependent prefill is the
-CC value (blank for Reply, the precomputed `reply_all_cc` for Reply
-All).
+The reply composer is inline on the email detail page —
+`EmailReplyComposer.svelte` mounted by `EmailDetailPage.svelte` above
+the original `EmailContent` when the user clicks Reply or Reply All in
+the right-rail `EmailActionPanel`. The page tracks a small
+`replyMode = $state(null)` (one of `null | 'reply' | 'reply-all'`); the
+action panel's Reply / Reply All buttons set it via an `onReply(mode)`
+callback prop. The right rail uses `position: sticky` so the action
+panel (Job / PO / Bill associations + Reply controls) stays visible
+while the user scrolls between the compose form and the original
+email below it.
+
+`EmailReplyComposer` owns the form state (to / cc / bcc / subject /
+body / extraFiles) directly and binds it into `DocumentSendForm`
+via `$bindable` props. Mid-compose mode switching (clicking Reply
+All while composing a Reply, or vice versa) preserves everything the
+user has typed and only updates the CC field — driven by an
+`$effect` that fires when `mode` changes after the initial load.
+Cancel button calls `onClose` which clears `replyMode`. Submit calls
+the reply endpoint and on success calls `onSent`, which clears the
+composer and reloads the email (so any inherited associations and
+the new outbound row in the linked Job's panel render
+appropriately).
 
 Backend endpoints:
 

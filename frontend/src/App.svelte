@@ -44,7 +44,6 @@
   import ReimbursementDetailPage from './routes/reimbursements/ReimbursementDetailPage.svelte';
   import EmailInboxPage from './routes/email/EmailInboxPage.svelte';
   import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
-  import EmailReplyPage from './routes/email/EmailReplyPage.svelte';
   import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
   import EmailCreatePOPage from './routes/email/EmailCreatePOPage.svelte';
   import EmailCreateBillPage from './routes/email/EmailCreateBillPage.svelte';
@@ -102,7 +101,6 @@
     '/email/:id/associate': EmailAssociatePage,
     '/email/:id/associate-po': EmailAssociatePOPage,
     '/email/:id/associate-bill': EmailAssociateBillPage,
-    '/email/:id/reply': EmailReplyPage,
     '/email/:id': EmailDetailPage,
     '/profile': ProfilePage,
     '/change-orders/:id': ChangeOrderDetailPage,

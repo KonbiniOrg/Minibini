@@ -2,7 +2,7 @@
   import { user } from '../../stores/auth.js';
   import { emailApi } from '../../lib/email.js';
 
-  let { emailRecord, onChange = null } = $props();
+  let { emailRecord, onChange = null, onReply = null } = $props();
 
   let canManageJobs = $derived(
     $user?.permissions?.includes('can_manage_jobs') ?? false
@@ -43,10 +43,10 @@
   <section>
     <h4>Reply</h4>
     <p>
-      <a class="action-button" href="#/email/{emailRecord.email_record_id}/reply">Reply</a>
+      <button type="button" class="action-button" onclick={() => onReply && onReply('reply')}>Reply</button>
     </p>
     <p>
-      <a class="action-button" href="#/email/{emailRecord.email_record_id}/reply?mode=all">Reply All</a>
+      <button type="button" class="action-button" onclick={() => onReply && onReply('reply-all')}>Reply All</button>
     </p>
   </section>
 
