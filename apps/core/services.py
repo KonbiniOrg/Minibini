@@ -1119,51 +1119,6 @@ class OutboundEmailService:
     DEFAULT_OUR_DOMAIN = 'example.com'
 
     @staticmethod
-    def send_email(to, subject, body, cc=None, bcc=None, attachments=None,
-                   from_email=None, message_id=None,
-                   in_reply_to=None, references=None):
-        """
-        Send an email with optional CC, BCC, and file attachments.
-
-        Args:
-            to: list of recipient email addresses
-            subject: email subject line
-            body: plain text email body
-            cc: list of CC addresses (optional)
-            bcc: list of BCC addresses (optional)
-            attachments: list of (filename, content_bytes, mime_type) tuples (optional)
-            from_email: sender address (optional, defaults to DEFAULT_FROM_EMAIL)
-            message_id: explicit RFC 5322 Message-ID to set in the outgoing
-                headers (optional). When omitted, the SMTP relay assigns one.
-            in_reply_to: parent Message-ID for replies (optional). Sets the
-                ``In-Reply-To`` header.
-            references: thread chain (optional). Sets the ``References``
-                header.
-        """
-        from django.core.mail import EmailMessage
-
-        msg = EmailMessage(
-            subject=subject,
-            body=body,
-            from_email=from_email or settings.DEFAULT_FROM_EMAIL,
-            to=to,
-            cc=cc or [],
-            bcc=bcc or [],
-        )
-
-        if message_id:
-            msg.extra_headers['Message-ID'] = message_id
-        if in_reply_to:
-            msg.extra_headers['In-Reply-To'] = in_reply_to
-        if references:
-            msg.extra_headers['References'] = references
-
-        for filename, content, mime_type in (attachments or []):
-            msg.attach(filename, content, mime_type)
-
-        msg.send()
-
-    @staticmethod
     def _resolve_our_domain():
         try:
             return Configuration.objects.get(key='our_domain').value
@@ -1278,13 +1233,24 @@ class OutboundEmailService:
 
         # Step 2: SMTP attempt. On failure we update the row in a fresh
         # transaction so the error persists even though we re-raise.
+        from django.core.mail import EmailMessage
         try:
-            OutboundEmailService.send_email(
-                to=to_list, subject=subject, body=body,
-                cc=cc_list, bcc=bcc_list, attachments=attachments,
-                message_id=email_record.message_id,
-                in_reply_to=in_reply_to, references=references,
+            msg = EmailMessage(
+                subject=subject,
+                body=body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=to_list,
+                cc=cc_list,
+                bcc=bcc_list,
             )
+            msg.extra_headers['Message-ID'] = email_record.message_id
+            if in_reply_to:
+                msg.extra_headers['In-Reply-To'] = in_reply_to
+            if references:
+                msg.extra_headers['References'] = references
+            for filename, content, mime_type in (attachments or []):
+                msg.attach(filename, content, mime_type)
+            msg.send()
         except Exception as e:
             EmailRecord.objects.filter(pk=email_record.pk).update(
                 last_send_error=str(e),
