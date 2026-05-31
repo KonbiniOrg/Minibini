@@ -547,23 +547,6 @@ class RateScheme(models.Model):
             # fall back to 1 for a genuine one-off fee with no quantity.
             return task.est_qty if task.est_qty is not None else Decimal('1')
 
-
-@history(exclude=['request_id'])
-class BlepChangeRequest(TimeChangeRequest):
-    request_id = models.AutoField(primary_key=True)
-    blep = models.ForeignKey('jobs.Blep', on_delete=models.PROTECT,
-                             null=True, blank=True, related_name='change_requests')
-    task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT,
-                             null=True, blank=True, related_name='+')
-
-    class Meta(TimeChangeRequest.Meta):
-        abstract = False
-        db_table = 'blep_change_requests'
-
-    @property
-    def target_user(self):
-        return self.blep.user if self.blep_id else self.requester
-
     def get_modifier_inputs(self):
         """Return modifiers list for UI rendering."""
         return list(self.modifiers)
@@ -640,6 +623,23 @@ class BlepChangeRequest(TimeChangeRequest):
 
     def __str__(self):
         return self.name
+
+
+@history(exclude=['request_id'])
+class BlepChangeRequest(TimeChangeRequest):
+    request_id = models.AutoField(primary_key=True)
+    blep = models.ForeignKey('jobs.Blep', on_delete=models.PROTECT,
+                             null=True, blank=True, related_name='change_requests')
+    task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT,
+                             null=True, blank=True, related_name='+')
+
+    class Meta(TimeChangeRequest.Meta):
+        abstract = False
+        db_table = 'blep_change_requests'
+
+    @property
+    def target_user(self):
+        return self.blep.user if self.blep_id else self.requester
 
 
 
