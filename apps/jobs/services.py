@@ -200,24 +200,30 @@ class BlepService:
         at-or-over-minimum blep is closed (end_time floored to the minute on
         save). Returns the number of bleps that were resolved.
         """
+        # Programming-error guard: no DB needed, keep outside the atomic.
         if user is None and task is None:
             raise ValueError("_close_open requires user or task filter")
         if now is None:
             now = timezone.now()
-        qs = Blep.objects.filter(end_time__isnull=True)
-        if user is not None:
-            qs = qs.filter(user=user)
-        if task is not None:
-            qs = qs.filter(task=task)
-        bleps = list(qs)
-        for blep in bleps:
-            if BlepService._under_minimum(blep, now):
-                # Sub-minimum = accidental start: cancel with full undo.
-                BlepService._cancel_blep(blep)
-            else:
-                blep.end_time = now
-                blep.save()  # floors end to the minute
-        return len(bleps)
+        # Self-atomic: _cancel_blep uses select_for_update(), which requires an
+        # enclosing transaction. Callers under autocommit (logout, deactivate)
+        # would otherwise 500. Nested inside an existing atomic block this is
+        # just a savepoint, which is fine.
+        with transaction.atomic():
+            qs = Blep.objects.filter(end_time__isnull=True)
+            if user is not None:
+                qs = qs.filter(user=user)
+            if task is not None:
+                qs = qs.filter(task=task)
+            bleps = list(qs)
+            for blep in bleps:
+                if BlepService._under_minimum(blep, now):
+                    # Sub-minimum = accidental start: cancel with full undo.
+                    BlepService._cancel_blep(blep)
+                else:
+                    blep.end_time = now
+                    blep.save()  # floors end to the minute
+            return len(bleps)
 
     @staticmethod
     def close_user_open_bleps(user, now=None):
@@ -1022,7 +1028,15 @@ class TaskLifecycleService:
             # Close target's open Blep on ANY task
             BlepService._close_open(user=target, now=now)
             if action == 'takeover':
-                other_bleps.update(end_time=now)
+                # A takeover is a deliberate hand-off, not an accidental
+                # start, so always CLOSE the displaced workers' bleps (floored
+                # via save()) — never route through the sub-minimum cancel,
+                # which would revert the very task being taken over and
+                # un-consume its materials mid-takeover. Iterate-and-save (not
+                # QuerySet.update) so end_time is floored by Blep.save().
+                for b in list(other_bleps):
+                    b.end_time = now
+                    b.save()
             blep = BlepService._create(task, target, start_time=now)
             JobService.mark_work_started(task.job)
             # Promote only when the blepper IS the assignee (see above).

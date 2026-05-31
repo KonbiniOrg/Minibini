@@ -712,6 +712,41 @@ class StartStopWorkTest(BaseTestCase):
         other_blep.refresh_from_db()
         self.assertIsNotNone(other_blep.end_time)
 
+    def test_start_work_takeover_closes_sub_minimum_blep(self):
+        """A takeover is a deliberate hand-off: it CLOSES the displaced worker's
+        blep (end_time floored to the minute, blep still exists) even when that
+        blep is sub-minute. It does NOT cancel/delete it — cancelling would
+        revert the very task being handed off. The task stays in_progress and
+        the new worker gets an open blep.
+        """
+        from apps.core.models import Shift
+        now = timezone.now()
+        # Enclosing open shift for worker2 so the soon-to-be-closed short blep
+        # satisfies the shift-enclosure invariant.
+        Shift.objects.create(
+            user=self.worker2, start_time=now - timedelta(days=1),
+        )
+        # worker2 has an OPEN sub-minute blep on the in_progress task.
+        other_blep = Blep.objects.create(
+            task=self.task, user=self.worker2, start_time=now,
+        )
+        result = TaskLifecycleService.start_work(
+            self.task.pk, self.user, action='takeover'
+        )
+        # Displaced blep is CLOSED, not deleted.
+        self.assertTrue(Blep.objects.filter(pk=other_blep.pk).exists())
+        other_blep.refresh_from_db()
+        self.assertIsNotNone(other_blep.end_time)
+        # end_time floored to the minute (Blep.save() normalization).
+        self.assertEqual(other_blep.end_time.second, 0)
+        self.assertEqual(other_blep.end_time.microsecond, 0)
+        # Task still in_progress; new worker has an open blep.
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+        new_blep = result['blep']
+        self.assertEqual(new_blep.user, self.user)
+        self.assertIsNone(new_blep.end_time)
+
     def test_start_work_join_does_not_change_assignee(self):
         self.task.assignee = self.worker2
         self.task.est_worker_time = timedelta(hours=1)

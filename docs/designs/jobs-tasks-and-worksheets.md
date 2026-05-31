@@ -499,6 +499,19 @@ and `can_manage_time` rules.
   `_close_open`, they share the behavior — a sub-minimum blep is **never**
   persisted closed. Manager on-behalf stop is never a cancel of intent, but
   a genuinely sub-minimum blep it closes is still discarded by this rule.
+  `_close_open` wraps its per-blep resolution loop in `transaction.atomic()`
+  so it is self-atomic regardless of caller: `_cancel_blep` uses
+  `select_for_update()`, and the logout / deactivate callers invoke it under
+  autocommit (no enclosing transaction), where it would otherwise raise
+  `TransactionManagementError` → 500.
+  **Exception — takeover always closes, never cancels.** The `action='takeover'`
+  branch of `start_work` does NOT go through `_close_open` for the displaced
+  worker; it closes that worker's open blep directly (end floored to the minute,
+  via iterate-and-`save()`, not `QuerySet.update()`), even when the blep is
+  sub-minute. A takeover is a deliberate hand-off, not an accidental start, so
+  the displaced blep must be **closed, not cancelled** — cancelling it would
+  revert the very task being handed off (back to `pending`, un-consuming its
+  materials) mid-takeover.
 - **Derived activity facets.** `TaskSerializer` and `BoardService` expose
   `has_active_blep`, `active_worker_count`, and `has_bleps` (computed from
   `blep_set`, prefetched to avoid N+1). The SPA collapses these + status
