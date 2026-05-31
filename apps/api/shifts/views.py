@@ -5,9 +5,12 @@ from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.core.models import Shift, User
-from apps.core.services import ShiftService
-from .serializers import ShiftSerializer
+from apps.core.models import Shift, User, ShiftChangeRequest
+from apps.jobs.models import BlepChangeRequest
+from apps.core.services import ShiftService, TimeChangeRequestService
+from apps.api.permissions import CanManageTime
+from .serializers import (ShiftSerializer, ShiftChangeRequestSerializer,
+                          BlepChangeRequestSerializer)
 
 
 def _resolve_target(request):
@@ -97,3 +100,62 @@ class ShiftViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Not permitted.'}, status=status.HTTP_403_FORBIDDEN)
         shift.delete()
         return Response({'message': 'Shift deleted.'})
+
+
+class _ChangeRequestViewSet(viewsets.ModelViewSet):
+    """Common behaviour for shift/blep change requests."""
+
+    def get_permissions(self):
+        if self.action in ('approve', 'deny'):
+            return [IsAuthenticated(), CanManageTime()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = self.queryset_model.objects.all().select_related('requester')
+        status_p = self.request.query_params.get('status')
+        mine = self.request.query_params.get('mine')
+        if status_p:
+            qs = qs.filter(status=status_p)
+        if mine == 'true':
+            qs = qs.filter(requester=self.request.user)
+        elif not (self.request.user.is_superuser
+                  or self.request.user.has_perm('core.can_manage_time')):
+            qs = qs.filter(requester=self.request.user)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        ser = self.get_serializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        instance = self.queryset_model(requester=request.user, **ser.validated_data)
+        try:
+            TimeChangeRequestService.submit(instance)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        try:
+            TimeChangeRequestService.approve(self.get_object(), reviewer=request.user)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(self.get_object()).data)
+
+    @action(detail=True, methods=['post'])
+    def deny(self, request, pk=None):
+        note = (request.data or {}).get('note', '')
+        try:
+            TimeChangeRequestService.deny(self.get_object(), reviewer=request.user, note=note)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(self.get_object()).data)
+
+
+class ShiftChangeRequestViewSet(_ChangeRequestViewSet):
+    queryset_model = ShiftChangeRequest
+    serializer_class = ShiftChangeRequestSerializer
+
+
+class BlepChangeRequestViewSet(_ChangeRequestViewSet):
+    queryset_model = BlepChangeRequest
+    serializer_class = BlepChangeRequestSerializer
