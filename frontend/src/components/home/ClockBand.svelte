@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
   import { currentShift, refreshCurrentShift, notifyShiftChanged } from '../../stores/shift.js';
+  import { notifyBlepChanged } from '../../stores/blepActivity.js';
 
   let busy = $state(false);
   let error = $state('');
@@ -26,7 +27,13 @@
   }
   async function clockOut() {
     busy = true; error = '';
-    try { await api.post('/api/shifts/clock-out/', {}); await notifyShiftChanged(); }
+    try {
+      await api.post('/api/shifts/clock-out/', {});
+      // Clock-out closes any open blep server-side, so refresh the blep band too,
+      // not just the shift state.
+      await notifyShiftChanged();
+      await notifyBlepChanged();
+    }
     catch (e) { error = e.message || 'Could not clock out.'; } finally { busy = false; }
   }
 </script>
