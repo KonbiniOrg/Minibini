@@ -13,7 +13,7 @@ class BlepViewSet(viewsets.ModelViewSet):
     """Top-level Blep (time entry) endpoints.
 
     List supports filters ?user=me|<id>, ?task=<id>, ?since=<iso>.
-    Create/update/delete enforce ownership + 24h window or can_manage_time
+    Create/update/delete enforce ownership + 30h window or can_manage_time
     in the service layer.
     """
     serializer_class = BlepSerializer

@@ -129,6 +129,13 @@ class _ChangeRequestViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         ser = self.get_serializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        target = ser.validated_data.get('shift') or ser.validated_data.get('blep')
+        if target is not None and target.user_id != request.user.id \
+                and not (request.user.is_superuser
+                         or request.user.has_perm('core.can_manage_time')):
+            return Response(
+                {'detail': 'You can only request changes to your own time records.'},
+                status=status.HTTP_403_FORBIDDEN)
         instance = self.queryset_model(requester=request.user, **ser.validated_data)
         try:
             TimeChangeRequestService.submit(instance)

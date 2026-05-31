@@ -48,3 +48,9 @@ class BlepChangeRequestSerializer(_BaseChangeRequestSerializer):
         model = BlepChangeRequest
         fields = _BaseChangeRequestSerializer.common_fields + ['blep', 'task', 'task_name']
         read_only_fields = _BaseChangeRequestSerializer.common_read_only
+
+    def validate(self, attrs):
+        if attrs.get('blep') is None and attrs.get('task') is None:
+            raise serializers.ValidationError(
+                {'task': 'A task is required to record a missing time entry.'})
+        return attrs

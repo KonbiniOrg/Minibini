@@ -52,3 +52,27 @@ class ChangeRequestAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.worker)
         r = self.client.post(f'/api/shift-change-requests/{req.pk}/approve/', {}, format='json')
         self.assertIn(r.status_code, (403, 401))
+
+    def test_blep_create_request_requires_task(self):
+        self.client.force_authenticate(user=self.worker)
+        r = self.client.post('/api/blep-change-requests/', {
+            'requested_start': (self.now - timedelta(hours=40)).isoformat(),
+            'requested_end': (self.now - timedelta(hours=39)).isoformat(),
+            'reason': 'missing entry',
+        }, format='json')
+        self.assertEqual(r.status_code, 400, r.data)
+
+    def test_worker_cannot_target_another_users_shift(self):
+        from apps.core.models import Shift
+        other = User.objects.create_user(username='cr_api_other', password='x')
+        s = Shift.objects.create(user=other,
+                                 start_time=self.now - timedelta(hours=40),
+                                 end_time=self.now - timedelta(hours=39))
+        self.client.force_authenticate(user=self.worker)
+        r = self.client.post('/api/shift-change-requests/', {
+            'shift': s.shift_id,
+            'requested_start': (self.now - timedelta(hours=40)).isoformat(),
+            'requested_end': (self.now - timedelta(hours=38)).isoformat(),
+            'reason': 'not mine',
+        }, format='json')
+        self.assertEqual(r.status_code, 403, r.data)
