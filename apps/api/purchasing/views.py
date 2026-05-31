@@ -228,7 +228,10 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
 
     @action(detail=True, methods=['post'], url_path='send', url_name='send')
     def send(self, request, pk=None):
-        """Send a PO to the vendor via email with PDF attachment."""
+        """Send a PO to the vendor via email with PDF attachment.
+        Accepts to/subject/body plus optional cc/bcc (comma-separated)
+        and multipart 'attachments' uploads beyond the auto-attached PDF."""
+        from django.core.exceptions import ValidationError as DjangoValidationError
         po = self.get_object()
         to = request.data.get('to', '').strip()
         subject = request.data.get('subject', '').strip()
@@ -245,15 +248,30 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        cc = [c.strip() for c in request.data.get('cc', '').split(',') if c.strip()]
+        bcc = [b.strip() for b in request.data.get('bcc', '').split(',') if b.strip()]
+        extra_attachments = []
+        for uploaded in request.FILES.getlist('attachments'):
+            extra_attachments.append((
+                uploaded.name, uploaded.read(),
+                uploaded.content_type or 'application/octet-stream',
+            ))
+
         try:
             po = PurchaseOrderEmailService.send_po(
                 po, to=to, subject=subject, body=body,
+                cc=cc, bcc=bcc, extra_attachments=extra_attachments,
                 user=request.user,
+            )
+        except DjangoValidationError as e:
+            return Response(
+                {'detail': e.messages if hasattr(e, 'messages') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:
             return Response(
                 {'detail': str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_502_BAD_GATEWAY,
             )
 
         serializer = self.get_serializer(po)

@@ -158,14 +158,57 @@ def extract_company_from_signature(email_text):
     return ''
 
 
-def extract_email_body(email_content):
+_REPLY_MARKER_PATTERNS = (
+    # A line that starts with '>' (Gmail and most clients quote this way).
+    r'(?:^|\n)[ \t]*>',
+    # "On <date>, <person> wrote:" — Gmail/Apple Mail reply prelude.
+    r'(?:^|\n)[ \t]*On .{1,200}\bwrote:[ \t]*(?:\n|$)',
+    # Outlook classic divider.
+    r'(?:^|\n)-{5,}[ \t]*Original Message[ \t]*-{5,}',
+    # Outlook forward header — three header lines in a row.
+    r'(?:^|\n)From:[ \t].+\nSent:[ \t].+\nTo:[ \t].+',
+    # Apple Mail forward marker.
+    r'(?:^|\n)Begin forwarded message:',
+)
+
+_REPLY_MARKER_RE = re.compile('|'.join(_REPLY_MARKER_PATTERNS), re.IGNORECASE)
+
+
+def strip_quoted_reply(text):
+    """Trim a plain-text email body at the first reply or forward marker.
+
+    Recognizes Gmail-style ">" quote lines, "On <date>, <person> wrote:"
+    preludes, Outlook's "-----Original Message-----" divider, Outlook
+    forward header blocks (From:/Sent:/To: in three consecutive lines), and
+    Apple Mail's "Begin forwarded message:" marker.
+
+    Normalizes CRLF -> LF before matching. Returns the body up to (not
+    including) the earliest marker, rstrip'd. If no marker matches, returns
+    the input unchanged.
+    """
+    if not text:
+        return ''
+    normalized = text.replace('\r\n', '\n').replace('\r', '\n')
+    match = _REPLY_MARKER_RE.search(normalized)
+    if not match:
+        return text
+    return normalized[:match.start()].rstrip()
+
+
+def extract_email_body(email_content, trim_signature=True):
     """
     Extract the most relevant body content from email.
 
-    Prefers plain text, removes signatures and quoted replies.
+    Prefers plain text, removes quoted replies via `strip_quoted_reply`.
+    When `trim_signature` is True (default, for backwards compatibility),
+    also strips any text following a broad set of signature markers —
+    useful when the caller just wants a short excerpt. Callers that want
+    the full body and intend to apply their own sign-off trim (e.g.
+    `trim_body_at_signoff`) should pass `trim_signature=False`.
 
     Args:
         email_content (dict): Dict with 'text' and 'html' keys
+        trim_signature (bool): If True, also cut at the first signature marker
 
     Returns:
         str: Cleaned email body
@@ -182,30 +225,267 @@ def extract_email_body(email_content):
     if not body:
         return ''
 
-    # Remove quoted replies (lines starting with >)
-    lines = body.split('\n')
-    cleaned_lines = []
-    for line in lines:
-        if line.strip().startswith('>'):
-            break  # Stop at quoted content
-        cleaned_lines.append(line)
+    body = strip_quoted_reply(body)
 
-    body = '\n'.join(cleaned_lines)
+    if trim_signature:
+        # Broad signature trim — kept for the deprecated HTML view path.
+        signature_patterns = [
+            r'\n--\s*\n',
+            r'\n\s*Best regards',
+            r'\n\s*Sincerely',
+            r'\n\s*Regards',
+            r'\n\s*Thank you',
+            r'\n\s*Thanks',
+        ]
 
-    # Truncate signature (common patterns)
-    signature_patterns = [
-        r'\n--\s*\n',
-        r'\n\s*Best regards',
-        r'\n\s*Sincerely',
-        r'\n\s*Regards',
-        r'\n\s*Thank you',
-        r'\n\s*Thanks',
-    ]
-
-    for pattern in signature_patterns:
-        match = re.search(pattern, body, re.IGNORECASE)
-        if match:
-            body = body[:match.start()]
-            break
+        for pattern in signature_patterns:
+            match = re.search(pattern, body, re.IGNORECASE)
+            if match:
+                body = body[:match.start()]
+                break
 
     return body.strip()
+
+
+# Longest first so alternation prefers "Best regards," over "Best,".
+_SIGNOFF_PHRASES = (
+    'Best regards',
+    'Kind regards',
+    'Many thanks',
+    'Thank you',
+    'Thanks',
+    'Thx',
+    'Cheers',
+    'Regards',
+    'Sincerely',
+    'Cordially',
+    'Best',
+)
+
+_SIGNOFF_RE = re.compile(
+    r'(?:^|\n)[ \t]*(?:'
+    r'(?:' + '|'.join(_SIGNOFF_PHRASES) + r'),'      # signoff word + comma, OR
+    r'|-{3,}'                                         # a separator line of 3+ hyphens
+    r')[ \t]*\n[ \t]*\S',
+    re.IGNORECASE,
+)
+
+
+def trim_body_at_signoff(body):
+    """Trim an email body just before a single sign-off line + signer name.
+
+    Only trims when we can identify the pattern:
+
+        <signoff phrase>,
+        <name on the next line>
+
+    where the signoff is one of `_SIGNOFF_PHRASES`. Without the comma or the
+    following name, the body is returned unchanged — we'd rather keep too much
+    than throw real content away.
+    """
+    if not body:
+        return ''
+    # IMAP bodies routinely arrive with CRLF — normalize so the regex's
+    # `\n[ \t]*` boundary works regardless of source line endings.
+    normalized = body.replace('\r\n', '\n').replace('\r', '\n')
+    match = _SIGNOFF_RE.search(normalized)
+    if not match:
+        return body
+    return normalized[:match.start()].rstrip()
+
+
+_SUBJECT_PREFIX_RE = re.compile(r'^\s*(?:(?:Re|Fwd?|FW)\s*:\s*)+', re.IGNORECASE)
+_JOB_NAME_MAX = 50
+
+
+def clean_subject_for_job_name(subject):
+    """Strip leading Re:/Fwd: prefixes from an email subject and clamp to the
+    50-char Job.name limit (with an ellipsis if it had to be truncated)."""
+    if not subject:
+        return ''
+    cleaned = _SUBJECT_PREFIX_RE.sub('', subject).strip()
+    if len(cleaned) > _JOB_NAME_MAX:
+        cleaned = cleaned[:_JOB_NAME_MAX - 3] + '...'
+    return cleaned
+
+
+def resolve_contact_links(addresses):
+    """Look up Contact rows by email for any address that matches one we know.
+
+    Args:
+        addresses: iterable of raw address strings (each may be a bare email or
+            a ``Name <email@host>`` form). ``None`` / empty strings ignored.
+
+    Returns:
+        dict mapping the lowercased email address to
+        ``{'contact_id': int, 'name': str}`` for any address that resolves to
+        an existing Contact. Addresses without a Contact match are omitted.
+
+    The lookup is one query regardless of the number of addresses passed in.
+    """
+    if not addresses:
+        return {}
+    emails = set()
+    for raw in addresses:
+        if not raw or not raw.strip():
+            continue
+        _, parsed = parse_email_address(raw)
+        if parsed:
+            emails.add(parsed.lower())
+    if not emails:
+        return {}
+    # Late import: this module is also used by code paths that load before
+    # the contacts app is ready (e.g. management commands at import time).
+    from apps.contacts.models import Contact
+    # Group matches by email so we can detect ambiguity. Contact.email isn't
+    # unique — when two contacts share an address, the SPA should render
+    # plain text rather than silently link to one of them.
+    grouped = {}
+    for c in Contact.objects.filter(email__in=emails):
+        grouped.setdefault(c.email.lower(), []).append(c)
+    return {
+        email: {'contact_id': matches[0].contact_id, 'name': matches[0].name}
+        for email, matches in grouped.items()
+        if len(matches) == 1
+    }
+
+
+def build_reply_subject(parent_subject):
+    """Strip existing Re:/Fwd: prefixes and prefix exactly one ``Re: ``.
+
+    Reuses _SUBJECT_PREFIX_RE (already used by clean_subject_for_job_name).
+    Empty / whitespace-only input becomes ``Re: (no subject)``.
+    """
+    cleaned = (_SUBJECT_PREFIX_RE.sub('', parent_subject) if parent_subject else '').strip()
+    if not cleaned:
+        return 'Re: (no subject)'
+    return f'Re: {cleaned}'
+
+
+def build_reply_body(parent_email_record):
+    """Build the quoted-original body for a reply to ``parent_email_record``.
+
+    Output shape (standard mail-client convention, top-posted):
+
+        \\n
+        \\n
+        On <localized date>, <name> <<email>> wrote:
+        > <parent body line 1>
+        > <parent body line 2>
+        ...
+
+    Each line of ``parent.temp_data.text_body`` is prefixed with ``> ``,
+    including blank lines (which become a bare ``>``). When the parent
+    has no cached text body, the attribution still renders and the body
+    is a single ``> (original message unavailable)`` line. When the
+    parent has no ``temp_data`` at all (older email scrubbed from
+    cache), no attribution can be built — return just the two leading
+    blank lines so the user can still type a reply.
+    """
+    temp = getattr(parent_email_record, 'temp_data', None)
+    if not temp:
+        return '\n\n'
+
+    name, email = parse_email_address(temp.from_email or '')
+    if name:
+        sender = f'{name} <{email}>'
+    else:
+        sender = email or '(unknown)'
+
+    date = temp.date_sent
+    if date is not None:
+        # Mon, May 28, 2026 at 9:32 AM. %-d / %-I are GNU/BSD extensions
+        # (Mac and Linux); we don't run on Windows.
+        try:
+            date_str = date.strftime('%a, %b %-d, %Y at %-I:%M %p')
+        except ValueError:
+            # Defensive fallback if strftime rejects the format on some
+            # platform; ISO is at least readable.
+            date_str = date.isoformat()
+    else:
+        date_str = '(unknown date)'
+
+    attribution = f'On {date_str}, {sender} wrote:'
+
+    text_body = temp.text_body or ''
+    if text_body:
+        quoted_lines = []
+        for line in text_body.splitlines():
+            if line:
+                quoted_lines.append(f'> {line}')
+            else:
+                quoted_lines.append('>')
+        quoted_body = '\n'.join(quoted_lines)
+    else:
+        quoted_body = '> (original message unavailable)'
+
+    return f'\n\n{attribution}\n{quoted_body}'
+
+
+# Defensive cap on BFS iterations in collect_thread_member_ids. A real
+# thread converges in 1-2 rounds because each email's References field
+# encodes the full chain back to the root; this cap exists to prevent
+# any pathological loop, not to handle deep threads.
+_THREAD_BFS_MAX_ITERATIONS = 8
+
+
+def collect_thread_member_ids(email_record):
+    """Return the set of EmailRecord PKs in the same RFC 5322 thread.
+
+    A "thread" is the transitive closure over the Message-ID /
+    In-Reply-To / References graph. Two emails are in the same thread
+    if their key sets intersect, where an email's key set is its own
+    ``message_id`` plus its TempEmail's ``in_reply_to`` plus every
+    space-separated token in TempEmail's ``references``.
+
+    Walks via BFS, one DB round per expansion, capped at
+    _THREAD_BFS_MAX_ITERATIONS rounds defensively. The cap is almost
+    never reached because real threads converge in 1-2 rounds.
+
+    Emails whose TempEmail row has been purged from the cache still
+    participate — they're included via Message-ID match when a
+    sibling's references chain mentions them, but they don't expand
+    the search set (no headers to read from).
+    """
+    from django.db.models import Q
+    from apps.core.models import EmailRecord, TempEmail
+
+    # Bootstrap the known-IDs set from the source email's headers.
+    known = set()
+    if email_record.message_id:
+        known.add(email_record.message_id)
+    temp = getattr(email_record, 'temp_data', None)
+    if temp:
+        if temp.in_reply_to:
+            known.add(temp.in_reply_to.strip())
+        if temp.references:
+            known.update(t.strip() for t in temp.references.split() if t.strip())
+
+    if not known:
+        return {email_record.pk}
+
+    for _ in range(_THREAD_BFS_MAX_ITERATIONS):
+        # Find TempEmail rows whose EmailRecord's Message-ID, or whose own
+        # In-Reply-To, or whose References field mentions any of our known
+        # IDs. References tokens always include angle brackets per RFC 5322,
+        # so `__contains` is unambiguous.
+        q = Q(email_record__message_id__in=known) | Q(in_reply_to__in=known)
+        for token in known:
+            q |= Q(references__contains=token)
+
+        next_tokens = set()
+        for row in TempEmail.objects.filter(q).select_related('email_record'):
+            if row.email_record.message_id:
+                next_tokens.add(row.email_record.message_id)
+            if row.in_reply_to:
+                next_tokens.add(row.in_reply_to.strip())
+            if row.references:
+                next_tokens.update(t.strip() for t in row.references.split() if t.strip())
+
+        if next_tokens <= known:
+            break
+        known |= next_tokens
+
+    return set(
+        EmailRecord.objects.filter(message_id__in=known).values_list('pk', flat=True)
+    )

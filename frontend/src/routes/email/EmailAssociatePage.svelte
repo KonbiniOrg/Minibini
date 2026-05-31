@@ -52,6 +52,11 @@
     const parts = text.split(/\s+/);
     return parts.length <= words ? text : parts.slice(0, words).join(' ') + '…';
   }
+
+  $effect(() => {
+    void params.id;
+    load();
+  });
 </script>
 
 <h2>Associate Email with Existing Job</h2>

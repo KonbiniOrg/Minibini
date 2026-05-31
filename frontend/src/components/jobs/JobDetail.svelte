@@ -1,5 +1,5 @@
 <script>
-  import HistoryPanel from '../HistoryPanel.svelte';
+  import EmailPanel from '../EmailPanel.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
   import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
   import DeliverablesSection from './DeliverablesSection.svelte';
@@ -17,8 +17,6 @@
     invoices = null,
     purchaseOrders = null,
     emails = null,
-    history = null,
-    onAddNote = null,
     onStatusChange = null,
     onStartWizard = null,
   } = $props();
@@ -482,7 +480,7 @@
   <DeliverablesSection jobId={job.job_id} />
   <div class="panel history-panel">
     <div class="panel-scroll history-scroll-host">
-      <HistoryPanel {history} {emails} {onAddNote} />
+      <EmailPanel {emails} />
     </div>
   </div>
 </div>
@@ -1342,8 +1340,9 @@
   }
   .panel-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
   .description-panel p { margin: 0; line-height: 1.6; color: #333; font-size: 14px; }
-  /* Let HistoryPanel's internal scroll relax inside our fixed-height panel */
+  /* Let the inner panel's scroll relax inside our fixed-height panel */
   .history-scroll-host :global(h3) { margin-top: 0; font-size: 14px; }
+  .history-scroll-host :global(.email-scroll),
   .history-scroll-host :global(.history-scroll) { max-height: none; }
 
   /* ACCORDION */

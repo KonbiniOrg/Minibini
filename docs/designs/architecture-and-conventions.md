@@ -619,7 +619,7 @@ Adoption is sparse — currently only two consumers
 (`components/contacts/BusinessDetail.svelte`,
 `components/contacts/ContactDetail.svelte`). Other components either
 predate the convention or check `$viewMode` directly (e.g.,
-`HistoryPanel.svelte` filters its timeline based on `$viewMode === 'lite'`).
+`HistoryPanel.svelte` filters history entries based on `$viewMode === 'lite'`).
 
 ### 6.3 Toggle location
 
@@ -710,10 +710,351 @@ one if needed.
 
 ### 7.5 Frontend
 
-`frontend/src/components/HistoryPanel.svelte` renders a merged timeline
-of `HistoryEntry` rows and `EmailRecord` rows for the same object. In
-lite mode it filters to emails plus history entries that have free-text
-content (`entry.data.text`); full mode shows everything.
+`frontend/src/components/HistoryPanel.svelte` renders a history-only
+timeline of `HistoryEntry` rows for an object. In lite mode it filters
+to entries with free-text content (`entry.data.text`); full mode shows
+everything. The component is currently unmounted from the Job overview
+pending a redesign — `EmailPanel.svelte` occupies that slot today (see
+§7.6) — but the component itself is still wired and works for any
+caller that passes it `{ history, onAddNote }`.
+
+### 7.6 Email panel on the Job overview
+
+`frontend/src/components/EmailPanel.svelte` renders the email list in
+the bottom-right pane of the Job overview, mounted by `JobDetail.svelte`
+where `HistoryPanel.svelte` used to live. Two-line cards: row 1 is
+`<date> <direction-glyph> <display_address> <subject>`, row 2 is the
+`snippet`. Outbound rows get a tinted background. The whole card is an
+`<a>` to `#/email/<email_record_id>`.
+
+The component consumes the same paginated `/api/emails/?job=<id>`
+response the rest of the SPA uses. The serializer now exposes three
+fields specifically for this view (`apps/api/email/serializers.py`):
+
+- `direction` — `'inbound' | 'outbound'`. Hard-coded `'inbound'` today;
+  outbound tracking is a deferred follow-up but the data shape is in
+  place.
+- `display_address` — sender for inbound, first recipient for outbound.
+- `snippet` — 80-char preview derived from the cached body
+  (`text_body`, or `html_body` with HTML tags stripped), passed through
+  `strip_quoted_reply` and whitespace-collapsed. Empty string when
+  `temp_data` has been purged.
+
+### 7.7 IMAP cache on `TempEmail`
+
+`TempEmail` caches the parts of an email that list and detail views
+need so the SPA can render without re-hitting IMAP:
+
+- `text_body` / `html_body` — message body (used by the Email panel
+  snippet, `sender_info`, and the detail page).
+- `attachments_metadata` — JSON list of
+  `{filename, content_type, size}` per attachment (used by the detail
+  page's attachment list).
+
+`EmailService.fetch_emails_by_date_range` / `fetch_new_emails`
+populate all three fields when they create the `TempEmail` row (helper
+`_attachments_metadata` builds the list).
+`EmailService.get_email_content` returns a cache-only dict when both
+the body and the attachment list are available; it falls back to IMAP
+when (a) `temp_data` is missing entirely or (b) the cache is
+incomplete — either no body cached, or `has_attachments=True` with an
+empty `attachments_metadata` (pre-backfill rows). Attachment payload
+bytes are never cached and are not part of the JSON response; the
+future per-attachment download endpoint re-fetches them by UID. Cached
+bodies/metadata are purged alongside the rest of `TempEmail` per the
+retention policy described in §7.7a.
+
+### 7.7a Retention clock: finality-based purge
+
+`EmailService.cleanup_old_temp_emails` (invoked by the
+`cleanup_temp_emails` scheduled command) decides eligibility per
+`TempEmail` row:
+
+- **Unlinked** (the `EmailRecord` has no `job` / `purchase_order` /
+  `bill`): clock starts at `TempEmail.created_at`. Purged once
+  `email_retention_days` have elapsed. This is the original behavior.
+- **Linked to one or more of Job / PurchaseOrder / Bill**: the clock
+  is the *finality date* of those records, not the email's own date.
+  Each linked record contributes its own clock; the strictest one wins
+  (the email is purged only when **every** linked record is past its
+  retention window).
+- A linked record's finality date is the timestamp of the most recent
+  `HistoryEntry` recording a transition into a final status, scoped to
+  that record. If no qualifying `HistoryEntry` exists for a final
+  record (pre-history-tracking data, or created directly in a final
+  state), we fall back to `TempEmail.created_at` for that link so
+  emails aren't stuck unpurgeable.
+- A linked record that is **not** currently in a final status keeps
+  its emails indefinitely. The clock has not yet started.
+
+Final-status sets ("practically done"):
+
+| Model | Final statuses |
+|---|---|
+| `Job` | `completed`, `rejected`, `cancelled` |
+| `PurchaseOrder` | `received_in_full`, `cancelled` |
+| `Bill` | `paid_in_full`, `cancelled`, `refunded` |
+
+`EmailRecord` rows are preserved permanently regardless of `TempEmail`
+purge — the auditable record of an email having existed survives even
+once its cached body and metadata are gone.
+
+`email_retention_days` is editable in the Settings → Email tab
+(gated on `can_manage_config`).
+
+### 7.8 Email detail action panel
+
+`EmailRecord` has three independent association FKs — `job`,
+`purchase_order`, and `bill`, all `on_delete=SET_NULL`. Any
+combination is valid; the user chooses which apply per email.
+
+`frontend/src/components/email/EmailActionPanel.svelte` is the
+right-rail side panel on the email detail page (`EmailDetailPage.svelte`
+lays out content + rail in a two-column flexbox). One section per
+target (Job, Purchase Order, Bill). When the email is linked to that
+target the section shows the linked entity as a navigation link plus a
+Disassociate `<button>`; when unlinked it shows two `<a>`s styled like
+buttons — *Create new* and *Link existing* — that route to the
+respective Create-from-Email and Associate-with-Existing pages. Each
+section is hidden when the viewer lacks the relevant permission atom
+(`can_manage_jobs` for the Job section; `can_manage_financials` for
+PO and Bill).
+
+The Create-from-Email pages share `SenderResolutionForm.svelte`
+(`frontend/src/components/email/`), the sender-info + contact-picker /
+new-contact-form + business-mode sub-flow. The form owns the visual
+block and the resolution state (bound via `$bindable`); the
+`resolveSenderToContact(state)` helper in `lib/email.js` turns that
+state into `{contactId, businessId}` by making the necessary
+`/api/contacts/` and `/api/businesses/` POSTs on submit. The constraint
+that drove this shape: `Business.default_contact` is a required FK, so
+every Create flow that produces a vendor Business naturally produces
+a Contact alongside it. The placeholder name "PO receiver" (or
+similar) is acceptable when no real sales rep is involved.
+
+SPA routes registered in `App.svelte`:
+
+- `/email/:id/create-job` → `EmailCreateJobPage.svelte`
+- `/email/:id/create-po` → `EmailCreatePOPage.svelte`
+- `/email/:id/create-bill` → `EmailCreateBillPage.svelte` (resolves the
+  Contact+Business, then navigates to `#/bills/new?email=&vendor=` —
+  the actual Bill creation page is future work)
+- `/email/:id/associate` → `EmailAssociatePage.svelte` (Job picker)
+- `/email/:id/associate-po` → `EmailAssociatePOPage.svelte`
+- `/email/:id/associate-bill` → `EmailAssociateBillPage.svelte`
+
+`EmailRecordSerializer` exposes `job` + `job_number`,
+`purchase_order` + `po_number`, and `bill` + `vendor_invoice_number`
+read-only so the panel can render linked-entity labels without extra
+fetches.
+
+### 7.9 `EmailService` association helpers
+
+`EmailService.associate_with(email_pk, target_field, target_pk)` and
+`disassociate_from(email_pk, target_field)` are parameterized over the
+three target fields (`'job'`, `'purchase_order'`, `'bill'`), validated
+against an allowlist. The five Email-action API endpoints
+(`link-to-job` / `unlink-from-job` / `link-to-po` / `unlink-from-po` /
+`link-to-bill` / `unlink-from-bill`) route through these via a
+`_link_email_to(target_field, body_key, …)` / `_unlink_email_from`
+helper pair in `apps/api/email/views.py` so the six views are
+one-liners. `EmailService.associate_with_job` and
+`disassociate_from_job` remain as backwards-compatible shims that
+delegate to the parameterized pair; callers that already used the
+job-specific names keep working unchanged.
+
+### 7.10 Outbound email tracking
+
+Outbound documents (Estimate / PO / Invoice send) persist an
+`EmailRecord` with `direction='outbound'` at send time. The flow is
+owned by `OutboundEmailService.send_tracked` in `apps/core/services.py`:
+
+1. Generate a Message-ID we control —
+   `<minibini-<uuid4-hex>@<our_domain>>` — where `our_domain` is the
+   eponymous Configuration key (default `example.com` until tenancy
+   lands). Set as the outgoing message's `Message-ID` header so
+   customer replies' `In-Reply-To` round-trips back to a row we own.
+2. Persist the `EmailRecord` (direction=outbound, message_id, the
+   association FK passed in `associate_with={'job'|'purchase_order'|
+   'bill': obj}`) + a `TempEmail` row holding the composed
+   subject/from/to/cc/bcc/body and the attachments_metadata. Both
+   committed in a single transaction *before* SMTP runs.
+3. Call `EmailMessage.send()`. On success, set `sent_at=now()`. On
+   failure, save the exception's message into `last_send_error` and
+   re-raise — the row persists for the user to retry.
+4. Retry semantics: `send_tracked` finds the most recent
+   `direction='outbound', sent_at=null` row for the same target and
+   reuses it (same `message_id`, updated body/subject/etc from the
+   current call). PDFs are regenerated on every attempt; user
+   uploads come from the multipart POST. No drafts.
+
+The per-document send services that wrap this:
+- `EstimateEmailService` (`apps/estimates/services.py`) — generates
+  the PDF, calls `send_tracked` with `associate_with={'job': …}`,
+  transitions `draft → open` on send success.
+- `PurchaseOrderEmailService.send_po` (`apps/purchasing/services.py`)
+  — same shape but `associate_with={'purchase_order': …}` and
+  `draft → issued`.
+- `InvoiceEmailService.send_invoice` (`apps/invoicing/services.py`)
+  — adds the QBO push step before SMTP (skipped if `invoice.qbo_id`
+  is already set — fixes the duplicate-push-on-retry bug),
+  auto-attaches both the QBO-rendered invoice PDF and the local Job
+  Statement PDF, transitions `draft → open`.
+
+Body / subject templates live as `Configuration` keys
+(`estimate_email_subject_template`, `estimate_email_body_template`,
+`po_email_*`, `invoice_email_*`). Rendering goes through
+`apps.core.email_templates.render_email_template` — a safe
+`str.format_map` wrapper that leaves unknown `{placeholders}`
+literal so user-edited templates can't crash a send. Variables shared
+across all three document types: `{contact_fname}`, `{contact_lname}`,
+`{contact_business}`, `{my_user_name}`, `{job_number}`, `{job_name}`,
+`{document_number}`. Per-document aliases (`{estimate_number}`,
+`{po_number}`, `{invoice_number}`, `{vendor_name}`) also work. The
+shop's own business name isn't a variable — users hard-code it into
+the boilerplate where they want it.
+
+### 7.11 Reply correlation
+
+`EmailService.correlate_reply(email_record)` runs at the tail of
+`fetch_new_emails` and `fetch_emails_by_date_range`, after the
+inbound `EmailRecord` + `TempEmail` are created. It walks
+`TempEmail.in_reply_to` first, then the `references` chain
+right-to-left, looking up each token against existing
+`EmailRecord.message_id`. **The walk continues past parents that
+exist but have no FKs to copy** — that lets a new reply inherit
+context from a grandparent when the immediate parent happens to be
+orphaned itself. The first parent that contributes at least one
+non-null FK wins; its `job` / `purchase_order` / `bill` values are
+copied onto the new reply EmailRecord. Behavior is silent — no
+"auto-linked via reply" badge; the action panel's existing
+Disassociate handles any mis-correlated auto-links.
+
+The `TempEmail` rows that drive this gain three columns:
+`in_reply_to` (CharField, captures the immediate parent's
+Message-ID), `references` (TextField, captures the full thread
+chain), and `bcc_email` (TextField, populated only on outbound rows
+since IMAP-fetched inbound can't see BCC).
+
+### 7.11a Thread-wide association propagation
+
+Every place that sets a `job` / `purchase_order` / `bill` FK on an
+EmailRecord — `EmailService.associate_with` (called by the
+link-to-X endpoints and the create-X-from-email paths) and
+`correlate_reply` (called at IMAP fetch time) — invokes
+`EmailService.propagate_thread_association(email_record,
+target_field)` afterwards. The propagation:
+
+1. Reads the source EmailRecord's value for that field. No-op when
+   it's null (nothing to propagate).
+2. Calls `collect_thread_member_ids(email_record)` in
+   `apps.core.email_utils` — a BFS over the RFC 5322 thread graph
+   (Message-ID + In-Reply-To + References intersection) that
+   returns every EmailRecord PK in the same thread. The BFS uses
+   one DB round per expansion, capped at 8 rounds defensively;
+   real threads converge in 1-2 rounds because each email's
+   References field already encodes its full chain back to the
+   root.
+3. Bulk-updates every thread member where the target field is null
+   to the source's value. **Doesn't overwrite a sibling already
+   linked to a different target** — that's a deliberate human
+   choice the propagation respects.
+
+Bulk `.update()` skips `Model.save()` and the `@history` capture —
+that's intentional. The user-initiated event on the source
+EmailRecord IS the audited action; the propagated set is the
+implicit consequence the design promises, and writing a per-row
+history entry for each sibling would flood the activity feed.
+
+Disassociate doesn't propagate. Per-email is the surgical tool the
+user reaches for when a sibling really doesn't belong.
+
+### 7.12 SPA send pages
+
+The send compose surface is a per-document route
+(`/estimates/:id/send`, `/purchase-orders/:id/send`,
+`/invoices/:id/send`). Each wraps the shared
+`frontend/src/components/email/DocumentSendForm.svelte` (To / CC /
+BCC / Subject / Body / Attachments-with-remove-checkboxes /
+Add-attachment / Send button with native `confirm()`), fetches its
+own `send-defaults` for prefill, and renders a focused read-only
+document summary below the form. Submit POSTs as
+`multipart/form-data` via `api.postMultipart()` in `lib/api.js` —
+the new sibling of the JSON `api.post()`.
+
+### 7.13 Reply composer
+
+The reply composer is inline on the email detail page —
+`EmailReplyComposer.svelte` mounted by `EmailDetailPage.svelte` above
+the original `EmailContent` when the user clicks Reply or Reply All in
+the right-rail `EmailActionPanel`. The page tracks a small
+`replyMode = $state(null)` (one of `null | 'reply' | 'reply-all'`); the
+action panel's Reply / Reply All buttons set it via an `onReply(mode)`
+callback prop. The right rail uses `position: sticky` so the action
+panel (Job / PO / Bill associations + Reply controls) stays visible
+while the user scrolls between the compose form and the original
+email below it.
+
+`EmailReplyComposer` owns the form state (to / cc / bcc / subject /
+body / extraFiles) directly and binds it into `DocumentSendForm`
+via `$bindable` props. Mid-compose mode switching (clicking Reply
+All while composing a Reply, or vice versa) preserves everything the
+user has typed and only updates the CC field — driven by an
+`$effect` that fires when `mode` changes after the initial load.
+Cancel button calls `onClose` which clears `replyMode`. Submit calls
+the reply endpoint and on success calls `onSent`, which clears the
+composer and reloads the email (so any inherited associations and
+the new outbound row in the linked Job's panel render
+appropriately).
+
+Backend endpoints:
+
+- `GET /api/emails/{id}/reply-defaults/` — returns the prefilled
+  form payload: `to` (parent's parsed from-email), `cc` (blank),
+  `bcc` (blank), `reply_all_cc` (parent's to + cc minus
+  `EMAIL_HOST_USER`, deduped, original order), `subject`
+  (single-`Re: ` prefix via `build_reply_subject`), `body`
+  (quoted-original block via `build_reply_body`), `in_reply_to`
+  (parent's `message_id`), `references` (parent's references chain
+  extended with the parent's own message_id), and
+  `inherit_associations` (the parent's `job_id` /
+  `purchase_order_id` / `bill_id`).
+- `POST /api/emails/{id}/reply/` — accepts multipart form data,
+  echoes the threading headers + first non-null inherited
+  association FK back as `associate_with`, delegates to
+  `OutboundEmailService.send_tracked`. Returns
+  `{email_record_id}` on success, 400 on missing To, 502 on SMTP
+  failure (the outbound row's `last_send_error` captures the
+  reason).
+
+Both endpoints are `IsAuthenticated` — no atom required (replying
+is the email reader's own words; not a permission decision).
+
+The reply correlation pass (§7.11) runs unchanged on the inbound
+side: customer's reply to our outbound auto-links to the same Job
+/ PO / Bill the outbound was associated with.
+
+### 7.14 Outbound email — single entry point
+
+`OutboundEmailService.send_tracked` is the sole way to send email
+from this codebase. The earlier `send_email` SMTP-wrapper sibling
+has been removed; its `EmailMessage` construction is inlined into
+`send_tracked` where it's the only thing that did anything anyway.
+
+Every outbound flow — document sends (Estimate / PO / Invoice) and
+replies — routes through `send_tracked`, which guarantees an
+`EmailRecord` row exists before SMTP fires, a Message-ID is
+generated and persisted, and SMTP failures leave a "needs retry"
+row that the user can re-submit from.
+
+The `{object_url}` placeholder in document-send templates resolves
+through `apps.core.email_templates.build_object_url(kind, obj_id)`
+to `<our_public_url>/<entity-path>/<id>`, where `our_public_url` is
+a Configuration key (default `https://example.com`). These URLs
+don't currently serve unauthenticated customers — they're stub-
+shaped so user-authored boilerplate has a sensible placeholder. The
+real customer-facing public URL feature is a deferred follow-up;
+the stub resolution flips to signed tokens when that work lands.
 
 ---
 
@@ -805,13 +1146,14 @@ are written only by the base class.
 
 ### 9.3 The commands and their cadence
 
-Three commands run on a schedule today:
+Four commands run on a schedule today:
 
 | Command | `process_name` | What it does |
 |---|---|---|
 | `poll_qbo_payments` | `poll_qbo_payments` | Polls QBO for invoice payment and drives `Invoice.status` — see `quickbooks-integration.md` / `invoicing-and-expenses.md`. |
 | `mark_estimates_expired` | `mark_estimates_expired` | Expires `open` estimates past their frozen `expiration_date` — see `estimates-and-prices.md`. |
-| `cleanup_temp_emails` | `cleanup_temp_emails` | Deletes cached `TempEmail` rows older than `email_retention_days` (preserves `EmailRecord`; no per-object history). |
+| `mark_change_orders_expired` | `mark_change_orders_expired` | Expires `open` change orders past their frozen `expiration_date` — see `estimates-and-prices.md` (CO section). |
+| `cleanup_temp_emails` | `cleanup_temp_emails` | Deletes cached `TempEmail` rows whose retention clock has elapsed (preserves `EmailRecord`; no per-object history). See §7.7a for the finality-based clock rule. |
 
 ### 9.4 The docker-compose `cron` service
 

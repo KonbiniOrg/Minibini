@@ -21,6 +21,126 @@ proper issue.
 
 ## Open
 
+- **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
+  Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
+  intentionally have no draft state. SMTP failure with a page reload loses whatever the
+  user typed. Acceptable until real complaints surface — at which point the natural shape
+  is a `direction='outbound', sent_at=null, last_send_error=''` EmailRecord (the "in
+  flight" state currently never persists) plus a SPA list of "Drafts" on the inbox page.
+  Reply drafts probably want the most attention since freeform replies can be long.
+  _Done when:_ user can leave a send page mid-compose, come back later, and the form
+  pre-fills with what was there.
+
+- **Send outbound documents as a reply to the customer's most recent inbound thread.** — _added 2026-05-30_
+  When sending an Estimate / PO / Invoice, look up the latest `direction='inbound'`
+  EmailRecord linked to the document's Job (or PO / Bill), and set the outbound's
+  `In-Reply-To` + `References` headers so the customer sees the doc in the same Gmail
+  thread as their inquiry. Today we always send a fresh standalone email — works fine
+  but means customers see two separate threads. Probably a per-document Configuration
+  toggle ("thread document emails into recent customer threads by default") when this
+  lands. _Done when:_ outbound document emails optionally thread into the parent
+  conversation and customer mail clients see proper threading.
+
+- **Sent-folder upload via IMAP APPEND.** — _added 2026-05-30_
+  Outbound emails sent by Minibini don't appear in the user's Gmail web "Sent" folder
+  — they go out through SMTP and we keep our own EmailRecord, but the user's mail
+  client doesn't know about them. Append each successful outbound to the configured
+  Sent folder via IMAP so the user sees a consistent picture across our app and Gmail.
+  Off the critical path; nice-to-have. _Done when:_ sent emails from Minibini appear
+  in the user's Gmail Sent folder alongside emails they sent through Gmail directly.
+
+- **Forward action in the reply composer.** — _added 2026-05-30_
+  Standard mail-client Forward — different prefill from Reply (no recipient, `Fwd:`
+  subject, body becomes the quoted original, original attachments included). Not in
+  the inline composer today. _Done when:_ the action panel has a Forward button
+  alongside Reply / Reply All and the composer handles the Forward prefill shape.
+
+- **Subject-line parsing fallback for forwarded-rather-than-replied correlation.** — _added 2026-05-30_
+  Reply correlation uses In-Reply-To / References, which most replies preserve.
+  Forwards typically drop the threading headers, so a forwarded reply lands
+  unassociated. Could grep the subject for our outbound document numbers
+  (`EST-2026-0001`, `PO-…`, `INV-…`) as a fallback. Only worth doing if forwards
+  turn out to be a noticeable miss rate. _Done when:_ a measurable rate of
+  forwarded-replies-to-documents auto-associate to the right object.
+
+- **Multiple "our own" addresses for Reply-All filtering.** — _added 2026-05-30_
+  The Reply-All CC computation strips only the single `EMAIL_HOST_USER` address from
+  the list of original recipients. If the shop ever polls multiple accounts or
+  accepts mail at aliases, the user could see their own alias end up in CC. _Done
+  when:_ Reply-All strips any of the configured "our own" addresses (probably a
+  small list pulled from a new Configuration key).
+
+- **Thread view in the SPA.** — _added 2026-05-30_
+  Show all emails in a thread together (with their shared and individual
+  associations) instead of inbox rows that hide the structure. The
+  thread-association propagation feature ensures the data is now correctly
+  per-thread, so a thread view would just render what's already coherent. Real UX
+  improvement; out of scope when the propagation feature shipped. _Done when:_ the
+  email inbox has a thread-grouped view; clicking a thread shows the conversation
+  with the shared FK associations at the top and per-email details below.
+
+- **Bulk operations across a thread.** — _added 2026-05-30_
+  "Mark whole thread as read," "delete whole thread," "disassociate the whole
+  thread from Job X." Different from per-email actions (already present) — these
+  would operate over the thread membership set computed by
+  `collect_thread_member_ids`. Pair with the thread-view follow-up since the UI
+  surface for invoking these is the natural place. _Done when:_ the SPA has at
+  least one thread-level bulk action wired up.
+
+- **Customer-facing public URLs for documents (`{object_url}` real resolution).** — _added 2026-05-29_
+  The Estimate / PO / Invoice send templates support an `{object_url}` placeholder today,
+  resolved against the `our_public_url` Configuration key as
+  `<our_public_url>/<entity-path>/<id>`. The URL is a stub — internal IDs aren't customer-
+  reachable, no public view exists, no auth model is in place. The real feature needs:
+  (1) signed tokens or per-document `public_token` columns so URLs aren't guessable;
+  (2) public read views per document type (Estimate / PO / Invoice / Bill), styled for
+  the customer; (3) for Estimates, a public accept/reject API surface. Once the real
+  resolution is in place, `build_object_url` in `apps.core.email_templates` swaps from
+  the stub URL to the signed-token URL and existing user-authored boilerplate keeps
+  working unchanged. _Done when:_ the feature has shipped end-to-end and a customer
+  can click a Send-Email URL and view-then-accept an Estimate without a Minibini
+  account.
+
+- **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
+  Inconsistencies noticed in passing: some pages surface API errors via the global
+  `lib/api.js` overlay, some via inline `<p><strong>Error:</strong> {message}</p>` rows
+  under the form, some via field-level errors derived from DRF's `e.data`, and the
+  Invoice send dialog uses `e.data?.error || e.message`. The set of envelope shapes the
+  backend returns is also a bit mixed — some endpoints return `{'detail': '…'}`, some
+  `{'<field>': ['…']}`, some `{'error': '…'}`. The user-visible result is that the same
+  kind of failure can look quite different depending on where it happens. _Done when:_ a
+  quick pass has catalogued the variants, agreed on a small set of envelope shapes the
+  backend uses consistently, and the SPA's error display has been normalized to match
+  (probably: lean on `lib/api.js` overlays for unexpected errors, inline rows for
+  field-validation responses).
+
+- **Email attachments aren't downloadable.** — _added 2026-05-28_
+  `EmailContent.svelte` and the deprecated `email_detail.html` template both render
+  attachments as `<strong>{filename}</strong> ({content_type}, {size} bytes)` — no
+  download link. The IMAP service used to ship the raw `payload` bytes inside the JSON
+  response, which 500'd for any non-UTF-8 attachment (commit `<this-one>` strips
+  `payload` from the service contract); the SPA never used the bytes anyway. _Done
+  when:_ a streaming endpoint exists (e.g. `GET /api/emails/{id}/attachments/{index}/`)
+  that re-fetches by UID, returns the bytes with correct `Content-Type` and
+  `Content-Disposition: attachment; filename=…`, and the email detail page wraps the
+  filename in an `<a href>` to it. Decide at that time whether to cache attachment
+  bytes on `TempEmail` (avoids IMAP-per-click) or keep the streaming-from-IMAP shape.
+
+- **Email-association pickers cap the dropdown at 100 entries and sort poorly.** — _added 2026-05-28_
+  `EmailAssociatePage.svelte` (jobs) and, once they land, the equivalent PO and Bill
+  pickers all request `?page_size=500` to populate a `<select>`, but
+  `StandardPagination.max_page_size = 100` silently caps it. Fine while each table is
+  under 100 rows; once any of them crosses that, only the most recently-created entries
+  are reachable. The pickers also lean on each list endpoint's default ordering, which
+  isn't always what a human would call "most recent" — `Job` sorts by `-created_date`
+  (fine), but PO/Bill defaults need a deliberate decision (a job's `start_date` or last
+  status change is arguably more relevant than its creation; a PO's issue/sent date
+  beats its created_at; a Bill's bill_date or due_date may matter more than its
+  created_at). _Done when:_ each picker either paginates / searches server-side
+  (typeahead against `?search=`) or filters to "active" statuses only AND sorts by a
+  human-meaningful lifecycle date per entity (decide which per entity at that time),
+  whichever is cheaper than scrolling a long `<select>`.
+
 - **Review site-wide `z-index` usage; decide whether to impose a scale.** — _added 2026-05-26_
   We added an ad-hoc `z-index: 30` to `.job-header` (plus `z-index: 1` on
   `.hold-reason-form`) in commit `270c79d` to lift the on-hold reason popover above the

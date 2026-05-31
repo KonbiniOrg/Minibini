@@ -204,36 +204,79 @@ Footer actions use `frontend/src/components/wizards/WizardActions.svelte` — al
 
 ---
 
-## Send to QBO
+## Sending an Invoice
 
-`InvoiceViewSet.send_to_qbo` (action endpoint `POST /api/invoices/{id}/send-to-qbo/`).
+`InvoiceEmailService.send_invoice` in `apps/invoicing/services.py` is
+the orchestrator. SPA route: `/invoices/:id/send`
+(`InvoiceSendPage.svelte`). The compose page is mounted from the
+detail page's "Send Invoice" link (button text reads "Resend Invoice"
+when `qbo_id` is already set).
 
 ### Minibini-side flow
 
-1. Caller posts `{send_to, cc?, bcc?}` (email addresses).
-2. View dispatches to `QBOInvoiceSyncService.push_invoice(invoice, send_to, cc, bcc)`.
+1. Caller posts `{to, subject, body, cc?, bcc?}` to
+   `/api/invoices/{id}/send/`. Multipart `attachments` files come
+   along for the ride.
+2. View dispatches to `InvoiceEmailService.send_invoice(invoice, *,
+   to, subject, body, cc, bcc, extra_attachments, user)`.
 3. The service:
-   - Resolves a QBO customer ref (creates one for the job's business or contact if needed).
-   - Builds the QBO Invoice via `InvoiceGroupingService.group_for_qbo(invoice)` — line items grouped by `(accounting_category, taxable)`. One QBO line per group, with `Description = "Job {number}: {category} (taxable|non-taxable)"`.
-   - Saves it to QBO; stores `qbo_id` immediately so retries don't duplicate.
-   - Generates a job-statement PDF (`apps/invoicing/pdf.generate_job_statement_pdf`), attaches it to the QBO invoice.
-   - Marks the QBO invoice as Sent; downloads the QBO-rendered PDF (which carries the Pay Now link).
-   - Sends both PDFs via Minibini's email infrastructure to the recipients.
-   - Logs to `QBOSyncLog` (success or failure).
-4. Returns `{qbo_id, status: 'sent'}`.
+   - **If `invoice.qbo_id` is unset:** resolves a QBO customer ref
+     (creates one for the job's business or contact if needed); builds
+     the QBO Invoice via
+     `InvoiceGroupingService.group_for_qbo(invoice)` — line items
+     grouped by `(accounting_category, taxable)`, one QBO line per
+     group, with `Description = "Job {number}: {category}
+     (taxable|non-taxable)"`; saves it; stores `qbo_id`; marks the QBO
+     invoice as Sent. Logs to `QBOSyncLog`.
+   - **If `invoice.qbo_id` is set:** skips the push entirely (this is
+     the retry path — the previous version had a bug where retries
+     re-pushed and duplicated the QBO Invoice).
+   - Generates a job-statement PDF
+     (`apps/invoicing/pdf.generate_job_statement_pdf`).
+   - Downloads the QBO-rendered invoice PDF (which carries the Pay
+     Now link, the QBO branding, the calculated tax).
+   - Calls `OutboundEmailService.send_tracked` with
+     `associate_with={'job': invoice.job}` and both PDFs attached;
+     user-uploaded extras append. The send-tracked path persists the
+     outbound `EmailRecord` before SMTP runs, so SMTP failures keep
+     the row around with `last_send_error` populated.
+4. **On send success**, transitions `Invoice.status` `draft → open`.
+   Returns `{email_record_id, invoice_status, qbo_id}`.
+5. **On QBO failure** (`No active QBO connection`, build error, etc.)
+   the view returns 400. **On SMTP failure** the view returns 502 and
+   the outbound EmailRecord captures `last_send_error`. From the
+   user's perspective there's one Send button either way; the backend
+   decides where to resume based on `qbo_id` state.
 
 ### Minibini state changes
 
-- `Invoice.qbo_id` is populated.
-- `Invoice.status` is **not** changed by the push. It stays `draft`. There is no automated `draft → open` transition path in the codebase. (See "Unfinished work.")
-- `HistoryEntry` rows are written by the `@history` decorator on `Invoice` — but only when fields actually change. `qbo_id` is the field that changes here, so a history entry is recorded for the push.
-- `QBOSyncLog` records the push attempt with status `success` or `failed`.
+- `Invoice.qbo_id` is populated on the first send.
+- `Invoice.status` flips `draft → open` on send success — Send is the
+  status transition. There is no separate "Mark Sent" affordance.
+- An outbound `EmailRecord` is created, linked to the Invoice's Job
+  via FK (so the email shows up in the Job overview Email panel, and
+  the customer's reply auto-correlates to the same Job via
+  In-Reply-To matching against the outbound's Message-ID).
+- `QBOSyncLog` records the QBO push attempt on the first send only.
 
-### Why Minibini does not email invoices itself
+### Why we own the email pipeline (and QBO is invisible plumbing)
 
-The send pipeline goes Minibini → QBO → back to Minibini email. QBO is the source of truth for the customer-facing PDF (it has the Pay Now link, the calculated tax, the QBO branding). Minibini's email simply delivers what QBO produced.
+QBO renders the invoice PDF (with Pay Now link and tax). Minibini
+generates the job-statement PDF (the detailed breakdown the customer
+asks about when there's a question). Both go out as attachments on
+*our* outbound email so reply correlation, threading, and the
+Email-panel view all work uniformly across Estimate / PO / Invoice.
 
-For OAuth, the `QBOSyncLog` model, payment polling internals, the customer-sync flow, and connection lifecycle, see `docs/designs/quickbooks-integration.md`.
+Configuration keys for the body/subject templates:
+`invoice_email_subject_template`, `invoice_email_body_template`
+(defaults documented in
+`architecture-and-conventions.md` §7.10). The common template
+variable set is available; `{invoice_number}` aliases
+`{document_number}`.
+
+For OAuth, the `QBOSyncLog` model, payment polling internals, the
+customer-sync flow, and connection lifecycle, see
+`docs/designs/quickbooks-integration.md`.
 
 ### Payment polling
 

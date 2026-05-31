@@ -72,6 +72,13 @@ class EmailRecord(models.Model):
     Contains only the minimum data needed to link and retrieve the email.
     This record is never automatically deleted.
     """
+    INBOUND = 'inbound'
+    OUTBOUND = 'outbound'
+    DIRECTION_CHOICES = [
+        (INBOUND, 'Inbound'),
+        (OUTBOUND, 'Outbound'),
+    ]
+
     email_record_id = models.AutoField(primary_key=True)
 
     # IMAP identifier - required for fetching from server
@@ -82,6 +89,21 @@ class EmailRecord(models.Model):
         help_text='RFC 2822 Message-ID header'
     )
 
+    # Direction: 'inbound' (IMAP-fetched) or 'outbound' (we sent it).
+    # Outbound rows are created at send time by OutboundEmailService.send_tracked.
+    direction = models.CharField(
+        max_length=10,
+        choices=DIRECTION_CHOICES,
+        default=INBOUND,
+    )
+
+    # For outbound EmailRecords: when SMTP succeeded. Null = pending or failed.
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    # For outbound EmailRecords: the most recent SMTP failure message.
+    # Empty when the send succeeded or is in flight.
+    last_send_error = models.TextField(blank=True, default='')
+
     # Job association
     job = models.ForeignKey(
         'jobs.Job',
@@ -90,6 +112,26 @@ class EmailRecord(models.Model):
         blank=True,
         related_name='email_records',
         help_text='Associated job for this email'
+    )
+
+    # Purchase Order association — independent of job/bill.
+    purchase_order = models.ForeignKey(
+        'purchasing.PurchaseOrder',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_records',
+        help_text='Associated purchase order for this email'
+    )
+
+    # Bill association — independent of job/purchase_order.
+    bill = models.ForeignKey(
+        'purchasing.Bill',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_records',
+        help_text='Associated bill for this email'
     )
 
     # Metadata
@@ -132,7 +174,26 @@ class TempEmail(models.Model):
     from_email = models.EmailField()
     to_email = models.TextField(help_text='Comma-separated email addresses')
     cc_email = models.TextField(blank=True, help_text='Comma-separated email addresses')
+    # BCC: populated only on outbound rows (inbound IMAP fetches can't see BCC).
+    bcc_email = models.TextField(blank=True, default='', help_text='Comma-separated email addresses')
     date_sent = models.DateTimeField()
+
+    # RFC 5322 threading headers — captured at IMAP fetch time for inbound,
+    # used by the reply-correlation pass in EmailService to auto-link replies
+    # to the right Job / PO / Bill.
+    in_reply_to = models.CharField(max_length=255, blank=True, default='')
+    references = models.TextField(blank=True, default='')
+
+    # Cached body content (populated at IMAP fetch time so list-style
+    # consumers can render snippets without re-hitting IMAP).
+    text_body = models.TextField(blank=True, default='')
+    html_body = models.TextField(blank=True, default='')
+
+    # Per-attachment metadata cache (filename, content_type, size).
+    # Lets the email-detail view render the attachment list from the cache;
+    # attachment payloads themselves are not cached (re-fetched by the
+    # download endpoint, when that lands).
+    attachments_metadata = models.JSONField(blank=True, default=list)
 
     # Flags
     is_read = models.BooleanField(default=False)

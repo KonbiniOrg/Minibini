@@ -145,33 +145,63 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             'line_item': InvoiceLineItemSerializer(line_item).data,
         })
 
-    @action(detail=True, methods=['post'], url_path='send-to-qbo')
-    def send_to_qbo(self, request, pk=None):
-        """Push this invoice to QBO, attach PDF, and send to customer."""
+    @action(detail=True, methods=['get'], url_path='send-defaults')
+    def send_defaults(self, request, pk=None):
+        """Pre-populated values for the Send Email page."""
+        from apps.invoicing.services import InvoiceEmailService
         invoice = self.get_object()
-        send_to = request.data.get('send_to')
-        if not send_to:
-            return Response(
-                {'error': 'send_to email address is required'},
-                status=400,
-            )
+        return Response(InvoiceEmailService.get_email_defaults(invoice))
 
-        cc = request.data.get('cc', None)
-        bcc = request.data.get('bcc', None)
+    @action(detail=True, methods=['post'], url_path='send')
+    def send(self, request, pk=None):
+        """Send the invoice via the tracked outbound flow. Pushes to QBO
+        if needed, attaches both QBO and Job Statement PDFs, transitions
+        draft -> open on success. Multipart 'attachments' files append
+        to the auto-attached PDFs."""
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.invoicing.services import InvoiceEmailService
+
+        invoice = self.get_object()
+        to = request.data.get('to', '').strip()
+        if not to:
+            return Response(
+                {'to': ['Recipient email address is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        subject = request.data.get('subject', '')
+        body = request.data.get('body', '')
+        cc = [c.strip() for c in request.data.get('cc', '').split(',') if c.strip()]
+        bcc = [b.strip() for b in request.data.get('bcc', '').split(',') if b.strip()]
+        extra_attachments = []
+        for uploaded in request.FILES.getlist('attachments'):
+            extra_attachments.append((
+                uploaded.name, uploaded.read(),
+                uploaded.content_type or 'application/octet-stream',
+            ))
 
         try:
-            from apps.qbo.services import QBOInvoiceSyncService
-            qbo_id = QBOInvoiceSyncService.push_invoice(
-                invoice, send_to=send_to, cc=cc, bcc=bcc,
+            record = InvoiceEmailService.send_invoice(
+                invoice,
+                to=to, subject=subject, body=body, cc=cc, bcc=bcc,
+                extra_attachments=extra_attachments,
+                user=request.user,
             )
-            return Response({
-                'qbo_id': qbo_id,
-                'status': 'sent',
-            })
-        except ValueError as e:
-            return Response({'error': str(e)}, status=400)
+        except DjangoValidationError as e:
+            return Response(
+                {'detail': e.messages if hasattr(e, 'messages') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as e:
-            return Response({'error': str(e)}, status=500)
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response({
+            'email_record_id': record.email_record_id,
+            'invoice_status': invoice.status,
+            'qbo_id': invoice.qbo_id,
+        })
 
 
 def _serialize_pool(pool):

@@ -106,7 +106,7 @@ class POSendDefaultsTest(POSendTestBase):
 class POSendEndpointTest(POSendTestBase):
     """Test the POST send endpoint."""
 
-    @patch('apps.core.services.OutboundEmailService.send_email')
+    @patch('apps.core.services.OutboundEmailService.send_tracked')
     @patch('apps.purchasing.pdf.generate_purchase_order_pdf')
     def test_send_draft_po_issues_and_sends(self, mock_pdf, mock_send):
         mock_pdf.return_value = b'%PDF-fake'
@@ -130,7 +130,7 @@ class POSendEndpointTest(POSendTestBase):
         self.assertEqual(len(attachments), 1)
         self.assertEqual(attachments[0][0], 'PO-TEST-SEND.pdf')
 
-    @patch('apps.core.services.OutboundEmailService.send_email')
+    @patch('apps.core.services.OutboundEmailService.send_tracked')
     @patch('apps.purchasing.pdf.generate_purchase_order_pdf')
     def test_send_issued_po_resends_without_status_change(self, mock_pdf, mock_send):
         mock_pdf.return_value = b'%PDF-fake'
@@ -147,7 +147,7 @@ class POSendEndpointTest(POSendTestBase):
         self.assertEqual(response.data['status'], PurchaseOrder.STATUS_ISSUED)
         mock_send.assert_called_once()
 
-    @patch('apps.core.services.OutboundEmailService.send_email')
+    @patch('apps.core.services.OutboundEmailService.send_tracked')
     @patch('apps.purchasing.pdf.generate_purchase_order_pdf')
     def test_send_creates_history_entry(self, mock_pdf, mock_send):
         mock_pdf.return_value = b'%PDF-fake'

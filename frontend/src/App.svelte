@@ -19,6 +19,7 @@
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
+  import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
   import InvoiceWizardPage from './routes/invoices/InvoiceWizardPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
@@ -27,12 +28,14 @@
   import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
   import PlanTaskDetailPage from './routes/worksheets/PlanTaskDetailPage.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
+  import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
   import EstimateWizardPage from './routes/estimates/EstimateWizardPage.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
   import PackingListPrint from './routes/shipments/PackingListPrint.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
+  import PurchaseOrderSendPage from './routes/purchaseorders/PurchaseOrderSendPage.svelte';
   import PurchaseOrderFormPage from './routes/purchaseorders/PurchaseOrderFormPage.svelte';
   import UserListPage from './routes/users/UserListPage.svelte';
   import UserCreatePage from './routes/users/UserCreatePage.svelte';
@@ -42,7 +45,11 @@
   import EmailInboxPage from './routes/email/EmailInboxPage.svelte';
   import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
   import EmailCreateJobPage from './routes/email/EmailCreateJobPage.svelte';
+  import EmailCreatePOPage from './routes/email/EmailCreatePOPage.svelte';
+  import EmailCreateBillPage from './routes/email/EmailCreateBillPage.svelte';
   import EmailAssociatePage from './routes/email/EmailAssociatePage.svelte';
+  import EmailAssociatePOPage from './routes/email/EmailAssociatePOPage.svelte';
+  import EmailAssociateBillPage from './routes/email/EmailAssociateBillPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
   import ChangeOrderDetailPage from './routes/change-orders/ChangeOrderDetailPage.svelte';
 
@@ -71,12 +78,15 @@
     '/worksheets/:id': WorksheetDetailPage,
     '/worksheets/:wsId/plan-tasks/:planTaskId': PlanTaskDetailPage,
     '/estimates/:id/wizard': EstimateWizardPage,
+    '/estimates/:id/send': EstimateSendPage,
     '/estimates/:id': EstimateDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
     '/purchase-orders/new': PurchaseOrderFormPage,
     '/purchase-orders/:id/edit': PurchaseOrderFormPage,
+    '/purchase-orders/:id/send': PurchaseOrderSendPage,
     '/purchase-orders/:id': PurchaseOrderDetailPage,
     '/invoices/:id/wizard': InvoiceWizardPage,
+    '/invoices/:id/send': InvoiceSendPage,
     '/invoices/:id': InvoiceDetailPage,
     '/settings': SettingsPage,
     '/users': UserListPage,
@@ -86,7 +96,11 @@
     '/reimbursements/:id': ReimbursementDetailPage,
     '/email': EmailInboxPage,
     '/email/:id/create-job': EmailCreateJobPage,
+    '/email/:id/create-po': EmailCreatePOPage,
+    '/email/:id/create-bill': EmailCreateBillPage,
     '/email/:id/associate': EmailAssociatePage,
+    '/email/:id/associate-po': EmailAssociatePOPage,
+    '/email/:id/associate-bill': EmailAssociateBillPage,
     '/email/:id': EmailDetailPage,
     '/profile': ProfilePage,
     '/change-orders/:id': ChangeOrderDetailPage,
