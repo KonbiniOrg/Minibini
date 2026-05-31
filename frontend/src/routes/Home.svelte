@@ -8,6 +8,7 @@
   import ExpensesList from '../components/home/ExpensesList.svelte';
   import RecentLoginsList from '../components/home/RecentLoginsList.svelte';
   import RecentTimeList from '../components/home/RecentTimeList.svelte';
+  import ClockBand from '../components/home/ClockBand.svelte';
 
   let loading = $state(true);
   let error = $state('');
@@ -43,6 +44,8 @@
 <h2>Home</h2>
 
 <SearchBox />
+
+<ClockBand />
 
 <nav class="home-tabs">
   <button class:active={tab === 'work'} onclick={() => tab = 'work'}>Work</button>
