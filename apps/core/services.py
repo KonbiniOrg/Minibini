@@ -1022,3 +1022,56 @@ class ShiftService:
             shift.end_time = now
             shift.save()
         return shift
+
+    @staticmethod
+    def _has_manage_time(user):
+        return user.is_superuser or user.has_perm('core.can_manage_time')
+
+    @staticmethod
+    def _within_window(start_time):
+        return (timezone.now() - start_time) <= timedelta(hours=SELF_EDIT_WINDOW_HOURS)
+
+    @staticmethod
+    def _assert_can_edit(shift, actor):
+        if ShiftService._has_manage_time(actor):
+            return
+        if shift.user_id != actor.id:
+            raise ValidationError("You can only edit your own shifts.")
+        if not ShiftService._within_window(shift.start_time):
+            raise ValidationError(
+                "This shift is older than the edit window — request a change instead."
+            )
+
+    @staticmethod
+    def _assert_encloses(user, start_time, end_time, also_span=None):
+        from apps.core.time_integrity import unenclosed_bleps_for_shift
+        bad = unenclosed_bleps_for_shift(user, start_time, end_time, also_span=also_span)
+        if bad:
+            ids = ", ".join(str(b.pk) for b in bad)
+            raise ValidationError(
+                f"This shift would not enclose blep(s) {ids}; adjust the blep(s) first."
+            )
+
+    @staticmethod
+    def update(shift, actor, start_time, end_time):
+        ShiftService._assert_can_edit(shift, actor)
+        if end_time is not None and start_time is not None and end_time < start_time:
+            raise ValidationError("End must be after start.")
+        old_span = (shift.start_time, shift.end_time or timezone.now())
+        ShiftService._assert_encloses(shift.user, start_time, end_time, also_span=old_span)
+        shift.start_time = start_time
+        shift.end_time = end_time
+        shift.save()
+        return shift
+
+    @staticmethod
+    def create(user, actor, start_time, end_time):
+        """Create a (usually historical) closed shift - used by manager edit and
+        by approving a create-type change request."""
+        if not (ShiftService._has_manage_time(actor) or actor.id == user.id):
+            raise ValidationError("Not permitted.")
+        if end_time is not None and start_time is not None and end_time < start_time:
+            raise ValidationError("End must be after start.")
+        ShiftService._assert_encloses(user, start_time, end_time)
+        from apps.core.models import Shift
+        return Shift.objects.create(user=user, start_time=start_time, end_time=end_time)
