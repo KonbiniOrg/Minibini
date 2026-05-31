@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+from apps.core.history import history
 
 
 class User(AbstractUser):
@@ -27,6 +28,25 @@ class User(AbstractUser):
             ('can_manage_config', 'Can manage settings, templates, user admin'),
         ]
 
+
+
+@history(exclude=['shift_id'])
+class Shift(models.Model):
+    shift_id = models.AutoField(primary_key=True)
+    user = models.ForeignKey('core.User', on_delete=models.PROTECT, related_name='shifts')
+    start_time = models.DateTimeField()                       # clock-in
+    end_time = models.DateTimeField(null=True, blank=True)    # null = on the clock
+
+    class Meta:
+        db_table = 'shifts'
+        ordering = ['-start_time']
+
+    @property
+    def is_open(self):
+        return self.end_time is None
+
+    def __str__(self):
+        return f"Shift {self.pk} for {self.user.username}"
 
 
 class Configuration(models.Model):
