@@ -1,9 +1,19 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { user as userStore } from '../../stores/auth.js';
+  import TimeEditModal from '../time/TimeEditModal.svelte';
 
   let rows = $state([]);
   let loading = $state(true);
   let error = $state('');
+
+  // Editing the target shift/blep in place so the manager can adjust it and
+  // then approve, without hunting for the record elsewhere.
+  let modalOpen = $state(false);
+  let modalType = $state('shift');   // 'shift' | 'blep'
+  let modalRecord = $state(null);
+
+  const perms = $derived($userStore?.permissions || []);
 
   async function load() {
     loading = true; error = '';
@@ -18,6 +28,27 @@
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     } catch (e) { error = e.message || 'Could not load requests.'; }
     finally { loading = false; }
+  }
+
+  // Open the request's target record (the existing shift/blep it amends) in the
+  // edit modal. Create-type requests (no target yet) have nothing to open.
+  async function openTarget(r) {
+    error = '';
+    try {
+      if (r.kind === 'Shift') {
+        modalRecord = await api.get(`/api/shifts/${r.shift}/`);
+        modalType = 'shift';
+      } else {
+        modalRecord = await api.get(`/api/bleps/${r.blep}/`);
+        modalType = 'blep';
+      }
+      modalOpen = true;
+    } catch (e) { error = e.message || 'Could not load the record.'; }
+  }
+
+  async function onModalSaved() {
+    modalOpen = false; modalRecord = null;
+    await load();   // re-evaluate conflicts after the edit
   }
 
   async function approve(r) {
@@ -41,12 +72,24 @@
   {:else if rows.length === 0}<p>No pending requests.</p>
   {:else}
     <table class="data-table">
-      <thead><tr><th>Type</th><th>Worker</th><th>Requested</th><th>Reason</th><th>Conflict</th><th>Actions</th></tr></thead>
+      <thead><tr>
+        <th>Type</th><th>Worker</th><th>Record</th><th>Requested</th>
+        <th>Reason</th><th>Conflict</th><th>Actions</th>
+      </tr></thead>
       <tbody>
         {#each rows as r (r.kind + r.request_id)}
           <tr>
             <td>{r.kind}</td>
             <td>{r.requester_name}</td>
+            <td>
+              {#if r.kind === 'Shift' && r.shift}
+                <button type="button" onclick={() => openTarget(r)}>Open shift</button>
+              {:else if r.kind === 'Time' && r.blep}
+                <button type="button" onclick={() => openTarget(r)}>Open blep{#if r.task_name} ({r.task_name}){/if}</button>
+              {:else}
+                <em>new {r.kind === 'Shift' ? 'shift' : 'entry'}</em>
+              {/if}
+            </td>
             <td>{new Date(r.requested_start).toLocaleString()} → {r.requested_end ? new Date(r.requested_end).toLocaleString() : '—'}</td>
             <td>{r.reason}</td>
             <td>{r.has_known_conflict ? '⚠ yes' : '—'}</td>
@@ -58,7 +101,18 @@
         {/each}
       </tbody>
     </table>
-    <p><em>If Approve fails with a conflict, edit the conflicting shift/blep (via the worker's
-      record) so the shift encloses the blep, then approve again.</em></p>
+    <p><em>If Approve is blocked by a conflict, open the relevant shift/blep here, adjust
+      it so the shift encloses the blep, then approve.</em></p>
   {/if}
 </section>
+
+<TimeEditModal
+  open={modalOpen}
+  recordType={modalType}
+  action="edit"
+  record={modalRecord}
+  currentUser={$userStore}
+  userPermissions={perms}
+  onSaved={onModalSaved}
+  onClose={() => { modalOpen = false; modalRecord = null; }}
+/>
