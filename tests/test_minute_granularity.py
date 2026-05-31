@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone as tz
 from django.utils import timezone
-from django.core.management import call_command
 from tests.base import BaseTestCase
 from apps.core.models import User, Shift
 from apps.core.services import ShiftService
@@ -44,18 +43,3 @@ class MinuteGranularityTest(BaseTestCase):
         b.refresh_from_db()
         self.assertIsNotNone(b.end_time)
         self.assertEqual((b.end_time.second, b.end_time.microsecond), (0, 0))
-
-    def test_normalize_command_floors_legacy_rows_and_is_idempotent(self):
-        t = timezone.now().replace(second=50, microsecond=7)
-        s = Shift.objects.create(user=self.user, start_time=t, end_time=t + timedelta(hours=1))
-        b = Blep.objects.create(task=self.task, user=self.user, start_time=t, end_time=t + timedelta(minutes=10))
-        # Inject legacy sub-minute data straight to the DB, bypassing save() (test-only):
-        Shift.objects.filter(pk=s.pk).update(start_time=t, end_time=t + timedelta(hours=1))
-        Blep.objects.filter(pk=b.pk).update(start_time=t, end_time=t + timedelta(minutes=10))
-        call_command('normalize_shift_blep_times')
-        s.refresh_from_db(); b.refresh_from_db()
-        self.assertEqual((s.start_time.second, s.end_time.second), (0, 0))
-        self.assertEqual((b.start_time.second, b.end_time.second), (0, 0))
-        call_command('normalize_shift_blep_times')  # idempotent — no error, still floored
-        s.refresh_from_db()
-        self.assertEqual(s.start_time.second, 0)

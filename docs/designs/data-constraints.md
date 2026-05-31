@@ -97,9 +97,7 @@ Bleps. `db_table = 'shifts'`. `@history(exclude=['shift_id'])`.
   `clock_out` sets the shift end = the closed blep end to the same minute, so
   the enclosure check (which is monotonic under flooring) cannot reject an edit
   re-sent at minute precision. `QuerySet.update()` / `bulk_*` bypass `save()`
-  and must not be used to write these fields (iterate and call `.save()`); the
-  one-time `normalize_shift_blep_times` command floors any legacy sub-minute
-  rows and is idempotent.
+  and must not be used to write these fields (iterate and call `.save()`).
 - **One OPEN shift per user**: a user may have at most one shift with
   `end_time IS NULL`. This is enforced in `ShiftService` (`clock_in` blocks a
   second clock-in; `ensure_open_shift` reuses the existing open one) — **not**
@@ -125,10 +123,10 @@ the service layer, not the DB — helpers live in `apps/core/time_integrity.py`
   the user's existing bleps (`ShiftService._assert_encloses`); the
   manager-approve path re-checks inside a transaction and rolls back on
   conflict.
-- Pre-feature bleps were **backfilled** (one enclosing shift per
-  user-per-local-day), not exempted — see the `backfill_shifts` management
-  command (`apps/core/management/commands/backfill_shifts.py`, idempotent).
-  Open bleps (no `end_time`) and user-less bleps are skipped.
+- Pre-feature bleps were **backfilled** with enclosing shifts (one per
+  user-per-local-day) during the feature's initial rollout, not exempted, so
+  the invariant holds for historical data. (Open bleps and user-less bleps
+  can't be enclosed and were skipped.)
 
 Clocking out (`ShiftService.clock_out`) closes the worker's open bleps first,
 then stamps `end_time` on the shift — so a clock-out can never leave a blep

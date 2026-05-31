@@ -48,7 +48,7 @@ class NoFutureEndTimeTest(BaseTestCase):
 
     def test_update_active_to_past_end_closes_it(self):
         blep = self._active_blep()
-        end = timezone.now() - timedelta(minutes=1)
+        end = (timezone.now() - timedelta(minutes=1)).replace(second=0, microsecond=0)
         updated = BlepService.update(blep, self.user, end_time=end)
         self.assertEqual(updated.end_time, end)
 
