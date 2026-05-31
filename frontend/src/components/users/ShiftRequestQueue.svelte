@@ -30,20 +30,19 @@
     finally { loading = false; }
   }
 
-  // Open the request's target record (the existing shift/blep it amends) in the
-  // edit modal. Create-type requests (no target yet) have nothing to open.
-  async function openTarget(r) {
+  // Open any shift/blep (the request's target, or a conflicting record the
+  // check surfaced) in the edit modal so the manager can adjust it in place.
+  async function openRecord(type, id) {
     error = '';
     try {
-      if (r.kind === 'Shift') {
-        modalRecord = await api.get(`/api/shifts/${r.shift}/`);
-        modalType = 'shift';
-      } else {
-        modalRecord = await api.get(`/api/bleps/${r.blep}/`);
-        modalType = 'blep';
-      }
+      modalRecord = await api.get(`/api/${type === 'shift' ? 'shifts' : 'bleps'}/${id}/`);
+      modalType = type;
       modalOpen = true;
     } catch (e) { error = e.message || 'Could not load the record.'; }
+  }
+  function openTarget(r) {
+    return openRecord(r.kind === 'Shift' ? 'shift' : 'blep',
+                      r.kind === 'Shift' ? r.shift : r.blep);
   }
 
   async function onModalSaved() {
@@ -92,7 +91,16 @@
             </td>
             <td>{new Date(r.requested_start).toLocaleString()} → {r.requested_end ? new Date(r.requested_end).toLocaleString() : '—'}</td>
             <td>{r.reason}</td>
-            <td>{r.has_known_conflict ? '⚠ yes' : '—'}</td>
+            <td>
+              {#if r.conflicts && r.conflicts.length}
+                ⚠
+                {#each r.conflicts as c}
+                  <button type="button" onclick={() => openRecord(c.type, c.id)}>Open {c.type} ({c.label})</button>
+                {/each}
+              {:else if r.has_known_conflict}
+                ⚠ no covering shift
+              {:else}—{/if}
+            </td>
             <td>
               <button type="button" onclick={() => approve(r)}>Approve</button>
               <button type="button" onclick={() => deny(r)}>Deny</button>

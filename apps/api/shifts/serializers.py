@@ -35,19 +35,37 @@ class _BaseChangeRequestSerializer(serializers.ModelSerializer):
 
 
 class ShiftChangeRequestSerializer(_BaseChangeRequestSerializer):
+    conflicts = serializers.SerializerMethodField()
+
     class Meta:
         model = ShiftChangeRequest
-        fields = _BaseChangeRequestSerializer.common_fields + ['shift']
+        fields = _BaseChangeRequestSerializer.common_fields + ['shift', 'conflicts']
         read_only_fields = _BaseChangeRequestSerializer.common_read_only
+
+    def get_conflicts(self, obj):
+        # The specific bleps the requested shift span would orphan — open each
+        # to trim/move it so the shift encloses it, then approve.
+        return [{'type': 'blep', 'id': b.blep_id,
+                 'label': (b.task.name if b.task_id else None) or f'blep #{b.blep_id}'}
+                for b in obj.conflicting_records()]
 
 
 class BlepChangeRequestSerializer(_BaseChangeRequestSerializer):
     task_name = serializers.CharField(source='task.name', read_only=True)
+    conflicts = serializers.SerializerMethodField()
 
     class Meta:
         model = BlepChangeRequest
-        fields = _BaseChangeRequestSerializer.common_fields + ['blep', 'task', 'task_name']
+        fields = _BaseChangeRequestSerializer.common_fields + ['blep', 'task', 'task_name', 'conflicts']
         read_only_fields = _BaseChangeRequestSerializer.common_read_only
+
+    def get_conflicts(self, obj):
+        # No shift covers the requested time; surface the worker's overlapping
+        # shifts as candidates to widen (empty if none overlaps at all).
+        return [{'type': 'shift', 'id': s.shift_id,
+                 'label': s.start_time.strftime('%b %d, %H:%M')
+                          + s.end_time.strftime('–%H:%M')}
+                for s in obj.conflicting_records()]
 
     def validate(self, attrs):
         if attrs.get('blep') is None and attrs.get('task') is None:

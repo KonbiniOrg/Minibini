@@ -652,6 +652,18 @@ class BlepChangeRequest(TimeChangeRequest):
         return enclosing_shift_for_blep(
             self.target_user, self.requested_start, self.requested_end) is None
 
+    def conflicting_records(self):
+        """When no shift encloses the requested time, the worker's shifts that
+        overlap it are the candidates a manager would widen. Empty when an
+        enclosing shift already exists (no conflict) or none overlaps."""
+        from apps.core.time_integrity import (enclosing_shift_for_blep,
+                                              overlapping_shifts_for_blep)
+        if enclosing_shift_for_blep(self.target_user, self.requested_start,
+                                    self.requested_end) is not None:
+            return []
+        return list(overlapping_shifts_for_blep(
+            self.target_user, self.requested_start, self.requested_end))
+
     def apply_requested(self, reviewer):
         from apps.jobs.services import BlepService
         if self.blep_id:

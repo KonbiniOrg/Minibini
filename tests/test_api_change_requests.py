@@ -99,3 +99,47 @@ class ChangeRequestAPITest(BaseTestCase):
         self.assertEqual(r.status_code, 201, r.data)
         self.assertTrue(r.data['has_known_conflict'])
         self.assertEqual(r.data['status'], 'pending')
+
+    def test_shift_request_conflict_surfaces_offending_blep(self):
+        from apps.jobs.models import Job, Task, Blep
+        job = Job.objects.first()
+        task = Task.objects.create(name='Demo', job=job, rate_scheme_id=1)
+        shift = Shift.objects.create(user=self.worker,
+                                     start_time=self.now - timedelta(hours=5),
+                                     end_time=self.now - timedelta(hours=1))
+        blep = Blep.objects.create(task=task, user=self.worker,
+                                   start_time=self.now - timedelta(hours=4),
+                                   end_time=self.now - timedelta(hours=3))
+        req = ShiftChangeRequest.objects.create(
+            requester=self.worker, shift=shift,
+            requested_start=self.now - timedelta(hours=5),
+            requested_end=self.now - timedelta(hours=3, minutes=30),  # drops the blep
+            reason='left early')
+        self.client.force_authenticate(user=self.mgr)
+        r = self.client.get('/api/shift-change-requests/?status=pending')
+        rows = r.data.get('results', r.data)
+        row = next(x for x in rows if x['request_id'] == req.pk)
+        self.assertTrue(any(c['type'] == 'blep' and c['id'] == blep.blep_id
+                            for c in row['conflicts']), row['conflicts'])
+
+    def test_blep_request_conflict_surfaces_overlapping_shift(self):
+        from apps.jobs.models import Job, Task, Blep, BlepChangeRequest
+        job = Job.objects.first()
+        task = Task.objects.create(name='Demo2', job=job, rate_scheme_id=1)
+        shift = Shift.objects.create(user=self.worker,
+                                     start_time=self.now - timedelta(hours=3),
+                                     end_time=self.now - timedelta(hours=1))
+        blep = Blep.objects.create(task=task, user=self.worker,
+                                   start_time=self.now - timedelta(hours=2, minutes=30),
+                                   end_time=self.now - timedelta(hours=2))
+        req = BlepChangeRequest.objects.create(
+            requester=self.worker, blep=blep, task=task,
+            requested_start=self.now - timedelta(hours=2, minutes=30),
+            requested_end=self.now - timedelta(minutes=30),  # past shift end -> not enclosed
+            reason='ran later')
+        self.client.force_authenticate(user=self.mgr)
+        r = self.client.get('/api/blep-change-requests/?status=pending')
+        rows = r.data.get('results', r.data)
+        row = next(x for x in rows if x['request_id'] == req.pk)
+        self.assertTrue(any(c['type'] == 'shift' and c['id'] == shift.shift_id
+                            for c in row['conflicts']), row['conflicts'])

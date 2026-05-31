@@ -453,11 +453,17 @@ class ShiftChangeRequest(TimeChangeRequest):
     def target_user(self):
         return self.shift.user if self.shift_id else self.requester
 
-    def would_conflict(self):
+    def conflicting_records(self):
+        """The bleps this requested shift span would fail to enclose — the
+        records a manager must adjust before approving. Found by the same check
+        that flags the conflict."""
         from apps.core.time_integrity import unenclosed_bleps_for_shift
         also = (self.shift.start_time, self.shift.end_time or timezone.now()) if self.shift_id else None
-        return bool(unenclosed_bleps_for_shift(
+        return list(unenclosed_bleps_for_shift(
             self.target_user, self.requested_start, self.requested_end, also_span=also))
+
+    def would_conflict(self):
+        return bool(self.conflicting_records())
 
     def apply_requested(self, reviewer):
         from apps.core.services import ShiftService

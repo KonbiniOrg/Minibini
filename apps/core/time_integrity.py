@@ -48,3 +48,17 @@ def enclosing_shift_for_blep(user, blep_start, blep_end, exclude_blep=None):
         .order_by('start_time')
         .first()
     )
+
+
+def overlapping_shifts_for_blep(user, blep_start, blep_end):
+    """Closed shifts of `user` that overlap [blep_start, blep_end] but don't
+    necessarily enclose it — the candidates a manager would widen when no shift
+    fully covers the blep. Ordered by start."""
+    return (
+        user.shifts.filter(
+            end_time__isnull=False,
+            start_time__lt=blep_end,
+            end_time__gt=blep_start,
+        )
+        .order_by('start_time')
+    )
