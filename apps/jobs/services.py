@@ -19,7 +19,7 @@ from apps.estimates.models import (
 )
 from apps.inventory.models import PriceListItem
 from apps.core.models import Configuration
-from apps.core.services import NumberGenerationService, NotFoundError
+from apps.core.services import NumberGenerationService, NotFoundError, SELF_EDIT_WINDOW_HOURS
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -56,25 +56,27 @@ class TaskWorkerTimeRequired(Exception):
     pass
 
 
-_EDIT_WINDOW = timedelta(hours=24)
+_EDIT_WINDOW = timedelta(hours=SELF_EDIT_WINDOW_HOURS)  # matches ShiftService.SELF_EDIT_WINDOW_HOURS
 
-# Below this elapsed duration, a worker's Stop becomes Cancel (delete + undo).
-# Lazy default written into Configuration on first read (mirrors the schedule keys).
-_BLEP_MINIMUM_SECONDS_DEFAULT = '60'
+# Below this elapsed duration (whole minutes), a worker's Stop becomes Cancel
+# (delete + undo). Lazy default written into Configuration on first read
+# (mirrors the schedule keys). Times are minute-granular, so this is in minutes.
+_BLEP_MINIMUM_MINUTES_DEFAULT = '1'
 
 
-def blep_minimum_seconds():
-    """The Stop→Cancel threshold (seconds). Single source of truth, also read by
-    the API to expose it to the client. Lazy default written on first read."""
+def blep_minimum_minutes():
+    """The Stop→Cancel threshold (whole minutes). Single source of truth, also
+    read by the API to expose it to the client. Lazy default written on first
+    read."""
     try:
-        return int(Configuration.objects.get(key='blep_minimum_seconds').value)
+        return int(Configuration.objects.get(key='blep_minimum_minutes').value)
     except Configuration.DoesNotExist:
         Configuration.objects.create(
-            key='blep_minimum_seconds', value=_BLEP_MINIMUM_SECONDS_DEFAULT,
+            key='blep_minimum_minutes', value=_BLEP_MINIMUM_MINUTES_DEFAULT,
         )
-        return int(_BLEP_MINIMUM_SECONDS_DEFAULT)
+        return int(_BLEP_MINIMUM_MINUTES_DEFAULT)
     except (TypeError, ValueError):
-        return int(_BLEP_MINIMUM_SECONDS_DEFAULT)
+        return int(_BLEP_MINIMUM_MINUTES_DEFAULT)
 
 
 def _has_manage_time(user):
@@ -151,22 +153,82 @@ class BlepService:
         )
 
     @staticmethod
-    def _close_open(user=None, task=None, now=None):
-        """Close all open Bleps matching the given filter.
+    def _under_minimum(blep, close_time):
+        """True when closing `blep` at `close_time` yields fewer whole minutes
+        than the configured minimum. start_time is already minute-floored on
+        save, so this compares whole minutes."""
+        if blep.start_time is None:
+            return False
+        whole_minutes = int((close_time - blep.start_time).total_seconds() // 60)
+        return whole_minutes < blep_minimum_minutes()
 
-        At least one of `user` or `task` must be provided. Returns the
-        number of bleps that were closed.
+    @staticmethod
+    def _cancel_blep(blep):
+        """Delete an open blep with full cancel_work semantics.
+
+        Locks the blep's task, computes whether this blep is the first/only
+        activity (task is in_progress AND this is the only blep on it), deletes
+        the blep, and — if first/only — reverts the task to pending and
+        un-consumes its materials. This is exactly what cancel_work does after
+        its guard; callers that hand an instance here must NOT re-query for the
+        open blep nor re-apply the "too long" guard.
         """
+        task = Task.objects.select_for_update().get(pk=blep.task_id)
+        first_activity = (
+            task.status == Task.STATUS_IN_PROGRESS
+            and Blep.objects.filter(task=task).count() == 1
+        )
+        blep.delete()
+        if first_activity:
+            reverted = Task.objects.filter(
+                pk=task.pk, status=Task.STATUS_IN_PROGRESS,
+            ).update(status=Task.STATUS_PENDING)
+            if reverted:
+                from apps.inventory.services import MaterialService
+                for material in task.materials.all():
+                    if material.consumption_state == \
+                            material.CONSUMPTION_STATE_CONSUMED:
+                        MaterialService.unconsume(material)
+
+    @staticmethod
+    def _resolve_open_blep(blep, now):
+        """Close an open blep, or cancel it (full undo) if it's under the
+        minimum — the shared resolution used by every close path."""
+        if BlepService._under_minimum(blep, now):
+            BlepService._cancel_blep(blep)
+        else:
+            blep.end_time = now
+            blep.save()
+
+    @staticmethod
+    def _close_open(user=None, task=None, now=None):
+        """Resolve all open Bleps matching the given filter.
+
+        At least one of `user` or `task` must be provided. Each open blep is
+        resolved individually: a sub-minimum blep is an accidental start and is
+        cancelled with full undo (delete + first/only-activity revert); an
+        at-or-over-minimum blep is closed (end_time floored to the minute on
+        save). Returns the number of bleps that were resolved.
+        """
+        # Programming-error guard: no DB needed, keep outside the atomic.
         if user is None and task is None:
             raise ValueError("_close_open requires user or task filter")
         if now is None:
             now = timezone.now()
-        qs = Blep.objects.filter(end_time__isnull=True)
-        if user is not None:
-            qs = qs.filter(user=user)
-        if task is not None:
-            qs = qs.filter(task=task)
-        return qs.update(end_time=now)
+        # Self-atomic: _cancel_blep uses select_for_update(), which requires an
+        # enclosing transaction. Callers under autocommit (logout, deactivate)
+        # would otherwise 500. Nested inside an existing atomic block this is
+        # just a savepoint, which is fine.
+        with transaction.atomic():
+            qs = Blep.objects.filter(end_time__isnull=True)
+            if user is not None:
+                qs = qs.filter(user=user)
+            if task is not None:
+                qs = qs.filter(task=task)
+            bleps = list(qs)
+            for blep in bleps:
+                BlepService._resolve_open_blep(blep, now)
+            return len(bleps)
 
     @staticmethod
     def close_user_open_bleps(user, now=None):
@@ -186,7 +248,7 @@ class BlepService:
         - actor: the user performing the action
         - target_user: user the blep belongs to (defaults to actor)
         - Creating for another user requires can_manage_time
-        - Creating older than 24h requires can_manage_time
+        - Creating older than 30h requires can_manage_time
         - Task must belong to a Job
         - end_time must be >= start_time
         - Must not overlap another blep for target_user
@@ -212,12 +274,18 @@ class BlepService:
             raise ValidationError("End time cannot be in the future.")
         if not _within_edit_window(start_time) and not _has_manage_time(actor):
             raise BlepPermissionError(
-                "Creating a time entry older than 24 hours requires can_manage_time."
+                "Creating a time entry older than 30 hours requires can_manage_time."
             )
         if _existing_overlaps(target_user, start_time, end_time):
             raise ValidationError(
                 "This time entry overlaps an existing entry for the user."
             )
+        if target_user is not None:
+            from apps.core.time_integrity import enclosing_shift_for_blep
+            if enclosing_shift_for_blep(target_user, start_time, end_time) is None:
+                raise ValidationError(
+                    "No shift encloses this time — clock in / add a shift covering it first."
+                )
         with transaction.atomic():
             blep = BlepService._create(
                 task, target_user, start_time=start_time, end_time=end_time,
@@ -233,7 +301,7 @@ class BlepService:
         if is_own:
             if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):
                 raise BlepPermissionError(
-                    "Editing a time entry older than 24 hours requires can_manage_time."
+                    "Editing a time entry older than 30 hours requires can_manage_time."
                 )
         else:
             if not _has_manage_time(actor):
@@ -273,6 +341,15 @@ class BlepService:
                 "This time entry would overlap an existing entry for the user."
             )
 
+        # Enclosure guard: a closed blep must sit inside one of its user's
+        # shifts. Skip orphan (user-less) bleps and still-open bleps (no end).
+        if check_user is not None and new_end is not None:
+            from apps.core.time_integrity import enclosing_shift_for_blep
+            if enclosing_shift_for_blep(check_user, new_start, new_end) is None:
+                raise ValidationError(
+                    "No shift encloses the edited time — widen the enclosing shift first."
+                )
+
         for k, v in fields.items():
             setattr(blep, k, v)
         blep.save()
@@ -284,7 +361,7 @@ class BlepService:
         if is_own:
             if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):
                 raise BlepPermissionError(
-                    "Deleting a time entry older than 24 hours requires can_manage_time."
+                    "Deleting a time entry older than 30 hours requires can_manage_time."
                 )
         else:
             if not _has_manage_time(actor):
@@ -915,6 +992,11 @@ class TaskLifecycleService:
                 )
             now = timezone.now()
 
+            # Auto-clock-in: a worker starting a live blep must have an open
+            # shift. Open one for the target if they have none.
+            from apps.core.services import ShiftService
+            ShiftService.ensure_open_shift(target, start_time=now)
+
             if task.status == Task.STATUS_PENDING:
                 # First worker on a pending task: promote (which consumes the
                 # task's materials) and assign. No conflict possible — nobody
@@ -948,10 +1030,18 @@ class TaskLifecycleService:
                     'started_at': b.start_time,
                     'options': ['join', 'takeover'],
                 }
+            if action == 'takeover':
+                # Resolve the displaced worker(s)' blep(s): a sub-minute one is an
+                # accidental start → cancelled (full undo; may revert the task to
+                # pending and un-consume materials), a real one → closed. Then start
+                # fresh via the normal tested path — if the cancel reverted the task
+                # to pending, that path re-promotes/re-consumes/reassigns; otherwise
+                # it just adds the blep. No takeover-specific state handling.
+                for b in list(other_bleps):
+                    BlepService._resolve_open_blep(b, now)
+                return TaskLifecycleService.start_work(task_pk, target)
             # Close target's open Blep on ANY task
             BlepService._close_open(user=target, now=now)
-            if action == 'takeover':
-                other_bleps.update(end_time=now)
             blep = BlepService._create(task, target, start_time=now)
             JobService.mark_work_started(task.job)
             # Promote only when the blepper IS the assignee (see above).
@@ -992,7 +1082,7 @@ class TaskLifecycleService:
         (see the spec). A 'join' on an already-active task, or a task with
         prior sessions, only loses the blep.
 
-        Only allowed while the session is under `blep_minimum_seconds`; over
+        Only allowed while the session is under `blep_minimum_minutes`; over
         that the caller should Stop instead (enforced defensively here).
         """
         with transaction.atomic():
@@ -1007,28 +1097,11 @@ class TaskLifecycleService:
                 raise ValidationError(
                     "No open time entry to cancel for this user on this task."
                 )
-            elapsed = blep.elapsed
-            if elapsed is not None and elapsed.total_seconds() >= blep_minimum_seconds():
+            if not BlepService._under_minimum(blep, timezone.now()):
                 raise ValidationError(
                     "Session is too long to cancel; stop it instead."
                 )
-            # First/only activity: this is the sole blep and the task is only
-            # in_progress because of it.
-            first_activity = (
-                task.status == Task.STATUS_IN_PROGRESS
-                and Blep.objects.filter(task=task).count() == 1
-            )
-            blep.delete()
-            if first_activity:
-                reverted = Task.objects.filter(
-                    pk=task.pk, status=Task.STATUS_IN_PROGRESS,
-                ).update(status=Task.STATUS_PENDING)
-                if reverted:
-                    from apps.inventory.services import MaterialService
-                    for material in task.materials.all():
-                        if material.consumption_state == \
-                                material.CONSUMPTION_STATE_CONSUMED:
-                            MaterialService.unconsume(material)
+            BlepService._cancel_blep(blep)
 
 
 # ═══════════════════════════════════════════════════════════════════

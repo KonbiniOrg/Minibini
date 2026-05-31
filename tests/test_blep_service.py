@@ -2,9 +2,10 @@ from django.utils import timezone
 from datetime import timedelta
 
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, Shift
 from apps.jobs.models import Job, Task, Blep
 from apps.jobs.services import BlepService
+from apps.core.timeutils import floor_to_minute
 
 
 class BlepServicePrimitivesTest(BaseTestCase):
@@ -27,14 +28,16 @@ class BlepServicePrimitivesTest(BaseTestCase):
         start = timezone.now() - timedelta(hours=2)
         end = timezone.now() - timedelta(hours=1)
         blep = BlepService._create(self.task, self.user, start_time=start, end_time=end)
-        self.assertEqual(blep.start_time, start)
-        self.assertEqual(blep.end_time, end)
+        self.assertEqual(blep.start_time, floor_to_minute(start))
+        self.assertEqual(blep.end_time, floor_to_minute(end))
 
     def test_close_open_by_user_closes_all_user_bleps(self):
-        b1 = Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
-        b2 = Blep.objects.create(task=self.other_task, user=self.user, start_time=timezone.now())
+        # Backdate well past the minimum so these are CLOSED (not cancelled).
+        past = timezone.now() - timedelta(minutes=30)
+        b1 = Blep.objects.create(task=self.task, user=self.user, start_time=past)
+        b2 = Blep.objects.create(task=self.other_task, user=self.user, start_time=past)
         # Another user's blep should NOT be closed.
-        other = Blep.objects.create(task=self.task, user=self.other_user, start_time=timezone.now())
+        other = Blep.objects.create(task=self.task, user=self.other_user, start_time=past)
         BlepService._close_open(user=self.user)
         b1.refresh_from_db(); b2.refresh_from_db(); other.refresh_from_db()
         self.assertIsNotNone(b1.end_time)
@@ -42,16 +45,18 @@ class BlepServicePrimitivesTest(BaseTestCase):
         self.assertIsNone(other.end_time)
 
     def test_close_open_by_user_and_task_scoped(self):
-        on_task = Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
-        other_task_blep = Blep.objects.create(task=self.other_task, user=self.user, start_time=timezone.now())
+        past = timezone.now() - timedelta(minutes=30)
+        on_task = Blep.objects.create(task=self.task, user=self.user, start_time=past)
+        other_task_blep = Blep.objects.create(task=self.other_task, user=self.user, start_time=past)
         BlepService._close_open(user=self.user, task=self.task)
         on_task.refresh_from_db(); other_task_blep.refresh_from_db()
         self.assertIsNotNone(on_task.end_time)
         self.assertIsNone(other_task_blep.end_time)
 
     def test_close_open_by_task_closes_all_workers(self):
-        mine = Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
-        theirs = Blep.objects.create(task=self.task, user=self.other_user, start_time=timezone.now())
+        past = timezone.now() - timedelta(minutes=30)
+        mine = Blep.objects.create(task=self.task, user=self.user, start_time=past)
+        theirs = Blep.objects.create(task=self.task, user=self.other_user, start_time=past)
         BlepService._close_open(task=self.task)
         mine.refresh_from_db(); theirs.refresh_from_db()
         self.assertIsNotNone(mine.end_time)
@@ -81,25 +86,38 @@ class CreateHistoricalTest(BaseTestCase):
         self.manager.user_permissions.add(perm)
         self.manager = User.objects.get(pk=self.manager.pk)
         self.other_user = User.objects.create_user(username='worker2', password='x')
+        now = timezone.now()
+        for u in (self.user, self.manager, self.other_user):
+            Shift.objects.create(
+                user=u,
+                start_time=now - timedelta(days=3),
+                end_time=now + timedelta(days=1),
+            )
 
     def _times(self, hours_ago_start, hours_ago_end):
         now = timezone.now()
         return (now - timedelta(hours=hours_ago_start),
                 now - timedelta(hours=hours_ago_end))
 
-    def test_create_for_self_within_24h(self):
+    def test_create_for_self_within_30h(self):
         start, end = self._times(2, 1)
         blep = BlepService.create_historical(self.user, self.task, start, end)
         self.assertEqual(blep.user, self.user)
-        self.assertEqual(blep.start_time, start)
-        self.assertEqual(blep.end_time, end)
+        self.assertEqual(blep.start_time, floor_to_minute(start))
+        self.assertEqual(blep.end_time, floor_to_minute(end))
 
-    def test_create_for_self_older_than_24h_requires_manage_time(self):
+    def test_create_for_self_25h_old_is_within_window(self):
+        # 25h is inside the 30h self-edit window (was outside the old 24h window).
+        start, end = self._times(25, 24)
+        blep = BlepService.create_historical(self.user, self.task, start, end)
+        self.assertEqual(blep.user, self.user)
+
+    def test_create_for_self_older_than_30h_requires_manage_time(self):
         start, end = self._times(48, 47)
         with self.assertRaises(BlepPermissionError):
             BlepService.create_historical(self.user, self.task, start, end)
 
-    def test_create_for_self_older_than_24h_manager_allowed(self):
+    def test_create_for_self_older_than_30h_manager_allowed(self):
         start, end = self._times(48, 47)
         blep = BlepService.create_historical(self.manager, self.task, start, end)
         self.assertEqual(blep.user, self.manager)
@@ -213,6 +231,13 @@ class UpdateBlepTest(BaseTestCase):
         self.manager.user_permissions.add(perm)
         self.manager = User.objects.get(pk=self.manager.pk)
         self.other = User.objects.create_user(username='w2', password='x')
+        now = timezone.now()
+        for u in (self.user, self.manager, self.other):
+            Shift.objects.create(
+                user=u,
+                start_time=now - timedelta(days=3),
+                end_time=now + timedelta(days=1),
+            )
 
     def _blep(self, user, hours_ago_start=2, hours_ago_end=1):
         now = timezone.now()
@@ -225,6 +250,13 @@ class UpdateBlepTest(BaseTestCase):
     def test_update_own_recent_blep(self):
         blep = self._blep(self.user)
         new_end = blep.end_time + timedelta(minutes=15)
+        updated = BlepService.update(blep, self.user, end_time=new_end)
+        self.assertEqual(updated.end_time, new_end)
+
+    def test_update_own_25h_old_blep_is_within_window(self):
+        # 25h is inside the 30h self-edit window (was outside the old 24h window).
+        blep = self._blep(self.user, hours_ago_start=25, hours_ago_end=24)
+        new_end = blep.end_time + timedelta(minutes=5)
         updated = BlepService.update(blep, self.user, end_time=new_end)
         self.assertEqual(updated.end_time, new_end)
 
@@ -310,6 +342,12 @@ class DeleteBlepTest(BaseTestCase):
 
     def test_delete_own_recent(self):
         blep = self._blep(self.user)
+        BlepService.delete(blep, self.user)
+        self.assertFalse(Blep.objects.filter(pk=blep.blep_id).exists())
+
+    def test_delete_own_25h_old_is_within_window(self):
+        # 25h is inside the 30h self-edit window (was outside the old 24h window).
+        blep = self._blep(self.user, hours_ago_start=25)
         BlepService.delete(blep, self.user)
         self.assertFalse(Blep.objects.filter(pk=blep.blep_id).exists())
 

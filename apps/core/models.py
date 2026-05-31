@@ -1,7 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from decimal import Decimal
+from apps.core.history import history
+from apps.core.timeutils import floor_to_minute
 
 
 class User(AbstractUser):
@@ -27,6 +30,30 @@ class User(AbstractUser):
             ('can_manage_config', 'Can manage settings, templates, user admin'),
         ]
 
+
+
+@history(exclude=['shift_id'])
+class Shift(models.Model):
+    shift_id = models.AutoField(primary_key=True)
+    user = models.ForeignKey('core.User', on_delete=models.PROTECT, related_name='shifts')
+    start_time = models.DateTimeField()                       # clock-in
+    end_time = models.DateTimeField(null=True, blank=True)    # null = on the clock
+
+    class Meta:
+        db_table = 'shifts'
+        ordering = ['-start_time']
+
+    @property
+    def is_open(self):
+        return self.end_time is None
+
+    def save(self, *args, **kwargs):
+        self.start_time = floor_to_minute(self.start_time)
+        self.end_time = floor_to_minute(self.end_time)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Shift {self.pk} for {self.user.username}"
 
 
 class Configuration(models.Model):
@@ -444,3 +471,67 @@ class ScheduledProcessRun(models.Model):
 
     def __str__(self):
         return f'{self.process_name} @ {self.started_at:%Y-%m-%d %H:%M} ({self.outcome})'
+
+
+class TimeChangeRequest(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_DENIED = 'denied'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_DENIED, 'Denied'),
+    ]
+
+    requester = models.ForeignKey('core.User', on_delete=models.PROTECT, related_name='+')
+    requested_start = models.DateTimeField()
+    requested_end = models.DateTimeField(null=True, blank=True)
+    reason = models.TextField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    has_known_conflict = models.BooleanField(default=False)
+    reviewer = models.ForeignKey('core.User', on_delete=models.PROTECT,
+                                 null=True, blank=True, related_name='+')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_note = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        abstract = True
+        ordering = ['-created_at']
+
+
+@history(exclude=['request_id'])
+class ShiftChangeRequest(TimeChangeRequest):
+    request_id = models.AutoField(primary_key=True)
+    shift = models.ForeignKey('core.Shift', on_delete=models.PROTECT,
+                              null=True, blank=True, related_name='change_requests')
+
+    class Meta(TimeChangeRequest.Meta):
+        abstract = False
+        db_table = 'shift_change_requests'
+
+    @property
+    def target_user(self):
+        return self.shift.user if self.shift_id else self.requester
+
+    def conflicting_records(self):
+        """The bleps this requested shift span would fail to enclose — the
+        records a manager must adjust before approving. Found by the same check
+        that flags the conflict."""
+        from apps.core.time_integrity import unenclosed_bleps_for_shift
+        also = (self.shift.start_time, self.shift.end_time or timezone.now()) if self.shift_id else None
+        return list(unenclosed_bleps_for_shift(
+            self.target_user, self.requested_start, self.requested_end, also_span=also))
+
+    def would_conflict(self):
+        return bool(self.conflicting_records())
+
+    def apply_requested(self, reviewer):
+        from apps.core.services import ShiftService
+        if self.shift_id:
+            return ShiftService.update(self.shift, actor=reviewer,
+                                       start_time=self.requested_start,
+                                       end_time=self.requested_end)
+        return ShiftService.create(self.requester, actor=reviewer,
+                                   start_time=self.requested_start,
+                                   end_time=self.requested_end)

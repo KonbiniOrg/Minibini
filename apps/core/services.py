@@ -1401,3 +1401,127 @@ class OutboundEmailService:
         )
         email_record.refresh_from_db()
         return email_record
+
+
+SELF_EDIT_WINDOW_HOURS = 30
+
+
+class ShiftService:
+    @staticmethod
+    def open_shift_for(user):
+        return user.shifts.filter(end_time__isnull=True).first()
+
+    @staticmethod
+    def clock_in(user, start_time=None):
+        if ShiftService.open_shift_for(user):
+            raise ValidationError("You are already clocked in.")
+        from apps.core.models import Shift
+        return Shift.objects.create(user=user, start_time=start_time or timezone.now())
+
+    @staticmethod
+    def ensure_open_shift(user, start_time=None):
+        """Open a shift if the user has none open (auto-clock-in on blep start)."""
+        existing = ShiftService.open_shift_for(user)
+        if existing:
+            return existing
+        return ShiftService.clock_in(user, start_time=start_time)
+
+    @staticmethod
+    def clock_out(user, end_time=None):
+        shift = ShiftService.open_shift_for(user)
+        if not shift:
+            raise ValidationError("You are not clocked in.")
+        now = end_time or timezone.now()
+        with transaction.atomic():
+            from apps.jobs.services import BlepService
+            BlepService.close_user_open_bleps(user, now=now)
+            shift.end_time = now
+            shift.save()
+        return shift
+
+    @staticmethod
+    def _has_manage_time(user):
+        return user.is_superuser or user.has_perm('core.can_manage_time')
+
+    @staticmethod
+    def _within_window(start_time):
+        return (timezone.now() - start_time) <= timedelta(hours=SELF_EDIT_WINDOW_HOURS)
+
+    @staticmethod
+    def _assert_can_edit(shift, actor):
+        if ShiftService._has_manage_time(actor):
+            return
+        if shift.user_id != actor.id:
+            raise ValidationError("You can only edit your own shifts.")
+        if not ShiftService._within_window(shift.start_time):
+            raise ValidationError(
+                "This shift is older than the edit window — request a change instead."
+            )
+
+    @staticmethod
+    def _assert_encloses(user, start_time, end_time, also_span=None):
+        from apps.core.time_integrity import unenclosed_bleps_for_shift
+        bad = unenclosed_bleps_for_shift(user, start_time, end_time, also_span=also_span)
+        if bad:
+            ids = ", ".join(str(b.pk) for b in bad)
+            raise ValidationError(
+                f"This shift would not enclose blep(s) {ids}; adjust the blep(s) first."
+            )
+
+    @staticmethod
+    def update(shift, actor, start_time, end_time):
+        ShiftService._assert_can_edit(shift, actor)
+        if end_time is not None and start_time is not None and end_time < start_time:
+            raise ValidationError("End must be after start.")
+        old_span = (shift.start_time, shift.end_time or timezone.now())
+        ShiftService._assert_encloses(shift.user, start_time, end_time, also_span=old_span)
+        shift.start_time = start_time
+        shift.end_time = end_time
+        shift.save()
+        return shift
+
+    @staticmethod
+    def create(user, actor, start_time, end_time):
+        """Create a (usually historical) closed shift - used by manager edit and
+        by approving a create-type change request."""
+        if not (ShiftService._has_manage_time(actor) or actor.id == user.id):
+            raise ValidationError("Not permitted.")
+        if end_time is not None and start_time is not None and end_time < start_time:
+            raise ValidationError("End must be after start.")
+        ShiftService._assert_encloses(user, start_time, end_time)
+        from apps.core.models import Shift
+        return Shift.objects.create(user=user, start_time=start_time, end_time=end_time)
+
+
+class TimeChangeRequestService:
+    @staticmethod
+    def submit(request):
+        """Validate + save a new request. Conflicts are allowed (warn-and-flag)."""
+        if not (request.reason or '').strip():
+            raise ValidationError("A reason is required.")
+        request.has_known_conflict = request.would_conflict()
+        request.save()
+        return request
+
+    @staticmethod
+    def approve(request, reviewer):
+        if request.status != request.STATUS_PENDING:
+            raise ValidationError("Only pending requests can be approved.")
+        with transaction.atomic():
+            request.apply_requested(reviewer)   # raises ValidationError on invariant break
+            request.status = request.STATUS_APPROVED
+            request.reviewer = reviewer
+            request.reviewed_at = timezone.now()
+            request.save()
+        return request
+
+    @staticmethod
+    def deny(request, reviewer, note=''):
+        if request.status != request.STATUS_PENDING:
+            raise ValidationError("Only pending requests can be denied.")
+        request.status = request.STATUS_DENIED
+        request.reviewer = reviewer
+        request.reviewed_at = timezone.now()
+        request.review_note = note or ''
+        request.save()
+        return request

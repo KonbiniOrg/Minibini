@@ -54,16 +54,17 @@ The project defines four custom permission atoms on `User.Meta.permissions`:
 |---|---|
 | `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, contacts, businesses. Status transitions on each. Email-to-job actions: link, unlink, create-job-from-email. |
 | `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO / email-to-bill actions: link, unlink, create-po-from-email. |
-| `can_manage_time` | Edit or delete any user's bleps, and start/stop another worker's live timer on-behalf. (Tracking or editing one's own time is `IsAuthenticated`.) |
+| `can_manage_time` | Edit or delete any user's bleps and shifts, clock another worker in/out, and approve/deny shift & blep change requests. (Tracking, clocking, or editing one's own recent time is `IsAuthenticated`.) |
 | `can_manage_config` | Settings endpoint, work and task templates, accounting categories, user admin viewset, QBO connection management. |
 
 DRF permission classes in `apps/api/permissions.py`:
 
 ```python
-CanManageJobs       = atom_permission('can_manage_jobs')
-CanManageFinancials = atom_permission('can_manage_financials')
-CanManageTime       = atom_permission('can_manage_time')
-CanManageConfig     = atom_permission('can_manage_config')
+CanManageJobs            = atom_permission('can_manage_jobs')
+CanManageFinancials      = atom_permission('can_manage_financials')
+CanManageTime            = atom_permission('can_manage_time')
+CanManageConfig          = atom_permission('can_manage_config')
+CanManageTimeOrFinancials  # OR of the two — gates the payroll shift report
 ```
 
 `atom_permission(codename)` is a factory returning a `BasePermission` subclass whose `has_permission` calls `request.user.has_perm(f'core.{codename}')`.
@@ -96,7 +97,10 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` | |
 | `/api/tasks/` (job-side) | `IsAuthenticated` | `IsAuthenticated` | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
 | `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` | retrieve open to all |
-| `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 24h rolling rule + `can_manage_time` for editing others |
+| `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 30h rolling rule + `can_manage_time` for editing others |
+| `/api/shifts/` | `IsAuthenticated` | `IsAuthenticated` for `PATCH` (service enforces 30h self-edit window) | `DELETE` requires `can_manage_time` (200 + JSON body); `?user=me\|<id>`, `?since=` |
+| `/api/shift-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | serializes a read-only `conflicts` list (the records the request collides with); a worker can't target another user's record (403 unless `can_manage_time`) |
+| `/api/blep-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | a create-type (null `blep`) request requires `task`; same `conflicts` list + own-record rule as shifts |
 | `/api/rate-schemes/` | `IsAuthenticated` | `can_manage_config` | `supersede` action also `can_manage_config` |
 | `/api/work-templates/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/task-templates/` | `IsAuthenticated` | `can_manage_config` | |
@@ -128,6 +132,9 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 - **`POST /api/jobs/{id}/add-from-template/`** and **`POST /api/jobs/{id}/create_material/`** are `IsAuthenticated` only — workers can self-serve adding template-driven tasks and materials.
 - **`POST /api/jobs/{id}/start-invoice-wizard/`** accepts `can_manage_jobs` OR `can_manage_financials` — either side can spawn the draft so the other side can fill it.
 - **`POST /api/jobs/{id}/notes/`**, **`POST /api/contacts/{id}/notes/`**, **`POST /api/businesses/{id}/notes/`** are `IsAuthenticated` — anyone can add a note.
+- **`POST /api/shifts/clock-in/`**, **`POST /api/shifts/clock-out/`** are `IsAuthenticated` for self. Clocking another worker (via `?user=` / body `user`) requires `can_manage_time`; an unknown user id returns 404. Clock-out also closes the worker's open bleps.
+- **`GET /api/shifts/active/`** is `IsAuthenticated` — the caller's own open shift (or `null`).
+- **`GET /api/shifts/report/?start=&end=&user=`** (per-worker per-day payroll report) requires `can_manage_time` **OR** `can_manage_financials` (`CanManageTimeOrFinancials`). Financial staff can run payroll without the time-management atom.
 
 #### Stub endpoints
 
@@ -135,8 +142,11 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 
 - `POST /api/auth/refresh/` (placeholder for token refresh)
 - `POST /api/emails/send/` (outbound email — `can_manage_jobs` is the natural fit)
-- `POST /api/shifts/clock-in/`, `POST /api/shifts/clock-out/` (`IsAuthenticated` for self; `can_manage_time` for others)
 - `GET /api/time-tracking/status/`, `GET /api/time-tracking/active/`
+
+The previously-stubbed `POST /api/shifts/clock-in/` and
+`POST /api/shifts/clock-out/` are now **live** (work-shifts feature) — see the
+endpoint table and the special cases above.
 
 ## Authentication
 
@@ -163,6 +173,7 @@ All live under `/api/auth/` (`apps/api/auth/`):
 1. `frontend/src/components/LoginPage.svelte` is shown when `$user` is `null` after the initial `checkAuth()` mount probe.
 2. The form posts to `/api/auth/login/` via `frontend/src/stores/auth.js`'s `login(username, password)`. Success sets the `user` store; the SPA re-renders into the authenticated tree.
 3. `checkAuth()` on subsequent loads calls `GET /api/auth/me/` to populate the store from the existing session.
+4. After login the SPA lands on **Home** (`#/`), where the Clock In / Out band and the Time tab live — the worker's first action on arrival is typically to clock in.
 
 ## User admin
 
@@ -443,4 +454,4 @@ The component already exists at `frontend/src/components/home/RecentLoginsList.s
 | User-to-Contact association in user admin UI | `2026-04-10-user-admin-design.md` | `User.contact` is already nullable; the admin form does not yet let the owner link or create a Contact. |
 | Admin-action history logging | `2026-04-10-user-admin-design.md` | `HistoryEntry` already supports it; create/deactivate/reset/re-permission events should be logged. |
 | Forgot-password email flow | `2026-04-10-user-admin-design.md`, `2026-04-10-user-self-service-design.md` | Requires email-sending infra. |
-| Atom assignments for the stub endpoints | `2026-03-24-permission-atom-redesign.md` | `/api/shifts/...`, `/api/time-tracking/...`, `/api/emails/send/`, `/api/auth/refresh/` are 501 stubs. When implemented they need the right permission gating wired in. Candidates: `can_manage_time` for shifts/time-tracking, no atom for own-expense submission. |
+| Atom assignments for the stub endpoints | `2026-03-24-permission-atom-redesign.md` | `/api/emails/send/`, `/api/auth/refresh/`, and `/api/time-tracking/{status,active}/` are 501 stubs needing permission gating when implemented. (`/api/shifts/...` is now live — see the endpoint table above.) |

@@ -532,7 +532,7 @@ class BlepModelTest(TestCase):
         )
 
     def test_blep_creation(self):
-        start_time = timezone.now()
+        start_time = timezone.now().replace(second=0, microsecond=0)
         end_time = start_time + timedelta(hours=2)
 
         blep = Blep.objects.create(

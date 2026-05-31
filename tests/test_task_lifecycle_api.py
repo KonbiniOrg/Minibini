@@ -128,7 +128,11 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_stop_work(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
-        Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
+        # Over-minimum so stop-work CLOSES it (a sub-minimum blep is cancelled).
+        Blep.objects.create(
+            task=self.task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
         url = f'/api/tasks/{self.task.pk}/stop-work/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
@@ -159,7 +163,11 @@ class TaskLifecycleAPITest(BaseTestCase):
     def test_stop_work_on_behalf_closes_targets_blep(self):
         worker = self._create_user('ob_stop_target')
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
-        Blep.objects.create(task=self.task, user=worker, start_time=timezone.now())
+        # Over-minimum so the on-behalf stop CLOSES it (not cancels).
+        Blep.objects.create(
+            task=self.task, user=worker,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
         url = f'/api/tasks/{self.task.pk}/stop-work/'
         resp = self.client.post(url, {'on_behalf_of': worker.pk})
         self.assertEqual(resp.status_code, 200)
@@ -199,13 +207,22 @@ class TaskLifecycleAPITest(BaseTestCase):
         )
 
     def test_start_work_takeover(self):
+        from datetime import timedelta
+        from apps.core.models import Shift
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         other_user = self._create_user('otherworker')
-        Blep.objects.create(task=self.task, user=other_user, start_time=timezone.now())
+        now = timezone.now()
+        # Enclosing shift + over-minute displaced blep so takeover CLOSES (real
+        # work), rather than cancelling a sub-minute accidental start.
+        Shift.objects.create(user=other_user, start_time=now - timedelta(days=1))
+        Blep.objects.create(
+            task=self.task, user=other_user,
+            start_time=now - timedelta(minutes=30),
+        )
         url = f'/api/tasks/{self.task.pk}/start-work/'
         resp = self.client.post(url, {'action': 'takeover'})
         self.assertEqual(resp.status_code, 200)
-        # Other user's blep should be closed
+        # Other user's real-work blep should be closed (still exists)
         other_blep = Blep.objects.get(task=self.task, user=other_user)
         self.assertIsNotNone(other_blep.end_time)
         # Current user should have open blep

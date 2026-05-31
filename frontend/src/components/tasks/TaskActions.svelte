@@ -33,11 +33,9 @@
   const underMinimum = $derived.by(() => {
     const ab = activeBlepOnThisTask;
     if (!ab || !ab.start_time) return false;
-    const threshold = ab.blep_minimum_seconds ?? task?.blep_minimum_seconds ?? 60;
-    const elapsed = Math.max(
-      0, Math.floor((nowMs - new Date(ab.start_time).getTime()) / 1000)
-    );
-    return elapsed < threshold;
+    const minMinutes = ab.blep_minimum_minutes ?? task?.blep_minimum_minutes ?? 1;
+    const wholeMinutes = Math.floor((nowMs - new Date(ab.start_time).getTime()) / 60000);
+    return wholeMinutes < minMinutes;
   });
 
   // Visibility per status (see design doc § Action visibility)

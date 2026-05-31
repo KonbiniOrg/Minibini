@@ -27,6 +27,8 @@ from apps.api.templates_config.views import (
 )
 from apps.api.rate_schemes.views import RateSchemeViewSet
 from apps.api.change_orders.views import ChangeOrderViewSet
+from apps.api.shifts.views import (ShiftViewSet, ShiftChangeRequestViewSet,
+                                   BlepChangeRequestViewSet)
 
 
 @api_view(['GET'])
@@ -81,6 +83,9 @@ router.register(r'task-templates', TaskTemplateViewSet, basename='task-template'
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
 router.register(r'rate-schemes', RateSchemeViewSet, basename='rate-scheme')
 router.register(r'change-orders', ChangeOrderViewSet, basename='change-order')
+router.register(r'shifts', ShiftViewSet, basename='shift')
+router.register(r'shift-change-requests', ShiftChangeRequestViewSet, basename='shift-change-request')
+router.register(r'blep-change-requests', BlepChangeRequestViewSet, basename='blep-change-request')
 
 urlpatterns = [
     path('', api_root, name='api-root'),

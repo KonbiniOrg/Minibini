@@ -44,8 +44,7 @@ class FullURLTreeTest(BaseTestCase):
         """Stub endpoints should return 501."""
         stubs = [
             ('POST', '/api/auth/refresh/'),
-            ('POST', '/api/shifts/clock-in/'),
-            ('POST', '/api/shifts/clock-out/'),
+            # /api/shifts/clock-in/ and clock-out/ are now implemented (shifts feature).
             ('GET', '/api/time-tracking/status/'),
             ('GET', '/api/time-tracking/active/'),
             ('POST', '/api/emails/send/'),

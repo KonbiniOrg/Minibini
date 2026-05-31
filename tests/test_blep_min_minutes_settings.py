@@ -1,4 +1,4 @@
-"""Settings validation for blep_minimum_seconds — must be a non-negative
+"""Settings validation for blep_minimum_minutes — must be a non-negative
 integer. See docs/plans/2026-05-24-blep-handling-changes.md §2.
 """
 from rest_framework.test import APIClient
@@ -14,7 +14,7 @@ def _admin():
     return User.objects.get(pk=user.pk)
 
 
-class BlepMinSecondsSettingsTest(BaseTestCase):
+class BlepMinMinutesSettingsTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.client = APIClient()
@@ -22,23 +22,23 @@ class BlepMinSecondsSettingsTest(BaseTestCase):
 
     def test_rejects_non_integer(self):
         resp = self.client.patch(
-            '/api/settings/', {'blep_minimum_seconds': 'abc'}, format='json',
+            '/api/settings/', {'blep_minimum_minutes': 'abc'}, format='json',
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn('blep_minimum_seconds', resp.json())
+        self.assertIn('blep_minimum_minutes', resp.json())
 
     def test_rejects_negative(self):
         resp = self.client.patch(
-            '/api/settings/', {'blep_minimum_seconds': '-5'}, format='json',
+            '/api/settings/', {'blep_minimum_minutes': '-5'}, format='json',
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn('blep_minimum_seconds', resp.json())
+        self.assertIn('blep_minimum_minutes', resp.json())
 
     def test_accepts_valid(self):
         resp = self.client.patch(
-            '/api/settings/', {'blep_minimum_seconds': '90'}, format='json',
+            '/api/settings/', {'blep_minimum_minutes': '5'}, format='json',
         )
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(
-            Configuration.objects.get(key='blep_minimum_seconds').value, '90',
+            Configuration.objects.get(key='blep_minimum_minutes').value, '5',
         )

@@ -10,7 +10,7 @@ from apps.core.models import User
 from apps.jobs.services import TaskLifecycleService
 
 
-class BlepMinSecondsPayloadTest(BaseTestCase):
+class BlepMinMinutesPayloadTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.client = APIClient()
@@ -22,12 +22,12 @@ class BlepMinSecondsPayloadTest(BaseTestCase):
             self.job.save()
         self.task = Task.objects.create(job=self.job, name='T', rate_scheme_id=1)
 
-    def test_current_blep_includes_min_seconds(self):
+    def test_current_blep_includes_min_minutes(self):
         TaskLifecycleService.start_work(self.task.pk, self.user)
         body = self.client.get('/api/bleps/current/').json()
         self.assertIsNotNone(body)
-        self.assertEqual(int(body['blep_minimum_seconds']), 60)
+        self.assertEqual(int(body['blep_minimum_minutes']), 1)
 
-    def test_task_detail_includes_min_seconds(self):
+    def test_task_detail_includes_min_minutes(self):
         body = self.client.get(f'/api/tasks/{self.task.pk}/').json()
-        self.assertEqual(int(body['blep_minimum_seconds']), 60)
+        self.assertEqual(int(body['blep_minimum_minutes']), 1)

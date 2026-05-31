@@ -2,8 +2,9 @@ from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
-from apps.core.models import AbstractWorkContainer
+from apps.core.models import AbstractWorkContainer, TimeChangeRequest
 from apps.core.history import history
+from apps.core.timeutils import floor_to_minute
 
 
 # Palette used to auto-assign Job.accent_color. Order matters for tie-breaking
@@ -428,6 +429,11 @@ class Blep(models.Model):
             return f"{hours}h {minutes}m"
         return f"{minutes}m"
 
+    def save(self, *args, **kwargs):
+        self.start_time = floor_to_minute(self.start_time)
+        self.end_time = floor_to_minute(self.end_time)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"Blep {self.pk} for Task {self.task.pk}"
 
@@ -623,6 +629,51 @@ class RateScheme(models.Model):
 
     def __str__(self):
         return self.name
+
+
+@history(exclude=['request_id'])
+class BlepChangeRequest(TimeChangeRequest):
+    request_id = models.AutoField(primary_key=True)
+    blep = models.ForeignKey('jobs.Blep', on_delete=models.PROTECT,
+                             null=True, blank=True, related_name='change_requests')
+    task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT,
+                             null=True, blank=True, related_name='+')
+
+    class Meta(TimeChangeRequest.Meta):
+        abstract = False
+        db_table = 'blep_change_requests'
+
+    @property
+    def target_user(self):
+        return self.blep.user if self.blep_id else self.requester
+
+    def would_conflict(self):
+        from apps.core.time_integrity import enclosing_shift_for_blep
+        return enclosing_shift_for_blep(
+            self.target_user, self.requested_start, self.requested_end) is None
+
+    def conflicting_records(self):
+        """When no shift encloses the requested time, the worker's shifts that
+        overlap it are the candidates a manager would widen. Empty when an
+        enclosing shift already exists (no conflict) or none overlaps."""
+        from apps.core.time_integrity import (enclosing_shift_for_blep,
+                                              overlapping_shifts_for_blep)
+        if enclosing_shift_for_blep(self.target_user, self.requested_start,
+                                    self.requested_end) is not None:
+            return []
+        return list(overlapping_shifts_for_blep(
+            self.target_user, self.requested_start, self.requested_end))
+
+    def apply_requested(self, reviewer):
+        from apps.jobs.services import BlepService
+        if self.blep_id:
+            return BlepService.update(self.blep, actor=reviewer,
+                                      start_time=self.requested_start,
+                                      end_time=self.requested_end)
+        return BlepService.create_historical(
+            actor=reviewer, task=self.task,
+            start_time=self.requested_start, end_time=self.requested_end,
+            target_user=self.requester)
 
 
 

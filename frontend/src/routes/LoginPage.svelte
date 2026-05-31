@@ -1,4 +1,5 @@
 <script>
+  import { push } from 'svelte-spa-router';
   import { login } from '../stores/auth.js';
 
   let username = '';
@@ -9,6 +10,7 @@
     error = '';
     try {
       await login(username, password);
+      push('/');
     } catch (e) {
       error = e.message || 'Login failed';
     }

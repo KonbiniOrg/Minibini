@@ -326,8 +326,8 @@ sanctioned path to transition a Task. All methods wrap in
 | `unblock_task(task_pk)` | — | blocked → in_progress; clears `blocked_reason` |
 | `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); fires job-completion check |
 | `start_work(task_pk, user, action=None, on_behalf_of=None)` | user, optional action, optional on_behalf_of | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). |
-| `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). |
-| `cancel_work(task_pk, user)` | user | The under-the-minimum "oops" undo. Deletes the user's open Blep on the task; if it was the first/only activity (the sole reason the task is `in_progress`), reverts the task to `pending` and un-consumes its materials (`MaterialService.unconsume`). Job status and assignee are left alone. Rejects if the session is already ≥ `blep_minimum_seconds` (stop instead) or there is no open Blep. Own-blep only — no `on_behalf_of`. |
+| `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. A sub-minimum Blep (`< blep_minimum_minutes` whole minutes) is cancelled with full undo instead of being persisted closed — see the close-primitive note below §5.5. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). |
+| `cancel_work(task_pk, user)` | user | The under-the-minimum "oops" undo. Deletes the user's open Blep on the task; if it was the first/only activity (the sole reason the task is `in_progress`), reverts the task to `pending` and un-consumes its materials (`MaterialService.unconsume`). Job status and assignee are left alone. Rejects if the session is already ≥ `blep_minimum_minutes` (stop instead) or there is no open Blep. Own-blep only — no `on_behalf_of`. (Internally delegates to `BlepService._cancel_blep`, which the close primitive also uses.) |
 
 Material consumption happens exactly once: when the first worker calls
 `start_work` on a `pending` task, `MaterialService.consume(material)`
@@ -357,8 +357,17 @@ descriptor instead of opening a new Blep:
 
 The client (`StartWorkConflictModal.svelte`) presents the choice. Re-call
 `start_work` with `action='join'` (creates a parallel Blep — both workers
-active) or `action='takeover'` (closes the other worker's Blep first,
-then opens a new one).
+active) or `action='takeover'`.
+
+Takeover composes existing tested logic rather than special-casing state:
+it RESOLVES each displaced Blep via the shared `_resolve_open_blep` (cancel
+with full undo if sub-minute — an accidental start; close, end_time floored,
+if it's real work), then restarts via the normal `start_work` path. If the
+cancel reverted the task to pending (the displaced sub-minute Blep was the
+task's only activity), the restart re-promotes it, re-consumes materials, and
+reassigns to the taking-over worker; otherwise the restart just opens the new
+Blep. The restart is `action=None` with no remaining other workers, so it
+terminates after one level. There is no takeover-specific state handling.
 
 `block_task` returns a similar conflict shape (`active_workers`, plural,
 no options) when open Bleps exist — there's no override; the requester
@@ -395,12 +404,32 @@ Any path that would create a second active Blep first calls
 Multiple users can have active Bleps on the same task (the "join"
 case).
 
-The 24-hour rolling rule applies to direct user edits, not to
+**Shift enclosure.** Every Blep must be fully enclosed by a `Shift` of the
+same user (`shift.start <= blep.start and blep.end <= shift.end`). Shifts are
+the worker's clock-in/clock-out attendance spans (`Shift` model in
+`apps.core` — see `docs/designs/data-constraints.md` §1.2a). Consequences for
+bleps:
+
+- **Auto-clock-in.** Starting a live blep (`TaskLifecycleService.start_work`)
+  calls `ShiftService.ensure_open_shift(target)` — if the worker has no open
+  shift, one is opened at `now` so the new blep is enclosed. Workers normally
+  clock in from the Home band, but starting work clocks them in implicitly.
+- **Clock-out closes open bleps.** `ShiftService.clock_out` closes the
+  worker's open bleps (`end_time = now`) *before* stamping the shift's
+  `end_time`, so clocking out never leaves a blep unenclosed. The logout
+  endpoint clocks the worker out (§5.3).
+- **Enclosure guard on create/edit.** A blep create or edit (live or
+  historical) is rejected if no shift of that user encloses the resulting
+  span (`enclosing_shift_for_blep` in `apps/core/time_integrity.py`). A worker
+  whose target time falls outside any shift, or outside their 30h self-edit
+  window, files a `BlepChangeRequest` for a manager to approve.
+
+The 30-hour rolling rule applies to direct user edits, not to
 service-driven activity:
 
 - A user can create / edit / delete their own Blep if its `start_time`
-  is within the last 24 hours.
-- Editing or deleting another user's Blep, or any Blep older than 24
+  is within the last 30 hours.
+- Editing or deleting another user's Blep, or any Blep older than 30
   hours, requires the `can_manage_time` permission atom.
 - Reassigning a Blep to a different user also requires `can_manage_time`.
 - Starting or stopping another worker's live timer (`on_behalf_of` on
@@ -418,11 +447,11 @@ viewset, `ValidationError` to HTTP 400.
 |---|---|
 | `_create(task, user, start_time=None, end_time=None)` | Create a Blep |
 | `_close_open(user=None, task=None, now=None)` | Close all open Bleps matching the filters |
-| `close_user_open_bleps(user)` | Public wrapper around `_close_open(user=...)`; called by `UserAdminService` on deactivation and by the logout endpoint (`/api/auth/logout/`) so an explicit logout clocks the worker out. Session expiry does not call it (no server-side hook). |
+| `close_user_open_bleps(user)` | Public wrapper around `_close_open(user=...)`; called by `UserAdminService` on deactivation, by the logout endpoint (`/api/auth/logout/`) so an explicit logout clocks the worker out, and by `ShiftService.clock_out` so clocking out closes the worker's open bleps before the shift closes. Session expiry does not call it (no server-side hook). |
 
 | Public method | Purpose |
 |---|---|
-| `create_historical(actor, task, start_time, end_time, target_user=None)` | Validated historical create; 24h window + `can_manage_time` rules |
+| `create_historical(actor, task, start_time, end_time, target_user=None)` | Validated historical create; 30h window + `can_manage_time` rules |
 | `update(blep, actor, **fields)` | Update `start_time`, `end_time`, optionally `user`; validates ownership, window, and overlap |
 | `delete(blep, actor)` | Same authorization rules |
 
@@ -432,7 +461,7 @@ Validation rules enforced inside `BlepService`:
 2. No interval overlap per user (open bleps are treated as
    `[start, now)` for the comparison; two different users may overlap
    on the same task)
-3. 24h rolling window for non-managers (create / update / delete)
+3. 30h rolling window for non-managers (create / update / delete)
 4. **Job-status guard:** a Blep may only be created on a Task whose Job
    is in a status where work belongs. Live `start_work` allows `approved`
    and `in_progress` only; backfilled `create_historical` also allows
@@ -444,6 +473,11 @@ Validation rules enforced inside `BlepService`:
    `now` (`BlepService._CLOCK_SKEW_BUFFER`, tolerating mismatched device
    clocks) is rejected on create and update. You cannot have worked ahead
    of now.
+6. **Shift enclosure:** the resulting blep span must be fully enclosed by a
+   shift of the same user (`enclosing_shift_for_blep`). `start_work`
+   auto-opens a shift so live timers always pass; historical creates/edits
+   outside any shift are rejected (file a `BlepChangeRequest` instead). See
+   §5.2 and `docs/designs/data-constraints.md` §1.2a.
 
 ### 5.4 API
 
@@ -454,14 +488,42 @@ and `can_manage_time` rules.
 
 ### 5.5 Minimum session, derived activity, change notification
 
-- **Minimum session (`blep_minimum_seconds`, default 60).** While a
-  worker's own open Blep is under this elapsed duration, the UI's Stop
-  control becomes **Cancel** — `POST /api/tasks/{id}/cancel-work/` →
-  `cancel_work` (§4.5). The premise: a session that short is an "oops, I
-  didn't mean to start that," so it's discarded rather than saved. The
-  threshold rides on the `/api/bleps/current/` and task-detail payloads so
-  the client can choose the label live. Manager on-behalf stop is never a
-  cancel.
+- **Minimum session (`blep_minimum_minutes`, default 1).** Config is now in
+  **whole minutes** (Blep/Shift times are minute-granular). While a worker's
+  own open Blep is under this duration, the UI's Stop control becomes
+  **Cancel** — `POST /api/tasks/{id}/cancel-work/` → `cancel_work` (§4.5). The
+  premise: a session that short is an "oops, I didn't mean to start that," so
+  it's discarded rather than saved. The threshold rides on the
+  `/api/bleps/current/` (field `blep_minimum_minutes`) and task-detail payloads
+  so the client can choose the label live (compared in whole minutes,
+  `floor((now − start)/60s)`, to stay aligned with the backend).
+- **Sub-minimum close = cancel, enforced for ALL close paths.** The rule is
+  not just a frontend affordance: it lives in the backend close primitive
+  `BlepService._close_open`. When any close path resolves an open Blep, a
+  sub-minimum one (`< blep_minimum_minutes` whole minutes) is cancelled with
+  full `cancel_work` undo (`_cancel_blep`: delete + first/only-activity revert
+  to `pending` + material un-consume); an at-or-over-minimum one is closed
+  (end floored to the minute). Because `stop_work`, `ShiftService.clock_out`,
+  and logout/deactivation (`close_user_open_bleps`) all route through
+  `_close_open`, they share the behavior — a sub-minimum blep is **never**
+  persisted closed. Manager on-behalf stop is never a cancel of intent, but
+  a genuinely sub-minimum blep it closes is still discarded by this rule.
+  The per-blep decision (cancel-if-sub-minimum / else close) lives in the
+  shared `_resolve_open_blep(blep, now)` helper; `_close_open` just loops over
+  matching open bleps and calls it. `_close_open` wraps that loop in
+  `transaction.atomic()` so it is self-atomic regardless of caller:
+  `_cancel_blep` uses `select_for_update()`, and the logout / deactivate
+  callers invoke it under autocommit (no enclosing transaction), where it would
+  otherwise raise `TransactionManagementError` → 500.
+  **Takeover RESOLVES the displaced blep, then restarts.** The
+  `action='takeover'` branch of `start_work` calls `_resolve_open_blep` on each
+  displaced worker's open blep — so a sub-minute one is **cancelled** (full
+  undo: deleted, and if it was the task's only activity the task reverts to
+  `pending` and materials un-consume) and a real one is **closed**. It then
+  recurses into `start_work(task_pk, target)` (the normal tested path): if the
+  cancel reverted the task to pending, that path re-promotes / re-consumes /
+  reassigns; otherwise it just opens the new blep. No takeover-specific state
+  handling — takeover is composed from cancel + start, not a special case.
 - **Derived activity facets.** `TaskSerializer` and `BoardService` expose
   `has_active_blep`, `active_worker_count`, and `has_bleps` (computed from
   `blep_set`, prefetched to avoid N+1). The SPA collapses these + status
@@ -732,7 +794,7 @@ mount.
 
 | Component | Role |
 |---|---|
-| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions. While the user's own session is under `blep_minimum_seconds`, **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
+| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions. While the user's own session is under `blep_minimum_minutes` (whole minutes), **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
 | `BlepList.svelte` | Table of bleps with edit / delete buttons gated by `isBlepEditable(blep, user, perms)` |
 | `BlepEditModal.svelte` | Create or edit a Blep — `start_time` / `end_time` always; `user` dropdown only when actor has `can_manage_time` |
 | `StartWorkConflictModal.svelte` | Shown when `start-work` returns a `conflict` payload; offers Join / Take over / Cancel |
@@ -753,16 +815,18 @@ Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 Worker access to Complete/Block/Unblock is intentional — workers are
 the ones who discover these conditions. Cancel stays manager-only.
 
-While the active session is under `blep_minimum_seconds`, the "Stop Work"
-button instead reads "Cancel" and deletes the just-started Blep (undoing
-the Start) rather than closing it — see §5.5. This is distinct from the
-manager-only task **Cancel** above.
+While the active session is under `blep_minimum_minutes` (compared in whole
+minutes), the "Stop Work" button instead reads "Cancel" and deletes the
+just-started Blep (undoing the Start) rather than closing it — see §5.5. The
+backend enforces the same rule on every close path, so even a Stop on a
+sub-minimum session is converted to a cancel server-side. This is distinct
+from the manager-only task **Cancel** above.
 
 ### 10.3 Recent Time list (home page)
 
 `components/home/RecentTimeList.svelte` (home **Time** tab) fetches
 `GET /api/bleps/?user=me&since=<7d ago>` — the signed-in user's own recent
-sessions. Each row offers **Edit** when the blep is editable (within the 24h
+sessions. Each row offers **Edit** when the blep is editable (within the 30h
 rolling window, or any blep for a `can_manage_time` manager); otherwise a
 **Request Edit** button — currently a stub that alerts "Not yet implemented"
 (see Unfinished Work).

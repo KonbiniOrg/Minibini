@@ -8,6 +8,10 @@ Minibini is a Django-based job shop management system for handling jobs, estimat
 
 **Tech Stack:** Django 5.2+, Django REST Framework, MySQL, Python 3.12, Svelte 5 SPA (Vite)
 
+## Brainstorming / Design Discussion
+
+**Never use the multiple-choice / AskUserQuestion framework when brainstorming with this user.** Conduct design discussions as unstructured, back-and-forth prose — one idea or question at a time, in conversational paragraphs. This overrides any skill or default that prefers multiple-choice questions.
+
 ## Essential Commands
 
 ```bash
@@ -266,6 +270,14 @@ for contact in Contact.objects.filter(...):
 
 **Line item deletion:** NEVER call `.delete()` directly on a line item (`EstimateLineItem`, `InvoiceLineItem`, `PurchaseOrderLineItem`, `BillLineItem`). Always go through `LineItemService.delete_line_item_with_renumber(line_item)` — `BaseLineItem.delete()` does NOT renumber survivors, so a direct call leaves gaps in `line_number` (e.g. lines 2, 3, 5, 7). The only legitimate exception is the implementation of `delete_line_item_with_renumber` itself. Cascade deletes from the parent container (Estimate/Invoice/PO/Bill) are fine because Django uses bulk-delete and skips per-instance `.delete()` entirely. If you need to delete a line item from a new code path, route it through the service.
 
+**QuerySet.update() / bulk writes:** NEVER use `QuerySet.update()`, `bulk_update`, or `bulk_create` for fields that `Model.save()` normalizes or that trigger side effects — these bypass `save()` entirely (same reasoning as the `QuerySet.delete()` rule above). `Shift.save()` and `Blep.save()` floor `start_time`/`end_time` to the whole minute, so a `Blep.objects.filter(...).update(end_time=now)` would persist an unfloored timestamp and break shift↔blep minute alignment. Iterate and call `.save()` per instance instead:
+```python
+bleps = list(qs)
+for blep in bleps:
+    blep.end_time = now
+    blep.save()
+```
+
 **Transactions:** Wrap multi-model operations:
 ```python
 with transaction.atomic():
@@ -353,6 +365,7 @@ See `docs/designs/quickbooks-integration.md` for the full reference, including O
 6. **Missing transaction wrapping** - Multi-model ops need `transaction.atomic()`
 7. **Type coercion** - Pass correct types to ORM fields
 8. **Direct `.delete()` on a line item** - Leaves `line_number` gaps. Always go through `LineItemService.delete_line_item_with_renumber(line_item)`
+9. **QuerySet.update() bypasses Model.save()** - Iterate and call `save()` individually when `save()` normalizes fields or has side effects (e.g. Shift/Blep floor times to the minute)
 
 ### Code Review Checklist
 - [ ] Status values match model choice definitions

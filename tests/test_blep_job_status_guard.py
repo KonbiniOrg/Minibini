@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, Shift
 from apps.jobs.models import Job, Task
 from apps.jobs.services import BlepService, TaskLifecycleService
 
@@ -83,6 +83,12 @@ class CreateHistoricalJobStatusGuardTest(BaseTestCase):
         super().setUp()
         self.contact = Job.objects.first().contact
         self.user = User.objects.get(username='admin')
+        now = timezone.now()
+        Shift.objects.create(
+            user=self.user,
+            start_time=now - timedelta(days=3),
+            end_time=now + timedelta(days=1),
+        )
 
     def _task(self, job):
         return Task.objects.create(name='T', job=job, rate_scheme_id=1)

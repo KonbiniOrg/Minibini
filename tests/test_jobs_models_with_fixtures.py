@@ -127,7 +127,7 @@ class BlepModelFixtureTest(FixtureTestCase):
         task = Task.objects.get(name="Kitchen demolition")
         user = User.objects.get(username="manager1")
 
-        start_time = timezone.now()
+        start_time = timezone.now().replace(second=0, microsecond=0)
         end_time = start_time + timedelta(hours=4)
 
         blep = Blep.objects.create(

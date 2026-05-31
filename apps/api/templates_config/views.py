@@ -225,13 +225,13 @@ def settings_view(request):
     schedule_errors = _validate_schedule_keys(request.data)
     if schedule_errors:
         return Response(schedule_errors, status=400)
-    if 'blep_minimum_seconds' in request.data:
+    if 'blep_minimum_minutes' in request.data:
         try:
-            if int(request.data['blep_minimum_seconds']) < 0:
+            if int(request.data['blep_minimum_minutes']) < 0:
                 raise ValueError
         except (TypeError, ValueError):
             return Response(
-                {'blep_minimum_seconds': 'must be a non-negative integer'},
+                {'blep_minimum_minutes': 'must be a non-negative integer'},
                 status=400,
             )
     for key, value in request.data.items():
