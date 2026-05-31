@@ -1,4 +1,7 @@
+from collections import defaultdict
+from datetime import datetime, time
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone as dj_tz
 from django.utils.dateparse import parse_datetime
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, permission_classes, action
@@ -8,7 +11,7 @@ from rest_framework.response import Response
 from apps.core.models import Shift, User, ShiftChangeRequest
 from apps.jobs.models import BlepChangeRequest
 from apps.core.services import ShiftService, TimeChangeRequestService
-from apps.api.permissions import CanManageTime
+from apps.api.permissions import CanManageTime, CanManageTimeOrFinancials
 from .serializers import (ShiftSerializer, ShiftChangeRequestSerializer,
                           BlepChangeRequestSerializer)
 
@@ -159,3 +162,47 @@ class ShiftChangeRequestViewSet(_ChangeRequestViewSet):
 class BlepChangeRequestViewSet(_ChangeRequestViewSet):
     queryset_model = BlepChangeRequest
     serializer_class = BlepChangeRequestSerializer
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, CanManageTimeOrFinancials])
+def shift_report(request):
+    start_s = request.query_params.get('start')
+    end_s = request.query_params.get('end')
+    if not start_s or not end_s:
+        return Response({'detail': 'start and end (YYYY-MM-DD) are required.'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    tz = dj_tz.get_current_timezone()
+    start_dt = dj_tz.make_aware(datetime.combine(datetime.fromisoformat(start_s).date(), time.min), tz)
+    end_dt = dj_tz.make_aware(datetime.combine(datetime.fromisoformat(end_s).date(), time.max), tz)
+
+    qs = (Shift.objects.filter(start_time__gte=start_dt, start_time__lte=end_dt)
+          .select_related('user').order_by('user__username', 'start_time'))
+    if request.query_params.get('user'):
+        qs = qs.filter(user_id=request.query_params['user'])
+
+    workers = defaultdict(lambda: {'user_id': None, 'name': '', 'days': defaultdict(list),
+                                   'total_minutes': 0})
+    for s in qs:
+        w = workers[s.user_id]
+        w['user_id'] = s.user_id
+        w['name'] = s.user.get_full_name() or s.user.username
+        local_start = dj_tz.localtime(s.start_time)
+        end = s.end_time or dj_tz.now()
+        minutes = max(0, int((end - s.start_time).total_seconds() // 60))
+        w['days'][local_start.date().isoformat()].append({
+            'shift_id': s.shift_id,
+            'start': s.start_time.isoformat(),
+            'end': s.end_time.isoformat() if s.end_time else None,
+            'minutes': minutes,
+            'open': s.end_time is None,
+        })
+        w['total_minutes'] += minutes
+
+    result = []
+    for w in workers.values():
+        result.append({
+            'user_id': w['user_id'], 'name': w['name'], 'total_minutes': w['total_minutes'],
+            'days': [{'date': d, 'shifts': shifts} for d, shifts in sorted(w['days'].items())],
+        })
+    return Response({'start': start_s, 'end': end_s, 'workers': result})
