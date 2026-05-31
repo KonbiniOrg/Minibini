@@ -131,3 +131,23 @@ proper issue.
   live-refresh idea ([[project_general_repolling]]).
   _Done when:_ a requester is notified (by whatever agreed channel) of approve/deny
   outcomes for both time-change requests and expense reimbursements.
+
+- **Time managers can't reach the shift request queue / payroll report.** — _added 2026-05-31_
+  `ShiftRequestQueue` + `PayrollReport` live on the **Shifts tab of the Users page**
+  (`routes/users/UserListPage.svelte`), but the "Users" sidebar link is gated on
+  `can_manage_config` (`Sidebar.svelte`). A manager with `can_manage_time` (or
+  `can_manage_financials` for the report) but not `can_manage_config` has no nav path to
+  it — exactly the people meant to approve requests / run payroll. Likely fix: a dedicated
+  "Shifts"/"Time" sidebar link gated on `can_manage_time OR can_manage_financials` routing
+  to a small page that hosts the queue + report, decoupled from user-admin.
+  _Done when:_ a `can_manage_time`/`can_manage_financials` manager can navigate to the
+  request queue and payroll report without `can_manage_config`.
+
+- **Surface the conflicting *shift* for a blep change request that needs a wider shift.** — _added 2026-05-31_
+  The request queue now lists conflicting records (`conflicts`): a shift request shows the
+  bleps it would orphan, and a blep request shows the worker's *overlapping* shifts to
+  widen. But a blep request whose new time has **no** overlapping shift at all (worked a
+  span with no shift) surfaces nothing to open — the manager must create a shift, and there's
+  no manager UI to create/edit an arbitrary worker's shift outside this queue's modal.
+  _Done when:_ a manager can resolve a blep request that needs a brand-new shift (create one)
+  directly from the review flow.

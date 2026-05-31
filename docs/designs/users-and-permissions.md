@@ -99,8 +99,8 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` | retrieve open to all |
 | `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 30h rolling rule + `can_manage_time` for editing others |
 | `/api/shifts/` | `IsAuthenticated` | `IsAuthenticated` for `PATCH` (service enforces 30h self-edit window) | `DELETE` requires `can_manage_time` (200 + JSON body); `?user=me\|<id>`, `?since=` |
-| `/api/shift-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | |
-| `/api/blep-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | |
+| `/api/shift-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | serializes a read-only `conflicts` list (the records the request collides with); a worker can't target another user's record (403 unless `can_manage_time`) |
+| `/api/blep-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | a create-type (null `blep`) request requires `task`; same `conflicts` list + own-record rule as shifts |
 | `/api/rate-schemes/` | `IsAuthenticated` | `can_manage_config` | `supersede` action also `can_manage_config` |
 | `/api/work-templates/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/task-templates/` | `IsAuthenticated` | `can_manage_config` | |

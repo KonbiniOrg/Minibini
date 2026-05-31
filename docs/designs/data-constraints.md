@@ -167,6 +167,15 @@ lives in core, `BlepChangeRequest` in `apps/jobs/models.py`.
   create-new-shift request. `BlepChangeRequest.blep` (nullable FK → Blep) +
   `task` (nullable FK → Task): null `blep` = a create-new-blep request against
   `task`.
+- **Conflict surfacing**: `conflicting_records()` returns the actual records a
+  request collides with (and `would_conflict()` derives `bool(...)` from it, so
+  there's one source of truth). A `ShiftChangeRequest` returns the bleps the
+  requested span would orphan (`unenclosed_bleps_for_shift`); a
+  `BlepChangeRequest` returns the worker's shifts that overlap the requested
+  time but don't enclose it (`overlapping_shifts_for_blep` in
+  `apps/core/time_integrity.py`) — the candidates a manager widens. The
+  change-request serializers expose this as a read-only `conflicts` list so the
+  manager's review queue links straight to the record to adjust, then approve.
 
 See `docs/designs/users-and-permissions.md` for the endpoint/atom mapping and
 `jobs-tasks-and-worksheets.md` §5 for the Blep side.
