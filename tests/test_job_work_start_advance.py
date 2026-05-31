@@ -6,7 +6,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, Shift
 from apps.jobs.models import Job, Task
 from apps.jobs.services import BlepService, JobService, TaskLifecycleService
 
@@ -58,6 +58,12 @@ class WorkStartAdvancesJobTest(BaseTestCase):
         super().setUp()
         self.contact = Job.objects.first().contact
         self.user = User.objects.get(username='admin')
+        now = timezone.now()
+        Shift.objects.create(
+            user=self.user,
+            start_time=now - timedelta(days=1),
+            end_time=now + timedelta(days=1),
+        )
 
     def test_start_work_advances_approved_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)

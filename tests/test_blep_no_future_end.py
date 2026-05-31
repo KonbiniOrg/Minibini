@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, Shift
 from apps.jobs.models import Job, Task, Blep
 from apps.jobs.services import BlepService
 
@@ -21,6 +21,12 @@ class NoFutureEndTimeTest(BaseTestCase):
             self.job.save()
         self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='nofuture_worker', password='x')
+        now = timezone.now()
+        Shift.objects.create(
+            user=self.user,
+            start_time=now - timedelta(days=1),
+            end_time=now + timedelta(days=1),
+        )
 
     def _active_blep(self):
         return Blep.objects.create(

@@ -12,14 +12,13 @@ class StubEndpointTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
 
     def test_time_tracking_stubs(self):
+        # /api/shifts/clock-in/ and clock-out/ are now implemented (shifts feature).
         endpoints = [
-            '/api/shifts/clock-in/',
-            '/api/shifts/clock-out/',
             '/api/time-tracking/status/',
             '/api/time-tracking/active/',
         ]
         for url in endpoints:
-            response = self.client.post(url, {}, format='json')
+            response = self.client.get(url)
             self.assertEqual(response.status_code, 501, f'{url} should return 501')
 
     # test_expense_stubs removed — /api/expenses/ now has a real viewset

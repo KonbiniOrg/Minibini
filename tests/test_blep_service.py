@@ -2,7 +2,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, Shift
 from apps.jobs.models import Job, Task, Blep
 from apps.jobs.services import BlepService
 
@@ -81,6 +81,13 @@ class CreateHistoricalTest(BaseTestCase):
         self.manager.user_permissions.add(perm)
         self.manager = User.objects.get(pk=self.manager.pk)
         self.other_user = User.objects.create_user(username='worker2', password='x')
+        now = timezone.now()
+        for u in (self.user, self.manager, self.other_user):
+            Shift.objects.create(
+                user=u,
+                start_time=now - timedelta(days=3),
+                end_time=now + timedelta(days=1),
+            )
 
     def _times(self, hours_ago_start, hours_ago_end):
         now = timezone.now()
@@ -213,6 +220,13 @@ class UpdateBlepTest(BaseTestCase):
         self.manager.user_permissions.add(perm)
         self.manager = User.objects.get(pk=self.manager.pk)
         self.other = User.objects.create_user(username='w2', password='x')
+        now = timezone.now()
+        for u in (self.user, self.manager, self.other):
+            Shift.objects.create(
+                user=u,
+                start_time=now - timedelta(days=3),
+                end_time=now + timedelta(days=1),
+            )
 
     def _blep(self, user, hours_ago_start=2, hours_ago_end=1):
         now = timezone.now()
