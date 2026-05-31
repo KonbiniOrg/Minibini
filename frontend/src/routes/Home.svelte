@@ -8,6 +8,8 @@
   import ExpensesList from '../components/home/ExpensesList.svelte';
   import RecentLoginsList from '../components/home/RecentLoginsList.svelte';
   import RecentTimeList from '../components/home/RecentTimeList.svelte';
+  import MyShiftsList from '../components/home/MyShiftsList.svelte';
+  import MyChangeRequestsList from '../components/home/MyChangeRequestsList.svelte';
   import ClockBand from '../components/home/ClockBand.svelte';
 
   let loading = $state(true);
@@ -61,7 +63,9 @@
   <AssignedTaskList tasks={assignedTasks} />
   <RecentJobsList jobs={recentJobs} />
 {:else if tab === 'time'}
+  <MyShiftsList />
   <RecentTimeList />
+  <MyChangeRequestsList />
   <RecentLoginsList />
 {:else if tab === 'expenses'}
   <ExpensesList />

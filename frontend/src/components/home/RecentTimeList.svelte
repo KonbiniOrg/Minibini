@@ -2,25 +2,26 @@
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
-  import BlepEditModal from '../tasks/BlepEditModal.svelte';
+  import TimeEditModal from '../time/TimeEditModal.svelte';
   import BlepLogTable from '../time/BlepLogTable.svelte';
 
   let bleps = $state([]);
   let loading = $state(true);
   let editingBlep = $state(null);
   let modalOpen = $state(false);
+  let modalAction = $state('edit');
 
   const userPermissions = $derived($userStore?.permissions || []);
   const canManageTime = $derived(userPermissions.includes('can_manage_time'));
 
-  function within24h(iso) {
+  function within30h(iso) {
     if (!iso) return false;
-    return Date.now() - new Date(iso).getTime() < 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(iso).getTime() < 30 * 60 * 60 * 1000;
   }
 
   function isEditable(blep) {
     if (canManageTime) return true;
-    return blep.user === $userStore?.id && within24h(blep.start_time);
+    return blep.user === $userStore?.id && within30h(blep.start_time);
   }
 
   async function load() {
@@ -34,8 +35,8 @@
     }
   }
 
-  function openEdit(blep) { editingBlep = blep; modalOpen = true; }
-  function requestEdit() { alert('Request Edit: not yet implemented.'); }
+  function openEdit(blep) { editingBlep = blep; modalAction = 'edit'; modalOpen = true; }
+  function requestEdit(blep) { editingBlep = blep; modalAction = 'request'; modalOpen = true; }
   async function handleSaved() { modalOpen = false; editingBlep = null; await load(); }
   function closeModal() { modalOpen = false; editingBlep = null; }
 
@@ -64,19 +65,20 @@
         {#if isEditable(blep)}
           <button type="button" onclick={() => openEdit(blep)}>Edit</button>
         {:else}
-          <button type="button" onclick={requestEdit}>Request Edit</button>
+          <button type="button" onclick={() => requestEdit(blep)}>Request Edit</button>
         {/if}
       {/snippet}
     </BlepLogTable>
   {/if}
 </section>
 
-<BlepEditModal
+<TimeEditModal
   open={modalOpen}
-  mode="edit"
-  blep={editingBlep}
+  recordType="blep"
+  action={modalAction}
+  record={editingBlep}
   currentUser={$userStore}
-  {userPermissions}
+  userPermissions={userPermissions}
   onSaved={handleSaved}
   onClose={closeModal}
 />
