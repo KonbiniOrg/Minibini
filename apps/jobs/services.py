@@ -166,7 +166,11 @@ class BlepService:
             qs = qs.filter(user=user)
         if task is not None:
             qs = qs.filter(task=task)
-        return qs.update(end_time=now)
+        bleps = list(qs)
+        for blep in bleps:
+            blep.end_time = now
+            blep.save()
+        return len(bleps)
 
     @staticmethod
     def close_user_open_bleps(user, now=None):

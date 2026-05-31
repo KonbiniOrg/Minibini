@@ -5,6 +5,7 @@ from tests.base import BaseTestCase
 from apps.core.models import User, Shift
 from apps.jobs.models import Job, Task, Blep
 from apps.jobs.services import BlepService
+from apps.core.timeutils import floor_to_minute
 
 
 class BlepServicePrimitivesTest(BaseTestCase):
@@ -27,8 +28,8 @@ class BlepServicePrimitivesTest(BaseTestCase):
         start = timezone.now() - timedelta(hours=2)
         end = timezone.now() - timedelta(hours=1)
         blep = BlepService._create(self.task, self.user, start_time=start, end_time=end)
-        self.assertEqual(blep.start_time, start)
-        self.assertEqual(blep.end_time, end)
+        self.assertEqual(blep.start_time, floor_to_minute(start))
+        self.assertEqual(blep.end_time, floor_to_minute(end))
 
     def test_close_open_by_user_closes_all_user_bleps(self):
         b1 = Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
@@ -98,8 +99,8 @@ class CreateHistoricalTest(BaseTestCase):
         start, end = self._times(2, 1)
         blep = BlepService.create_historical(self.user, self.task, start, end)
         self.assertEqual(blep.user, self.user)
-        self.assertEqual(blep.start_time, start)
-        self.assertEqual(blep.end_time, end)
+        self.assertEqual(blep.start_time, floor_to_minute(start))
+        self.assertEqual(blep.end_time, floor_to_minute(end))
 
     def test_create_for_self_25h_old_is_within_window(self):
         # 25h is inside the 30h self-edit window (was outside the old 24h window).

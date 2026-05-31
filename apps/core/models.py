@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from decimal import Decimal
 from apps.core.history import history
+from apps.core.timeutils import floor_to_minute
 
 
 class User(AbstractUser):
@@ -45,6 +46,11 @@ class Shift(models.Model):
     @property
     def is_open(self):
         return self.end_time is None
+
+    def save(self, *args, **kwargs):
+        self.start_time = floor_to_minute(self.start_time)
+        self.end_time = floor_to_minute(self.end_time)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Shift {self.pk} for {self.user.username}"

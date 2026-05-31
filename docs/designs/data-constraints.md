@@ -89,6 +89,17 @@ Bleps. `db_table = 'shifts'`. `@history(exclude=['shift_id'])`.
 - **end_time**: nullable datetime. **Null = open** (worker is currently on the
   clock). `is_open` property returns `end_time is None`. When set, must be
   ≥ `start_time` (enforced by `ShiftService`).
+- **Minute granularity**: Shift and Blep `start_time`/`end_time` are stored
+  floored to the whole minute (seconds + microseconds = 0) via `Model.save()`
+  (`Shift.save()` / `Blep.save()`, using `apps.core.timeutils.floor_to_minute`).
+  This keeps the minute-granular edit UI (`datetime-local`) round-tripping
+  losslessly and makes shift↔blep enclosure boundaries align exactly:
+  `clock_out` sets the shift end = the closed blep end to the same minute, so
+  the enclosure check (which is monotonic under flooring) cannot reject an edit
+  re-sent at minute precision. `QuerySet.update()` / `bulk_*` bypass `save()`
+  and must not be used to write these fields (iterate and call `.save()`); the
+  one-time `normalize_shift_blep_times` command floors any legacy sub-minute
+  rows and is idempotent.
 - **One OPEN shift per user**: a user may have at most one shift with
   `end_time IS NULL`. This is enforced in `ShiftService` (`clock_in` blocks a
   second clock-in; `ensure_open_shift` reuses the existing open one) — **not**

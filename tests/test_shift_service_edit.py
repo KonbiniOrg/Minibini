@@ -14,7 +14,10 @@ class ShiftEditTest(BaseTestCase):
         self.mgr = User.objects.create_user(username='edit_mgr', password='x', is_superuser=True)
         self.job = Job.objects.first()
         self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
-        self.now = timezone.now().replace(microsecond=0)
+        # Floor to the whole minute: Shift/Blep save() now stores minute-granular
+        # times, so test expectations derived from self.now must land on a minute
+        # boundary to compare equal to the stored values.
+        self.now = timezone.now().replace(second=0, microsecond=0)
 
     def _recent_shift(self):
         return Shift.objects.create(user=self.user, start_time=self.now - timedelta(hours=3),

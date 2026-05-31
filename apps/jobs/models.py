@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from apps.core.models import AbstractWorkContainer, TimeChangeRequest
 from apps.core.history import history
+from apps.core.timeutils import floor_to_minute
 
 
 # Palette used to auto-assign Job.accent_color. Order matters for tie-breaking
@@ -427,6 +428,11 @@ class Blep(models.Model):
         if hours > 0:
             return f"{hours}h {minutes}m"
         return f"{minutes}m"
+
+    def save(self, *args, **kwargs):
+        self.start_time = floor_to_minute(self.start_time)
+        self.end_time = floor_to_minute(self.end_time)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Blep {self.pk} for Task {self.task.pk}"
