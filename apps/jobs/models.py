@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
-from apps.core.models import AbstractWorkContainer
+from apps.core.models import AbstractWorkContainer, TimeChangeRequest
 from apps.core.history import history
 
 
@@ -546,6 +546,23 @@ class RateScheme(models.Model):
             # comes from the worksheet, carried to the Task and editable there;
             # fall back to 1 for a genuine one-off fee with no quantity.
             return task.est_qty if task.est_qty is not None else Decimal('1')
+
+
+@history(exclude=['request_id'])
+class BlepChangeRequest(TimeChangeRequest):
+    request_id = models.AutoField(primary_key=True)
+    blep = models.ForeignKey('jobs.Blep', on_delete=models.PROTECT,
+                             null=True, blank=True, related_name='change_requests')
+    task = models.ForeignKey('jobs.Task', on_delete=models.PROTECT,
+                             null=True, blank=True, related_name='+')
+
+    class Meta(TimeChangeRequest.Meta):
+        abstract = False
+        db_table = 'blep_change_requests'
+
+    @property
+    def target_user(self):
+        return self.blep.user if self.blep_id else self.requester
 
     def get_modifier_inputs(self):
         """Return modifiers list for UI rendering."""

@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from decimal import Decimal
 from apps.core.history import history
 
@@ -403,3 +404,45 @@ class ScheduledProcessRun(models.Model):
 
     def __str__(self):
         return f'{self.process_name} @ {self.started_at:%Y-%m-%d %H:%M} ({self.outcome})'
+
+
+class TimeChangeRequest(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_DENIED = 'denied'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_DENIED, 'Denied'),
+    ]
+
+    requester = models.ForeignKey('core.User', on_delete=models.PROTECT, related_name='+')
+    requested_start = models.DateTimeField()
+    requested_end = models.DateTimeField(null=True, blank=True)
+    reason = models.TextField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    has_known_conflict = models.BooleanField(default=False)
+    reviewer = models.ForeignKey('core.User', on_delete=models.PROTECT,
+                                 null=True, blank=True, related_name='+')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_note = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        abstract = True
+        ordering = ['-created_at']
+
+
+@history(exclude=['request_id'])
+class ShiftChangeRequest(TimeChangeRequest):
+    request_id = models.AutoField(primary_key=True)
+    shift = models.ForeignKey('core.Shift', on_delete=models.PROTECT,
+                              null=True, blank=True, related_name='change_requests')
+
+    class Meta(TimeChangeRequest.Meta):
+        abstract = False
+        db_table = 'shift_change_requests'
+
+    @property
+    def target_user(self):
+        return self.shift.user if self.shift_id else self.requester
