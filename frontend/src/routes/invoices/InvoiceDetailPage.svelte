@@ -4,7 +4,6 @@
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user } from '../../stores/auth.js';
-  import SendToQBODialog from '../../components/invoices/SendToQBODialog.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
 
@@ -16,7 +15,6 @@
   let categories = $state([]);
   let loading = $state(true);
   let error = $state(null);
-  let showSendDialog = $state(false);
   let success = $state(null);
 
   let canEditInvoice = $derived(
@@ -54,11 +52,6 @@
     } catch (_) { categories = []; }
   }
 
-  function handleSendSuccess(result) {
-    showSendDialog = false;
-    success = `Sent to QuickBooks (QBO ID: ${result.qbo_id})`;
-    loadInvoice();
-  }
 
   function fmtDate(iso) {
     if (!iso) return '';
@@ -87,8 +80,10 @@
     {#if invoice.status === 'draft' && canEditInvoice}
       <a href={`/invoices/${invoice.invoice_id}/wizard`} use:link>Continue in wizard</a>
     {/if}
-    {#if !invoice.qbo_id && canEditInvoice}
-      <button type="button" onclick={() => showSendDialog = true}>Send to QuickBooks</button>
+    {#if canEditInvoice}
+      <a class="action-link" href="#/invoices/{invoice.invoice_id}/send">
+        {invoice.qbo_id ? 'Resend Invoice' : 'Send Invoice'}
+      </a>
     {/if}
   </div>
 
@@ -117,15 +112,6 @@
 
   <h3>Line Items</h3>
   <LineItemTable lineItems={invoice.line_items || []} {categories} />
-
-  {#if showSendDialog}
-    <SendToQBODialog
-      invoiceId={invoice.invoice_id}
-      defaultEmail={invoice.default_send_to || ''}
-      onSuccess={handleSendSuccess}
-      onCancel={() => showSendDialog = false}
-    />
-  {/if}
 {/if}
 
 <style>
@@ -135,6 +121,13 @@
     padding: 8px 24px;
   }
   .back-link { font-size: 13px; }
+  .action-link {
+    display: inline-block; padding: 4px 12px;
+    border: 1px solid #d1d5db; border-radius: 3px;
+    background: #fff; color: #2563eb; text-decoration: none;
+    font-size: 13px; cursor: pointer;
+  }
+  .action-link:hover { background: #f3f4f6; }
   .page-title { font-size: 18px; font-weight: 600; }
   .status-badge {
     padding: 4px 12px; border-radius: 12px; font-size: 13px;

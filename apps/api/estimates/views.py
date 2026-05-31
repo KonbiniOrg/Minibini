@@ -162,6 +162,60 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
             'line_item': EstimateLineItemSerializer(line_item).data,
         })
 
+    @action(detail=True, methods=['get'], url_path='send-defaults')
+    def send_defaults(self, request, pk=None):
+        """Pre-populated values for the Send Email page."""
+        from apps.estimates.services import EstimateEmailService
+        estimate = self.get_object()
+        return Response(EstimateEmailService.get_email_defaults(estimate))
+
+    @action(detail=True, methods=['post'], url_path='send')
+    def send(self, request, pk=None):
+        """Send the estimate as a PDF attachment. Transitions draft -> open
+        on success. Body: to, subject, body, cc, bcc (all strings; cc/bcc
+        comma-separated). Multipart attachments come through request.FILES."""
+        from apps.estimates.services import EstimateEmailService
+        estimate = self.get_object()
+        to = request.data.get('to', '').strip()
+        if not to:
+            return Response(
+                {'to': ['Recipient email address is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        subject = request.data.get('subject', '')
+        body = request.data.get('body', '')
+        cc = [c.strip() for c in request.data.get('cc', '').split(',') if c.strip()]
+        bcc = [b.strip() for b in request.data.get('bcc', '').split(',') if b.strip()]
+        extra_attachments = []
+        for uploaded in request.FILES.getlist('attachments'):
+            extra_attachments.append((
+                uploaded.name, uploaded.read(),
+                uploaded.content_type or 'application/octet-stream',
+            ))
+        try:
+            record = EstimateEmailService.send_estimate(
+                estimate,
+                to=to, subject=subject, body=body, cc=cc, bcc=bcc,
+                extra_attachments=extra_attachments,
+                user=request.user,
+            )
+        except DjangoValidationError as e:
+            return Response(
+                {'detail': e.messages if hasattr(e, 'messages') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            # SMTP / unexpected failure — the outbound EmailRecord has been
+            # persisted with last_send_error set, but the request is failing.
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({
+            'email_record_id': record.email_record_id,
+            'estimate_status': estimate.status,
+        })
+
 
 def _serialize_pool(pool):
     """Convert Decimals in the pool to strings for JSON serialization."""

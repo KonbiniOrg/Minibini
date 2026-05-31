@@ -323,7 +323,7 @@ Django Groups are not used; permissions are assigned per-atom on `user_permissio
 Job → EstWorksheet (optionally from template) → Estimate → Tasks on Job → Time tracking (Bleps) → Job advances to `work_complete` when all tasks complete → Invoice
 
 ### Email-to-Job Workflow
-1. Fetch emails from IMAP → EmailRecord + TempEmail
+1. Fetch emails from IMAP → EmailRecord + TempEmail. `TempEmail.text_body` / `html_body` cache the message body and `TempEmail.attachments_metadata` caches per-attachment filename/content_type/size so list views, `sender_info`, and the email-detail page render without re-hitting IMAP. `EmailService.get_email_content` falls back to IMAP only when `temp_data` is missing or the cache is incomplete (no body cached, or `has_attachments=True` with empty `attachments_metadata` — e.g. pre-backfill rows). Attachment payloads themselves are never cached.
 2. Parse sender, extract company from signature
 3. If contact exists → redirect to job creation with contact pre-selected
 4. If not → session-based flow: create contact → optionally create/associate business (4 scenarios via dropdown) → create job → link EmailRecord to job

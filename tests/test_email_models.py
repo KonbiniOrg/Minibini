@@ -95,6 +95,108 @@ class EmailRecordModelTest(TestCase):
         self.assertIn(email1, job_emails)
         self.assertIn(email2, job_emails)
 
+    def test_email_record_with_purchase_order(self):
+        """EmailRecord can link to a PurchaseOrder independently of job/bill."""
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(
+            po_number="PO-0001",
+            business=self.business,
+        )
+        email_record = EmailRecord.objects.create(
+            message_id="<po-link@example.com>",
+            purchase_order=po,
+        )
+        self.assertEqual(email_record.purchase_order, po)
+        self.assertIsNone(email_record.job)
+        self.assertIsNone(email_record.bill)
+
+    def test_email_record_with_bill(self):
+        from apps.purchasing.models import Bill
+        bill = Bill.objects.create(
+            vendor_invoice_number="BIL-0001",
+            business=self.business,
+        )
+        email_record = EmailRecord.objects.create(
+            message_id="<bill-link@example.com>",
+            bill=bill,
+        )
+        self.assertEqual(email_record.bill, bill)
+
+    def test_email_record_with_all_three_targets(self):
+        """A single email can be linked to job, PO, and bill simultaneously."""
+        from apps.purchasing.models import PurchaseOrder, Bill
+        po = PurchaseOrder.objects.create(po_number="PO-0002", business=self.business)
+        bill = Bill.objects.create(vendor_invoice_number="BIL-0002", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<all-three@example.com>",
+            job=self.job,
+            purchase_order=po,
+            bill=bill,
+        )
+        self.assertEqual(email_record.job, self.job)
+        self.assertEqual(email_record.purchase_order, po)
+        self.assertEqual(email_record.bill, bill)
+
+    def test_email_record_purchase_order_set_null_on_delete(self):
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(po_number="PO-0003", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<po-setnull@example.com>",
+            purchase_order=po,
+        )
+        po.delete()
+        email_record.refresh_from_db()
+        self.assertIsNone(email_record.purchase_order)
+
+    def test_email_record_bill_set_null_on_delete(self):
+        from apps.purchasing.models import Bill
+        bill = Bill.objects.create(vendor_invoice_number="BIL-0003", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<bill-setnull@example.com>",
+            bill=bill,
+        )
+        bill.delete()
+        email_record.refresh_from_db()
+        self.assertIsNone(email_record.bill)
+
+    def test_email_record_direction_defaults_inbound(self):
+        email_record = EmailRecord.objects.create(message_id="<dir-default@example.com>")
+        self.assertEqual(email_record.direction, EmailRecord.INBOUND)
+        self.assertIsNone(email_record.sent_at)
+        self.assertEqual(email_record.last_send_error, '')
+
+    def test_email_record_outbound_round_trip(self):
+        email_record = EmailRecord.objects.create(
+            message_id="<outbound-rt@example.com>",
+            direction=EmailRecord.OUTBOUND,
+            sent_at=timezone.now(),
+            last_send_error='',
+        )
+        email_record.refresh_from_db()
+        self.assertEqual(email_record.direction, EmailRecord.OUTBOUND)
+        self.assertIsNotNone(email_record.sent_at)
+
+    def test_email_record_outbound_failed_send(self):
+        email_record = EmailRecord.objects.create(
+            message_id="<outbound-fail@example.com>",
+            direction=EmailRecord.OUTBOUND,
+            sent_at=None,
+            last_send_error='SMTP connection refused',
+        )
+        email_record.refresh_from_db()
+        self.assertIsNone(email_record.sent_at)
+        self.assertEqual(email_record.last_send_error, 'SMTP connection refused')
+
+    def test_purchase_order_reverse_relation_to_email_records(self):
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(po_number="PO-0004", business=self.business)
+        email1 = EmailRecord.objects.create(message_id="<po-rev1@example.com>", purchase_order=po)
+        email2 = EmailRecord.objects.create(message_id="<po-rev2@example.com>", purchase_order=po)
+        emails = po.email_records.all()
+        self.assertEqual(emails.count(), 2)
+        self.assertIn(email1, emails)
+        self.assertIn(email2, emails)
+
 
 class TempEmailModelTest(TestCase):
     """Test TempEmail model - temporary cache of email metadata."""
@@ -138,9 +240,86 @@ class TempEmailModelTest(TestCase):
 
         self.assertEqual(temp_email.subject, "")
         self.assertEqual(temp_email.cc_email, "")
+        self.assertEqual(temp_email.text_body, "")
+        self.assertEqual(temp_email.html_body, "")
         self.assertFalse(temp_email.is_read)
         self.assertFalse(temp_email.is_starred)
         self.assertFalse(temp_email.has_attachments)
+
+    def test_temp_email_body_fields_round_trip(self):
+        """Cached IMAP bodies round-trip through text_body/html_body."""
+        text = "Hi,\n\nNeed 50 brackets.\n\nThanks,\nJane"
+        html = "<p>Hi,</p><p>Need 50 brackets.</p>"
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="body-rt",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            date_sent=timezone.now(),
+            text_body=text,
+            html_body=html,
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.text_body, text)
+        self.assertEqual(temp_email.html_body, html)
+
+    def test_temp_email_attachments_metadata_round_trip(self):
+        """Per-attachment metadata round-trips as JSON; default is []."""
+        metadata = [
+            {'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size': 12345},
+            {'filename': 'photo.jpg', 'content_type': 'image/jpeg', 'size': 6789},
+        ]
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="att-meta-rt",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            date_sent=timezone.now(),
+            attachments_metadata=metadata,
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.attachments_metadata, metadata)
+
+    def test_temp_email_attachments_metadata_default_is_empty_list(self):
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="default-test",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            date_sent=timezone.now(),
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.attachments_metadata, [])
+
+    def test_temp_email_new_fields_default_empty(self):
+        """bcc_email, in_reply_to, references default to empty strings."""
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="new-fields-default",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            date_sent=timezone.now(),
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.bcc_email, '')
+        self.assertEqual(temp_email.in_reply_to, '')
+        self.assertEqual(temp_email.references, '')
+
+    def test_temp_email_new_fields_round_trip(self):
+        temp_email = TempEmail.objects.create(
+            email_record=self.email_record,
+            uid="new-fields-rt",
+            from_email="sender@example.com",
+            to_email="recipient@example.com",
+            bcc_email="bcc1@example.com,bcc2@example.com",
+            date_sent=timezone.now(),
+            in_reply_to="<parent-id@example.com>",
+            references="<root@example.com> <middle@example.com> <parent-id@example.com>",
+        )
+        temp_email.refresh_from_db()
+        self.assertEqual(temp_email.bcc_email, "bcc1@example.com,bcc2@example.com")
+        self.assertEqual(temp_email.in_reply_to, "<parent-id@example.com>")
+        self.assertIn("<root@example.com>", temp_email.references)
 
     def test_temp_email_one_to_one_relationship(self):
         """Test that each EmailRecord can have only one TempEmail."""
@@ -392,6 +571,88 @@ class EmailServiceTest(TestCase):
         with self.assertRaises(NotFoundError):
             EmailService.associate_with_job(email_record.email_record_id, 99999)
 
+    def test_associate_with_parameterized_job(self):
+        """The parameterized associate_with handles the job field path."""
+        email_record = EmailRecord.objects.create(message_id="<gen-job@example.com>")
+        result = EmailService.associate_with(
+            email_record.email_record_id, 'job', self.job.job_id,
+        )
+        self.assertEqual(result.job, self.job)
+
+    def test_associate_with_purchase_order(self):
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(po_number="PO-LINK-1", business=self.business)
+        email_record = EmailRecord.objects.create(message_id="<gen-po@example.com>")
+        result = EmailService.associate_with(
+            email_record.email_record_id, 'purchase_order', po.po_id,
+        )
+        self.assertEqual(result.purchase_order, po)
+
+    def test_associate_with_bill(self):
+        from apps.purchasing.models import Bill
+        bill = Bill.objects.create(
+            vendor_invoice_number="BIL-LINK-1", business=self.business,
+        )
+        email_record = EmailRecord.objects.create(message_id="<gen-bill@example.com>")
+        result = EmailService.associate_with(
+            email_record.email_record_id, 'bill', bill.bill_id,
+        )
+        self.assertEqual(result.bill, bill)
+
+    def test_associate_with_rejects_unknown_field(self):
+        email_record = EmailRecord.objects.create(message_id="<gen-bad@example.com>")
+        with self.assertRaises(ValueError):
+            EmailService.associate_with(
+                email_record.email_record_id, 'estimate', 1,
+            )
+
+    def test_associate_with_target_not_found(self):
+        from apps.core.services import NotFoundError
+        email_record = EmailRecord.objects.create(message_id="<gen-po-404@example.com>")
+        with self.assertRaises(NotFoundError):
+            EmailService.associate_with(
+                email_record.email_record_id, 'purchase_order', 99999,
+            )
+
+    def test_disassociate_from_purchase_order(self):
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(po_number="PO-UNLINK-1", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<gen-po-unlink@example.com>", purchase_order=po,
+        )
+        result = EmailService.disassociate_from(
+            email_record.email_record_id, 'purchase_order',
+        )
+        self.assertIsNone(result.purchase_order)
+
+    def test_disassociate_from_bill(self):
+        from apps.purchasing.models import Bill
+        bill = Bill.objects.create(
+            vendor_invoice_number="BIL-UNLINK-1", business=self.business,
+        )
+        email_record = EmailRecord.objects.create(
+            message_id="<gen-bill-unlink@example.com>", bill=bill,
+        )
+        result = EmailService.disassociate_from(
+            email_record.email_record_id, 'bill',
+        )
+        self.assertIsNone(result.bill)
+
+    def test_disassociate_from_only_clears_named_field(self):
+        """Disassociating one target leaves the other two alone."""
+        from apps.purchasing.models import PurchaseOrder, Bill
+        po = PurchaseOrder.objects.create(po_number="PO-MULTI-1", business=self.business)
+        bill = Bill.objects.create(vendor_invoice_number="BIL-MULTI-1", business=self.business)
+        email_record = EmailRecord.objects.create(
+            message_id="<multi@example.com>",
+            job=self.job, purchase_order=po, bill=bill,
+        )
+        EmailService.disassociate_from(email_record.email_record_id, 'purchase_order')
+        email_record.refresh_from_db()
+        self.assertEqual(email_record.job, self.job)
+        self.assertIsNone(email_record.purchase_order)
+        self.assertEqual(email_record.bill, bill)
+
     def test_cleanup_old_temp_emails(self):
         """Test cleanup of old TempEmail records."""
         service = EmailService()
@@ -481,13 +742,20 @@ class EmailServiceTest(TestCase):
         mock_msg.to = ['recipient@example.com']
         mock_msg.cc = []
         mock_msg.date = timezone.now()
-        mock_msg.attachments = []
+        att = Mock()
+        att.filename = 'spec.pdf'
+        att.content_type = 'application/pdf'
+        att.payload = b'%PDF-binary'
+        mock_msg.attachments = [att]
 
         # Mock the mailbox
         mock_mailbox = MagicMock()
         mock_mailbox.fetch.return_value = [mock_msg]
         mock_mailbox.__enter__.return_value = mock_mailbox
         mock_mailbox_class.return_value.login.return_value = mock_mailbox
+
+        mock_msg.text = 'plain body'
+        mock_msg.html = '<p>html body</p>'
 
         service = EmailService()
         stats = service.fetch_new_emails()
@@ -501,11 +769,17 @@ class EmailServiceTest(TestCase):
         self.assertIsNotNone(email_record)
         self.assertIsNone(email_record.job)  # No automatic job linking
 
-        # Verify TempEmail created
+        # Verify TempEmail created with cached bodies + attachment metadata
         temp_email = TempEmail.objects.get(email_record=email_record)
         self.assertEqual(temp_email.uid, '12345')
         self.assertEqual(temp_email.subject, 'New Email')
         self.assertEqual(temp_email.from_email, 'sender@example.com')
+        self.assertEqual(temp_email.text_body, 'plain body')
+        self.assertEqual(temp_email.html_body, '<p>html body</p>')
+        self.assertTrue(temp_email.has_attachments)
+        self.assertEqual(temp_email.attachments_metadata, [
+            {'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size': len(b'%PDF-binary')},
+        ])
 
     @override_settings(
         EMAIL_IMAP_SERVER='imap.example.com',
@@ -611,6 +885,159 @@ class EmailServiceTest(TestCase):
         EMAIL_HOST_PASSWORD='password123'
     )
     @patch('apps.core.services.MailBox')
+    def test_get_email_content_prefers_cache(self, mock_mailbox_class):
+        """When TempEmail has cached body, no IMAP fetch occurs."""
+        email_record = EmailRecord.objects.create(message_id='<cached@example.com>')
+        TempEmail.objects.create(
+            email_record=email_record,
+            uid='cached-uid',
+            subject='Cached Subject',
+            from_email='sender@example.com',
+            to_email='r@example.com',
+            cc_email='',
+            date_sent=timezone.now(),
+            text_body='cached text body',
+            html_body='<p>cached html</p>',
+        )
+
+        service = EmailService()
+        content = service.get_email_content(email_record.email_record_id)
+
+        self.assertIsNotNone(content)
+        self.assertEqual(content['text'], 'cached text body')
+        self.assertEqual(content['html'], '<p>cached html</p>')
+        self.assertEqual(content['subject'], 'Cached Subject')
+        # Crucially: no IMAP login was attempted.
+        mock_mailbox_class.assert_not_called()
+
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
+    def test_get_email_content_falls_back_to_imap_when_cache_empty(self, mock_mailbox_class):
+        """When TempEmail exists but bodies are blank, fall back to IMAP."""
+        email_record = EmailRecord.objects.create(message_id='<empty@example.com>')
+        TempEmail.objects.create(
+            email_record=email_record,
+            uid='55555',
+            from_email='sender@example.com',
+            to_email='r@example.com',
+            date_sent=timezone.now(),
+            text_body='',
+            html_body='',
+        )
+
+        mock_msg = Mock()
+        mock_msg.subject = 'From IMAP'
+        mock_msg.from_ = 'sender@example.com'
+        mock_msg.to = ['r@example.com']
+        mock_msg.cc = []
+        mock_msg.date = timezone.now()
+        mock_msg.text = 'fetched text'
+        mock_msg.html = ''
+        mock_msg.attachments = []
+
+        mock_mailbox = MagicMock()
+        mock_mailbox.fetch.return_value = [mock_msg]
+        mock_mailbox.__enter__.return_value = mock_mailbox
+        mock_mailbox_class.return_value.login.return_value = mock_mailbox
+
+        service = EmailService()
+        content = service.get_email_content(email_record.email_record_id)
+
+        self.assertEqual(content['text'], 'fetched text')
+        mock_mailbox_class.assert_called_once()
+
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
+    def test_get_email_content_uses_cache_when_attachments_metadata_cached(self, mock_mailbox_class):
+        """Emails with cached attachments_metadata serve the detail view
+        entirely from cache — IMAP is reserved for the future download path."""
+        email_record = EmailRecord.objects.create(message_id='<att@example.com>')
+        TempEmail.objects.create(
+            email_record=email_record,
+            uid='77777',
+            from_email='sender@example.com',
+            to_email='r@example.com',
+            date_sent=timezone.now(),
+            text_body='cached body',
+            html_body='',
+            has_attachments=True,
+            attachments_metadata=[
+                {'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size': 12345},
+            ],
+        )
+
+        service = EmailService()
+        content = service.get_email_content(email_record.email_record_id)
+
+        self.assertEqual(content['text'], 'cached body')
+        self.assertEqual(content['attachments'], [
+            {'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size': 12345},
+        ])
+        mock_mailbox_class.assert_not_called()
+
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
+    def test_get_email_content_falls_back_when_attachments_metadata_missing(self, mock_mailbox_class):
+        """Old rows that pre-date the attachments_metadata column have
+        has_attachments=True but attachments_metadata=[]. We can't render
+        a useful attachment list from cache, so fall back to IMAP."""
+        email_record = EmailRecord.objects.create(message_id='<old-att@example.com>')
+        TempEmail.objects.create(
+            email_record=email_record,
+            uid='88888',
+            from_email='sender@example.com',
+            to_email='r@example.com',
+            date_sent=timezone.now(),
+            text_body='cached body',
+            html_body='',
+            has_attachments=True,
+            attachments_metadata=[],  # not yet backfilled
+        )
+
+        mock_msg = Mock()
+        mock_msg.subject = 'With Attachments'
+        mock_msg.from_ = 'sender@example.com'
+        mock_msg.to = ['r@example.com']
+        mock_msg.cc = []
+        mock_msg.date = timezone.now()
+        mock_msg.text = 'fresh body'
+        mock_msg.html = ''
+        att = Mock()
+        att.filename = 'spec.pdf'
+        att.content_type = 'application/pdf'
+        att.payload = b'%PDF...'
+        mock_msg.attachments = [att]
+
+        mock_mailbox = MagicMock()
+        mock_mailbox.fetch.return_value = [mock_msg]
+        mock_mailbox.__enter__.return_value = mock_mailbox
+        mock_mailbox_class.return_value.login.return_value = mock_mailbox
+
+        service = EmailService()
+        content = service.get_email_content(email_record.email_record_id)
+
+        self.assertEqual(content['text'], 'fresh body')
+        self.assertEqual(len(content['attachments']), 1)
+        mock_mailbox_class.assert_called_once()
+
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
     def test_fetch_emails_by_date_range_creates_configuration(self, mock_mailbox_class):
         """Test that fetch_emails_by_date_range creates Configuration if not exists."""
         # Mock empty mailbox
@@ -666,6 +1093,8 @@ class EmailServiceTest(TestCase):
         mock_msg.cc = []
         mock_msg.date = new_date
         mock_msg.attachments = []
+        mock_msg.text = ''
+        mock_msg.html = ''
 
         mock_mailbox = MagicMock()
         mock_mailbox.fetch.return_value = [mock_msg]
@@ -712,3 +1141,164 @@ class EmailServiceTest(TestCase):
         mock_mailbox.fetch.assert_called_once()
         call_args = mock_mailbox.fetch.call_args
         # The actual date used should be from config, not 30 days back
+
+
+class PropagateThreadAssociationTest(TestCase):
+    """EmailService.propagate_thread_association copies a single FK to
+    every thread sibling that has a null value for the same field. Doesn't
+    overwrite differing existing links."""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D',
+            email='j@example.com', mobile_number='555',
+        )
+        self.business = Business.objects.create(
+            business_name='Acme', default_contact=self.contact,
+        )
+        self.job_a = Job.objects.create(
+            job_number='JOB-PROP-A', contact=self.contact, description='A',
+        )
+        self.job_b = Job.objects.create(
+            job_number='JOB-PROP-B', contact=self.contact, description='B',
+        )
+
+    def _make(self, mid, *, in_reply_to='', references='', job=None,
+              po=None, bill=None, direction=None):
+        from apps.core.models import EmailRecord, TempEmail
+        kwargs = {'message_id': mid}
+        if direction is not None:
+            kwargs['direction'] = direction
+        if job:
+            kwargs['job'] = job
+        if po:
+            kwargs['purchase_order'] = po
+        if bill:
+            kwargs['bill'] = bill
+        record = EmailRecord.objects.create(**kwargs)
+        TempEmail.objects.create(
+            email_record=record,
+            uid=mid.replace('<', '').replace('>', '')[:10],
+            from_email='x@x.com', to_email='us@example.com',
+            date_sent=timezone.now(),
+            in_reply_to=in_reply_to, references=references,
+        )
+        return record
+
+    def test_linear_chain_propagates_job_to_unlinked_siblings(self):
+        from apps.core.services import EmailService
+        e1 = self._make('<m1@example.com>')
+        e2 = self._make(
+            '<m2@example.com>',
+            in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+        )
+        e3 = self._make(
+            '<m3@example.com>',
+            in_reply_to='<m2@example.com>',
+            references='<m1@example.com> <m2@example.com>',
+        )
+
+        # User links e3 to job_a.
+        EmailService.associate_with(e3.email_record_id, 'job', self.job_a.pk)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.job, self.job_a)
+        self.assertEqual(e2.job, self.job_a)
+        self.assertEqual(e3.job, self.job_a)
+
+    def test_sibling_already_linked_to_different_job_is_not_overwritten(self):
+        """E1 pre-linked to job_a; user now links E3 to job_b. Propagation
+        leaves E1 alone, sets E2 (null) to job_b, E3 stays job_b."""
+        from apps.core.services import EmailService
+        e1 = self._make('<m1@example.com>', job=self.job_a)
+        e2 = self._make(
+            '<m2@example.com>',
+            in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+        )
+        e3 = self._make(
+            '<m3@example.com>',
+            in_reply_to='<m2@example.com>',
+            references='<m1@example.com> <m2@example.com>',
+        )
+
+        EmailService.associate_with(e3.email_record_id, 'job', self.job_b.pk)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.job, self.job_a, 'pre-existing link must stay')
+        self.assertEqual(e2.job, self.job_b)
+        self.assertEqual(e3.job, self.job_b)
+
+    def test_mixed_fk_types_propagate_independently(self):
+        """E1 has PO=p. Linking E3 to a Job propagates only Job, leaves PO
+        untouched on E1; E2 gains Job too."""
+        from apps.core.services import EmailService
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.create(
+            po_number='PO-PROP-1', business=self.business,
+        )
+        e1 = self._make('<m1@example.com>', po=po)
+        e2 = self._make(
+            '<m2@example.com>', in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+        )
+        e3 = self._make(
+            '<m3@example.com>', in_reply_to='<m2@example.com>',
+            references='<m1@example.com> <m2@example.com>',
+        )
+
+        EmailService.associate_with(e3.email_record_id, 'job', self.job_a.pk)
+
+        e1.refresh_from_db(); e2.refresh_from_db(); e3.refresh_from_db()
+        self.assertEqual(e1.purchase_order, po, 'unrelated FK untouched')
+        self.assertEqual(e1.job, self.job_a, 'job propagated even though PO was set')
+        self.assertEqual(e2.job, self.job_a)
+        self.assertEqual(e3.job, self.job_a)
+
+    def test_outbound_in_thread_picks_up_association(self):
+        from apps.core.services import EmailService
+        from apps.core.models import EmailRecord
+        inbound = self._make('<customer@example.com>')
+        outbound = self._make(
+            '<minibini-out@example.com>',
+            in_reply_to='<customer@example.com>',
+            references='<customer@example.com>',
+            direction=EmailRecord.OUTBOUND,
+        )
+
+        EmailService.associate_with(inbound.email_record_id, 'job', self.job_a.pk)
+
+        outbound.refresh_from_db()
+        self.assertEqual(outbound.job, self.job_a)
+
+    def test_no_op_when_source_field_is_null(self):
+        """propagate_thread_association is a no-op when the source has no
+        value for the target field — there's nothing to propagate."""
+        from apps.core.services import EmailService
+        e1 = self._make('<m1@example.com>')
+        e2 = self._make(
+            '<m2@example.com>', in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+        )
+        # e1.job is null. Calling propagate directly should do nothing.
+        EmailService.propagate_thread_association(e1, 'job')
+        e1.refresh_from_db(); e2.refresh_from_db()
+        self.assertIsNone(e1.job)
+        self.assertIsNone(e2.job)
+
+    def test_disassociate_does_not_propagate(self):
+        """Disassociate is a per-email surgical tool, not a thread-level
+        one (per spec §4.3)."""
+        from apps.core.services import EmailService
+        e1 = self._make('<m1@example.com>', job=self.job_a)
+        e2 = self._make(
+            '<m2@example.com>', in_reply_to='<m1@example.com>',
+            references='<m1@example.com>',
+            job=self.job_a,
+        )
+        EmailService.disassociate_from(e1.email_record_id, 'job')
+        e1.refresh_from_db(); e2.refresh_from_db()
+        self.assertIsNone(e1.job)
+        # e2 still has its job — we don't strip siblings.
+        self.assertEqual(e2.job, self.job_a)

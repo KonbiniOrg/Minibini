@@ -236,53 +236,6 @@ def disassociate_email_from_job(request, email_record_id):
     return redirect('core:email_detail', email_record_id=email_record_id)
 
 @login_required
-def compose_email(request):
-    """Simple compose email form for testing outbound email."""
-    if request.method == 'POST':
-        to_raw = request.POST.get('to', '').strip()
-        cc_raw = request.POST.get('cc', '').strip()
-        bcc_raw = request.POST.get('bcc', '').strip()
-        subject = request.POST.get('subject', '').strip()
-        body = request.POST.get('body', '').strip()
-
-        if not to_raw or not subject:
-            messages.error(request, 'To and Subject are required.')
-            return render(request, 'core/compose_email.html', {
-                'to': to_raw, 'cc': cc_raw, 'bcc': bcc_raw,
-                'subject': subject, 'body': body,
-            })
-
-        to_list = [e.strip() for e in to_raw.split(',') if e.strip()]
-        cc_list = [e.strip() for e in cc_raw.split(',') if e.strip()] if cc_raw else []
-        bcc_list = [e.strip() for e in bcc_raw.split(',') if e.strip()] if bcc_raw else []
-
-        attachments = []
-        for uploaded_file in request.FILES.getlist('attachments'):
-            content = uploaded_file.read()
-            attachments.append((
-                uploaded_file.name,
-                content,
-                uploaded_file.content_type or 'application/octet-stream',
-            ))
-
-        try:
-            OutboundEmailService.send_email(
-                to=to_list, subject=subject, body=body,
-                cc=cc_list, bcc=bcc_list, attachments=attachments,
-            )
-            messages.success(request, f'Email sent to {to_raw}.')
-            return redirect('core:compose_email')
-        except Exception as e:
-            messages.error(request, f'Failed to send email: {e}')
-            return render(request, 'core/compose_email.html', {
-                'to': to_raw, 'cc': cc_raw, 'bcc': bcc_raw,
-                'subject': subject, 'body': body,
-            })
-
-    return render(request, 'core/compose_email.html')
-
-
-@login_required
 @permission_required('core.can_manage_config', raise_exception=True)
 def accounting_category_list(request):
     """List all accounting categories."""

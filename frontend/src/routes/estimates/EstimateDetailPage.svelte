@@ -35,7 +35,6 @@
   };
   let validNextStatuses = $derived(VALID_TRANSITIONS[estimate?.status] || []);
 
-  let marking = $state(false);
   let revising = $state(false);
 
   async function handleRevise() {
@@ -47,19 +46,6 @@
     } catch (e) {
       alert(e.message || 'Could not revise estimate.');
       revising = false;
-    }
-  }
-
-  async function handleMarkAsSent() {
-    if (!confirm('Mark this estimate as sent? This will set the sent/expiration dates and finalize the worksheet.')) return;
-    marking = true;
-    try {
-      await api.post(`/api/estimates/${estimate.estimate_id}/mark-open/`);
-      await loadEstimate();
-    } catch (e) {
-      alert(e.message || 'Could not mark estimate as sent.');
-    } finally {
-      marking = false;
     }
   }
 
@@ -217,10 +203,10 @@
       <span class="status-badge status-{estimate.status}">{estimate.status}</span>
     {/if}
     {#if canManageJobs && estimate.status === 'draft'}
-      <button type="button" disabled title="Coming soon: render PDF and email to customer">Send Estimate</button>
-      <button type="button" onclick={handleMarkAsSent} disabled={marking}>
-        {marking ? 'Marking...' : 'Mark as Sent'}
-      </button>
+      <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Send Email</a>
+    {/if}
+    {#if canManageJobs && estimate.status === 'open'}
+      <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Resend Email</a>
     {/if}
     {#if canManageJobs && estimate.status === 'open'}
       <button type="button" onclick={handleRevise} disabled={revising}>
@@ -320,6 +306,13 @@
     padding: 8px 24px;
   }
   .back-link { font-size: 13px; }
+  .action-link {
+    display: inline-block; padding: 4px 12px;
+    border: 1px solid #d1d5db; border-radius: 3px;
+    background: #fff; color: #2563eb; text-decoration: none;
+    font-size: 13px; cursor: pointer;
+  }
+  .action-link:hover { background: #f3f4f6; }
   .page-title { font-size: 18px; font-weight: 600; }
   .status-line { margin: 8px 0 16px; display: flex; align-items: center; gap: 12px; }
   .status-badge {

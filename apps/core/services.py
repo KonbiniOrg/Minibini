@@ -13,6 +13,30 @@ from imap_tools import MailBox, AND
 from .models import Configuration, EmailRecord, TempEmail, AccountingCategory
 
 
+def _attachments_metadata(msg):
+    """Build the [{filename, content_type, size}, …] list cached on TempEmail
+    from an imap_tools message. Skips payloads — those are re-fetched by the
+    download endpoint when needed."""
+    return [
+        {
+            'filename': att.filename,
+            'content_type': att.content_type,
+            'size': len(att.payload),
+        }
+        for att in (msg.attachments or [])
+    ]
+
+
+def _header_value(msg, name):
+    """Pull a single header value from an imap_tools message; '' if missing.
+    Headers are stored as list-of-strings per name; we take the first item."""
+    raw = msg.headers.get(name, ())
+    if not raw:
+        return ''
+    value = raw[0] if isinstance(raw, (list, tuple)) else raw
+    return (value or '').strip()
+
+
 class ServiceError(Exception):
     """Base exception for service-layer errors."""
     pass
@@ -261,7 +285,17 @@ class EmailService:
                             cc_email=', '.join(msg.cc) if msg.cc else '',
                             date_sent=msg.date,
                             has_attachments=bool(msg.attachments),
+                            text_body=getattr(msg, 'text', '') or '',
+                            html_body=getattr(msg, 'html', '') or '',
+                            attachments_metadata=_attachments_metadata(msg),
+                            in_reply_to=_header_value(msg, 'in-reply-to'),
+                            references=_header_value(msg, 'references'),
                         )
+
+                        # Auto-link to a parent's associations if In-Reply-To
+                        # or References points at one of our outbound rows.
+                        email_record.refresh_from_db()
+                        EmailService.correlate_reply(email_record)
 
                         stats['new'] += 1
 
@@ -300,7 +334,30 @@ class EmailService:
             # No temp data - try to fetch by message_id
             return self._fetch_by_message_id(email_record.message_id)
 
-        uid = email_record.temp_data.uid
+        temp = email_record.temp_data
+
+        # Prefer cached body + attachment metadata when both are available.
+        # Pre-backfill rows with has_attachments=True but an empty
+        # attachments_metadata still fall back to IMAP so the detail view
+        # can show what's attached. Payloads are never cached — those come
+        # from the future per-attachment download endpoint.
+        body_cached = bool(temp.text_body or temp.html_body)
+        attachments_cached = (
+            not temp.has_attachments or bool(temp.attachments_metadata)
+        )
+        if body_cached and attachments_cached:
+            return {
+                'subject': temp.subject,
+                'from': temp.from_email,
+                'to': [a.strip() for a in temp.to_email.split(',') if a.strip()],
+                'cc': [a.strip() for a in temp.cc_email.split(',') if a.strip()],
+                'date': temp.date_sent,
+                'text': temp.text_body,
+                'html': temp.html_body,
+                'attachments': list(temp.attachments_metadata or []),
+            }
+
+        uid = temp.uid
 
         try:
             with MailBox(self.imap_server).login(self.email, self.password) as mailbox:
@@ -321,7 +378,6 @@ class EmailService:
                                 'filename': att.filename,
                                 'content_type': att.content_type,
                                 'size': len(att.payload),
-                                'payload': att.payload,
                             }
                             for att in msg.attachments
                         ],
@@ -360,7 +416,6 @@ class EmailService:
                                 'filename': att.filename,
                                 'content_type': att.content_type,
                                 'size': len(att.payload),
-                                'payload': att.payload,
                             }
                             for att in msg.attachments
                         ],
@@ -451,7 +506,17 @@ class EmailService:
                             cc_email=', '.join(msg.cc) if msg.cc else '',
                             date_sent=msg.date,
                             has_attachments=bool(msg.attachments),
+                            text_body=getattr(msg, 'text', '') or '',
+                            html_body=getattr(msg, 'html', '') or '',
+                            attachments_metadata=_attachments_metadata(msg),
+                            in_reply_to=_header_value(msg, 'in-reply-to'),
+                            references=_header_value(msg, 'references'),
                         )
+
+                        # Auto-link to a parent's associations if In-Reply-To
+                        # or References points at one of our outbound rows.
+                        email_record.refresh_from_db()
+                        EmailService.correlate_reply(email_record)
 
                         stats['new'] += 1
 
@@ -473,85 +538,316 @@ class EmailService:
         return stats
 
     def cleanup_old_temp_emails(self, retention_days=None):
-        """
-        Delete TempEmail records older than the configured retention period.
-        EmailRecord entries are preserved permanently.
+        """Delete TempEmail rows whose retention clock has elapsed.
 
-        Args:
-            retention_days (int): Override default retention period from configuration
+        Retention clock semantics (the "tweak"):
 
-        Returns:
-            int: Number of TempEmail records deleted
+        - An unlinked TempEmail (its EmailRecord has no ``job`` /
+          ``purchase_order`` / ``bill``) uses ``TempEmail.created_at`` as the
+          clock start — original behavior.
+        - A linked TempEmail uses the *finality date* of its linked objects
+          instead: the most recent ``HistoryEntry`` recording a transition into
+          a final status, per linked object. The TempEmail is eligible only if
+          **every** linked object is currently in a final status AND every
+          object's finality timestamp is older than the cutoff. A still-active
+          link keeps the email indefinitely.
+        - If a linked object is in a final status but no qualifying
+          HistoryEntry exists (pre-history-tracking data, or created directly
+          in a final state), fall back to ``TempEmail.created_at`` so emails
+          aren't stuck unpurgeable.
+
+        EmailRecord rows are preserved permanently regardless.
         """
+        from django.db.models import Max
+        from apps.core.models import HistoryEntry
+        from apps.jobs.models import Job
+        from apps.purchasing.models import PurchaseOrder, Bill
+
         if retention_days is None:
-            # Get retention period from Configuration model
             try:
                 config = Configuration.objects.get(key='email_retention_days')
                 retention_days = int(config.value)
             except (Configuration.DoesNotExist, ValueError):
                 retention_days = 90
 
-        cutoff_date = timezone.now() - timedelta(days=retention_days)
+        cutoff = timezone.now() - timedelta(days=retention_days)
 
-        # Delete TempEmail records older than cutoff
-        # EmailRecord entries remain intact
+        FINAL_STATUSES = {
+            'job': (
+                Job,
+                'job_id',
+                {Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED},
+            ),
+            'purchaseorder': (
+                PurchaseOrder,
+                'purchase_order_id',
+                {PurchaseOrder.STATUS_RECEIVED_IN_FULL, PurchaseOrder.STATUS_CANCELLED},
+            ),
+            'bill': (
+                Bill,
+                'bill_id',
+                {Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED, Bill.STATUS_REFUNDED},
+            ),
+        }
+
+        # Per-type lookup: {linked_pk: finality_timestamp_or_None}.
+        # None means "currently final but no qualifying HistoryEntry" → caller
+        # falls back to TempEmail.created_at for that link.
+        finality_by_type = {}
+        for object_type, (model, _fk, final_set) in FINAL_STATUSES.items():
+            final_ids = list(
+                model.objects.filter(status__in=final_set).values_list('pk', flat=True)
+            )
+            finality_map = dict.fromkeys(final_ids, None)
+            if final_ids:
+                rows = (
+                    HistoryEntry.objects
+                    .filter(
+                        object_type=object_type,
+                        object_id__in=final_ids,
+                        changes__status__new__in=list(final_set),
+                    )
+                    .values('object_id')
+                    .annotate(last_final=Max('timestamp'))
+                )
+                for row in rows:
+                    finality_map[row['object_id']] = row['last_final']
+            finality_by_type[object_type] = finality_map
+
+        # Walk every TempEmail. The table is small in this app's lifetime;
+        # if it grows we can switch to batched queries later.
+        eligible_ids = []
+        candidates = TempEmail.objects.select_related('email_record').only(
+            'temp_email_id', 'created_at',
+            'email_record__job_id',
+            'email_record__purchase_order_id',
+            'email_record__bill_id',
+        )
+        for temp in candidates:
+            er = temp.email_record
+            links = []
+            if er.job_id:
+                links.append(('job', er.job_id))
+            if er.purchase_order_id:
+                links.append(('purchaseorder', er.purchase_order_id))
+            if er.bill_id:
+                links.append(('bill', er.bill_id))
+
+            if not links:
+                if temp.created_at < cutoff:
+                    eligible_ids.append(temp.temp_email_id)
+                continue
+
+            # Linked. Strictest rule: every link must be purgeable.
+            all_purgeable = True
+            for object_type, linked_pk in links:
+                finality_map = finality_by_type[object_type]
+                if linked_pk not in finality_map:
+                    # Linked object is NOT currently in a final status.
+                    all_purgeable = False
+                    break
+                last_final = finality_map[linked_pk]
+                if last_final is None:
+                    # Final but no HistoryEntry — fall back to email date.
+                    if temp.created_at >= cutoff:
+                        all_purgeable = False
+                        break
+                elif last_final >= cutoff:
+                    all_purgeable = False
+                    break
+
+            if all_purgeable:
+                eligible_ids.append(temp.temp_email_id)
+
+        if not eligible_ids:
+            return 0
         deleted_count, _ = TempEmail.objects.filter(
-            created_at__lt=cutoff_date
+            temp_email_id__in=eligible_ids
         ).delete()
-
         return deleted_count
 
     def _validate_config(self):
         """Check if required IMAP configuration is present."""
         return all([self.imap_server, self.email, self.password])
 
+    # Allowlist of EmailRecord fields that the association helpers will
+    # touch, plus the lazy-imported model the FK points at. New target?
+    # Add it here.
+    _ASSOC_TARGETS = {
+        'job': ('apps.jobs.models', 'Job'),
+        'purchase_order': ('apps.purchasing.models', 'PurchaseOrder'),
+        'bill': ('apps.purchasing.models', 'Bill'),
+    }
+
     @staticmethod
-    def associate_with_job(email_record_id, job_id):
-        """Associate an EmailRecord with a Job.
+    def _resolve_target_model(target_field):
+        try:
+            module_path, class_name = EmailService._ASSOC_TARGETS[target_field]
+        except KeyError:
+            raise ValueError(
+                f'Unknown EmailRecord association field: {target_field!r}. '
+                f'Expected one of {sorted(EmailService._ASSOC_TARGETS)}.'
+            )
+        import importlib
+        return getattr(importlib.import_module(module_path), class_name)
+
+    @staticmethod
+    def associate_with(email_record_id, target_field, target_pk):
+        """Set ``EmailRecord.<target_field>`` to the row identified by
+        ``target_pk``.
 
         Args:
             email_record_id: PK of EmailRecord
-            job_id: PK of Job
+            target_field: one of 'job', 'purchase_order', 'bill'
+            target_pk: PK of the target row
 
         Returns:
-            EmailRecord with job set
+            EmailRecord with the target FK set
 
         Raises:
-            NotFoundError: if email_record or job not found
+            ValueError: target_field not in the allowlist
+            NotFoundError: email_record or target row missing
         """
-        from apps.jobs.models import Job
+        target_model = EmailService._resolve_target_model(target_field)
         try:
             email_record = EmailRecord.objects.get(pk=email_record_id)
         except EmailRecord.DoesNotExist:
             raise NotFoundError(f'EmailRecord {email_record_id} not found')
         try:
-            job = Job.objects.get(pk=job_id)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {job_id} not found')
-        email_record.job = job
+            target = target_model.objects.get(pk=target_pk)
+        except target_model.DoesNotExist:
+            raise NotFoundError(
+                f'{target_model.__name__} {target_pk} not found'
+            )
+        setattr(email_record, target_field, target)
+        email_record.save()
+        EmailService.propagate_thread_association(email_record, target_field)
+        return email_record
+
+    @staticmethod
+    def propagate_thread_association(email_record, target_field):
+        """Copy ``email_record.<target_field>`` to other EmailRecords in the
+        same RFC 5322 thread that have a NULL value for the same field.
+
+        No-op when email_record's own value is null (nothing to propagate)
+        or when target_field isn't in the allowlist. Does NOT overwrite a
+        non-null value on a sibling — that's a deliberate human choice the
+        propagation respects.
+
+        Uses bulk ``.update()`` — no per-row history entries. The user-
+        initiated event on the source email IS the audited action; the
+        propagated set is the implicit consequence the design promises.
+        """
+        if target_field not in EmailService._ASSOC_TARGETS:
+            return
+        source_value = getattr(email_record, f'{target_field}_id', None)
+        if source_value is None:
+            return
+        from apps.core.email_utils import collect_thread_member_ids
+        thread_pks = collect_thread_member_ids(email_record)
+        if not thread_pks:
+            return
+        EmailRecord.objects.filter(
+            pk__in=thread_pks,
+            **{f'{target_field}_id__isnull': True},
+        ).update(**{f'{target_field}_id': source_value})
+
+    @staticmethod
+    def disassociate_from(email_record_id, target_field):
+        """Clear ``EmailRecord.<target_field>``.
+
+        Args:
+            email_record_id: PK of EmailRecord
+            target_field: one of 'job', 'purchase_order', 'bill'
+
+        Returns:
+            EmailRecord with the target FK cleared
+
+        Raises:
+            ValueError: target_field not in the allowlist
+            NotFoundError: email_record missing
+        """
+        # Validate field name early.
+        EmailService._resolve_target_model(target_field)
+        try:
+            email_record = EmailRecord.objects.get(pk=email_record_id)
+        except EmailRecord.DoesNotExist:
+            raise NotFoundError(f'EmailRecord {email_record_id} not found')
+        setattr(email_record, target_field, None)
         email_record.save()
         return email_record
+
+    @staticmethod
+    def associate_with_job(email_record_id, job_id):
+        """Backwards-compatible shim — delegates to associate_with."""
+        return EmailService.associate_with(email_record_id, 'job', job_id)
 
     @staticmethod
     def disassociate_from_job(email_record_id):
-        """Remove job association from an EmailRecord.
+        """Backwards-compatible shim — delegates to disassociate_from."""
+        return EmailService.disassociate_from(email_record_id, 'job')
+
+    @staticmethod
+    def correlate_reply(email_record):
+        """Auto-link an inbound EmailRecord to its parent's associations,
+        when In-Reply-To or References points at one of our existing
+        EmailRecord.message_id values.
+
+        Walks In-Reply-To first (the immediate parent — wins on conflict),
+        then the References chain right-to-left (most recent first). The
+        first match's job / purchase_order / bill FKs are copied onto
+        `email_record` (any that are non-null on the parent).
 
         Args:
-            email_record_id: PK of EmailRecord
+            email_record: the newly-fetched inbound EmailRecord. Must have a
+                ``temp_data`` row whose `in_reply_to` / `references` headers
+                were populated at fetch time.
 
-        Returns:
-            EmailRecord with job cleared
-
-        Raises:
-            NotFoundError: if email_record not found
+        No-op if no parent is found, or if the email_record has no temp_data.
         """
-        try:
-            email_record = EmailRecord.objects.get(pk=email_record_id)
-        except EmailRecord.DoesNotExist:
-            raise NotFoundError(f'EmailRecord {email_record_id} not found')
-        email_record.job = None
-        email_record.save()
-        return email_record
+        temp = getattr(email_record, 'temp_data', None)
+        if not temp:
+            return
+
+        candidates = []
+        if temp.in_reply_to:
+            candidates.append(temp.in_reply_to.strip())
+        if temp.references:
+            # References is a space-separated chain; walk right-to-left so the
+            # most recent parent wins among References-only matches.
+            tokens = [t.strip() for t in temp.references.split() if t.strip()]
+            candidates.extend(reversed(tokens))
+
+        for token in candidates:
+            # Some clients add stray whitespace inside the brackets.
+            parent_id = token.strip()
+            try:
+                parent = EmailRecord.objects.get(message_id=parent_id)
+            except EmailRecord.DoesNotExist:
+                continue
+            # Copy non-null associations from the parent. Don't overwrite
+            # whatever might already be set on the reply (rare, but possible
+            # if someone manually pre-associated before the correlation pass).
+            updates = {}
+            for field in ('job_id', 'purchase_order_id', 'bill_id'):
+                parent_value = getattr(parent, field)
+                if parent_value and not getattr(email_record, field):
+                    updates[field] = parent_value
+            if updates:
+                EmailRecord.objects.filter(pk=email_record.pk).update(**updates)
+                for field, value in updates.items():
+                    setattr(email_record, field, value)
+                # Propagate each just-set FK to the rest of the thread —
+                # closes the gap where an earlier sibling was orphaned
+                # before this inbound's correlation linked the new arrival.
+                for field in updates:
+                    target_field = field.removesuffix('_id')
+                    EmailService.propagate_thread_association(email_record, target_field)
+                return  # Stop at the first parent that contributed something.
+            # Otherwise keep walking: the immediate parent had no FKs to
+            # copy; try the next candidate up the References chain. This
+            # is what lets a new reply inherit context from a grandparent
+            # when the immediate parent is itself orphaned.
 
 
 class ReorderService:
@@ -955,36 +1251,156 @@ class ConfigurationService:
 class OutboundEmailService:
     """Sends emails via SMTP with optional attachments."""
 
+    # Allowlist of association target fields for send_tracked.
+    _ASSOC_FIELDS = ('job', 'purchase_order', 'bill')
+
+    # Fallback Message-ID domain when no `our_domain` Configuration row exists.
+    DEFAULT_OUR_DOMAIN = 'example.com'
+
     @staticmethod
-    def send_email(to, subject, body, cc=None, bcc=None, attachments=None,
-                   from_email=None):
-        """
-        Send an email with optional CC, BCC, and file attachments.
+    def _resolve_our_domain():
+        try:
+            return Configuration.objects.get(key='our_domain').value
+        except Configuration.DoesNotExist:
+            return OutboundEmailService.DEFAULT_OUR_DOMAIN
+
+    @staticmethod
+    def _generate_message_id():
+        import uuid
+        domain = OutboundEmailService._resolve_our_domain()
+        return f'<minibini-{uuid.uuid4().hex}@{domain}>'
+
+    @staticmethod
+    def _find_pending_outbound(associate_with):
+        """Return the most recent outbound EmailRecord that's tied to the
+        same target and has sent_at=null (a previous failed attempt)."""
+        if not associate_with:
+            return None
+        field, target = next(iter(associate_with.items()))
+        qs = EmailRecord.objects.filter(
+            direction=EmailRecord.OUTBOUND,
+            sent_at__isnull=True,
+            **{f'{field}': target},
+        ).order_by('-created_at')
+        return qs.first()
+
+    @staticmethod
+    def send_tracked(*, to, subject, body, cc=None, bcc=None,
+                     attachments=None, associate_with=None,
+                     in_reply_to=None, references=None):
+        """Persist an outbound EmailRecord + TempEmail, attempt SMTP,
+        record outcome. Returns the EmailRecord regardless of send success;
+        on SMTP failure the exception is re-raised after persistence.
 
         Args:
-            to: list of recipient email addresses
+            to: list of recipient email addresses (or comma-separated str)
             subject: email subject line
             body: plain text email body
-            cc: list of CC addresses (optional)
-            bcc: list of BCC addresses (optional)
-            attachments: list of (filename, content_bytes, mime_type) tuples (optional)
-            from_email: sender address (optional, defaults to DEFAULT_FROM_EMAIL)
+            cc / bcc: list[str] or None
+            attachments: list of (filename, content_bytes, mime_type) tuples
+            associate_with: dict of at most one of {'job': obj, 'purchase_order': obj,
+                'bill': obj}, used to set the EmailRecord's FK and to find any
+                pending retry row.
+            in_reply_to: parent Message-ID when this is a reply (optional).
+                Flows to the outgoing ``In-Reply-To`` header and the
+                outbound ``TempEmail.in_reply_to`` column.
+            references: thread References chain (optional). Same dual-use.
+
+        Returns:
+            EmailRecord (refreshed from DB).
+
+        Raises:
+            ValueError: associate_with has an unknown field name.
+            Any exception SMTP raises (re-raised after persisting last_send_error).
         """
+        if associate_with:
+            field = next(iter(associate_with.keys()))
+            if field not in OutboundEmailService._ASSOC_FIELDS:
+                raise ValueError(
+                    f'Unknown association field: {field!r}. '
+                    f'Expected one of {OutboundEmailService._ASSOC_FIELDS}.'
+                )
+
+        to_list = to if isinstance(to, (list, tuple)) else [
+            a.strip() for a in str(to).split(',') if a.strip()
+        ]
+        cc_list = list(cc or [])
+        bcc_list = list(bcc or [])
+
+        attachments_meta = [
+            {'filename': fn, 'content_type': ct, 'size': len(payload)}
+            for fn, payload, ct in (attachments or [])
+        ]
+
+        # Step 1: persistence — committed before SMTP so a failure leaves
+        # the row in place for the user to see and retry.
+        with transaction.atomic():
+            existing = OutboundEmailService._find_pending_outbound(associate_with)
+            if existing:
+                email_record = existing
+                email_record.last_send_error = ''
+                email_record.save(update_fields=['last_send_error'])
+                # Replace TempEmail with current form state.
+                TempEmail.objects.filter(email_record=email_record).delete()
+            else:
+                message_id = OutboundEmailService._generate_message_id()
+                assoc_kwargs = associate_with or {}
+                email_record = EmailRecord.objects.create(
+                    message_id=message_id,
+                    direction=EmailRecord.OUTBOUND,
+                    sent_at=None,
+                    last_send_error='',
+                    **assoc_kwargs,
+                )
+
+            TempEmail.objects.create(
+                email_record=email_record,
+                uid='',  # No IMAP UID for outbound
+                subject=subject,
+                from_email=getattr(settings, 'EMAIL_HOST_USER', '') or 'unknown@example.com',
+                to_email=', '.join(to_list),
+                cc_email=', '.join(cc_list),
+                bcc_email=', '.join(bcc_list),
+                date_sent=timezone.now(),
+                text_body=body or '',
+                html_body='',
+                attachments_metadata=attachments_meta,
+                has_attachments=bool(attachments_meta),
+                in_reply_to=in_reply_to or '',
+                references=references or '',
+            )
+
+        # Step 2: SMTP attempt. On failure we update the row in a fresh
+        # transaction so the error persists even though we re-raise.
         from django.core.mail import EmailMessage
+        try:
+            msg = EmailMessage(
+                subject=subject,
+                body=body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=to_list,
+                cc=cc_list,
+                bcc=bcc_list,
+            )
+            msg.extra_headers['Message-ID'] = email_record.message_id
+            if in_reply_to:
+                msg.extra_headers['In-Reply-To'] = in_reply_to
+            if references:
+                msg.extra_headers['References'] = references
+            for filename, content, mime_type in (attachments or []):
+                msg.attach(filename, content, mime_type)
+            msg.send()
+        except Exception as e:
+            EmailRecord.objects.filter(pk=email_record.pk).update(
+                last_send_error=str(e),
+            )
+            raise
 
-        msg = EmailMessage(
-            subject=subject,
-            body=body,
-            from_email=from_email or settings.DEFAULT_FROM_EMAIL,
-            to=to,
-            cc=cc or [],
-            bcc=bcc or [],
+        EmailRecord.objects.filter(pk=email_record.pk).update(
+            sent_at=timezone.now(), last_send_error='',
         )
-
-        for filename, content, mime_type in (attachments or []):
-            msg.attach(filename, content, mime_type)
-
-        msg.send()
+        email_record.refresh_from_db()
+        return email_record
 
 
 SELF_EDIT_WINDOW_HOURS = 30

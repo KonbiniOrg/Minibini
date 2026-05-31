@@ -53,7 +53,7 @@ The project defines four custom permission atoms on `User.Meta.permissions`:
 | Atom | Scope |
 |---|---|
 | `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, contacts, businesses. Status transitions on each. Email-to-job actions: link, unlink, create-job-from-email. |
-| `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. |
+| `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO / email-to-bill actions: link, unlink, create-po-from-email. |
 | `can_manage_time` | Edit or delete any user's bleps and shifts, clock another worker in/out, and approve/deny shift & blep change requests. (Tracking, clocking, or editing one's own recent time is `IsAuthenticated`.) |
 | `can_manage_config` | Settings endpoint, work and task templates, accounting categories, user admin viewset, QBO connection management. |
 
@@ -93,7 +93,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/contacts/` | `IsAuthenticated` | `can_manage_jobs` | |
 | `/api/businesses/` | `IsAuthenticated` | `can_manage_jobs` | |
 | `/api/payment-terms/` | `IsAuthenticated` | (read-only) | |
-| `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` | |
+| `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` | also `send-defaults` (GET, IsAuth), `send` (POST, can_manage_jobs) |
 | `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` | |
 | `/api/tasks/` (job-side) | `IsAuthenticated` | `IsAuthenticated` | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
 | `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` | retrieve open to all |
@@ -105,7 +105,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/work-templates/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/task-templates/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/accounting-categories/` | `IsAuthenticated` | `can_manage_config` | |
-| `/api/invoices/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
+| `/api/invoices/` | `IsAuthenticated` | `can_manage_financials` | `send-defaults` (GET) IsAuth; `send` (POST) `can_manage_financials`. The legacy `send-to-qbo` was removed when the new send flow shipped. |
 | `/api/purchase-orders/` | `IsAuthenticated` | `can_manage_financials` | |
 | `/api/bills/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
 | `/api/price-list-items/` | `IsAuthenticated` | `can_manage_financials` | |
@@ -115,7 +115,11 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/users/` (admin) | `can_manage_config` | `can_manage_config` | DELETE returns 405 — use deactivate |
 | `/api/auth/users/` (assignee dropdown) | `IsAuthenticated` | — | distinct from `/api/users/` |
 | `/api/emails/` | `IsAuthenticated` | (no writes from this viewset) | reads only |
-| `/api/emails/{id}/link-to-job/` etc. | — | `can_manage_jobs` | link, unlink, create-job-from-email |
+| `/api/emails/{id}/link-to-job/` etc. | — | `can_manage_jobs` | link-to-job, unlink-from-job, create-job |
+| `/api/emails/{id}/link-to-po/` etc. | — | `can_manage_financials` | link-to-po, unlink-from-po, create-po |
+| `/api/emails/{id}/link-to-bill/` etc. | — | `can_manage_financials` | link-to-bill, unlink-from-bill |
+| `/api/emails/{id}/reply-defaults/` | `IsAuthenticated` | — | Pre-populated form payload for Reply / Reply All |
+| `/api/emails/{id}/reply/` | — | `IsAuthenticated` | POST a reply (multipart); delegates to `send_tracked` |
 | `/api/search/` | `IsAuthenticated` | — | |
 | `/api/jobs/board/*` | `IsAuthenticated` | — | one bulk reorder endpoint requires `can_manage_jobs` |
 | `/api/home/` | `IsAuthenticated` | — | |

@@ -317,83 +317,11 @@ class QBOVendorSyncService:
 
 
 class QBOInvoiceSyncService:
-    """Pushes Minibini invoices to QBO."""
-
-    @staticmethod
-    def push_invoice(invoice, send_to, cc=None, bcc=None):
-        if invoice.qbo_id:
-            return invoice.qbo_id
-
-        contact = invoice.job.contact
-        business = contact.business
-
-        client = QBOService.get_client()
-        if not client:
-            raise ValueError('No active QBO connection')
-
-        # Resolve QBO customer ID: business path or individual contact path
-        if business:
-            if not business.qbo_customer_id:
-                QBOCustomerSyncService.push_customer(business)
-            qbo_customer_id = business.qbo_customer_id
-        else:
-            if not contact.qbo_customer_id:
-                QBOCustomerSyncService.push_contact_as_customer(contact)
-                contact.refresh_from_db()
-            qbo_customer_id = contact.qbo_customer_id
-
-        from apps.invoicing.services import InvoiceGroupingService
-        grouped_lines = InvoiceGroupingService.group_for_qbo(invoice)
-        qbo_invoice = QBOInvoiceSyncService._build_qbo_invoice(
-            invoice, qbo_customer_id, grouped_lines
-        )
-
-        try:
-            qbo_invoice.save(qb=client)
-            qbo_id = str(qbo_invoice.Id)
-
-            # Save qbo_id immediately so retries don't create duplicates
-            invoice.qbo_id = qbo_id
-            invoice.save(update_fields=['qbo_id'])
-
-            # Generate Minibini job statement PDF (attached to the customer
-            # email; no longer uploaded to QBO — see invoice-send design notes).
-            from apps.invoicing.pdf import generate_job_statement_pdf
-            statement_pdf = generate_job_statement_pdf(invoice)
-
-            # Mark as sent in QBO (so it doesn't show "needs to be sent")
-            QBOInvoiceSyncService._mark_as_sent(client, qbo_id)
-
-            # Download QBO invoice PDF (includes tax calc and Pay Now link)
-            qbo_invoice_pdf = QBOInvoiceSyncService._download_qbo_pdf(client, qbo_id)
-
-            # Send both PDFs via Minibini's email
-            QBOInvoiceSyncService._send_email(
-                invoice, send_to, cc, bcc,
-                qbo_invoice_pdf, statement_pdf,
-            )
-
-            QBOService.log_sync(
-                entity_type='invoice',
-                entity_id=invoice.pk,
-                qbo_entity_type='Invoice',
-                qbo_entity_id=qbo_id,
-                action='create',
-                status='success',
-            )
-            return qbo_id
-
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='invoice',
-                entity_id=invoice.pk,
-                qbo_entity_type='Invoice',
-                qbo_entity_id='',
-                action='create',
-                status='failed',
-                error_message=str(e),
-            )
-            raise
+    """Helpers used by InvoiceEmailService.send_invoice to push an Invoice
+    to QBO and fetch the rendered PDF. The full send orchestration lives
+    in apps/invoicing/services.py:InvoiceEmailService — including the
+    qbo_id short-circuit that fixes the duplicate-push-on-retry bug the
+    earlier push_invoice path had."""
 
     @staticmethod
     def _build_qbo_invoice(invoice, qbo_customer_id, grouped_lines):
@@ -438,36 +366,6 @@ class QBOInvoiceSyncService:
         from quickbooks.objects.invoice import Invoice as QBOInvoice
         qbo_invoice = QBOInvoice.get(qbo_id, qb=client)
         return qbo_invoice.download_pdf(qb=client)
-
-    @staticmethod
-    def _send_email(invoice, send_to, cc, bcc, qbo_invoice_pdf, statement_pdf):
-        """Send invoice email via Minibini with both PDFs attached."""
-        from apps.core.services import OutboundEmailService
-
-        job = invoice.job
-        subject = f'Invoice {invoice.invoice_number} — {job.job_number}'
-        body = (
-            f'Please find attached your invoice and job statement '
-            f'for {job.job_number}.\n\n'
-            f'The invoice includes a link to view and pay online.'
-        )
-
-        attachments = [
-            (f'Invoice_{invoice.invoice_number}.pdf',
-             qbo_invoice_pdf, 'application/pdf'),
-            (f'Job_Statement_{invoice.invoice_number}.pdf',
-             statement_pdf, 'application/pdf'),
-        ]
-
-        to_list = [send_to] if isinstance(send_to, str) else send_to
-        cc_list = [e.strip() for e in cc.split(',') if e.strip()] if cc else []
-        bcc_list = [e.strip() for e in bcc.split(',') if e.strip()] if bcc else []
-
-        OutboundEmailService.send_email(
-            to=to_list, subject=subject, body=body,
-            cc=cc_list, bcc=bcc_list, attachments=attachments,
-        )
-
 
 class QBOBillSyncService:
     """Pushes Minibini bills to QBO."""

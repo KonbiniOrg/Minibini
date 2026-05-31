@@ -126,6 +126,159 @@ class InvoiceService:
         return LineItemService.delete_line_item_with_renumber(line_item)
 
 
+class InvoiceEmailService:
+    """Orchestrates sending an Invoice to the customer.
+
+    Steps on each send: ensure the invoice exists in QBO (push only if
+    qbo_id is unset — fixes the duplicate-push-on-retry bug), generate
+    the Minibini job-statement PDF, download the QBO-rendered invoice
+    PDF (which carries the Pay Now link), call OutboundEmailService.
+    send_tracked with both PDFs attached, then transition the Invoice
+    draft -> open on send success.
+    """
+
+    DEFAULT_SUBJECT = 'Invoice {document_number} for {job_number}'
+    DEFAULT_BODY = (
+        'Hi {contact_fname},\n\n'
+        'Please find attached your invoice {document_number} for {job_name}. '
+        'The invoice includes a Pay Now link.\n\n'
+        'Thanks,\n{my_user_name}'
+    )
+
+    @staticmethod
+    def get_email_defaults(invoice):
+        """Pre-populated send-form fields for an Invoice."""
+        from apps.core.models import Configuration
+        from apps.core.email_templates import render_email_template
+
+        subject_template = InvoiceEmailService.DEFAULT_SUBJECT
+        body_template = InvoiceEmailService.DEFAULT_BODY
+        try:
+            subject_template = Configuration.objects.get(
+                key='invoice_email_subject_template'
+            ).value
+        except Configuration.DoesNotExist:
+            pass
+        try:
+            body_template = Configuration.objects.get(
+                key='invoice_email_body_template'
+            ).value
+        except Configuration.DoesNotExist:
+            pass
+        job = invoice.job
+        contact = job.contact if job else None
+        contact_business = ''
+        if contact and contact.business:
+            contact_business = contact.business.business_name
+
+        from apps.core.email_templates import build_object_url
+        values = {
+            'contact_fname': contact.first_name if contact else '',
+            'contact_lname': contact.last_name if contact else '',
+            'contact_business': contact_business,
+            'my_user_name': '',
+            'job_number': job.job_number if job else '',
+            'job_name': job.name if job else '',
+            'document_number': invoice.invoice_number,
+            'invoice_number': invoice.invoice_number,
+            'object_url': build_object_url('invoice', invoice.invoice_id),
+        }
+        subject = render_email_template(subject_template, **values)
+        body = render_email_template(body_template, **values)
+
+        to = ''
+        if contact and contact.email:
+            to = contact.email
+
+        attachments_preview = [
+            {'filename': f'Invoice-{invoice.invoice_number}.pdf',
+             'content_type': 'application/pdf', 'size': 0},
+            {'filename': f'JobStatement-{invoice.invoice_number}.pdf',
+             'content_type': 'application/pdf', 'size': 0},
+        ]
+        return {
+            'to': to, 'subject': subject, 'body': body,
+            'attachments_preview': attachments_preview,
+        }
+
+    @staticmethod
+    def send_invoice(invoice, *, to, subject, body, cc=None, bcc=None,
+                     extra_attachments=None, user=None):
+        """Send an Invoice. Pushes to QBO if needed, attaches both QBO PDF
+        and statement PDF, calls send_tracked, transitions status on success.
+
+        Returns the outbound EmailRecord.
+        """
+        from apps.core.services import OutboundEmailService
+        from apps.invoicing.pdf import generate_job_statement_pdf
+        from apps.qbo.services import (
+            QBOService, QBOInvoiceSyncService, QBOCustomerSyncService,
+        )
+
+        if not to:
+            raise ValidationError('Recipient email address is required.')
+
+        client = QBOService.get_client()
+        if not client:
+            raise ValidationError('No active QBO connection.')
+
+        # Step 1: QBO push (skip if already pushed — retry path).
+        if not invoice.qbo_id:
+            contact = invoice.job.contact
+            business = contact.business if contact else None
+
+            if business:
+                if not business.qbo_customer_id:
+                    QBOCustomerSyncService.push_customer(business)
+                qbo_customer_id = business.qbo_customer_id
+            else:
+                if not contact.qbo_customer_id:
+                    QBOCustomerSyncService.push_contact_as_customer(contact)
+                    contact.refresh_from_db()
+                qbo_customer_id = contact.qbo_customer_id
+
+            grouped_lines = InvoiceGroupingService.group_for_qbo(invoice)
+            qbo_invoice = QBOInvoiceSyncService._build_qbo_invoice(
+                invoice, qbo_customer_id, grouped_lines,
+            )
+            qbo_invoice.save(qb=client)
+            qbo_id = str(qbo_invoice.Id)
+            invoice.qbo_id = qbo_id
+            invoice.save(update_fields=['qbo_id'])
+
+            QBOInvoiceSyncService._mark_as_sent(client, qbo_id)
+            QBOService.log_sync(
+                entity_type='invoice', entity_id=invoice.pk,
+                qbo_entity_type='Invoice', qbo_entity_id=qbo_id,
+                action='create', status='success',
+            )
+
+        # Step 2: generate / fetch the two PDFs.
+        statement_pdf = generate_job_statement_pdf(invoice)
+        qbo_invoice_pdf = QBOInvoiceSyncService._download_qbo_pdf(client, invoice.qbo_id)
+
+        # Step 3: send via tracked outbound.
+        attachments = [
+            (f'Invoice-{invoice.invoice_number}.pdf', qbo_invoice_pdf, 'application/pdf'),
+            (f'JobStatement-{invoice.invoice_number}.pdf', statement_pdf, 'application/pdf'),
+        ]
+        if extra_attachments:
+            attachments.extend(extra_attachments)
+
+        record = OutboundEmailService.send_tracked(
+            to=to, subject=subject, body=body,
+            cc=cc, bcc=bcc, attachments=attachments,
+            associate_with={'job': invoice.job},
+        )
+
+        # Step 4: status transition on success.
+        if invoice.status == Invoice.STATUS_DRAFT:
+            invoice.status = Invoice.STATUS_OPEN
+            invoice.save()
+
+        return record
+
+
 class InvoiceGroupingService:
     """Groups invoice line items by AccountingCategory + taxability for QBO push."""
 
