@@ -108,6 +108,25 @@
       error = e.message || 'Could not save.';
     } finally { busy = false; }
   }
+
+  async function remove() {
+    if (!record) return;
+    // Deletion is irreversible — confirm (per app UI convention).
+    if (!confirm(recordType === 'shift' ? 'Delete this shift?' : 'Delete this time entry?')) return;
+    busy = true; error = '';
+    try {
+      if (recordType === 'shift') {
+        await api.delete(`/api/shifts/${record.shift_id}/`);
+        await notifyShiftChanged();
+      } else {
+        await api.delete(`/api/bleps/${record.blep_id}/`);
+        await notifyBlepChanged();
+      }
+      onSaved();
+    } catch (e) {
+      error = e.message || 'Could not delete.';
+    } finally { busy = false; }
+  }
 </script>
 
 {#if open}
@@ -142,6 +161,9 @@
         <button type="button" onclick={save} disabled={busy || blocked || (action === 'request' && !reason.trim())}>
           {action === 'request' ? 'Submit request' : 'Save'}
         </button>
+        {#if action === 'edit' && record}
+          <button type="button" onclick={remove} disabled={busy}>Delete</button>
+        {/if}
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
