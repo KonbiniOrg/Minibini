@@ -1,6 +1,13 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
+  import { user as userStore } from '../../stores/auth.js';
+  import ShiftRequestQueue from '../../components/users/ShiftRequestQueue.svelte';
+  import PayrollReport from '../../components/users/PayrollReport.svelte';
+
+  let tab = $state('users');
+  const perms = $derived($userStore?.permissions || []);
+  const canSeeShifts = $derived(perms.includes('can_manage_time') || perms.includes('can_manage_financials') || $userStore?.is_superuser);
 
   // Short labels for the permission column — keep the table narrow.
   const ATOM_SHORT_LABELS = {
@@ -37,6 +44,18 @@
 </script>
 
 <h2>Users</h2>
+
+<nav class="home-tabs">
+  <button class:active={tab === 'users'} onclick={() => tab = 'users'}>Users</button>
+  {#if canSeeShifts}
+    <button class:active={tab === 'shifts'} onclick={() => tab = 'shifts'}>Shifts</button>
+  {/if}
+</nav>
+
+{#if tab === 'shifts'}
+  <ShiftRequestQueue />
+  <PayrollReport />
+{:else}
 
 <p><a href="/users/new" use:link>New user</a></p>
 
@@ -81,3 +100,26 @@
     </tbody>
   </table>
 {/if}
+{/if}
+
+<style>
+  .home-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid #ccc;
+    margin-bottom: 1em;
+  }
+  .home-tabs button {
+    padding: 0.4em 1.2em;
+    border: 2px solid #ccc;
+    border-bottom: none;
+    background: #f5f5f5;
+    cursor: pointer;
+    margin-bottom: -2px;
+  }
+  .home-tabs button.active {
+    background: white;
+    border-bottom: 2px solid white;
+    font-weight: bold;
+  }
+</style>
