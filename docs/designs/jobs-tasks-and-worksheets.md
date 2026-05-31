@@ -357,8 +357,17 @@ descriptor instead of opening a new Blep:
 
 The client (`StartWorkConflictModal.svelte`) presents the choice. Re-call
 `start_work` with `action='join'` (creates a parallel Blep — both workers
-active) or `action='takeover'` (closes the other worker's Blep first,
-then opens a new one).
+active) or `action='takeover'`.
+
+Takeover composes existing tested logic rather than special-casing state:
+it RESOLVES each displaced Blep via the shared `_resolve_open_blep` (cancel
+with full undo if sub-minute — an accidental start; close, end_time floored,
+if it's real work), then restarts via the normal `start_work` path. If the
+cancel reverted the task to pending (the displaced sub-minute Blep was the
+task's only activity), the restart re-promotes it, re-consumes materials, and
+reassigns to the taking-over worker; otherwise the restart just opens the new
+Blep. The restart is `action=None` with no remaining other workers, so it
+terminates after one level. There is no takeover-specific state handling.
 
 `block_task` returns a similar conflict shape (`active_workers`, plural,
 no options) when open Bleps exist — there's no override; the requester
@@ -499,19 +508,22 @@ and `can_manage_time` rules.
   `_close_open`, they share the behavior — a sub-minimum blep is **never**
   persisted closed. Manager on-behalf stop is never a cancel of intent, but
   a genuinely sub-minimum blep it closes is still discarded by this rule.
-  `_close_open` wraps its per-blep resolution loop in `transaction.atomic()`
-  so it is self-atomic regardless of caller: `_cancel_blep` uses
-  `select_for_update()`, and the logout / deactivate callers invoke it under
-  autocommit (no enclosing transaction), where it would otherwise raise
-  `TransactionManagementError` → 500.
-  **Exception — takeover always closes, never cancels.** The `action='takeover'`
-  branch of `start_work` does NOT go through `_close_open` for the displaced
-  worker; it closes that worker's open blep directly (end floored to the minute,
-  via iterate-and-`save()`, not `QuerySet.update()`), even when the blep is
-  sub-minute. A takeover is a deliberate hand-off, not an accidental start, so
-  the displaced blep must be **closed, not cancelled** — cancelling it would
-  revert the very task being handed off (back to `pending`, un-consuming its
-  materials) mid-takeover.
+  The per-blep decision (cancel-if-sub-minimum / else close) lives in the
+  shared `_resolve_open_blep(blep, now)` helper; `_close_open` just loops over
+  matching open bleps and calls it. `_close_open` wraps that loop in
+  `transaction.atomic()` so it is self-atomic regardless of caller:
+  `_cancel_blep` uses `select_for_update()`, and the logout / deactivate
+  callers invoke it under autocommit (no enclosing transaction), where it would
+  otherwise raise `TransactionManagementError` → 500.
+  **Takeover RESOLVES the displaced blep, then restarts.** The
+  `action='takeover'` branch of `start_work` calls `_resolve_open_blep` on each
+  displaced worker's open blep — so a sub-minute one is **cancelled** (full
+  undo: deleted, and if it was the task's only activity the task reverts to
+  `pending` and materials un-consume) and a real one is **closed**. It then
+  recurses into `start_work(task_pk, target)` (the normal tested path): if the
+  cancel reverted the task to pending, that path re-promotes / re-consumes /
+  reassigns; otherwise it just opens the new blep. No takeover-specific state
+  handling — takeover is composed from cancel + start, not a special case.
 - **Derived activity facets.** `TaskSerializer` and `BoardService` expose
   `has_active_blep`, `active_worker_count`, and `has_bleps` (computed from
   `blep_set`, prefetched to avoid N+1). The SPA collapses these + status

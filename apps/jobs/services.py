@@ -191,6 +191,16 @@ class BlepService:
                         MaterialService.unconsume(material)
 
     @staticmethod
+    def _resolve_open_blep(blep, now):
+        """Close an open blep, or cancel it (full undo) if it's under the
+        minimum — the shared resolution used by every close path."""
+        if BlepService._under_minimum(blep, now):
+            BlepService._cancel_blep(blep)
+        else:
+            blep.end_time = now
+            blep.save()
+
+    @staticmethod
     def _close_open(user=None, task=None, now=None):
         """Resolve all open Bleps matching the given filter.
 
@@ -217,12 +227,7 @@ class BlepService:
                 qs = qs.filter(task=task)
             bleps = list(qs)
             for blep in bleps:
-                if BlepService._under_minimum(blep, now):
-                    # Sub-minimum = accidental start: cancel with full undo.
-                    BlepService._cancel_blep(blep)
-                else:
-                    blep.end_time = now
-                    blep.save()  # floors end to the minute
+                BlepService._resolve_open_blep(blep, now)
             return len(bleps)
 
     @staticmethod
@@ -1025,18 +1030,18 @@ class TaskLifecycleService:
                     'started_at': b.start_time,
                     'options': ['join', 'takeover'],
                 }
+            if action == 'takeover':
+                # Resolve the displaced worker(s)' blep(s): a sub-minute one is an
+                # accidental start → cancelled (full undo; may revert the task to
+                # pending and un-consume materials), a real one → closed. Then start
+                # fresh via the normal tested path — if the cancel reverted the task
+                # to pending, that path re-promotes/re-consumes/reassigns; otherwise
+                # it just adds the blep. No takeover-specific state handling.
+                for b in list(other_bleps):
+                    BlepService._resolve_open_blep(b, now)
+                return TaskLifecycleService.start_work(task_pk, target)
             # Close target's open Blep on ANY task
             BlepService._close_open(user=target, now=now)
-            if action == 'takeover':
-                # A takeover is a deliberate hand-off, not an accidental
-                # start, so always CLOSE the displaced workers' bleps (floored
-                # via save()) — never route through the sub-minimum cancel,
-                # which would revert the very task being taken over and
-                # un-consume its materials mid-takeover. Iterate-and-save (not
-                # QuerySet.update) so end_time is floored by Blep.save().
-                for b in list(other_bleps):
-                    b.end_time = now
-                    b.save()
             blep = BlepService._create(task, target, start_time=now)
             JobService.mark_work_started(task.job)
             # Promote only when the blepper IS the assignee (see above).

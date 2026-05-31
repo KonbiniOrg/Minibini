@@ -703,44 +703,118 @@ class StartStopWorkTest(BaseTestCase):
         open_bleps = Blep.objects.filter(task=self.task, end_time__isnull=True)
         self.assertEqual(open_bleps.count(), 2)
 
-    def test_start_work_takeover(self):
-        other_blep = Blep.objects.create(
-            task=self.task, user=self.worker2, start_time=timezone.now()
-        )
-        result = TaskLifecycleService.start_work(self.task.pk, self.user, action='takeover')
-        self.assertIn('blep', result)
-        other_blep.refresh_from_db()
-        self.assertIsNotNone(other_blep.end_time)
-
-    def test_start_work_takeover_closes_sub_minimum_blep(self):
-        """A takeover is a deliberate hand-off: it CLOSES the displaced worker's
-        blep (end_time floored to the minute, blep still exists) even when that
-        blep is sub-minute. It does NOT cancel/delete it — cancelling would
-        revert the very task being handed off. The task stays in_progress and
-        the new worker gets an open blep.
+    def test_start_work_takeover_over_minimum_closes_displaced_blep(self):
+        """Takeover RESOLVES the displaced blep then restarts via the normal
+        path. An over-minimum displaced blep is real work: it is CLOSED (still
+        exists, end_time set + floored), the task stays in_progress, and the
+        taking-over worker gets an open blep.
         """
         from apps.core.models import Shift
         now = timezone.now()
-        # Enclosing open shift for worker2 so the soon-to-be-closed short blep
+        # Enclosing open shift for worker2 so the soon-to-be-closed blep
         # satisfies the shift-enclosure invariant.
         Shift.objects.create(
             user=self.worker2, start_time=now - timedelta(days=1),
         )
-        # worker2 has an OPEN sub-minute blep on the in_progress task.
+        # worker2 has an OPEN over-minute blep on the in_progress task.
         other_blep = Blep.objects.create(
-            task=self.task, user=self.worker2, start_time=now,
+            task=self.task, user=self.worker2,
+            start_time=now - timedelta(minutes=30),
         )
         result = TaskLifecycleService.start_work(
             self.task.pk, self.user, action='takeover'
         )
-        # Displaced blep is CLOSED, not deleted.
+        # Displaced real-work blep is CLOSED, not deleted.
         self.assertTrue(Blep.objects.filter(pk=other_blep.pk).exists())
         other_blep.refresh_from_db()
         self.assertIsNotNone(other_blep.end_time)
         # end_time floored to the minute (Blep.save() normalization).
         self.assertEqual(other_blep.end_time.second, 0)
         self.assertEqual(other_blep.end_time.microsecond, 0)
-        # Task still in_progress; new worker has an open blep.
+        # Task stays in_progress; new worker has an open blep.
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+        new_blep = result['blep']
+        self.assertEqual(new_blep.user, self.user)
+        self.assertIsNone(new_blep.end_time)
+
+    def test_start_work_takeover_sub_minimum_only_activity_cancels_and_restarts(self):
+        """A sub-minute displaced blep that was the task's ONLY activity is an
+        accidental start: takeover CANCELS it (deleted/gone), which reverts the
+        task to pending and un-consumes materials. The restart via the normal
+        pending path then re-promotes (re-consuming materials), reassigns the
+        task to the taking-over worker, and opens that worker's blep.
+        """
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.inventory.models import Material, PriceListItem
+        # Material on the task so we can confirm re-consumption.
+        cat = AccountingCategory.objects.get_or_create(
+            code='SVC', defaults={'name': 'Service', 'taxable': False},
+        )[0]
+        non_inv = PriceListItem.objects.create(
+            code='PLI-NI-TKO', description='Labor',
+            is_inventoried=False, qty_on_hand=Decimal('0.00'),
+            qty_sold=Decimal('0.00'), accounting_category=cat,
+        )
+        mat = Material.objects.create(
+            job=self.job, task=self.task, price_list_item=non_inv,
+            description='non-inv', quantity=Decimal('2.00'),
+        )
+        # The task was promoted by worker2's start, so its material is consumed.
+        Material.objects.filter(pk=mat.pk).update(
+            consumption_state=Material.CONSUMPTION_STATE_CONSUMED,
+        )
+        now = timezone.now()
+        # worker2 has an OPEN sub-minute blep that is the task's only activity.
+        other_blep = Blep.objects.create(
+            task=self.task, user=self.worker2, start_time=now,
+        )
+        result = TaskLifecycleService.start_work(
+            self.task.pk, self.user, action='takeover'
+        )
+        # Displaced sub-minute blep is CANCELLED (deleted), not closed.
+        self.assertFalse(Blep.objects.filter(pk=other_blep.pk).exists())
+        # Task ended in_progress (re-promoted by the restart), reassigned to the
+        # taking-over worker, who has an open blep.
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+        self.assertEqual(self.task.assignee, self.user)
+        new_blep = result['blep']
+        self.assertEqual(new_blep.user, self.user)
+        self.assertIsNone(new_blep.end_time)
+        # Material was re-consumed via the pending->in_progress promotion.
+        mat.refresh_from_db()
+        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+
+    def test_start_work_takeover_sub_minimum_with_prior_activity_no_revert(self):
+        """A sub-minute displaced blep on a task that had PRIOR activity (a
+        closed blep) is deleted on takeover, but the task is NOT reverted to
+        pending (it was not the first/only activity). Task stays in_progress and
+        the taking-over worker gets a blep — no spurious revert.
+        """
+        from apps.core.models import Shift
+        now = timezone.now()
+        # Prior closed blep => task is not first/only activity.
+        Shift.objects.create(
+            user=self.worker2, start_time=now - timedelta(days=1),
+        )
+        prior = Blep.objects.create(
+            task=self.task, user=self.worker2,
+            start_time=now - timedelta(hours=2),
+            end_time=now - timedelta(hours=1),
+        )
+        # worker2's OPEN sub-minute blep.
+        other_blep = Blep.objects.create(
+            task=self.task, user=self.worker2, start_time=now,
+        )
+        result = TaskLifecycleService.start_work(
+            self.task.pk, self.user, action='takeover'
+        )
+        # Sub-minute open blep deleted; the prior closed blep survives.
+        self.assertFalse(Blep.objects.filter(pk=other_blep.pk).exists())
+        self.assertTrue(Blep.objects.filter(pk=prior.pk).exists())
+        # No spurious revert: task stays in_progress.
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
         new_blep = result['blep']
