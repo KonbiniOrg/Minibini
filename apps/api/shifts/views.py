@@ -17,7 +17,11 @@ def _resolve_target(request):
         if not (request.user.is_superuser or request.user.has_perm('core.can_manage_time')):
             return None, Response({'detail': 'Not permitted to clock another user.'},
                                   status=status.HTTP_403_FORBIDDEN)
-        return User.objects.get(pk=uid), None
+        try:
+            return User.objects.get(pk=uid), None
+        except User.DoesNotExist:
+            return None, Response({'detail': 'User not found.'},
+                                  status=status.HTTP_404_NOT_FOUND)
     return request.user, None
 
 
@@ -64,7 +68,8 @@ class ShiftViewSet(viewsets.ModelViewSet):
             # A '+HH:MM' tz offset arrives URL-decoded to a space; restore it
             # before parsing so the filter doesn't choke on an invalid format.
             parsed = parse_datetime(since) or parse_datetime(since.replace(' ', '+'))
-            qs = qs.filter(start_time__gte=parsed or since)
+            if parsed is not None:
+                qs = qs.filter(start_time__gte=parsed)
         return qs
 
     @action(detail=False, methods=['get'], url_path='active')

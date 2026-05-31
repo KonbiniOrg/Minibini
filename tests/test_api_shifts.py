@@ -44,3 +44,17 @@ class ShiftAPITest(BaseTestCase):
                               {'start_time': new_start,
                                'end_time': s.end_time.isoformat()}, format='json')
         self.assertEqual(r.status_code, 200, r.data)
+
+    def test_manager_clock_unknown_user_404(self):
+        from django.contrib.auth.models import Permission
+        mgr = User.objects.create_user(username='api_shift_mgr', password='x')
+        mgr.user_permissions.add(Permission.objects.get(
+            codename='can_manage_time', content_type__app_label='core'))
+        mgr = User.objects.get(pk=mgr.pk)
+        self.client.force_authenticate(user=mgr)
+        r = self.client.post('/api/shifts/clock-in/', {'user': 99999999}, format='json')
+        self.assertEqual(r.status_code, 404, r.data)
+
+    def test_invalid_since_is_ignored(self):
+        r = self.client.get('/api/shifts/?user=me&since=not-a-date')
+        self.assertEqual(r.status_code, 200, r.data)
