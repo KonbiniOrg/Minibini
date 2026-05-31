@@ -8,6 +8,10 @@ Minibini is a Django-based job shop management system for handling jobs, estimat
 
 **Tech Stack:** Django 5.2+, Django REST Framework, MySQL, Python 3.12, Svelte 5 SPA (Vite)
 
+## Brainstorming / Design Discussion
+
+**Never use the multiple-choice / AskUserQuestion framework when brainstorming with this user.** Conduct design discussions as unstructured, back-and-forth prose — one idea or question at a time, in conversational paragraphs. This overrides any skill or default that prefers multiple-choice questions.
+
 ## Essential Commands
 
 ```bash
