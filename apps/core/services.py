@@ -985,3 +985,40 @@ class OutboundEmailService:
             msg.attach(filename, content, mime_type)
 
         msg.send()
+
+
+SELF_EDIT_WINDOW_HOURS = 30
+
+
+class ShiftService:
+    @staticmethod
+    def open_shift_for(user):
+        return user.shifts.filter(end_time__isnull=True).first()
+
+    @staticmethod
+    def clock_in(user, start_time=None):
+        if ShiftService.open_shift_for(user):
+            raise ValidationError("You are already clocked in.")
+        from apps.core.models import Shift
+        return Shift.objects.create(user=user, start_time=start_time or timezone.now())
+
+    @staticmethod
+    def ensure_open_shift(user, start_time=None):
+        """Open a shift if the user has none open (auto-clock-in on blep start)."""
+        existing = ShiftService.open_shift_for(user)
+        if existing:
+            return existing
+        return ShiftService.clock_in(user, start_time=start_time)
+
+    @staticmethod
+    def clock_out(user, end_time=None):
+        shift = ShiftService.open_shift_for(user)
+        if not shift:
+            raise ValidationError("You are not clocked in.")
+        now = end_time or timezone.now()
+        with transaction.atomic():
+            from apps.jobs.services import BlepService
+            BlepService.close_user_open_bleps(user, now=now)
+            shift.end_time = now
+            shift.save()
+        return shift
