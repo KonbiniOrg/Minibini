@@ -48,9 +48,13 @@ Additional keys: `email_retention_days`, `latest_email_date`,
 Schedule view: `schedule_workday_start` (`08:00`), `schedule_workday_end`
 (`17:00`), `schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
 
-Time tracking: `blep_minimum_seconds` (`60`) — below this elapsed duration
-a worker's Stop becomes Cancel (delete + undo); see
-`jobs-tasks-and-worksheets.md` §4.5/§5.5.
+Time tracking: `blep_minimum_minutes` (`1`) — below this elapsed duration
+(whole minutes; times are minute-granular) a blep is an accidental start.
+Closing one (via any path — stop, clock-out, logout/deactivation) cancels it
+with full `cancel_work` undo (delete + first/only-activity revert) rather than
+persisting a closed blep; the UI's Stop control reads Cancel below the
+threshold. **Invariant: a sub-minimum close is never persisted — it is
+cancelled.** See `jobs-tasks-and-worksheets.md` §4.5/§5.5.
 
 ---
 

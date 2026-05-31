@@ -32,10 +32,12 @@ class BlepServicePrimitivesTest(BaseTestCase):
         self.assertEqual(blep.end_time, floor_to_minute(end))
 
     def test_close_open_by_user_closes_all_user_bleps(self):
-        b1 = Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
-        b2 = Blep.objects.create(task=self.other_task, user=self.user, start_time=timezone.now())
+        # Backdate well past the minimum so these are CLOSED (not cancelled).
+        past = timezone.now() - timedelta(minutes=30)
+        b1 = Blep.objects.create(task=self.task, user=self.user, start_time=past)
+        b2 = Blep.objects.create(task=self.other_task, user=self.user, start_time=past)
         # Another user's blep should NOT be closed.
-        other = Blep.objects.create(task=self.task, user=self.other_user, start_time=timezone.now())
+        other = Blep.objects.create(task=self.task, user=self.other_user, start_time=past)
         BlepService._close_open(user=self.user)
         b1.refresh_from_db(); b2.refresh_from_db(); other.refresh_from_db()
         self.assertIsNotNone(b1.end_time)
@@ -43,16 +45,18 @@ class BlepServicePrimitivesTest(BaseTestCase):
         self.assertIsNone(other.end_time)
 
     def test_close_open_by_user_and_task_scoped(self):
-        on_task = Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
-        other_task_blep = Blep.objects.create(task=self.other_task, user=self.user, start_time=timezone.now())
+        past = timezone.now() - timedelta(minutes=30)
+        on_task = Blep.objects.create(task=self.task, user=self.user, start_time=past)
+        other_task_blep = Blep.objects.create(task=self.other_task, user=self.user, start_time=past)
         BlepService._close_open(user=self.user, task=self.task)
         on_task.refresh_from_db(); other_task_blep.refresh_from_db()
         self.assertIsNotNone(on_task.end_time)
         self.assertIsNone(other_task_blep.end_time)
 
     def test_close_open_by_task_closes_all_workers(self):
-        mine = Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
-        theirs = Blep.objects.create(task=self.task, user=self.other_user, start_time=timezone.now())
+        past = timezone.now() - timedelta(minutes=30)
+        mine = Blep.objects.create(task=self.task, user=self.user, start_time=past)
+        theirs = Blep.objects.create(task=self.task, user=self.other_user, start_time=past)
         BlepService._close_open(task=self.task)
         mine.refresh_from_db(); theirs.refresh_from_db()
         self.assertIsNotNone(mine.end_time)

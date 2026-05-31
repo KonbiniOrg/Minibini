@@ -33,9 +33,10 @@
   // it (delete + undo). Stop becomes Cancel until the timer crosses the line.
   const underMinimum = $derived.by(() => {
     const cb = $currentBlep;
-    if (!cb) return false;
-    const threshold = cb.blep_minimum_seconds ?? 60;
-    return elapsedSeconds(cb.start_time) < threshold;
+    if (!cb || !cb.start_time) return false;
+    const minMinutes = cb.blep_minimum_minutes ?? 1;
+    const wholeMinutes = Math.floor((now - new Date(cb.start_time).getTime()) / 60000);
+    return wholeMinutes < minMinutes;
   });
 
   async function act(urlSuffix) {

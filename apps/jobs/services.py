@@ -58,23 +58,25 @@ class TaskWorkerTimeRequired(Exception):
 
 _EDIT_WINDOW = timedelta(hours=SELF_EDIT_WINDOW_HOURS)  # matches ShiftService.SELF_EDIT_WINDOW_HOURS
 
-# Below this elapsed duration, a worker's Stop becomes Cancel (delete + undo).
-# Lazy default written into Configuration on first read (mirrors the schedule keys).
-_BLEP_MINIMUM_SECONDS_DEFAULT = '60'
+# Below this elapsed duration (whole minutes), a worker's Stop becomes Cancel
+# (delete + undo). Lazy default written into Configuration on first read
+# (mirrors the schedule keys). Times are minute-granular, so this is in minutes.
+_BLEP_MINIMUM_MINUTES_DEFAULT = '1'
 
 
-def blep_minimum_seconds():
-    """The Stop→Cancel threshold (seconds). Single source of truth, also read by
-    the API to expose it to the client. Lazy default written on first read."""
+def blep_minimum_minutes():
+    """The Stop→Cancel threshold (whole minutes). Single source of truth, also
+    read by the API to expose it to the client. Lazy default written on first
+    read."""
     try:
-        return int(Configuration.objects.get(key='blep_minimum_seconds').value)
+        return int(Configuration.objects.get(key='blep_minimum_minutes').value)
     except Configuration.DoesNotExist:
         Configuration.objects.create(
-            key='blep_minimum_seconds', value=_BLEP_MINIMUM_SECONDS_DEFAULT,
+            key='blep_minimum_minutes', value=_BLEP_MINIMUM_MINUTES_DEFAULT,
         )
-        return int(_BLEP_MINIMUM_SECONDS_DEFAULT)
+        return int(_BLEP_MINIMUM_MINUTES_DEFAULT)
     except (TypeError, ValueError):
-        return int(_BLEP_MINIMUM_SECONDS_DEFAULT)
+        return int(_BLEP_MINIMUM_MINUTES_DEFAULT)
 
 
 def _has_manage_time(user):
@@ -151,11 +153,52 @@ class BlepService:
         )
 
     @staticmethod
-    def _close_open(user=None, task=None, now=None):
-        """Close all open Bleps matching the given filter.
+    def _under_minimum(blep, close_time):
+        """True when closing `blep` at `close_time` yields fewer whole minutes
+        than the configured minimum. start_time is already minute-floored on
+        save, so this compares whole minutes."""
+        if blep.start_time is None:
+            return False
+        whole_minutes = int((close_time - blep.start_time).total_seconds() // 60)
+        return whole_minutes < blep_minimum_minutes()
 
-        At least one of `user` or `task` must be provided. Returns the
-        number of bleps that were closed.
+    @staticmethod
+    def _cancel_blep(blep):
+        """Delete an open blep with full cancel_work semantics.
+
+        Locks the blep's task, computes whether this blep is the first/only
+        activity (task is in_progress AND this is the only blep on it), deletes
+        the blep, and — if first/only — reverts the task to pending and
+        un-consumes its materials. This is exactly what cancel_work does after
+        its guard; callers that hand an instance here must NOT re-query for the
+        open blep nor re-apply the "too long" guard.
+        """
+        task = Task.objects.select_for_update().get(pk=blep.task_id)
+        first_activity = (
+            task.status == Task.STATUS_IN_PROGRESS
+            and Blep.objects.filter(task=task).count() == 1
+        )
+        blep.delete()
+        if first_activity:
+            reverted = Task.objects.filter(
+                pk=task.pk, status=Task.STATUS_IN_PROGRESS,
+            ).update(status=Task.STATUS_PENDING)
+            if reverted:
+                from apps.inventory.services import MaterialService
+                for material in task.materials.all():
+                    if material.consumption_state == \
+                            material.CONSUMPTION_STATE_CONSUMED:
+                        MaterialService.unconsume(material)
+
+    @staticmethod
+    def _close_open(user=None, task=None, now=None):
+        """Resolve all open Bleps matching the given filter.
+
+        At least one of `user` or `task` must be provided. Each open blep is
+        resolved individually: a sub-minimum blep is an accidental start and is
+        cancelled with full undo (delete + first/only-activity revert); an
+        at-or-over-minimum blep is closed (end_time floored to the minute on
+        save). Returns the number of bleps that were resolved.
         """
         if user is None and task is None:
             raise ValueError("_close_open requires user or task filter")
@@ -168,8 +211,12 @@ class BlepService:
             qs = qs.filter(task=task)
         bleps = list(qs)
         for blep in bleps:
-            blep.end_time = now
-            blep.save()
+            if BlepService._under_minimum(blep, now):
+                # Sub-minimum = accidental start: cancel with full undo.
+                BlepService._cancel_blep(blep)
+            else:
+                blep.end_time = now
+                blep.save()  # floors end to the minute
         return len(bleps)
 
     @staticmethod
@@ -1016,7 +1063,7 @@ class TaskLifecycleService:
         (see the spec). A 'join' on an already-active task, or a task with
         prior sessions, only loses the blep.
 
-        Only allowed while the session is under `blep_minimum_seconds`; over
+        Only allowed while the session is under `blep_minimum_minutes`; over
         that the caller should Stop instead (enforced defensively here).
         """
         with transaction.atomic():
@@ -1031,28 +1078,11 @@ class TaskLifecycleService:
                 raise ValidationError(
                     "No open time entry to cancel for this user on this task."
                 )
-            elapsed = blep.elapsed
-            if elapsed is not None and elapsed.total_seconds() >= blep_minimum_seconds():
+            if not BlepService._under_minimum(blep, timezone.now()):
                 raise ValidationError(
                     "Session is too long to cancel; stop it instead."
                 )
-            # First/only activity: this is the sole blep and the task is only
-            # in_progress because of it.
-            first_activity = (
-                task.status == Task.STATUS_IN_PROGRESS
-                and Blep.objects.filter(task=task).count() == 1
-            )
-            blep.delete()
-            if first_activity:
-                reverted = Task.objects.filter(
-                    pk=task.pk, status=Task.STATUS_IN_PROGRESS,
-                ).update(status=Task.STATUS_PENDING)
-                if reverted:
-                    from apps.inventory.services import MaterialService
-                    for material in task.materials.all():
-                        if material.consumption_state == \
-                                material.CONSUMPTION_STATE_CONSUMED:
-                            MaterialService.unconsume(material)
+            BlepService._cancel_blep(blep)
 
 
 # ═══════════════════════════════════════════════════════════════════

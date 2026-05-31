@@ -128,7 +128,11 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_stop_work(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
-        Blep.objects.create(task=self.task, user=self.user, start_time=timezone.now())
+        # Over-minimum so stop-work CLOSES it (a sub-minimum blep is cancelled).
+        Blep.objects.create(
+            task=self.task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
         url = f'/api/tasks/{self.task.pk}/stop-work/'
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 200)
@@ -159,7 +163,11 @@ class TaskLifecycleAPITest(BaseTestCase):
     def test_stop_work_on_behalf_closes_targets_blep(self):
         worker = self._create_user('ob_stop_target')
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
-        Blep.objects.create(task=self.task, user=worker, start_time=timezone.now())
+        # Over-minimum so the on-behalf stop CLOSES it (not cancels).
+        Blep.objects.create(
+            task=self.task, user=worker,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
         url = f'/api/tasks/{self.task.pk}/stop-work/'
         resp = self.client.post(url, {'on_behalf_of': worker.pk})
         self.assertEqual(resp.status_code, 200)

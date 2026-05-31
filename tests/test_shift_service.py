@@ -24,9 +24,11 @@ class ShiftClockTest(BaseTestCase):
             ShiftService.clock_in(self.user)
 
     def test_clock_out_closes_shift_and_open_bleps(self):
-        s = ShiftService.clock_in(self.user)
+        # Clock in 30 min ago so the shift encloses an over-minimum blep that
+        # clock_out will CLOSE (sub-minimum bleps are cancelled instead).
+        s = ShiftService.clock_in(self.user, start_time=timezone.now() - timedelta(minutes=30))
         blep = Blep.objects.create(task=self.task, user=self.user,
-                                   start_time=timezone.now())
+                                   start_time=timezone.now() - timedelta(minutes=20))
         ShiftService.clock_out(self.user)
         s.refresh_from_db(); blep.refresh_from_db()
         self.assertIsNotNone(s.end_time)

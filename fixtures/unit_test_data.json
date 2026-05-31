@@ -258,9 +258,9 @@
     },
     {
         "model": "core.configuration",
-        "pk": "blep_minimum_seconds",
+        "pk": "blep_minimum_minutes",
         "fields": {
-            "value": "60"
+            "value": "1"
         }
     },
     {

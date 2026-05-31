@@ -21,10 +21,11 @@ class BlepPublicWrapperTest(BaseTestCase):
         self.assertIsNotNone(self.task, 'Fixture must provide at least one Task')
 
     def test_close_user_open_bleps_closes_open_blep(self):
+        # Over-minimum so it is CLOSED (a sub-minimum blep would be cancelled).
         open_blep = Blep.objects.create(
             user=self.user,
             task=self.task,
-            start_time=timezone.now(),
+            start_time=timezone.now() - timedelta(minutes=30),
             end_time=None,
         )
         BlepService.close_user_open_bleps(self.user)
@@ -422,9 +423,10 @@ class UserActivateDeactivateTest(BaseTestCase):
 
     def test_deactivate_closes_open_bleps(self):
         task = Task.objects.first()
+        # Over-minimum so it is CLOSED (a sub-minimum blep would be cancelled).
         open_blep = Blep.objects.create(
             user=self.target, task=task,
-            start_time=timezone.now(), end_time=None,
+            start_time=timezone.now() - timedelta(minutes=30), end_time=None,
         )
         self.client.post(f'/api/users/{self.target.pk}/deactivate/')
         open_blep.refresh_from_db()

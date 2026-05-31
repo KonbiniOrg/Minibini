@@ -168,8 +168,10 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
     def test_start_work_closes_users_other_open_blep(self):
         other_task = Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        # Over-minimum so it is CLOSED (not cancelled) when start_work switches tasks.
         old_blep = Blep.objects.create(
-            task=other_task, user=self.user, start_time=timezone.now()
+            task=other_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30)
         )
         TaskLifecycleService.start_work(self.task.pk, self.user)
         old_blep.refresh_from_db()
@@ -279,8 +281,10 @@ class OnBehalfStartStopTest(BaseTestCase):
 
     def test_stop_on_behalf_closes_targets_open_blep(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        # Over-minimum so the manager's on-behalf stop CLOSES it (not cancels).
         blep = Blep.objects.create(
-            task=self.task, user=self.worker, start_time=timezone.now(),
+            task=self.task, user=self.worker,
+            start_time=timezone.now() - timedelta(minutes=30),
         )
         TaskLifecycleService.stop_work(
             self.task.pk, self.manager, on_behalf_of=self.worker,
@@ -300,8 +304,10 @@ class OnBehalfStartStopTest(BaseTestCase):
 
     def test_stop_on_behalf_leaves_actors_own_blep_alone(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        # worker_blep is over-minimum so it is CLOSED (not cancelled) on stop.
         worker_blep = Blep.objects.create(
-            task=self.task, user=self.worker, start_time=timezone.now(),
+            task=self.task, user=self.worker,
+            start_time=timezone.now() - timedelta(minutes=30),
         )
         manager_blep = Blep.objects.create(
             task=self.task, user=self.manager, start_time=timezone.now(),
@@ -338,8 +344,10 @@ class CompleteTaskTest(BaseTestCase):
     def test_complete_closes_open_bleps(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.task.refresh_from_db()
+        # Over-minimum so completing the task CLOSES it (not cancels).
         blep = Blep.objects.create(
-            task=self.task, user=self.user, start_time=timezone.now()
+            task=self.task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30)
         )
         TaskLifecycleService.complete_task(self.task.pk)
         blep.refresh_from_db()
@@ -607,8 +615,10 @@ class CancelTaskTest(BaseTestCase):
     def test_cancel_from_in_progress_closes_bleps(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.task.refresh_from_db()
+        # Over-minimum so cancelling the task CLOSES the blep (not cancels it).
         blep = Blep.objects.create(
-            task=self.task, user=self.user, start_time=timezone.now()
+            task=self.task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30)
         )
         TaskLifecycleService.cancel_task(self.task.pk)
         self.task.refresh_from_db()
@@ -665,8 +675,10 @@ class StartStopWorkTest(BaseTestCase):
     def test_start_work_closes_users_other_blep(self):
         other_task = Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        # Over-minimum so it is CLOSED (not cancelled) when start_work switches tasks.
         old_blep = Blep.objects.create(
-            task=other_task, user=self.user, start_time=timezone.now()
+            task=other_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30)
         )
         TaskLifecycleService.start_work(self.task.pk, self.user)
         old_blep.refresh_from_db()
@@ -712,8 +724,10 @@ class StartStopWorkTest(BaseTestCase):
         self.assertEqual(self.task.assignee, self.worker2)
 
     def test_stop_work_closes_blep(self):
+        # Over-minimum so stop_work CLOSES it (a sub-minimum blep is cancelled).
         blep = Blep.objects.create(
-            task=self.task, user=self.user, start_time=timezone.now()
+            task=self.task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30)
         )
         TaskLifecycleService.stop_work(self.task.pk, self.user)
         blep.refresh_from_db()

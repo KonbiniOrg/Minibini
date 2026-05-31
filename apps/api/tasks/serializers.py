@@ -128,10 +128,10 @@ class TaskSerializer(serializers.ModelSerializer):
 
 class TaskDetailSerializer(TaskSerializer):
     job = serializers.SerializerMethodField()
-    blep_minimum_seconds = serializers.SerializerMethodField()
+    blep_minimum_minutes = serializers.SerializerMethodField()
 
     class Meta(TaskSerializer.Meta):
-        fields = TaskSerializer.Meta.fields + ['job', 'blep_minimum_seconds']
+        fields = TaskSerializer.Meta.fields + ['job', 'blep_minimum_minutes']
 
     def get_job(self, obj):
         job = obj.job
@@ -142,6 +142,6 @@ class TaskDetailSerializer(TaskSerializer):
             'status': job.status,
         }
 
-    def get_blep_minimum_seconds(self, obj):
-        from apps.jobs.services import blep_minimum_seconds
-        return blep_minimum_seconds()
+    def get_blep_minimum_minutes(self, obj):
+        from apps.jobs.services import blep_minimum_minutes
+        return blep_minimum_minutes()
