@@ -218,6 +218,12 @@ class BlepService:
             raise ValidationError(
                 "This time entry overlaps an existing entry for the user."
             )
+        if target_user is not None:
+            from apps.core.time_integrity import enclosing_shift_for_blep
+            if enclosing_shift_for_blep(target_user, start_time, end_time) is None:
+                raise ValidationError(
+                    "No shift encloses this time — clock in / add a shift covering it first."
+                )
         with transaction.atomic():
             blep = BlepService._create(
                 task, target_user, start_time=start_time, end_time=end_time,
@@ -272,6 +278,15 @@ class BlepService:
             raise ValidationError(
                 "This time entry would overlap an existing entry for the user."
             )
+
+        # Enclosure guard: a closed blep must sit inside one of its user's
+        # shifts. Skip orphan (user-less) bleps and still-open bleps (no end).
+        if check_user is not None and new_end is not None:
+            from apps.core.time_integrity import enclosing_shift_for_blep
+            if enclosing_shift_for_blep(check_user, new_start, new_end) is None:
+                raise ValidationError(
+                    "No shift encloses the edited time — widen the enclosing shift first."
+                )
 
         for k, v in fields.items():
             setattr(blep, k, v)
@@ -914,6 +929,11 @@ class TaskLifecycleService:
                     f"must be 'pending' or 'in_progress'."
                 )
             now = timezone.now()
+
+            # Auto-clock-in: a worker starting a live blep must have an open
+            # shift. Open one for the target if they have none.
+            from apps.core.services import ShiftService
+            ShiftService.ensure_open_shift(target, start_time=now)
 
             if task.status == Task.STATUS_PENDING:
                 # First worker on a pending task: promote (which consumes the

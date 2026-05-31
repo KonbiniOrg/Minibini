@@ -4,7 +4,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from tests.base import BaseTestCase
-from apps.core.models import User
+from apps.core.models import User, Shift
 from apps.jobs.models import Job, Task, Blep
 
 
@@ -120,6 +120,10 @@ class BlepCreateAPITest(BaseTestCase):
             self.job.status = s
             self.job.save()
         self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        # Wide closed shift so historical bleps have an enclosing shift.
+        now = timezone.now()
+        Shift.objects.create(user=self.user, start_time=now - timedelta(days=3),
+                             end_time=now + timedelta(hours=1))
 
     def _payload(self, hours_ago=2, duration_hours=1, user=None, task=None):
         now = timezone.now()
@@ -181,6 +185,10 @@ class BlepUpdateAPITest(BaseTestCase):
         self.manager = User.objects.get(pk=self.manager.pk)
         self.job = Job.objects.first()
         self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        # Wide closed shift so edited bleps stay enclosed by a shift.
+        now = timezone.now()
+        Shift.objects.create(user=self.user, start_time=now - timedelta(days=3),
+                             end_time=now + timedelta(hours=1))
 
     def _blep(self, user, hours_ago_start=2, hours_ago_end=1):
         now = timezone.now()
