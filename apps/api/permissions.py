@@ -15,3 +15,9 @@ CanManageJobs = atom_permission('can_manage_jobs')
 CanManageFinancials = atom_permission('can_manage_financials')
 CanManageTime = atom_permission('can_manage_time')
 CanManageConfig = atom_permission('can_manage_config')
+
+
+class CanManageTimeOrFinancials(BasePermission):
+    def has_permission(self, request, view):
+        return (request.user.has_perm('core.can_manage_time')
+                or request.user.has_perm('core.can_manage_financials'))
