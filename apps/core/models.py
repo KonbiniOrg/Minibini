@@ -446,3 +446,19 @@ class ShiftChangeRequest(TimeChangeRequest):
     @property
     def target_user(self):
         return self.shift.user if self.shift_id else self.requester
+
+    def would_conflict(self):
+        from apps.core.time_integrity import unenclosed_bleps_for_shift
+        also = (self.shift.start_time, self.shift.end_time or timezone.now()) if self.shift_id else None
+        return bool(unenclosed_bleps_for_shift(
+            self.target_user, self.requested_start, self.requested_end, also_span=also))
+
+    def apply_requested(self, reviewer):
+        from apps.core.services import ShiftService
+        if self.shift_id:
+            return ShiftService.update(self.shift, actor=reviewer,
+                                       start_time=self.requested_start,
+                                       end_time=self.requested_end)
+        return ShiftService.create(self.requester, actor=reviewer,
+                                   start_time=self.requested_start,
+                                   end_time=self.requested_end)

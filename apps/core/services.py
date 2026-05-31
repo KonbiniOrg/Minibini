@@ -1075,3 +1075,37 @@ class ShiftService:
         ShiftService._assert_encloses(user, start_time, end_time)
         from apps.core.models import Shift
         return Shift.objects.create(user=user, start_time=start_time, end_time=end_time)
+
+
+class TimeChangeRequestService:
+    @staticmethod
+    def submit(request):
+        """Validate + save a new request. Conflicts are allowed (warn-and-flag)."""
+        if not (request.reason or '').strip():
+            raise ValidationError("A reason is required.")
+        request.has_known_conflict = request.would_conflict()
+        request.save()
+        return request
+
+    @staticmethod
+    def approve(request, reviewer):
+        if request.status != request.STATUS_PENDING:
+            raise ValidationError("Only pending requests can be approved.")
+        with transaction.atomic():
+            request.apply_requested(reviewer)   # raises ValidationError on invariant break
+            request.status = request.STATUS_APPROVED
+            request.reviewer = reviewer
+            request.reviewed_at = timezone.now()
+            request.save()
+        return request
+
+    @staticmethod
+    def deny(request, reviewer, note=''):
+        if request.status != request.STATUS_PENDING:
+            raise ValidationError("Only pending requests can be denied.")
+        request.status = request.STATUS_DENIED
+        request.reviewer = reviewer
+        request.reviewed_at = timezone.now()
+        request.review_note = note or ''
+        request.save()
+        return request

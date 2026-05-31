@@ -641,5 +641,21 @@ class BlepChangeRequest(TimeChangeRequest):
     def target_user(self):
         return self.blep.user if self.blep_id else self.requester
 
+    def would_conflict(self):
+        from apps.core.time_integrity import enclosing_shift_for_blep
+        return enclosing_shift_for_blep(
+            self.target_user, self.requested_start, self.requested_end) is None
+
+    def apply_requested(self, reviewer):
+        from apps.jobs.services import BlepService
+        if self.blep_id:
+            return BlepService.update(self.blep, actor=reviewer,
+                                      start_time=self.requested_start,
+                                      end_time=self.requested_end)
+        return BlepService.create_historical(
+            actor=reviewer, task=self.task,
+            start_time=self.requested_start, end_time=self.requested_end,
+            target_user=self.requester)
+
 
 
