@@ -65,15 +65,21 @@
         const bad = bleps.filter(b => b.end_time &&
           !(new Date(s) <= new Date(b.start_time) && new Date(b.end_time) <= new Date(e)) &&
           (new Date(b.start_time) < new Date(e) && new Date(b.end_time) > new Date(s)));
-        if (bad.length) conflictMsg =
-          `This shift would not cover blep(s) on ${bad.map(b => b.task_name).join(', ')}.`;
+        if (bad.length) {
+          const names = bad.map(b => b.task_name).join(', ');
+          conflictMsg = action === 'request'
+            ? `Heads up: this shift wouldn't cover your blep(s) on ${names} — your manager will reconcile that when reviewing the request.`
+            : `This shift would not cover blep(s) on ${names}.`;
+        }
       } else {
         const resp = await api.get(`/api/shifts/?user=${uid}&since=${encodeURIComponent(
           new Date(new Date(s).getTime() - 86400000).toISOString())}`);
         const shifts = (resp.results || resp).filter(sh => sh.end_time);
         const enclosed = shifts.some(sh =>
           new Date(sh.start_time) <= new Date(s) && new Date(e) <= new Date(sh.end_time));
-        if (!enclosed) conflictMsg = 'No shift covers this time — widen the enclosing shift first.';
+        if (!enclosed) conflictMsg = action === 'request'
+          ? "Heads up: this time isn't covered by one of your shifts — your manager will adjust the shift when reviewing the request."
+          : 'No shift covers this time — widen the enclosing shift first.';
       }
     } catch { /* soft check only */ }
   }
@@ -86,14 +92,20 @@
     if (canManageTime && targetUserId) payload.user = Number(targetUserId);
     try {
       if (action === 'request') {
-        payload.reason = reason;
+        // Change-request API expects requested_start / requested_end (not the
+        // start_time/end_time the direct blep/shift edit endpoints use).
+        const reqPayload = {
+          requested_start: localToIso(startTime),
+          requested_end: localToIso(endTime),
+          reason,
+        };
         if (recordType === 'shift') {
-          if (record) payload.shift = record.shift_id;
-          await api.post('/api/shift-change-requests/', payload);
+          if (record) reqPayload.shift = record.shift_id;
+          await api.post('/api/shift-change-requests/', reqPayload);
         } else {
-          payload.task = record ? record.task : taskId;
-          if (record) payload.blep = record.blep_id;
-          await api.post('/api/blep-change-requests/', payload);
+          reqPayload.task = record ? record.task : taskId;
+          if (record) reqPayload.blep = record.blep_id;
+          await api.post('/api/blep-change-requests/', reqPayload);
         }
       } else if (recordType === 'shift') {
         if (action === 'edit') await api.patch(`/api/shifts/${record.shift_id}/`, payload);

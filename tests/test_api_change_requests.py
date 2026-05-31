@@ -76,3 +76,26 @@ class ChangeRequestAPITest(BaseTestCase):
             'reason': 'not mine',
         }, format='json')
         self.assertEqual(r.status_code, 403, r.data)
+
+    def test_worker_files_conflicting_blep_request_is_allowed(self):
+        # A request whose new time no shift covers must still be ALLOWED
+        # (warn-and-flag) — the worker can't widen the shift; the manager
+        # reconciles it on review. This is the agreed warn-and-allow contract.
+        from apps.jobs.models import Job, Task, Blep
+        job = Job.objects.first()
+        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        blep = Blep.objects.create(
+            task=task, user=self.worker,
+            start_time=self.now - timedelta(hours=3),
+            end_time=self.now - timedelta(hours=2))
+        self.client.force_authenticate(user=self.worker)
+        r = self.client.post('/api/blep-change-requests/', {
+            'blep': blep.blep_id,
+            'task': task.pk,
+            'requested_start': (self.now - timedelta(hours=50)).isoformat(),
+            'requested_end': (self.now - timedelta(hours=49)).isoformat(),
+            'reason': 'logged on the wrong day',
+        }, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertTrue(r.data['has_known_conflict'])
+        self.assertEqual(r.data['status'], 'pending')
