@@ -76,6 +76,90 @@ and the actor/target authorization rules.
 
 ---
 
+### 1.2a Shift (+ ShiftChangeRequest / BlepChangeRequest)
+
+Depends on: User.
+
+A work-attendance span: the clock-in/clock-out band that encloses a worker's
+Bleps. `db_table = 'shifts'`. `@history(exclude=['shift_id'])`.
+
+- **shift_id**: auto primary key
+- **user** (required FK → User, PROTECT, `related_name='shifts'`)
+- **start_time**: required datetime (clock-in)
+- **end_time**: nullable datetime. **Null = open** (worker is currently on the
+  clock). `is_open` property returns `end_time is None`. When set, must be
+  ≥ `start_time` (enforced by `ShiftService`).
+- **One OPEN shift per user**: a user may have at most one shift with
+  `end_time IS NULL`. This is enforced in `ShiftService` (`clock_in` blocks a
+  second clock-in; `ensure_open_shift` reuses the existing open one) — **not**
+  a DB constraint (MySQL has no partial unique index). Fixtures must not ship
+  two open shifts for one user.
+- **Multiple shifts per day** are allowed (split shifts, clock-out for lunch
+  and back in).
+
+#### The shift↔blep enclosure invariant
+
+**Every Blep must be fully enclosed by a Shift of the same user:**
+`shift.start_time <= blep.start_time and blep.end_time <= shift.end_time`.
+Bleps and Shifts are related by time overlap, not by an FK. Only a *closed*
+shift can enclose (an open shift has no end yet). The invariant is enforced in
+the service layer, not the DB — helpers live in `apps/core/time_integrity.py`
+(`unenclosed_bleps_for_shift`, `enclosing_shift_for_blep`):
+
+- Starting a live Blep auto-opens a shift for the worker if none is open
+  (`TaskLifecycleService.start_work` → `ShiftService.ensure_open_shift`).
+- Creating / editing a Blep (live or historical) is rejected unless a shift
+  of that user encloses the resulting span.
+- Editing / creating a Shift is rejected if it would fail to enclose any of
+  the user's existing bleps (`ShiftService._assert_encloses`); the
+  manager-approve path re-checks inside a transaction and rolls back on
+  conflict.
+- Pre-feature bleps were **backfilled** (one enclosing shift per
+  user-per-local-day), not exempted — see the `backfill_shifts` management
+  command (`apps/core/management/commands/backfill_shifts.py`, idempotent).
+  Open bleps (no `end_time`) and user-less bleps are skipped.
+
+Clocking out (`ShiftService.clock_out`) closes the worker's open bleps first,
+then stamps `end_time` on the shift — so a clock-out can never leave a blep
+unenclosed.
+
+#### Self-edit window
+
+`ShiftService.SELF_EDIT_WINDOW_HOURS = 30`. A worker may edit/create their own
+shift only when its `start_time` is within the last 30 hours; older shifts must
+go through a change request. Holders of `can_manage_time` (and superusers) edit
+any shift at any time. (Bleps keep a separate **24h** self-edit window — see
+§1.12.)
+
+#### ShiftChangeRequest / BlepChangeRequest
+
+Workers whose target time is outside their self-edit window submit a change
+request that a manager approves or denies. Both concrete models extend the
+abstract `TimeChangeRequest` (`apps/core/models.py`); `ShiftChangeRequest`
+lives in core, `BlepChangeRequest` in `apps/jobs/models.py`.
+
+- `db_table = 'shift_change_requests'` / `db_table = 'blep_change_requests'`.
+  Both `@history(exclude=['request_id'])`.
+- **requester** (required FK → User, PROTECT)
+- **requested_start** (required) / **requested_end** (nullable) — the proposed
+  span
+- **reason** (required text — `TimeChangeRequestService.submit` rejects blank)
+- **status**: `pending` (default) → `approved` / `denied`
+- **has_known_conflict**: boolean set on submit; a request that would break the
+  enclosure invariant is still allowed to be submitted (warn-and-flag), but
+  approval re-validates and rolls back if it still conflicts.
+- **reviewer** (nullable FK → User), **reviewed_at** (nullable),
+  **review_note** (blank text), **created_at** (auto)
+- `ShiftChangeRequest.shift` (nullable FK → Shift, PROTECT): null = a
+  create-new-shift request. `BlepChangeRequest.blep` (nullable FK → Blep) +
+  `task` (nullable FK → Task): null `blep` = a create-new-blep request against
+  `task`.
+
+See `docs/designs/users-and-permissions.md` for the endpoint/atom mapping and
+`jobs-tasks-and-worksheets.md` §5 for the Blep side.
+
+---
+
 ### 1.3 AccountingCategory
 
 Standalone. No FK dependencies.
@@ -439,6 +523,12 @@ Depends on: Task, User.
   closing the user's open Blep before creating a new one.
 - Open Bleps are auto-closed (end_time set to now) when their Task transitions
   to `complete`, `cancelled`, or `blocked`.
+- **Shift enclosure**: every Blep must be fully enclosed by a Shift of the same
+  user (`shift.start <= blep.start and blep.end <= shift.end`). Bleps and
+  Shifts relate by time overlap, not an FK. Enforced in the service layer; see
+  §1.2a for the full invariant, the auto-clock-in / clock-out behaviour, and
+  the backfill. Self-edit window for direct user blep edits is **24h** (the
+  shift self-edit window is 30h — §1.2a).
 
 ---
 
@@ -1325,6 +1415,24 @@ entered `in_progress`.
 
 ---
 
+### 2.8a Work starts → Shift auto-opened; clock-out → open Bleps closed
+
+**Trigger:** `start_work` opens a live Blep / `ShiftService.clock_out` runs.
+
+**Effects:**
+- On `start_work`, if the worker has no open Shift, one is opened with
+  `start_time = now` (`ShiftService.ensure_open_shift`). This guarantees the
+  new Blep is enclosed (§1.2a).
+- On clock-out, the worker's open Bleps are closed (`end_time = now`) first,
+  then the open Shift's `end_time` is stamped — so clock-out never strands an
+  unenclosed open Blep.
+
+**Data constraint:** A worker with an open Blep must have an open Shift that
+started at or before the Blep. A closed Shift must enclose every Blep of that
+user whose span overlaps it.
+
+---
+
 ### 2.9 Task terminal → open Bleps closed
 
 **Trigger:** A Task transitions to `complete`, `cancelled`, or `blocked`.
@@ -1444,8 +1552,8 @@ as side effects of object operations.
 ### What generates history
 
 `@history`-decorated models: Contact, Business, Job, Estimate, EstWorksheet,
-Invoice, PurchaseOrder, Bill. The decorator creates `audit` entries on
-create and update.
+Invoice, PurchaseOrder, Bill, Shift, ShiftChangeRequest, BlepChangeRequest.
+The decorator creates `audit` entries on create and update.
 
 Signal handlers create `action` entries (as `system` user) for:
 - Job status changes triggered by Estimate acceptance

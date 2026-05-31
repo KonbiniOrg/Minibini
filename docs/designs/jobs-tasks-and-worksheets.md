@@ -395,6 +395,26 @@ Any path that would create a second active Blep first calls
 Multiple users can have active Bleps on the same task (the "join"
 case).
 
+**Shift enclosure.** Every Blep must be fully enclosed by a `Shift` of the
+same user (`shift.start <= blep.start and blep.end <= shift.end`). Shifts are
+the worker's clock-in/clock-out attendance spans (`Shift` model in
+`apps.core` — see `docs/designs/data-constraints.md` §1.2a). Consequences for
+bleps:
+
+- **Auto-clock-in.** Starting a live blep (`TaskLifecycleService.start_work`)
+  calls `ShiftService.ensure_open_shift(target)` — if the worker has no open
+  shift, one is opened at `now` so the new blep is enclosed. Workers normally
+  clock in from the Home band, but starting work clocks them in implicitly.
+- **Clock-out closes open bleps.** `ShiftService.clock_out` closes the
+  worker's open bleps (`end_time = now`) *before* stamping the shift's
+  `end_time`, so clocking out never leaves a blep unenclosed. The logout
+  endpoint clocks the worker out (§5.3).
+- **Enclosure guard on create/edit.** A blep create or edit (live or
+  historical) is rejected if no shift of that user encloses the resulting
+  span (`enclosing_shift_for_blep` in `apps/core/time_integrity.py`). A worker
+  whose target time falls outside any shift, or outside their 24h self-edit
+  window, files a `BlepChangeRequest` for a manager to approve.
+
 The 24-hour rolling rule applies to direct user edits, not to
 service-driven activity:
 
@@ -418,7 +438,7 @@ viewset, `ValidationError` to HTTP 400.
 |---|---|
 | `_create(task, user, start_time=None, end_time=None)` | Create a Blep |
 | `_close_open(user=None, task=None, now=None)` | Close all open Bleps matching the filters |
-| `close_user_open_bleps(user)` | Public wrapper around `_close_open(user=...)`; called by `UserAdminService` on deactivation and by the logout endpoint (`/api/auth/logout/`) so an explicit logout clocks the worker out. Session expiry does not call it (no server-side hook). |
+| `close_user_open_bleps(user)` | Public wrapper around `_close_open(user=...)`; called by `UserAdminService` on deactivation, by the logout endpoint (`/api/auth/logout/`) so an explicit logout clocks the worker out, and by `ShiftService.clock_out` so clocking out closes the worker's open bleps before the shift closes. Session expiry does not call it (no server-side hook). |
 
 | Public method | Purpose |
 |---|---|
@@ -444,6 +464,11 @@ Validation rules enforced inside `BlepService`:
    `now` (`BlepService._CLOCK_SKEW_BUFFER`, tolerating mismatched device
    clocks) is rejected on create and update. You cannot have worked ahead
    of now.
+6. **Shift enclosure:** the resulting blep span must be fully enclosed by a
+   shift of the same user (`enclosing_shift_for_blep`). `start_work`
+   auto-opens a shift so live timers always pass; historical creates/edits
+   outside any shift are rejected (file a `BlepChangeRequest` instead). See
+   §5.2 and `docs/designs/data-constraints.md` §1.2a.
 
 ### 5.4 API
 

@@ -154,10 +154,12 @@ apps/api/
     rate_schemes/            # RateScheme
     reimbursements/          # expense reimbursement batches
     search/                  # SearchService dispatch
+    shifts/                  # Shift + clock-in/out + change-requests + report
     tasks/                   # Task (job-side tasks)
     templates_config/        # WorkTemplate, TaskTemplate, AccountingCategory,
                              #  settings, units
-    time_tracking/           # urls only — all routes return 501
+    time_tracking/           # urls only — re-exports apps.api.shifts.urls
+                             #  (mounted at /api/shifts/); time-tracking/{status,active} still 501
     users/                   # User admin (CRUD, deactivate, reset password)
     worksheets/              # EstWorksheet
 ```
@@ -165,6 +167,16 @@ apps/api/
 The `WorkOrder` model has been removed; Tasks live directly on `Job`.
 See `docs/designs/jobs-tasks-and-worksheets.md` for the task-on-job
 shape.
+
+**Shared change-request viewset.** `apps/api/shifts/views.py` defines a
+`_ChangeRequestViewSet` base that `ShiftChangeRequestViewSet` and
+`BlepChangeRequestViewSet` both subclass — common create / list-scoping /
+`approve` / `deny` behaviour, differing only in `queryset_model` and
+`serializer_class`. Both delegate to `TimeChangeRequestService`
+(`apps/core/services.py`) and the model's `apply_requested()`. See
+`docs/designs/data-constraints.md` §1.2a and
+`docs/designs/users-and-permissions.md` for the shift/blep change-request
+and clock-in/out endpoints and their atoms.
 
 ### 3.2 Authentication
 
@@ -332,10 +344,12 @@ The factory is `apps/api/stubs.py:stub_501`.
 
 - `POST /api/auth/refresh/` — `apps/api/auth/views.py` (JWT placeholder)
 - `POST /api/emails/send/` — `apps/api/email/urls.py`
-- `POST /api/shifts/clock-in/` — `apps/api/time_tracking/urls.py`
-- `POST /api/shifts/clock-out/` — `apps/api/time_tracking/urls.py`
 - `GET /api/time-tracking/status/` — `apps/api/urls.py`
 - `GET /api/time-tracking/active/` — `apps/api/urls.py`
+
+`POST /api/shifts/clock-in/` and `POST /api/shifts/clock-out/` are no longer
+stubs — they are live in `apps/api/shifts/views.py` (work-shifts feature).
+`apps/api/time_tracking/urls.py` now re-exports the real shift URLs.
 
 `/api/expenses/` is fully implemented (`ExpenseViewSet` in
 `apps/api/expenses/views.py`); it is not a stub.
@@ -568,6 +582,25 @@ midband sets `.midband > * { min-width: 0 }` for this; pair `overflow-wrap:
 anywhere` (now part of `.preserve-breaks`) with `min-width: 0` anywhere a
 free-text field sits in a grid/flex track.
 
+### 5.9 Time-edit modal (shifts + bleps)
+
+`frontend/src/components/time/TimeEditModal.svelte` is the single modal for all
+time-record edits — generalized from the old `BlepEditModal` (which now just
+wraps `TimeEditModal` with `recordType="blep"`). Props pick the variant:
+
+- `recordType`: `'blep'` | `'shift'`
+- `action`: `'edit'` | `'create'` | `'request'`
+
+In `edit` mode it offers Delete; in all modes it runs **soft conflict
+detection** against the enclosure invariant (shift↔blep) and shows a warning.
+On `edit` / `create` a detected conflict **blocks Save** (the change would
+break the invariant outright); on `request` it only **warns** (the request is
+still submittable — a manager resolves it on approve, see
+`docs/designs/data-constraints.md` §1.2a). Mutations notify the relevant store
+(`stores/shift.js` / `stores/blepActivity.js`) so other views refresh. Used by
+`home/MyShiftsList.svelte`, `home/RecentTimeList.svelte`, and the task-detail
+blep wrapper.
+
 ---
 
 ## 6. View mode (full / lite)
@@ -655,10 +688,11 @@ system-generated description in `text`.
 Models opt in with `@history(exclude=[...])` from `apps/core/history.py`:
 
 - `Contact`, `Business` — `apps/contacts/models.py`
-- `Job` — `apps/jobs/models.py`
+- `Job`, `BlepChangeRequest` — `apps/jobs/models.py`
 - `Estimate`, `EstWorksheet` — `apps/estimates/models.py`
 - `Invoice` — `apps/invoicing/models.py`
 - `PurchaseOrder`, `Bill` — `apps/purchasing/models.py`
+- `Shift`, `ShiftChangeRequest` — `apps/core/models.py`
 
 Excluded fields don't appear in `changes`; if they were the only fields
 that changed, no entry is created.
